@@ -1,4 +1,4 @@
-# editor-core (工作空间)
+# editor-core
 
 无头编辑器引擎 + 集成，用于构建 UI 无关的文本编辑器。
 

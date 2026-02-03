@@ -1,4 +1,4 @@
-# editor-core (workspace)
+# editor-core
 
 Headless editor engine + integrations for building UI-agnostic text editors.
 
@@ -34,9 +34,7 @@ The editor consistently uses **character offsets** (Rust `char` indices) at API 
   to multiple visual rows.
 - **LSP positions**: `(line, character)` where `character` is **UTF-16 code units** (see `editor-core-lsp`).
 
-This project does *not* currently model “cursor movement by grapheme cluster” (e.g. family emoji
-sequences are multiple `char`s). Many editors choose grapheme-cluster-aware movement; if you need
-that, you can layer it in your command logic.
+This project does *not* currently model “cursor movement by grapheme cluster” (e.g. family emoji like "👨‍👩‍👧‍👦" sequences are multiple `char`s). Many editors choose grapheme-cluster-aware movement; if you need that, you can layer it in your command logic.
 
 ### “Text grid” snapshots (rendering input)
 
