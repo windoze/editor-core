@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/editor-core",
+    "crates/editor-core-lsp",
+    "crates/editor-core-highlight-simple",
+    "crates/editor-core-sublime",
+    "crates/tui-editor",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.91"
+license = "MIT OR Apache-2.0"
+documentation = "https://docs.rs/editor-core/"
+homepage = "https://github.com/windoze/editor-core"
+repository = "https://github.com/windoze/editor-core"
+authors = ["Chen Xu <windoze@0d0a.com>"]

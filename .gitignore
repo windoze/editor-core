@@ -1,0 +1,48 @@
+# Rust 编译输出
+/target
+debug/
+target/
+
+# Cargo lock 文件（库项目通常忽略，二进制项目保留）
+# Cargo.lock
+
+# Rust 备份文件
+**/*.rs.bk
+*.pdb
+
+# IDE 和编辑器配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 构建产物
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+
+# 测试覆盖率
+*.profraw
+*.profdata
+/coverage
+
+# 文档构建
+/doc
+
+# 临时文件
+*.tmp
+*.temp
+*.orig
+
+# 环境变量文件
+.env
+.env.local
+
+# 特定工具和服务的文件
+.claude
+CLAUDE.md
+AGENTS.md

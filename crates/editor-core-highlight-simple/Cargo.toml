@@ -1,0 +1,18 @@
+[package]
+name = "editor-core-highlight-simple"
+version = "0.1.0"
+description = "Simple syntax highlighting implementation for editor-core."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["editor", "text-editor", "unicode", "lsp", "headless"]
+categories = ["text-editors", "text-processing"]
+
+[dependencies]
+editor-core = { version = "0.1.0", path = "../editor-core" }
+regex = "1.11"
+

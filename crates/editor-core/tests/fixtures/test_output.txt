@@ -1,0 +1,180 @@
+   Compiling editor-core v0.1.0 (/Volumes/Data/home/chenxu/repos/editor-core)
+warning: unused variable: `calc`
+  --> tests/stage5_validation.rs:71:9
+   |
+71 |     let calc = DeltaCalculator::from_text(document);
+   |         ^^^^ help: if this is intentional, prefix it with an underscore: `_calc`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `editor-core` (test "stage5_validation") generated 1 warning (run `cargo fix --test "stage5_validation" -p editor-core` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.56s
+     Running unittests src/lib.rs (target/release/deps/editor_core-1d6e64ce708295d4)
+
+running 67 tests
+test intervals::tests::test_fold_region ... ok
+test intervals::tests::test_folding_manager ... ok
+test intervals::tests::test_interval_contains ... ok
+test intervals::tests::test_interval_overlaps ... ok
+test intervals::tests::test_interval_tree_insert ... ok
+test intervals::tests::test_interval_tree_query_point ... ok
+test intervals::tests::test_interval_tree_query_range ... ok
+test intervals::tests::test_interval_tree_update_deletion ... ok
+test intervals::tests::test_interval_tree_update_insertion ... ok
+test intervals::tests::test_logical_to_visual_with_folding ... ok
+test intervals::tests::test_multiple_overlapping_styles ... ok
+test layout::tests::test_calculate_wrap_points_cjk ... ok
+test layout::tests::test_calculate_wrap_points_cjk_overflow ... ok
+test layout::tests::test_calculate_wrap_points_exact_fit ... ok
+test layout::tests::test_calculate_wrap_points_one_over ... ok
+test layout::tests::test_calculate_wrap_points_simple ... ok
+test layout::tests::test_char_width ... ok
+test layout::tests::test_layout_engine_basic ... ok
+test layout::tests::test_layout_engine_viewport_change ... ok
+test layout::tests::test_logical_to_visual ... ok
+test layout::tests::test_str_width ... ok
+test layout::tests::test_visual_line_info ... ok
+test layout::tests::test_visual_to_logical ... ok
+test layout::tests::test_wrap_double_width_char ... ok
+test line_index::tests::test_append_line ... ok
+test line_index::tests::test_char_offset_to_position ... ok
+test line_index::tests::test_from_text ... ok
+test line_index::tests::test_get_line ... ok
+test line_index::tests::test_insert_delete_lines ... ok
+test line_index::tests::test_large_document ... ok
+test line_index::tests::test_line_to_offset ... ok
+test line_index::tests::test_mixed_ascii_cjk ... ok
+test line_index::tests::test_new_line_index ... ok
+test line_index::tests::test_offset_to_line ... ok
+test line_index::tests::test_position_to_char_offset ... ok
+test line_index::tests::test_utf8_cjk ... ok
+test lsp_sync::tests::test_char_offset_to_utf16 ... ok
+test lsp_sync::tests::test_delta_calculator_delete ... ok
+test lsp_sync::tests::test_delta_calculator_insert ... ok
+test lsp_sync::tests::test_position_to_lsp ... ok
+test lsp_sync::tests::test_position_to_lsp_with_emoji ... ok
+test lsp_sync::tests::test_roundtrip_conversion ... ok
+test lsp_sync::tests::test_semantic_tokens_absolute_positions ... ok
+test lsp_sync::tests::test_utf16_to_char_offset ... ok
+test lsp_sync::tests::test_utf8_to_utf16_len ... ok
+test snapshot::tests::test_cell_creation ... ok
+test snapshot::tests::test_cell_with_styles ... ok
+test snapshot::tests::test_empty_document ... ok
+test snapshot::tests::test_get_headless_grid ... ok
+test snapshot::tests::test_grid_bounds ... ok
+test snapshot::tests::test_grid_with_cjk ... ok
+test snapshot::tests::test_grid_with_emoji ... ok
+test snapshot::tests::test_headless_line ... ok
+test snapshot::tests::test_snapshot_generator_basic ... ok
+test snapshot::tests::test_viewport_width_change ... ok
+test storage::tests::test_delete_at_end ... ok
+test storage::tests::test_delete_at_start ... ok
+test storage::tests::test_delete_in_middle ... ok
+test storage::tests::test_empty_piece_table ... ok
+test storage::tests::test_get_range ... ok
+test storage::tests::test_insert_at_end ... ok
+test storage::tests::test_insert_at_start ... ok
+test storage::tests::test_insert_in_middle ... ok
+test storage::tests::test_multiple_operations ... ok
+test storage::tests::test_new_piece_table ... ok
+test storage::tests::test_utf8_chinese ... ok
+test storage::tests::test_utf8_emoji ... ok
+
+test result: ok. 67 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stage1_validation.rs (target/release/deps/stage1_validation-db4f309c730cc168)
+
+running 4 tests
+test test_consistency_medium_document ... ok
+test test_large_document_append_performance ... ok
+test test_memory_footprint_1m_operations ... ok
+test test_stress_mixed_operations ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 979.59s
+
+     Running tests/stage2_validation.rs (target/release/deps/stage2_validation-15f8373755bfa0dd)
+
+running 8 tests
+test test_byte_offset_conversions ... ok
+test test_char_offset_conversions ... ok
+test test_cjk_character_awareness ... ok
+test test_emoji_and_grapheme_clusters ... ok
+test test_empty_lines ... ok
+test test_line_access_performance ... ok
+test test_line_operations_with_cjk ... ok
+test test_mixed_content ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stage3_validation.rs (target/release/deps/stage3_validation-f7ee6308ded801b0)
+
+running 11 tests
+test test_cjk_line_wrap ... ok
+test test_consecutive_double_width ... ok
+test test_double_width_wrap ... ok
+test test_dynamic_reflow ... ok
+test test_edge_cases ... ok
+test test_layout_engine_visual_line_count ... ok
+test test_logical_visual_conversion ... ok
+test test_mixed_width_wrap ... ok
+test test_very_long_line ... ok
+test test_viewport_width_change ... ok
+test test_zero_width_viewport ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stage4_validation.rs (target/release/deps/stage4_validation-e481dd4b81125945)
+
+running 11 tests
+test test_complex_folding_scenario ... ok
+test test_expand_collapse_all ... ok
+test test_folding_awareness ... ok
+test test_folding_toggle ... ok
+test test_interval_deletion_overlap ... ok
+test test_interval_overlap ... ok
+test test_interval_tree_text_changes ... ok
+test test_multiple_folding_regions ... ok
+test test_query_range_performance ... ok
+test test_style_priority ... ok
+test test_visual_to_logical_with_folding ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stage5_validation.rs (target/release/deps/stage5_validation-78e37dfe60752d5e)
+
+running 9 tests
+test test_complex_unicode_scenarios ... ok
+test test_coordinate_robustness_with_emoji ... ok
+test test_edge_cases ... ok
+test test_incremental_sync_changes ... ok
+test test_lsp_position_calculations ... ok
+test test_multi_line_emoji_document ... ok
+test test_performance_large_line ... ok
+test test_semantic_tokens_conversion ... ok
+test test_utf16_conversion_accuracy ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stage6_validation.rs (target/release/deps/stage6_validation-bcdc9fcee978dc22)
+
+running 11 tests
+test test_basic_snapshot_generation ... ok
+test test_dynamic_update_scenario ... ok
+test test_edge_cases ... ok
+test test_integration_with_layout_engine ... ok
+test test_integration_with_line_index ... ok
+test test_integration_with_piece_table ... ok
+test test_large_document_snapshot ... ok
+test test_paginated_snapshot ... ok
+test test_snapshot_with_styles ... ok
+test test_unicode_full_pipeline ... ok
+test test_viewport_width_changes ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests editor_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

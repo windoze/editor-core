@@ -1,0 +1,419 @@
+# editor-core — Design Notes
+
+This document explains the internal design of the `editor-core` workspace and how the crates fit
+together. It is written for:
+
+- UI/front-end authors integrating the engine
+- contributors extending storage/index/layout/derived-state subsystems
+
+If you only need API-level usage, start with the workspace `README.md` and the per-crate READMEs
+under `crates/*/README.md`.
+
+## Goals and non-goals
+
+### Goals
+
+- **Headless / UI-agnostic**: the engine produces snapshots and state; the host renders and maps
+  styles to visuals.
+- **Unicode-aware basics**:
+  - edit operations use **character offsets** (Rust `char` indices), not byte offsets
+  - layout uses **cell widths** (typical terminals: 1 or 2) for CJK/emoji
+- **Coordinate conversions**:
+  - char offsets ⇄ logical `(line, column)`
+  - logical ⇄ visual rows (soft wrapping, folding)
+  - UTF-16 conversions for LSP via `editor-core-lsp`
+- **Composable derived state**: highlight/folding/diagnostics are “derived metadata”, applied as
+  patches (`ProcessingEdit`) rather than hardwired into the core.
+
+### Non-goals (currently)
+
+- A full UI renderer, theme system, or widget toolkit.
+- A fully typed LSP framework (`editor-core-lsp` intentionally uses `serde_json::Value`).
+- Grapheme-cluster-aware cursor movement/selection (see “Unicode model” below).
+- A full incremental parsing pipeline. Highlighting integrations are meant to be swappable.
+
+## High-level architecture
+
+The core engine (`crates/editor-core`) is organized in layers that build up from text storage to UI
+snapshots:
+
+```text
+┌──────────────────────────────────────────────┐
+│ State + commands (CommandExecutor/State)     │  public edit/query surface
+├──────────────────────────────────────────────┤
+│ Snapshots (HeadlessGrid)                     │  UI reads + renders
+├──────────────────────────────────────────────┤
+│ Styles + folding (IntervalTree/FoldingMgr)   │  derived metadata overlays
+├──────────────────────────────────────────────┤
+│ Layout (LayoutEngine)                        │  soft wrap + logical↔visual
+├──────────────────────────────────────────────┤
+│ Line index (LineIndex, ropey)                │  line access + pos↔offset
+├──────────────────────────────────────────────┤
+│ Storage (PieceTable)                         │  edits + text retrieval
+└──────────────────────────────────────────────┘
+```
+
+“Integration” crates (`editor-core-lsp`, `editor-core-sublime`, `editor-core-highlight-simple`)
+compute derived metadata and/or drive external protocols. They feed results back into the core via
+the shared derived-state interfaces.
+
+## Coordinate model
+
+`editor-core` needs multiple coordinate spaces. Using them consistently is the key to correct UI
+behavior.
+
+### 1) Byte offsets (UTF-8)
+
+- Used internally in `PieceTable` *buffers* (`Piece.start`, `Piece.byte_length`).
+- Not used as the primary API coordinate, because bytes are not stable under Unicode operations.
+
+### 2) Character offsets (Unicode scalar values)
+
+Most public APIs use **character offsets** (`usize`):
+
+- Offsets count Rust `char`s across the whole document, including newline characters.
+- Ranges are typically half-open: `[start, end)`.
+
+Tradeoff: a user-perceived “character” (a grapheme cluster like `👨‍👩‍👧‍👦`) may be multiple `char`s.
+
+### 3) Logical positions (line/column)
+
+`Position { line, column }` is used for cursor/selection APIs.
+
+- `line` is a logical line index (0-based)
+- `column` is a character column within the logical line (0-based, counted in `char`s)
+
+Conversions are provided by `LineIndex`:
+
+- `LineIndex::char_offset_to_position(char_offset) -> (line, column)`
+- `LineIndex::position_to_char_offset(line, column) -> char_offset`
+
+### 4) Visual positions (soft wrap + folding)
+
+Layout introduces a “visual row” coordinate:
+
+- Soft wrapping splits a single logical line into multiple visual rows.
+- Folding can hide logical lines and optionally append a placeholder to a fold start line.
+
+Conversions exist in `LayoutEngine` (wrap-only) and `EditorCore` (wrap + folding):
+
+- `LayoutEngine::logical_to_visual_line(logical_line)`
+- `LayoutEngine::visual_to_logical_line(visual_line)`
+- `EditorCore::logical_position_to_visual(...)`
+- `EditorCore::visual_to_logical_line(visual_line)`
+
+Visual `x` positions are expressed in **cells**, not characters.
+
+### 5) LSP UTF-16 positions (integration crate)
+
+The Language Server Protocol uses UTF-16 code units for `Position.character`.
+
+`editor-core-lsp` provides `LspCoordinateConverter` and helpers to map between:
+
+- editor char offsets / positions
+- LSP UTF-16 positions / ranges
+
+## Core data structures
+
+### PieceTable (storage)
+
+File: `crates/editor-core/src/storage.rs`
+
+The storage layer is a classic **piece table**:
+
+- `original_buffer`: immutable bytes of the initial document
+- `add_buffer`: append-only bytes for inserted text
+- `pieces: Vec<Piece>`: each piece references a slice of one buffer
+
+Each `Piece` stores:
+
+- `start` + `byte_length` (byte range into the buffer)
+- `char_count` (cached to support char-offset operations)
+
+Edits:
+
+- Insert:
+  - append inserted bytes to `add_buffer`
+  - find the piece containing the target char offset
+  - split the containing piece if inserting in the middle
+  - insert a new `Piece` referencing the new add-buffer region
+- Delete:
+  - split boundary pieces as needed and remove affected pieces/ranges
+
+Notes:
+
+- Splitting a piece at a *character* offset requires converting to a byte offset (currently an
+  O(n) scan of the piece’s UTF-8 segment).
+- Adjacent pieces from the add buffer are merged to reduce fragmentation.
+- A simple GC compacts `add_buffer` by copying referenced regions and rewriting piece starts.
+
+### LineIndex (logical line access)
+
+File: `crates/editor-core/src/line_index.rs`
+
+The line index is built on `ropey::Rope`:
+
+- fast line access (`rope.line(i)`)
+- efficient conversions between char offsets and line/column
+
+In the current implementation, many edit paths rebuild the rope from the full document text after
+mutations (simple and correct, not the most incremental approach). The public API still exposes
+incremental `insert/delete` helpers for future optimizations.
+
+Two offset conversion styles exist:
+
+- `char_offset_to_position` / `position_to_char_offset`: preferred; match rope semantics where the
+  newline is a character in the text stream.
+- `line_to_offset` / `offset_to_line`: legacy helpers that treat offsets as “excluding newlines”
+  and are mostly used in validation tests.
+
+### LayoutEngine (soft wrapping)
+
+File: `crates/editor-core/src/layout.rs`
+
+Layout is a **headless reflow** engine:
+
+- Input: logical line text and `viewport_width` (in cells)
+- Output: wrap points (`WrapPoint { char_index, byte_offset }`) and `visual_line_count`
+
+`char_width(ch)` uses the `unicode-width` crate:
+
+- wide CJK/emoji → typically `2`
+- combining marks → often `0`
+
+Because width is computed per Unicode scalar value, multi-codepoint grapheme clusters are not
+treated as single units for wrapping or cursor movement.
+
+The engine provides coordinate conversion for wrapped lines:
+
+- `logical_position_to_visual(line, column) -> (visual_row, x_in_cells)`
+- `logical_position_to_visual_allow_virtual(...)`: allows “virtual spaces” beyond line end, used by
+  rectangular selection / column editing.
+
+### IntervalTree and style layers (derived styling)
+
+File: `crates/editor-core/src/intervals.rs`
+
+Styles are represented as **intervals** over character offsets:
+
+- `StyleId` is an opaque `u32` identifier
+- `Interval { start, end, style_id }` uses half-open char ranges `[start, end)`
+
+`IntervalTree` is implemented as:
+
+- a vector sorted by `start`
+- a `prefix_max_end` array for pruning during queries
+
+This supports:
+
+- point queries: “which styles apply at this offset?”
+- range queries: “which intervals overlap this viewport?”
+
+The core maintains:
+
+- `interval_tree`: base style intervals
+- `style_layers: BTreeMap<StyleLayerId, IntervalTree>`: per-source overlays (LSP semantic tokens,
+  Sublime syntax, diagnostics, …)
+
+Snapshots merge styles from the base tree and all layers, then sort+dedup the `StyleId` list for
+each cell.
+
+### FoldingManager (visibility)
+
+File: `crates/editor-core/src/intervals.rs`
+
+Folding is represented as line-based regions:
+
+- `FoldRegion { start_line, end_line, is_collapsed, placeholder }`
+- `end_line` is inclusive
+
+`FoldingManager` stores a sorted list of regions and provides:
+
+- toggling/collapsing/expanding
+- mapping between logical and visual lines when folds hide content
+
+When a region is collapsed, lines `(start_line + 1 ..= end_line)` become hidden.
+
+Snapshots optionally append the region’s placeholder on the fold **start** line using the built-in
+`FOLD_PLACEHOLDER_STYLE_ID`.
+
+Current limitation:
+
+- Folding regions are line-based and are **not automatically shifted** on text edits that insert or
+  delete newlines. The intended usage is to treat folds as derived state and refresh them from an
+  external provider (e.g. LSP folding ranges or Sublime syntax folding) after edits.
+
+## Command and state layers
+
+### EditorCore (aggregated model)
+
+File: `crates/editor-core/src/commands.rs` (`pub struct EditorCore`)
+
+`EditorCore` aggregates all major subsystems:
+
+- text: `PieceTable`, `LineIndex`
+- layout: `LayoutEngine`
+- derived metadata: `IntervalTree`, style layers, `FoldingManager`
+- selection state: cursor + selection(s)
+- viewport width
+
+It provides the styled snapshot helper:
+
+- `EditorCore::get_headless_grid_styled(start_visual_row, count)`
+
+This is the primary “UI reads data” method: it applies wrapping + folding and merges styles into
+cells.
+
+### CommandExecutor (mutations)
+
+File: `crates/editor-core/src/commands.rs` (`pub struct CommandExecutor`)
+
+Edits are applied through a command enum:
+
+- `EditCommand`: insert/delete/replace, multi-caret typing, undo/redo, find/replace helpers
+- `CursorCommand`: movement, selection, multi-cursor, rectangular selection
+- `ViewCommand`: viewport width changes, request an unstyled viewport snapshot
+- `StyleCommand`: ad-hoc base styles and manual folding toggles
+
+Implementation notes:
+
+- Edit commands update the piece table, keep style interval offsets consistent (shift on insert/
+  delete), and rebuild the rope + layout as needed.
+- Multi-caret typing is applied by computing all edit ranges in the *original* document and then
+  applying changes in descending offset order (so earlier edits don’t invalidate later offsets).
+
+#### Undo/redo model
+
+Undo/redo is implemented in `commands.rs` via an internal `UndoRedoManager`:
+
+- Each applied edit produces one or more `TextEdit` records (deleted_text + inserted_text).
+- Edits are grouped into `UndoStep { group_id, ... }`.
+- Pure insertions that don’t contain newlines may be coalesced into the current “open group” to
+  produce typical typing undo behavior.
+- A “clean point” is tracked to support `is_modified`/save prompts in higher layers.
+
+### EditorStateManager (queries + notifications)
+
+File: `crates/editor-core/src/state.rs`
+
+`EditorStateManager` wraps `CommandExecutor` and adds:
+
+- a monotonically increasing `version`
+- `is_modified` tracking + `mark_saved()`
+- subscription callbacks (`subscribe`) for change notifications
+- viewport bookkeeping (`scroll_top`, optional viewport height)
+- structured query methods:
+  - `get_document_state`, `get_cursor_state`, `get_viewport_state`, `get_style_state`, …
+
+#### Derived state interface
+
+The state manager is also the “integration point” for derived metadata:
+
+- `DocumentProcessor` (trait): compute derived updates
+- `ProcessingEdit` (enum): replace/clear style layers and folding regions
+
+Processors are expected to be:
+
+- deterministic given the editor state
+- side-effect-free with respect to the editor (they return edits; the host applies them)
+
+This pattern allows multiple independent integrations to coexist:
+
+- a syntax highlighter can populate `StyleLayerId::SUBLIME_SYNTAX`
+- an LSP session can populate `StyleLayerId::SEMANTIC_TOKENS` and folding regions
+- a diagnostics engine can populate `StyleLayerId::DIAGNOSTICS`
+
+## Snapshots
+
+File: `crates/editor-core/src/snapshot.rs`
+
+The snapshot format is intentionally small and UI-friendly:
+
+- `HeadlessGrid { lines, start_visual_row, count }`
+- `HeadlessLine { logical_line_index, is_wrapped_part, cells }`
+- `Cell { ch, width, styles }`
+
+There are two snapshot paths:
+
+1. `SnapshotGenerator` (text-only):
+   - owns a `Vec<String>` of lines + its own `LayoutEngine`
+   - produces unstyled snapshots
+   - useful for tests and simple usage
+2. `EditorCore::get_headless_grid_styled` (recommended for real UIs):
+   - uses the editor’s live `LineIndex` + `LayoutEngine`
+   - merges styles and applies folding
+
+## Integration crates
+
+### editor-core-highlight-simple
+
+Path: `crates/editor-core-highlight-simple/`
+
+A lightweight, regex-based highlighter intended for simple formats (JSON/INI/etc.):
+
+- `RegexHighlighter` runs regex rules line-by-line and emits style `Interval`s in char offsets.
+- `RegexHighlightProcessor` implements `DocumentProcessor` and emits
+  `ProcessingEdit::ReplaceStyleLayer` for `StyleLayerId::SIMPLE_SYNTAX`.
+
+### editor-core-sublime
+
+Path: `crates/editor-core-sublime/`
+
+Implements a subset of the Sublime Text `.sublime-syntax` model:
+
+- compile YAML syntax definitions
+- run a highlighting engine to produce:
+  - style intervals (char offsets)
+  - fold regions (logical line ranges)
+- expose a `SublimeProcessor` (`DocumentProcessor`) that outputs:
+  - `StyleLayerId::SUBLIME_SYNTAX`
+  - folding edits
+
+This provides “good enough” highlighting/folding for many languages without requiring an LSP.
+
+### editor-core-lsp
+
+Path: `crates/editor-core-lsp/`
+
+Provides runtime-agnostic helpers for LSP integration:
+
+- UTF-16 conversion helpers (`LspCoordinateConverter`)
+- incremental text change helpers (`DeltaCalculator`)
+- semantic tokens decoding into editor style intervals
+- workspace/text edit parsing + application (`serde_json::Value` based)
+- stdio JSON-RPC client (`LspClient`) and a higher-level session (`LspSession`)
+
+`LspSession` can be used as a `DocumentProcessor`:
+
+- polls the server
+- updates editor derived state with `ProcessingEdit` (semantic tokens + folding ranges, etc.)
+
+## TUI demo app
+
+Path: `crates/tui-editor/`
+
+`tui-editor` is a runnable example that:
+
+- renders `HeadlessGrid` using `ratatui`
+- drives edits via `EditorStateManager`
+- optionally enables:
+  - Sublime syntax highlighting/folding (if a matching `.sublime-syntax` exists in the CWD)
+  - LSP semantic tokens/folding ranges (stdio server)
+
+It is meant as:
+
+- a functional integration test for the workspace
+- a reference for how a UI can consume snapshots and apply derived state
+
+## Known limitations / extension points
+
+- **Grapheme clusters**: cursor movement/selection is `char`-based; if you need grapheme-aware UX,
+  layer it above `editor-core` using `unicode-segmentation` or similar.
+- **Tabs/control chars**: layout measures per `char` width; hosts typically implement tab expansion
+  at render time or by transforming snapshots.
+- **Folding edits**: line-based folds are not shifted on newline edits; treat folding as derived
+  state and refresh from an external source after edits.
+- **Incrementality**: some operations rebuild derived structures from the full text for simplicity.
+  The architecture is intentionally layered so internal components can be made more incremental
+  over time without breaking the public API shape.
+
