@@ -5,6 +5,9 @@
 
 use unicode_width::UnicodeWidthChar;
 
+/// Default tab width (in cells) used when a caller does not specify a tab width.
+pub const DEFAULT_TAB_WIDTH: usize = 4;
+
 /// Wrap point
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WrapPoint {
@@ -42,6 +45,17 @@ impl VisualLineInfo {
             wrap_points,
         }
     }
+
+    /// Calculate visual line information from text and width constraint, with explicit `tab_width`.
+    pub fn from_text_with_tab_width(text: &str, viewport_width: usize, tab_width: usize) -> Self {
+        let wrap_points = calculate_wrap_points_with_tab_width(text, viewport_width, tab_width);
+        let visual_line_count = wrap_points.len() + 1;
+
+        Self {
+            visual_line_count,
+            wrap_points,
+        }
+    }
 }
 
 impl Default for VisualLineInfo {
@@ -61,47 +75,96 @@ pub fn char_width(ch: char) -> usize {
     UnicodeWidthChar::width(ch).unwrap_or(1)
 }
 
+/// Calculate visual width (in cells) for a character at a specific cell offset within the line.
+///
+/// Notes:
+/// - For most characters, width follows UAX #11 via [`char_width`].
+/// - For `'\t'`, width advances to the next tab stop based on `tab_width`.
+pub fn cell_width_at(ch: char, cell_offset_in_line: usize, tab_width: usize) -> usize {
+    if ch == '\t' {
+        let tab_width = tab_width.max(1);
+        let rem = cell_offset_in_line % tab_width;
+        tab_width - rem
+    } else {
+        char_width(ch)
+    }
+}
+
 /// Calculate total visual width of a string
 pub fn str_width(s: &str) -> usize {
     s.chars().map(char_width).sum()
+}
+
+/// Calculate total visual width of a string, interpreting `'\t'` using `tab_width`.
+pub fn str_width_with_tab_width(s: &str, tab_width: usize) -> usize {
+    let mut x = 0usize;
+    for ch in s.chars() {
+        x = x.saturating_add(cell_width_at(ch, x, tab_width));
+    }
+    x
+}
+
+/// Calculate the visual cell offset from the start of the line to the given character column.
+///
+/// - `column` is counted in `char` (not bytes).
+/// - `'\t'` is expanded using `tab_width` and the current cell offset.
+pub fn visual_x_for_column(line: &str, column: usize, tab_width: usize) -> usize {
+    let mut x = 0usize;
+    for ch in line.chars().take(column) {
+        x = x.saturating_add(cell_width_at(ch, x, tab_width));
+    }
+    x
 }
 
 /// Calculate wrap points for text
 ///
 /// Given a width constraint, calculates where the text needs to wrap
 pub fn calculate_wrap_points(text: &str, viewport_width: usize) -> Vec<WrapPoint> {
+    calculate_wrap_points_with_tab_width(text, viewport_width, DEFAULT_TAB_WIDTH)
+}
+
+/// Calculate wrap points for text, interpreting `'\t'` using `tab_width`.
+pub fn calculate_wrap_points_with_tab_width(
+    text: &str,
+    viewport_width: usize,
+    tab_width: usize,
+) -> Vec<WrapPoint> {
     if viewport_width == 0 {
         return Vec::new();
     }
 
     let mut wrap_points = Vec::new();
-    let mut current_width = 0;
+    let mut x_in_segment = 0usize;
+    let mut x_in_line = 0usize;
 
     for (char_index, (byte_offset, ch)) in text.char_indices().enumerate() {
-        let ch_width = char_width(ch);
+        let ch_width = cell_width_at(ch, x_in_line, tab_width);
 
         // If adding this character would exceed the width limit
-        if current_width + ch_width > viewport_width {
+        if x_in_segment + ch_width > viewport_width {
             // Double-width characters cannot be split
             // If remaining width cannot accommodate the double-width character, it should wrap intact to the next line
             wrap_points.push(WrapPoint {
                 char_index,
                 byte_offset,
             });
-            current_width = ch_width;
+            x_in_segment = 0;
         } else {
-            current_width += ch_width;
+            // ok
         }
 
+        x_in_segment = x_in_segment.saturating_add(ch_width);
+        x_in_line = x_in_line.saturating_add(ch_width);
+
         // If current width equals viewport width exactly, the next character should wrap
-        if current_width == viewport_width {
+        if x_in_segment == viewport_width {
             // Check if there are more characters
             if byte_offset + ch.len_utf8() < text.len() {
                 wrap_points.push(WrapPoint {
                     char_index: char_index + 1,
                     byte_offset: byte_offset + ch.len_utf8(),
                 });
-                current_width = 0;
+                x_in_segment = 0;
             }
         }
     }
@@ -113,6 +176,8 @@ pub fn calculate_wrap_points(text: &str, viewport_width: usize) -> Vec<WrapPoint
 pub struct LayoutEngine {
     /// Viewport width (in character cells)
     viewport_width: usize,
+    /// Tab width (in cells) for expanding `'\t'`
+    tab_width: usize,
     /// Visual information for each logical line
     line_layouts: Vec<VisualLineInfo>,
     /// Raw text for each logical line (excluding newline characters)
@@ -124,6 +189,7 @@ impl LayoutEngine {
     pub fn new(viewport_width: usize) -> Self {
         Self {
             viewport_width,
+            tab_width: DEFAULT_TAB_WIDTH,
             line_layouts: Vec::new(),
             line_texts: Vec::new(),
         }
@@ -142,6 +208,22 @@ impl LayoutEngine {
         self.viewport_width
     }
 
+    /// Get tab width (in cells).
+    pub fn tab_width(&self) -> usize {
+        self.tab_width
+    }
+
+    /// Set tab width (in cells) used for expanding `'\t'`.
+    ///
+    /// If `tab_width` changes, all line layouts are recalculated.
+    pub fn set_tab_width(&mut self, tab_width: usize) {
+        let tab_width = tab_width.max(1);
+        if self.tab_width != tab_width {
+            self.tab_width = tab_width;
+            self.recalculate_all();
+        }
+    }
+
     /// Build layout from list of text lines
     pub fn from_lines(&mut self, lines: &[&str]) {
         self.line_layouts.clear();
@@ -149,7 +231,11 @@ impl LayoutEngine {
         for line in lines {
             self.line_texts.push((*line).to_string());
             self.line_layouts
-                .push(VisualLineInfo::from_text(line, self.viewport_width));
+                .push(VisualLineInfo::from_text_with_tab_width(
+                    line,
+                    self.viewport_width,
+                    self.tab_width,
+                ));
         }
     }
 
@@ -157,14 +243,19 @@ impl LayoutEngine {
     pub fn add_line(&mut self, text: &str) {
         self.line_texts.push(text.to_string());
         self.line_layouts
-            .push(VisualLineInfo::from_text(text, self.viewport_width));
+            .push(VisualLineInfo::from_text_with_tab_width(
+                text,
+                self.viewport_width,
+                self.tab_width,
+            ));
     }
 
     /// Update a specific line
     pub fn update_line(&mut self, line_index: usize, text: &str) {
         if line_index < self.line_layouts.len() {
             self.line_texts[line_index] = text.to_string();
-            self.line_layouts[line_index] = VisualLineInfo::from_text(text, self.viewport_width);
+            self.line_layouts[line_index] =
+                VisualLineInfo::from_text_with_tab_width(text, self.viewport_width, self.tab_width);
         }
     }
 
@@ -172,8 +263,10 @@ impl LayoutEngine {
     pub fn insert_line(&mut self, line_index: usize, text: &str) {
         let pos = line_index.min(self.line_layouts.len());
         self.line_texts.insert(pos, text.to_string());
-        self.line_layouts
-            .insert(pos, VisualLineInfo::from_text(text, self.viewport_width));
+        self.line_layouts.insert(
+            pos,
+            VisualLineInfo::from_text_with_tab_width(text, self.viewport_width, self.tab_width),
+        );
     }
 
     /// Delete a line
@@ -241,13 +334,21 @@ impl LayoutEngine {
             self.line_layouts.clear();
             for line in &self.line_texts {
                 self.line_layouts
-                    .push(VisualLineInfo::from_text(line, self.viewport_width));
+                    .push(VisualLineInfo::from_text_with_tab_width(
+                        line,
+                        self.viewport_width,
+                        self.tab_width,
+                    ));
             }
             return;
         }
 
         for (layout, line_text) in self.line_layouts.iter_mut().zip(self.line_texts.iter()) {
-            *layout = VisualLineInfo::from_text(line_text, self.viewport_width);
+            *layout = VisualLineInfo::from_text_with_tab_width(
+                line_text,
+                self.viewport_width,
+                self.tab_width,
+            );
         }
     }
 
@@ -290,13 +391,19 @@ impl LayoutEngine {
             }
         }
 
-        // Calculate visual width from segment start to column.
-        let x_in_segment: usize = line_text
+        // Calculate visual width from segment start to column, with tab expansion.
+        let seg_start_x_in_line = visual_x_for_column(line_text, segment_start_col, self.tab_width);
+        let mut x_in_line = seg_start_x_in_line;
+        let mut x_in_segment = 0usize;
+        for ch in line_text
             .chars()
             .skip(segment_start_col)
             .take(column.saturating_sub(segment_start_col))
-            .map(char_width)
-            .sum();
+        {
+            let w = cell_width_at(ch, x_in_line, self.tab_width);
+            x_in_line = x_in_line.saturating_add(w);
+            x_in_segment = x_in_segment.saturating_add(w);
+        }
 
         let visual_row = self.logical_to_visual_line(logical_line) + wrapped_offset;
         Some((visual_row, x_in_segment))
@@ -329,12 +436,18 @@ impl LayoutEngine {
             }
         }
 
-        let x_in_segment: usize = line_text
+        let seg_start_x_in_line = visual_x_for_column(line_text, segment_start_col, self.tab_width);
+        let mut x_in_line = seg_start_x_in_line;
+        let mut x_in_segment = 0usize;
+        for ch in line_text
             .chars()
             .skip(segment_start_col)
             .take(clamped_column.saturating_sub(segment_start_col))
-            .map(char_width)
-            .sum();
+        {
+            let w = cell_width_at(ch, x_in_line, self.tab_width);
+            x_in_line = x_in_line.saturating_add(w);
+            x_in_segment = x_in_segment.saturating_add(w);
+        }
 
         let x_in_segment = x_in_segment + column.saturating_sub(line_char_len);
         let visual_row = self.logical_to_visual_line(logical_line) + wrapped_offset;
@@ -371,6 +484,22 @@ mod tests {
         assert_eq!(str_width("你好"), 4); // 2 CJK characters = 4 cells
         assert_eq!(str_width("hello你好"), 9); // 5 + 4
         assert_eq!(str_width("👋🌍"), 4); // 2 emojis = 4 cells
+    }
+
+    #[test]
+    fn test_tab_width_expansion() {
+        // tab stops every 4 cells.
+        assert_eq!(cell_width_at('\t', 0, 4), 4);
+        assert_eq!(cell_width_at('\t', 1, 4), 3);
+        assert_eq!(cell_width_at('\t', 2, 4), 2);
+        assert_eq!(cell_width_at('\t', 3, 4), 1);
+        assert_eq!(cell_width_at('\t', 4, 4), 4);
+
+        assert_eq!(str_width_with_tab_width("\t", 4), 4);
+        assert_eq!(str_width_with_tab_width("a\t", 4), 4); // "a" (1) then tab to 4
+        assert_eq!(str_width_with_tab_width("ab\t", 4), 4); // 2 + 2
+        assert_eq!(str_width_with_tab_width("abc\t", 4), 4); // 3 + 1
+        assert_eq!(str_width_with_tab_width("abcd\t", 4), 8); // 4 + 4
     }
 
     #[test]

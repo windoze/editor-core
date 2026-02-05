@@ -1,6 +1,6 @@
 use editor_core::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, Position,
-    StyleCommand, ViewCommand,
+    StyleCommand, TabKeyBehavior, ViewCommand,
 };
 
 #[test]
@@ -188,6 +188,71 @@ fn test_selection_direction_forward_and_backward() {
         executor.editor().selection().unwrap().direction,
         editor_core::SelectionDirection::Backward
     );
+}
+
+#[test]
+fn test_set_tab_width_affects_visual_position() {
+    let mut executor = CommandExecutor::new("\tX", 80);
+
+    // Default tab width is 4 cells.
+    let (_, x_default) = executor
+        .editor()
+        .logical_position_to_visual(0, 1)
+        .expect("valid position");
+    assert_eq!(x_default, 4);
+
+    executor
+        .execute(Command::View(ViewCommand::SetTabWidth { width: 2 }))
+        .unwrap();
+    let (_, x) = executor
+        .editor()
+        .logical_position_to_visual(0, 1)
+        .expect("valid position");
+    assert_eq!(x, 2);
+}
+
+#[test]
+fn test_insert_tab_spaces_mode_inserts_to_next_stop() {
+    let mut executor = CommandExecutor::new("abc", 80);
+    executor
+        .execute(Command::View(ViewCommand::SetTabKeyBehavior {
+            behavior: TabKeyBehavior::Spaces,
+        }))
+        .unwrap();
+
+    executor
+        .execute(Command::Cursor(CursorCommand::MoveTo {
+            line: 0,
+            column: 3,
+        }))
+        .unwrap();
+
+    // col=3 => x=3, tab_width=4 => inserts 1 space to reach x=4.
+    executor
+        .execute(Command::Edit(EditCommand::InsertTab))
+        .unwrap();
+    assert_eq!(executor.editor().get_text(), "abc ");
+
+    // col=4 => x=4 => inserts 4 spaces to reach x=8.
+    executor
+        .execute(Command::Edit(EditCommand::InsertTab))
+        .unwrap();
+    assert_eq!(executor.editor().get_text(), "abc     ");
+}
+
+#[test]
+fn test_insert_tab_tab_mode_inserts_literal_tab() {
+    let mut executor = CommandExecutor::empty(80);
+    executor
+        .execute(Command::View(ViewCommand::SetTabKeyBehavior {
+            behavior: TabKeyBehavior::Tab,
+        }))
+        .unwrap();
+
+    executor
+        .execute(Command::Edit(EditCommand::InsertTab))
+        .unwrap();
+    assert_eq!(executor.editor().get_text(), "\t");
 }
 
 #[test]

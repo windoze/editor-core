@@ -1,6 +1,6 @@
 [package]
 name = "editor-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "A headless editor engine focused on state management, Unicode-aware text measurement, and coordinate conversion."
 authors.workspace = true
 edition.workspace = true

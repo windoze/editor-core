@@ -34,7 +34,7 @@
 //! ```
 
 use crate::intervals::{FoldRegion, StyleId, StyleLayerId};
-use crate::layout::char_width;
+use crate::layout::{cell_width_at, char_width, visual_x_for_column};
 use crate::search::{CharIndex, SearchMatch, SearchOptions, find_all, find_next, find_prev};
 use crate::snapshot::{Cell, HeadlessGrid, HeadlessLine};
 use crate::{
@@ -95,6 +95,15 @@ pub enum SelectionDirection {
     Backward,
 }
 
+/// Controls how a Tab key press is handled by the editor when using [`EditCommand::InsertTab`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabKeyBehavior {
+    /// Insert a literal tab character (`'\t'`).
+    Tab,
+    /// Insert spaces up to the next tab stop (based on the current `tab_width` setting).
+    Spaces,
+}
+
 /// Text editing commands
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditCommand {
@@ -126,6 +135,11 @@ pub enum EditCommand {
         /// Text to insert/replace at each selection/caret.
         text: String,
     },
+    /// Insert a tab at each caret (or replace each selection), using the current tab settings.
+    ///
+    /// - If `TabKeyBehavior::Tab`, inserts `'\t'`.
+    /// - If `TabKeyBehavior::Spaces`, inserts spaces up to the next tab stop.
+    InsertTab,
     /// Backspace-like deletion: delete selection(s) if any, otherwise delete 1 char before each caret.
     Backspace,
     /// Delete key-like deletion: delete selection(s) if any, otherwise delete 1 char after each caret.
@@ -232,6 +246,16 @@ pub enum ViewCommand {
     SetViewportWidth {
         /// Width in character cells.
         width: usize,
+    },
+    /// Set tab width (in character cells) used for measuring `'\t'` and tab stops.
+    SetTabWidth {
+        /// Tab width in character cells (must be greater than 0).
+        width: usize,
+    },
+    /// Configure how [`EditCommand::InsertTab`] inserts text.
+    SetTabKeyBehavior {
+        /// Tab key behavior.
+        behavior: TabKeyBehavior,
     },
     /// Scroll to specified line
     ScrollTo {
@@ -659,6 +683,8 @@ impl EditorCore {
             return grid;
         }
 
+        let tab_width = self.layout_engine.tab_width();
+
         let total_visual = self.visual_line_count();
         if start_visual_row >= total_visual {
             return grid;
@@ -712,6 +738,8 @@ impl EditorCore {
                     };
 
                     let mut headless_line = HeadlessLine::new(logical_line, visual_in_line > 0);
+                    let mut x_in_line =
+                        visual_x_for_column(&line_text, segment_start_col, tab_width);
 
                     for (col, ch) in line_text
                         .chars()
@@ -721,7 +749,9 @@ impl EditorCore {
                     {
                         let offset = line_start_offset + col;
                         let styles = self.styles_at_offset(offset);
-                        headless_line.add_cell(Cell::with_styles(ch, char_width(ch), styles));
+                        let w = cell_width_at(ch, x_in_line, tab_width);
+                        x_in_line = x_in_line.saturating_add(w);
+                        headless_line.add_cell(Cell::with_styles(ch, w, styles));
                     }
 
                     // For collapsed folding start line, append placeholder to the last segment.
@@ -731,6 +761,7 @@ impl EditorCore {
                         && !region.placeholder.is_empty()
                     {
                         if !headless_line.cells.is_empty() {
+                            x_in_line = x_in_line.saturating_add(char_width(' '));
                             headless_line.add_cell(Cell::with_styles(
                                 ' ',
                                 char_width(' '),
@@ -738,9 +769,11 @@ impl EditorCore {
                             ));
                         }
                         for ch in region.placeholder.chars() {
+                            let w = cell_width_at(ch, x_in_line, tab_width);
+                            x_in_line = x_in_line.saturating_add(w);
                             headless_line.add_cell(Cell::with_styles(
                                 ch,
-                                char_width(ch),
+                                w,
                                 vec![FOLD_PLACEHOLDER_STYLE_ID],
                             ));
                         }
@@ -815,6 +848,8 @@ impl EditorCore {
         let logical_line = Self::closest_visible_line(regions, logical_line)?;
         let visual_start = self.visual_start_for_logical_line(logical_line)?;
 
+        let tab_width = self.layout_engine.tab_width();
+
         let layout = self.layout_engine.get_line_layout(logical_line)?;
         let line_text = self
             .line_index
@@ -835,12 +870,18 @@ impl EditorCore {
             }
         }
 
-        let x_in_segment: usize = line_text
+        let seg_start_x_in_line = visual_x_for_column(&line_text, segment_start_col, tab_width);
+        let mut x_in_line = seg_start_x_in_line;
+        let mut x_in_segment = 0usize;
+        for ch in line_text
             .chars()
             .skip(segment_start_col)
             .take(column.saturating_sub(segment_start_col))
-            .map(char_width)
-            .sum();
+        {
+            let w = cell_width_at(ch, x_in_line, tab_width);
+            x_in_line = x_in_line.saturating_add(w);
+            x_in_segment = x_in_segment.saturating_add(w);
+        }
 
         Some((visual_start.saturating_add(wrapped_offset), x_in_segment))
     }
@@ -857,6 +898,8 @@ impl EditorCore {
         let regions = self.folding_manager.regions();
         let logical_line = Self::closest_visible_line(regions, logical_line)?;
         let visual_start = self.visual_start_for_logical_line(logical_line)?;
+
+        let tab_width = self.layout_engine.tab_width();
 
         let layout = self.layout_engine.get_line_layout(logical_line)?;
         let line_text = self
@@ -878,12 +921,18 @@ impl EditorCore {
             }
         }
 
-        let x_in_segment: usize = line_text
+        let seg_start_x_in_line = visual_x_for_column(&line_text, segment_start_col, tab_width);
+        let mut x_in_line = seg_start_x_in_line;
+        let mut x_in_segment = 0usize;
+        for ch in line_text
             .chars()
             .skip(segment_start_col)
             .take(clamped_column.saturating_sub(segment_start_col))
-            .map(char_width)
-            .sum();
+        {
+            let w = cell_width_at(ch, x_in_line, tab_width);
+            x_in_line = x_in_line.saturating_add(w);
+            x_in_segment = x_in_segment.saturating_add(w);
+        }
 
         let x_in_segment = x_in_segment + column.saturating_sub(line_char_len);
 
@@ -1030,6 +1079,8 @@ pub struct CommandExecutor {
     command_history: Vec<Command>,
     /// Undo/redo manager (only records CommandExecutor edit commands executed via)
     undo_redo: UndoRedoManager,
+    /// Controls how [`EditCommand::InsertTab`] behaves.
+    tab_key_behavior: TabKeyBehavior,
 }
 
 impl CommandExecutor {
@@ -1039,6 +1090,7 @@ impl CommandExecutor {
             editor: EditorCore::new(text, viewport_width),
             command_history: Vec::new(),
             undo_redo: UndoRedoManager::new(1000),
+            tab_key_behavior: TabKeyBehavior::Tab,
         }
     }
 
@@ -1131,6 +1183,16 @@ impl CommandExecutor {
         &mut self.editor
     }
 
+    /// Get current tab key behavior used by [`EditCommand::InsertTab`].
+    pub fn tab_key_behavior(&self) -> TabKeyBehavior {
+        self.tab_key_behavior
+    }
+
+    /// Set tab key behavior used by [`EditCommand::InsertTab`].
+    pub fn set_tab_key_behavior(&mut self, behavior: TabKeyBehavior) {
+        self.tab_key_behavior = behavior;
+    }
+
     // Private method: execute edit command
     fn execute_edit(&mut self, command: EditCommand) -> Result<CommandResult, CommandError> {
         match command {
@@ -1153,6 +1215,7 @@ impl CommandExecutor {
             EditCommand::Backspace => self.execute_backspace_command(),
             EditCommand::DeleteForward => self.execute_delete_forward_command(),
             EditCommand::InsertText { text } => self.execute_insert_text_command(text),
+            EditCommand::InsertTab => self.execute_insert_tab_command(),
             EditCommand::Insert { offset, text } => self.execute_insert_command(offset, text),
             EditCommand::Delete { start, length } => self.execute_delete_command(start, length),
             EditCommand::Replace {
@@ -1384,6 +1447,216 @@ impl CommandExecutor {
 
         let is_pure_insert = edits.iter().all(|e| e.deleted_text.is_empty());
         let coalescible_insert = is_pure_insert && !text.contains('\n');
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        self.undo_redo.push_step(step, coalescible_insert);
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_insert_tab_command(&mut self) -> Result<CommandResult, CommandError> {
+        let before_selection = self.snapshot_selection_set();
+
+        let mut selections: Vec<Selection> =
+            Vec::with_capacity(1 + self.editor.secondary_selections.len());
+        let primary_selection = self.editor.selection.clone().unwrap_or(Selection {
+            start: self.editor.cursor_position,
+            end: self.editor.cursor_position,
+            direction: SelectionDirection::Forward,
+        });
+        selections.push(primary_selection);
+        selections.extend(self.editor.secondary_selections.iter().cloned());
+
+        let (selections, primary_index) = crate::selection_set::normalize_selections(selections, 0);
+
+        let tab_width = self.editor.layout_engine.tab_width();
+
+        struct Op {
+            selection_index: usize,
+            start_offset: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            insert_text: String,
+            insert_char_len: usize,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(selections.len());
+
+        for (selection_index, selection) in selections.iter().enumerate() {
+            let (range_start_pos, range_end_pos) = if selection.start <= selection.end {
+                (selection.start, selection.end)
+            } else {
+                (selection.end, selection.start)
+            };
+
+            let (start_offset, start_pad) =
+                self.position_to_char_offset_and_virtual_pad(range_start_pos);
+            let end_offset = self.position_to_char_offset_clamped(range_end_pos);
+
+            let delete_len = end_offset.saturating_sub(start_offset);
+
+            let deleted_text = if delete_len == 0 {
+                String::new()
+            } else {
+                self.editor.piece_table.get_range(start_offset, delete_len)
+            };
+
+            // Compute cell X within the logical line at the insertion position (including virtual pad).
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(range_start_pos.line)
+                .unwrap_or_default();
+            let line_char_len = line_text.chars().count();
+            let clamped_col = range_start_pos.column.min(line_char_len);
+            let x_in_line =
+                visual_x_for_column(&line_text, clamped_col, tab_width).saturating_add(start_pad);
+
+            let mut insert_text = String::new();
+            for _ in 0..start_pad {
+                insert_text.push(' ');
+            }
+
+            match self.tab_key_behavior {
+                TabKeyBehavior::Tab => {
+                    insert_text.push('\t');
+                    ops.push(Op {
+                        selection_index,
+                        start_offset,
+                        start_after: start_offset,
+                        delete_len,
+                        deleted_text,
+                        insert_text,
+                        insert_char_len: start_pad + 1,
+                    });
+                }
+                TabKeyBehavior::Spaces => {
+                    let tab_width = tab_width.max(1);
+                    let rem = x_in_line % tab_width;
+                    let spaces = tab_width - rem;
+                    for _ in 0..spaces {
+                        insert_text.push(' ');
+                    }
+
+                    ops.push(Op {
+                        selection_index,
+                        start_offset,
+                        start_after: start_offset,
+                        delete_len,
+                        deleted_text,
+                        insert_text,
+                        insert_char_len: start_pad + spaces,
+                    });
+                }
+            }
+        }
+
+        // Compute final caret offsets in the post-edit document (ascending order with delta),
+        // while also recording each operation's start offset in the post-edit document.
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_offset);
+
+        let mut caret_offsets: Vec<usize> = vec![0; ops.len()];
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = (op.start_offset as i64 + delta) as usize;
+            op.start_after = effective_start;
+            caret_offsets[op.selection_index] = effective_start + op.insert_char_len;
+            delta += op.insert_char_len as i64 - op.delete_len as i64;
+        }
+
+        // Apply edits safely (descending offsets).
+        let mut desc_indices = asc_indices;
+        desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+
+        for &idx in &desc_indices {
+            let op = &ops[idx];
+
+            if op.delete_len > 0 {
+                self.editor
+                    .piece_table
+                    .delete(op.start_offset, op.delete_len);
+                self.editor
+                    .interval_tree
+                    .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+                for layer_tree in self.editor.style_layers.values_mut() {
+                    layer_tree
+                        .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+                }
+            }
+
+            if !op.insert_text.is_empty() {
+                self.editor
+                    .piece_table
+                    .insert(op.start_offset, &op.insert_text);
+                self.editor
+                    .interval_tree
+                    .update_for_insertion(op.start_offset, op.insert_char_len);
+                for layer_tree in self.editor.style_layers.values_mut() {
+                    layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
+                }
+            }
+        }
+
+        // Rebuild derived structures once.
+        let updated_text = self.editor.piece_table.get_text();
+        self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.rebuild_layout_engine_from_text(&updated_text);
+
+        // Update selection state: collapse to carets after insertion.
+        let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
+        for offset in &caret_offsets {
+            let (line, column) = self.editor.line_index.char_offset_to_position(*offset);
+            let pos = Position::new(line, column);
+            new_carets.push(Selection {
+                start: pos,
+                end: pos,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        let (new_carets, new_primary_index) =
+            crate::selection_set::normalize_selections(new_carets, primary_index);
+        let primary = new_carets
+            .get(new_primary_index)
+            .cloned()
+            .ok_or_else(|| CommandError::Other("Invalid primary caret".to_string()))?;
+
+        self.editor.cursor_position = primary.end;
+        self.editor.selection = None;
+        self.editor.secondary_selections = new_carets
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, sel)| {
+                if idx == new_primary_index {
+                    None
+                } else {
+                    Some(sel)
+                }
+            })
+            .collect();
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_offset,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.insert_text,
+            })
+            .collect();
+
+        let is_pure_insert = edits.iter().all(|e| e.deleted_text.is_empty());
+        let coalescible_insert = is_pure_insert;
 
         let step = UndoStep {
             group_id: 0,
@@ -2481,6 +2754,20 @@ impl CommandExecutor {
                 self.editor.layout_engine.set_viewport_width(width);
                 Ok(CommandResult::Success)
             }
+            ViewCommand::SetTabWidth { width } => {
+                if width == 0 {
+                    return Err(CommandError::Other(
+                        "Tab width must be greater than 0".to_string(),
+                    ));
+                }
+
+                self.editor.layout_engine.set_tab_width(width);
+                Ok(CommandResult::Success)
+            }
+            ViewCommand::SetTabKeyBehavior { behavior } => {
+                self.tab_key_behavior = behavior;
+                Ok(CommandResult::Success)
+            }
             ViewCommand::ScrollTo { line } => {
                 if line >= self.editor.line_index.line_count() {
                     return Err(CommandError::InvalidPosition { line, column: 0 });
@@ -2492,7 +2779,11 @@ impl CommandExecutor {
             }
             ViewCommand::GetViewport { start_row, count } => {
                 let text = self.editor.piece_table.get_text();
-                let generator = SnapshotGenerator::from_text(&text, self.editor.viewport_width);
+                let generator = SnapshotGenerator::from_text_with_tab_width(
+                    &text,
+                    self.editor.viewport_width,
+                    self.editor.layout_engine.tab_width(),
+                );
                 let grid = generator.get_headless_grid(start_row, count);
                 Ok(CommandResult::Viewport(grid))
             }

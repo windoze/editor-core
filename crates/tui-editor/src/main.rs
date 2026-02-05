@@ -60,7 +60,7 @@ use crossterm::{
 use editor_core::{
     Command, CommandResult, CursorCommand, EditCommand, EditorStateManager,
     FOLD_PLACEHOLDER_STYLE_ID, Position, SearchOptions, Selection, StyleLayerId, ViewCommand,
-    layout::char_width,
+    layout::{cell_width_at, visual_x_for_column},
 };
 use editor_core_highlight_simple::{
     RegexHighlightProcessor, SIMPLE_STYLE_BOOLEAN, SIMPLE_STYLE_COMMENT, SIMPLE_STYLE_KEY,
@@ -691,6 +691,11 @@ impl App {
                 self.insert_newline();
             }
 
+            // Tab
+            (_, KeyCode::Tab) => {
+                self.insert_tab();
+            }
+
             // 普通字符输入
             (_, KeyCode::Char(c)) => {
                 self.insert_char(c);
@@ -1189,6 +1194,33 @@ impl App {
         self.insert_text("\n");
     }
 
+    /// 插入 Tab（由 editor-core 根据 tab 设置决定插入 `\\t` 或空格）
+    fn insert_tab(&mut self) {
+        let mut full_lsp_change = None::<LspContentChange>;
+        if let Some(lsp) = self.lsp.as_ref() {
+            // Tab 插入（特别是 spaces 模式）在不同光标/列上会产生不同插入文本；
+            // 为了保证 demo 的 LSP 同步正确，这里统一走全量替换。
+            let old_char_count = self.state_manager.editor().char_count();
+            full_lsp_change = Some(lsp.full_document_change(
+                &self.state_manager.editor().line_index,
+                old_char_count,
+                "",
+            ));
+        }
+
+        if !self.execute(Command::Edit(EditCommand::InsertTab)) {
+            return;
+        }
+
+        self.rect_selection_anchor = None;
+        self.last_insert_time = Some(Instant::now());
+        self.refresh_syntax_highlighting();
+        if let Some(mut change) = full_lsp_change {
+            change.text = self.state_manager.editor().get_text();
+            self.lsp_did_change(change);
+        }
+    }
+
     /// 退格删除
     fn backspace(&mut self) {
         let has_multi = !self
@@ -1608,20 +1640,23 @@ impl App {
         segment_start_col: usize,
         segment_end_col: usize,
         target_x: usize,
+        tab_width: usize,
     ) -> usize {
         let mut col = segment_start_col;
-        let mut x = 0usize;
+        let mut x_in_segment = 0usize;
+        let mut x_in_line = visual_x_for_column(line_text, segment_start_col, tab_width);
 
         for ch in line_text
             .chars()
             .skip(segment_start_col)
             .take(segment_end_col.saturating_sub(segment_start_col))
         {
-            let w = char_width(ch);
-            if x + w > target_x {
+            let w = cell_width_at(ch, x_in_line, tab_width);
+            if x_in_segment + w > target_x {
                 break;
             }
-            x += w;
+            x_in_segment += w;
+            x_in_line += w;
             col += 1;
         }
 
@@ -1681,8 +1716,13 @@ impl App {
             line_char_len
         };
 
-        let target_col =
-            Self::column_for_x_in_segment(&line_text, segment_start_col, segment_end_col, cursor_x);
+        let target_col = Self::column_for_x_in_segment(
+            &line_text,
+            segment_start_col,
+            segment_end_col,
+            cursor_x,
+            layout_engine.tab_width(),
+        );
         self.move_cursor_to(Position::new(target_line, target_col), selecting);
     }
 
@@ -2023,7 +2063,13 @@ impl App {
                     current_style = Some(style);
                 }
 
-                buffer.push(cell.ch);
+                if cell.ch == '\t' {
+                    for _ in 0..cell.width.max(1) {
+                        buffer.push(' ');
+                    }
+                } else {
+                    buffer.push(cell.ch);
+                }
             }
 
             if !buffer.is_empty() {

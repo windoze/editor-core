@@ -3,7 +3,7 @@
 //! Provides data structures needed by UI renderers, simulating "text grid" output.
 
 use crate::intervals::StyleId;
-use crate::layout::{LayoutEngine, char_width};
+use crate::layout::{DEFAULT_TAB_WIDTH, LayoutEngine, cell_width_at, visual_x_for_column};
 
 /// Cell (character) information
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +104,8 @@ pub struct SnapshotGenerator {
     lines: Vec<String>,
     /// Viewport width
     viewport_width: usize,
+    /// Tab width (in cells) used to expand `'\t'` during layout/measurement.
+    tab_width: usize,
     /// Soft wrap layout engine (for logical line <-> visual line conversion)
     layout_engine: LayoutEngine,
 }
@@ -120,19 +122,27 @@ impl SnapshotGenerator {
             // Maintain consistency with common editor semantics: an empty document also has 1 empty line.
             lines,
             viewport_width,
+            tab_width: layout_engine.tab_width(),
             layout_engine,
         }
     }
 
     /// Initialize from text
     pub fn from_text(text: &str, viewport_width: usize) -> Self {
+        Self::from_text_with_tab_width(text, viewport_width, DEFAULT_TAB_WIDTH)
+    }
+
+    /// Initialize from text, with explicit `tab_width` (in cells) for expanding `'\t'`.
+    pub fn from_text_with_tab_width(text: &str, viewport_width: usize, tab_width: usize) -> Self {
         let lines = crate::text::split_lines_preserve_trailing(text);
         let mut layout_engine = LayoutEngine::new(viewport_width);
+        layout_engine.set_tab_width(tab_width);
         let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         layout_engine.from_lines(&line_refs);
         Self {
             lines,
             viewport_width,
+            tab_width: layout_engine.tab_width(),
             layout_engine,
         }
     }
@@ -153,6 +163,17 @@ impl SnapshotGenerator {
     pub fn set_viewport_width(&mut self, width: usize) {
         self.viewport_width = width;
         self.layout_engine.set_viewport_width(width);
+    }
+
+    /// Set tab width (in cells) used for expanding `'\t'`.
+    pub fn set_tab_width(&mut self, tab_width: usize) {
+        self.tab_width = tab_width.max(1);
+        self.layout_engine.set_tab_width(self.tab_width);
+    }
+
+    /// Get tab width (in cells).
+    pub fn tab_width(&self) -> usize {
+        self.tab_width
     }
 
     /// Get headless grid snapshot
@@ -211,12 +232,17 @@ impl SnapshotGenerator {
                     };
 
                     let mut headless_line = HeadlessLine::new(logical_line, visual_in_line > 0);
+                    let seg_start_x_in_line =
+                        visual_x_for_column(line_text, segment_start_col, self.tab_width);
+                    let mut x_in_line = seg_start_x_in_line;
                     for ch in line_text
                         .chars()
                         .skip(segment_start_col)
                         .take(segment_end_col.saturating_sub(segment_start_col))
                     {
-                        headless_line.add_cell(Cell::new(ch, char_width(ch)));
+                        let w = cell_width_at(ch, x_in_line, self.tab_width);
+                        x_in_line = x_in_line.saturating_add(w);
+                        headless_line.add_cell(Cell::new(ch, w));
                     }
 
                     grid.add_line(headless_line);

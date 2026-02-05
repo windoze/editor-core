@@ -113,7 +113,7 @@ mod text;
 
 pub use commands::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
-    Position, Selection, SelectionDirection, StyleCommand, ViewCommand,
+    Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, ViewCommand,
 };
 pub use intervals::{FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, StyleLayerId};
 pub use layout::LayoutEngine;

@@ -367,10 +367,14 @@ impl EditorStateManager {
                 | CursorCommand::FindNext { .. }
                 | CursorCommand::FindPrev { .. },
             ) => Some(StateChangeType::SelectionChanged),
-            Command::View(ViewCommand::SetViewportWidth { .. }) => {
-                Some(StateChangeType::ViewportChanged)
-            }
-            Command::View(ViewCommand::ScrollTo { .. } | ViewCommand::GetViewport { .. }) => None,
+            Command::View(
+                ViewCommand::SetViewportWidth { .. } | ViewCommand::SetTabWidth { .. },
+            ) => Some(StateChangeType::ViewportChanged),
+            Command::View(
+                ViewCommand::SetTabKeyBehavior { .. }
+                | ViewCommand::ScrollTo { .. }
+                | ViewCommand::GetViewport { .. },
+            ) => None,
             Command::Style(StyleCommand::AddStyle { .. } | StyleCommand::RemoveStyle { .. }) => {
                 Some(StateChangeType::StyleChanged)
             }
@@ -693,7 +697,11 @@ impl EditorStateManager {
     pub fn get_viewport_content(&self, start_row: usize, count: usize) -> HeadlessGrid {
         let editor = self.executor.editor();
         let text = editor.get_text();
-        let generator = crate::SnapshotGenerator::from_text(&text, editor.viewport_width);
+        let generator = crate::SnapshotGenerator::from_text_with_tab_width(
+            &text,
+            editor.viewport_width,
+            editor.layout_engine.tab_width(),
+        );
         generator.get_headless_grid(start_row, count)
     }
 
@@ -891,6 +899,38 @@ mod tests {
         let state = manager.get_undo_redo_state();
         assert!(state.can_undo);
         assert!(!state.can_redo);
+    }
+
+    #[test]
+    fn test_insert_tab_undo_restores_clean_state() {
+        let mut manager = EditorStateManager::empty(80);
+        assert!(!manager.get_document_state().is_modified);
+
+        manager
+            .execute(Command::Edit(EditCommand::InsertTab))
+            .unwrap();
+        assert!(manager.get_document_state().is_modified);
+
+        manager.execute(Command::Edit(EditCommand::Undo)).unwrap();
+        assert!(!manager.get_document_state().is_modified);
+    }
+
+    #[test]
+    fn test_insert_tab_spaces_undo_restores_clean_state() {
+        let mut manager = EditorStateManager::empty(80);
+        manager
+            .execute(Command::View(ViewCommand::SetTabKeyBehavior {
+                behavior: crate::TabKeyBehavior::Spaces,
+            }))
+            .unwrap();
+
+        manager
+            .execute(Command::Edit(EditCommand::InsertTab))
+            .unwrap();
+        assert!(manager.get_document_state().is_modified);
+
+        manager.execute(Command::Edit(EditCommand::Undo)).unwrap();
+        assert!(!manager.get_document_state().is_modified);
     }
 
     #[test]
