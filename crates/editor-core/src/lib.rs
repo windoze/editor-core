@@ -100,6 +100,7 @@
 //! - via `editor-core-sublime` provides `.sublime-syntax` syntax highlighting and folding (optional integration)
 
 pub mod commands;
+pub mod delta;
 pub mod intervals;
 pub mod layout;
 pub mod line_index;
@@ -115,6 +116,7 @@ pub use commands::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
     Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, ViewCommand,
 };
+pub use delta::{TextDelta, TextDeltaEdit};
 pub use intervals::{FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, StyleLayerId};
 pub use layout::LayoutEngine;
 pub use line_index::LineIndex;

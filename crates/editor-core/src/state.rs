@@ -33,6 +33,7 @@
 //! manager.mark_modified(StateChangeType::DocumentModified);
 //! ```
 
+use crate::delta::TextDelta;
 use crate::intervals::{FoldRegion, Interval, StyleId, StyleLayerId};
 use crate::processing::{DocumentProcessor, ProcessingEdit};
 use crate::snapshot::HeadlessGrid;
@@ -42,6 +43,7 @@ use crate::{
 };
 use std::collections::HashSet;
 use std::ops::Range;
+use std::sync::Arc;
 
 /// Document state
 #[derive(Debug, Clone)]
@@ -151,6 +153,8 @@ pub struct StateChange {
     pub new_version: u64,
     /// Affected region (character offset range)
     pub affected_region: Option<Range<usize>>,
+    /// Structured text delta for document changes (if available).
+    pub text_delta: Option<Arc<TextDelta>>,
 }
 
 impl StateChange {
@@ -161,12 +165,19 @@ impl StateChange {
             old_version,
             new_version,
             affected_region: None,
+            text_delta: None,
         }
     }
 
     /// Attach the affected character range to this change record.
     pub fn with_region(mut self, region: Range<usize>) -> Self {
         self.affected_region = Some(region);
+        self
+    }
+
+    /// Attach a structured text delta to this change record.
+    pub fn with_text_delta(mut self, delta: Arc<TextDelta>) -> Self {
+        self.text_delta = Some(delta);
         self
     }
 }
@@ -250,6 +261,8 @@ pub struct EditorStateManager {
     scroll_top: usize,
     /// Viewport height (optional)
     viewport_height: Option<usize>,
+    /// Structured text delta produced by the last document edit.
+    last_text_delta: Option<Arc<TextDelta>>,
 }
 
 impl EditorStateManager {
@@ -262,6 +275,7 @@ impl EditorStateManager {
             callbacks: Vec::new(),
             scroll_top: 0,
             viewport_height: None,
+            last_text_delta: None,
         }
     }
 
@@ -302,6 +316,7 @@ impl EditorStateManager {
 
         let result = self.executor.execute(command)?;
         let char_count_after = self.executor.editor().char_count();
+        let delta_present = self.executor.last_text_delta().is_some();
 
         if let Some(change_type) = change_type {
             let changed = match change_type {
@@ -325,7 +340,7 @@ impl EditorStateManager {
                     if is_delete_like {
                         char_count_after != char_count_before
                     } else {
-                        true
+                        delta_present
                     }
                 }
                 // Style/folding commands are currently treated as "success means change".
@@ -335,9 +350,11 @@ impl EditorStateManager {
             if changed {
                 if matches!(change_type, StateChangeType::DocumentModified) {
                     let is_modified = !self.executor.is_clean();
-                    self.mark_modified_internal(change_type, Some(is_modified));
+                    let delta = self.executor.take_last_text_delta().map(Arc::new);
+                    self.last_text_delta = delta.clone();
+                    self.mark_modified_internal(change_type, Some(is_modified), delta);
                 } else {
-                    self.mark_modified_internal(change_type, None);
+                    self.mark_modified_internal(change_type, None, None);
                 }
             }
         }
@@ -734,13 +751,14 @@ impl EditorStateManager {
 
     /// Mark document as modified and increment version number
     pub fn mark_modified(&mut self, change_type: StateChangeType) {
-        self.mark_modified_internal(change_type, None);
+        self.mark_modified_internal(change_type, None, None);
     }
 
     fn mark_modified_internal(
         &mut self,
         change_type: StateChangeType,
         is_modified_override: Option<bool>,
+        delta: Option<Arc<TextDelta>>,
     ) {
         let old_version = self.state_version;
         self.state_version += 1;
@@ -750,7 +768,10 @@ impl EditorStateManager {
             self.is_modified = is_modified_override.unwrap_or(true);
         }
 
-        let change = StateChange::new(change_type, old_version, self.state_version);
+        let mut change = StateChange::new(change_type, old_version, self.state_version);
+        if let Some(delta) = delta {
+            change = change.with_text_delta(delta);
+        }
         self.notify_callbacks(&change);
     }
 
@@ -764,6 +785,16 @@ impl EditorStateManager {
     fn notify_change(&mut self, change_type: StateChangeType) {
         let change = StateChange::new(change_type, self.state_version, self.state_version);
         self.notify_callbacks(&change);
+    }
+
+    /// Get the structured text delta produced by the last document edit, if any.
+    pub fn last_text_delta(&self) -> Option<&TextDelta> {
+        self.last_text_delta.as_deref()
+    }
+
+    /// Take the structured text delta produced by the last document edit, if any.
+    pub fn take_last_text_delta(&mut self) -> Option<Arc<TextDelta>> {
+        self.last_text_delta.take()
     }
 
     /// Notify all callbacks

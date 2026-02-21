@@ -33,6 +33,7 @@
 //! executor.execute_batch(commands).unwrap();
 //! ```
 
+use crate::delta::{TextDelta, TextDeltaEdit};
 use crate::intervals::{FoldRegion, StyleId, StyleLayerId};
 use crate::layout::{cell_width_at, char_width, visual_x_for_column};
 use crate::search::{CharIndex, SearchMatch, SearchOptions, find_all, find_next, find_prev};
@@ -503,7 +504,7 @@ impl UndoRedoManager {
         self.redo_stack.clear();
     }
 
-    fn push_step(&mut self, mut step: UndoStep, coalescible_insert: bool) {
+    fn push_step(&mut self, mut step: UndoStep, coalescible_insert: bool) -> usize {
         self.clear_redo_and_adjust_clean();
 
         if self.undo_stack.len() >= self.max_undo {
@@ -534,7 +535,9 @@ impl UndoRedoManager {
             self.open_group_id = None;
         }
 
+        let group_id = step.group_id;
         self.undo_stack.push(step);
+        group_id
     }
 
     fn pop_undo_group(&mut self) -> Option<Vec<UndoStep>> {
@@ -1081,6 +1084,8 @@ pub struct CommandExecutor {
     undo_redo: UndoRedoManager,
     /// Controls how [`EditCommand::InsertTab`] behaves.
     tab_key_behavior: TabKeyBehavior,
+    /// Structured delta for the last executed text modification (cleared on each `execute()` call).
+    last_text_delta: Option<TextDelta>,
 }
 
 impl CommandExecutor {
@@ -1091,6 +1096,7 @@ impl CommandExecutor {
             command_history: Vec::new(),
             undo_redo: UndoRedoManager::new(1000),
             tab_key_behavior: TabKeyBehavior::Tab,
+            last_text_delta: None,
         }
     }
 
@@ -1101,6 +1107,8 @@ impl CommandExecutor {
 
     /// Execute command
     pub fn execute(&mut self, command: Command) -> Result<CommandResult, CommandError> {
+        self.last_text_delta = None;
+
         // Save command to history
         self.command_history.push(command.clone());
 
@@ -1116,6 +1124,16 @@ impl CommandExecutor {
             Command::View(view_cmd) => self.execute_view(view_cmd),
             Command::Style(style_cmd) => self.execute_style(style_cmd),
         }
+    }
+
+    /// Get the structured text delta produced by the last successful `execute()` call, if any.
+    pub fn last_text_delta(&self) -> Option<&TextDelta> {
+        self.last_text_delta.as_ref()
+    }
+
+    /// Take the structured text delta produced by the last successful `execute()` call, if any.
+    pub fn take_last_text_delta(&mut self) -> Option<TextDelta> {
+        self.last_text_delta.take()
     }
 
     /// Batch execute commands (transactional)
@@ -1232,12 +1250,28 @@ impl CommandExecutor {
             return Err(CommandError::Other("Nothing to undo".to_string()));
         }
 
+        let before_char_count = self.editor.piece_table.char_count();
         let steps = self
             .undo_redo
             .pop_undo_group()
             .ok_or_else(|| CommandError::Other("Nothing to undo".to_string()))?;
 
+        let undo_group_id = steps.first().map(|s| s.group_id);
+        let mut delta_edits: Vec<TextDeltaEdit> = Vec::new();
+
         for step in &steps {
+            let mut step_edits: Vec<TextDeltaEdit> = step
+                .edits
+                .iter()
+                .map(|edit| TextDeltaEdit {
+                    start: edit.start_after,
+                    deleted_text: edit.inserted_text.clone(),
+                    inserted_text: edit.deleted_text.clone(),
+                })
+                .collect();
+            step_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+            delta_edits.extend(step_edits);
+
             self.apply_undo_edits(&step.edits)?;
             self.restore_selection_set(step.before_selection.clone());
         }
@@ -1246,6 +1280,13 @@ impl CommandExecutor {
         for step in steps {
             self.undo_redo.redo_stack.push(step);
         }
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: undo_group_id,
+        });
 
         Ok(CommandResult::Success)
     }
@@ -1256,12 +1297,28 @@ impl CommandExecutor {
             return Err(CommandError::Other("Nothing to redo".to_string()));
         }
 
+        let before_char_count = self.editor.piece_table.char_count();
         let steps = self
             .undo_redo
             .pop_redo_group()
             .ok_or_else(|| CommandError::Other("Nothing to redo".to_string()))?;
 
+        let undo_group_id = steps.first().map(|s| s.group_id);
+        let mut delta_edits: Vec<TextDeltaEdit> = Vec::new();
+
         for step in &steps {
+            let mut step_edits: Vec<TextDeltaEdit> = step
+                .edits
+                .iter()
+                .map(|edit| TextDeltaEdit {
+                    start: edit.start_before,
+                    deleted_text: edit.deleted_text.clone(),
+                    inserted_text: edit.inserted_text.clone(),
+                })
+                .collect();
+            step_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+            delta_edits.extend(step_edits);
+
             self.apply_redo_edits(&step.edits)?;
             self.restore_selection_set(step.after_selection.clone());
         }
@@ -1271,6 +1328,13 @@ impl CommandExecutor {
             self.undo_redo.undo_stack.push(step);
         }
 
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: undo_group_id,
+        });
+
         Ok(CommandResult::Success)
     }
 
@@ -1279,6 +1343,7 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
+        let before_char_count = self.editor.piece_table.char_count();
         let before_selection = self.snapshot_selection_set();
 
         // Build canonical selection set (primary + secondary), VSCode-like: edits are applied
@@ -1448,18 +1513,36 @@ impl CommandExecutor {
         let is_pure_insert = edits.iter().all(|e| e.deleted_text.is_empty());
         let coalescible_insert = is_pure_insert && !text.contains('\n');
 
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
         let step = UndoStep {
             group_id: 0,
             edits,
             before_selection,
             after_selection,
         };
-        self.undo_redo.push_step(step, coalescible_insert);
+        let group_id = self.undo_redo.push_step(step, coalescible_insert);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
 
         Ok(CommandResult::Success)
     }
 
     fn execute_insert_tab_command(&mut self) -> Result<CommandResult, CommandError> {
+        let before_char_count = self.editor.piece_table.char_count();
         let before_selection = self.snapshot_selection_set();
 
         let mut selections: Vec<Selection> =
@@ -1658,13 +1741,30 @@ impl CommandExecutor {
         let is_pure_insert = edits.iter().all(|e| e.deleted_text.is_empty());
         let coalescible_insert = is_pure_insert;
 
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
         let step = UndoStep {
             group_id: 0,
             edits,
             before_selection,
             after_selection,
         };
-        self.undo_redo.push_step(step, coalescible_insert);
+        let group_id = self.undo_redo.push_step(step, coalescible_insert);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
 
         Ok(CommandResult::Success)
     }
@@ -1683,6 +1783,7 @@ impl CommandExecutor {
             return Err(CommandError::InvalidOffset(offset));
         }
 
+        let before_char_count = self.editor.piece_table.char_count();
         let before_selection = self.snapshot_selection_set();
 
         let affected_line = self.editor.line_index.char_offset_to_position(offset).0;
@@ -1737,7 +1838,18 @@ impl CommandExecutor {
         };
 
         let coalescible_insert = !text.contains('\n');
-        self.undo_redo.push_step(step, coalescible_insert);
+        let group_id = self.undo_redo.push_step(step, coalescible_insert);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: vec![TextDeltaEdit {
+                start: offset,
+                deleted_text: String::new(),
+                inserted_text: text,
+            }],
+            undo_group_id: Some(group_id),
+        });
 
         Ok(CommandResult::Success)
     }
@@ -1751,6 +1863,7 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
+        let before_char_count = self.editor.piece_table.char_count();
         let max_offset = self.editor.piece_table.char_count();
         if start > max_offset {
             return Err(CommandError::InvalidOffset(start));
@@ -1765,6 +1878,7 @@ impl CommandExecutor {
         let before_selection = self.snapshot_selection_set();
 
         let deleted_text = self.editor.piece_table.get_range(start, length);
+        let delta_deleted_text = deleted_text.clone();
         let deletes_newline = deleted_text.contains('\n');
         let affected_line = self.editor.line_index.char_offset_to_position(start).0;
 
@@ -1813,7 +1927,18 @@ impl CommandExecutor {
             before_selection,
             after_selection,
         };
-        self.undo_redo.push_step(step, false);
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: vec![TextDeltaEdit {
+                start,
+                deleted_text: delta_deleted_text,
+                inserted_text: String::new(),
+            }],
+            undo_group_id: Some(group_id),
+        });
 
         Ok(CommandResult::Success)
     }
@@ -1824,6 +1949,7 @@ impl CommandExecutor {
         length: usize,
         text: String,
     ) -> Result<CommandResult, CommandError> {
+        let before_char_count = self.editor.piece_table.char_count();
         let max_offset = self.editor.piece_table.char_count();
         if start > max_offset {
             return Err(CommandError::InvalidOffset(start));
@@ -1846,6 +1972,8 @@ impl CommandExecutor {
         } else {
             self.editor.piece_table.get_range(start, length)
         };
+        let delta_deleted_text = deleted_text.clone();
+        let delta_inserted_text = text.clone();
 
         let affected_line = self.editor.line_index.char_offset_to_position(start).0;
         let replace_affects_layout = deleted_text.contains('\n') || text.contains('\n');
@@ -1905,7 +2033,18 @@ impl CommandExecutor {
             before_selection,
             after_selection,
         };
-        self.undo_redo.push_step(step, false);
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: vec![TextDeltaEdit {
+                start,
+                deleted_text: delta_deleted_text,
+                inserted_text: delta_inserted_text,
+            }],
+            undo_group_id: Some(group_id),
+        });
 
         Ok(CommandResult::Success)
     }
@@ -2066,6 +2205,8 @@ impl CommandExecutor {
             .editor
             .piece_table
             .get_range(target.start, target.len());
+        let before_char_count = self.editor.piece_table.char_count();
+        let delta_deleted_text = deleted_text.clone();
 
         let before_selection = self.snapshot_selection_set();
         self.apply_text_ops(vec![(target.start, target.len(), inserted_text.as_str())])?;
@@ -2089,7 +2230,18 @@ impl CommandExecutor {
             before_selection,
             after_selection,
         };
-        self.undo_redo.push_step(step, false);
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: vec![TextDeltaEdit {
+                start: target.start,
+                deleted_text: delta_deleted_text,
+                inserted_text,
+            }],
+            undo_group_id: Some(group_id),
+        });
 
         Ok(CommandResult::ReplaceResult { replaced: 1 })
     }
@@ -2181,6 +2333,7 @@ impl CommandExecutor {
             delta += op.inserted_len as i64 - op.delete_len as i64;
         }
 
+        let before_char_count = self.editor.piece_table.char_count();
         let before_selection = self.snapshot_selection_set();
         let apply_ops: Vec<(usize, usize, &str)> = ops
             .iter()
@@ -2216,13 +2369,30 @@ impl CommandExecutor {
             })
             .collect();
 
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
         let step = UndoStep {
             group_id: 0,
             edits,
             before_selection,
             after_selection,
         };
-        self.undo_redo.push_step(step, false);
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
 
         Ok(CommandResult::ReplaceResult {
             replaced: match_count,
@@ -2312,6 +2482,8 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
+        let before_char_count = self.editor.piece_table.char_count();
+
         // Compute caret offsets in the post-delete document (ascending order with delta).
         let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
         asc_indices.sort_by_key(|&idx| ops[idx].start_offset);
@@ -2397,13 +2569,30 @@ impl CommandExecutor {
             })
             .collect();
 
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: String::new(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
         let step = UndoStep {
             group_id: 0,
             edits,
             before_selection,
             after_selection,
         };
-        self.undo_redo.push_step(step, false);
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
 
         Ok(CommandResult::Success)
     }
