@@ -114,6 +114,7 @@ pub mod snapshot;
 pub mod state;
 pub mod storage;
 mod text;
+pub mod workspace;
 
 pub use commands::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
@@ -137,3 +138,4 @@ pub use state::{
     StyleState, UndoRedoState, ViewportState,
 };
 pub use storage::PieceTable;
+pub use workspace::{DocumentId, DocumentMetadata, Workspace, WorkspaceError};

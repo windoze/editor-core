@@ -24,7 +24,7 @@ Legend:
 
 | ID | Feature | Scope | Status | Notes |
 |---|---|---|---|---|
-| P0-1 | Multi-document / workspace model | kernel + host | planned | Needed for “real editor” buffer/workspace behavior and realistic LSP. |
+| P0-1 | Multi-document / workspace model | kernel + host | done | `Workspace` + `DocumentId` with optional uri mapping; host still owns file I/O + view composition. |
 | P0-2 | Structured `TextDelta` events | kernel | done | Implemented as `TextDelta` + `StateChange.text_delta` with tests. |
 | P0-3 | Consistent line-ending model (CRLF/LF) | kernel + host | done | Normalize `\\r\\n`/`\\r` → `\\n` internally; track save preference via `LineEnding`. |
 | P0-4 | Visual-row cursor movement (wrap + folding aware) | kernel | done | Added visual movement commands + wrap/fold mapping with tests. |
@@ -65,6 +65,8 @@ full editor UX with minimal host-side reinvention”.
 
 ### 1) Multi-document / workspace model
 
+**Status: done**
+
 **What’s missing**
 
 The core API surface is fundamentally “one editor = one document”. A full editor typically needs:
@@ -79,19 +81,20 @@ The core API surface is fundamentally “one editor = one document”. A full ed
 Without a workspace model, host apps tend to re-implement a second “editor manager” layer, and
 integration crates (notably LSP) can’t naturally coordinate edits across multiple open documents.
 
-**Proposal (kernel + host)**
+**What’s implemented**
 
-- Introduce a workspace type in `editor-core` (or a new crate in the workspace):
-  - `Workspace { documents: HashMap<DocumentId, EditorStateManager>, ... }`
-  - `DocumentId` should be stable and opaque (e.g., `u64` or `Uuid`)
-- Explicitly separate:
-  - **document state** (text, selections, derived layers)
-  - **view state** (scroll position, viewport size, cursor “preferred x”, etc.) per view
+In `editor-core`:
 
-**Notes**
+- `Workspace` container that manages multiple open documents as `EditorStateManager`s
+- `DocumentId` as a stable, opaque handle
+- optional `uri -> DocumentId` mapping for integrations (e.g. LSP)
+- a host-driven “active document” convenience slot
 
-This can remain UI-agnostic: the host still decides how to render tabs, split panes, and file
-pickers; the kernel just provides the data model.
+**Notes / still host-driven**
+
+- File I/O (load/save, change detection) remains outside the kernel.
+- Split views of the same document are not modeled yet (workspace currently treats each
+  `EditorStateManager` as a “document + view” bundle).
 
 ---
 
