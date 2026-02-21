@@ -387,9 +387,16 @@ impl EditorStateManager {
             }) if text.is_empty() => None,
             Command::Edit(EditCommand::EndUndoGroup) => None,
             Command::Edit(_) => Some(StateChangeType::DocumentModified),
-            Command::Cursor(CursorCommand::MoveTo { .. } | CursorCommand::MoveBy { .. }) => {
-                Some(StateChangeType::CursorMoved)
-            }
+            Command::Cursor(
+                CursorCommand::MoveTo { .. }
+                | CursorCommand::MoveBy { .. }
+                | CursorCommand::MoveVisualBy { .. }
+                | CursorCommand::MoveToVisual { .. }
+                | CursorCommand::MoveToLineStart
+                | CursorCommand::MoveToLineEnd
+                | CursorCommand::MoveToVisualLineStart
+                | CursorCommand::MoveToVisualLineEnd,
+            ) => Some(StateChangeType::CursorMoved),
             Command::Cursor(
                 CursorCommand::SetSelection { .. }
                 | CursorCommand::ExtendSelection { .. }

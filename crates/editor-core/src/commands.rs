@@ -195,6 +195,29 @@ pub enum CursorCommand {
         /// Delta in columns (characters).
         delta_column: isize,
     },
+    /// Move cursor by visual rows (soft wrap + folding aware).
+    ///
+    /// This uses a "preferred x" in **cells** (sticky column) similar to many editors:
+    /// horizontal moves update preferred x, while vertical visual moves try to preserve it.
+    MoveVisualBy {
+        /// Delta in global visual rows (after wrapping/folding).
+        delta_rows: isize,
+    },
+    /// Move cursor to a visual position (global visual row + x in cells).
+    MoveToVisual {
+        /// Target global visual row (after wrapping/folding).
+        row: usize,
+        /// Target x offset in cells within that visual row.
+        x_cells: usize,
+    },
+    /// Move cursor to the start of the current logical line.
+    MoveToLineStart,
+    /// Move cursor to the end of the current logical line.
+    MoveToLineEnd,
+    /// Move cursor to the start of the current visual line segment (wrap-aware).
+    MoveToVisualLineStart,
+    /// Move cursor to the end of the current visual line segment (wrap-aware).
+    MoveToVisualLineEnd,
     /// Set selection range
     SetSelection {
         /// Selection start position.
@@ -946,6 +969,74 @@ impl EditorCore {
         Some((visual_start.saturating_add(wrapped_offset), x_in_segment))
     }
 
+    /// Convert visual coordinates (global visual row + x in cells) back to logical `(line, column)`.
+    ///
+    /// - `visual_row` is the global visual row (after soft wrapping and folding).
+    /// - `x_in_cells` is the cell offset within that visual row (0-based).
+    ///
+    /// Returns `None` if layout information is unavailable.
+    pub fn visual_position_to_logical(
+        &self,
+        visual_row: usize,
+        x_in_cells: usize,
+    ) -> Option<Position> {
+        let total_visual = self.visual_line_count();
+        if total_visual == 0 {
+            return Some(Position::new(0, 0));
+        }
+
+        let clamped_row = visual_row.min(total_visual.saturating_sub(1));
+        let (logical_line, visual_in_logical) = self.visual_to_logical_line(clamped_row);
+
+        let layout = self.layout_engine.get_line_layout(logical_line)?;
+        let line_text = self
+            .line_index
+            .get_line_text(logical_line)
+            .unwrap_or_default();
+        let line_char_len = line_text.chars().count();
+
+        let segment_start_col = if visual_in_logical == 0 {
+            0
+        } else {
+            layout
+                .wrap_points
+                .get(visual_in_logical - 1)
+                .map(|wp| wp.char_index)
+                .unwrap_or(0)
+        };
+
+        let segment_end_col = layout
+            .wrap_points
+            .get(visual_in_logical)
+            .map(|wp| wp.char_index)
+            .unwrap_or(line_char_len)
+            .max(segment_start_col)
+            .min(line_char_len);
+
+        let tab_width = self.layout_engine.tab_width();
+        let seg_start_x_in_line = visual_x_for_column(&line_text, segment_start_col, tab_width);
+        let mut x_in_line = seg_start_x_in_line;
+        let mut x_in_segment = 0usize;
+        let mut column = segment_start_col;
+
+        for (char_idx, ch) in line_text.chars().enumerate().skip(segment_start_col) {
+            if char_idx >= segment_end_col {
+                break;
+            }
+
+            let w = cell_width_at(ch, x_in_line, tab_width);
+            if x_in_segment.saturating_add(w) > x_in_cells {
+                break;
+            }
+
+            x_in_line = x_in_line.saturating_add(w);
+            x_in_segment = x_in_segment.saturating_add(w);
+            column = column.saturating_add(1);
+        }
+
+        Some(Position::new(logical_line, column))
+    }
+
     fn visual_start_for_logical_line(&self, logical_line: usize) -> Option<usize> {
         if logical_line >= self.layout_engine.logical_line_count() {
             return None;
@@ -1090,6 +1181,8 @@ pub struct CommandExecutor {
     tab_key_behavior: TabKeyBehavior,
     /// Preferred line ending for saving (internal storage is always LF).
     line_ending: LineEnding,
+    /// Sticky x position for visual-row cursor movement (in cells).
+    preferred_x_cells: Option<usize>,
     /// Structured delta for the last executed text modification (cleared on each `execute()` call).
     last_text_delta: Option<TextDelta>,
 }
@@ -1103,6 +1196,7 @@ impl CommandExecutor {
             undo_redo: UndoRedoManager::new(1000),
             tab_key_behavior: TabKeyBehavior::Tab,
             line_ending: LineEnding::detect_in_text(text),
+            preferred_x_cells: None,
             last_text_delta: None,
         }
     }
@@ -2756,6 +2850,10 @@ impl CommandExecutor {
 
                 let clamped_column = self.clamp_column_for_line(line, column);
                 self.editor.cursor_position = Position::new(line, clamped_column);
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(line, clamped_column)
+                    .map(|(_, x)| x);
                 // VSCode-like: moving the primary caret to an absolute position collapses multi-cursor.
                 self.editor.secondary_selections.clear();
                 Ok(CommandResult::Success)
@@ -2791,6 +2889,133 @@ impl CommandExecutor {
 
                 let clamped_column = self.clamp_column_for_line(new_line, new_column);
                 self.editor.cursor_position = Position::new(new_line, clamped_column);
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(new_line, clamped_column)
+                    .map(|(_, x)| x);
+                Ok(CommandResult::Success)
+            }
+            CursorCommand::MoveVisualBy { delta_rows } => {
+                let Some((current_row, current_x)) = self.editor.logical_position_to_visual(
+                    self.editor.cursor_position.line,
+                    self.editor.cursor_position.column,
+                ) else {
+                    return Ok(CommandResult::Success);
+                };
+
+                let preferred_x = self.preferred_x_cells.unwrap_or(current_x);
+                self.preferred_x_cells = Some(preferred_x);
+
+                let total_visual = self.editor.visual_line_count();
+                if total_visual == 0 {
+                    return Ok(CommandResult::Success);
+                }
+
+                let target_row = if delta_rows >= 0 {
+                    current_row.saturating_add(delta_rows as usize)
+                } else {
+                    current_row.saturating_sub((-delta_rows) as usize)
+                }
+                .min(total_visual.saturating_sub(1));
+
+                let Some(pos) = self
+                    .editor
+                    .visual_position_to_logical(target_row, preferred_x)
+                else {
+                    return Ok(CommandResult::Success);
+                };
+
+                self.editor.cursor_position = pos;
+                Ok(CommandResult::Success)
+            }
+            CursorCommand::MoveToVisual { row, x_cells } => {
+                let Some(pos) = self.editor.visual_position_to_logical(row, x_cells) else {
+                    return Ok(CommandResult::Success);
+                };
+
+                self.editor.cursor_position = pos;
+                self.preferred_x_cells = Some(x_cells);
+                // Treat as an absolute move (similar to `MoveTo`).
+                self.editor.secondary_selections.clear();
+                Ok(CommandResult::Success)
+            }
+            CursorCommand::MoveToLineStart => {
+                let line = self.editor.cursor_position.line;
+                self.editor.cursor_position = Position::new(line, 0);
+                self.preferred_x_cells = Some(0);
+                self.editor.secondary_selections.clear();
+                Ok(CommandResult::Success)
+            }
+            CursorCommand::MoveToLineEnd => {
+                let line = self.editor.cursor_position.line;
+                let end_col = self.clamp_column_for_line(line, usize::MAX);
+                self.editor.cursor_position = Position::new(line, end_col);
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(line, end_col)
+                    .map(|(_, x)| x);
+                self.editor.secondary_selections.clear();
+                Ok(CommandResult::Success)
+            }
+            CursorCommand::MoveToVisualLineStart => {
+                let line = self.editor.cursor_position.line;
+                let Some(layout) = self.editor.layout_engine.get_line_layout(line) else {
+                    return Ok(CommandResult::Success);
+                };
+
+                let line_text = self
+                    .editor
+                    .line_index
+                    .get_line_text(line)
+                    .unwrap_or_default();
+                let line_char_len = line_text.chars().count();
+                let column = self.editor.cursor_position.column.min(line_char_len);
+
+                let mut seg_start = 0usize;
+                for wp in &layout.wrap_points {
+                    if column >= wp.char_index {
+                        seg_start = wp.char_index;
+                    } else {
+                        break;
+                    }
+                }
+
+                self.editor.cursor_position = Position::new(line, seg_start);
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(line, seg_start)
+                    .map(|(_, x)| x);
+                self.editor.secondary_selections.clear();
+                Ok(CommandResult::Success)
+            }
+            CursorCommand::MoveToVisualLineEnd => {
+                let line = self.editor.cursor_position.line;
+                let Some(layout) = self.editor.layout_engine.get_line_layout(line) else {
+                    return Ok(CommandResult::Success);
+                };
+
+                let line_text = self
+                    .editor
+                    .line_index
+                    .get_line_text(line)
+                    .unwrap_or_default();
+                let line_char_len = line_text.chars().count();
+                let column = self.editor.cursor_position.column.min(line_char_len);
+
+                let mut seg_end = line_char_len;
+                for wp in &layout.wrap_points {
+                    if column < wp.char_index {
+                        seg_end = wp.char_index;
+                        break;
+                    }
+                }
+
+                self.editor.cursor_position = Position::new(line, seg_end);
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(line, seg_end)
+                    .map(|(_, x)| x);
+                self.editor.secondary_selections.clear();
                 Ok(CommandResult::Success)
             }
             CursorCommand::SetSelection { start, end } => {
