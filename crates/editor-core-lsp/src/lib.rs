@@ -16,7 +16,7 @@ pub mod lsp_uri;
 
 pub use editor::{
     LspContentChange, LspDocument, LspServerInfo, LspSession, LspSessionStartOptions,
-    SemanticTokensLegend, clear_lsp_state, lsp_clear_edits,
+    SemanticTokensLegend, clear_lsp_state, lsp_clear_edits, lsp_diagnostics_to_processing_edits,
 };
 pub use lsp_client::{LspClient, LspInbound, LspOutbound};
 pub use lsp_events::{

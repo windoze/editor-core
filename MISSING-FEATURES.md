@@ -31,7 +31,7 @@ Legend:
 | P0-5 | Wrap modes (char/word) + wrapped indent | kernel | done | `WrapMode` + `WrapIndent` + `ViewCommand::{SetWrapMode, SetWrapIndent}` with tests. |
 | P0-6 | Unicode segmentation for UX (graphemes/words) | kernel | done | `CursorCommand::{MoveGrapheme*, MoveWord*}` + `EditCommand::{DeleteGrapheme*, DeleteWord*}` with tests. |
 | P0-7 | Indentation / whitespace primitives | kernel | done | `EditCommand::{InsertNewline{auto_indent}, Indent, Outdent, DeleteToPrevTabStop}` + tests. |
-| P1-8 | First-class diagnostics model | kernel + integration | planned | Store diagnostics data, not only underline styles. |
+| P1-8 | First-class diagnostics model | kernel + integration | done | `Diagnostic` model + `ProcessingEdit::{ReplaceDiagnostics, ClearDiagnostics}`; LSP publishDiagnostics populates both styles and data. |
 | P1-9 | Decorations model (inlay hints, code lens, links, match highlights) | kernel + integration | planned | Requires “virtual text” / anchored decorations. |
 | P1-10 | Multi-document LSP sync + workspace edits | integration + kernel workspace | planned | Route per-doc state and apply workspace edits reliably. |
 
@@ -305,30 +305,28 @@ selections, virtual space, and wrapping are involved.
 
 ### 8) First-class diagnostics (not just style overlays)
 
+**Status: done**
+
 **What exists today**
 
 `editor-core-lsp` can convert diagnostics into a style layer (`StyleLayerId::DIAGNOSTICS`), which
 is great for underlines.
 
-**What’s missing**
+**What’s implemented**
 
-A full editor also needs:
+In `editor-core`:
 
-- diagnostic messages + codes + sources
-- related information (linked locations)
-- per-line “gutter markers” and lists (Problems panel)
-- quick fixes / code actions attached to diagnostics
+- `diagnostics` module with a stable, UI-agnostic `Diagnostic` data model
+- `EditorCore.diagnostics: Vec<Diagnostic>` + query API
+- `ProcessingEdit::{ReplaceDiagnostics, ClearDiagnostics}` + `StateChangeType::DiagnosticsChanged`
 
-**Proposal (kernel + integration)**
+In `editor-core-lsp`:
 
-Extend the derived-state pipeline to support “annotations” in addition to style intervals:
+- `publishDiagnostics` is converted into both:
+  - underline intervals in `StyleLayerId::DIAGNOSTICS`
+  - structured diagnostics in the editor state
 
-- Add a new derived channel (data model) in `editor-core`, e.g.:
-  - `Diagnostic { range, severity, message, source, code, related: Vec<...> }`
-- Extend `ProcessingEdit` to include:
-  - `ReplaceDiagnostics { diagnostics: Vec<Diagnostic> }`
-  - `ClearDiagnostics`
-- Keep the rendering UI-specific; the kernel just stores and exposes query APIs.
+Rendering remains host-driven (gutter markers, Problems panel, tooltips, etc.).
 
 ---
 

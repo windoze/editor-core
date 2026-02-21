@@ -101,6 +101,7 @@
 
 pub mod commands;
 pub mod delta;
+pub mod diagnostics;
 pub mod intervals;
 pub mod layout;
 pub mod line_ending;
@@ -118,6 +119,7 @@ pub use commands::{
     Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, ViewCommand,
 };
 pub use delta::{TextDelta, TextDeltaEdit};
+pub use diagnostics::{Diagnostic, DiagnosticRange, DiagnosticSeverity};
 pub use intervals::{FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, StyleLayerId};
 pub use layout::{LayoutEngine, WrapIndent, WrapMode};
 pub use line_ending::LineEnding;
@@ -126,7 +128,7 @@ pub use processing::{DocumentProcessor, ProcessingEdit};
 pub use search::{SearchError, SearchMatch, SearchOptions};
 pub use snapshot::{Cell, HeadlessGrid, HeadlessLine, SnapshotGenerator};
 pub use state::{
-    CursorState, DocumentState, EditorState, EditorStateManager, FoldingState, StateChange,
-    StateChangeCallback, StateChangeType, StyleState, UndoRedoState, ViewportState,
+    CursorState, DiagnosticsState, DocumentState, EditorState, EditorStateManager, FoldingState,
+    StateChange, StateChangeCallback, StateChangeType, StyleState, UndoRedoState, ViewportState,
 };
 pub use storage::PieceTable;

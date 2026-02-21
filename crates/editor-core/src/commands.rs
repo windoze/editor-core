@@ -34,6 +34,7 @@
 //! ```
 
 use crate::delta::{TextDelta, TextDeltaEdit};
+use crate::diagnostics::Diagnostic;
 use crate::intervals::{FoldRegion, StyleId, StyleLayerId};
 use crate::layout::{
     WrapIndent, WrapMode, cell_width_at, char_width, visual_x_for_column,
@@ -743,6 +744,8 @@ pub struct EditorCore {
     pub interval_tree: IntervalTree,
     /// Layered styles (for semantic highlighting/simple syntax highlighting, etc.)
     pub style_layers: BTreeMap<StyleLayerId, IntervalTree>,
+    /// Derived diagnostics for this document (character-offset ranges + metadata).
+    pub diagnostics: Vec<Diagnostic>,
     /// Folding manager
     pub folding_manager: FoldingManager,
     /// Current cursor position
@@ -776,6 +779,7 @@ impl EditorCore {
             layout_engine,
             interval_tree: IntervalTree::new(),
             style_layers: BTreeMap::new(),
+            diagnostics: Vec::new(),
             folding_manager: FoldingManager::new(),
             cursor_position: Position::new(0, 0),
             selection: None,
@@ -817,6 +821,11 @@ impl EditorCore {
     /// Get secondary selections/cursors (multi-cursor)
     pub fn secondary_selections(&self) -> &[Selection] {
         &self.secondary_selections
+    }
+
+    /// Get the current diagnostics list.
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
     }
 
     /// Get styled headless grid snapshot (by visual line).

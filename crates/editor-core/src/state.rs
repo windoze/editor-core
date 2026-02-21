@@ -38,8 +38,8 @@ use crate::intervals::{FoldRegion, Interval, StyleId, StyleLayerId};
 use crate::processing::{DocumentProcessor, ProcessingEdit};
 use crate::snapshot::HeadlessGrid;
 use crate::{
-    Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
-    LineEnding, Position, Selection, SelectionDirection, StyleCommand, ViewCommand,
+    Command, CommandError, CommandExecutor, CommandResult, CursorCommand, Diagnostic, EditCommand,
+    EditorCore, LineEnding, Position, Selection, SelectionDirection, StyleCommand, ViewCommand,
 };
 use std::collections::HashSet;
 use std::ops::Range;
@@ -118,6 +118,13 @@ pub struct FoldingState {
     pub total_visual_lines: usize,
 }
 
+/// Diagnostics state
+#[derive(Debug, Clone)]
+pub struct DiagnosticsState {
+    /// Total number of diagnostics.
+    pub diagnostics_count: usize,
+}
+
 /// Style state
 #[derive(Debug, Clone)]
 pub struct StyleState {
@@ -140,6 +147,8 @@ pub enum StateChangeType {
     FoldingChanged,
     /// Style changed
     StyleChanged,
+    /// Diagnostics changed
+    DiagnosticsChanged,
 }
 
 /// State change record
@@ -195,6 +204,8 @@ pub struct EditorState {
     pub undo_redo: UndoRedoState,
     /// Folding state
     pub folding: FoldingState,
+    /// Diagnostics state
+    pub diagnostics: DiagnosticsState,
     /// Style state
     pub style: StyleState,
 }
@@ -359,8 +370,10 @@ impl EditorStateManager {
                         delta_present
                     }
                 }
-                // Style/folding commands are currently treated as "success means change".
-                StateChangeType::FoldingChanged | StateChangeType::StyleChanged => true,
+                // Style/folding/diagnostics commands are currently treated as "success means change".
+                StateChangeType::FoldingChanged
+                | StateChangeType::StyleChanged
+                | StateChangeType::DiagnosticsChanged => true,
             };
 
             if changed {
@@ -459,6 +472,7 @@ impl EditorStateManager {
             viewport: self.get_viewport_state(),
             undo_redo: self.get_undo_redo_state(),
             folding: self.get_folding_state(),
+            diagnostics: self.get_diagnostics_state(),
             style: self.get_style_state(),
         }
     }
@@ -591,6 +605,14 @@ impl EditorStateManager {
         }
     }
 
+    /// Get diagnostics state.
+    pub fn get_diagnostics_state(&self) -> DiagnosticsState {
+        let editor = self.executor.editor();
+        DiagnosticsState {
+            diagnostics_count: editor.diagnostics.len(),
+        }
+    }
+
     /// Get all styles within the specified range
     pub fn get_styles_in_range(&self, start: usize, end: usize) -> Vec<(usize, usize, StyleId)> {
         let editor = self.executor.editor();
@@ -668,6 +690,20 @@ impl EditorStateManager {
         self.mark_modified(StateChangeType::StyleChanged);
     }
 
+    /// Replace diagnostics wholesale.
+    pub fn replace_diagnostics(&mut self, diagnostics: Vec<Diagnostic>) {
+        let editor = self.executor.editor_mut();
+        editor.diagnostics = diagnostics;
+        self.mark_modified(StateChangeType::DiagnosticsChanged);
+    }
+
+    /// Clear all diagnostics.
+    pub fn clear_diagnostics(&mut self) {
+        let editor = self.executor.editor_mut();
+        editor.diagnostics.clear();
+        self.mark_modified(StateChangeType::DiagnosticsChanged);
+    }
+
     /// Replace folding regions wholesale.
     ///
     /// If `preserve_collapsed` is true, any region that matches an existing collapsed region
@@ -725,6 +761,12 @@ impl EditorStateManager {
                 }
                 ProcessingEdit::ClearFoldingRegions => {
                     self.clear_folding_regions();
+                }
+                ProcessingEdit::ReplaceDiagnostics { diagnostics } => {
+                    self.replace_diagnostics(diagnostics);
+                }
+                ProcessingEdit::ClearDiagnostics => {
+                    self.clear_diagnostics();
                 }
             }
         }

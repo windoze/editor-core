@@ -21,7 +21,9 @@ use crate::lsp_sync::{
 use crate::lsp_text_edits::{apply_text_edits, workspace_edit_text_edits_for_uri};
 use editor_core::intervals::{FoldRegion, Interval, StyleId};
 use editor_core::processing::{DocumentProcessor, ProcessingEdit};
-use editor_core::{EditorStateManager, LineIndex, StyleLayerId};
+use editor_core::{
+    Diagnostic, DiagnosticRange, DiagnosticSeverity, EditorStateManager, LineIndex, StyleLayerId,
+};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::io;
@@ -40,6 +42,7 @@ pub fn lsp_clear_edits() -> Vec<ProcessingEdit> {
         ProcessingEdit::ClearStyleLayer {
             layer: StyleLayerId::DIAGNOSTICS,
         },
+        ProcessingEdit::ClearDiagnostics,
         ProcessingEdit::ClearFoldingRegions,
     ]
 }
@@ -1285,10 +1288,11 @@ impl LspSession {
                         {
                             if let LspNotification::PublishDiagnostics(diags) = &notification
                                 && diags.uri == self.document.uri
-                                && let Some(style_edit) =
-                                    diagnostics_to_style_edit(&state.editor().line_index, diags)
                             {
-                                edits.push(style_edit);
+                                edits.extend(lsp_diagnostics_to_processing_edits(
+                                    &state.editor().line_index,
+                                    diags,
+                                ));
                             }
                             self.push_event(LspEvent::Notification(notification));
                         }
@@ -1732,4 +1736,67 @@ fn diagnostics_to_style_edit(
         layer: StyleLayerId::DIAGNOSTICS,
         intervals,
     })
+}
+
+fn diagnostic_severity(
+    severity: Option<crate::lsp_events::LspDiagnosticSeverity>,
+) -> Option<DiagnosticSeverity> {
+    match severity {
+        Some(crate::lsp_events::LspDiagnosticSeverity::Error) => Some(DiagnosticSeverity::Error),
+        Some(crate::lsp_events::LspDiagnosticSeverity::Warning) => {
+            Some(DiagnosticSeverity::Warning)
+        }
+        Some(crate::lsp_events::LspDiagnosticSeverity::Information) => {
+            Some(DiagnosticSeverity::Information)
+        }
+        Some(crate::lsp_events::LspDiagnosticSeverity::Hint) => Some(DiagnosticSeverity::Hint),
+        None => None,
+    }
+}
+
+fn diagnostic_code(code: &Option<Value>) -> Option<String> {
+    match code.as_ref() {
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(Value::Number(n)) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// Convert an LSP `publishDiagnostics` payload into `editor-core` processing edits.
+///
+/// The resulting edits include:
+/// - `StyleLayerId::DIAGNOSTICS` underline intervals (for rendering)
+/// - `ProcessingEdit::ReplaceDiagnostics` structured diagnostics (for UX / panels)
+pub fn lsp_diagnostics_to_processing_edits(
+    line_index: &LineIndex,
+    params: &crate::lsp_events::LspPublishDiagnosticsParams,
+) -> Vec<ProcessingEdit> {
+    let style_edit = diagnostics_to_style_edit(line_index, params);
+
+    let mut diagnostics = Vec::<Diagnostic>::with_capacity(params.diagnostics.len());
+    for diag in &params.diagnostics {
+        let start = char_offset_for_lsp_position(line_index, diag.range.start);
+        let end = char_offset_for_lsp_position(line_index, diag.range.end);
+        let (start, end) = (start.min(end), start.max(end));
+        if start == end {
+            continue;
+        }
+
+        diagnostics.push(Diagnostic {
+            range: DiagnosticRange::new(start, end),
+            severity: diagnostic_severity(diag.severity),
+            code: diagnostic_code(&diag.code),
+            source: diag.source.clone(),
+            message: diag.message.clone(),
+            related_information_json: diag.related_information.as_ref().map(|v| v.to_string()),
+            data_json: diag.data.as_ref().map(|v| v.to_string()),
+        });
+    }
+
+    let mut out = Vec::<ProcessingEdit>::with_capacity(2);
+    if let Some(style_edit) = style_edit {
+        out.push(style_edit);
+    }
+    out.push(ProcessingEdit::ReplaceDiagnostics { diagnostics });
+    out
 }

@@ -9,6 +9,7 @@
 //! [`EditorStateManager::apply_processing_edits`](crate::EditorStateManager::apply_processing_edits).
 
 use crate::EditorStateManager;
+use crate::diagnostics::Diagnostic;
 use crate::intervals::{FoldRegion, Interval, StyleLayerId};
 
 /// A change to derived editor state (highlighting, folding, etc.).
@@ -38,6 +39,13 @@ pub enum ProcessingEdit {
     },
     /// Clear all folding regions.
     ClearFoldingRegions,
+    /// Replace the current diagnostic list (character offsets).
+    ReplaceDiagnostics {
+        /// Full diagnostic list for the document.
+        diagnostics: Vec<Diagnostic>,
+    },
+    /// Clear all diagnostics.
+    ClearDiagnostics,
 }
 
 /// A generic processor that produces [`ProcessingEdit`]s for an editor document.
