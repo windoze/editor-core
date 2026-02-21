@@ -395,7 +395,11 @@ impl EditorStateManager {
                 | CursorCommand::MoveToLineStart
                 | CursorCommand::MoveToLineEnd
                 | CursorCommand::MoveToVisualLineStart
-                | CursorCommand::MoveToVisualLineEnd,
+                | CursorCommand::MoveToVisualLineEnd
+                | CursorCommand::MoveGraphemeLeft
+                | CursorCommand::MoveGraphemeRight
+                | CursorCommand::MoveWordLeft
+                | CursorCommand::MoveWordRight,
             ) => Some(StateChangeType::CursorMoved),
             Command::Cursor(
                 CursorCommand::SetSelection { .. }

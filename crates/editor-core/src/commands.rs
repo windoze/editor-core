@@ -49,6 +49,7 @@ use crate::{
 use regex::RegexBuilder;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Position coordinates (line and column numbers)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,6 +162,14 @@ pub enum EditCommand {
     ///
     /// Otherwise, behaves like [`EditCommand::Backspace`].
     DeleteToPrevTabStop,
+    /// Delete the previous Unicode grapheme cluster (UAX #29) for each caret/selection.
+    DeleteGraphemeBack,
+    /// Delete the next Unicode grapheme cluster (UAX #29) for each caret/selection.
+    DeleteGraphemeForward,
+    /// Delete back to the previous Unicode word boundary (UAX #29) for each caret/selection.
+    DeleteWordBack,
+    /// Delete forward to the next Unicode word boundary (UAX #29) for each caret/selection.
+    DeleteWordForward,
     /// Backspace-like deletion: delete selection(s) if any, otherwise delete 1 char before each caret.
     Backspace,
     /// Delete key-like deletion: delete selection(s) if any, otherwise delete 1 char after each caret.
@@ -237,6 +246,14 @@ pub enum CursorCommand {
     MoveToVisualLineStart,
     /// Move cursor to the end of the current visual line segment (wrap-aware).
     MoveToVisualLineEnd,
+    /// Move cursor left by one Unicode grapheme cluster (UAX #29).
+    MoveGraphemeLeft,
+    /// Move cursor right by one Unicode grapheme cluster (UAX #29).
+    MoveGraphemeRight,
+    /// Move cursor left to the previous Unicode word boundary (UAX #29).
+    MoveWordLeft,
+    /// Move cursor right to the next Unicode word boundary (UAX #29).
+    MoveWordRight,
     /// Set selection range
     SetSelection {
         /// Selection start position.
@@ -457,6 +474,79 @@ impl std::error::Error for CommandError {}
 struct SelectionSetSnapshot {
     selections: Vec<Selection>,
     primary_index: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextBoundary {
+    Grapheme,
+    Word,
+}
+
+fn byte_offset_for_char_column(text: &str, column: usize) -> usize {
+    if column == 0 {
+        return 0;
+    }
+
+    text.char_indices()
+        .nth(column)
+        .map(|(byte, _)| byte)
+        .unwrap_or_else(|| text.len())
+}
+
+fn char_column_for_byte_offset(text: &str, byte_offset: usize) -> usize {
+    text.get(..byte_offset).unwrap_or(text).chars().count()
+}
+
+fn prev_boundary_column(text: &str, column: usize, boundary: TextBoundary) -> usize {
+    let byte_pos = byte_offset_for_char_column(text, column);
+
+    let mut prev = 0usize;
+    match boundary {
+        TextBoundary::Grapheme => {
+            for (b, _) in text.grapheme_indices(true) {
+                if b >= byte_pos {
+                    break;
+                }
+                prev = b;
+            }
+        }
+        TextBoundary::Word => {
+            for (b, _) in text.split_word_bound_indices() {
+                if b >= byte_pos {
+                    break;
+                }
+                prev = b;
+            }
+        }
+    }
+
+    char_column_for_byte_offset(text, prev)
+}
+
+fn next_boundary_column(text: &str, column: usize, boundary: TextBoundary) -> usize {
+    let byte_pos = byte_offset_for_char_column(text, column);
+
+    let mut next = text.len();
+    match boundary {
+        TextBoundary::Grapheme => {
+            for (b, _) in text.grapheme_indices(true) {
+                if b > byte_pos {
+                    next = b;
+                    break;
+                }
+            }
+        }
+        TextBoundary::Word => {
+            for (b, _) in text.split_word_bound_indices() {
+                if b > byte_pos {
+                    next = b;
+                    break;
+                }
+            }
+        }
+    }
+
+    char_column_for_byte_offset(text, next)
 }
 
 #[derive(Debug, Clone)]
@@ -1421,6 +1511,18 @@ impl CommandExecutor {
                 options,
             } => self.execute_replace_all_command(query, replacement, options),
             EditCommand::DeleteToPrevTabStop => self.execute_delete_to_prev_tab_stop_command(),
+            EditCommand::DeleteGraphemeBack => {
+                self.execute_delete_by_boundary_command(false, TextBoundary::Grapheme)
+            }
+            EditCommand::DeleteGraphemeForward => {
+                self.execute_delete_by_boundary_command(true, TextBoundary::Grapheme)
+            }
+            EditCommand::DeleteWordBack => {
+                self.execute_delete_by_boundary_command(false, TextBoundary::Word)
+            }
+            EditCommand::DeleteWordForward => {
+                self.execute_delete_by_boundary_command(true, TextBoundary::Word)
+            }
             EditCommand::Backspace => self.execute_backspace_command(),
             EditCommand::DeleteForward => self.execute_delete_forward_command(),
             EditCommand::InsertText { text } => self.execute_insert_text_command(text),
@@ -3270,6 +3372,229 @@ impl CommandExecutor {
         Ok(CommandResult::Success)
     }
 
+    fn execute_delete_by_boundary_command(
+        &mut self,
+        forward: bool,
+        boundary: TextBoundary,
+    ) -> Result<CommandResult, CommandError> {
+        // Any delete-like action should end an open insert coalescing group, even if it turns out
+        // to be a no-op.
+        self.undo_redo.end_group();
+
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+        let primary_index = before_selection.primary_index;
+
+        let doc_char_count = self.editor.piece_table.char_count();
+
+        #[derive(Debug)]
+        struct Op {
+            selection_index: usize,
+            start_offset: usize,
+            delete_len: usize,
+            deleted_text: String,
+            start_after: usize,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(selections.len());
+
+        for (selection_index, selection) in selections.iter().enumerate() {
+            let (range_start_pos, range_end_pos) = if selection.start <= selection.end {
+                (selection.start, selection.end)
+            } else {
+                (selection.end, selection.start)
+            };
+
+            let (start_offset, end_offset) = if range_start_pos != range_end_pos {
+                let start_offset = self.position_to_char_offset_clamped(range_start_pos);
+                let end_offset = self.position_to_char_offset_clamped(range_end_pos);
+                if start_offset <= end_offset {
+                    (start_offset, end_offset)
+                } else {
+                    (end_offset, start_offset)
+                }
+            } else {
+                let caret = selection.end;
+                let caret_offset = self.position_to_char_offset_clamped(caret);
+                let line_count = self.editor.line_index.line_count();
+                let line = caret.line.min(line_count.saturating_sub(1));
+                let line_text = self
+                    .editor
+                    .line_index
+                    .get_line_text(line)
+                    .unwrap_or_default();
+                let line_char_len = line_text.chars().count();
+                let col = caret.column.min(line_char_len);
+
+                if forward {
+                    if caret_offset >= doc_char_count {
+                        (caret_offset, caret_offset)
+                    } else {
+                        if col >= line_char_len {
+                            (caret_offset, (caret_offset + 1).min(doc_char_count))
+                        } else {
+                            let next_col = next_boundary_column(&line_text, col, boundary);
+                            let start_offset =
+                                self.editor.line_index.position_to_char_offset(line, col);
+                            let end_offset = self
+                                .editor
+                                .line_index
+                                .position_to_char_offset(line, next_col);
+                            (start_offset, end_offset)
+                        }
+                    }
+                } else if caret_offset == 0 {
+                    (0, 0)
+                } else {
+                    if col == 0 {
+                        (caret_offset - 1, caret_offset)
+                    } else {
+                        let prev_col = prev_boundary_column(&line_text, col, boundary);
+                        let start_offset = self
+                            .editor
+                            .line_index
+                            .position_to_char_offset(line, prev_col);
+                        let end_offset = self.editor.line_index.position_to_char_offset(line, col);
+                        (start_offset, end_offset)
+                    }
+                }
+            };
+
+            let delete_len = end_offset.saturating_sub(start_offset);
+            let deleted_text = if delete_len == 0 {
+                String::new()
+            } else {
+                self.editor.piece_table.get_range(start_offset, delete_len)
+            };
+
+            ops.push(Op {
+                selection_index,
+                start_offset,
+                delete_len,
+                deleted_text,
+                start_after: start_offset,
+            });
+        }
+
+        if !ops.iter().any(|op| op.delete_len > 0) {
+            return Ok(CommandResult::Success);
+        }
+
+        let before_char_count = self.editor.piece_table.char_count();
+
+        // Compute caret offsets in the post-delete document (ascending order with delta).
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_offset);
+
+        let mut caret_offsets: Vec<usize> = vec![0; ops.len()];
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = (op.start_offset as i64 + delta) as usize;
+            op.start_after = effective_start;
+            caret_offsets[op.selection_index] = effective_start;
+            delta -= op.delete_len as i64;
+        }
+
+        // Apply deletes descending to keep offsets valid.
+        let mut desc_indices = asc_indices;
+        desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+
+        for &idx in &desc_indices {
+            let op = &ops[idx];
+            if op.delete_len == 0 {
+                continue;
+            }
+
+            self.editor
+                .piece_table
+                .delete(op.start_offset, op.delete_len);
+            self.editor
+                .interval_tree
+                .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+            for layer_tree in self.editor.style_layers.values_mut() {
+                layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+            }
+        }
+
+        // Rebuild derived structures once.
+        let updated_text = self.editor.piece_table.get_text();
+        self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.rebuild_layout_engine_from_text(&updated_text);
+
+        // Collapse selection state to carets at the start of deleted ranges.
+        let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
+        for offset in &caret_offsets {
+            let (line, column) = self.editor.line_index.char_offset_to_position(*offset);
+            let pos = Position::new(line, column);
+            new_carets.push(Selection {
+                start: pos,
+                end: pos,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        let (new_carets, new_primary_index) =
+            crate::selection_set::normalize_selections(new_carets, primary_index);
+        let primary = new_carets
+            .get(new_primary_index)
+            .cloned()
+            .ok_or_else(|| CommandError::Other("Invalid primary caret".to_string()))?;
+
+        self.editor.cursor_position = primary.end;
+        self.editor.selection = None;
+        self.editor.secondary_selections = new_carets
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, sel)| {
+                if idx == new_primary_index {
+                    None
+                } else {
+                    Some(sel)
+                }
+            })
+            .collect();
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_offset,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: String::new(),
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
     fn execute_delete_like_command(
         &mut self,
         forward: bool,
@@ -3638,6 +3963,166 @@ impl CommandExecutor {
                 self.preferred_x_cells = self
                     .editor
                     .logical_position_to_visual(new_line, clamped_column)
+                    .map(|(_, x)| x);
+                Ok(CommandResult::Success)
+            }
+            CursorCommand::MoveGraphemeLeft => {
+                let line_count = self.editor.line_index.line_count();
+                if line_count == 0 {
+                    return Ok(CommandResult::Success);
+                }
+
+                let mut line = self
+                    .editor
+                    .cursor_position
+                    .line
+                    .min(line_count.saturating_sub(1));
+                let mut line_text = self
+                    .editor
+                    .line_index
+                    .get_line_text(line)
+                    .unwrap_or_default();
+                let mut line_char_len = line_text.chars().count();
+                let mut col = self.editor.cursor_position.column.min(line_char_len);
+
+                if col == 0 {
+                    if line == 0 {
+                        return Ok(CommandResult::Success);
+                    }
+                    line = line.saturating_sub(1);
+                    line_text = self
+                        .editor
+                        .line_index
+                        .get_line_text(line)
+                        .unwrap_or_default();
+                    line_char_len = line_text.chars().count();
+                    col = line_char_len;
+                } else {
+                    col = prev_boundary_column(&line_text, col, TextBoundary::Grapheme);
+                }
+
+                self.editor.cursor_position = Position::new(line, col);
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(line, col)
+                    .map(|(_, x)| x);
+                Ok(CommandResult::Success)
+            }
+            CursorCommand::MoveGraphemeRight => {
+                let line_count = self.editor.line_index.line_count();
+                if line_count == 0 {
+                    return Ok(CommandResult::Success);
+                }
+
+                let line = self
+                    .editor
+                    .cursor_position
+                    .line
+                    .min(line_count.saturating_sub(1));
+                let line_text = self
+                    .editor
+                    .line_index
+                    .get_line_text(line)
+                    .unwrap_or_default();
+                let line_char_len = line_text.chars().count();
+                let col = self.editor.cursor_position.column.min(line_char_len);
+
+                let (line, col) = if col >= line_char_len {
+                    if line + 1 >= line_count {
+                        return Ok(CommandResult::Success);
+                    }
+                    (line + 1, 0)
+                } else {
+                    (
+                        line,
+                        next_boundary_column(&line_text, col, TextBoundary::Grapheme),
+                    )
+                };
+
+                self.editor.cursor_position = Position::new(line, col);
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(line, col)
+                    .map(|(_, x)| x);
+                Ok(CommandResult::Success)
+            }
+            CursorCommand::MoveWordLeft => {
+                let line_count = self.editor.line_index.line_count();
+                if line_count == 0 {
+                    return Ok(CommandResult::Success);
+                }
+
+                let mut line = self
+                    .editor
+                    .cursor_position
+                    .line
+                    .min(line_count.saturating_sub(1));
+                let mut line_text = self
+                    .editor
+                    .line_index
+                    .get_line_text(line)
+                    .unwrap_or_default();
+                let mut line_char_len = line_text.chars().count();
+                let mut col = self.editor.cursor_position.column.min(line_char_len);
+
+                if col == 0 {
+                    if line == 0 {
+                        return Ok(CommandResult::Success);
+                    }
+                    line = line.saturating_sub(1);
+                    line_text = self
+                        .editor
+                        .line_index
+                        .get_line_text(line)
+                        .unwrap_or_default();
+                    line_char_len = line_text.chars().count();
+                    col = line_char_len;
+                } else {
+                    col = prev_boundary_column(&line_text, col, TextBoundary::Word);
+                }
+
+                self.editor.cursor_position = Position::new(line, col);
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(line, col)
+                    .map(|(_, x)| x);
+                Ok(CommandResult::Success)
+            }
+            CursorCommand::MoveWordRight => {
+                let line_count = self.editor.line_index.line_count();
+                if line_count == 0 {
+                    return Ok(CommandResult::Success);
+                }
+
+                let line = self
+                    .editor
+                    .cursor_position
+                    .line
+                    .min(line_count.saturating_sub(1));
+                let line_text = self
+                    .editor
+                    .line_index
+                    .get_line_text(line)
+                    .unwrap_or_default();
+                let line_char_len = line_text.chars().count();
+                let col = self.editor.cursor_position.column.min(line_char_len);
+
+                let (line, col) = if col >= line_char_len {
+                    if line + 1 >= line_count {
+                        return Ok(CommandResult::Success);
+                    }
+                    (line + 1, 0)
+                } else {
+                    (
+                        line,
+                        next_boundary_column(&line_text, col, TextBoundary::Word),
+                    )
+                };
+
+                self.editor.cursor_position = Position::new(line, col);
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(line, col)
                     .map(|(_, x)| x);
                 Ok(CommandResult::Success)
             }

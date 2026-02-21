@@ -29,7 +29,7 @@ Legend:
 | P0-3 | Consistent line-ending model (CRLF/LF) | kernel + host | done | Normalize `\\r\\n`/`\\r` → `\\n` internally; track save preference via `LineEnding`. |
 | P0-4 | Visual-row cursor movement (wrap + folding aware) | kernel | done | Added visual movement commands + wrap/fold mapping with tests. |
 | P0-5 | Wrap modes (char/word) + wrapped indent | kernel | done | `WrapMode` + `WrapIndent` + `ViewCommand::{SetWrapMode, SetWrapIndent}` with tests. |
-| P0-6 | Unicode segmentation for UX (graphemes/words) | kernel + host | planned | Optional but important for modern UX. |
+| P0-6 | Unicode segmentation for UX (graphemes/words) | kernel | done | `CursorCommand::{MoveGrapheme*, MoveWord*}` + `EditCommand::{DeleteGrapheme*, DeleteWord*}` with tests. |
 | P0-7 | Indentation / whitespace primitives | kernel | done | `EditCommand::{InsertNewline{auto_indent}, Indent, Outdent, DeleteToPrevTabStop}` + tests. |
 | P1-8 | First-class diagnostics model | kernel + integration | planned | Store diagnostics data, not only underline styles. |
 | P1-9 | Decorations model (inlay hints, code lens, links, match highlights) | kernel + integration | planned | Requires “virtual text” / anchored decorations. |
@@ -240,6 +240,8 @@ This stays UI-agnostic: it only changes how visual rows are computed.
 ---
 
 ### 6) Unicode segmentation for editor UX (graphemes + words)
+
+**Status: done**
 
 **What’s missing**
 
