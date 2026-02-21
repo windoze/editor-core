@@ -39,7 +39,7 @@ use crate::processing::{DocumentProcessor, ProcessingEdit};
 use crate::snapshot::HeadlessGrid;
 use crate::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
-    Position, Selection, SelectionDirection, StyleCommand, ViewCommand,
+    LineEnding, Position, Selection, SelectionDirection, StyleCommand, ViewCommand,
 };
 use std::collections::HashSet;
 use std::ops::Range;
@@ -292,6 +292,22 @@ impl EditorStateManager {
     /// Get a mutable reference to the Editor Core
     pub fn editor_mut(&mut self) -> &mut EditorCore {
         self.executor.editor_mut()
+    }
+
+    /// Get the preferred line ending for saving this document.
+    pub fn line_ending(&self) -> LineEnding {
+        self.executor.line_ending()
+    }
+
+    /// Override the preferred line ending for saving this document.
+    pub fn set_line_ending(&mut self, line_ending: LineEnding) {
+        self.executor.set_line_ending(line_ending);
+    }
+
+    /// Get the current document text converted to the preferred line ending for saving.
+    pub fn get_text_for_saving(&self) -> String {
+        let text = self.editor().get_text();
+        self.line_ending().apply_to_text(&text)
     }
 
     /// Execute a command and automatically trigger state change notifications.

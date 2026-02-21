@@ -36,6 +36,7 @@
 use crate::delta::{TextDelta, TextDeltaEdit};
 use crate::intervals::{FoldRegion, StyleId, StyleLayerId};
 use crate::layout::{cell_width_at, char_width, visual_x_for_column};
+use crate::line_ending::LineEnding;
 use crate::search::{CharIndex, SearchMatch, SearchOptions, find_all, find_next, find_prev};
 use crate::snapshot::{Cell, HeadlessGrid, HeadlessLine};
 use crate::{
@@ -615,6 +616,9 @@ pub struct EditorCore {
 impl EditorCore {
     /// Create a new Editor Core
     pub fn new(text: &str, viewport_width: usize) -> Self {
+        let normalized = crate::text::normalize_crlf_to_lf(text);
+        let text = normalized.as_ref();
+
         let piece_table = PieceTable::new(text);
         let line_index = LineIndex::from_text(text);
         let mut layout_engine = LayoutEngine::new(viewport_width);
@@ -1084,6 +1088,8 @@ pub struct CommandExecutor {
     undo_redo: UndoRedoManager,
     /// Controls how [`EditCommand::InsertTab`] behaves.
     tab_key_behavior: TabKeyBehavior,
+    /// Preferred line ending for saving (internal storage is always LF).
+    line_ending: LineEnding,
     /// Structured delta for the last executed text modification (cleared on each `execute()` call).
     last_text_delta: Option<TextDelta>,
 }
@@ -1096,6 +1102,7 @@ impl CommandExecutor {
             command_history: Vec::new(),
             undo_redo: UndoRedoManager::new(1000),
             tab_key_behavior: TabKeyBehavior::Tab,
+            line_ending: LineEnding::detect_in_text(text),
             last_text_delta: None,
         }
     }
@@ -1209,6 +1216,16 @@ impl CommandExecutor {
     /// Set tab key behavior used by [`EditCommand::InsertTab`].
     pub fn set_tab_key_behavior(&mut self, behavior: TabKeyBehavior) {
         self.tab_key_behavior = behavior;
+    }
+
+    /// Get the preferred line ending for saving this document.
+    pub fn line_ending(&self) -> LineEnding {
+        self.line_ending
+    }
+
+    /// Override the preferred line ending for saving this document.
+    pub fn set_line_ending(&mut self, line_ending: LineEnding) {
+        self.line_ending = line_ending;
     }
 
     // Private method: execute edit command
@@ -1343,6 +1360,7 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
+        let text = crate::text::normalize_crlf_to_lf_string(text);
         let before_char_count = self.editor.piece_table.char_count();
         let before_selection = self.snapshot_selection_set();
 
@@ -1778,6 +1796,7 @@ impl CommandExecutor {
             return Err(CommandError::EmptyText);
         }
 
+        let text = crate::text::normalize_crlf_to_lf_string(text);
         let max_offset = self.editor.piece_table.char_count();
         if offset > max_offset {
             return Err(CommandError::InvalidOffset(offset));
@@ -1965,6 +1984,7 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
+        let text = crate::text::normalize_crlf_to_lf_string(text);
         let before_selection = self.snapshot_selection_set();
 
         let deleted_text = if length == 0 {
@@ -2200,6 +2220,7 @@ impl CommandExecutor {
         } else {
             replacement
         };
+        let inserted_text = crate::text::normalize_crlf_to_lf_string(inserted_text);
 
         let deleted_text = self
             .editor
@@ -2256,6 +2277,7 @@ impl CommandExecutor {
             return Err(CommandError::Other("Search query is empty".to_string()));
         }
 
+        let replacement = crate::text::normalize_crlf_to_lf_string(replacement);
         let text = self.editor.piece_table.get_text();
         let matches =
             find_all(&text, &query, options).map_err(|err| CommandError::Other(err.to_string()))?;
@@ -2288,6 +2310,7 @@ impl CommandExecutor {
                 };
                 let inserted_text =
                     Self::regex_expand_replacement(&re, &text, &index, m, &replacement)?;
+                let inserted_text = crate::text::normalize_crlf_to_lf_string(inserted_text);
                 let inserted_len = inserted_text.chars().count();
                 ops.push(Op {
                     start_before: m.start,

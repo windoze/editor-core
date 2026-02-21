@@ -103,6 +103,7 @@ pub mod commands;
 pub mod delta;
 pub mod intervals;
 pub mod layout;
+pub mod line_ending;
 pub mod line_index;
 pub mod processing;
 pub mod search;
@@ -119,6 +120,7 @@ pub use commands::{
 pub use delta::{TextDelta, TextDeltaEdit};
 pub use intervals::{FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, StyleLayerId};
 pub use layout::LayoutEngine;
+pub use line_ending::LineEnding;
 pub use line_index::LineIndex;
 pub use processing::{DocumentProcessor, ProcessingEdit};
 pub use search::{SearchError, SearchMatch, SearchOptions};

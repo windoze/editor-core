@@ -265,9 +265,6 @@ impl LineIndex {
         if text.ends_with('\n') {
             text.pop();
         }
-        if text.ends_with('\r') {
-            text.pop();
-        }
 
         Some(text)
     }

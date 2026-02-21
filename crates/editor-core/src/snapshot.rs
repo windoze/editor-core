@@ -134,7 +134,8 @@ impl SnapshotGenerator {
 
     /// Initialize from text, with explicit `tab_width` (in cells) for expanding `'\t'`.
     pub fn from_text_with_tab_width(text: &str, viewport_width: usize, tab_width: usize) -> Self {
-        let lines = crate::text::split_lines_preserve_trailing(text);
+        let normalized = crate::text::normalize_crlf_to_lf(text);
+        let lines = crate::text::split_lines_preserve_trailing(normalized.as_ref());
         let mut layout_engine = LayoutEngine::new(viewport_width);
         layout_engine.set_tab_width(tab_width);
         let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
