@@ -35,7 +35,10 @@
 
 use crate::delta::{TextDelta, TextDeltaEdit};
 use crate::intervals::{FoldRegion, StyleId, StyleLayerId};
-use crate::layout::{WrapMode, cell_width_at, char_width, visual_x_for_column};
+use crate::layout::{
+    WrapIndent, WrapMode, cell_width_at, char_width, visual_x_for_column,
+    wrap_indent_cells_for_line_text,
+};
 use crate::line_ending::LineEnding;
 use crate::search::{CharIndex, SearchMatch, SearchOptions, find_all, find_next, find_prev};
 use crate::snapshot::{Cell, HeadlessGrid, HeadlessLine};
@@ -292,6 +295,11 @@ pub enum ViewCommand {
     SetWrapMode {
         /// Wrap mode.
         mode: WrapMode,
+    },
+    /// Set wrapped-line indentation policy.
+    SetWrapIndent {
+        /// Wrap indent policy.
+        indent: WrapIndent,
     },
     /// Set tab width (in character cells) used for measuring `'\t'` and tab stops.
     SetTabWidth {
@@ -789,6 +797,17 @@ impl EditorCore {
                     };
 
                     let mut headless_line = HeadlessLine::new(logical_line, visual_in_line > 0);
+                    if visual_in_line > 0 {
+                        let indent_cells = wrap_indent_cells_for_line_text(
+                            &line_text,
+                            self.layout_engine.wrap_indent(),
+                            self.viewport_width,
+                            tab_width,
+                        );
+                        for _ in 0..indent_cells {
+                            headless_line.add_cell(Cell::new(' ', 1));
+                        }
+                    }
                     let mut x_in_line =
                         visual_x_for_column(&line_text, segment_start_col, tab_width);
 
@@ -934,7 +953,21 @@ impl EditorCore {
             x_in_segment = x_in_segment.saturating_add(w);
         }
 
-        Some((visual_start.saturating_add(wrapped_offset), x_in_segment))
+        let indent = if wrapped_offset == 0 {
+            0
+        } else {
+            wrap_indent_cells_for_line_text(
+                &line_text,
+                self.layout_engine.wrap_indent(),
+                self.viewport_width,
+                tab_width,
+            )
+        };
+
+        Some((
+            visual_start.saturating_add(wrapped_offset),
+            indent.saturating_add(x_in_segment),
+        ))
     }
 
     /// Convert logical coordinates (line, column) to visual coordinates (visual line number, in-line x cell offset), considering folding.
@@ -987,7 +1020,21 @@ impl EditorCore {
 
         let x_in_segment = x_in_segment + column.saturating_sub(line_char_len);
 
-        Some((visual_start.saturating_add(wrapped_offset), x_in_segment))
+        let indent = if wrapped_offset == 0 {
+            0
+        } else {
+            wrap_indent_cells_for_line_text(
+                &line_text,
+                self.layout_engine.wrap_indent(),
+                self.viewport_width,
+                tab_width,
+            )
+        };
+
+        Some((
+            visual_start.saturating_add(wrapped_offset),
+            indent.saturating_add(x_in_segment),
+        ))
     }
 
     /// Convert visual coordinates (global visual row + x in cells) back to logical `(line, column)`.
@@ -1035,6 +1082,17 @@ impl EditorCore {
             .min(line_char_len);
 
         let tab_width = self.layout_engine.tab_width();
+        let x_in_cells = if visual_in_logical == 0 {
+            x_in_cells
+        } else {
+            let indent = wrap_indent_cells_for_line_text(
+                &line_text,
+                self.layout_engine.wrap_indent(),
+                self.viewport_width,
+                tab_width,
+            );
+            x_in_cells.saturating_sub(indent)
+        };
         let seg_start_x_in_line = visual_x_for_column(&line_text, segment_start_col, tab_width);
         let mut x_in_line = seg_start_x_in_line;
         let mut x_in_segment = 0usize;
@@ -3883,6 +3941,10 @@ impl CommandExecutor {
                 self.editor.layout_engine.set_wrap_mode(mode);
                 Ok(CommandResult::Success)
             }
+            ViewCommand::SetWrapIndent { indent } => {
+                self.editor.layout_engine.set_wrap_indent(indent);
+                Ok(CommandResult::Success)
+            }
             ViewCommand::SetTabWidth { width } => {
                 if width == 0 {
                     return Err(CommandError::Other(
@@ -3908,11 +3970,12 @@ impl CommandExecutor {
             }
             ViewCommand::GetViewport { start_row, count } => {
                 let text = self.editor.piece_table.get_text();
-                let generator = SnapshotGenerator::from_text_with_options(
+                let generator = SnapshotGenerator::from_text_with_layout_options(
                     &text,
                     self.editor.viewport_width,
                     self.editor.layout_engine.tab_width(),
                     self.editor.layout_engine.wrap_mode(),
+                    self.editor.layout_engine.wrap_indent(),
                 );
                 let grid = generator.get_headless_grid(start_row, count);
                 Ok(CommandResult::Viewport(grid))

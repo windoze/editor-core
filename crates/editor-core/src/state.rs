@@ -410,6 +410,7 @@ impl EditorStateManager {
             Command::View(
                 ViewCommand::SetViewportWidth { .. }
                 | ViewCommand::SetWrapMode { .. }
+                | ViewCommand::SetWrapIndent { .. }
                 | ViewCommand::SetTabWidth { .. },
             ) => Some(StateChangeType::ViewportChanged),
             Command::View(
@@ -739,11 +740,12 @@ impl EditorStateManager {
     pub fn get_viewport_content(&self, start_row: usize, count: usize) -> HeadlessGrid {
         let editor = self.executor.editor();
         let text = editor.get_text();
-        let generator = crate::SnapshotGenerator::from_text_with_options(
+        let generator = crate::SnapshotGenerator::from_text_with_layout_options(
             &text,
             editor.viewport_width,
             editor.layout_engine.tab_width(),
             editor.layout_engine.wrap_mode(),
+            editor.layout_engine.wrap_indent(),
         );
         generator.get_headless_grid(start_row, count)
     }

@@ -25,6 +25,24 @@ impl Default for WrapMode {
     }
 }
 
+/// Wrapped-line indentation policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WrapIndent {
+    /// No indentation for wrapped continuations.
+    None,
+    /// Indent wrapped continuations by the width (in cells) of the logical line's leading
+    /// whitespace prefix (spaces + tabs).
+    SameAsLineIndent,
+    /// Indent wrapped continuations by a fixed number of cells.
+    FixedCells(usize),
+}
+
+impl Default for WrapIndent {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
 /// Wrap point
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WrapPoint {
@@ -81,11 +99,29 @@ impl VisualLineInfo {
         tab_width: usize,
         wrap_mode: WrapMode,
     ) -> Self {
-        let wrap_points = calculate_wrap_points_with_tab_width_and_mode(
+        Self::from_text_with_layout_options(
             text,
             viewport_width,
             tab_width,
             wrap_mode,
+            WrapIndent::None,
+        )
+    }
+
+    /// Calculate visual line information with explicit layout options.
+    pub fn from_text_with_layout_options(
+        text: &str,
+        viewport_width: usize,
+        tab_width: usize,
+        wrap_mode: WrapMode,
+        wrap_indent: WrapIndent,
+    ) -> Self {
+        let wrap_points = calculate_wrap_points_with_tab_width_mode_and_indent(
+            text,
+            viewport_width,
+            tab_width,
+            wrap_mode,
+            wrap_indent,
         );
         let visual_line_count = wrap_points.len() + 1;
 
@@ -154,6 +190,40 @@ pub fn visual_x_for_column(line: &str, column: usize, tab_width: usize) -> usize
     x
 }
 
+fn leading_whitespace_prefix_slice(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let mut end = 0usize;
+    while end < bytes.len() {
+        match bytes[end] {
+            b' ' | b'\t' => end += 1,
+            _ => break,
+        }
+    }
+    &line[..end]
+}
+
+pub(crate) fn wrap_indent_cells_for_line_text(
+    line_text: &str,
+    wrap_indent: WrapIndent,
+    viewport_width: usize,
+    tab_width: usize,
+) -> usize {
+    if viewport_width <= 1 {
+        return 0;
+    }
+
+    let raw = match wrap_indent {
+        WrapIndent::None => 0,
+        WrapIndent::FixedCells(n) => n,
+        WrapIndent::SameAsLineIndent => {
+            let prefix = leading_whitespace_prefix_slice(line_text);
+            str_width_with_tab_width(prefix, tab_width)
+        }
+    };
+
+    raw.min(viewport_width.saturating_sub(1))
+}
+
 /// Calculate wrap points for text
 ///
 /// Given a width constraint, calculates where the text needs to wrap
@@ -177,6 +247,23 @@ pub fn calculate_wrap_points_with_tab_width_and_mode(
     tab_width: usize,
     wrap_mode: WrapMode,
 ) -> Vec<WrapPoint> {
+    calculate_wrap_points_with_tab_width_mode_and_indent(
+        text,
+        viewport_width,
+        tab_width,
+        wrap_mode,
+        WrapIndent::None,
+    )
+}
+
+/// Calculate wrap points for text using a configurable [`WrapMode`] and [`WrapIndent`].
+pub fn calculate_wrap_points_with_tab_width_mode_and_indent(
+    text: &str,
+    viewport_width: usize,
+    tab_width: usize,
+    wrap_mode: WrapMode,
+    wrap_indent: WrapIndent,
+) -> Vec<WrapPoint> {
     if viewport_width == 0 {
         return Vec::new();
     }
@@ -184,10 +271,14 @@ pub fn calculate_wrap_points_with_tab_width_and_mode(
     match wrap_mode {
         WrapMode::None => Vec::new(),
         WrapMode::Char => {
-            calculate_wrap_points_char_with_tab_width(text, viewport_width, tab_width)
+            let indent =
+                wrap_indent_cells_for_line_text(text, wrap_indent, viewport_width, tab_width);
+            calculate_wrap_points_char_with_tab_width(text, viewport_width, tab_width, indent)
         }
         WrapMode::Word => {
-            calculate_wrap_points_word_with_tab_width(text, viewport_width, tab_width)
+            let indent =
+                wrap_indent_cells_for_line_text(text, wrap_indent, viewport_width, tab_width);
+            calculate_wrap_points_word_with_tab_width(text, viewport_width, tab_width, indent)
         }
     }
 }
@@ -196,6 +287,7 @@ fn calculate_wrap_points_char_with_tab_width(
     text: &str,
     viewport_width: usize,
     tab_width: usize,
+    wrap_indent_cells: usize,
 ) -> Vec<WrapPoint> {
     let mut wrap_points = Vec::new();
     let mut x_in_segment = 0usize;
@@ -212,7 +304,7 @@ fn calculate_wrap_points_char_with_tab_width(
                 char_index,
                 byte_offset,
             });
-            x_in_segment = 0;
+            x_in_segment = wrap_indent_cells;
         } else {
             // ok
         }
@@ -228,7 +320,7 @@ fn calculate_wrap_points_char_with_tab_width(
                     char_index: char_index + 1,
                     byte_offset: byte_offset + ch.len_utf8(),
                 });
-                x_in_segment = 0;
+                x_in_segment = wrap_indent_cells;
             }
         }
     }
@@ -240,6 +332,7 @@ fn calculate_wrap_points_word_with_tab_width(
     text: &str,
     viewport_width: usize,
     tab_width: usize,
+    wrap_indent_cells: usize,
 ) -> Vec<WrapPoint> {
     let mut wrap_points = Vec::new();
 
@@ -253,7 +346,14 @@ fn calculate_wrap_points_word_with_tab_width(
         let ch_width = cell_width_at(ch, x_in_line, tab_width);
 
         loop {
-            let x_in_segment = x_in_line.saturating_sub(segment_start_x_in_line);
+            let segment_indent = if segment_start_char == 0 {
+                0
+            } else {
+                wrap_indent_cells
+            };
+            let x_in_segment = x_in_line
+                .saturating_sub(segment_start_x_in_line)
+                .saturating_add(segment_indent);
             if x_in_segment.saturating_add(ch_width) <= viewport_width {
                 break;
             }
@@ -300,6 +400,8 @@ pub struct LayoutEngine {
     tab_width: usize,
     /// Soft wrapping mode.
     wrap_mode: WrapMode,
+    /// Wrapped-line indentation policy.
+    wrap_indent: WrapIndent,
     /// Visual information for each logical line
     line_layouts: Vec<VisualLineInfo>,
     /// Raw text for each logical line (excluding newline characters)
@@ -313,6 +415,7 @@ impl LayoutEngine {
             viewport_width,
             tab_width: DEFAULT_TAB_WIDTH,
             wrap_mode: WrapMode::Char,
+            wrap_indent: WrapIndent::None,
             line_layouts: Vec::new(),
             line_texts: Vec::new(),
         }
@@ -346,6 +449,21 @@ impl LayoutEngine {
         }
     }
 
+    /// Get wrapped-line indentation policy.
+    pub fn wrap_indent(&self) -> WrapIndent {
+        self.wrap_indent
+    }
+
+    /// Set wrapped-line indentation policy.
+    ///
+    /// If `wrap_indent` changes, all line layouts are recalculated.
+    pub fn set_wrap_indent(&mut self, wrap_indent: WrapIndent) {
+        if self.wrap_indent != wrap_indent {
+            self.wrap_indent = wrap_indent;
+            self.recalculate_all();
+        }
+    }
+
     /// Get tab width (in cells).
     pub fn tab_width(&self) -> usize {
         self.tab_width
@@ -369,11 +487,12 @@ impl LayoutEngine {
         for line in lines {
             self.line_texts.push((*line).to_string());
             self.line_layouts
-                .push(VisualLineInfo::from_text_with_options(
+                .push(VisualLineInfo::from_text_with_layout_options(
                     line,
                     self.viewport_width,
                     self.tab_width,
                     self.wrap_mode,
+                    self.wrap_indent,
                 ));
         }
     }
@@ -382,11 +501,12 @@ impl LayoutEngine {
     pub fn add_line(&mut self, text: &str) {
         self.line_texts.push(text.to_string());
         self.line_layouts
-            .push(VisualLineInfo::from_text_with_options(
+            .push(VisualLineInfo::from_text_with_layout_options(
                 text,
                 self.viewport_width,
                 self.tab_width,
                 self.wrap_mode,
+                self.wrap_indent,
             ));
     }
 
@@ -394,11 +514,12 @@ impl LayoutEngine {
     pub fn update_line(&mut self, line_index: usize, text: &str) {
         if line_index < self.line_layouts.len() {
             self.line_texts[line_index] = text.to_string();
-            self.line_layouts[line_index] = VisualLineInfo::from_text_with_options(
+            self.line_layouts[line_index] = VisualLineInfo::from_text_with_layout_options(
                 text,
                 self.viewport_width,
                 self.tab_width,
                 self.wrap_mode,
+                self.wrap_indent,
             );
         }
     }
@@ -409,11 +530,12 @@ impl LayoutEngine {
         self.line_texts.insert(pos, text.to_string());
         self.line_layouts.insert(
             pos,
-            VisualLineInfo::from_text_with_options(
+            VisualLineInfo::from_text_with_layout_options(
                 text,
                 self.viewport_width,
                 self.tab_width,
                 self.wrap_mode,
+                self.wrap_indent,
             ),
         );
     }
@@ -483,22 +605,24 @@ impl LayoutEngine {
             self.line_layouts.clear();
             for line in &self.line_texts {
                 self.line_layouts
-                    .push(VisualLineInfo::from_text_with_options(
+                    .push(VisualLineInfo::from_text_with_layout_options(
                         line,
                         self.viewport_width,
                         self.tab_width,
                         self.wrap_mode,
+                        self.wrap_indent,
                     ));
             }
             return;
         }
 
         for (layout, line_text) in self.line_layouts.iter_mut().zip(self.line_texts.iter()) {
-            *layout = VisualLineInfo::from_text_with_options(
+            *layout = VisualLineInfo::from_text_with_layout_options(
                 line_text,
                 self.viewport_width,
                 self.tab_width,
                 self.wrap_mode,
+                self.wrap_indent,
             );
         }
     }
@@ -556,8 +680,19 @@ impl LayoutEngine {
             x_in_segment = x_in_segment.saturating_add(w);
         }
 
+        let indent = if wrapped_offset == 0 {
+            0
+        } else {
+            wrap_indent_cells_for_line_text(
+                line_text,
+                self.wrap_indent,
+                self.viewport_width,
+                self.tab_width,
+            )
+        };
+
         let visual_row = self.logical_to_visual_line(logical_line) + wrapped_offset;
-        Some((visual_row, x_in_segment))
+        Some((visual_row, indent.saturating_add(x_in_segment)))
     }
 
     /// Convert logical coordinates (line, column) to visual coordinates, allowing column to exceed line end (virtual spaces).
@@ -600,9 +735,20 @@ impl LayoutEngine {
             x_in_segment = x_in_segment.saturating_add(w);
         }
 
+        let indent = if wrapped_offset == 0 {
+            0
+        } else {
+            wrap_indent_cells_for_line_text(
+                line_text,
+                self.wrap_indent,
+                self.viewport_width,
+                self.tab_width,
+            )
+        };
+
         let x_in_segment = x_in_segment + column.saturating_sub(line_char_len);
         let visual_row = self.logical_to_visual_line(logical_line) + wrapped_offset;
-        Some((visual_row, x_in_segment))
+        Some((visual_row, indent.saturating_add(x_in_segment)))
     }
 }
 
@@ -733,6 +879,21 @@ mod tests {
 
         assert_eq!(wraps.len(), 1);
         assert_eq!(wraps[0].char_index, 6);
+    }
+
+    #[test]
+    fn test_wrap_indent_same_as_line_indent_reduces_continuation_width() {
+        let text = "    abcdefgh";
+        let wraps = calculate_wrap_points_with_tab_width_mode_and_indent(
+            text,
+            6,
+            DEFAULT_TAB_WIDTH,
+            WrapMode::Char,
+            WrapIndent::SameAsLineIndent,
+        );
+
+        let indices: Vec<usize> = wraps.iter().map(|wp| wp.char_index).collect();
+        assert_eq!(indices, vec![6, 8, 10]);
     }
 
     #[test]

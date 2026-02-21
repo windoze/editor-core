@@ -119,7 +119,7 @@ pub use commands::{
 };
 pub use delta::{TextDelta, TextDeltaEdit};
 pub use intervals::{FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, StyleLayerId};
-pub use layout::{LayoutEngine, WrapMode};
+pub use layout::{LayoutEngine, WrapIndent, WrapMode};
 pub use line_ending::LineEnding;
 pub use line_index::LineIndex;
 pub use processing::{DocumentProcessor, ProcessingEdit};

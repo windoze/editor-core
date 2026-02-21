@@ -4,7 +4,8 @@
 
 use crate::intervals::StyleId;
 use crate::layout::{
-    DEFAULT_TAB_WIDTH, LayoutEngine, WrapMode, cell_width_at, visual_x_for_column,
+    DEFAULT_TAB_WIDTH, LayoutEngine, WrapIndent, WrapMode, cell_width_at, visual_x_for_column,
+    wrap_indent_cells_for_line_text,
 };
 
 /// Cell (character) information
@@ -146,11 +147,29 @@ impl SnapshotGenerator {
         tab_width: usize,
         wrap_mode: WrapMode,
     ) -> Self {
+        Self::from_text_with_layout_options(
+            text,
+            viewport_width,
+            tab_width,
+            wrap_mode,
+            WrapIndent::None,
+        )
+    }
+
+    /// Initialize from text, with explicit layout options.
+    pub fn from_text_with_layout_options(
+        text: &str,
+        viewport_width: usize,
+        tab_width: usize,
+        wrap_mode: WrapMode,
+        wrap_indent: WrapIndent,
+    ) -> Self {
         let normalized = crate::text::normalize_crlf_to_lf(text);
         let lines = crate::text::split_lines_preserve_trailing(normalized.as_ref());
         let mut layout_engine = LayoutEngine::new(viewport_width);
         layout_engine.set_tab_width(tab_width);
         layout_engine.set_wrap_mode(wrap_mode);
+        layout_engine.set_wrap_indent(wrap_indent);
         let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         layout_engine.from_lines(&line_refs);
         Self {
@@ -246,6 +265,17 @@ impl SnapshotGenerator {
                     };
 
                     let mut headless_line = HeadlessLine::new(logical_line, visual_in_line > 0);
+                    if visual_in_line > 0 {
+                        let indent_cells = wrap_indent_cells_for_line_text(
+                            line_text,
+                            self.layout_engine.wrap_indent(),
+                            self.viewport_width,
+                            self.tab_width,
+                        );
+                        for _ in 0..indent_cells {
+                            headless_line.add_cell(Cell::new(' ', 1));
+                        }
+                    }
                     let seg_start_x_in_line =
                         visual_x_for_column(line_text, segment_start_col, self.tab_width);
                     let mut x_in_line = seg_start_x_in_line;
