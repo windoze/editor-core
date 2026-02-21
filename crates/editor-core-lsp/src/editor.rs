@@ -22,7 +22,8 @@ use crate::lsp_text_edits::{apply_text_edits, workspace_edit_text_edits_for_uri}
 use editor_core::intervals::{FoldRegion, Interval, StyleId};
 use editor_core::processing::{DocumentProcessor, ProcessingEdit};
 use editor_core::{
-    Diagnostic, DiagnosticRange, DiagnosticSeverity, EditorStateManager, LineIndex, StyleLayerId,
+    DecorationLayerId, Diagnostic, DiagnosticRange, DiagnosticSeverity, EditorStateManager,
+    LineIndex, StyleLayerId,
 };
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -33,6 +34,7 @@ use std::time::{Duration, Instant};
 /// Clear LSP-derived state in the editor:
 /// - `StyleLayerId::SEMANTIC_TOKENS`
 /// - `StyleLayerId::DIAGNOSTICS`
+/// - `DecorationLayerId::INLAY_HINTS`
 /// - all folding regions (typically sourced from LSP `foldingRange`)
 pub fn lsp_clear_edits() -> Vec<ProcessingEdit> {
     vec![
@@ -43,6 +45,9 @@ pub fn lsp_clear_edits() -> Vec<ProcessingEdit> {
             layer: StyleLayerId::DIAGNOSTICS,
         },
         ProcessingEdit::ClearDiagnostics,
+        ProcessingEdit::ClearDecorations {
+            layer: DecorationLayerId::INLAY_HINTS,
+        },
         ProcessingEdit::ClearFoldingRegions,
     ]
 }

@@ -32,7 +32,7 @@ Legend:
 | P0-6 | Unicode segmentation for UX (graphemes/words) | kernel | done | `CursorCommand::{MoveGrapheme*, MoveWord*}` + `EditCommand::{DeleteGrapheme*, DeleteWord*}` with tests. |
 | P0-7 | Indentation / whitespace primitives | kernel | done | `EditCommand::{InsertNewline{auto_indent}, Indent, Outdent, DeleteToPrevTabStop}` + tests. |
 | P1-8 | First-class diagnostics model | kernel + integration | done | `Diagnostic` model + `ProcessingEdit::{ReplaceDiagnostics, ClearDiagnostics}`; LSP publishDiagnostics populates both styles and data. |
-| P1-9 | Decorations model (inlay hints, code lens, links, match highlights) | kernel + integration | planned | Requires “virtual text” / anchored decorations. |
+| P1-9 | Decorations model (inlay hints, code lens, links, match highlights) | kernel + integration | done | `Decoration*` model + `ProcessingEdit::{ReplaceDecorations, ClearDecorations}`. |
 | P1-10 | Multi-document LSP sync + workspace edits | integration + kernel workspace | planned | Route per-doc state and apply workspace edits reliably. |
 
 ## Current coverage (what already exists)
@@ -332,6 +332,8 @@ Rendering remains host-driven (gutter markers, Problems panel, tooltips, etc.).
 
 ### 9) Inline decorations: inlay hints, code lens, links, search highlights
 
+**Status: done**
+
 **What’s missing**
 
 These are ubiquitous in modern editors:
@@ -349,17 +351,19 @@ Today, the derived-state model is limited to:
 
 That’s insufficient to represent inline text that does not exist in the document (virtual text).
 
-**Proposal (kernel + integration)**
+**What’s implemented**
 
-Introduce a general “decoration” model that can be consumed by any UI:
+In `editor-core`:
 
-- `Decoration { anchor: Position/offset, kind, text: Option<String>, styles: Vec<StyleId>, ... }`
-- Extend `ProcessingEdit` with:
-  - `ReplaceDecorations { source: DecorationSourceId, decorations: Vec<Decoration> }`
-  - `ClearDecorations { source: ... }`
+- `decorations` module with:
+  - `DecorationLayerId` (layered sources, similar to style layers)
+  - `Decoration { range, placement, kind, text, styles, ... }`
+- `ProcessingEdit::{ReplaceDecorations, ClearDecorations}` and `StateChangeType::DecorationsChanged`
 
-Keep it minimal at first (only inline text + style ids), and avoid embedding UI concepts like fonts
-or pixel positioning.
+Notes:
+
+- Decorations are stored and exposed to the host, but do **not** mutate the document text.
+- Rendering (inline virtual text layout, click handling, tooltips) remains host-driven.
 
 ## P1 — LSP + tooling ergonomics
 

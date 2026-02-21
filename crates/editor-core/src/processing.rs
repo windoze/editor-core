@@ -9,6 +9,7 @@
 //! [`EditorStateManager::apply_processing_edits`](crate::EditorStateManager::apply_processing_edits).
 
 use crate::EditorStateManager;
+use crate::decorations::{Decoration, DecorationLayerId};
 use crate::diagnostics::Diagnostic;
 use crate::intervals::{FoldRegion, Interval, StyleLayerId};
 
@@ -46,6 +47,18 @@ pub enum ProcessingEdit {
     },
     /// Clear all diagnostics.
     ClearDiagnostics,
+    /// Replace a decoration layer wholesale.
+    ReplaceDecorations {
+        /// Decoration layer being replaced.
+        layer: DecorationLayerId,
+        /// Full decoration list for the layer (character offsets).
+        decorations: Vec<Decoration>,
+    },
+    /// Clear a decoration layer.
+    ClearDecorations {
+        /// Decoration layer being cleared.
+        layer: DecorationLayerId,
+    },
 }
 
 /// A generic processor that produces [`ProcessingEdit`]s for an editor document.

@@ -33,6 +33,7 @@
 //! executor.execute_batch(commands).unwrap();
 //! ```
 
+use crate::decorations::{Decoration, DecorationLayerId};
 use crate::delta::{TextDelta, TextDeltaEdit};
 use crate::diagnostics::Diagnostic;
 use crate::intervals::{FoldRegion, StyleId, StyleLayerId};
@@ -746,6 +747,8 @@ pub struct EditorCore {
     pub style_layers: BTreeMap<StyleLayerId, IntervalTree>,
     /// Derived diagnostics for this document (character-offset ranges + metadata).
     pub diagnostics: Vec<Diagnostic>,
+    /// Derived decorations for this document (virtual text, links, etc.).
+    pub decorations: BTreeMap<DecorationLayerId, Vec<Decoration>>,
     /// Folding manager
     pub folding_manager: FoldingManager,
     /// Current cursor position
@@ -780,6 +783,7 @@ impl EditorCore {
             interval_tree: IntervalTree::new(),
             style_layers: BTreeMap::new(),
             diagnostics: Vec::new(),
+            decorations: BTreeMap::new(),
             folding_manager: FoldingManager::new(),
             cursor_position: Position::new(0, 0),
             selection: None,
@@ -826,6 +830,14 @@ impl EditorCore {
     /// Get the current diagnostics list.
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+
+    /// Get all decorations for a given layer.
+    pub fn decorations_for_layer(&self, layer: DecorationLayerId) -> &[Decoration] {
+        self.decorations
+            .get(&layer)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// Get styled headless grid snapshot (by visual line).

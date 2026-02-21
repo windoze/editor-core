@@ -38,8 +38,9 @@ use crate::intervals::{FoldRegion, Interval, StyleId, StyleLayerId};
 use crate::processing::{DocumentProcessor, ProcessingEdit};
 use crate::snapshot::HeadlessGrid;
 use crate::{
-    Command, CommandError, CommandExecutor, CommandResult, CursorCommand, Diagnostic, EditCommand,
-    EditorCore, LineEnding, Position, Selection, SelectionDirection, StyleCommand, ViewCommand,
+    Command, CommandError, CommandExecutor, CommandResult, CursorCommand, Decoration,
+    DecorationLayerId, Diagnostic, EditCommand, EditorCore, LineEnding, Position, Selection,
+    SelectionDirection, StyleCommand, ViewCommand,
 };
 use std::collections::HashSet;
 use std::ops::Range;
@@ -125,6 +126,15 @@ pub struct DiagnosticsState {
     pub diagnostics_count: usize,
 }
 
+/// Decorations state
+#[derive(Debug, Clone)]
+pub struct DecorationsState {
+    /// Total number of decoration layers.
+    pub layer_count: usize,
+    /// Total number of decorations (across all layers).
+    pub decoration_count: usize,
+}
+
 /// Style state
 #[derive(Debug, Clone)]
 pub struct StyleState {
@@ -147,6 +157,8 @@ pub enum StateChangeType {
     FoldingChanged,
     /// Style changed
     StyleChanged,
+    /// Decorations changed
+    DecorationsChanged,
     /// Diagnostics changed
     DiagnosticsChanged,
 }
@@ -206,6 +218,8 @@ pub struct EditorState {
     pub folding: FoldingState,
     /// Diagnostics state
     pub diagnostics: DiagnosticsState,
+    /// Decorations state
+    pub decorations: DecorationsState,
     /// Style state
     pub style: StyleState,
 }
@@ -373,6 +387,7 @@ impl EditorStateManager {
                 // Style/folding/diagnostics commands are currently treated as "success means change".
                 StateChangeType::FoldingChanged
                 | StateChangeType::StyleChanged
+                | StateChangeType::DecorationsChanged
                 | StateChangeType::DiagnosticsChanged => true,
             };
 
@@ -473,6 +488,7 @@ impl EditorStateManager {
             undo_redo: self.get_undo_redo_state(),
             folding: self.get_folding_state(),
             diagnostics: self.get_diagnostics_state(),
+            decorations: self.get_decorations_state(),
             style: self.get_style_state(),
         }
     }
@@ -613,6 +629,16 @@ impl EditorStateManager {
         }
     }
 
+    /// Get decorations state.
+    pub fn get_decorations_state(&self) -> DecorationsState {
+        let editor = self.executor.editor();
+        let decoration_count: usize = editor.decorations.values().map(|d| d.len()).sum();
+        DecorationsState {
+            layer_count: editor.decorations.len(),
+            decoration_count,
+        }
+    }
+
     /// Get all styles within the specified range
     pub fn get_styles_in_range(&self, start: usize, end: usize) -> Vec<(usize, usize, StyleId)> {
         let editor = self.executor.editor();
@@ -704,6 +730,25 @@ impl EditorStateManager {
         self.mark_modified(StateChangeType::DiagnosticsChanged);
     }
 
+    /// Replace a decoration layer wholesale.
+    pub fn replace_decorations(
+        &mut self,
+        layer: DecorationLayerId,
+        mut decorations: Vec<Decoration>,
+    ) {
+        decorations.sort_unstable_by_key(|d| (d.range.start, d.range.end));
+        let editor = self.executor.editor_mut();
+        editor.decorations.insert(layer, decorations);
+        self.mark_modified(StateChangeType::DecorationsChanged);
+    }
+
+    /// Clear a decoration layer.
+    pub fn clear_decorations(&mut self, layer: DecorationLayerId) {
+        let editor = self.executor.editor_mut();
+        editor.decorations.remove(&layer);
+        self.mark_modified(StateChangeType::DecorationsChanged);
+    }
+
     /// Replace folding regions wholesale.
     ///
     /// If `preserve_collapsed` is true, any region that matches an existing collapsed region
@@ -767,6 +812,12 @@ impl EditorStateManager {
                 }
                 ProcessingEdit::ClearDiagnostics => {
                     self.clear_diagnostics();
+                }
+                ProcessingEdit::ReplaceDecorations { layer, decorations } => {
+                    self.replace_decorations(layer, decorations);
+                }
+                ProcessingEdit::ClearDecorations { layer } => {
+                    self.clear_decorations(layer);
                 }
             }
         }

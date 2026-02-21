@@ -7,6 +7,7 @@
 
 pub mod editor;
 pub mod lsp_client;
+pub mod lsp_decorations;
 pub mod lsp_events;
 pub mod lsp_locations;
 pub mod lsp_sync;
@@ -19,6 +20,7 @@ pub use editor::{
     SemanticTokensLegend, clear_lsp_state, lsp_clear_edits, lsp_diagnostics_to_processing_edits,
 };
 pub use lsp_client::{LspClient, LspInbound, LspOutbound};
+pub use lsp_decorations::{lsp_inlay_hints_to_decorations, lsp_inlay_hints_to_processing_edit};
 pub use lsp_events::{
     LspDiagnostic, LspDiagnosticSeverity, LspEvent, LspLogMessageParams, LspMessageType,
     LspNotification, LspProgressParams, LspPublishDiagnosticsParams, LspResponse, LspResponseError,

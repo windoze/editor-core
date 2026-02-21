@@ -119,6 +119,7 @@ fn main() {
     println!("  视口宽度: {}", full_state.viewport.width);
     println!("  样式数量: {}", full_state.style.style_count);
     println!("  诊断数量: {}", full_state.diagnostics.diagnostics_count);
+    println!("  装饰数量: {}", full_state.decorations.decoration_count);
     println!("  总状态变更: {}", *change_count.lock().unwrap());
 
     // 获取视口内容

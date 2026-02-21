@@ -100,6 +100,7 @@
 //! - via `editor-core-sublime` provides `.sublime-syntax` syntax highlighting and folding (optional integration)
 
 pub mod commands;
+pub mod decorations;
 pub mod delta;
 pub mod diagnostics;
 pub mod intervals;
@@ -118,6 +119,9 @@ pub use commands::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
     Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, ViewCommand,
 };
+pub use decorations::{
+    Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
+};
 pub use delta::{TextDelta, TextDeltaEdit};
 pub use diagnostics::{Diagnostic, DiagnosticRange, DiagnosticSeverity};
 pub use intervals::{FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, StyleLayerId};
@@ -128,7 +132,8 @@ pub use processing::{DocumentProcessor, ProcessingEdit};
 pub use search::{SearchError, SearchMatch, SearchOptions};
 pub use snapshot::{Cell, HeadlessGrid, HeadlessLine, SnapshotGenerator};
 pub use state::{
-    CursorState, DiagnosticsState, DocumentState, EditorState, EditorStateManager, FoldingState,
-    StateChange, StateChangeCallback, StateChangeType, StyleState, UndoRedoState, ViewportState,
+    CursorState, DecorationsState, DiagnosticsState, DocumentState, EditorState,
+    EditorStateManager, FoldingState, StateChange, StateChangeCallback, StateChangeType,
+    StyleState, UndoRedoState, ViewportState,
 };
 pub use storage::PieceTable;
