@@ -8,6 +8,23 @@ use unicode_width::UnicodeWidthChar;
 /// Default tab width (in cells) used when a caller does not specify a tab width.
 pub const DEFAULT_TAB_WIDTH: usize = 4;
 
+/// Soft wrapping mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WrapMode {
+    /// No soft wrapping (each logical line is a single visual line).
+    None,
+    /// Wrap at character boundaries (current behavior).
+    Char,
+    /// Prefer wrapping at word boundaries (whitespace), falling back to character wrap.
+    Word,
+}
+
+impl Default for WrapMode {
+    fn default() -> Self {
+        Self::Char
+    }
+}
+
 /// Wrap point
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WrapPoint {
@@ -49,6 +66,27 @@ impl VisualLineInfo {
     /// Calculate visual line information from text and width constraint, with explicit `tab_width`.
     pub fn from_text_with_tab_width(text: &str, viewport_width: usize, tab_width: usize) -> Self {
         let wrap_points = calculate_wrap_points_with_tab_width(text, viewport_width, tab_width);
+        let visual_line_count = wrap_points.len() + 1;
+
+        Self {
+            visual_line_count,
+            wrap_points,
+        }
+    }
+
+    /// Calculate visual line information with explicit options.
+    pub fn from_text_with_options(
+        text: &str,
+        viewport_width: usize,
+        tab_width: usize,
+        wrap_mode: WrapMode,
+    ) -> Self {
+        let wrap_points = calculate_wrap_points_with_tab_width_and_mode(
+            text,
+            viewport_width,
+            tab_width,
+            wrap_mode,
+        );
         let visual_line_count = wrap_points.len() + 1;
 
         Self {
@@ -129,10 +167,36 @@ pub fn calculate_wrap_points_with_tab_width(
     viewport_width: usize,
     tab_width: usize,
 ) -> Vec<WrapPoint> {
+    calculate_wrap_points_with_tab_width_and_mode(text, viewport_width, tab_width, WrapMode::Char)
+}
+
+/// Calculate wrap points for text using a configurable [`WrapMode`].
+pub fn calculate_wrap_points_with_tab_width_and_mode(
+    text: &str,
+    viewport_width: usize,
+    tab_width: usize,
+    wrap_mode: WrapMode,
+) -> Vec<WrapPoint> {
     if viewport_width == 0 {
         return Vec::new();
     }
 
+    match wrap_mode {
+        WrapMode::None => Vec::new(),
+        WrapMode::Char => {
+            calculate_wrap_points_char_with_tab_width(text, viewport_width, tab_width)
+        }
+        WrapMode::Word => {
+            calculate_wrap_points_word_with_tab_width(text, viewport_width, tab_width)
+        }
+    }
+}
+
+fn calculate_wrap_points_char_with_tab_width(
+    text: &str,
+    viewport_width: usize,
+    tab_width: usize,
+) -> Vec<WrapPoint> {
     let mut wrap_points = Vec::new();
     let mut x_in_segment = 0usize;
     let mut x_in_line = 0usize;
@@ -172,12 +236,70 @@ pub fn calculate_wrap_points_with_tab_width(
     wrap_points
 }
 
+fn calculate_wrap_points_word_with_tab_width(
+    text: &str,
+    viewport_width: usize,
+    tab_width: usize,
+) -> Vec<WrapPoint> {
+    let mut wrap_points = Vec::new();
+
+    let mut segment_start_char = 0usize;
+    let mut segment_start_x_in_line = 0usize;
+    let mut last_break: Option<(usize, usize, usize)> = None; // (char_index, byte_offset, x_in_line)
+
+    let mut x_in_line = 0usize;
+
+    for (char_index, (byte_offset, ch)) in text.char_indices().enumerate() {
+        let ch_width = cell_width_at(ch, x_in_line, tab_width);
+
+        loop {
+            let x_in_segment = x_in_line.saturating_sub(segment_start_x_in_line);
+            if x_in_segment.saturating_add(ch_width) <= viewport_width {
+                break;
+            }
+
+            if let Some((break_char, break_byte, break_x)) = last_break
+                && break_char > segment_start_char
+            {
+                wrap_points.push(WrapPoint {
+                    char_index: break_char,
+                    byte_offset: break_byte,
+                });
+                segment_start_char = break_char;
+                segment_start_x_in_line = break_x;
+                last_break = None;
+                continue;
+            }
+
+            // Fallback: wrap at the current character.
+            wrap_points.push(WrapPoint {
+                char_index,
+                byte_offset,
+            });
+            segment_start_char = char_index;
+            segment_start_x_in_line = x_in_line;
+            last_break = None;
+            break;
+        }
+
+        x_in_line = x_in_line.saturating_add(ch_width);
+
+        if ch.is_whitespace() {
+            last_break = Some((char_index + 1, byte_offset + ch.len_utf8(), x_in_line));
+        }
+    }
+
+    wrap_points
+}
+
 /// Layout engine - manages visual representation of all lines
 pub struct LayoutEngine {
     /// Viewport width (in character cells)
     viewport_width: usize,
     /// Tab width (in cells) for expanding `'\t'`
     tab_width: usize,
+    /// Soft wrapping mode.
+    wrap_mode: WrapMode,
     /// Visual information for each logical line
     line_layouts: Vec<VisualLineInfo>,
     /// Raw text for each logical line (excluding newline characters)
@@ -190,6 +312,7 @@ impl LayoutEngine {
         Self {
             viewport_width,
             tab_width: DEFAULT_TAB_WIDTH,
+            wrap_mode: WrapMode::Char,
             line_layouts: Vec::new(),
             line_texts: Vec::new(),
         }
@@ -206,6 +329,21 @@ impl LayoutEngine {
     /// Get viewport width
     pub fn viewport_width(&self) -> usize {
         self.viewport_width
+    }
+
+    /// Get wrap mode.
+    pub fn wrap_mode(&self) -> WrapMode {
+        self.wrap_mode
+    }
+
+    /// Set wrap mode.
+    ///
+    /// If `wrap_mode` changes, all line layouts are recalculated.
+    pub fn set_wrap_mode(&mut self, wrap_mode: WrapMode) {
+        if self.wrap_mode != wrap_mode {
+            self.wrap_mode = wrap_mode;
+            self.recalculate_all();
+        }
     }
 
     /// Get tab width (in cells).
@@ -231,10 +369,11 @@ impl LayoutEngine {
         for line in lines {
             self.line_texts.push((*line).to_string());
             self.line_layouts
-                .push(VisualLineInfo::from_text_with_tab_width(
+                .push(VisualLineInfo::from_text_with_options(
                     line,
                     self.viewport_width,
                     self.tab_width,
+                    self.wrap_mode,
                 ));
         }
     }
@@ -243,10 +382,11 @@ impl LayoutEngine {
     pub fn add_line(&mut self, text: &str) {
         self.line_texts.push(text.to_string());
         self.line_layouts
-            .push(VisualLineInfo::from_text_with_tab_width(
+            .push(VisualLineInfo::from_text_with_options(
                 text,
                 self.viewport_width,
                 self.tab_width,
+                self.wrap_mode,
             ));
     }
 
@@ -254,8 +394,12 @@ impl LayoutEngine {
     pub fn update_line(&mut self, line_index: usize, text: &str) {
         if line_index < self.line_layouts.len() {
             self.line_texts[line_index] = text.to_string();
-            self.line_layouts[line_index] =
-                VisualLineInfo::from_text_with_tab_width(text, self.viewport_width, self.tab_width);
+            self.line_layouts[line_index] = VisualLineInfo::from_text_with_options(
+                text,
+                self.viewport_width,
+                self.tab_width,
+                self.wrap_mode,
+            );
         }
     }
 
@@ -265,7 +409,12 @@ impl LayoutEngine {
         self.line_texts.insert(pos, text.to_string());
         self.line_layouts.insert(
             pos,
-            VisualLineInfo::from_text_with_tab_width(text, self.viewport_width, self.tab_width),
+            VisualLineInfo::from_text_with_options(
+                text,
+                self.viewport_width,
+                self.tab_width,
+                self.wrap_mode,
+            ),
         );
     }
 
@@ -334,20 +483,22 @@ impl LayoutEngine {
             self.line_layouts.clear();
             for line in &self.line_texts {
                 self.line_layouts
-                    .push(VisualLineInfo::from_text_with_tab_width(
+                    .push(VisualLineInfo::from_text_with_options(
                         line,
                         self.viewport_width,
                         self.tab_width,
+                        self.wrap_mode,
                     ));
             }
             return;
         }
 
         for (layout, line_text) in self.line_layouts.iter_mut().zip(self.line_texts.iter()) {
-            *layout = VisualLineInfo::from_text_with_tab_width(
+            *layout = VisualLineInfo::from_text_with_options(
                 line_text,
                 self.viewport_width,
                 self.tab_width,
+                self.wrap_mode,
             );
         }
     }
@@ -553,6 +704,35 @@ mod tests {
         // Should wrap after the 5th character (first 5 characters = 10 cells)
         assert_eq!(wraps.len(), 1);
         assert_eq!(wraps[0].char_index, 5);
+    }
+
+    #[test]
+    fn test_wrap_mode_none_disables_wrapping() {
+        let mut engine = LayoutEngine::new(5);
+        engine.set_wrap_mode(WrapMode::None);
+        engine.from_lines(&["abcdefghij"]);
+
+        assert_eq!(engine.visual_line_count(), 1);
+        let layout = engine.get_line_layout(0).expect("layout");
+        assert_eq!(layout.visual_line_count, 1);
+        assert!(layout.wrap_points.is_empty());
+    }
+
+    #[test]
+    fn test_word_wrap_prefers_whitespace_when_possible() {
+        // With width=7, char-wrap would wrap as "hello w" + "orld".
+        // Word-wrap should prefer wrapping at the whitespace boundary ("hello " + "world").
+        let text = "hello world";
+
+        let wraps = calculate_wrap_points_with_tab_width_and_mode(
+            text,
+            7,
+            DEFAULT_TAB_WIDTH,
+            WrapMode::Word,
+        );
+
+        assert_eq!(wraps.len(), 1);
+        assert_eq!(wraps[0].char_index, 6);
     }
 
     #[test]

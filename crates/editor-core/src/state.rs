@@ -408,7 +408,9 @@ impl EditorStateManager {
                 | CursorCommand::FindPrev { .. },
             ) => Some(StateChangeType::SelectionChanged),
             Command::View(
-                ViewCommand::SetViewportWidth { .. } | ViewCommand::SetTabWidth { .. },
+                ViewCommand::SetViewportWidth { .. }
+                | ViewCommand::SetWrapMode { .. }
+                | ViewCommand::SetTabWidth { .. },
             ) => Some(StateChangeType::ViewportChanged),
             Command::View(
                 ViewCommand::SetTabKeyBehavior { .. }
@@ -737,10 +739,11 @@ impl EditorStateManager {
     pub fn get_viewport_content(&self, start_row: usize, count: usize) -> HeadlessGrid {
         let editor = self.executor.editor();
         let text = editor.get_text();
-        let generator = crate::SnapshotGenerator::from_text_with_tab_width(
+        let generator = crate::SnapshotGenerator::from_text_with_options(
             &text,
             editor.viewport_width,
             editor.layout_engine.tab_width(),
+            editor.layout_engine.wrap_mode(),
         );
         generator.get_headless_grid(start_row, count)
     }

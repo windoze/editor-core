@@ -35,7 +35,7 @@
 
 use crate::delta::{TextDelta, TextDeltaEdit};
 use crate::intervals::{FoldRegion, StyleId, StyleLayerId};
-use crate::layout::{cell_width_at, char_width, visual_x_for_column};
+use crate::layout::{WrapMode, cell_width_at, char_width, visual_x_for_column};
 use crate::line_ending::LineEnding;
 use crate::search::{CharIndex, SearchMatch, SearchOptions, find_all, find_next, find_prev};
 use crate::snapshot::{Cell, HeadlessGrid, HeadlessLine};
@@ -271,6 +271,11 @@ pub enum ViewCommand {
     SetViewportWidth {
         /// Width in character cells.
         width: usize,
+    },
+    /// Set soft wrap mode.
+    SetWrapMode {
+        /// Wrap mode.
+        mode: WrapMode,
     },
     /// Set tab width (in character cells) used for measuring `'\t'` and tab stops.
     SetTabWidth {
@@ -3191,6 +3196,10 @@ impl CommandExecutor {
                 self.editor.layout_engine.set_viewport_width(width);
                 Ok(CommandResult::Success)
             }
+            ViewCommand::SetWrapMode { mode } => {
+                self.editor.layout_engine.set_wrap_mode(mode);
+                Ok(CommandResult::Success)
+            }
             ViewCommand::SetTabWidth { width } => {
                 if width == 0 {
                     return Err(CommandError::Other(
@@ -3216,10 +3225,11 @@ impl CommandExecutor {
             }
             ViewCommand::GetViewport { start_row, count } => {
                 let text = self.editor.piece_table.get_text();
-                let generator = SnapshotGenerator::from_text_with_tab_width(
+                let generator = SnapshotGenerator::from_text_with_options(
                     &text,
                     self.editor.viewport_width,
                     self.editor.layout_engine.tab_width(),
+                    self.editor.layout_engine.wrap_mode(),
                 );
                 let grid = generator.get_headless_grid(start_row, count);
                 Ok(CommandResult::Viewport(grid))

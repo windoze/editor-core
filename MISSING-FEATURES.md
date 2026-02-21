@@ -28,7 +28,7 @@ Legend:
 | P0-2 | Structured `TextDelta` events | kernel | done | Implemented as `TextDelta` + `StateChange.text_delta` with tests. |
 | P0-3 | Consistent line-ending model (CRLF/LF) | kernel + host | done | Normalize `\\r\\n`/`\\r` → `\\n` internally; track save preference via `LineEnding`. |
 | P0-4 | Visual-row cursor movement (wrap + folding aware) | kernel | done | Added visual movement commands + wrap/fold mapping with tests. |
-| P0-5 | Wrap modes (char/word) + wrapped indent | kernel | planned | Improves long-line readability. |
+| P0-5 | Wrap modes (char/word) + wrapped indent | kernel | in_progress | Added `WrapMode` + `SetWrapMode`; wrapped indent still pending. |
 | P0-6 | Unicode segmentation for UX (graphemes/words) | kernel + host | planned | Optional but important for modern UX. |
 | P0-7 | Indentation / whitespace primitives | kernel | planned | Indent/outdent, smart backspace, auto-indent. |
 | P1-8 | First-class diagnostics model | kernel + integration | planned | Store diagnostics data, not only underline styles. |

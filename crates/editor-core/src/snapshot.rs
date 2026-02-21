@@ -3,7 +3,9 @@
 //! Provides data structures needed by UI renderers, simulating "text grid" output.
 
 use crate::intervals::StyleId;
-use crate::layout::{DEFAULT_TAB_WIDTH, LayoutEngine, cell_width_at, visual_x_for_column};
+use crate::layout::{
+    DEFAULT_TAB_WIDTH, LayoutEngine, WrapMode, cell_width_at, visual_x_for_column,
+};
 
 /// Cell (character) information
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,10 +136,21 @@ impl SnapshotGenerator {
 
     /// Initialize from text, with explicit `tab_width` (in cells) for expanding `'\t'`.
     pub fn from_text_with_tab_width(text: &str, viewport_width: usize, tab_width: usize) -> Self {
+        Self::from_text_with_options(text, viewport_width, tab_width, WrapMode::Char)
+    }
+
+    /// Initialize from text, with explicit options.
+    pub fn from_text_with_options(
+        text: &str,
+        viewport_width: usize,
+        tab_width: usize,
+        wrap_mode: WrapMode,
+    ) -> Self {
         let normalized = crate::text::normalize_crlf_to_lf(text);
         let lines = crate::text::split_lines_preserve_trailing(normalized.as_ref());
         let mut layout_engine = LayoutEngine::new(viewport_width);
         layout_engine.set_tab_width(tab_width);
+        layout_engine.set_wrap_mode(wrap_mode);
         let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         layout_engine.from_lines(&line_refs);
         Self {
