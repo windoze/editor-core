@@ -30,7 +30,7 @@ Legend:
 | P0-4 | Visual-row cursor movement (wrap + folding aware) | kernel | done | Added visual movement commands + wrap/fold mapping with tests. |
 | P0-5 | Wrap modes (char/word) + wrapped indent | kernel | in_progress | Added `WrapMode` + `SetWrapMode`; wrapped indent still pending. |
 | P0-6 | Unicode segmentation for UX (graphemes/words) | kernel + host | planned | Optional but important for modern UX. |
-| P0-7 | Indentation / whitespace primitives | kernel | planned | Indent/outdent, smart backspace, auto-indent. |
+| P0-7 | Indentation / whitespace primitives | kernel | done | `EditCommand::{InsertNewline{auto_indent}, Indent, Outdent, DeleteToPrevTabStop}` + tests. |
 | P1-8 | First-class diagnostics model | kernel + integration | planned | Store diagnostics data, not only underline styles. |
 | P1-9 | Decorations model (inlay hints, code lens, links, match highlights) | kernel + integration | planned | Requires “virtual text” / anchored decorations. |
 | P1-10 | Multi-document LSP sync + workspace edits | integration + kernel workspace | planned | Route per-doc state and apply workspace edits reliably. |
@@ -270,6 +270,8 @@ This allows hosts to opt into `unicode-segmentation` without forcing it into the
 ---
 
 ### 7) Indentation / whitespace editing primitives
+
+**Status: done**
 
 **What’s missing**
 

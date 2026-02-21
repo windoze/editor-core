@@ -142,6 +142,22 @@ pub enum EditCommand {
     /// - If `TabKeyBehavior::Tab`, inserts `'\t'`.
     /// - If `TabKeyBehavior::Spaces`, inserts spaces up to the next tab stop.
     InsertTab,
+    /// Insert a newline at each caret (or replace each selection).
+    ///
+    /// If `auto_indent` is true, the inserted newline is followed by the leading whitespace
+    /// prefix of the current logical line.
+    InsertNewline {
+        /// Whether to auto-indent the new line.
+        auto_indent: bool,
+    },
+    /// Indent the selected lines (or the current line for an empty selection).
+    Indent,
+    /// Outdent the selected lines (or the current line for an empty selection).
+    Outdent,
+    /// Smart backspace: if the caret is in leading whitespace, delete back to the previous tab stop.
+    ///
+    /// Otherwise, behaves like [`EditCommand::Backspace`].
+    DeleteToPrevTabStop,
     /// Backspace-like deletion: delete selection(s) if any, otherwise delete 1 char before each caret.
     Backspace,
     /// Delete key-like deletion: delete selection(s) if any, otherwise delete 1 char after each caret.
@@ -1346,10 +1362,16 @@ impl CommandExecutor {
                 replacement,
                 options,
             } => self.execute_replace_all_command(query, replacement, options),
+            EditCommand::DeleteToPrevTabStop => self.execute_delete_to_prev_tab_stop_command(),
             EditCommand::Backspace => self.execute_backspace_command(),
             EditCommand::DeleteForward => self.execute_delete_forward_command(),
             EditCommand::InsertText { text } => self.execute_insert_text_command(text),
             EditCommand::InsertTab => self.execute_insert_tab_command(),
+            EditCommand::InsertNewline { auto_indent } => {
+                self.execute_insert_newline_command(auto_indent)
+            }
+            EditCommand::Indent => self.execute_indent_command(false),
+            EditCommand::Outdent => self.execute_indent_command(true),
             EditCommand::Insert { offset, text } => self.execute_insert_command(offset, text),
             EditCommand::Delete { start, length } => self.execute_delete_command(start, length),
             EditCommand::Replace {
@@ -1875,6 +1897,442 @@ impl CommandExecutor {
             after_selection,
         };
         let group_id = self.undo_redo.push_step(step, coalescible_insert);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn leading_whitespace_prefix(line_text: &str) -> String {
+        line_text
+            .chars()
+            .take_while(|ch| *ch == ' ' || *ch == '\t')
+            .collect()
+    }
+
+    fn indent_unit(&self) -> String {
+        match self.tab_key_behavior {
+            TabKeyBehavior::Tab => "\t".to_string(),
+            TabKeyBehavior::Spaces => " ".repeat(self.editor.layout_engine.tab_width().max(1)),
+        }
+    }
+
+    fn execute_insert_newline_command(
+        &mut self,
+        auto_indent: bool,
+    ) -> Result<CommandResult, CommandError> {
+        // Newline insertion should not coalesce into a typing group.
+        self.undo_redo.end_group();
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+
+        // Canonical selection set (primary + secondary).
+        let mut selections: Vec<Selection> =
+            Vec::with_capacity(1 + self.editor.secondary_selections.len());
+        let primary_selection = self.editor.selection.clone().unwrap_or(Selection {
+            start: self.editor.cursor_position,
+            end: self.editor.cursor_position,
+            direction: SelectionDirection::Forward,
+        });
+        selections.push(primary_selection);
+        selections.extend(self.editor.secondary_selections.iter().cloned());
+
+        let (selections, primary_index) = crate::selection_set::normalize_selections(selections, 0);
+
+        struct Op {
+            selection_index: usize,
+            start_offset: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            insert_text: String,
+            insert_char_len: usize,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(selections.len());
+
+        for (selection_index, selection) in selections.iter().enumerate() {
+            let (range_start_pos, range_end_pos) =
+                crate::selection_set::selection_min_max(selection);
+
+            let start_offset = self.position_to_char_offset_clamped(range_start_pos);
+            let end_offset = self.position_to_char_offset_clamped(range_end_pos);
+
+            let delete_len = end_offset.saturating_sub(start_offset);
+            let deleted_text = if delete_len == 0 {
+                String::new()
+            } else {
+                self.editor.piece_table.get_range(start_offset, delete_len)
+            };
+
+            let indent = if auto_indent {
+                let line_text = self
+                    .editor
+                    .line_index
+                    .get_line_text(range_start_pos.line)
+                    .unwrap_or_default();
+                Self::leading_whitespace_prefix(&line_text)
+            } else {
+                String::new()
+            };
+
+            let insert_text = format!("\n{}", indent);
+            let insert_char_len = insert_text.chars().count();
+
+            ops.push(Op {
+                selection_index,
+                start_offset,
+                start_after: start_offset,
+                delete_len,
+                deleted_text,
+                insert_text,
+                insert_char_len,
+            });
+        }
+
+        // Compute final caret offsets in the post-edit document (ascending order with delta),
+        // while also recording each operation's start offset in the post-edit document.
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_offset);
+
+        let mut caret_offsets: Vec<usize> = vec![0; ops.len()];
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = (op.start_offset as i64 + delta) as usize;
+            op.start_after = effective_start;
+            caret_offsets[op.selection_index] = effective_start + op.insert_char_len;
+            delta += op.insert_char_len as i64 - op.delete_len as i64;
+        }
+
+        // Apply edits safely (descending offsets).
+        let mut desc_indices = asc_indices;
+        desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+
+        for &idx in &desc_indices {
+            let op = &ops[idx];
+
+            if op.delete_len > 0 {
+                self.editor
+                    .piece_table
+                    .delete(op.start_offset, op.delete_len);
+                self.editor
+                    .interval_tree
+                    .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+                for layer_tree in self.editor.style_layers.values_mut() {
+                    layer_tree
+                        .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+                }
+            }
+
+            if !op.insert_text.is_empty() {
+                self.editor
+                    .piece_table
+                    .insert(op.start_offset, &op.insert_text);
+                self.editor
+                    .interval_tree
+                    .update_for_insertion(op.start_offset, op.insert_char_len);
+                for layer_tree in self.editor.style_layers.values_mut() {
+                    layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
+                }
+            }
+        }
+
+        // Rebuild derived structures once.
+        let updated_text = self.editor.piece_table.get_text();
+        self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.rebuild_layout_engine_from_text(&updated_text);
+
+        // Update selection state: collapse to carets after insertion.
+        let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
+        for offset in &caret_offsets {
+            let (line, column) = self.editor.line_index.char_offset_to_position(*offset);
+            let pos = Position::new(line, column);
+            new_carets.push(Selection {
+                start: pos,
+                end: pos,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        let (new_carets, new_primary_index) =
+            crate::selection_set::normalize_selections(new_carets, primary_index);
+        let primary = new_carets
+            .get(new_primary_index)
+            .cloned()
+            .ok_or_else(|| CommandError::Other("Invalid primary caret".to_string()))?;
+
+        self.editor.cursor_position = primary.end;
+        self.editor.selection = None;
+        self.editor.secondary_selections = new_carets
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, sel)| {
+                if idx == new_primary_index {
+                    None
+                } else {
+                    Some(sel)
+                }
+            })
+            .collect();
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_offset,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.insert_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_indent_command(&mut self, outdent: bool) -> Result<CommandResult, CommandError> {
+        self.undo_redo.end_group();
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+
+        let mut lines: Vec<usize> = Vec::new();
+        for sel in &selections {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(sel);
+            for line in min_pos.line..=max_pos.line {
+                lines.push(line);
+            }
+        }
+        lines.sort_unstable();
+        lines.dedup();
+
+        if lines.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        let tab_width = self.editor.layout_engine.tab_width().max(1);
+        let indent_unit = self.indent_unit();
+        let indent_chars = indent_unit.chars().count();
+
+        #[derive(Debug)]
+        struct Op {
+            start_offset: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            insert_text: String,
+            insert_len: usize,
+        }
+
+        let mut ops: Vec<Op> = Vec::new();
+        let mut line_deltas: std::collections::HashMap<usize, isize> =
+            std::collections::HashMap::new();
+
+        for line in lines {
+            if line >= self.editor.line_index.line_count() {
+                continue;
+            }
+
+            let start_offset = self.editor.line_index.position_to_char_offset(line, 0);
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(line)
+                .unwrap_or_default();
+
+            if outdent {
+                let mut remove_len = 0usize;
+                if let Some(first) = line_text.chars().next() {
+                    if first == '\t' {
+                        remove_len = 1;
+                    } else if first == ' ' {
+                        let leading_spaces = line_text.chars().take_while(|c| *c == ' ').count();
+                        remove_len = leading_spaces.min(tab_width);
+                    }
+                }
+
+                if remove_len == 0 {
+                    continue;
+                }
+
+                let deleted_text = self.editor.piece_table.get_range(start_offset, remove_len);
+                ops.push(Op {
+                    start_offset,
+                    start_after: start_offset,
+                    delete_len: remove_len,
+                    deleted_text,
+                    insert_text: String::new(),
+                    insert_len: 0,
+                });
+                line_deltas.insert(line, -(remove_len as isize));
+            } else {
+                if indent_chars == 0 {
+                    continue;
+                }
+
+                ops.push(Op {
+                    start_offset,
+                    start_after: start_offset,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    insert_text: indent_unit.clone(),
+                    insert_len: indent_chars,
+                });
+                line_deltas.insert(line, indent_chars as isize);
+            }
+        }
+
+        if ops.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        // Compute start_after using ascending order and delta accumulation.
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_offset);
+
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = (op.start_offset as i64 + delta) as usize;
+            op.start_after = effective_start;
+            delta += op.insert_len as i64 - op.delete_len as i64;
+        }
+
+        // Apply ops descending so offsets remain valid.
+        let mut desc_indices = asc_indices;
+        desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+
+        for &idx in &desc_indices {
+            let op = &ops[idx];
+
+            if op.delete_len > 0 {
+                self.editor
+                    .piece_table
+                    .delete(op.start_offset, op.delete_len);
+                self.editor
+                    .interval_tree
+                    .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+                for layer_tree in self.editor.style_layers.values_mut() {
+                    layer_tree
+                        .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+                }
+            }
+
+            if op.insert_len > 0 {
+                self.editor
+                    .piece_table
+                    .insert(op.start_offset, &op.insert_text);
+                self.editor
+                    .interval_tree
+                    .update_for_insertion(op.start_offset, op.insert_len);
+                for layer_tree in self.editor.style_layers.values_mut() {
+                    layer_tree.update_for_insertion(op.start_offset, op.insert_len);
+                }
+            }
+        }
+
+        // Rebuild derived structures.
+        let updated_text = self.editor.piece_table.get_text();
+        self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.rebuild_layout_engine_from_text(&updated_text);
+
+        // Shift cursor/selections for touched lines.
+        let line_index = &self.editor.line_index;
+        let apply_delta = |pos: &mut Position, deltas: &std::collections::HashMap<usize, isize>| {
+            let Some(delta) = deltas.get(&pos.line) else {
+                return;
+            };
+
+            let new_col = if *delta >= 0 {
+                pos.column.saturating_add(*delta as usize)
+            } else {
+                pos.column.saturating_sub((-*delta) as usize)
+            };
+
+            pos.column = Self::clamp_column_for_line_with_index(line_index, pos.line, new_col);
+        };
+
+        apply_delta(&mut self.editor.cursor_position, &line_deltas);
+        if let Some(sel) = &mut self.editor.selection {
+            apply_delta(&mut sel.start, &line_deltas);
+            apply_delta(&mut sel.end, &line_deltas);
+        }
+        for sel in &mut self.editor.secondary_selections {
+            apply_delta(&mut sel.start, &line_deltas);
+            apply_delta(&mut sel.end, &line_deltas);
+        }
+
+        self.normalize_cursor_and_selection();
+        self.preferred_x_cells = self
+            .editor
+            .logical_position_to_visual(
+                self.editor.cursor_position.line,
+                self.editor.cursor_position.column,
+            )
+            .map(|(_, x)| x);
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_offset,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.insert_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
@@ -2527,6 +2985,231 @@ impl CommandExecutor {
 
     fn execute_delete_forward_command(&mut self) -> Result<CommandResult, CommandError> {
         self.execute_delete_like_command(true)
+    }
+
+    fn execute_delete_to_prev_tab_stop_command(&mut self) -> Result<CommandResult, CommandError> {
+        // Treat like a delete-like action: end any open insert coalescing group, even if it turns out
+        // to be a no-op.
+        self.undo_redo.end_group();
+
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+        let primary_index = before_selection.primary_index;
+
+        let tab_width = self.editor.layout_engine.tab_width().max(1);
+
+        #[derive(Debug)]
+        struct Op {
+            selection_index: usize,
+            start_offset: usize,
+            delete_len: usize,
+            deleted_text: String,
+            start_after: usize,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(selections.len());
+
+        for (selection_index, selection) in selections.iter().enumerate() {
+            let (range_start_pos, range_end_pos) = if selection.start <= selection.end {
+                (selection.start, selection.end)
+            } else {
+                (selection.end, selection.start)
+            };
+
+            let (start_offset, end_offset) = if range_start_pos != range_end_pos {
+                let start_offset = self.position_to_char_offset_clamped(range_start_pos);
+                let end_offset = self.position_to_char_offset_clamped(range_end_pos);
+                if start_offset <= end_offset {
+                    (start_offset, end_offset)
+                } else {
+                    (end_offset, start_offset)
+                }
+            } else {
+                let caret = selection.end;
+                let caret_offset = self.position_to_char_offset_clamped(caret);
+                if caret_offset == 0 {
+                    (0, 0)
+                } else {
+                    let line_text = self
+                        .editor
+                        .line_index
+                        .get_line_text(caret.line)
+                        .unwrap_or_default();
+                    let line_char_len = line_text.chars().count();
+                    let col = caret.column.min(line_char_len);
+
+                    let in_leading_whitespace = line_text
+                        .chars()
+                        .take(col)
+                        .all(|ch| ch == ' ' || ch == '\t');
+
+                    if !in_leading_whitespace {
+                        (caret_offset - 1, caret_offset)
+                    } else {
+                        let x_in_line = visual_x_for_column(&line_text, col, tab_width);
+                        let back = if x_in_line == 0 {
+                            0
+                        } else {
+                            let rem = x_in_line % tab_width;
+                            if rem == 0 { tab_width } else { rem }
+                        };
+                        let target_x = x_in_line.saturating_sub(back);
+
+                        let mut target_col = col;
+                        while target_col > 0 {
+                            let prev_col = target_col - 1;
+                            let prev_x = visual_x_for_column(&line_text, prev_col, tab_width);
+                            if prev_x < target_x {
+                                break;
+                            }
+                            target_col = prev_col;
+                            if prev_x == target_x {
+                                break;
+                            }
+                        }
+
+                        let target_offset = self
+                            .editor
+                            .line_index
+                            .position_to_char_offset(caret.line, target_col);
+                        (target_offset, caret_offset)
+                    }
+                }
+            };
+
+            let delete_len = end_offset.saturating_sub(start_offset);
+            let deleted_text = if delete_len == 0 {
+                String::new()
+            } else {
+                self.editor.piece_table.get_range(start_offset, delete_len)
+            };
+
+            ops.push(Op {
+                selection_index,
+                start_offset,
+                delete_len,
+                deleted_text,
+                start_after: start_offset,
+            });
+        }
+
+        if !ops.iter().any(|op| op.delete_len > 0) {
+            return Ok(CommandResult::Success);
+        }
+
+        let before_char_count = self.editor.piece_table.char_count();
+
+        // Compute caret offsets in the post-delete document (ascending order with delta).
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_offset);
+
+        let mut caret_offsets: Vec<usize> = vec![0; ops.len()];
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = (op.start_offset as i64 + delta) as usize;
+            op.start_after = effective_start;
+            caret_offsets[op.selection_index] = effective_start;
+            delta -= op.delete_len as i64;
+        }
+
+        // Apply deletes descending to keep offsets valid.
+        let mut desc_indices = asc_indices;
+        desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+
+        for &idx in &desc_indices {
+            let op = &ops[idx];
+            if op.delete_len == 0 {
+                continue;
+            }
+
+            self.editor
+                .piece_table
+                .delete(op.start_offset, op.delete_len);
+            self.editor
+                .interval_tree
+                .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+            for layer_tree in self.editor.style_layers.values_mut() {
+                layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+            }
+        }
+
+        // Rebuild derived structures once.
+        let updated_text = self.editor.piece_table.get_text();
+        self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.rebuild_layout_engine_from_text(&updated_text);
+
+        // Collapse selection state to carets at the start of deleted ranges.
+        let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
+        for offset in &caret_offsets {
+            let (line, column) = self.editor.line_index.char_offset_to_position(*offset);
+            let pos = Position::new(line, column);
+            new_carets.push(Selection {
+                start: pos,
+                end: pos,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        let (new_carets, new_primary_index) =
+            crate::selection_set::normalize_selections(new_carets, primary_index);
+        let primary = new_carets
+            .get(new_primary_index)
+            .cloned()
+            .ok_or_else(|| CommandError::Other("Invalid primary caret".to_string()))?;
+
+        self.editor.cursor_position = primary.end;
+        self.editor.selection = None;
+        self.editor.secondary_selections = new_carets
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, sel)| {
+                if idx == new_primary_index {
+                    None
+                } else {
+                    Some(sel)
+                }
+            })
+            .collect();
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_offset,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: String::new(),
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
     }
 
     fn execute_delete_like_command(
