@@ -12,6 +12,7 @@ use crate::EditorStateManager;
 use crate::decorations::{Decoration, DecorationLayerId};
 use crate::diagnostics::Diagnostic;
 use crate::intervals::{FoldRegion, Interval, StyleLayerId};
+use crate::symbols::DocumentOutline;
 
 /// A change to derived editor state (highlighting, folding, etc.).
 #[derive(Debug, Clone)]
@@ -61,6 +62,13 @@ pub enum ProcessingEdit {
         /// Decoration layer being cleared.
         layer: DecorationLayerId,
     },
+    /// Replace the document outline / symbol tree wholesale.
+    ReplaceDocumentSymbols {
+        /// The full document outline.
+        symbols: DocumentOutline,
+    },
+    /// Clear the current document symbol set.
+    ClearDocumentSymbols,
 }
 
 /// A generic processor that produces [`ProcessingEdit`]s for an editor document.

@@ -161,6 +161,8 @@ pub enum StateChangeType {
     DecorationsChanged,
     /// Diagnostics changed
     DiagnosticsChanged,
+    /// Document symbols / outline changed
+    SymbolsChanged,
 }
 
 /// State change record
@@ -388,7 +390,8 @@ impl EditorStateManager {
                 StateChangeType::FoldingChanged
                 | StateChangeType::StyleChanged
                 | StateChangeType::DecorationsChanged
-                | StateChangeType::DiagnosticsChanged => true,
+                | StateChangeType::DiagnosticsChanged
+                | StateChangeType::SymbolsChanged => true,
             };
 
             if changed {
@@ -737,6 +740,20 @@ impl EditorStateManager {
         self.mark_modified(StateChangeType::DiagnosticsChanged);
     }
 
+    /// Replace document symbols / outline wholesale.
+    pub fn replace_document_symbols(&mut self, symbols: crate::DocumentOutline) {
+        let editor = self.executor.editor_mut();
+        editor.document_symbols = symbols;
+        self.mark_modified(StateChangeType::SymbolsChanged);
+    }
+
+    /// Clear document symbols / outline.
+    pub fn clear_document_symbols(&mut self) {
+        let editor = self.executor.editor_mut();
+        editor.document_symbols = crate::DocumentOutline::default();
+        self.mark_modified(StateChangeType::SymbolsChanged);
+    }
+
     /// Replace a decoration layer wholesale.
     pub fn replace_decorations(
         &mut self,
@@ -827,6 +844,12 @@ impl EditorStateManager {
                 }
                 ProcessingEdit::ClearDecorations { layer } => {
                     self.clear_decorations(layer);
+                }
+                ProcessingEdit::ReplaceDocumentSymbols { symbols } => {
+                    self.replace_document_symbols(symbols);
+                }
+                ProcessingEdit::ClearDocumentSymbols => {
+                    self.clear_document_symbols();
                 }
             }
         }

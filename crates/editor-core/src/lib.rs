@@ -113,6 +113,7 @@ mod selection_set;
 pub mod snapshot;
 pub mod state;
 pub mod storage;
+pub mod symbols;
 mod text;
 pub mod workspace;
 
@@ -147,6 +148,10 @@ pub use state::{
     StyleState, UndoRedoState, ViewportState,
 };
 pub use storage::PieceTable;
+pub use symbols::{
+    DocumentOutline, DocumentSymbol, SymbolKind, SymbolLocation, SymbolRange, Utf16Position,
+    Utf16Range, WorkspaceSymbol,
+};
 pub use workspace::{
     BufferId, BufferMetadata, OpenBufferResult, ViewId, Workspace, WorkspaceError,
     WorkspaceSearchResult,

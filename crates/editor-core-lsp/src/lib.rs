@@ -12,6 +12,7 @@ pub mod lsp_decorations;
 pub mod lsp_events;
 pub mod lsp_highlights;
 pub mod lsp_locations;
+pub mod lsp_symbols;
 pub mod lsp_sync;
 pub mod lsp_text_edits;
 pub mod lsp_transport;
@@ -40,6 +41,10 @@ pub use lsp_highlights::{
     lsp_document_highlights_to_intervals, lsp_document_highlights_to_processing_edit,
 };
 pub use lsp_locations::{LspLocation, locations_from_value};
+pub use lsp_symbols::{
+    lsp_document_symbols_to_outline, lsp_document_symbols_to_processing_edit,
+    lsp_workspace_symbols_to_results,
+};
 pub use lsp_sync::{
     DeltaCalculator, LspCoordinateConverter, LspPosition, LspRange, SemanticToken,
     SemanticTokensError, SemanticTokensManager, TextChange, decode_semantic_style_id,

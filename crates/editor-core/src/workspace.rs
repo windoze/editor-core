@@ -823,6 +823,7 @@ impl Workspace {
         let mut folding_changed = false;
         let mut diagnostics_changed = false;
         let mut decorations_changed = false;
+        let mut symbols_changed = false;
 
         for edit in edits {
             match edit {
@@ -906,6 +907,15 @@ impl Workspace {
                     buffer.executor.editor_mut().decorations.remove(&layer);
                     decorations_changed = true;
                 }
+                ProcessingEdit::ReplaceDocumentSymbols { symbols } => {
+                    buffer.executor.editor_mut().document_symbols = symbols;
+                    symbols_changed = true;
+                }
+                ProcessingEdit::ClearDocumentSymbols => {
+                    buffer.executor.editor_mut().document_symbols =
+                        crate::DocumentOutline::default();
+                    symbols_changed = true;
+                }
             }
         }
 
@@ -917,6 +927,8 @@ impl Workspace {
             Some(StateChangeType::DecorationsChanged)
         } else if diagnostics_changed {
             Some(StateChangeType::DiagnosticsChanged)
+        } else if symbols_changed {
+            Some(StateChangeType::SymbolsChanged)
         } else {
             None
         };

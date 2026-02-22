@@ -11,6 +11,8 @@ snapshots and drive edits through the command/state APIs.
 - **Soft wrapping layout** (`LayoutEngine`) with Unicode-aware cell widths.
 - **Style + folding metadata** via interval trees (`IntervalTree`) and fold regions (`FoldingManager`)
   (derived folds + stable user folds).
+- **Symbols/outline model** (`DocumentOutline`, `DocumentSymbol`, `WorkspaceSymbol`) for building
+  outline trees and symbol search UIs (typically populated from LSP).
 - **Headless snapshots** (`SnapshotGenerator` → `HeadlessGrid`) for building “text grid” UIs.
 - **Decoration-aware composed snapshots** (`ComposedGrid`) that inject virtual text (inlay hints,
   code lens) so hosts can render from snapshot data without re-implementing layout rules.

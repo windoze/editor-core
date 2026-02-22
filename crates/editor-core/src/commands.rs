@@ -832,6 +832,8 @@ pub struct EditorCore {
     pub diagnostics: Vec<Diagnostic>,
     /// Derived decorations for this document (virtual text, links, etc.).
     pub decorations: BTreeMap<DecorationLayerId, Vec<Decoration>>,
+    /// Derived document symbols / outline for this document.
+    pub document_symbols: crate::DocumentOutline,
     /// Folding manager
     pub folding_manager: FoldingManager,
     /// Current cursor position
@@ -867,6 +869,7 @@ impl EditorCore {
             style_layers: BTreeMap::new(),
             diagnostics: Vec::new(),
             decorations: BTreeMap::new(),
+            document_symbols: crate::DocumentOutline::default(),
             folding_manager: FoldingManager::new(),
             cursor_position: Position::new(0, 0),
             selection: None,
