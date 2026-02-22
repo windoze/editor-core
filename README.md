@@ -20,6 +20,8 @@ drive edits through the command/state APIs.
   - See `crates/editor-core-lsp/README.md`
 - `crates/editor-core-sublime/` — `.sublime-syntax` highlighting + folding engine (headless output as style intervals + fold regions).
   - See `crates/editor-core-sublime/README.md`
+- `crates/editor-core-treesitter/` — Tree-sitter integration (incremental parsing → highlighting + folding).
+  - See `crates/editor-core-treesitter/README.md`
 - `crates/editor-core-highlight-simple/` — lightweight regex-based highlighting helpers (JSON/INI/etc).
 - `crates/tui-editor/` — runnable TUI demo app (ratatui + crossterm) that wires everything together.
 
@@ -158,6 +160,7 @@ assert!(grid.lines[0].cells.iter().any(|c| !c.styles.is_empty()));
 For richer syntax highlighting and folding, use:
 
 - `editor-core-sublime` (`SublimeProcessor`)
+- `editor-core-treesitter` (`TreeSitterProcessor`)
 - `editor-core-lsp` (`LspSession`)
 
 ## Documentation

@@ -152,3 +152,4 @@ assert!(composed.actual_line_count() > 0);
 
 - `editor-core-lsp`: LSP integration (UTF-16 conversions, semantic tokens helpers, stdio JSON-RPC).
 - `editor-core-sublime`: `.sublime-syntax` highlighting + folding engine.
+- `editor-core-treesitter`: Tree-sitter integration (incremental parsing → highlighting + folding).
