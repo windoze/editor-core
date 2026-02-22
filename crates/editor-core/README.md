@@ -9,9 +9,18 @@ snapshots and drive edits through the command/state APIs.
 - **Efficient text storage** via a Piece Table (`PieceTable`) for inserts/deletes.
 - **Fast line indexing** via a rope-backed `LineIndex` for line access and conversions.
 - **Soft wrapping layout** (`LayoutEngine`) with Unicode-aware cell widths.
-- **Style + folding metadata** via interval trees (`IntervalTree`) and fold regions (`FoldingManager`).
+- **Style + folding metadata** via interval trees (`IntervalTree`) and fold regions (`FoldingManager`)
+  (derived folds + stable user folds).
 - **Headless snapshots** (`SnapshotGenerator` → `HeadlessGrid`) for building “text grid” UIs.
 - **Command interface** (`CommandExecutor`) and **state/query layer** (`EditorStateManager`).
+- **Workspace utilities** (`Workspace`) over open documents:
+  - search across open buffers: `Workspace::search_all_open_documents`
+  - apply workspace edits (per-document undo grouping): `Workspace::apply_text_edits`
+- **Kernel-level editing commands** for common editor UX:
+  - line ops: `DuplicateLines`, `DeleteLines`, `MoveLinesUp/Down`, `JoinLines`, `SplitLine`
+  - comment toggling: `ToggleComment` (language-config driven)
+  - selection/multi-cursor ops: `SelectLine`, `SelectWord`, `ExpandSelection`, `AddCursorAbove/Below`,
+    `AddNextOccurrence`, `AddAllOccurrences`
 - **Search utilities** (`find_next`, `find_prev`, `find_all`) operating on character offsets.
 
 ## Design overview

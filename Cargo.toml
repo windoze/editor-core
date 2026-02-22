@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/editor-core",
+    "crates/editor-core-lang",
     "crates/editor-core-lsp",
     "crates/editor-core-highlight-simple",
     "crates/editor-core-sublime",

@@ -1,0 +1,13 @@
+[package]
+name = "editor-core-lang"
+version = "0.2.0"
+description = "Language configuration helpers for editor-core (comments, etc.)"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+

@@ -436,6 +436,13 @@ impl EditorStateManager {
                 | CursorCommand::SetSelections { .. }
                 | CursorCommand::ClearSecondarySelections
                 | CursorCommand::SetRectSelection { .. }
+                | CursorCommand::SelectLine
+                | CursorCommand::SelectWord
+                | CursorCommand::ExpandSelection
+                | CursorCommand::AddCursorAbove
+                | CursorCommand::AddCursorBelow
+                | CursorCommand::AddNextOccurrence { .. }
+                | CursorCommand::AddAllOccurrences { .. }
                 | CursorCommand::FindNext { .. }
                 | CursorCommand::FindPrev { .. },
             ) => Some(StateChangeType::SelectionChanged),
@@ -762,7 +769,7 @@ impl EditorStateManager {
             let collapsed: HashSet<(usize, usize)> = self
                 .editor()
                 .folding_manager
-                .regions()
+                .derived_regions()
                 .iter()
                 .filter(|r| r.is_collapsed)
                 .map(|r| (r.start_line, r.end_line))
@@ -775,13 +782,15 @@ impl EditorStateManager {
             }
         }
 
-        self.editor_mut().folding_manager.replace_regions(regions);
+        self.editor_mut()
+            .folding_manager
+            .replace_derived_regions(regions);
         self.mark_modified(StateChangeType::FoldingChanged);
     }
 
-    /// Clear all folding regions.
+    /// Clear all *derived* folding regions (leaves user folds intact).
     pub fn clear_folding_regions(&mut self) {
-        self.editor_mut().folding_manager.clear();
+        self.editor_mut().folding_manager.clear_derived_regions();
         self.mark_modified(StateChangeType::FoldingChanged);
     }
 

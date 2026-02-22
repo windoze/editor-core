@@ -14,6 +14,11 @@ requirements, and a small dependency surface.
   - stable style id encoding/decoding helpers
   - `SemanticTokensManager` for relative→absolute conversion
 - **Workspace edit helpers**: parse/apply `TextEdit` / `WorkspaceEdit` shapes using `serde_json::Value`.
+- **Common UX bridges** (LSP → kernel derived state):
+  - document highlights → `ProcessingEdit::ReplaceStyleLayer` (`StyleLayerId::DOCUMENT_HIGHLIGHTS`)
+  - document links → `ProcessingEdit::ReplaceDecorations` (`DecorationLayerId::DOCUMENT_LINKS`)
+  - code lens → `ProcessingEdit::ReplaceDecorations` (`DecorationLayerId::CODE_LENS`)
+  - completion apply helpers: batch `additionalTextEdits` and best-effort snippet downgrade
 - **Stdio JSON-RPC client** (`LspClient`) for driving an LSP server process.
 - **High-level session wrapper** (`LspSession`) that polls messages, emits typed events, and produces
   derived-state edits (`ProcessingEdit`) for the editor.
@@ -32,8 +37,58 @@ This crate intentionally uses `serde_json::Value` instead of `lsp-types`:
 
 - Semantic tokens → `ProcessingEdit::ReplaceStyleLayer` (typically `StyleLayerId::SEMANTIC_TOKENS`)
 - Folding ranges → `ProcessingEdit::ReplaceFoldingRegions`
+- Inlay hints → `ProcessingEdit::ReplaceDecorations` (typically `DecorationLayerId::INLAY_HINTS`)
 
 Hosts can apply those edits via `EditorStateManager::apply_processing_edits`.
+
+### UX bridges (manual / on-demand)
+
+Some LSP features are typically requested on demand (cursor hover, go-to, document highlight, ...).
+This crate provides small helpers that convert common result payloads into `editor-core` derived
+state edits or kernel edit commands:
+
+```rust
+use editor_core::{EditorStateManager};
+use editor_core_lsp::{
+    CompletionTextEditMode, apply_completion_item,
+    lsp_code_lens_to_processing_edit, lsp_document_highlights_to_processing_edit,
+    lsp_document_links_to_processing_edit,
+};
+use serde_json::json;
+
+let mut state = EditorStateManager::new("fn main() {\n    fo\n}\n", 80);
+
+// `textDocument/documentHighlight` -> style layer
+let highlights = json!([
+  { "range": { "start": { "line": 1, "character": 4 }, "end": { "line": 1, "character": 6 } }, "kind": 1 }
+]);
+state.apply_processing_edits(vec![
+  lsp_document_highlights_to_processing_edit(&state.editor().line_index, &highlights)
+]);
+
+// `textDocument/documentLink` -> decorations
+let links = json!([
+  { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } }, "target": "https://example.com" }
+]);
+state.apply_processing_edits(vec![
+  lsp_document_links_to_processing_edit(&state.editor().line_index, &links)
+]);
+
+// `textDocument/codeLens` -> decorations
+let lenses = json!([
+  { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "command": { "title": "Run", "command": "run" } }
+]);
+state.apply_processing_edits(vec![
+  lsp_code_lens_to_processing_edit(&state.editor().line_index, &lenses)
+]);
+
+// Apply a `CompletionItem` as a single undoable step (additionalTextEdits + snippets).
+let completion_item = json!({
+  "insertTextFormat": 2,
+  "textEdit": { "range": { "start": { "line": 1, "character": 4 }, "end": { "line": 1, "character": 6 } }, "newText": "println!(${1:msg})$0" }
+});
+apply_completion_item(&mut state, &completion_item, CompletionTextEditMode::Insert).unwrap();
+```
 
 ## Quick start
 
@@ -83,3 +138,11 @@ session.poll(&mut state).unwrap();
   headless helper, not a fully typed LSP framework.
 - For UI-facing notifications and server->client requests, see `LspEvent` / `LspNotification` and
   the server-request policy helpers.
+
+### Examples
+
+Run a small "bridges" demo (pure JSON `Value` inputs):
+
+```bash
+cargo run -p editor-core-lsp --example bridges_v1
+```

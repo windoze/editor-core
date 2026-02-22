@@ -118,14 +118,20 @@ pub mod workspace;
 
 pub use commands::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
-    Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, ViewCommand,
+    Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, TextEditSpec,
+    ViewCommand,
 };
 pub use decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
 };
 pub use delta::{TextDelta, TextDeltaEdit};
 pub use diagnostics::{Diagnostic, DiagnosticRange, DiagnosticSeverity};
-pub use intervals::{FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, StyleLayerId};
+pub use editor_core_lang::CommentConfig;
+pub use intervals::{
+    DOCUMENT_HIGHLIGHT_READ_STYLE_ID, DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
+    DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, FOLD_PLACEHOLDER_STYLE_ID, FoldRegion, FoldingManager,
+    IntervalTree, StyleLayerId,
+};
 pub use layout::{LayoutEngine, WrapIndent, WrapMode};
 pub use line_ending::LineEnding;
 pub use line_index::LineIndex;
@@ -138,4 +144,6 @@ pub use state::{
     StyleState, UndoRedoState, ViewportState,
 };
 pub use storage::PieceTable;
-pub use workspace::{DocumentId, DocumentMetadata, Workspace, WorkspaceError};
+pub use workspace::{
+    DocumentId, DocumentMetadata, Workspace, WorkspaceError, WorkspaceSearchResult,
+};

@@ -11,6 +11,11 @@
   - 稳定的样式 ID 编码/解码助手
   - `SemanticTokensManager` 用于相对→绝对转换
 - **工作区编辑助手**: 使用 `serde_json::Value` 解析/应用 `TextEdit` / `WorkspaceEdit` 结构。
+- **常见 UX 桥接**(LSP → 内核派生状态):
+  - 文档高亮 → `ProcessingEdit::ReplaceStyleLayer`(`StyleLayerId::DOCUMENT_HIGHLIGHTS`)
+  - 文档链接 → `ProcessingEdit::ReplaceDecorations`(`DecorationLayerId::DOCUMENT_LINKS`)
+  - Code lens → `ProcessingEdit::ReplaceDecorations`(`DecorationLayerId::CODE_LENS`)
+  - 补全应用助手: 批量应用 `additionalTextEdits`，并对 snippet 形态插入做尽力降级
 - **Stdio JSON-RPC 客户端**(`LspClient`)用于驱动 LSP 服务器进程。
 - **高级会话包装器**(`LspSession`)用于轮询消息、发出类型化事件,并为编辑器生成派生状态编辑(`ProcessingEdit`)。
 
@@ -28,8 +33,57 @@
 
 - 语义令牌 → `ProcessingEdit::ReplaceStyleLayer`(通常为 `StyleLayerId::SEMANTIC_TOKENS`)
 - 折叠范围 → `ProcessingEdit::ReplaceFoldingRegions`
+- Inlay hints → `ProcessingEdit::ReplaceDecorations`(通常为 `DecorationLayerId::INLAY_HINTS`)
 
 宿主可以通过 `EditorStateManager::apply_processing_edits` 应用这些编辑。
+
+### UX 桥接(手动/按需)
+
+部分 LSP 功能通常是按需请求的(例如 document highlight、document link、code lens、completion 等)。
+本 crate 提供了一些小型 helper，把常见结果 payload 转换为 `editor-core` 的派生状态编辑或内核编辑命令:
+
+```rust
+use editor_core::{EditorStateManager};
+use editor_core_lsp::{
+    CompletionTextEditMode, apply_completion_item,
+    lsp_code_lens_to_processing_edit, lsp_document_highlights_to_processing_edit,
+    lsp_document_links_to_processing_edit,
+};
+use serde_json::json;
+
+let mut state = EditorStateManager::new("fn main() {\n    fo\n}\n", 80);
+
+// `textDocument/documentHighlight` -> 样式层
+let highlights = json!([
+  { "range": { "start": { "line": 1, "character": 4 }, "end": { "line": 1, "character": 6 } }, "kind": 1 }
+]);
+state.apply_processing_edits(vec![
+  lsp_document_highlights_to_processing_edit(&state.editor().line_index, &highlights)
+]);
+
+// `textDocument/documentLink` -> decorations
+let links = json!([
+  { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } }, "target": "https://example.com" }
+]);
+state.apply_processing_edits(vec![
+  lsp_document_links_to_processing_edit(&state.editor().line_index, &links)
+]);
+
+// `textDocument/codeLens` -> decorations
+let lenses = json!([
+  { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "command": { "title": "Run", "command": "run" } }
+]);
+state.apply_processing_edits(vec![
+  lsp_code_lens_to_processing_edit(&state.editor().line_index, &lenses)
+]);
+
+// 将 `CompletionItem` 作为一次可撤销操作应用(additionalTextEdits + snippets)。
+let completion_item = json!({
+  "insertTextFormat": 2,
+  "textEdit": { "range": { "start": { "line": 1, "character": 4 }, "end": { "line": 1, "character": 6 } }, "newText": "println!(${1:msg})$0" }
+});
+apply_completion_item(&mut state, &completion_item, CompletionTextEditMode::Insert).unwrap();
+```
 
 ## 快速开始
 
@@ -77,3 +131,11 @@ session.poll(&mut state).unwrap();
 
 - LSP 服务器在能力和期望上差异很大;`LspSession` 旨在成为一个实用的无头助手,而非完整类型化的 LSP 框架。
 - 有关 UI 层面的通知和服务器→客户端请求,请参见 `LspEvent` / `LspNotification` 和服务器请求策略助手。
+
+### 示例
+
+运行一个小型 bridges demo(纯 JSON `Value` 输入):
+
+```bash
+cargo run -p editor-core-lsp --example bridges_v1
+```

@@ -10,6 +10,8 @@
 //! - an "active document" convenience slot (host-driven)
 
 use crate::EditorStateManager;
+use crate::commands::{Command, EditCommand, TextEditSpec};
+use crate::search::{SearchError, SearchMatch, SearchOptions, find_all};
 use std::collections::{BTreeMap, HashMap};
 
 /// Opaque identifier for an open document in a [`Workspace`].
@@ -42,6 +44,24 @@ pub enum WorkspaceError {
     UriAlreadyOpen(String),
     /// A document id was not found.
     DocumentNotFound(DocumentId),
+    /// Applying edits to a document failed.
+    ApplyEditsFailed {
+        /// Target document id.
+        id: DocumentId,
+        /// Error message.
+        message: String,
+    },
+}
+
+/// Search matches for a single open document in a [`Workspace`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceSearchResult {
+    /// Document id.
+    pub id: DocumentId,
+    /// Optional URI/path metadata.
+    pub uri: Option<String>,
+    /// All matches in this document (character offsets, half-open).
+    pub matches: Vec<SearchMatch>,
 }
 
 /// A collection of open documents/buffers and their state.
@@ -209,5 +229,76 @@ impl Workspace {
     /// Iterate over open documents in `DocumentId` order.
     pub fn iter(&self) -> impl Iterator<Item = (DocumentId, &EditorStateManager)> {
         self.documents.iter().map(|(id, entry)| (*id, &entry.state))
+    }
+
+    /// Search across all open documents in the workspace.
+    ///
+    /// - This is purely in-memory (no file I/O).
+    /// - Match ranges are returned as **character offsets** (half-open).
+    pub fn search_all_open_documents(
+        &self,
+        query: &str,
+        options: SearchOptions,
+    ) -> Result<Vec<WorkspaceSearchResult>, SearchError> {
+        let mut out: Vec<WorkspaceSearchResult> = Vec::new();
+
+        for (id, entry) in &self.documents {
+            let text = entry.state.editor().get_text();
+            let matches = find_all(&text, query, options)?;
+            if matches.is_empty() {
+                continue;
+            }
+
+            out.push(WorkspaceSearchResult {
+                id: *id,
+                uri: entry.meta.uri.clone(),
+                matches,
+            });
+        }
+
+        Ok(out)
+    }
+
+    /// Apply a set of text edits to multiple open documents.
+    ///
+    /// - This is purely in-memory (no file I/O).
+    /// - Edits are applied as a single undoable step **per document**.
+    /// - Documents are applied in deterministic `DocumentId` order.
+    pub fn apply_text_edits<I>(
+        &mut self,
+        edits: I,
+    ) -> Result<Vec<(DocumentId, usize)>, WorkspaceError>
+    where
+        I: IntoIterator<Item = (DocumentId, Vec<TextEditSpec>)>,
+    {
+        let mut by_id: BTreeMap<DocumentId, Vec<TextEditSpec>> = BTreeMap::new();
+        for (id, mut doc_edits) in edits {
+            by_id.entry(id).or_default().append(&mut doc_edits);
+        }
+
+        let mut applied: Vec<(DocumentId, usize)> = Vec::new();
+        for (id, doc_edits) in by_id {
+            let edit_count = doc_edits.len();
+            if edit_count == 0 {
+                continue;
+            }
+
+            let Some(state) = self.document_mut(id) else {
+                return Err(WorkspaceError::DocumentNotFound(id));
+            };
+
+            state
+                .execute(Command::Edit(EditCommand::ApplyTextEdits {
+                    edits: doc_edits,
+                }))
+                .map_err(|err| WorkspaceError::ApplyEditsFailed {
+                    id,
+                    message: err.to_string(),
+                })?;
+
+            applied.push((id, edit_count));
+        }
+
+        Ok(applied)
     }
 }

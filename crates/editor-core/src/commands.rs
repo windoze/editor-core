@@ -48,6 +48,7 @@ use crate::{
     FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex, PieceTable,
     SnapshotGenerator,
 };
+use editor_core_lang::CommentConfig;
 use regex::RegexBuilder;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -112,6 +113,20 @@ pub enum TabKeyBehavior {
     Spaces,
 }
 
+/// A simple document text edit (character offsets, half-open).
+///
+/// This is commonly used for applying a batch of "simultaneous" edits (e.g. rename, refactor, or
+/// workspace-wide search/replace), where the edit list is expressed in **pre-edit** coordinates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextEditSpec {
+    /// Inclusive start character offset.
+    pub start: usize,
+    /// Exclusive end character offset.
+    pub end: usize,
+    /// Replacement text.
+    pub text: String,
+}
+
 /// Text editing commands
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditCommand {
@@ -160,6 +175,48 @@ pub enum EditCommand {
     Indent,
     /// Outdent the selected lines (or the current line for an empty selection).
     Outdent,
+    /// Duplicate the selected line(s) (or the current line for an empty selection).
+    ///
+    /// This is a line-based operation and will act on all carets/selections (primary + secondary),
+    /// including rectangular selections.
+    DuplicateLines,
+    /// Delete the selected line(s) (or the current line for an empty selection).
+    ///
+    /// This is a line-based operation and will act on all carets/selections (primary + secondary),
+    /// including rectangular selections.
+    DeleteLines,
+    /// Move the selected line(s) up by one line.
+    ///
+    /// This is a line-based operation and will act on all carets/selections (primary + secondary),
+    /// including rectangular selections.
+    MoveLinesUp,
+    /// Move the selected line(s) down by one line.
+    ///
+    /// This is a line-based operation and will act on all carets/selections (primary + secondary),
+    /// including rectangular selections.
+    MoveLinesDown,
+    /// Join the current line with the next line (for each caret/selection).
+    ///
+    /// If multiple carets/selections exist, joins are applied from bottom to top to keep offsets stable.
+    JoinLines,
+    /// Split the current line at each caret (or replace each selection) by inserting a newline.
+    ///
+    /// This is a convenience alias for [`EditCommand::InsertNewline`] with `auto_indent: false`.
+    SplitLine,
+    /// Toggle comments for the selected line(s) or selection ranges, using a language-provided
+    /// comment configuration.
+    ToggleComment {
+        /// Comment tokens/config for the current language (data-driven).
+        config: CommentConfig,
+    },
+    /// Apply a batch of text edits as a single undoable step.
+    ///
+    /// - Edits are interpreted in **pre-edit** character offsets.
+    /// - Edits must be non-overlapping; they are applied in descending offset order internally.
+    ApplyTextEdits {
+        /// The edit list (character offsets, half-open).
+        edits: Vec<TextEditSpec>,
+    },
     /// Smart backspace: if the caret is in leading whitespace, delete back to the previous tab stop.
     ///
     /// Otherwise, behaves like [`EditCommand::Backspace`].
@@ -285,6 +342,29 @@ pub enum CursorCommand {
         anchor: Position,
         /// Active position (moving corner).
         active: Position,
+    },
+    /// Select the entire current line (or the set of lines covered by the selection), for all carets.
+    SelectLine,
+    /// Select the word under each caret (or keep existing selections if already non-empty).
+    SelectWord,
+    /// Expand selection in a basic, editor-friendly way.
+    ///
+    /// - If the selection is empty, expands to the word under the caret.
+    /// - If the selection is non-empty, expands to full line(s).
+    ExpandSelection,
+    /// Add a new caret above each existing caret/selection (at the same column, clamped to line length).
+    AddCursorAbove,
+    /// Add a new caret below each existing caret/selection (at the same column, clamped to line length).
+    AddCursorBelow,
+    /// Multi-cursor match op: add the next occurrence of the current selection/word as a new selection.
+    AddNextOccurrence {
+        /// Search options (case sensitivity, whole-word, regex).
+        options: SearchOptions,
+    },
+    /// Multi-cursor match op: select all occurrences of the current selection/word.
+    AddAllOccurrences {
+        /// Search options (case sensitivity, whole-word, regex).
+        options: SearchOptions,
     },
     /// Find the next occurrence of `query` and select it (primary selection only).
     FindNext {
@@ -1553,6 +1633,14 @@ impl CommandExecutor {
             }
             EditCommand::Indent => self.execute_indent_command(false),
             EditCommand::Outdent => self.execute_indent_command(true),
+            EditCommand::DuplicateLines => self.execute_duplicate_lines_command(),
+            EditCommand::DeleteLines => self.execute_delete_lines_command(),
+            EditCommand::MoveLinesUp => self.execute_move_lines_command(true),
+            EditCommand::MoveLinesDown => self.execute_move_lines_command(false),
+            EditCommand::JoinLines => self.execute_join_lines_command(),
+            EditCommand::SplitLine => self.execute_insert_newline_command(false),
+            EditCommand::ToggleComment { config } => self.execute_toggle_comment_command(config),
+            EditCommand::ApplyTextEdits { edits } => self.execute_apply_text_edits_command(edits),
             EditCommand::Insert { offset, text } => self.execute_insert_command(offset, text),
             EditCommand::Delete { start, length } => self.execute_delete_command(start, length),
             EditCommand::Replace {
@@ -1754,6 +1842,30 @@ impl CommandExecutor {
         for &idx in &desc_indices {
             let op = &ops[idx];
 
+            let edit_line = self
+                .editor
+                .line_index
+                .char_offset_to_position(op.start_offset)
+                .0;
+            let deleted_newlines = op
+                .deleted_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let inserted_newlines = op
+                .insert_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+            if line_delta != 0 {
+                self.editor
+                    .folding_manager
+                    .apply_line_delta(edit_line, line_delta);
+            }
+
             if op.delete_len > 0 {
                 self.editor
                     .piece_table
@@ -1783,6 +1895,9 @@ impl CommandExecutor {
         // Rebuild derived structures once.
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.editor
+            .folding_manager
+            .clamp_to_line_count(self.editor.line_index.line_count());
         self.rebuild_layout_engine_from_text(&updated_text);
 
         // Update selection state: collapse to carets after typing.
@@ -1982,6 +2097,30 @@ impl CommandExecutor {
         for &idx in &desc_indices {
             let op = &ops[idx];
 
+            let edit_line = self
+                .editor
+                .line_index
+                .char_offset_to_position(op.start_offset)
+                .0;
+            let deleted_newlines = op
+                .deleted_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let inserted_newlines = op
+                .insert_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+            if line_delta != 0 {
+                self.editor
+                    .folding_manager
+                    .apply_line_delta(edit_line, line_delta);
+            }
+
             if op.delete_len > 0 {
                 self.editor
                     .piece_table
@@ -2011,6 +2150,9 @@ impl CommandExecutor {
         // Rebuild derived structures once.
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.editor
+            .folding_manager
+            .clamp_to_line_count(self.editor.line_index.line_count());
         self.rebuild_layout_engine_from_text(&updated_text);
 
         // Update selection state: collapse to carets after insertion.
@@ -2525,6 +2667,2120 @@ impl CommandExecutor {
         Ok(CommandResult::Success)
     }
 
+    fn selection_char_range(&self, selection: &Selection) -> SearchMatch {
+        let (min_pos, max_pos) = crate::selection_set::selection_min_max(selection);
+        let start = self.position_to_char_offset_clamped(min_pos);
+        let end = self.position_to_char_offset_clamped(max_pos);
+        SearchMatch {
+            start: start.min(end),
+            end: start.max(end),
+        }
+    }
+
+    fn selected_line_blocks(selections: &[Selection]) -> Vec<(usize, usize)> {
+        let mut lines: Vec<usize> = Vec::new();
+        for sel in selections {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(sel);
+            for line in min_pos.line..=max_pos.line {
+                lines.push(line);
+            }
+        }
+
+        lines.sort_unstable();
+        lines.dedup();
+
+        let mut blocks: Vec<(usize, usize)> = Vec::new();
+        for line in lines {
+            if let Some((_, end)) = blocks.last_mut() {
+                if *end + 1 == line {
+                    *end = line;
+                    continue;
+                }
+            }
+            blocks.push((line, line));
+        }
+        blocks
+    }
+
+    fn slice_text_for_lines(&self, start_line: usize, end_line: usize) -> String {
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 || start_line >= line_count || start_line > end_line {
+            return String::new();
+        }
+
+        let mut out = String::new();
+        for line in start_line..=end_line.min(line_count - 1) {
+            let text = self
+                .editor
+                .line_index
+                .get_line_text(line)
+                .unwrap_or_default();
+            out.push_str(&text);
+            // In the stored document, every line except the last has a trailing '\n'.
+            if line + 1 < line_count {
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    fn execute_duplicate_lines_command(&mut self) -> Result<CommandResult, CommandError> {
+        self.undo_redo.end_group();
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+        let primary_index = before_selection.primary_index;
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let blocks = Self::selected_line_blocks(&selections);
+        if blocks.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        let doc_text = self.editor.piece_table.get_text();
+        let doc_ends_with_newline = doc_text.ends_with('\n');
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+        }
+
+        let mut ops: Vec<Op> = Vec::new();
+
+        for (start_line, end_line) in blocks {
+            if start_line >= line_count {
+                continue;
+            }
+            let end_line = end_line.min(line_count - 1);
+
+            let insertion_offset = if end_line + 1 < line_count {
+                self.editor
+                    .line_index
+                    .position_to_char_offset(end_line + 1, 0)
+            } else {
+                before_char_count
+            };
+
+            let block_text = self.slice_text_for_lines(start_line, end_line);
+            if block_text.is_empty() && before_char_count == 0 {
+                continue;
+            }
+
+            let mut inserted_text = block_text;
+            if insertion_offset == before_char_count
+                && !doc_ends_with_newline
+                && before_char_count > 0
+            {
+                inserted_text.insert(0, '\n');
+            }
+
+            let inserted_len = inserted_text.chars().count();
+            if inserted_len == 0 {
+                continue;
+            }
+
+            ops.push(Op {
+                start_before: insertion_offset,
+                start_after: insertion_offset,
+                deleted_text: String::new(),
+                inserted_text,
+                inserted_len,
+            });
+        }
+
+        if ops.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        // Compute start_after using ascending order and delta accumulation.
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_before);
+
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "DuplicateLines produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, 0usize, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Move selections/carets to the duplicated lines, VSCode-style.
+        let mut mapped: Vec<Selection> = Vec::with_capacity(selections.len());
+
+        // Precompute per-block cumulative shift (in lines) for blocks above.
+        let mut block_info: Vec<(usize, usize, usize, usize)> = Vec::new(); // (start,end,size,shift_before)
+        let mut cumulative = 0usize;
+        let mut blocks = Self::selected_line_blocks(&selections);
+        blocks.sort_by_key(|(s, _)| *s);
+        for (s, e) in blocks {
+            let size = e.saturating_sub(s) + 1;
+            block_info.push((s, e, size, cumulative));
+            cumulative = cumulative.saturating_add(size);
+        }
+
+        let line_index = &self.editor.line_index;
+        for sel in selections {
+            let mut start = sel.start;
+            let mut end = sel.end;
+
+            let map_line = |line: usize, info: &[(usize, usize, usize, usize)]| -> usize {
+                // If inside a duplicated block, map to the duplicate copy (shift by block_size).
+                for (s, e, size, shift_before) in info {
+                    if line >= *s && line <= *e {
+                        return line + *shift_before + *size;
+                    }
+                    if line < *s {
+                        break;
+                    }
+                }
+
+                // Otherwise, shift down by the number of duplicated lines above this line.
+                let mut shift = 0usize;
+                for (s, e, size, shift_before) in info {
+                    let _ = shift_before;
+                    if *e < line {
+                        shift = shift.saturating_add(*size);
+                    } else if line < *s {
+                        break;
+                    }
+                }
+                line + shift
+            };
+
+            start.line = map_line(start.line, &block_info);
+            end.line = map_line(end.line, &block_info);
+
+            start.column =
+                Self::clamp_column_for_line_with_index(line_index, start.line, start.column);
+            end.column = Self::clamp_column_for_line_with_index(line_index, end.line, end.column);
+
+            mapped.push(Selection {
+                start,
+                end,
+                direction: crate::selection_set::selection_direction(start, end),
+            });
+        }
+
+        let (mapped, mapped_primary) =
+            crate::selection_set::normalize_selections(mapped, primary_index);
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: mapped,
+            primary_index: mapped_primary,
+        })?;
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_delete_lines_command(&mut self) -> Result<CommandResult, CommandError> {
+        self.undo_redo.end_group();
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+        let primary_selection = selections
+            .get(before_selection.primary_index)
+            .cloned()
+            .unwrap_or_else(|| selections[0].clone());
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let blocks = Self::selected_line_blocks(&selections);
+        if blocks.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+        }
+
+        let mut ops: Vec<Op> = Vec::new();
+        let mut primary_op_index = 0usize;
+
+        for (idx, (start_line, end_line)) in blocks.into_iter().enumerate() {
+            if start_line >= line_count {
+                continue;
+            }
+
+            let end_line = end_line.min(line_count - 1);
+            let mut start_offset = self
+                .editor
+                .line_index
+                .position_to_char_offset(start_line, 0);
+            let end_offset = if end_line + 1 < line_count {
+                self.editor
+                    .line_index
+                    .position_to_char_offset(end_line + 1, 0)
+            } else {
+                before_char_count
+            };
+
+            if end_line + 1 >= line_count && start_offset > 0 {
+                // Deleting the last line: also remove the newline before it, if any.
+                start_offset = start_offset.saturating_sub(1);
+            }
+
+            if end_offset <= start_offset {
+                continue;
+            }
+
+            let delete_len = end_offset - start_offset;
+            let deleted_text = self.editor.piece_table.get_range(start_offset, delete_len);
+
+            if crate::selection_set::selection_contains_position_inclusive(
+                &primary_selection,
+                Position::new(start_line, 0),
+            ) {
+                primary_op_index = idx;
+            }
+
+            ops.push(Op {
+                start_before: start_offset,
+                start_after: start_offset,
+                delete_len,
+                deleted_text,
+            });
+        }
+
+        if ops.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        // Compute start_after using ascending order and delta accumulation.
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_before);
+
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "DeleteLines produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta -= op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, ""))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Collapse selection state to carets at the start of each deleted block.
+        let mut new_carets: Vec<Selection> = Vec::with_capacity(ops.len());
+        for op in &ops {
+            let (line, column) = self
+                .editor
+                .line_index
+                .char_offset_to_position(op.start_after);
+            let pos = Position::new(line, column);
+            new_carets.push(Selection {
+                start: pos,
+                end: pos,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        let primary_index = primary_op_index.min(new_carets.len().saturating_sub(1));
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: new_carets,
+            primary_index,
+        })?;
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: String::new(),
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: String::new(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_move_lines_command(&mut self, up: bool) -> Result<CommandResult, CommandError> {
+        self.undo_redo.end_group();
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+        let primary_index = before_selection.primary_index;
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count <= 1 {
+            return Ok(CommandResult::Success);
+        }
+
+        let blocks = Self::selected_line_blocks(&selections);
+        if blocks.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        #[derive(Debug, Clone, Copy)]
+        struct Block {
+            start: usize,
+            end: usize,
+        }
+
+        let mut moved_blocks: Vec<Block> = Vec::new();
+        for (start, end) in blocks {
+            let start = start.min(line_count - 1);
+            let end = end.min(line_count - 1);
+            if up {
+                if start == 0 {
+                    continue;
+                }
+            } else if end + 1 >= line_count {
+                continue;
+            }
+            moved_blocks.push(Block { start, end });
+        }
+
+        if moved_blocks.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(moved_blocks.len());
+
+        for block in &moved_blocks {
+            let (range_start_line, range_end_line) = if up {
+                (block.start - 1, block.end)
+            } else {
+                (block.start, block.end + 1)
+            };
+
+            let start_offset = self
+                .editor
+                .line_index
+                .position_to_char_offset(range_start_line, 0);
+            let end_offset = if range_end_line + 1 < line_count {
+                self.editor
+                    .line_index
+                    .position_to_char_offset(range_end_line + 1, 0)
+            } else {
+                before_char_count
+            };
+
+            if end_offset <= start_offset {
+                continue;
+            }
+
+            let deleted_text = self
+                .editor
+                .piece_table
+                .get_range(start_offset, end_offset - start_offset);
+
+            let block_text = self.slice_text_for_lines(block.start, block.end);
+
+            let inserted_text = if up {
+                let above_text = self.slice_text_for_lines(block.start - 1, block.start - 1);
+                format!("{}{}", block_text, above_text)
+            } else {
+                let below_text = self.slice_text_for_lines(block.end + 1, block.end + 1);
+                format!("{}{}", below_text, block_text)
+            };
+
+            ops.push(Op {
+                start_before: start_offset,
+                start_after: start_offset,
+                delete_len: end_offset - start_offset,
+                deleted_text,
+                inserted_text,
+            });
+        }
+
+        if ops.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        // start_after is stable here (equal-length replacements), but compute for consistency.
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_before);
+
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "MoveLines produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            let inserted_len = op.inserted_text.chars().count() as i64;
+            delta += inserted_len - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Move selections with their line blocks (and adjust displaced neighbor line).
+        let line_index = &self.editor.line_index;
+        let mut mapped: Vec<Selection> = Vec::with_capacity(selections.len());
+
+        for sel in selections {
+            let mut start = sel.start;
+            let mut end = sel.end;
+
+            let map_line = |line: usize, moved_blocks: &[Block], up: bool| -> usize {
+                for block in moved_blocks {
+                    let size = block.end.saturating_sub(block.start) + 1;
+                    if line >= block.start && line <= block.end {
+                        return if up { line - 1 } else { line + 1 };
+                    }
+                    if up && line == block.start - 1 {
+                        return line + size;
+                    }
+                    if !up && line == block.end + 1 {
+                        return line.saturating_sub(size);
+                    }
+                }
+                line
+            };
+
+            start.line = map_line(start.line, &moved_blocks, up);
+            end.line = map_line(end.line, &moved_blocks, up);
+
+            start.column =
+                Self::clamp_column_for_line_with_index(line_index, start.line, start.column);
+            end.column = Self::clamp_column_for_line_with_index(line_index, end.line, end.column);
+
+            mapped.push(Selection {
+                start,
+                end,
+                direction: crate::selection_set::selection_direction(start, end),
+            });
+        }
+
+        let (mapped, mapped_primary) =
+            crate::selection_set::normalize_selections(mapped, primary_index);
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: mapped,
+            primary_index: mapped_primary,
+        })?;
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_join_lines_command(&mut self) -> Result<CommandResult, CommandError> {
+        self.undo_redo.end_group();
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count <= 1 {
+            return Ok(CommandResult::Success);
+        }
+
+        let mut join_lines: Vec<usize> = Vec::new();
+        for sel in &selections {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(sel);
+            if min_pos.line >= line_count {
+                continue;
+            }
+            let last = max_pos.line.min(line_count - 1);
+            if min_pos.line == last {
+                join_lines.push(last);
+            } else {
+                for line in min_pos.line..last {
+                    join_lines.push(line);
+                }
+            }
+        }
+
+        join_lines.sort_unstable();
+        join_lines.dedup();
+        join_lines.retain(|l| *l + 1 < line_count);
+
+        if join_lines.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(join_lines.len());
+
+        // Process from bottom to top to keep (line->offset) stable in the pre-edit document.
+        join_lines.sort_by_key(|l| std::cmp::Reverse(*l));
+
+        for line in join_lines {
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(line)
+                .unwrap_or_default();
+            let next_text = self
+                .editor
+                .line_index
+                .get_line_text(line + 1)
+                .unwrap_or_default();
+
+            let line_len = line_text.chars().count();
+            let join_offset = self
+                .editor
+                .line_index
+                .position_to_char_offset(line, line_len);
+            let leading_ws = next_text
+                .chars()
+                .take_while(|c| *c == ' ' || *c == '\t')
+                .count();
+            let end_offset = self
+                .editor
+                .line_index
+                .position_to_char_offset(line + 1, leading_ws);
+
+            if end_offset <= join_offset {
+                continue;
+            }
+
+            let left_ends_with_ws = line_text
+                .chars()
+                .last()
+                .is_some_and(|c| c == ' ' || c == '\t');
+            let right_trimmed_empty = next_text.chars().skip(leading_ws).next().is_none();
+            let insert_space = !left_ends_with_ws && !line_text.is_empty() && !right_trimmed_empty;
+
+            let inserted_text = if insert_space {
+                " ".to_string()
+            } else {
+                String::new()
+            };
+            let inserted_len = inserted_text.chars().count();
+            let delete_len = end_offset - join_offset;
+            let deleted_text = self.editor.piece_table.get_range(join_offset, delete_len);
+
+            ops.push(Op {
+                start_before: join_offset,
+                start_after: join_offset,
+                delete_len,
+                deleted_text,
+                inserted_text,
+                inserted_len,
+            });
+        }
+
+        if ops.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        ops.sort_by_key(|op| op.start_before);
+
+        let mut delta: i64 = 0;
+        for op in &mut ops {
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "JoinLines produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64 - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Collapse selection state to carets at each join point.
+        let mut new_carets: Vec<Selection> = Vec::with_capacity(ops.len());
+        for op in &ops {
+            let caret_offset = op.start_after + op.inserted_len;
+            let (line, column) = self.editor.line_index.char_offset_to_position(caret_offset);
+            let pos = Position::new(line, column);
+            new_carets.push(Selection {
+                start: pos,
+                end: pos,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        let (new_carets, primary_index) = crate::selection_set::normalize_selections(new_carets, 0);
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: new_carets,
+            primary_index,
+        })?;
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_toggle_comment_command(
+        &mut self,
+        config: CommentConfig,
+    ) -> Result<CommandResult, CommandError> {
+        if !config.has_line() && !config.has_block() {
+            return Err(CommandError::Other(
+                "ToggleComment requires at least one comment token".to_string(),
+            ));
+        }
+
+        self.undo_redo.end_group();
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+        let primary_index = before_selection.primary_index;
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let all_single_line_selections = selections.iter().all(|sel| {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(sel);
+            min_pos.line == max_pos.line && min_pos != max_pos
+        });
+
+        if config.has_block()
+            && all_single_line_selections
+            && let (Some(block_start), Some(block_end)) =
+                (config.block_start.as_deref(), config.block_end.as_deref())
+        {
+            return self.execute_toggle_block_comment_inline(
+                block_start,
+                block_end,
+                before_char_count,
+                before_selection,
+                selections,
+                primary_index,
+            );
+        }
+
+        if config.has_line()
+            && let Some(token) = config.line.as_deref()
+        {
+            return self.execute_toggle_line_comment(
+                token,
+                before_char_count,
+                before_selection,
+                selections,
+                primary_index,
+            );
+        }
+
+        if config.has_block()
+            && let (Some(block_start), Some(block_end)) =
+                (config.block_start.as_deref(), config.block_end.as_deref())
+        {
+            return self.execute_toggle_block_comment_lines(
+                block_start,
+                block_end,
+                before_char_count,
+                before_selection,
+                selections,
+                primary_index,
+            );
+        }
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_apply_text_edits_command(
+        &mut self,
+        mut edits: Vec<TextEditSpec>,
+    ) -> Result<CommandResult, CommandError> {
+        self.undo_redo.end_group();
+
+        if edits.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+
+        let max_offset = before_char_count;
+
+        for edit in &mut edits {
+            if edit.start > edit.end {
+                return Err(CommandError::InvalidRange {
+                    start: edit.start,
+                    end: edit.end,
+                });
+            }
+            if edit.end > max_offset {
+                return Err(CommandError::InvalidRange {
+                    start: edit.start,
+                    end: edit.end,
+                });
+            }
+            edit.text = crate::text::normalize_crlf_to_lf_string(edit.text.clone());
+        }
+
+        edits.sort_by_key(|e| (e.start, e.end));
+
+        // Validate non-overlap (pre-edit coordinates).
+        let mut prev_end = 0usize;
+        for (idx, edit) in edits.iter().enumerate() {
+            if idx > 0 && edit.start < prev_end {
+                return Err(CommandError::Other(
+                    "ApplyTextEdits requires non-overlapping edits".to_string(),
+                ));
+            }
+            prev_end = prev_end.max(edit.end);
+        }
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(edits.len());
+        for edit in edits {
+            let delete_len = edit.end.saturating_sub(edit.start);
+            let deleted_text = if delete_len == 0 {
+                String::new()
+            } else {
+                self.editor.piece_table.get_range(edit.start, delete_len)
+            };
+
+            let inserted_text = edit.text;
+            let inserted_len = inserted_text.chars().count();
+
+            ops.push(Op {
+                start_before: edit.start,
+                start_after: edit.start,
+                delete_len,
+                deleted_text,
+                inserted_text,
+                inserted_len,
+            });
+        }
+
+        // Compute start_after using ascending order and delta accumulation.
+        let mut delta: i64 = 0;
+        for op in &mut ops {
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "ApplyTextEdits produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64 - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_toggle_line_comment(
+        &mut self,
+        token: &str,
+        before_char_count: usize,
+        before_selection: SelectionSetSnapshot,
+        selections: Vec<Selection>,
+        _primary_index: usize,
+    ) -> Result<CommandResult, CommandError> {
+        let token = token.trim_end();
+        if token.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        let token_len = token.chars().count();
+        let insert_text = format!("{} ", token);
+        let insert_len = insert_text.chars().count();
+
+        // Collect unique target lines.
+        let mut lines: Vec<usize> = Vec::new();
+        for sel in &selections {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(sel);
+            for line in min_pos.line..=max_pos.line {
+                lines.push(line);
+            }
+        }
+        lines.sort_unstable();
+        lines.dedup();
+        lines.retain(|l| *l < self.editor.line_index.line_count());
+
+        if lines.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        // Decide whether to comment or uncomment.
+        let mut non_empty = 0usize;
+        let mut all_commented = true;
+        for line in &lines {
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(*line)
+                .unwrap_or_default();
+            let indent = line_text
+                .chars()
+                .take_while(|c| *c == ' ' || *c == '\t')
+                .count();
+            let indent_byte = byte_offset_for_char_column(&line_text, indent);
+            let rest = line_text.get(indent_byte..).unwrap_or("");
+            if rest.is_empty() {
+                continue;
+            }
+            non_empty += 1;
+            if !rest.starts_with(token) {
+                all_commented = false;
+                break;
+            }
+        }
+
+        let should_uncomment = non_empty > 0 && all_commented;
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+            line: usize,
+            indent_col: usize,
+            col_delta: isize,
+        }
+
+        let mut ops: Vec<Op> = Vec::new();
+
+        for line in lines {
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(line)
+                .unwrap_or_default();
+            let indent = line_text
+                .chars()
+                .take_while(|c| *c == ' ' || *c == '\t')
+                .count();
+            let indent_byte = byte_offset_for_char_column(&line_text, indent);
+            let rest = line_text.get(indent_byte..).unwrap_or("");
+
+            let start_offset = self.editor.line_index.position_to_char_offset(line, indent);
+
+            if should_uncomment {
+                if rest.is_empty() || !rest.starts_with(token) {
+                    continue;
+                }
+
+                let mut remove_len = token_len;
+                if let Some(ch) = line_text.chars().nth(indent + token_len)
+                    && ch == ' '
+                {
+                    remove_len += 1;
+                }
+
+                if remove_len == 0 {
+                    continue;
+                }
+
+                let deleted_text = self.editor.piece_table.get_range(start_offset, remove_len);
+                ops.push(Op {
+                    start_before: start_offset,
+                    start_after: start_offset,
+                    delete_len: remove_len,
+                    deleted_text,
+                    inserted_text: String::new(),
+                    inserted_len: 0,
+                    line,
+                    indent_col: indent,
+                    col_delta: -(remove_len as isize),
+                });
+            } else {
+                ops.push(Op {
+                    start_before: start_offset,
+                    start_after: start_offset,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    inserted_text: insert_text.clone(),
+                    inserted_len: insert_len,
+                    line,
+                    indent_col: indent,
+                    col_delta: insert_len as isize,
+                });
+            }
+        }
+
+        if ops.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        // Compute start_after.
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_before);
+
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "ToggleComment produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64 - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Shift cursor/selections for touched lines, but only for columns at/after the insertion point.
+        use std::collections::HashMap;
+        let mut line_deltas: HashMap<usize, (usize, isize)> = HashMap::new();
+        for op in &ops {
+            line_deltas.insert(op.line, (op.indent_col, op.col_delta));
+        }
+
+        let line_index = &self.editor.line_index;
+        let apply_delta = |pos: &mut Position, deltas: &HashMap<usize, (usize, isize)>| {
+            let Some((indent_col, delta)) = deltas.get(&pos.line) else {
+                return;
+            };
+            if pos.column < *indent_col {
+                return;
+            }
+
+            let new_col = if *delta >= 0 {
+                pos.column.saturating_add(*delta as usize)
+            } else {
+                pos.column.saturating_sub((-*delta) as usize)
+            };
+
+            pos.column = Self::clamp_column_for_line_with_index(line_index, pos.line, new_col);
+        };
+
+        apply_delta(&mut self.editor.cursor_position, &line_deltas);
+        if let Some(sel) = &mut self.editor.selection {
+            apply_delta(&mut sel.start, &line_deltas);
+            apply_delta(&mut sel.end, &line_deltas);
+        }
+        for sel in &mut self.editor.secondary_selections {
+            apply_delta(&mut sel.start, &line_deltas);
+            apply_delta(&mut sel.end, &line_deltas);
+        }
+
+        self.normalize_cursor_and_selection();
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_toggle_block_comment_inline(
+        &mut self,
+        block_start: &str,
+        block_end: &str,
+        before_char_count: usize,
+        before_selection: SelectionSetSnapshot,
+        selections: Vec<Selection>,
+        primary_index: usize,
+    ) -> Result<CommandResult, CommandError> {
+        let start_len = block_start.chars().count();
+        let end_len = block_end.chars().count();
+        if start_len == 0 || end_len == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let mut selection_ranges: Vec<SearchMatch> = selections
+            .iter()
+            .map(|s| self.selection_char_range(s))
+            .filter(|r| r.start < r.end)
+            .collect();
+
+        if selection_ranges.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        selection_ranges.sort_by_key(|r| (r.start, r.end));
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum TokenOpKind {
+            Start,
+            End,
+        }
+
+        // Decide per-selection whether it is already wrapped; then build ops.
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+            sel_id: usize,
+            kind: TokenOpKind,
+        }
+
+        let mut ops: Vec<Op> = Vec::new();
+
+        for (sel_id, range) in selection_ranges.iter().enumerate() {
+            let start = range.start;
+            let end = range.end;
+
+            let already_wrapped = start >= start_len
+                && end + end_len <= before_char_count
+                && self
+                    .editor
+                    .piece_table
+                    .get_range(start - start_len, start_len)
+                    == block_start
+                && self.editor.piece_table.get_range(end, end_len) == block_end;
+
+            if already_wrapped {
+                // Delete end token first (higher offset), then start token.
+                let deleted_end = self.editor.piece_table.get_range(end, end_len);
+                ops.push(Op {
+                    start_before: end,
+                    start_after: end,
+                    delete_len: end_len,
+                    deleted_text: deleted_end,
+                    inserted_text: String::new(),
+                    inserted_len: 0,
+                    sel_id,
+                    kind: TokenOpKind::End,
+                });
+
+                let start_token_offset = start - start_len;
+                let deleted_start = self
+                    .editor
+                    .piece_table
+                    .get_range(start_token_offset, start_len);
+                ops.push(Op {
+                    start_before: start_token_offset,
+                    start_after: start_token_offset,
+                    delete_len: start_len,
+                    deleted_text: deleted_start,
+                    inserted_text: String::new(),
+                    inserted_len: 0,
+                    sel_id,
+                    kind: TokenOpKind::Start,
+                });
+            } else {
+                // Insert end token first (higher offset), then start token.
+                ops.push(Op {
+                    start_before: end,
+                    start_after: end,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    inserted_text: block_end.to_string(),
+                    inserted_len: end_len,
+                    sel_id,
+                    kind: TokenOpKind::End,
+                });
+                ops.push(Op {
+                    start_before: start,
+                    start_after: start,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    inserted_text: block_start.to_string(),
+                    inserted_len: start_len,
+                    sel_id,
+                    kind: TokenOpKind::Start,
+                });
+            }
+        }
+
+        if ops.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        ops.sort_by_key(|op| op.start_before);
+
+        let mut delta: i64 = 0;
+        for op in &mut ops {
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "ToggleComment produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64 - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Keep selections around the inner text between tokens so toggling is repeatable.
+        let mut new_starts: Vec<usize> = vec![0; selection_ranges.len()];
+        let mut new_ends: Vec<usize> = vec![0; selection_ranges.len()];
+
+        for op in &ops {
+            match op.kind {
+                TokenOpKind::Start => {
+                    new_starts[op.sel_id] = if op.inserted_len > 0 {
+                        op.start_after + start_len
+                    } else {
+                        op.start_after
+                    };
+                }
+                TokenOpKind::End => {
+                    new_ends[op.sel_id] = op.start_after;
+                }
+            }
+        }
+
+        let mut next_selections: Vec<Selection> = Vec::with_capacity(selection_ranges.len());
+        for i in 0..selection_ranges.len() {
+            let start = new_starts[i].min(new_ends[i]);
+            let end = new_starts[i].max(new_ends[i]);
+            let (start_line, start_col) = self.editor.line_index.char_offset_to_position(start);
+            let (end_line, end_col) = self.editor.line_index.char_offset_to_position(end);
+            next_selections.push(Selection {
+                start: Position::new(start_line, start_col),
+                end: Position::new(end_line, end_col),
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: next_selections,
+            primary_index: primary_index.min(selection_ranges.len().saturating_sub(1)),
+        })?;
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_toggle_block_comment_lines(
+        &mut self,
+        block_start: &str,
+        block_end: &str,
+        before_char_count: usize,
+        before_selection: SelectionSetSnapshot,
+        selections: Vec<Selection>,
+        primary_index: usize,
+    ) -> Result<CommandResult, CommandError> {
+        let start_len = block_start.chars().count();
+        let end_len = block_end.chars().count();
+        if start_len == 0 || end_len == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let mut ranges: Vec<(usize, usize)> = Vec::new();
+        for sel in &selections {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(sel);
+            let start_line = min_pos.line.min(self.editor.line_index.line_count() - 1);
+            let end_line = max_pos.line.min(self.editor.line_index.line_count() - 1);
+
+            let start = self
+                .editor
+                .line_index
+                .position_to_char_offset(start_line, 0);
+            let end_line_text = self
+                .editor
+                .line_index
+                .get_line_text(end_line)
+                .unwrap_or_default();
+            let end = self
+                .editor
+                .line_index
+                .position_to_char_offset(end_line, end_line_text.chars().count());
+            if start < end {
+                ranges.push((start, end));
+            }
+        }
+
+        ranges.sort_unstable();
+        ranges.dedup();
+
+        if ranges.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        // Unwrap if every range already starts/ends with the tokens.
+        let mut all_wrapped = true;
+        for (start, end) in &ranges {
+            if *end < *start + start_len + end_len {
+                all_wrapped = false;
+                break;
+            }
+            let text = self.editor.piece_table.get_range(*start, end - start);
+            if !text.starts_with(block_start) || !text.ends_with(block_end) {
+                all_wrapped = false;
+                break;
+            }
+        }
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+        }
+
+        let mut ops: Vec<Op> = Vec::new();
+
+        for (start, end) in &ranges {
+            if all_wrapped {
+                // Remove end token (at end-end_len) and start token (at start).
+                let end_token_start = end.saturating_sub(end_len);
+                let deleted_end = self.editor.piece_table.get_range(end_token_start, end_len);
+                ops.push(Op {
+                    start_before: end_token_start,
+                    start_after: end_token_start,
+                    delete_len: end_len,
+                    deleted_text: deleted_end,
+                    inserted_text: String::new(),
+                    inserted_len: 0,
+                });
+
+                let deleted_start = self.editor.piece_table.get_range(*start, start_len);
+                ops.push(Op {
+                    start_before: *start,
+                    start_after: *start,
+                    delete_len: start_len,
+                    deleted_text: deleted_start,
+                    inserted_text: String::new(),
+                    inserted_len: 0,
+                });
+            } else {
+                // Insert end token then start token.
+                ops.push(Op {
+                    start_before: *end,
+                    start_after: *end,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    inserted_text: block_end.to_string(),
+                    inserted_len: end_len,
+                });
+                ops.push(Op {
+                    start_before: *start,
+                    start_after: *start,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    inserted_text: block_start.to_string(),
+                    inserted_len: start_len,
+                });
+            }
+        }
+
+        ops.sort_by_key(|op| op.start_before);
+        let mut delta: i64 = 0;
+        for op in &mut ops {
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "ToggleComment produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64 - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Keep a single caret at the end of the primary range.
+        let (primary_start, primary_end) = ranges
+            .get(primary_index.min(ranges.len().saturating_sub(1)))
+            .copied()
+            .unwrap_or((0, 0));
+        let caret_offset = primary_end.max(primary_start);
+        let (line, column) = self.editor.line_index.char_offset_to_position(caret_offset);
+        let pos = Position::new(line, column);
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: vec![Selection {
+                start: pos,
+                end: pos,
+                direction: SelectionDirection::Forward,
+            }],
+            primary_index: 0,
+        })?;
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn is_word_char(ch: char) -> bool {
+        ch == '_' || ch.is_alphanumeric()
+    }
+
+    fn word_range_in_line(line_text: &str, column: usize) -> Option<(usize, usize)> {
+        if line_text.is_empty() {
+            return None;
+        }
+
+        let mut parts: Vec<(usize, usize, &str)> = Vec::new();
+        for (start, part) in line_text.split_word_bound_indices() {
+            let end = start + part.len();
+            parts.push((start, end, part));
+        }
+        if parts.is_empty() {
+            return None;
+        }
+
+        let byte_pos =
+            byte_offset_for_char_column(line_text, column.min(line_text.chars().count()));
+
+        let mut part_idx = parts
+            .iter()
+            .position(|(s, e, _)| *s <= byte_pos && byte_pos < *e)
+            .or_else(|| parts.iter().position(|(s, _, _)| *s == byte_pos))
+            .unwrap_or_else(|| parts.len().saturating_sub(1));
+
+        let pick_part = |idx: usize, parts: &[(usize, usize, &str)]| -> Option<(usize, usize)> {
+            let (s, e, text) = parts.get(idx)?;
+            if text.chars().any(Self::is_word_char) {
+                Some((*s, *e))
+            } else {
+                None
+            }
+        };
+
+        // Prefer the part under the caret.
+        if let Some((s, e)) = pick_part(part_idx, &parts) {
+            return Some((
+                char_column_for_byte_offset(line_text, s),
+                char_column_for_byte_offset(line_text, e),
+            ));
+        }
+
+        // Search to the right.
+        for idx in part_idx + 1..parts.len() {
+            if let Some((s, e)) = pick_part(idx, &parts) {
+                return Some((
+                    char_column_for_byte_offset(line_text, s),
+                    char_column_for_byte_offset(line_text, e),
+                ));
+            }
+        }
+
+        // Search to the left.
+        while part_idx > 0 {
+            part_idx -= 1;
+            if let Some((s, e)) = pick_part(part_idx, &parts) {
+                return Some((
+                    char_column_for_byte_offset(line_text, s),
+                    char_column_for_byte_offset(line_text, e),
+                ));
+            }
+        }
+
+        None
+    }
+
+    fn execute_select_line_command(&mut self) -> Result<CommandResult, CommandError> {
+        let snapshot = self.snapshot_selection_set();
+        let selections = snapshot.selections;
+        let primary_index = snapshot.primary_index;
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let mut next: Vec<Selection> = Vec::with_capacity(selections.len());
+        for sel in selections {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(&sel);
+            let start_line = min_pos.line.min(line_count.saturating_sub(1));
+            let end_line = max_pos.line.min(line_count.saturating_sub(1));
+
+            let start = Position::new(start_line, 0);
+            let end = if end_line + 1 < line_count {
+                Position::new(end_line + 1, 0)
+            } else {
+                let line_text = self
+                    .editor
+                    .line_index
+                    .get_line_text(end_line)
+                    .unwrap_or_default();
+                Position::new(end_line, line_text.chars().count())
+            };
+
+            next.push(Selection {
+                start,
+                end,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: next,
+            primary_index,
+        })?;
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_select_word_command(&mut self) -> Result<CommandResult, CommandError> {
+        let snapshot = self.snapshot_selection_set();
+        let selections = snapshot.selections;
+        let primary_index = snapshot.primary_index;
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let mut next: Vec<Selection> = Vec::with_capacity(selections.len());
+
+        for sel in selections {
+            // If already a non-empty selection, keep it.
+            if sel.start != sel.end {
+                next.push(sel);
+                continue;
+            }
+
+            let caret = sel.end;
+            let line = caret.line.min(line_count.saturating_sub(1));
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(line)
+                .unwrap_or_default();
+            let col = caret.column.min(line_text.chars().count());
+
+            let Some((start_col, end_col)) = Self::word_range_in_line(&line_text, col) else {
+                next.push(sel);
+                continue;
+            };
+
+            let start = Position::new(line, start_col);
+            let end = Position::new(line, end_col);
+
+            next.push(Selection {
+                start,
+                end,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: next,
+            primary_index,
+        })?;
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_expand_selection_command(&mut self) -> Result<CommandResult, CommandError> {
+        // Basic expand policy:
+        // - empty selection => select word
+        // - non-empty selection => select line(s)
+        let snapshot = self.snapshot_selection_set();
+        if snapshot.selections.iter().any(|s| s.start != s.end) {
+            self.execute_select_line_command()
+        } else {
+            self.execute_select_word_command()
+        }
+    }
+
+    fn execute_add_cursor_vertical_command(
+        &mut self,
+        above: bool,
+    ) -> Result<CommandResult, CommandError> {
+        let snapshot = self.snapshot_selection_set();
+        let mut selections = snapshot.selections;
+        let primary_index = snapshot.primary_index;
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let mut extra: Vec<Selection> = Vec::new();
+        for sel in &selections {
+            let caret = sel.end;
+            let target_line = if above {
+                if caret.line == 0 {
+                    continue;
+                }
+                caret.line - 1
+            } else {
+                let next = caret.line + 1;
+                if next >= line_count {
+                    continue;
+                }
+                next
+            };
+
+            let col = self.clamp_column_for_line(target_line, caret.column);
+            let pos = Position::new(target_line, col);
+            extra.push(Selection {
+                start: pos,
+                end: pos,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        if extra.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        selections.extend(extra);
+
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections,
+            primary_index,
+        })?;
+        Ok(CommandResult::Success)
+    }
+
+    fn selection_query(
+        &self,
+        selections: &[Selection],
+        primary_index: usize,
+    ) -> Option<(String, Option<SearchMatch>)> {
+        let primary = selections.get(primary_index)?;
+        let range = self.selection_char_range(primary);
+
+        if range.start != range.end {
+            let len = range.end - range.start;
+            return Some((
+                self.editor.piece_table.get_range(range.start, len),
+                Some(range),
+            ));
+        }
+
+        let caret = primary.end;
+        let line_text = self
+            .editor
+            .line_index
+            .get_line_text(caret.line)
+            .unwrap_or_default();
+        let col = caret.column.min(line_text.chars().count());
+        let (start_col, end_col) = Self::word_range_in_line(&line_text, col)?;
+        if start_col == end_col {
+            return None;
+        }
+
+        let start = self
+            .editor
+            .line_index
+            .position_to_char_offset(caret.line, start_col);
+        let end = self
+            .editor
+            .line_index
+            .position_to_char_offset(caret.line, end_col);
+        let range = SearchMatch {
+            start,
+            end: end.max(start),
+        };
+        Some((
+            self.editor
+                .piece_table
+                .get_range(range.start, range.end.saturating_sub(range.start)),
+            Some(range),
+        ))
+    }
+
+    fn execute_add_next_occurrence_command(
+        &mut self,
+        options: SearchOptions,
+    ) -> Result<CommandResult, CommandError> {
+        let snapshot = self.snapshot_selection_set();
+        let mut selections = snapshot.selections;
+        let primary_index = snapshot.primary_index;
+
+        let Some((query, primary_range)) = self.selection_query(&selections, primary_index) else {
+            return Ok(CommandResult::Success);
+        };
+        if query.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        // VSCode-like: if there is no active selection, first select the current word occurrence.
+        if let Some(primary_range) = primary_range
+            && primary_range.start != primary_range.end
+        {
+            let current = selections
+                .get(primary_index)
+                .map(|s| self.selection_char_range(s))
+                .unwrap_or(SearchMatch { start: 0, end: 0 });
+            if current.start == current.end {
+                let (start_line, start_col) = self
+                    .editor
+                    .line_index
+                    .char_offset_to_position(primary_range.start);
+                let (end_line, end_col) = self
+                    .editor
+                    .line_index
+                    .char_offset_to_position(primary_range.end);
+                if let Some(sel) = selections.get_mut(primary_index) {
+                    *sel = Selection {
+                        start: Position::new(start_line, start_col),
+                        end: Position::new(end_line, end_col),
+                        direction: SelectionDirection::Forward,
+                    };
+                }
+            }
+        }
+
+        let text = self.editor.piece_table.get_text();
+
+        let mut ranges: Vec<SearchMatch> = selections
+            .iter()
+            .map(|s| self.selection_char_range(s))
+            .filter(|r| r.start != r.end)
+            .collect();
+
+        if let Some(primary_range) = primary_range
+            && primary_range.start != primary_range.end
+            && !ranges
+                .iter()
+                .any(|r| r.start == primary_range.start && r.end == primary_range.end)
+        {
+            ranges.push(primary_range);
+        }
+
+        let mut existing: Vec<(usize, usize)> = ranges
+            .iter()
+            .map(|r| (r.start.min(r.end), r.end.max(r.start)))
+            .collect();
+        existing.sort_unstable();
+
+        let from = existing.iter().map(|(_, end)| *end).max().unwrap_or(0);
+
+        let mut search_from = from;
+        let mut wrapped = false;
+        let mut found: Option<SearchMatch> = None;
+
+        loop {
+            let next = find_next(&text, &query, options, search_from)
+                .map_err(|err| CommandError::Other(err.to_string()))?;
+
+            let Some(m) = next else {
+                if wrapped {
+                    break;
+                }
+                wrapped = true;
+                search_from = 0;
+                continue;
+            };
+
+            let overlaps = existing.iter().any(|(s, e)| m.start < *e && m.end > *s);
+
+            if overlaps {
+                if m.end >= text.chars().count() {
+                    break;
+                }
+                search_from = m.end + 1;
+                continue;
+            }
+
+            found = Some(m);
+            break;
+        }
+
+        let Some(m) = found else {
+            return Ok(CommandResult::Success);
+        };
+
+        let (start_line, start_col) = self.editor.line_index.char_offset_to_position(m.start);
+        let (end_line, end_col) = self.editor.line_index.char_offset_to_position(m.end);
+
+        selections.push(Selection {
+            start: Position::new(start_line, start_col),
+            end: Position::new(end_line, end_col),
+            direction: SelectionDirection::Forward,
+        });
+
+        let new_primary_index = selections.len().saturating_sub(1);
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections,
+            primary_index: new_primary_index,
+        })?;
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_add_all_occurrences_command(
+        &mut self,
+        options: SearchOptions,
+    ) -> Result<CommandResult, CommandError> {
+        let snapshot = self.snapshot_selection_set();
+        let selections = snapshot.selections;
+        let primary_index = snapshot.primary_index;
+
+        let Some((query, primary_range)) = self.selection_query(&selections, primary_index) else {
+            return Ok(CommandResult::Success);
+        };
+        if query.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        let text = self.editor.piece_table.get_text();
+        let matches =
+            find_all(&text, &query, options).map_err(|err| CommandError::Other(err.to_string()))?;
+
+        if matches.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        let mut out: Vec<Selection> = Vec::with_capacity(matches.len());
+        let mut next_primary = 0usize;
+        let primary_range = primary_range.filter(|r| r.start != r.end);
+
+        for (idx, m) in matches.iter().enumerate() {
+            let (start_line, start_col) = self.editor.line_index.char_offset_to_position(m.start);
+            let (end_line, end_col) = self.editor.line_index.char_offset_to_position(m.end);
+            out.push(Selection {
+                start: Position::new(start_line, start_col),
+                end: Position::new(end_line, end_col),
+                direction: SelectionDirection::Forward,
+            });
+
+            if let Some(pr) = primary_range
+                && pr.start == m.start
+                && pr.end == m.end
+            {
+                next_primary = idx;
+            }
+        }
+
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: out,
+            primary_index: next_primary,
+        })?;
+
+        Ok(CommandResult::Success)
+    }
+
     fn execute_insert_command(
         &mut self,
         offset: usize,
@@ -2545,6 +4801,7 @@ impl CommandExecutor {
 
         let affected_line = self.editor.line_index.char_offset_to_position(offset).0;
         let inserts_newline = text.contains('\n');
+        let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
 
         // Execute insertion
         self.editor.piece_table.insert(offset, &text);
@@ -2552,6 +4809,14 @@ impl CommandExecutor {
         // Update line index
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        if inserted_newlines > 0 {
+            self.editor
+                .folding_manager
+                .apply_line_delta(affected_line, inserted_newlines as isize);
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
+        }
 
         // Update layout engine (soft wrappingneeds to stay consistent with text)
         if inserts_newline {
@@ -2637,6 +4902,11 @@ impl CommandExecutor {
         let deleted_text = self.editor.piece_table.get_range(start, length);
         let delta_deleted_text = deleted_text.clone();
         let deletes_newline = deleted_text.contains('\n');
+        let deleted_newlines = deleted_text
+            .as_bytes()
+            .iter()
+            .filter(|b| **b == b'\n')
+            .count();
         let affected_line = self.editor.line_index.char_offset_to_position(start).0;
 
         // Execute deletion
@@ -2645,6 +4915,14 @@ impl CommandExecutor {
         // Update line index
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        if deleted_newlines > 0 {
+            self.editor
+                .folding_manager
+                .apply_line_delta(affected_line, -(deleted_newlines as isize));
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
+        }
 
         // Update layout engine (soft wrappingneeds to stay consistent with text)
         if deletes_newline {
@@ -2734,6 +5012,13 @@ impl CommandExecutor {
         let delta_inserted_text = text.clone();
 
         let affected_line = self.editor.line_index.char_offset_to_position(start).0;
+        let deleted_newlines = deleted_text
+            .as_bytes()
+            .iter()
+            .filter(|b| **b == b'\n')
+            .count();
+        let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
+        let line_delta = inserted_newlines as isize - deleted_newlines as isize;
         let replace_affects_layout = deleted_text.contains('\n') || text.contains('\n');
 
         // Apply as a single operation (delete then insert at the same offset).
@@ -2761,6 +5046,14 @@ impl CommandExecutor {
         // Rebuild derived structures.
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        if line_delta != 0 {
+            self.editor
+                .folding_manager
+                .apply_line_delta(affected_line, line_delta);
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
+        }
 
         if replace_affects_layout {
             self.rebuild_layout_engine_from_text(&updated_text);
@@ -3304,6 +5597,23 @@ impl CommandExecutor {
                 continue;
             }
 
+            let edit_line = self
+                .editor
+                .line_index
+                .char_offset_to_position(op.start_offset)
+                .0;
+            let deleted_newlines = op
+                .deleted_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            if deleted_newlines > 0 {
+                self.editor
+                    .folding_manager
+                    .apply_line_delta(edit_line, -(deleted_newlines as isize));
+            }
+
             self.editor
                 .piece_table
                 .delete(op.start_offset, op.delete_len);
@@ -3318,6 +5628,9 @@ impl CommandExecutor {
         // Rebuild derived structures once.
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.editor
+            .folding_manager
+            .clamp_to_line_count(self.editor.line_index.line_count());
         self.rebuild_layout_engine_from_text(&updated_text);
 
         // Collapse selection state to carets at the start of deleted ranges.
@@ -3897,6 +6210,29 @@ impl CommandExecutor {
                 });
             }
 
+            let edit_line = self.editor.line_index.char_offset_to_position(start).0;
+            let deleted_text = if delete_len > 0 {
+                self.editor.piece_table.get_range(start, delete_len)
+            } else {
+                String::new()
+            };
+            let deleted_newlines = deleted_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let inserted_newlines = insert_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+            if line_delta != 0 {
+                self.editor
+                    .folding_manager
+                    .apply_line_delta(edit_line, line_delta);
+            }
+
             if delete_len > 0 {
                 self.editor.piece_table.delete(start, delete_len);
                 self.editor
@@ -3922,6 +6258,9 @@ impl CommandExecutor {
         // Rebuild derived structures.
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.editor
+            .folding_manager
+            .clamp_to_line_count(self.editor.line_index.line_count());
         self.rebuild_layout_engine_from_text(&updated_text);
         self.normalize_cursor_and_selection();
 
@@ -4415,6 +6754,17 @@ impl CommandExecutor {
                     primary_index,
                 })?;
                 Ok(CommandResult::Success)
+            }
+            CursorCommand::SelectLine => self.execute_select_line_command(),
+            CursorCommand::SelectWord => self.execute_select_word_command(),
+            CursorCommand::ExpandSelection => self.execute_expand_selection_command(),
+            CursorCommand::AddCursorAbove => self.execute_add_cursor_vertical_command(true),
+            CursorCommand::AddCursorBelow => self.execute_add_cursor_vertical_command(false),
+            CursorCommand::AddNextOccurrence { options } => {
+                self.execute_add_next_occurrence_command(options)
+            }
+            CursorCommand::AddAllOccurrences { options } => {
+                self.execute_add_all_occurrences_command(options)
             }
             CursorCommand::FindNext { query, options } => {
                 self.execute_find_command(query, options, true)
