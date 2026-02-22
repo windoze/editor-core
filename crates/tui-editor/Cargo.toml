@@ -1,6 +1,6 @@
 [package]
 name = "tui-editor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Demo TUI editor built on editor-core and related crates."
 authors.workspace = true
 edition.workspace = true
@@ -17,7 +17,7 @@ crossterm = "0.28"
 ratatui = "0.29"
 serde_json = "1.0"
 
-editor-core = { version = "0.1.0", path = "../editor-core" }
-editor-core-lsp = { version = "0.1.0", path = "../editor-core-lsp" }
-editor-core-highlight-simple = { version = "0.1.0", path = "../editor-core-highlight-simple" }
-editor-core-sublime = { version = "0.1.0", path = "../editor-core-sublime" }
+editor-core = { version = "0.2.0", path = "../editor-core" }
+editor-core-lsp = { version = "0.2.0", path = "../editor-core-lsp" }
+editor-core-highlight-simple = { version = "0.2.0", path = "../editor-core-highlight-simple" }
+editor-core-sublime = { version = "0.2.0", path = "../editor-core-sublime" }

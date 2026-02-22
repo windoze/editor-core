@@ -1,6 +1,6 @@
 [package]
 name = "editor-core-sublime"
-version = "0.1.0"
+version = "0.2.0"
 description = "Sublime syntax highlighting and folding integration for editor-core."
 authors.workspace = true
 edition.workspace = true
@@ -14,7 +14,7 @@ categories = ["text-editors", "text-processing"]
 readme = "README.md"
 
 [dependencies]
-editor-core = { version = "0.1.0", path = "../editor-core" }
+editor-core = { version = "0.2.0", path = "../editor-core" }
 onig = "6.5"
 regex = "1.11"
 serde = { version = "1.0", features = ["derive"] }

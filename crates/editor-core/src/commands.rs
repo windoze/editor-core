@@ -1604,7 +1604,7 @@ impl CommandExecutor {
             before_char_count,
             after_char_count: self.editor.piece_table.char_count(),
             edits: delta_edits,
-            undo_group_id: undo_group_id,
+            undo_group_id,
         });
 
         Ok(CommandResult::Success)
@@ -1651,7 +1651,7 @@ impl CommandExecutor {
             before_char_count,
             after_char_count: self.editor.piece_table.char_count(),
             edits: delta_edits,
-            undo_group_id: undo_group_id,
+            undo_group_id,
         });
 
         Ok(CommandResult::Success)
@@ -3450,34 +3450,30 @@ impl CommandExecutor {
                 if forward {
                     if caret_offset >= doc_char_count {
                         (caret_offset, caret_offset)
+                    } else if col >= line_char_len {
+                        (caret_offset, (caret_offset + 1).min(doc_char_count))
                     } else {
-                        if col >= line_char_len {
-                            (caret_offset, (caret_offset + 1).min(doc_char_count))
-                        } else {
-                            let next_col = next_boundary_column(&line_text, col, boundary);
-                            let start_offset =
-                                self.editor.line_index.position_to_char_offset(line, col);
-                            let end_offset = self
-                                .editor
-                                .line_index
-                                .position_to_char_offset(line, next_col);
-                            (start_offset, end_offset)
-                        }
+                        let next_col = next_boundary_column(&line_text, col, boundary);
+                        let start_offset =
+                            self.editor.line_index.position_to_char_offset(line, col);
+                        let end_offset = self
+                            .editor
+                            .line_index
+                            .position_to_char_offset(line, next_col);
+                        (start_offset, end_offset)
                     }
                 } else if caret_offset == 0 {
                     (0, 0)
+                } else if col == 0 {
+                    (caret_offset - 1, caret_offset)
                 } else {
-                    if col == 0 {
-                        (caret_offset - 1, caret_offset)
-                    } else {
-                        let prev_col = prev_boundary_column(&line_text, col, boundary);
-                        let start_offset = self
-                            .editor
-                            .line_index
-                            .position_to_char_offset(line, prev_col);
-                        let end_offset = self.editor.line_index.position_to_char_offset(line, col);
-                        (start_offset, end_offset)
-                    }
+                    let prev_col = prev_boundary_column(&line_text, col, boundary);
+                    let start_offset = self
+                        .editor
+                        .line_index
+                        .position_to_char_offset(line, prev_col);
+                    let end_offset = self.editor.line_index.position_to_char_offset(line, col);
+                    (start_offset, end_offset)
                 }
             };
 

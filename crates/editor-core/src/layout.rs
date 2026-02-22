@@ -9,38 +9,28 @@ use unicode_width::UnicodeWidthChar;
 pub const DEFAULT_TAB_WIDTH: usize = 4;
 
 /// Soft wrapping mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WrapMode {
     /// No soft wrapping (each logical line is a single visual line).
     None,
     /// Wrap at character boundaries (current behavior).
+    #[default]
     Char,
     /// Prefer wrapping at word boundaries (whitespace), falling back to character wrap.
     Word,
 }
 
-impl Default for WrapMode {
-    fn default() -> Self {
-        Self::Char
-    }
-}
-
 /// Wrapped-line indentation policy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WrapIndent {
     /// No indentation for wrapped continuations.
+    #[default]
     None,
     /// Indent wrapped continuations by the width (in cells) of the logical line's leading
     /// whitespace prefix (spaces + tabs).
     SameAsLineIndent,
     /// Indent wrapped continuations by a fixed number of cells.
     FixedCells(usize),
-}
-
-impl Default for WrapIndent {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 /// Wrap point
