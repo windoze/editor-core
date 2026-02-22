@@ -36,7 +36,7 @@
 use crate::delta::TextDelta;
 use crate::intervals::{FoldRegion, Interval, StyleId, StyleLayerId};
 use crate::processing::{DocumentProcessor, ProcessingEdit};
-use crate::snapshot::HeadlessGrid;
+use crate::snapshot::{ComposedGrid, HeadlessGrid};
 use crate::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, Decoration,
     DecorationLayerId, Diagnostic, EditCommand, EditorCore, LineEnding, Position, Selection,
@@ -868,6 +868,20 @@ impl EditorStateManager {
         self.executor
             .editor()
             .get_headless_grid_styled(start_visual_row, count)
+    }
+
+    /// Get a decoration-aware composed viewport snapshot (by composed visual line).
+    ///
+    /// See [`EditorCore::get_headless_grid_composed`](crate::EditorCore::get_headless_grid_composed)
+    /// for detailed semantics and caveats.
+    pub fn get_viewport_content_composed(
+        &self,
+        start_visual_row: usize,
+        count: usize,
+    ) -> ComposedGrid {
+        self.executor
+            .editor()
+            .get_headless_grid_composed(start_visual_row, count)
     }
 
     /// Subscribe to state change notifications

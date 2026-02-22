@@ -33,7 +33,7 @@
 //! executor.execute_batch(commands).unwrap();
 //! ```
 
-use crate::decorations::{Decoration, DecorationLayerId};
+use crate::decorations::{Decoration, DecorationLayerId, DecorationPlacement};
 use crate::delta::{TextDelta, TextDeltaEdit};
 use crate::diagnostics::Diagnostic;
 use crate::intervals::{FoldRegion, StyleId, StyleLayerId};
@@ -43,7 +43,10 @@ use crate::layout::{
 };
 use crate::line_ending::LineEnding;
 use crate::search::{CharIndex, SearchMatch, SearchOptions, find_all, find_next, find_prev};
-use crate::snapshot::{Cell, HeadlessGrid, HeadlessLine};
+use crate::snapshot::{
+    Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
+    HeadlessGrid, HeadlessLine,
+};
 use crate::{
     FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex, PieceTable,
     SnapshotGenerator,
@@ -51,7 +54,7 @@ use crate::{
 use editor_core_lang::CommentConfig;
 use regex::RegexBuilder;
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// Position coordinates (line and column numbers)
@@ -1042,6 +1045,311 @@ impl EditorCore {
 
                     grid.add_line(headless_line);
                 }
+
+                current_visual = current_visual.saturating_add(1);
+            }
+        }
+
+        grid
+    }
+
+    /// Get a decoration-aware composed grid snapshot (by composed visual line).
+    ///
+    /// This is an **optional** snapshot path that injects:
+    /// - inline virtual text (`DecorationPlacement::{Before,After}`), e.g. inlay hints
+    /// - above-line virtual text (`DecorationPlacement::AboveLine`), e.g. code lens
+    ///
+    /// Notes:
+    /// - Wrapping is still computed from the underlying document text only.
+    /// - Virtual text can therefore extend past the viewport width; hosts may clip.
+    /// - Each [`ComposedCell`] carries its origin (`Document` vs `Virtual`) so hosts can map
+    ///   interactions back to document offsets without re-implementing layout.
+    pub fn get_headless_grid_composed(
+        &self,
+        start_visual_row: usize,
+        count: usize,
+    ) -> ComposedGrid {
+        let mut grid = ComposedGrid::new(start_visual_row, count);
+        if count == 0 {
+            return grid;
+        }
+
+        #[derive(Debug, Clone)]
+        struct VirtualText {
+            anchor: usize,
+            text: String,
+            styles: Vec<StyleId>,
+        }
+
+        // Collect virtual text decorations from all layers.
+        let mut inline_before: HashMap<usize, Vec<VirtualText>> = HashMap::new();
+        let mut inline_after: HashMap<usize, Vec<VirtualText>> = HashMap::new();
+        let mut above_by_line: BTreeMap<usize, Vec<VirtualText>> = BTreeMap::new();
+
+        for decorations in self.decorations.values() {
+            for deco in decorations {
+                let Some(text) = deco.text.as_ref() else {
+                    continue;
+                };
+                if text.is_empty() {
+                    continue;
+                }
+
+                let anchor = match deco.placement {
+                    DecorationPlacement::After => deco.range.end,
+                    DecorationPlacement::Before | DecorationPlacement::AboveLine => {
+                        deco.range.start
+                    }
+                };
+                let vt = VirtualText {
+                    anchor,
+                    text: text.clone(),
+                    styles: deco.styles.clone(),
+                };
+
+                match deco.placement {
+                    DecorationPlacement::Before => {
+                        inline_before.entry(anchor).or_default().push(vt);
+                    }
+                    DecorationPlacement::After => {
+                        inline_after.entry(anchor).or_default().push(vt);
+                    }
+                    DecorationPlacement::AboveLine => {
+                        let line = self.line_index.char_offset_to_position(anchor).0;
+                        above_by_line.entry(line).or_default().push(vt);
+                    }
+                }
+            }
+        }
+
+        // Compute the total composed visual line count for bounds checking.
+        let regions = self.folding_manager.regions();
+        let mut total_composed = 0usize;
+        for logical_line in 0..self.layout_engine.logical_line_count() {
+            if Self::is_logical_line_hidden(regions, logical_line) {
+                continue;
+            }
+
+            if let Some(above) = above_by_line.get(&logical_line) {
+                total_composed = total_composed.saturating_add(above.len());
+            }
+
+            total_composed = total_composed.saturating_add(
+                self.layout_engine
+                    .get_line_layout(logical_line)
+                    .map(|l| l.visual_line_count)
+                    .unwrap_or(1),
+            );
+        }
+
+        if start_visual_row >= total_composed {
+            return grid;
+        }
+
+        let end_visual = start_visual_row.saturating_add(count).min(total_composed);
+        let tab_width = self.layout_engine.tab_width();
+
+        let mut current_visual = 0usize;
+
+        for logical_line in 0..self.layout_engine.logical_line_count() {
+            if Self::is_logical_line_hidden(regions, logical_line) {
+                continue;
+            }
+
+            // Above-line virtual text (e.g. code lens).
+            if let Some(above) = above_by_line.get(&logical_line) {
+                for vt in above {
+                    if current_visual >= end_visual {
+                        return grid;
+                    }
+
+                    if current_visual >= start_visual_row {
+                        let mut x_render = 0usize;
+                        let mut cells: Vec<ComposedCell> = Vec::new();
+                        for ch in vt.text.chars() {
+                            let w = cell_width_at(ch, x_render, tab_width);
+                            x_render = x_render.saturating_add(w);
+                            cells.push(ComposedCell {
+                                ch,
+                                width: w,
+                                styles: vt.styles.clone(),
+                                source: ComposedCellSource::Virtual {
+                                    anchor_offset: vt.anchor,
+                                },
+                            });
+                        }
+
+                        grid.lines.push(ComposedLine {
+                            kind: ComposedLineKind::VirtualAboveLine { logical_line },
+                            cells,
+                        });
+                    }
+
+                    current_visual = current_visual.saturating_add(1);
+                }
+            }
+
+            let Some(layout) = self.layout_engine.get_line_layout(logical_line) else {
+                continue;
+            };
+
+            let line_text = self
+                .line_index
+                .get_line_text(logical_line)
+                .unwrap_or_default();
+            let line_char_len = line_text.chars().count();
+            let line_start_offset = self.line_index.position_to_char_offset(logical_line, 0);
+
+            for visual_in_line in 0..layout.visual_line_count {
+                if current_visual >= end_visual {
+                    return grid;
+                }
+
+                if current_visual < start_visual_row {
+                    current_visual = current_visual.saturating_add(1);
+                    continue;
+                }
+
+                let segment_start_col = if visual_in_line == 0 {
+                    0
+                } else {
+                    layout
+                        .wrap_points
+                        .get(visual_in_line - 1)
+                        .map(|wp| wp.char_index)
+                        .unwrap_or(0)
+                        .min(line_char_len)
+                };
+
+                let segment_end_col = if visual_in_line < layout.wrap_points.len() {
+                    layout.wrap_points[visual_in_line]
+                        .char_index
+                        .min(line_char_len)
+                } else {
+                    line_char_len
+                };
+
+                let segment_start_offset = line_start_offset + segment_start_col;
+
+                let mut cells: Vec<ComposedCell> = Vec::new();
+
+                let mut x_render = 0usize;
+                if visual_in_line > 0 {
+                    let indent_cells = wrap_indent_cells_for_line_text(
+                        &line_text,
+                        self.layout_engine.wrap_indent(),
+                        self.viewport_width,
+                        tab_width,
+                    );
+                    x_render = x_render.saturating_add(indent_cells);
+                    for _ in 0..indent_cells {
+                        cells.push(ComposedCell {
+                            ch: ' ',
+                            width: 1,
+                            styles: Vec::new(),
+                            source: ComposedCellSource::Virtual {
+                                anchor_offset: segment_start_offset,
+                            },
+                        });
+                    }
+                }
+
+                let mut x_in_line = visual_x_for_column(&line_text, segment_start_col, tab_width);
+
+                let push_virtual = |anchor: usize,
+                                    list: &[VirtualText],
+                                    cells: &mut Vec<ComposedCell>,
+                                    x_render: &mut usize| {
+                    for vt in list {
+                        for ch in vt.text.chars() {
+                            let w = cell_width_at(ch, *x_render, tab_width);
+                            *x_render = x_render.saturating_add(w);
+                            cells.push(ComposedCell {
+                                ch,
+                                width: w,
+                                styles: vt.styles.clone(),
+                                source: ComposedCellSource::Virtual {
+                                    anchor_offset: anchor,
+                                },
+                            });
+                        }
+                    }
+                };
+
+                for (col, ch) in line_text
+                    .chars()
+                    .enumerate()
+                    .skip(segment_start_col)
+                    .take(segment_end_col.saturating_sub(segment_start_col))
+                {
+                    let offset = line_start_offset + col;
+
+                    if let Some(list) = inline_before.get(&offset) {
+                        push_virtual(offset, list, &mut cells, &mut x_render);
+                    }
+                    if let Some(list) = inline_after.get(&offset) {
+                        push_virtual(offset, list, &mut cells, &mut x_render);
+                    }
+
+                    let styles = self.styles_at_offset(offset);
+                    let w = cell_width_at(ch, x_in_line, tab_width);
+                    x_in_line = x_in_line.saturating_add(w);
+                    x_render = x_render.saturating_add(w);
+                    cells.push(ComposedCell {
+                        ch,
+                        width: w,
+                        styles,
+                        source: ComposedCellSource::Document { offset },
+                    });
+                }
+
+                // End-of-line inline virtual text (only on the last visual segment).
+                if visual_in_line + 1 == layout.visual_line_count {
+                    let eol_offset = line_start_offset + line_char_len;
+                    if let Some(list) = inline_before.get(&eol_offset) {
+                        push_virtual(eol_offset, list, &mut cells, &mut x_render);
+                    }
+                    if let Some(list) = inline_after.get(&eol_offset) {
+                        push_virtual(eol_offset, list, &mut cells, &mut x_render);
+                    }
+
+                    // For collapsed folding start line, append placeholder to the last segment.
+                    if let Some(region) = Self::collapsed_region_starting_at(regions, logical_line)
+                        && !region.placeholder.is_empty()
+                    {
+                        if !cells.is_empty() {
+                            x_render = x_render.saturating_add(char_width(' '));
+                            cells.push(ComposedCell {
+                                ch: ' ',
+                                width: char_width(' '),
+                                styles: vec![FOLD_PLACEHOLDER_STYLE_ID],
+                                source: ComposedCellSource::Virtual {
+                                    anchor_offset: eol_offset,
+                                },
+                            });
+                        }
+                        for ch in region.placeholder.chars() {
+                            let w = cell_width_at(ch, x_render, tab_width);
+                            x_render = x_render.saturating_add(w);
+                            cells.push(ComposedCell {
+                                ch,
+                                width: w,
+                                styles: vec![FOLD_PLACEHOLDER_STYLE_ID],
+                                source: ComposedCellSource::Virtual {
+                                    anchor_offset: eol_offset,
+                                },
+                            });
+                        }
+                    }
+                }
+
+                grid.lines.push(ComposedLine {
+                    kind: ComposedLineKind::Document {
+                        logical_line,
+                        visual_in_logical: visual_in_line,
+                    },
+                    cells,
+                });
 
                 current_visual = current_visual.saturating_add(1);
             }

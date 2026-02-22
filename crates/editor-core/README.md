@@ -12,6 +12,8 @@ snapshots and drive edits through the command/state APIs.
 - **Style + folding metadata** via interval trees (`IntervalTree`) and fold regions (`FoldingManager`)
   (derived folds + stable user folds).
 - **Headless snapshots** (`SnapshotGenerator` → `HeadlessGrid`) for building “text grid” UIs.
+- **Decoration-aware composed snapshots** (`ComposedGrid`) that inject virtual text (inlay hints,
+  code lens) so hosts can render from snapshot data without re-implementing layout rules.
 - **Command interface** (`CommandExecutor`) and **state/query layer** (`EditorStateManager`).
 - **Workspace model** (`Workspace`) for multi-buffer + multi-view (split panes):
   - open buffers: `Workspace::open_buffer` → `OpenBufferResult { buffer_id, view_id }`
@@ -113,6 +115,37 @@ ws.execute(right, Command::Cursor(CursorCommand::MoveTo { line: 0, column: 5 }))
 
 ws.execute(left, Command::Edit(EditCommand::InsertText { text: "X".to_string() })).unwrap();
 assert_eq!(ws.buffer_text(opened.buffer_id).unwrap(), "0X123456789\n");
+```
+
+### Decoration-aware composed snapshots (virtual text)
+
+If you apply decorations that include `Decoration.text` (e.g. inlay hints or code lens), you can
+render them via `ComposedGrid`:
+
+```rust
+use editor_core::{
+    Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
+    EditorStateManager, ProcessingEdit,
+};
+
+let mut manager = EditorStateManager::new("a = 1\n", 80);
+let anchor = manager.editor().line_index.position_to_char_offset(0, 1);
+
+manager.apply_processing_edits(vec![ProcessingEdit::ReplaceDecorations {
+    layer: DecorationLayerId::INLAY_HINTS,
+    decorations: vec![Decoration {
+        range: DecorationRange::new(anchor, anchor),
+        placement: DecorationPlacement::After,
+        kind: DecorationKind::InlayHint,
+        text: Some(": i32".to_string()),
+        styles: vec![],
+        tooltip: None,
+        data_json: None,
+    }],
+}]);
+
+let composed = manager.get_viewport_content_composed(0, 10);
+assert!(composed.actual_line_count() > 0);
 ```
 
 ## Related crates

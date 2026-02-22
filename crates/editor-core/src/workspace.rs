@@ -775,6 +775,37 @@ impl Workspace {
             .get_headless_grid_styled(start_visual_row, count))
     }
 
+    /// Get a decoration-aware composed viewport snapshot for a view (by composed visual line).
+    ///
+    /// This snapshot can include virtual text (inlay hints, code lens) injected from the buffer's
+    /// decoration layers. See [`crate::EditorCore::get_headless_grid_composed`] for details.
+    pub fn get_viewport_content_composed(
+        &mut self,
+        view_id: ViewId,
+        start_visual_row: usize,
+        count: usize,
+    ) -> Result<crate::ComposedGrid, WorkspaceError> {
+        let Some(buffer_id) = self.views.get(&view_id).map(|v| v.buffer) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+
+        let view_core = self
+            .views
+            .get(&view_id)
+            .map(|v| v.core.clone())
+            .ok_or(WorkspaceError::ViewNotFound(view_id))?;
+
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+
+        view_core.apply_to_executor(&mut buffer.executor);
+        Ok(buffer
+            .executor
+            .editor()
+            .get_headless_grid_composed(start_visual_row, count))
+    }
+
     /// Apply derived-state edits to a buffer and broadcast them to all views of that buffer.
     pub fn apply_processing_edits<I>(
         &mut self,
