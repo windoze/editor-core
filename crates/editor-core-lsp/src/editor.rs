@@ -1263,6 +1263,18 @@ impl LspSession {
         self.poll_edits_with_handler(state, |_| {})
     }
 
+    /// Poll the LSP connection and return derived-state edits (semantic tokens, folding ranges),
+    /// using an explicit [`LineIndex`].
+    ///
+    /// This is useful when integrating with workspace models that store buffer state outside of
+    /// [`EditorStateManager`] (e.g. split panes / multiple views into the same buffer).
+    pub fn poll_edits_with_line_index(
+        &mut self,
+        line_index: &LineIndex,
+    ) -> Result<Vec<ProcessingEdit>, String> {
+        self.poll_edits_with_line_index_and_handler(line_index, |_| {})
+    }
+
     /// Poll the LSP connection, returning derived-state edits (semantic tokens, folding ranges).
     ///
     /// `on_unhandled_message` receives any messages that are not:
@@ -1281,6 +1293,18 @@ impl LspSession {
         self.poll_edits_with_handlers(state, on_unhandled_message, |_| {})
     }
 
+    /// Poll the LSP connection, returning derived-state edits, using an explicit [`LineIndex`].
+    pub fn poll_edits_with_line_index_and_handler<F>(
+        &mut self,
+        line_index: &LineIndex,
+        on_unhandled_message: F,
+    ) -> Result<Vec<ProcessingEdit>, String>
+    where
+        F: FnMut(Value),
+    {
+        self.poll_edits_with_line_index_and_handlers(line_index, on_unhandled_message, |_| {})
+    }
+
     /// Poll the LSP connection, returning derived-state edits (semantic tokens, folding ranges).
     ///
     /// This is like [`LspSession::poll_edits_with_handler`], but also exposes each parsed
@@ -1288,6 +1312,24 @@ impl LspSession {
     pub fn poll_edits_with_handlers<F, G>(
         &mut self,
         state: &EditorStateManager,
+        on_unhandled_message: F,
+        on_notification: G,
+    ) -> Result<Vec<ProcessingEdit>, String>
+    where
+        F: FnMut(Value),
+        G: FnMut(&LspNotification),
+    {
+        self.poll_edits_with_line_index_and_handlers(
+            &state.editor().line_index,
+            on_unhandled_message,
+            on_notification,
+        )
+    }
+
+    /// Poll the LSP connection, returning derived-state edits, using an explicit [`LineIndex`].
+    pub fn poll_edits_with_line_index_and_handlers<F, G>(
+        &mut self,
+        line_index: &LineIndex,
         mut on_unhandled_message: F,
         mut on_notification: G,
     ) -> Result<Vec<ProcessingEdit>, String>
@@ -1325,7 +1367,7 @@ impl LspSession {
                     let maybe_id = msg.get("id").and_then(Value::as_u64);
                     if let Some(id) = maybe_id {
                         if let Some(pending) = self.pending.remove(&id) {
-                            self.handle_pending_response(state, pending, &msg, &mut edits)?;
+                            self.handle_pending_response(line_index, pending, &msg, &mut edits)?;
                             continue;
                         }
 
@@ -1364,10 +1406,8 @@ impl LspSession {
                             if let LspNotification::PublishDiagnostics(diags) = &notification
                                 && diags.uri == self.document.uri
                             {
-                                edits.extend(lsp_diagnostics_to_processing_edits(
-                                    &state.editor().line_index,
-                                    diags,
-                                ));
+                                edits
+                                    .extend(lsp_diagnostics_to_processing_edits(line_index, diags));
                             }
                             self.push_event(LspEvent::Notification(notification));
                         }
@@ -1512,7 +1552,7 @@ impl LspSession {
 
     fn handle_pending_response(
         &mut self,
-        state: &EditorStateManager,
+        line_index: &LineIndex,
         pending: PendingLspRequest,
         msg: &Value,
         edits: &mut Vec<ProcessingEdit>,
@@ -1524,7 +1564,7 @@ impl LspSession {
                 }
 
                 let result = msg.get("result").cloned().unwrap_or(Value::Null);
-                self.handle_semantic_tokens_result(&result, &state.editor().line_index, edits);
+                self.handle_semantic_tokens_result(&result, line_index, edits);
             }
             PendingLspRequest::FoldingRanges { version } => {
                 if version != self.document.version {

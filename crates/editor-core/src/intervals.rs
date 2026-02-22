@@ -46,6 +46,9 @@ impl StyleLayerId {
 
     /// LSP `textDocument/documentHighlight` overlay layer.
     pub const DOCUMENT_HIGHLIGHTS: Self = Self(5);
+
+    /// Tree-sitter syntax highlighting style layer.
+    pub const TREE_SITTER: Self = Self(6);
 }
 
 /// Interval structure

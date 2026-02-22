@@ -99,6 +99,87 @@ impl HeadlessGrid {
     }
 }
 
+/// A cell in a composed (decoration-aware) snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComposedCell {
+    /// The rendered character.
+    pub ch: char,
+    /// The rendered cell width (typically 1 or 2).
+    pub width: usize,
+    /// Style ids applied to this cell.
+    pub styles: Vec<crate::intervals::StyleId>,
+    /// Where this cell originated from (document text vs virtual text).
+    pub source: ComposedCellSource,
+}
+
+/// The origin of a composed cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComposedCellSource {
+    /// A document text character at the given character offset.
+    Document {
+        /// Character offset (Unicode scalar values) from the start of the document.
+        offset: usize,
+    },
+    /// A virtual cell anchored to a document character offset (e.g. inlay hints, code lens).
+    Virtual {
+        /// Anchor character offset in the document.
+        anchor_offset: usize,
+    },
+}
+
+/// The kind of a composed visual line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComposedLineKind {
+    /// A line segment that corresponds to actual document text (wrap + folding aware).
+    Document {
+        /// Logical line index.
+        logical_line: usize,
+        /// Which wrapped segment within the logical line (0-based).
+        visual_in_logical: usize,
+    },
+    /// A virtual line inserted above a logical line (e.g. code lens).
+    VirtualAboveLine {
+        /// Logical line index that this virtual line is associated with.
+        logical_line: usize,
+    },
+}
+
+/// A decoration-aware visual line (document segment or virtual text line).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComposedLine {
+    /// Line kind / anchor info.
+    pub kind: ComposedLineKind,
+    /// Rendered cells for this line.
+    pub cells: Vec<ComposedCell>,
+}
+
+/// A decoration-aware snapshot that can include virtual text (inlay hints, code lens, ...).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComposedGrid {
+    /// Composed visual lines.
+    pub lines: Vec<ComposedLine>,
+    /// Requested start row (in composed visual rows).
+    pub start_visual_row: usize,
+    /// Requested row count.
+    pub count: usize,
+}
+
+impl ComposedGrid {
+    /// Create an empty composed grid snapshot for a requested visual range.
+    pub fn new(start_visual_row: usize, count: usize) -> Self {
+        Self {
+            lines: Vec::new(),
+            start_visual_row,
+            count,
+        }
+    }
+
+    /// Get the actual number of lines returned.
+    pub fn actual_line_count(&self) -> usize {
+        self.lines.len()
+    }
+}
+
 /// Headless snapshot generator
 ///
 /// Integrates all components to generate snapshots needed for UI rendering

@@ -36,7 +36,7 @@
 use crate::delta::TextDelta;
 use crate::intervals::{FoldRegion, Interval, StyleId, StyleLayerId};
 use crate::processing::{DocumentProcessor, ProcessingEdit};
-use crate::snapshot::HeadlessGrid;
+use crate::snapshot::{ComposedGrid, HeadlessGrid};
 use crate::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, Decoration,
     DecorationLayerId, Diagnostic, EditCommand, EditorCore, LineEnding, Position, Selection,
@@ -161,6 +161,8 @@ pub enum StateChangeType {
     DecorationsChanged,
     /// Diagnostics changed
     DiagnosticsChanged,
+    /// Document symbols / outline changed
+    SymbolsChanged,
 }
 
 /// State change record
@@ -388,7 +390,8 @@ impl EditorStateManager {
                 StateChangeType::FoldingChanged
                 | StateChangeType::StyleChanged
                 | StateChangeType::DecorationsChanged
-                | StateChangeType::DiagnosticsChanged => true,
+                | StateChangeType::DiagnosticsChanged
+                | StateChangeType::SymbolsChanged => true,
             };
 
             if changed {
@@ -737,6 +740,20 @@ impl EditorStateManager {
         self.mark_modified(StateChangeType::DiagnosticsChanged);
     }
 
+    /// Replace document symbols / outline wholesale.
+    pub fn replace_document_symbols(&mut self, symbols: crate::DocumentOutline) {
+        let editor = self.executor.editor_mut();
+        editor.document_symbols = symbols;
+        self.mark_modified(StateChangeType::SymbolsChanged);
+    }
+
+    /// Clear document symbols / outline.
+    pub fn clear_document_symbols(&mut self) {
+        let editor = self.executor.editor_mut();
+        editor.document_symbols = crate::DocumentOutline::default();
+        self.mark_modified(StateChangeType::SymbolsChanged);
+    }
+
     /// Replace a decoration layer wholesale.
     pub fn replace_decorations(
         &mut self,
@@ -828,6 +845,12 @@ impl EditorStateManager {
                 ProcessingEdit::ClearDecorations { layer } => {
                     self.clear_decorations(layer);
                 }
+                ProcessingEdit::ReplaceDocumentSymbols { symbols } => {
+                    self.replace_document_symbols(symbols);
+                }
+                ProcessingEdit::ClearDocumentSymbols => {
+                    self.clear_document_symbols();
+                }
             }
         }
     }
@@ -868,6 +891,20 @@ impl EditorStateManager {
         self.executor
             .editor()
             .get_headless_grid_styled(start_visual_row, count)
+    }
+
+    /// Get a decoration-aware composed viewport snapshot (by composed visual line).
+    ///
+    /// See [`EditorCore::get_headless_grid_composed`](crate::EditorCore::get_headless_grid_composed)
+    /// for detailed semantics and caveats.
+    pub fn get_viewport_content_composed(
+        &self,
+        start_visual_row: usize,
+        count: usize,
+    ) -> ComposedGrid {
+        self.executor
+            .editor()
+            .get_headless_grid_composed(start_visual_row, count)
     }
 
     /// Subscribe to state change notifications

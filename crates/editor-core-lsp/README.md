@@ -19,6 +19,9 @@ requirements, and a small dependency surface.
   - document links → `ProcessingEdit::ReplaceDecorations` (`DecorationLayerId::DOCUMENT_LINKS`)
   - code lens → `ProcessingEdit::ReplaceDecorations` (`DecorationLayerId::CODE_LENS`)
   - completion apply helpers: batch `additionalTextEdits` and best-effort snippet downgrade
+- **Symbols/outline helpers**:
+  - document symbols (`textDocument/documentSymbol`) → `DocumentOutline` / `ProcessingEdit::ReplaceDocumentSymbols`
+  - workspace symbols (`workspace/symbol`) → `Vec<WorkspaceSymbol>`
 - **Stdio JSON-RPC client** (`LspClient`) for driving an LSP server process.
 - **High-level session wrapper** (`LspSession`) that polls messages, emits typed events, and produces
   derived-state edits (`ProcessingEdit`) for the editor.

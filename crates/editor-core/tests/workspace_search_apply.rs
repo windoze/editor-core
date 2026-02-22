@@ -1,17 +1,17 @@
-use editor_core::{Command, EditCommand, SearchOptions, TextEditSpec, Workspace};
+use editor_core::{Command, EditCommand, OpenBufferResult, SearchOptions, TextEditSpec, Workspace};
 
 #[test]
 fn test_workspace_search_all_open_documents() {
     let mut ws = Workspace::new();
-    let a = ws
-        .open_document(Some("file:///a.txt".to_string()), "foo bar\nbaz", 80)
+    let OpenBufferResult { buffer_id: a, .. } = ws
+        .open_buffer(Some("file:///a.txt".to_string()), "foo bar\nbaz", 80)
         .unwrap();
-    let b = ws
-        .open_document(Some("file:///b.txt".to_string()), "xx foo yy", 80)
+    let OpenBufferResult { buffer_id: b, .. } = ws
+        .open_buffer(Some("file:///b.txt".to_string()), "xx foo yy", 80)
         .unwrap();
 
     let results = ws
-        .search_all_open_documents("foo", SearchOptions::default())
+        .search_all_open_buffers("foo", SearchOptions::default())
         .unwrap();
 
     assert_eq!(results.len(), 2);
@@ -24,8 +24,14 @@ fn test_workspace_search_all_open_documents() {
 #[test]
 fn test_workspace_apply_text_edits_groups_undo_per_document() {
     let mut ws = Workspace::new();
-    let a = ws.open_document(None, "foo bar", 80).unwrap();
-    let b = ws.open_document(None, "bar foo", 80).unwrap();
+    let OpenBufferResult {
+        buffer_id: a,
+        view_id: a_view,
+    } = ws.open_buffer(None, "foo bar", 80).unwrap();
+    let OpenBufferResult {
+        buffer_id: b,
+        view_id: b_view,
+    } = ws.open_buffer(None, "bar foo", 80).unwrap();
 
     ws.apply_text_edits(vec![
         (
@@ -47,19 +53,15 @@ fn test_workspace_apply_text_edits_groups_undo_per_document() {
     ])
     .unwrap();
 
-    assert_eq!(ws.document(a).unwrap().editor().get_text(), "foo baz");
-    assert_eq!(ws.document(b).unwrap().editor().get_text(), "baz foo");
+    assert_eq!(ws.buffer_text(a).unwrap(), "foo baz");
+    assert_eq!(ws.buffer_text(b).unwrap(), "baz foo");
 
-    // One undo per document should revert the batch.
-    ws.document_mut(a)
-        .unwrap()
-        .execute(Command::Edit(EditCommand::Undo))
+    // One undo per buffer should revert the batch.
+    ws.execute(a_view, Command::Edit(EditCommand::Undo))
         .unwrap();
-    ws.document_mut(b)
-        .unwrap()
-        .execute(Command::Edit(EditCommand::Undo))
+    ws.execute(b_view, Command::Edit(EditCommand::Undo))
         .unwrap();
 
-    assert_eq!(ws.document(a).unwrap().editor().get_text(), "foo bar");
-    assert_eq!(ws.document(b).unwrap().editor().get_text(), "bar foo");
+    assert_eq!(ws.buffer_text(a).unwrap(), "foo bar");
+    assert_eq!(ws.buffer_text(b).unwrap(), "bar foo");
 }

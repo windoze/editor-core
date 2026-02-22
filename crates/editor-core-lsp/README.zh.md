@@ -16,6 +16,9 @@
   - 文档链接 → `ProcessingEdit::ReplaceDecorations`(`DecorationLayerId::DOCUMENT_LINKS`)
   - Code lens → `ProcessingEdit::ReplaceDecorations`(`DecorationLayerId::CODE_LENS`)
   - 补全应用助手: 批量应用 `additionalTextEdits`，并对 snippet 形态插入做尽力降级
+- **符号/大纲助手**:
+  - 文档符号(`textDocument/documentSymbol`) → `DocumentOutline` / `ProcessingEdit::ReplaceDocumentSymbols`
+  - 工作区符号(`workspace/symbol`) → `Vec<WorkspaceSymbol>`
 - **Stdio JSON-RPC 客户端**(`LspClient`)用于驱动 LSP 服务器进程。
 - **高级会话包装器**(`LspSession`)用于轮询消息、发出类型化事件,并为编辑器生成派生状态编辑(`ProcessingEdit`)。
 

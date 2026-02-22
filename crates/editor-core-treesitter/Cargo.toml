@@ -1,0 +1,22 @@
+[package]
+name = "editor-core-treesitter"
+version = "0.2.0"
+description = "Tree-sitter integration for editor-core (highlighting, folding, incremental parsing)."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["editor", "text-editor", "unicode", "tree-sitter", "headless"]
+categories = ["text-editors", "text-processing"]
+readme = "README.md"
+
+[dependencies]
+editor-core = { version = "0.2.0", path = "../editor-core" }
+streaming-iterator = "0.1"
+tree-sitter = "0.26"
+
+[dev-dependencies]
+tree-sitter-rust = "0.24"

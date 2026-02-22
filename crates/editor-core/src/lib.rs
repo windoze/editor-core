@@ -113,6 +113,7 @@ mod selection_set;
 pub mod snapshot;
 pub mod state;
 pub mod storage;
+pub mod symbols;
 mod text;
 pub mod workspace;
 
@@ -137,13 +138,21 @@ pub use line_ending::LineEnding;
 pub use line_index::LineIndex;
 pub use processing::{DocumentProcessor, ProcessingEdit};
 pub use search::{SearchError, SearchMatch, SearchOptions};
-pub use snapshot::{Cell, HeadlessGrid, HeadlessLine, SnapshotGenerator};
+pub use snapshot::{
+    Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
+    HeadlessGrid, HeadlessLine, SnapshotGenerator,
+};
 pub use state::{
     CursorState, DecorationsState, DiagnosticsState, DocumentState, EditorState,
     EditorStateManager, FoldingState, StateChange, StateChangeCallback, StateChangeType,
     StyleState, UndoRedoState, ViewportState,
 };
 pub use storage::PieceTable;
+pub use symbols::{
+    DocumentOutline, DocumentSymbol, SymbolKind, SymbolLocation, SymbolRange, Utf16Position,
+    Utf16Range, WorkspaceSymbol,
+};
 pub use workspace::{
-    DocumentId, DocumentMetadata, Workspace, WorkspaceError, WorkspaceSearchResult,
+    BufferId, BufferMetadata, OpenBufferResult, ViewId, Workspace, WorkspaceError,
+    WorkspaceSearchResult,
 };

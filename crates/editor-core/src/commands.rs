@@ -33,7 +33,7 @@
 //! executor.execute_batch(commands).unwrap();
 //! ```
 
-use crate::decorations::{Decoration, DecorationLayerId};
+use crate::decorations::{Decoration, DecorationLayerId, DecorationPlacement};
 use crate::delta::{TextDelta, TextDeltaEdit};
 use crate::diagnostics::Diagnostic;
 use crate::intervals::{FoldRegion, StyleId, StyleLayerId};
@@ -43,15 +43,17 @@ use crate::layout::{
 };
 use crate::line_ending::LineEnding;
 use crate::search::{CharIndex, SearchMatch, SearchOptions, find_all, find_next, find_prev};
-use crate::snapshot::{Cell, HeadlessGrid, HeadlessLine};
+use crate::snapshot::{
+    Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
+    HeadlessGrid, HeadlessLine,
+};
 use crate::{
     FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex, PieceTable,
-    SnapshotGenerator,
 };
 use editor_core_lang::CommentConfig;
 use regex::RegexBuilder;
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// Position coordinates (line and column numbers)
@@ -829,6 +831,8 @@ pub struct EditorCore {
     pub diagnostics: Vec<Diagnostic>,
     /// Derived decorations for this document (virtual text, links, etc.).
     pub decorations: BTreeMap<DecorationLayerId, Vec<Decoration>>,
+    /// Derived document symbols / outline for this document.
+    pub document_symbols: crate::DocumentOutline,
     /// Folding manager
     pub folding_manager: FoldingManager,
     /// Current cursor position
@@ -864,6 +868,7 @@ impl EditorCore {
             style_layers: BTreeMap::new(),
             diagnostics: Vec::new(),
             decorations: BTreeMap::new(),
+            document_symbols: crate::DocumentOutline::default(),
             folding_manager: FoldingManager::new(),
             cursor_position: Position::new(0, 0),
             selection: None,
@@ -1042,6 +1047,311 @@ impl EditorCore {
 
                     grid.add_line(headless_line);
                 }
+
+                current_visual = current_visual.saturating_add(1);
+            }
+        }
+
+        grid
+    }
+
+    /// Get a decoration-aware composed grid snapshot (by composed visual line).
+    ///
+    /// This is an **optional** snapshot path that injects:
+    /// - inline virtual text (`DecorationPlacement::{Before,After}`), e.g. inlay hints
+    /// - above-line virtual text (`DecorationPlacement::AboveLine`), e.g. code lens
+    ///
+    /// Notes:
+    /// - Wrapping is still computed from the underlying document text only.
+    /// - Virtual text can therefore extend past the viewport width; hosts may clip.
+    /// - Each [`ComposedCell`] carries its origin (`Document` vs `Virtual`) so hosts can map
+    ///   interactions back to document offsets without re-implementing layout.
+    pub fn get_headless_grid_composed(
+        &self,
+        start_visual_row: usize,
+        count: usize,
+    ) -> ComposedGrid {
+        let mut grid = ComposedGrid::new(start_visual_row, count);
+        if count == 0 {
+            return grid;
+        }
+
+        #[derive(Debug, Clone)]
+        struct VirtualText {
+            anchor: usize,
+            text: String,
+            styles: Vec<StyleId>,
+        }
+
+        // Collect virtual text decorations from all layers.
+        let mut inline_before: HashMap<usize, Vec<VirtualText>> = HashMap::new();
+        let mut inline_after: HashMap<usize, Vec<VirtualText>> = HashMap::new();
+        let mut above_by_line: BTreeMap<usize, Vec<VirtualText>> = BTreeMap::new();
+
+        for decorations in self.decorations.values() {
+            for deco in decorations {
+                let Some(text) = deco.text.as_ref() else {
+                    continue;
+                };
+                if text.is_empty() {
+                    continue;
+                }
+
+                let anchor = match deco.placement {
+                    DecorationPlacement::After => deco.range.end,
+                    DecorationPlacement::Before | DecorationPlacement::AboveLine => {
+                        deco.range.start
+                    }
+                };
+                let vt = VirtualText {
+                    anchor,
+                    text: text.clone(),
+                    styles: deco.styles.clone(),
+                };
+
+                match deco.placement {
+                    DecorationPlacement::Before => {
+                        inline_before.entry(anchor).or_default().push(vt);
+                    }
+                    DecorationPlacement::After => {
+                        inline_after.entry(anchor).or_default().push(vt);
+                    }
+                    DecorationPlacement::AboveLine => {
+                        let line = self.line_index.char_offset_to_position(anchor).0;
+                        above_by_line.entry(line).or_default().push(vt);
+                    }
+                }
+            }
+        }
+
+        // Compute the total composed visual line count for bounds checking.
+        let regions = self.folding_manager.regions();
+        let mut total_composed = 0usize;
+        for logical_line in 0..self.layout_engine.logical_line_count() {
+            if Self::is_logical_line_hidden(regions, logical_line) {
+                continue;
+            }
+
+            if let Some(above) = above_by_line.get(&logical_line) {
+                total_composed = total_composed.saturating_add(above.len());
+            }
+
+            total_composed = total_composed.saturating_add(
+                self.layout_engine
+                    .get_line_layout(logical_line)
+                    .map(|l| l.visual_line_count)
+                    .unwrap_or(1),
+            );
+        }
+
+        if start_visual_row >= total_composed {
+            return grid;
+        }
+
+        let end_visual = start_visual_row.saturating_add(count).min(total_composed);
+        let tab_width = self.layout_engine.tab_width();
+
+        let mut current_visual = 0usize;
+
+        for logical_line in 0..self.layout_engine.logical_line_count() {
+            if Self::is_logical_line_hidden(regions, logical_line) {
+                continue;
+            }
+
+            // Above-line virtual text (e.g. code lens).
+            if let Some(above) = above_by_line.get(&logical_line) {
+                for vt in above {
+                    if current_visual >= end_visual {
+                        return grid;
+                    }
+
+                    if current_visual >= start_visual_row {
+                        let mut x_render = 0usize;
+                        let mut cells: Vec<ComposedCell> = Vec::new();
+                        for ch in vt.text.chars() {
+                            let w = cell_width_at(ch, x_render, tab_width);
+                            x_render = x_render.saturating_add(w);
+                            cells.push(ComposedCell {
+                                ch,
+                                width: w,
+                                styles: vt.styles.clone(),
+                                source: ComposedCellSource::Virtual {
+                                    anchor_offset: vt.anchor,
+                                },
+                            });
+                        }
+
+                        grid.lines.push(ComposedLine {
+                            kind: ComposedLineKind::VirtualAboveLine { logical_line },
+                            cells,
+                        });
+                    }
+
+                    current_visual = current_visual.saturating_add(1);
+                }
+            }
+
+            let Some(layout) = self.layout_engine.get_line_layout(logical_line) else {
+                continue;
+            };
+
+            let line_text = self
+                .line_index
+                .get_line_text(logical_line)
+                .unwrap_or_default();
+            let line_char_len = line_text.chars().count();
+            let line_start_offset = self.line_index.position_to_char_offset(logical_line, 0);
+
+            for visual_in_line in 0..layout.visual_line_count {
+                if current_visual >= end_visual {
+                    return grid;
+                }
+
+                if current_visual < start_visual_row {
+                    current_visual = current_visual.saturating_add(1);
+                    continue;
+                }
+
+                let segment_start_col = if visual_in_line == 0 {
+                    0
+                } else {
+                    layout
+                        .wrap_points
+                        .get(visual_in_line - 1)
+                        .map(|wp| wp.char_index)
+                        .unwrap_or(0)
+                        .min(line_char_len)
+                };
+
+                let segment_end_col = if visual_in_line < layout.wrap_points.len() {
+                    layout.wrap_points[visual_in_line]
+                        .char_index
+                        .min(line_char_len)
+                } else {
+                    line_char_len
+                };
+
+                let segment_start_offset = line_start_offset + segment_start_col;
+
+                let mut cells: Vec<ComposedCell> = Vec::new();
+
+                let mut x_render = 0usize;
+                if visual_in_line > 0 {
+                    let indent_cells = wrap_indent_cells_for_line_text(
+                        &line_text,
+                        self.layout_engine.wrap_indent(),
+                        self.viewport_width,
+                        tab_width,
+                    );
+                    x_render = x_render.saturating_add(indent_cells);
+                    for _ in 0..indent_cells {
+                        cells.push(ComposedCell {
+                            ch: ' ',
+                            width: 1,
+                            styles: Vec::new(),
+                            source: ComposedCellSource::Virtual {
+                                anchor_offset: segment_start_offset,
+                            },
+                        });
+                    }
+                }
+
+                let mut x_in_line = visual_x_for_column(&line_text, segment_start_col, tab_width);
+
+                let push_virtual = |anchor: usize,
+                                    list: &[VirtualText],
+                                    cells: &mut Vec<ComposedCell>,
+                                    x_render: &mut usize| {
+                    for vt in list {
+                        for ch in vt.text.chars() {
+                            let w = cell_width_at(ch, *x_render, tab_width);
+                            *x_render = x_render.saturating_add(w);
+                            cells.push(ComposedCell {
+                                ch,
+                                width: w,
+                                styles: vt.styles.clone(),
+                                source: ComposedCellSource::Virtual {
+                                    anchor_offset: anchor,
+                                },
+                            });
+                        }
+                    }
+                };
+
+                for (col, ch) in line_text
+                    .chars()
+                    .enumerate()
+                    .skip(segment_start_col)
+                    .take(segment_end_col.saturating_sub(segment_start_col))
+                {
+                    let offset = line_start_offset + col;
+
+                    if let Some(list) = inline_before.get(&offset) {
+                        push_virtual(offset, list, &mut cells, &mut x_render);
+                    }
+                    if let Some(list) = inline_after.get(&offset) {
+                        push_virtual(offset, list, &mut cells, &mut x_render);
+                    }
+
+                    let styles = self.styles_at_offset(offset);
+                    let w = cell_width_at(ch, x_in_line, tab_width);
+                    x_in_line = x_in_line.saturating_add(w);
+                    x_render = x_render.saturating_add(w);
+                    cells.push(ComposedCell {
+                        ch,
+                        width: w,
+                        styles,
+                        source: ComposedCellSource::Document { offset },
+                    });
+                }
+
+                // End-of-line inline virtual text (only on the last visual segment).
+                if visual_in_line + 1 == layout.visual_line_count {
+                    let eol_offset = line_start_offset + line_char_len;
+                    if let Some(list) = inline_before.get(&eol_offset) {
+                        push_virtual(eol_offset, list, &mut cells, &mut x_render);
+                    }
+                    if let Some(list) = inline_after.get(&eol_offset) {
+                        push_virtual(eol_offset, list, &mut cells, &mut x_render);
+                    }
+
+                    // For collapsed folding start line, append placeholder to the last segment.
+                    if let Some(region) = Self::collapsed_region_starting_at(regions, logical_line)
+                        && !region.placeholder.is_empty()
+                    {
+                        if !cells.is_empty() {
+                            x_render = x_render.saturating_add(char_width(' '));
+                            cells.push(ComposedCell {
+                                ch: ' ',
+                                width: char_width(' '),
+                                styles: vec![FOLD_PLACEHOLDER_STYLE_ID],
+                                source: ComposedCellSource::Virtual {
+                                    anchor_offset: eol_offset,
+                                },
+                            });
+                        }
+                        for ch in region.placeholder.chars() {
+                            let w = cell_width_at(ch, x_render, tab_width);
+                            x_render = x_render.saturating_add(w);
+                            cells.push(ComposedCell {
+                                ch,
+                                width: w,
+                                styles: vec![FOLD_PLACEHOLDER_STYLE_ID],
+                                source: ComposedCellSource::Virtual {
+                                    anchor_offset: eol_offset,
+                                },
+                            });
+                        }
+                    }
+                }
+
+                grid.lines.push(ComposedLine {
+                    kind: ComposedLineKind::Document {
+                        logical_line,
+                        visual_in_logical: visual_in_line,
+                    },
+                    cells,
+                });
 
                 current_visual = current_visual.saturating_add(1);
             }
@@ -1582,6 +1892,16 @@ impl CommandExecutor {
         self.tab_key_behavior = behavior;
     }
 
+    /// Get the sticky x position (in cells) used by visual-row cursor movement.
+    pub fn preferred_x_cells(&self) -> Option<usize> {
+        self.preferred_x_cells
+    }
+
+    /// Set the sticky x position (in cells) used by visual-row cursor movement.
+    pub fn set_preferred_x_cells(&mut self, preferred_x_cells: Option<usize>) {
+        self.preferred_x_cells = preferred_x_cells;
+    }
+
     /// Get the preferred line ending for saving this document.
     pub fn line_ending(&self) -> LineEnding {
         self.line_ending
@@ -1890,15 +2210,17 @@ impl CommandExecutor {
                     layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
                 }
             }
+
+            self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                &op.insert_text,
+            );
         }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
         self.editor
             .folding_manager
             .clamp_to_line_count(self.editor.line_index.line_count());
-        self.rebuild_layout_engine_from_text(&updated_text);
 
         // Update selection state: collapse to carets after typing.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -2145,15 +2467,17 @@ impl CommandExecutor {
                     layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
                 }
             }
+
+            self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                &op.insert_text,
+            );
         }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
         self.editor
             .folding_manager
             .clamp_to_line_count(self.editor.line_index.line_count());
-        self.rebuild_layout_engine_from_text(&updated_text);
 
         // Update selection state: collapse to carets after insertion.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -2365,12 +2689,13 @@ impl CommandExecutor {
                     layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
                 }
             }
-        }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
-        self.rebuild_layout_engine_from_text(&updated_text);
+            self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                &op.insert_text,
+            );
+        }
 
         // Update selection state: collapse to carets after insertion.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -2585,12 +2910,13 @@ impl CommandExecutor {
                     layer_tree.update_for_insertion(op.start_offset, op.insert_len);
                 }
             }
-        }
 
-        // Rebuild derived structures.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
-        self.rebuild_layout_engine_from_text(&updated_text);
+            self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                &op.insert_text,
+            );
+        }
 
         // Shift cursor/selections for touched lines.
         let line_index = &self.editor.line_index;
@@ -4800,15 +5126,14 @@ impl CommandExecutor {
         let before_selection = self.snapshot_selection_set();
 
         let affected_line = self.editor.line_index.char_offset_to_position(offset).0;
-        let inserts_newline = text.contains('\n');
         let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
 
         // Execute insertion
         self.editor.piece_table.insert(offset, &text);
 
-        // Update line index
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
+        // Update line index + layout engine incrementally.
+        self.apply_text_change_to_line_index_and_layout(offset, "", &text);
+
         if inserted_newlines > 0 {
             self.editor
                 .folding_manager
@@ -4816,20 +5141,6 @@ impl CommandExecutor {
             self.editor
                 .folding_manager
                 .clamp_to_line_count(self.editor.line_index.line_count());
-        }
-
-        // Update layout engine (soft wrappingneeds to stay consistent with text)
-        if inserts_newline {
-            self.rebuild_layout_engine_from_text(&updated_text);
-        } else {
-            let line_text = self
-                .editor
-                .line_index
-                .get_line_text(affected_line)
-                .unwrap_or_default();
-            self.editor
-                .layout_engine
-                .update_line(affected_line, &line_text);
         }
 
         let inserted_len = text.chars().count();
@@ -4901,7 +5212,6 @@ impl CommandExecutor {
 
         let deleted_text = self.editor.piece_table.get_range(start, length);
         let delta_deleted_text = deleted_text.clone();
-        let deletes_newline = deleted_text.contains('\n');
         let deleted_newlines = deleted_text
             .as_bytes()
             .iter()
@@ -4912,9 +5222,9 @@ impl CommandExecutor {
         // Execute deletion
         self.editor.piece_table.delete(start, length);
 
-        // Update line index
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
+        // Update line index + layout engine incrementally.
+        self.apply_text_change_to_line_index_and_layout(start, &delta_deleted_text, "");
+
         if deleted_newlines > 0 {
             self.editor
                 .folding_manager
@@ -4922,20 +5232,6 @@ impl CommandExecutor {
             self.editor
                 .folding_manager
                 .clamp_to_line_count(self.editor.line_index.line_count());
-        }
-
-        // Update layout engine (soft wrappingneeds to stay consistent with text)
-        if deletes_newline {
-            self.rebuild_layout_engine_from_text(&updated_text);
-        } else {
-            let line_text = self
-                .editor
-                .line_index
-                .get_line_text(affected_line)
-                .unwrap_or_default();
-            self.editor
-                .layout_engine
-                .update_line(affected_line, &line_text);
         }
 
         // Update interval tree offsets
@@ -5019,7 +5315,6 @@ impl CommandExecutor {
             .count();
         let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
         let line_delta = inserted_newlines as isize - deleted_newlines as isize;
-        let replace_affects_layout = deleted_text.contains('\n') || text.contains('\n');
 
         // Apply as a single operation (delete then insert at the same offset).
         if length > 0 {
@@ -5043,9 +5338,9 @@ impl CommandExecutor {
             }
         }
 
-        // Rebuild derived structures.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
+        // Update line index + layout engine incrementally.
+        self.apply_text_change_to_line_index_and_layout(start, &deleted_text, &text);
+
         if line_delta != 0 {
             self.editor
                 .folding_manager
@@ -5053,19 +5348,6 @@ impl CommandExecutor {
             self.editor
                 .folding_manager
                 .clamp_to_line_count(self.editor.line_index.line_count());
-        }
-
-        if replace_affects_layout {
-            self.rebuild_layout_engine_from_text(&updated_text);
-        } else {
-            let line_text = self
-                .editor
-                .line_index
-                .get_line_text(affected_line)
-                .unwrap_or_default();
-            self.editor
-                .layout_engine
-                .update_line(affected_line, &line_text);
         }
 
         // Ensure cursor/selection still valid.
@@ -5623,15 +5905,13 @@ impl CommandExecutor {
             for layer_tree in self.editor.style_layers.values_mut() {
                 layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
+
+            self.apply_text_change_to_line_index_and_layout(op.start_offset, &op.deleted_text, "");
         }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
         self.editor
             .folding_manager
             .clamp_to_line_count(self.editor.line_index.line_count());
-        self.rebuild_layout_engine_from_text(&updated_text);
 
         // Collapse selection state to carets at the start of deleted ranges.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -5845,12 +6125,9 @@ impl CommandExecutor {
             for layer_tree in self.editor.style_layers.values_mut() {
                 layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
-        }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
-        self.rebuild_layout_engine_from_text(&updated_text);
+            self.apply_text_change_to_line_index_and_layout(op.start_offset, &op.deleted_text, "");
+        }
 
         // Collapse selection state to carets at the start of deleted ranges.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -6035,12 +6312,9 @@ impl CommandExecutor {
             for layer_tree in self.editor.style_layers.values_mut() {
                 layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
-        }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
-        self.rebuild_layout_engine_from_text(&updated_text);
+            self.apply_text_change_to_line_index_and_layout(op.start_offset, &op.deleted_text, "");
+        }
 
         // Collapse selection state to carets at the start of deleted ranges.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -6253,15 +6527,13 @@ impl CommandExecutor {
                     layer_tree.update_for_insertion(start, insert_len);
                 }
             }
+
+            self.apply_text_change_to_line_index_and_layout(start, &deleted_text, insert_text);
         }
 
-        // Rebuild derived structures.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
         self.editor
             .folding_manager
             .clamp_to_line_count(self.editor.line_index.line_count());
-        self.rebuild_layout_engine_from_text(&updated_text);
         self.normalize_cursor_and_selection();
 
         Ok(())
@@ -6821,15 +7093,7 @@ impl CommandExecutor {
                 Ok(CommandResult::Success)
             }
             ViewCommand::GetViewport { start_row, count } => {
-                let text = self.editor.piece_table.get_text();
-                let generator = SnapshotGenerator::from_text_with_layout_options(
-                    &text,
-                    self.editor.viewport_width,
-                    self.editor.layout_engine.tab_width(),
-                    self.editor.layout_engine.wrap_mode(),
-                    self.editor.layout_engine.wrap_indent(),
-                );
-                let grid = generator.get_headless_grid(start_row, count);
+                let grid = self.editor.get_headless_grid_styled(start_row, count);
                 Ok(CommandResult::Viewport(grid))
             }
         }
@@ -6886,10 +7150,74 @@ impl CommandExecutor {
         }
     }
 
-    fn rebuild_layout_engine_from_text(&mut self, text: &str) {
-        let lines = crate::text::split_lines_preserve_trailing(text);
-        let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
-        self.editor.layout_engine.from_lines(&line_refs);
+    fn apply_text_change_to_line_index_and_layout(
+        &mut self,
+        start_offset: usize,
+        deleted_text: &str,
+        inserted_text: &str,
+    ) {
+        let start_line = self
+            .editor
+            .line_index
+            .char_offset_to_position(start_offset)
+            .0;
+
+        let deleted_chars = deleted_text.chars().count();
+        if deleted_chars > 0 {
+            self.editor.line_index.delete(start_offset, deleted_chars);
+        }
+        if !inserted_text.is_empty() {
+            self.editor.line_index.insert(start_offset, inserted_text);
+        }
+
+        let deleted_newlines = deleted_text
+            .as_bytes()
+            .iter()
+            .filter(|b| **b == b'\n')
+            .count();
+        let inserted_newlines = inserted_text
+            .as_bytes()
+            .iter()
+            .filter(|b| **b == b'\n')
+            .count();
+
+        let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+        if line_delta > 0 {
+            for i in 0..(line_delta as usize) {
+                let line = start_line.saturating_add(1).saturating_add(i);
+                let line_text = self
+                    .editor
+                    .line_index
+                    .get_line_text(line)
+                    .unwrap_or_default();
+                self.editor.layout_engine.insert_line(line, &line_text);
+            }
+        } else if line_delta < 0 {
+            for _ in 0..((-line_delta) as usize) {
+                self.editor
+                    .layout_engine
+                    .delete_line(start_line.saturating_add(1));
+            }
+        }
+
+        // Update a small window around the edit site. This keeps the layout engine incremental
+        // while still handling multi-line inserts/deletes deterministically.
+        let touch_lines = deleted_newlines.max(inserted_newlines).saturating_add(1);
+        let end_line = start_line.saturating_add(touch_lines);
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 {
+            return;
+        }
+        let last_line = line_count.saturating_sub(1);
+        for line in start_line..=end_line.min(last_line) {
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(line)
+                .unwrap_or_default();
+            self.editor.layout_engine.update_line(line, &line_text);
+        }
     }
 
     fn position_to_char_offset_clamped(&self, pos: Position) -> usize {

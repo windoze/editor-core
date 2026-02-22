@@ -6,6 +6,7 @@ members = [
     "crates/editor-core-lsp",
     "crates/editor-core-highlight-simple",
     "crates/editor-core-sublime",
+    "crates/editor-core-treesitter",
     "crates/tui-editor",
 ]
 

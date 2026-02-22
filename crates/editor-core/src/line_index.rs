@@ -50,6 +50,7 @@ impl Default for LineMetadata {
 /// Logical line index - implemented using Rope data structure
 ///
 /// Rope provides O(log N) line access, insertion, and deletion performance, suitable for large file editing
+#[derive(Clone)]
 pub struct LineIndex {
     /// Rope data structure that automatically manages line indexing
     rope: Rope,
@@ -230,6 +231,33 @@ impl LineIndex {
     /// Get total character count
     pub fn char_count(&self) -> usize {
         self.rope.len_chars()
+    }
+
+    /// Convert a character offset (Unicode scalar values) to a UTF-8 byte offset.
+    ///
+    /// The returned byte offset is clamped to the document length.
+    pub fn char_offset_to_byte_offset(&self, char_offset: usize) -> usize {
+        let char_offset = char_offset.min(self.rope.len_chars());
+        self.rope.char_to_byte(char_offset)
+    }
+
+    /// Convert a UTF-8 byte offset to a character offset (Unicode scalar values).
+    ///
+    /// The returned character offset is clamped to the document length.
+    pub fn byte_offset_to_char_offset(&self, byte_offset: usize) -> usize {
+        let byte_offset = byte_offset.min(self.rope.len_bytes());
+        self.rope.byte_to_char(byte_offset)
+    }
+
+    /// Convert a character offset to `(line, byte_column)` where `byte_column` is measured in UTF-8 bytes.
+    pub fn char_offset_to_line_byte_column(&self, char_offset: usize) -> (usize, usize) {
+        let char_offset = char_offset.min(self.rope.len_chars());
+        let line = self.rope.char_to_line(char_offset);
+        let line_start_char = self.rope.line_to_char(line);
+
+        let line_start_byte = self.rope.char_to_byte(line_start_char);
+        let byte_offset = self.rope.char_to_byte(char_offset);
+        (line, byte_offset.saturating_sub(line_start_byte))
     }
 
     /// Insert text (at specified character offset)
@@ -419,5 +447,22 @@ mod tests {
 
         index.delete(6, 10); // Delete "Beautiful "
         assert_eq!(index.get_text(), "Hello World");
+    }
+
+    #[test]
+    fn test_char_byte_offset_roundtrip() {
+        let text = "a你好\n🌍b";
+        let index = LineIndex::from_text(text);
+
+        for char_offset in 0..=index.char_count() {
+            let byte_offset = index.char_offset_to_byte_offset(char_offset);
+            let recovered = index.byte_offset_to_char_offset(byte_offset);
+            assert_eq!(recovered, char_offset);
+
+            let (line, byte_col) = index.char_offset_to_line_byte_column(char_offset);
+            let line_start_char = index.rope.line_to_char(line);
+            let line_start_byte = index.rope.char_to_byte(line_start_char);
+            assert_eq!(line_start_byte + byte_col, byte_offset);
+        }
     }
 }
