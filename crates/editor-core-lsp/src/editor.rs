@@ -432,17 +432,33 @@ impl LspSession {
 
     /// Send `textDocument/didChange` for the active document.
     pub fn did_change(&mut self, change: LspContentChange) -> Result<(), String> {
+        self.did_change_many(vec![change])
+    }
+
+    /// Send `textDocument/didChange` for the active document with multiple changes.
+    pub fn did_change_many(&mut self, changes: Vec<LspContentChange>) -> Result<(), String> {
+        if changes.is_empty() {
+            return Ok(());
+        }
+
         self.document.version = self.document.version.saturating_add(1);
+
+        let content_changes = changes
+            .into_iter()
+            .map(|change| {
+                json!({
+                    "range": lsp_range_to_json(&change.range),
+                    "text": change.text,
+                })
+            })
+            .collect::<Vec<_>>();
 
         let params = json!({
             "textDocument": {
                 "uri": self.document.uri.as_str(),
                 "version": self.document.version,
             },
-            "contentChanges": [{
-                "range": lsp_range_to_json(&change.range),
-                "text": change.text,
-            }],
+            "contentChanges": content_changes,
         });
 
         if let Err(err) = self.client.notify("textDocument/didChange", params) {
@@ -531,8 +547,21 @@ impl LspSession {
         uri: &str,
         change: LspContentChange,
     ) -> Result<(), String> {
+        self.did_change_for_uri_many(uri, vec![change])
+    }
+
+    /// Send `textDocument/didChange` for a specific document URI with multiple changes.
+    pub fn did_change_for_uri_many(
+        &mut self,
+        uri: &str,
+        changes: Vec<LspContentChange>,
+    ) -> Result<(), String> {
+        if changes.is_empty() {
+            return Ok(());
+        }
+
         if self.document.uri == uri {
-            return self.did_change(change);
+            return self.did_change_many(changes);
         }
 
         let (doc_uri, version) = {
@@ -543,11 +572,21 @@ impl LspSession {
             (doc.uri.clone(), doc.version)
         };
 
+        let content_changes = changes
+            .into_iter()
+            .map(|change| {
+                json!({
+                    "range": lsp_range_to_json(&change.range),
+                    "text": change.text,
+                })
+            })
+            .collect::<Vec<_>>();
+
         self.notify(
             "textDocument/didChange",
             json!({
                 "textDocument": { "uri": doc_uri.as_str(), "version": version },
-                "contentChanges": [{ "range": lsp_range_to_json(&change.range), "text": change.text }],
+                "contentChanges": content_changes,
             }),
         )?;
 
@@ -1222,10 +1261,27 @@ impl LspSession {
     pub fn poll_edits_with_handler<F>(
         &mut self,
         state: &EditorStateManager,
-        mut on_unhandled_message: F,
+        on_unhandled_message: F,
     ) -> Result<Vec<ProcessingEdit>, String>
     where
         F: FnMut(Value),
+    {
+        self.poll_edits_with_handlers(state, on_unhandled_message, |_| {})
+    }
+
+    /// Poll the LSP connection, returning derived-state edits (semantic tokens, folding ranges).
+    ///
+    /// This is like [`LspSession::poll_edits_with_handler`], but also exposes each parsed
+    /// [`LspNotification`] to the caller.
+    pub fn poll_edits_with_handlers<F, G>(
+        &mut self,
+        state: &EditorStateManager,
+        mut on_unhandled_message: F,
+        mut on_notification: G,
+    ) -> Result<Vec<ProcessingEdit>, String>
+    where
+        F: FnMut(Value),
+        G: FnMut(&LspNotification),
     {
         let mut edits = Vec::<ProcessingEdit>::new();
 
@@ -1291,6 +1347,8 @@ impl LspSession {
                         if let Some(notification) =
                             LspNotification::from_method_and_params(method, params)
                         {
+                            on_notification(&notification);
+
                             if let LspNotification::PublishDiagnostics(diags) = &notification
                                 && diags.uri == self.document.uri
                             {

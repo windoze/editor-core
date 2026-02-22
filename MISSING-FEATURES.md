@@ -33,7 +33,7 @@ Legend:
 | P0-7 | Indentation / whitespace primitives | kernel | done | `EditCommand::{InsertNewline{auto_indent}, Indent, Outdent, DeleteToPrevTabStop}` + tests. |
 | P1-8 | First-class diagnostics model | kernel + integration | done | `Diagnostic` model + `ProcessingEdit::{ReplaceDiagnostics, ClearDiagnostics}`; LSP publishDiagnostics populates both styles and data. |
 | P1-9 | Decorations model (inlay hints, code lens, links, match highlights) | kernel + integration | done | `Decoration*` model + `ProcessingEdit::{ReplaceDecorations, ClearDecorations}`. |
-| P1-10 | Multi-document LSP sync + workspace edits | integration + kernel workspace | planned | Route per-doc state and apply workspace edits reliably. |
+| P1-10 | Multi-document LSP sync + workspace edits | integration + kernel workspace | done | `LspWorkspaceSync` wires `Workspace` + `LspSession`, routes diagnostics by uri, and applies multi-uri `WorkspaceEdit`. |
 
 ## Current coverage (what already exists)
 
@@ -372,6 +372,8 @@ Notes:
 
 ### 10) Multi-document LSP synchronization and workspace edits
 
+**Status: done**
+
 **What exists today**
 
 `editor-core-lsp` has:
@@ -379,22 +381,20 @@ Notes:
 - a single-document `LspSession` that drives didOpen/didChange for one URI
 - helpers to parse/apply `TextEdit` / `WorkspaceEdit` payloads
 
-**What’s missing for a full editor**
+**What’s implemented**
 
-- managing multiple open documents in one LSP session:
-  - open/close per doc
-  - per-doc versions
-  - per-doc semantic tokens / folding / diagnostics
-- applying workspace edits across many documents (some not open yet)
-- consistent policy hooks for server->client requests that require UI input
+In `editor-core-lsp`:
 
-**Proposal (integration + kernel workspace model)**
+- `LspWorkspaceSync`:
+  - ties `editor_core::Workspace` and `LspSession` together
+  - routes `publishDiagnostics` into the correct document by `uri`
+  - applies multi-uri `WorkspaceEdit` payloads to open documents in the workspace
 
-Once a `Workspace`/multi-document model exists in the kernel, add an LSP wrapper that:
+Notes:
 
-- tracks a map of `uri -> DocumentId`
-- routes notifications/events into the correct document’s derived state
-- applies workspace edits by opening/loading documents on demand (host-provided I/O hook)
+- Opening/loading documents that are not already in the workspace is still host-driven (file I/O).
+- Semantic tokens / folding refresh are still session-driven around an “active document”; hosts can
+  switch the active document via the sync wrapper before requesting those features.
 
 ## P2 — “Power editor” features (optional / later)
 

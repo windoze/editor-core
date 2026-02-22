@@ -129,6 +129,11 @@ impl DeltaCalculator {
         self.lines.get(line).map(|s| s.as_str())
     }
 
+    /// Get the current number of logical lines.
+    pub fn line_count(&self) -> usize {
+        self.lines.len()
+    }
+
     /// Calculate change for insert operation
     pub fn calculate_insert_change(
         &self,
