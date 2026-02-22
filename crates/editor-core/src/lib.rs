@@ -145,5 +145,6 @@ pub use state::{
 };
 pub use storage::PieceTable;
 pub use workspace::{
-    DocumentId, DocumentMetadata, Workspace, WorkspaceError, WorkspaceSearchResult,
+    BufferId, BufferMetadata, OpenBufferResult, ViewId, Workspace, WorkspaceError,
+    WorkspaceSearchResult,
 };

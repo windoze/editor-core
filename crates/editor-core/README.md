@@ -13,9 +13,13 @@ snapshots and drive edits through the command/state APIs.
   (derived folds + stable user folds).
 - **Headless snapshots** (`SnapshotGenerator` → `HeadlessGrid`) for building “text grid” UIs.
 - **Command interface** (`CommandExecutor`) and **state/query layer** (`EditorStateManager`).
-- **Workspace utilities** (`Workspace`) over open documents:
-  - search across open buffers: `Workspace::search_all_open_documents`
-  - apply workspace edits (per-document undo grouping): `Workspace::apply_text_edits`
+- **Workspace model** (`Workspace`) for multi-buffer + multi-view (split panes):
+  - open buffers: `Workspace::open_buffer` → `OpenBufferResult { buffer_id, view_id }`
+  - create additional views: `Workspace::create_view`
+  - execute commands against a view: `Workspace::execute`
+  - render from a view: `Workspace::get_viewport_content_styled`
+  - search across open buffers: `Workspace::search_all_open_buffers`
+  - apply workspace edits (per-buffer undo grouping): `Workspace::apply_text_edits`
 - **Kernel-level editing commands** for common editor UX:
   - line ops: `DuplicateLines`, `DeleteLines`, `MoveLinesUp/Down`, `JoinLines`, `SplitLine`
   - comment toggling: `ToggleComment` (language-config driven)
@@ -91,6 +95,24 @@ assert!(manager.get_document_state().is_modified);
 // Manual edits are possible, but callers must preserve invariants and call `mark_modified`.
 manager.editor_mut().piece_table.insert(0, "X");
 manager.mark_modified(StateChangeType::DocumentModified);
+```
+
+### Multi-view workspace (split panes)
+
+```rust
+use editor_core::{Command, CursorCommand, EditCommand, Workspace};
+
+let mut ws = Workspace::new();
+let opened = ws.open_buffer(Some("file:///demo.txt".to_string()), "0123456789\n", 10).unwrap();
+
+let left = opened.view_id;
+let right = ws.create_view(opened.buffer_id, 5).unwrap();
+
+ws.execute(left, Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 })).unwrap();
+ws.execute(right, Command::Cursor(CursorCommand::MoveTo { line: 0, column: 5 })).unwrap();
+
+ws.execute(left, Command::Edit(EditCommand::InsertText { text: "X".to_string() })).unwrap();
+assert_eq!(ws.buffer_text(opened.buffer_id).unwrap(), "0X123456789\n");
 ```
 
 ## Related crates

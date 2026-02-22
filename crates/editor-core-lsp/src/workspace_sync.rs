@@ -11,10 +11,8 @@
 use crate::editor::{LspContentChange, LspDocument, LspSession, LspSessionStartOptions};
 use crate::lsp_events::LspNotification;
 use crate::lsp_sync::{DeltaCalculator, TextChange};
-use crate::lsp_text_edits::{
-    LspTextEdit, apply_text_edits, char_offsets_for_lsp_range, workspace_edit_text_edits,
-};
-use editor_core::{DocumentId, EditorStateManager, TextDelta, Workspace};
+use crate::lsp_text_edits::{LspTextEdit, char_offsets_for_lsp_range, workspace_edit_text_edits};
+use editor_core::{BufferId, LineIndex, TextDelta, TextEditSpec, Workspace};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -82,25 +80,24 @@ impl LspWorkspaceSync {
         &mut self.session
     }
 
-    fn uri_for_workspace_document(workspace: &Workspace, id: DocumentId) -> Result<String, String> {
+    fn uri_for_workspace_buffer(workspace: &Workspace, id: BufferId) -> Result<String, String> {
         workspace
-            .document_metadata(id)
+            .buffer_metadata(id)
             .and_then(|m| m.uri.clone())
-            .ok_or_else(|| format!("Workspace document has no uri (id={})", id.get()))
+            .ok_or_else(|| format!("Workspace buffer has no uri (id={})", id.get()))
     }
 
-    /// Ensure the given workspace document is open/tracked by the LSP session.
+    /// Ensure the given workspace buffer is open/tracked by the LSP session.
     pub fn open_workspace_document(
         &mut self,
         workspace: &Workspace,
-        id: DocumentId,
+        id: BufferId,
         language_id: impl Into<String>,
     ) -> Result<(), String> {
-        let uri = Self::uri_for_workspace_document(workspace, id)?;
-        let Some(state) = workspace.document(id) else {
-            return Err(format!("Workspace document not found (id={})", id.get()));
-        };
-        let text = state.editor().get_text();
+        let uri = Self::uri_for_workspace_buffer(workspace, id)?;
+        let text = workspace
+            .buffer_text(id)
+            .map_err(|err| format!("Workspace buffer not found (id={}): {:?}", id.get(), err))?;
 
         if self.session.document_for_uri(&uri).is_none() {
             self.session.open_document(
@@ -119,13 +116,13 @@ impl LspWorkspaceSync {
         Ok(())
     }
 
-    /// Close a workspace document in the LSP session (if tracked).
+    /// Close a workspace buffer in the LSP session (if tracked).
     pub fn close_workspace_document(
         &mut self,
         workspace: &Workspace,
-        id: DocumentId,
+        id: BufferId,
     ) -> Result<(), String> {
-        let uri = Self::uri_for_workspace_document(workspace, id)?;
+        let uri = Self::uri_for_workspace_buffer(workspace, id)?;
         if self.session.document_for_uri(&uri).is_some() {
             self.session.close_document(&uri)?;
         }
@@ -137,9 +134,9 @@ impl LspWorkspaceSync {
     pub fn set_active_workspace_document(
         &mut self,
         workspace: &Workspace,
-        id: DocumentId,
+        id: BufferId,
     ) -> Result<(), String> {
-        let uri = Self::uri_for_workspace_document(workspace, id)?;
+        let uri = Self::uri_for_workspace_buffer(workspace, id)?;
         self.session.set_active_document(&uri)
     }
 
@@ -148,56 +145,61 @@ impl LspWorkspaceSync {
     /// - Applies semantic tokens / folding / diagnostics edits into the *active* document.
     /// - Routes `publishDiagnostics` for non-active documents by looking them up by uri.
     pub fn poll_workspace(&mut self, workspace: &mut Workspace) -> Result<(), String> {
-        let Some(active_id) = workspace.active_document_id() else {
+        let Some(active_id) = workspace.active_buffer_id() else {
             // Still poll the connection to drain events, but we have no document to apply edits to.
+            let dummy = LineIndex::from_text("");
             let _ = self
                 .session
-                .poll_edits_with_handler(&EditorStateManager::empty(1), |_| {});
+                .poll_edits_with_line_index_and_handler(&dummy, |_| {});
             return Ok(());
         };
 
-        let active_uri = Self::uri_for_workspace_document(workspace, active_id)?;
+        let active_uri = Self::uri_for_workspace_buffer(workspace, active_id)?;
         if self.session.document().uri != active_uri {
             self.session.set_active_document(&active_uri)?;
         }
 
         let mut publish_diags = Vec::new();
-        let edits = {
-            let Some(active_state) = workspace.document(active_id) else {
-                return Err(format!(
-                    "Workspace active document not found (id={})",
-                    active_id.get()
-                ));
-            };
-            self.session.poll_edits_with_handlers(
-                active_state,
-                |_| {},
-                |notification| {
-                    if let LspNotification::PublishDiagnostics(diags) = notification {
-                        publish_diags.push(diags.clone());
-                    }
-                },
-            )?
-        };
+        let active_text = workspace.buffer_text(active_id).map_err(|err| {
+            format!(
+                "Workspace active buffer not found (id={}): {:?}",
+                active_id.get(),
+                err
+            )
+        })?;
+        let active_line_index = LineIndex::from_text(&active_text);
 
-        if let Some(active_state) = workspace.document_mut(active_id) {
-            active_state.apply_processing_edits(edits);
-        }
+        let edits = self.session.poll_edits_with_line_index_and_handlers(
+            &active_line_index,
+            |_| {},
+            |notification| {
+                if let LspNotification::PublishDiagnostics(diags) = notification {
+                    publish_diags.push(diags.clone());
+                }
+            },
+        )?;
+
+        workspace
+            .apply_processing_edits(active_id, edits)
+            .map_err(|err| format!("apply processing edits 失败: {:?}", err))?;
 
         // Route diagnostics for other documents.
         for diags in publish_diags {
             if diags.uri == active_uri {
                 continue;
             }
-            let Some(id) = workspace.document_id_for_uri(&diags.uri) else {
+            let Some(id) = workspace.buffer_id_for_uri(&diags.uri) else {
                 continue;
             };
-            let Some(state) = workspace.document_mut(id) else {
-                continue;
-            };
-            let line_index = &state.editor().line_index;
-            let edits = crate::editor::lsp_diagnostics_to_processing_edits(line_index, &diags);
-            state.apply_processing_edits(edits);
+
+            let text = workspace.buffer_text(id).map_err(|err| {
+                format!("Workspace buffer not found (id={}): {:?}", id.get(), err)
+            })?;
+            let line_index = LineIndex::from_text(&text);
+            let edits = crate::editor::lsp_diagnostics_to_processing_edits(&line_index, &diags);
+            workspace
+                .apply_processing_edits(id, edits)
+                .map_err(|err| format!("apply diagnostics edits 失败: {:?}", err))?;
         }
 
         Ok(())
@@ -207,15 +209,14 @@ impl LspWorkspaceSync {
     pub fn did_change_from_text_delta(
         &mut self,
         workspace: &mut Workspace,
-        id: DocumentId,
+        id: BufferId,
     ) -> Result<(), String> {
-        let uri = Self::uri_for_workspace_document(workspace, id)?;
+        let uri = Self::uri_for_workspace_buffer(workspace, id)?;
 
-        let Some(state) = workspace.document_mut(id) else {
-            return Err(format!("Workspace document not found (id={})", id.get()));
-        };
-
-        let Some(delta) = state.take_last_text_delta() else {
+        let Some(delta) = workspace
+            .take_last_text_delta_for_buffer(id)
+            .map_err(|err| format!("Workspace buffer not found (id={}): {:?}", id.get(), err))?
+        else {
             return Ok(());
         };
 
@@ -254,17 +255,38 @@ impl LspWorkspaceSync {
         let mut skipped = Vec::<String>::new();
 
         for (uri, edits) in by_uri {
-            let Some(id) = workspace.document_id_for_uri(&uri) else {
+            let Some(id) = workspace.buffer_id_for_uri(&uri) else {
                 skipped.push(uri);
                 continue;
             };
-            let Some(state) = workspace.document_mut(id) else {
-                skipped.push(uri);
-                continue;
-            };
+            let text = workspace.buffer_text(id).map_err(|err| {
+                format!("Workspace buffer not found (id={}): {:?}", id.get(), err)
+            })?;
+            let line_index = LineIndex::from_text(&text);
 
-            let lsp_changes = lsp_changes_for_text_edits(state, &edits);
-            let changed_char_ranges = apply_text_edits(state, &edits)?;
+            let lsp_changes = lsp_changes_for_text_edits(&line_index, &edits);
+
+            let mut specs: Vec<TextEditSpec> = edits
+                .iter()
+                .map(|edit| {
+                    let (start, end) = char_offsets_for_lsp_range(&line_index, &edit.range);
+                    TextEditSpec {
+                        start,
+                        end,
+                        text: edit.new_text.clone(),
+                    }
+                })
+                .collect();
+            let mut changed_char_ranges: Vec<(usize, usize)> =
+                specs.iter().map(|e| (e.start, e.end)).collect();
+
+            // Match the application order (descending start offsets) for highlighting stability.
+            changed_char_ranges.sort_by_key(|(start, _)| std::cmp::Reverse(*start));
+            specs.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+            workspace
+                .apply_text_edits(vec![(id, specs)])
+                .map_err(|err| format!("apply workspace edit 失败: {:?}", err))?;
 
             // Keep our incremental calculator in sync with the applied edit.
             if let Some(calc) = self.calculators.get_mut(&uri) {
@@ -328,10 +350,9 @@ fn text_changes_for_text_delta(calc: &mut DeltaCalculator, delta: &TextDelta) ->
 }
 
 fn lsp_changes_for_text_edits(
-    state: &EditorStateManager,
+    line_index: &LineIndex,
     edits: &[LspTextEdit],
 ) -> Vec<LspContentChange> {
-    let line_index = &state.editor().line_index;
     let mut resolved = edits
         .iter()
         .map(|edit| {
@@ -356,7 +377,8 @@ fn lsp_changes_for_text_edits(
 mod tests {
     use super::*;
     use editor_core::{
-        Command, CursorCommand, EditCommand, Position, Selection, SelectionDirection,
+        Command, CursorCommand, EditCommand, EditorStateManager, Position, Selection,
+        SelectionDirection,
     };
 
     fn calc_text(calc: &DeltaCalculator) -> String {

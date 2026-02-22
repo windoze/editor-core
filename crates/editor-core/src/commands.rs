@@ -1582,6 +1582,16 @@ impl CommandExecutor {
         self.tab_key_behavior = behavior;
     }
 
+    /// Get the sticky x position (in cells) used by visual-row cursor movement.
+    pub fn preferred_x_cells(&self) -> Option<usize> {
+        self.preferred_x_cells
+    }
+
+    /// Set the sticky x position (in cells) used by visual-row cursor movement.
+    pub fn set_preferred_x_cells(&mut self, preferred_x_cells: Option<usize>) {
+        self.preferred_x_cells = preferred_x_cells;
+    }
+
     /// Get the preferred line ending for saving this document.
     pub fn line_ending(&self) -> LineEnding {
         self.line_ending
