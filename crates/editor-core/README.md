@@ -150,6 +150,33 @@ let composed = manager.get_viewport_content_composed(0, 10);
 assert!(composed.actual_line_count() > 0);
 ```
 
+## Performance & benches
+
+`editor-core` aims to keep the common editor hot paths **incremental**:
+
+- Text edits update `LineIndex` and `LayoutEngine` incrementally (instead of rebuilding from a full
+  `get_text()` copy on every keystroke).
+- Viewport rendering streams visible lines from `LineIndex` + `LayoutEngine` (no full-document
+  intermediate strings in the viewport path).
+
+Run the P1.5 benchmark suite:
+
+```bash
+cargo bench -p editor-core --bench performance
+```
+
+For a quick local sanity run (smaller sample sizes):
+
+```bash
+cargo bench -p editor-core --bench performance -- --sample-size 10 --warm-up-time 0.1 --measurement-time 0.1
+```
+
+There is also a small runtime example (prints timings for observation):
+
+```bash
+cargo run -p editor-core --example performance_milestones
+```
+
 ## Related crates
 
 - `editor-core-lsp`: LSP integration (UTF-16 conversions, semantic tokens helpers, stdio JSON-RPC).

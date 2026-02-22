@@ -170,6 +170,15 @@ For richer syntax highlighting and folding, use:
 - Examples:
   - `cargo run -p editor-core --example command_interface`
   - `cargo run -p editor-core --example state_management`
+  - `cargo run -p editor-core --example performance_milestones`
+
+### Performance benches
+
+`editor-core` includes a small criterion benchmark suite for large-file/open/typing/viewport paths:
+
+```bash
+cargo bench -p editor-core --bench performance
+```
 
 ## Development notes
 

@@ -616,8 +616,7 @@ impl Workspace {
         };
 
         let before_view_core = view.core.clone();
-        let before_text = buffer.executor.editor().get_text();
-        let before_line_index = LineIndex::from_text(&before_text);
+        let before_line_index = buffer.executor.editor().line_index.clone();
         let before_char_count = buffer.executor.editor().char_count();
 
         // Load view-local state into the executor, execute, then snapshot it back.
@@ -1001,8 +1000,7 @@ impl Workspace {
                 return Err(WorkspaceError::BufferNotFound(buffer_id));
             };
 
-            let before_text = buffer.executor.editor().get_text();
-            let before_line_index = LineIndex::from_text(&before_text);
+            let before_line_index = buffer.executor.editor().line_index.clone();
             let before_char_count = buffer.executor.editor().char_count();
 
             // Apply without relying on any specific view selection: load a neutral view state.

@@ -50,6 +50,7 @@ impl Default for LineMetadata {
 /// Logical line index - implemented using Rope data structure
 ///
 /// Rope provides O(log N) line access, insertion, and deletion performance, suitable for large file editing
+#[derive(Clone)]
 pub struct LineIndex {
     /// Rope data structure that automatically manages line indexing
     rope: Rope,

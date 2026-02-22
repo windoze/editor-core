@@ -49,7 +49,6 @@ use crate::snapshot::{
 };
 use crate::{
     FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex, PieceTable,
-    SnapshotGenerator,
 };
 use editor_core_lang::CommentConfig;
 use regex::RegexBuilder;
@@ -2211,15 +2210,17 @@ impl CommandExecutor {
                     layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
                 }
             }
+
+            self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                &op.insert_text,
+            );
         }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
         self.editor
             .folding_manager
             .clamp_to_line_count(self.editor.line_index.line_count());
-        self.rebuild_layout_engine_from_text(&updated_text);
 
         // Update selection state: collapse to carets after typing.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -2466,15 +2467,17 @@ impl CommandExecutor {
                     layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
                 }
             }
+
+            self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                &op.insert_text,
+            );
         }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
         self.editor
             .folding_manager
             .clamp_to_line_count(self.editor.line_index.line_count());
-        self.rebuild_layout_engine_from_text(&updated_text);
 
         // Update selection state: collapse to carets after insertion.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -2686,12 +2689,13 @@ impl CommandExecutor {
                     layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
                 }
             }
-        }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
-        self.rebuild_layout_engine_from_text(&updated_text);
+            self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                &op.insert_text,
+            );
+        }
 
         // Update selection state: collapse to carets after insertion.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -2906,12 +2910,13 @@ impl CommandExecutor {
                     layer_tree.update_for_insertion(op.start_offset, op.insert_len);
                 }
             }
-        }
 
-        // Rebuild derived structures.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
-        self.rebuild_layout_engine_from_text(&updated_text);
+            self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                &op.insert_text,
+            );
+        }
 
         // Shift cursor/selections for touched lines.
         let line_index = &self.editor.line_index;
@@ -5121,15 +5126,14 @@ impl CommandExecutor {
         let before_selection = self.snapshot_selection_set();
 
         let affected_line = self.editor.line_index.char_offset_to_position(offset).0;
-        let inserts_newline = text.contains('\n');
         let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
 
         // Execute insertion
         self.editor.piece_table.insert(offset, &text);
 
-        // Update line index
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
+        // Update line index + layout engine incrementally.
+        self.apply_text_change_to_line_index_and_layout(offset, "", &text);
+
         if inserted_newlines > 0 {
             self.editor
                 .folding_manager
@@ -5137,20 +5141,6 @@ impl CommandExecutor {
             self.editor
                 .folding_manager
                 .clamp_to_line_count(self.editor.line_index.line_count());
-        }
-
-        // Update layout engine (soft wrappingneeds to stay consistent with text)
-        if inserts_newline {
-            self.rebuild_layout_engine_from_text(&updated_text);
-        } else {
-            let line_text = self
-                .editor
-                .line_index
-                .get_line_text(affected_line)
-                .unwrap_or_default();
-            self.editor
-                .layout_engine
-                .update_line(affected_line, &line_text);
         }
 
         let inserted_len = text.chars().count();
@@ -5222,7 +5212,6 @@ impl CommandExecutor {
 
         let deleted_text = self.editor.piece_table.get_range(start, length);
         let delta_deleted_text = deleted_text.clone();
-        let deletes_newline = deleted_text.contains('\n');
         let deleted_newlines = deleted_text
             .as_bytes()
             .iter()
@@ -5233,9 +5222,9 @@ impl CommandExecutor {
         // Execute deletion
         self.editor.piece_table.delete(start, length);
 
-        // Update line index
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
+        // Update line index + layout engine incrementally.
+        self.apply_text_change_to_line_index_and_layout(start, &delta_deleted_text, "");
+
         if deleted_newlines > 0 {
             self.editor
                 .folding_manager
@@ -5243,20 +5232,6 @@ impl CommandExecutor {
             self.editor
                 .folding_manager
                 .clamp_to_line_count(self.editor.line_index.line_count());
-        }
-
-        // Update layout engine (soft wrappingneeds to stay consistent with text)
-        if deletes_newline {
-            self.rebuild_layout_engine_from_text(&updated_text);
-        } else {
-            let line_text = self
-                .editor
-                .line_index
-                .get_line_text(affected_line)
-                .unwrap_or_default();
-            self.editor
-                .layout_engine
-                .update_line(affected_line, &line_text);
         }
 
         // Update interval tree offsets
@@ -5340,7 +5315,6 @@ impl CommandExecutor {
             .count();
         let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
         let line_delta = inserted_newlines as isize - deleted_newlines as isize;
-        let replace_affects_layout = deleted_text.contains('\n') || text.contains('\n');
 
         // Apply as a single operation (delete then insert at the same offset).
         if length > 0 {
@@ -5364,9 +5338,9 @@ impl CommandExecutor {
             }
         }
 
-        // Rebuild derived structures.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
+        // Update line index + layout engine incrementally.
+        self.apply_text_change_to_line_index_and_layout(start, &deleted_text, &text);
+
         if line_delta != 0 {
             self.editor
                 .folding_manager
@@ -5374,19 +5348,6 @@ impl CommandExecutor {
             self.editor
                 .folding_manager
                 .clamp_to_line_count(self.editor.line_index.line_count());
-        }
-
-        if replace_affects_layout {
-            self.rebuild_layout_engine_from_text(&updated_text);
-        } else {
-            let line_text = self
-                .editor
-                .line_index
-                .get_line_text(affected_line)
-                .unwrap_or_default();
-            self.editor
-                .layout_engine
-                .update_line(affected_line, &line_text);
         }
 
         // Ensure cursor/selection still valid.
@@ -5944,15 +5905,13 @@ impl CommandExecutor {
             for layer_tree in self.editor.style_layers.values_mut() {
                 layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
+
+            self.apply_text_change_to_line_index_and_layout(op.start_offset, &op.deleted_text, "");
         }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
         self.editor
             .folding_manager
             .clamp_to_line_count(self.editor.line_index.line_count());
-        self.rebuild_layout_engine_from_text(&updated_text);
 
         // Collapse selection state to carets at the start of deleted ranges.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -6166,12 +6125,9 @@ impl CommandExecutor {
             for layer_tree in self.editor.style_layers.values_mut() {
                 layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
-        }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
-        self.rebuild_layout_engine_from_text(&updated_text);
+            self.apply_text_change_to_line_index_and_layout(op.start_offset, &op.deleted_text, "");
+        }
 
         // Collapse selection state to carets at the start of deleted ranges.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -6356,12 +6312,9 @@ impl CommandExecutor {
             for layer_tree in self.editor.style_layers.values_mut() {
                 layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
-        }
 
-        // Rebuild derived structures once.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
-        self.rebuild_layout_engine_from_text(&updated_text);
+            self.apply_text_change_to_line_index_and_layout(op.start_offset, &op.deleted_text, "");
+        }
 
         // Collapse selection state to carets at the start of deleted ranges.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -6574,15 +6527,13 @@ impl CommandExecutor {
                     layer_tree.update_for_insertion(start, insert_len);
                 }
             }
+
+            self.apply_text_change_to_line_index_and_layout(start, &deleted_text, insert_text);
         }
 
-        // Rebuild derived structures.
-        let updated_text = self.editor.piece_table.get_text();
-        self.editor.line_index = LineIndex::from_text(&updated_text);
         self.editor
             .folding_manager
             .clamp_to_line_count(self.editor.line_index.line_count());
-        self.rebuild_layout_engine_from_text(&updated_text);
         self.normalize_cursor_and_selection();
 
         Ok(())
@@ -7142,15 +7093,7 @@ impl CommandExecutor {
                 Ok(CommandResult::Success)
             }
             ViewCommand::GetViewport { start_row, count } => {
-                let text = self.editor.piece_table.get_text();
-                let generator = SnapshotGenerator::from_text_with_layout_options(
-                    &text,
-                    self.editor.viewport_width,
-                    self.editor.layout_engine.tab_width(),
-                    self.editor.layout_engine.wrap_mode(),
-                    self.editor.layout_engine.wrap_indent(),
-                );
-                let grid = generator.get_headless_grid(start_row, count);
+                let grid = self.editor.get_headless_grid_styled(start_row, count);
                 Ok(CommandResult::Viewport(grid))
             }
         }
@@ -7207,10 +7150,74 @@ impl CommandExecutor {
         }
     }
 
-    fn rebuild_layout_engine_from_text(&mut self, text: &str) {
-        let lines = crate::text::split_lines_preserve_trailing(text);
-        let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
-        self.editor.layout_engine.from_lines(&line_refs);
+    fn apply_text_change_to_line_index_and_layout(
+        &mut self,
+        start_offset: usize,
+        deleted_text: &str,
+        inserted_text: &str,
+    ) {
+        let start_line = self
+            .editor
+            .line_index
+            .char_offset_to_position(start_offset)
+            .0;
+
+        let deleted_chars = deleted_text.chars().count();
+        if deleted_chars > 0 {
+            self.editor.line_index.delete(start_offset, deleted_chars);
+        }
+        if !inserted_text.is_empty() {
+            self.editor.line_index.insert(start_offset, inserted_text);
+        }
+
+        let deleted_newlines = deleted_text
+            .as_bytes()
+            .iter()
+            .filter(|b| **b == b'\n')
+            .count();
+        let inserted_newlines = inserted_text
+            .as_bytes()
+            .iter()
+            .filter(|b| **b == b'\n')
+            .count();
+
+        let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+        if line_delta > 0 {
+            for i in 0..(line_delta as usize) {
+                let line = start_line.saturating_add(1).saturating_add(i);
+                let line_text = self
+                    .editor
+                    .line_index
+                    .get_line_text(line)
+                    .unwrap_or_default();
+                self.editor.layout_engine.insert_line(line, &line_text);
+            }
+        } else if line_delta < 0 {
+            for _ in 0..((-line_delta) as usize) {
+                self.editor
+                    .layout_engine
+                    .delete_line(start_line.saturating_add(1));
+            }
+        }
+
+        // Update a small window around the edit site. This keeps the layout engine incremental
+        // while still handling multi-line inserts/deletes deterministically.
+        let touch_lines = deleted_newlines.max(inserted_newlines).saturating_add(1);
+        let end_line = start_line.saturating_add(touch_lines);
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 {
+            return;
+        }
+        let last_line = line_count.saturating_sub(1);
+        for line in start_line..=end_line.min(last_line) {
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(line)
+                .unwrap_or_default();
+            self.editor.layout_engine.update_line(line, &line_text);
+        }
     }
 
     fn position_to_char_offset_clamped(&self, pos: Position) -> usize {

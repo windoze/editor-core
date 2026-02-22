@@ -162,6 +162,15 @@ assert!(grid.lines[0].cells.iter().any(|c| !c.styles.is_empty()));
 - 示例：
   - `cargo run -p editor-core --example command_interface`
   - `cargo run -p editor-core --example state_management`
+  - `cargo run -p editor-core --example performance_milestones`
+
+### 性能基准测试
+
+`editor-core` 提供了一个小型的 criterion benchmark 套件，用于覆盖大文件打开/中间输入/视口渲染等路径：
+
+```bash
+cargo bench -p editor-core --bench performance
+```
 
 ## 开发注意事项
 
