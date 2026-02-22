@@ -125,6 +125,7 @@ pub use decorations::{
 };
 pub use delta::{TextDelta, TextDeltaEdit};
 pub use diagnostics::{Diagnostic, DiagnosticRange, DiagnosticSeverity};
+pub use editor_core_lang::CommentConfig;
 pub use intervals::{FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, StyleLayerId};
 pub use layout::{LayoutEngine, WrapIndent, WrapMode};
 pub use line_ending::LineEnding;

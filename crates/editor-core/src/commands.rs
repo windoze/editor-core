@@ -48,6 +48,7 @@ use crate::{
     FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex, PieceTable,
     SnapshotGenerator,
 };
+use editor_core_lang::CommentConfig;
 use regex::RegexBuilder;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -188,6 +189,12 @@ pub enum EditCommand {
     ///
     /// This is a convenience alias for [`EditCommand::InsertNewline`] with `auto_indent: false`.
     SplitLine,
+    /// Toggle comments for the selected line(s) or selection ranges, using a language-provided
+    /// comment configuration.
+    ToggleComment {
+        /// Comment tokens/config for the current language (data-driven).
+        config: CommentConfig,
+    },
     /// Smart backspace: if the caret is in leading whitespace, delete back to the previous tab stop.
     ///
     /// Otherwise, behaves like [`EditCommand::Backspace`].
@@ -1610,6 +1617,7 @@ impl CommandExecutor {
             EditCommand::MoveLinesDown => self.execute_move_lines_command(false),
             EditCommand::JoinLines => self.execute_join_lines_command(),
             EditCommand::SplitLine => self.execute_insert_newline_command(false),
+            EditCommand::ToggleComment { config } => self.execute_toggle_comment_command(config),
             EditCommand::Insert { offset, text } => self.execute_insert_command(offset, text),
             EditCommand::Delete { start, length } => self.execute_delete_command(start, length),
             EditCommand::Replace {
@@ -3365,6 +3373,718 @@ impl CommandExecutor {
         self.execute_cursor(CursorCommand::SetSelections {
             selections: new_carets,
             primary_index,
+        })?;
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_toggle_comment_command(
+        &mut self,
+        config: CommentConfig,
+    ) -> Result<CommandResult, CommandError> {
+        if !config.has_line() && !config.has_block() {
+            return Err(CommandError::Other(
+                "ToggleComment requires at least one comment token".to_string(),
+            ));
+        }
+
+        self.undo_redo.end_group();
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+        let primary_index = before_selection.primary_index;
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let all_single_line_selections = selections.iter().all(|sel| {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(sel);
+            min_pos.line == max_pos.line && min_pos != max_pos
+        });
+
+        if config.has_block()
+            && all_single_line_selections
+            && let (Some(block_start), Some(block_end)) =
+                (config.block_start.as_deref(), config.block_end.as_deref())
+        {
+            return self.execute_toggle_block_comment_inline(
+                block_start,
+                block_end,
+                before_char_count,
+                before_selection,
+                selections,
+                primary_index,
+            );
+        }
+
+        if config.has_line()
+            && let Some(token) = config.line.as_deref()
+        {
+            return self.execute_toggle_line_comment(
+                token,
+                before_char_count,
+                before_selection,
+                selections,
+                primary_index,
+            );
+        }
+
+        if config.has_block()
+            && let (Some(block_start), Some(block_end)) =
+                (config.block_start.as_deref(), config.block_end.as_deref())
+        {
+            return self.execute_toggle_block_comment_lines(
+                block_start,
+                block_end,
+                before_char_count,
+                before_selection,
+                selections,
+                primary_index,
+            );
+        }
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_toggle_line_comment(
+        &mut self,
+        token: &str,
+        before_char_count: usize,
+        before_selection: SelectionSetSnapshot,
+        selections: Vec<Selection>,
+        _primary_index: usize,
+    ) -> Result<CommandResult, CommandError> {
+        let token = token.trim_end();
+        if token.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        let token_len = token.chars().count();
+        let insert_text = format!("{} ", token);
+        let insert_len = insert_text.chars().count();
+
+        // Collect unique target lines.
+        let mut lines: Vec<usize> = Vec::new();
+        for sel in &selections {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(sel);
+            for line in min_pos.line..=max_pos.line {
+                lines.push(line);
+            }
+        }
+        lines.sort_unstable();
+        lines.dedup();
+        lines.retain(|l| *l < self.editor.line_index.line_count());
+
+        if lines.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        // Decide whether to comment or uncomment.
+        let mut non_empty = 0usize;
+        let mut all_commented = true;
+        for line in &lines {
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(*line)
+                .unwrap_or_default();
+            let indent = line_text
+                .chars()
+                .take_while(|c| *c == ' ' || *c == '\t')
+                .count();
+            let indent_byte = byte_offset_for_char_column(&line_text, indent);
+            let rest = line_text.get(indent_byte..).unwrap_or("");
+            if rest.is_empty() {
+                continue;
+            }
+            non_empty += 1;
+            if !rest.starts_with(token) {
+                all_commented = false;
+                break;
+            }
+        }
+
+        let should_uncomment = non_empty > 0 && all_commented;
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+            line: usize,
+            indent_col: usize,
+            col_delta: isize,
+        }
+
+        let mut ops: Vec<Op> = Vec::new();
+
+        for line in lines {
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(line)
+                .unwrap_or_default();
+            let indent = line_text
+                .chars()
+                .take_while(|c| *c == ' ' || *c == '\t')
+                .count();
+            let indent_byte = byte_offset_for_char_column(&line_text, indent);
+            let rest = line_text.get(indent_byte..).unwrap_or("");
+
+            let start_offset = self.editor.line_index.position_to_char_offset(line, indent);
+
+            if should_uncomment {
+                if rest.is_empty() || !rest.starts_with(token) {
+                    continue;
+                }
+
+                let mut remove_len = token_len;
+                if let Some(ch) = line_text.chars().nth(indent + token_len)
+                    && ch == ' '
+                {
+                    remove_len += 1;
+                }
+
+                if remove_len == 0 {
+                    continue;
+                }
+
+                let deleted_text = self.editor.piece_table.get_range(start_offset, remove_len);
+                ops.push(Op {
+                    start_before: start_offset,
+                    start_after: start_offset,
+                    delete_len: remove_len,
+                    deleted_text,
+                    inserted_text: String::new(),
+                    inserted_len: 0,
+                    line,
+                    indent_col: indent,
+                    col_delta: -(remove_len as isize),
+                });
+            } else {
+                ops.push(Op {
+                    start_before: start_offset,
+                    start_after: start_offset,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    inserted_text: insert_text.clone(),
+                    inserted_len: insert_len,
+                    line,
+                    indent_col: indent,
+                    col_delta: insert_len as isize,
+                });
+            }
+        }
+
+        if ops.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        // Compute start_after.
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_before);
+
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "ToggleComment produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64 - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Shift cursor/selections for touched lines, but only for columns at/after the insertion point.
+        use std::collections::HashMap;
+        let mut line_deltas: HashMap<usize, (usize, isize)> = HashMap::new();
+        for op in &ops {
+            line_deltas.insert(op.line, (op.indent_col, op.col_delta));
+        }
+
+        let line_index = &self.editor.line_index;
+        let apply_delta = |pos: &mut Position, deltas: &HashMap<usize, (usize, isize)>| {
+            let Some((indent_col, delta)) = deltas.get(&pos.line) else {
+                return;
+            };
+            if pos.column < *indent_col {
+                return;
+            }
+
+            let new_col = if *delta >= 0 {
+                pos.column.saturating_add(*delta as usize)
+            } else {
+                pos.column.saturating_sub((-*delta) as usize)
+            };
+
+            pos.column = Self::clamp_column_for_line_with_index(line_index, pos.line, new_col);
+        };
+
+        apply_delta(&mut self.editor.cursor_position, &line_deltas);
+        if let Some(sel) = &mut self.editor.selection {
+            apply_delta(&mut sel.start, &line_deltas);
+            apply_delta(&mut sel.end, &line_deltas);
+        }
+        for sel in &mut self.editor.secondary_selections {
+            apply_delta(&mut sel.start, &line_deltas);
+            apply_delta(&mut sel.end, &line_deltas);
+        }
+
+        self.normalize_cursor_and_selection();
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_toggle_block_comment_inline(
+        &mut self,
+        block_start: &str,
+        block_end: &str,
+        before_char_count: usize,
+        before_selection: SelectionSetSnapshot,
+        selections: Vec<Selection>,
+        primary_index: usize,
+    ) -> Result<CommandResult, CommandError> {
+        let start_len = block_start.chars().count();
+        let end_len = block_end.chars().count();
+        if start_len == 0 || end_len == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let mut selection_ranges: Vec<SearchMatch> = selections
+            .iter()
+            .map(|s| self.selection_char_range(s))
+            .filter(|r| r.start < r.end)
+            .collect();
+
+        if selection_ranges.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        selection_ranges.sort_by_key(|r| (r.start, r.end));
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum TokenOpKind {
+            Start,
+            End,
+        }
+
+        // Decide per-selection whether it is already wrapped; then build ops.
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+            sel_id: usize,
+            kind: TokenOpKind,
+        }
+
+        let mut ops: Vec<Op> = Vec::new();
+
+        for (sel_id, range) in selection_ranges.iter().enumerate() {
+            let start = range.start;
+            let end = range.end;
+
+            let already_wrapped = start >= start_len
+                && end + end_len <= before_char_count
+                && self
+                    .editor
+                    .piece_table
+                    .get_range(start - start_len, start_len)
+                    == block_start
+                && self.editor.piece_table.get_range(end, end_len) == block_end;
+
+            if already_wrapped {
+                // Delete end token first (higher offset), then start token.
+                let deleted_end = self.editor.piece_table.get_range(end, end_len);
+                ops.push(Op {
+                    start_before: end,
+                    start_after: end,
+                    delete_len: end_len,
+                    deleted_text: deleted_end,
+                    inserted_text: String::new(),
+                    inserted_len: 0,
+                    sel_id,
+                    kind: TokenOpKind::End,
+                });
+
+                let start_token_offset = start - start_len;
+                let deleted_start = self
+                    .editor
+                    .piece_table
+                    .get_range(start_token_offset, start_len);
+                ops.push(Op {
+                    start_before: start_token_offset,
+                    start_after: start_token_offset,
+                    delete_len: start_len,
+                    deleted_text: deleted_start,
+                    inserted_text: String::new(),
+                    inserted_len: 0,
+                    sel_id,
+                    kind: TokenOpKind::Start,
+                });
+            } else {
+                // Insert end token first (higher offset), then start token.
+                ops.push(Op {
+                    start_before: end,
+                    start_after: end,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    inserted_text: block_end.to_string(),
+                    inserted_len: end_len,
+                    sel_id,
+                    kind: TokenOpKind::End,
+                });
+                ops.push(Op {
+                    start_before: start,
+                    start_after: start,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    inserted_text: block_start.to_string(),
+                    inserted_len: start_len,
+                    sel_id,
+                    kind: TokenOpKind::Start,
+                });
+            }
+        }
+
+        if ops.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        ops.sort_by_key(|op| op.start_before);
+
+        let mut delta: i64 = 0;
+        for op in &mut ops {
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "ToggleComment produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64 - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Keep selections around the inner text between tokens so toggling is repeatable.
+        let mut new_starts: Vec<usize> = vec![0; selection_ranges.len()];
+        let mut new_ends: Vec<usize> = vec![0; selection_ranges.len()];
+
+        for op in &ops {
+            match op.kind {
+                TokenOpKind::Start => {
+                    new_starts[op.sel_id] = if op.inserted_len > 0 {
+                        op.start_after + start_len
+                    } else {
+                        op.start_after
+                    };
+                }
+                TokenOpKind::End => {
+                    new_ends[op.sel_id] = op.start_after;
+                }
+            }
+        }
+
+        let mut next_selections: Vec<Selection> = Vec::with_capacity(selection_ranges.len());
+        for i in 0..selection_ranges.len() {
+            let start = new_starts[i].min(new_ends[i]);
+            let end = new_starts[i].max(new_ends[i]);
+            let (start_line, start_col) = self.editor.line_index.char_offset_to_position(start);
+            let (end_line, end_col) = self.editor.line_index.char_offset_to_position(end);
+            next_selections.push(Selection {
+                start: Position::new(start_line, start_col),
+                end: Position::new(end_line, end_col),
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: next_selections,
+            primary_index: primary_index.min(selection_ranges.len().saturating_sub(1)),
+        })?;
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_toggle_block_comment_lines(
+        &mut self,
+        block_start: &str,
+        block_end: &str,
+        before_char_count: usize,
+        before_selection: SelectionSetSnapshot,
+        selections: Vec<Selection>,
+        primary_index: usize,
+    ) -> Result<CommandResult, CommandError> {
+        let start_len = block_start.chars().count();
+        let end_len = block_end.chars().count();
+        if start_len == 0 || end_len == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let mut ranges: Vec<(usize, usize)> = Vec::new();
+        for sel in &selections {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(sel);
+            let start_line = min_pos.line.min(self.editor.line_index.line_count() - 1);
+            let end_line = max_pos.line.min(self.editor.line_index.line_count() - 1);
+
+            let start = self
+                .editor
+                .line_index
+                .position_to_char_offset(start_line, 0);
+            let end_line_text = self
+                .editor
+                .line_index
+                .get_line_text(end_line)
+                .unwrap_or_default();
+            let end = self
+                .editor
+                .line_index
+                .position_to_char_offset(end_line, end_line_text.chars().count());
+            if start < end {
+                ranges.push((start, end));
+            }
+        }
+
+        ranges.sort_unstable();
+        ranges.dedup();
+
+        if ranges.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        // Unwrap if every range already starts/ends with the tokens.
+        let mut all_wrapped = true;
+        for (start, end) in &ranges {
+            if *end < *start + start_len + end_len {
+                all_wrapped = false;
+                break;
+            }
+            let text = self.editor.piece_table.get_range(*start, end - start);
+            if !text.starts_with(block_start) || !text.ends_with(block_end) {
+                all_wrapped = false;
+                break;
+            }
+        }
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+        }
+
+        let mut ops: Vec<Op> = Vec::new();
+
+        for (start, end) in &ranges {
+            if all_wrapped {
+                // Remove end token (at end-end_len) and start token (at start).
+                let end_token_start = end.saturating_sub(end_len);
+                let deleted_end = self.editor.piece_table.get_range(end_token_start, end_len);
+                ops.push(Op {
+                    start_before: end_token_start,
+                    start_after: end_token_start,
+                    delete_len: end_len,
+                    deleted_text: deleted_end,
+                    inserted_text: String::new(),
+                    inserted_len: 0,
+                });
+
+                let deleted_start = self.editor.piece_table.get_range(*start, start_len);
+                ops.push(Op {
+                    start_before: *start,
+                    start_after: *start,
+                    delete_len: start_len,
+                    deleted_text: deleted_start,
+                    inserted_text: String::new(),
+                    inserted_len: 0,
+                });
+            } else {
+                // Insert end token then start token.
+                ops.push(Op {
+                    start_before: *end,
+                    start_after: *end,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    inserted_text: block_end.to_string(),
+                    inserted_len: end_len,
+                });
+                ops.push(Op {
+                    start_before: *start,
+                    start_after: *start,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    inserted_text: block_start.to_string(),
+                    inserted_len: start_len,
+                });
+            }
+        }
+
+        ops.sort_by_key(|op| op.start_before);
+        let mut delta: i64 = 0;
+        for op in &mut ops {
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "ToggleComment produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64 - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Keep a single caret at the end of the primary range.
+        let (primary_start, primary_end) = ranges
+            .get(primary_index.min(ranges.len().saturating_sub(1)))
+            .copied()
+            .unwrap_or((0, 0));
+        let caret_offset = primary_end.max(primary_start);
+        let (line, column) = self.editor.line_index.char_offset_to_position(caret_offset);
+        let pos = Position::new(line, column);
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: vec![Selection {
+                start: pos,
+                end: pos,
+                direction: SelectionDirection::Forward,
+            }],
+            primary_index: 0,
         })?;
 
         let after_selection = self.snapshot_selection_set();

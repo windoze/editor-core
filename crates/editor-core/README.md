@@ -14,6 +14,7 @@ snapshots and drive edits through the command/state APIs.
 - **Command interface** (`CommandExecutor`) and **state/query layer** (`EditorStateManager`).
 - **Kernel-level editing commands** for common editor UX:
   - line ops: `DuplicateLines`, `DeleteLines`, `MoveLinesUp/Down`, `JoinLines`, `SplitLine`
+  - comment toggling: `ToggleComment` (language-config driven)
   - selection/multi-cursor ops: `SelectLine`, `SelectWord`, `ExpandSelection`, `AddCursorAbove/Below`,
     `AddNextOccurrence`, `AddAllOccurrences`
 - **Search utilities** (`find_next`, `find_prev`, `find_all`) operating on character offsets.

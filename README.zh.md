@@ -14,6 +14,7 @@
 
 - `crates/editor-core/` — 核心无头编辑器引擎（`PieceTable`、`LineIndex`、`LayoutEngine`、快照、命令/状态）。
   - 参见 `crates/editor-core/README.md`
+- `crates/editor-core-lang/` — 轻量级语言配置（例如注释 token），用于驱动内核功能。
 - `crates/editor-core-lsp/` — LSP 集成（UTF-16 转换、语义 token 解码、stdio JSON-RPC 客户端/会话）。
   - 参见 `crates/editor-core-lsp/README.md`
 - `crates/editor-core-sublime/` — `.sublime-syntax` 高亮 + 折叠引擎（以样式区间 + 折叠区域形式输出无头数据）。
@@ -182,4 +183,3 @@ cargo clippy --all-targets --all-features
 
 * Apache许可证第2.0版（LICENSE-APACHE 或 http://www.apache.org/licenses/LICENSE-2.0）
 * MIT许可证（LICENSE-MIT 或 http://opensource.org/licenses/MIT）
-

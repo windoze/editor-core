@@ -171,6 +171,7 @@ dependencies = [
 name = "editor-core"
 version = "0.2.0"
 dependencies = [
+ "editor-core-lang",
  "rand",
  "regex",
  "ropey",
@@ -185,6 +186,10 @@ dependencies = [
  "editor-core",
  "regex",
 ]
+
+[[package]]
+name = "editor-core-lang"
+version = "0.2.0"
 
 [[package]]
 name = "editor-core-lsp"
