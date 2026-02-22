@@ -59,7 +59,8 @@ use crossterm::{
 };
 use editor_core::{
     Command, CommandResult, CursorCommand, EditCommand, EditorStateManager,
-    FOLD_PLACEHOLDER_STYLE_ID, Position, SearchOptions, Selection, StyleLayerId, ViewCommand,
+    FOLD_PLACEHOLDER_STYLE_ID, Position, SearchOptions, Selection, StyleLayerId, TextDelta,
+    ViewCommand,
     layout::{cell_width_at, visual_x_for_column},
 };
 use editor_core_highlight_simple::{
@@ -68,8 +69,8 @@ use editor_core_highlight_simple::{
     SimpleIniStyles, SimpleJsonStyles,
 };
 use editor_core_lsp::{
-    LspContentChange, LspDocument, LspSession, LspSessionStartOptions, clear_lsp_state,
-    decode_semantic_style_id, path_to_file_uri,
+    DeltaCalculator, LspContentChange, LspDocument, LspSession, LspSessionStartOptions,
+    clear_lsp_state, decode_semantic_style_id, path_to_file_uri,
 };
 use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
 use ratatui::{
@@ -189,6 +190,8 @@ struct App {
     sublime_syntax: Option<SublimeProcessor>,
     /// LSP session over stdio (optional; auto-enabled based on file/env config)
     lsp: Option<LspSession>,
+    /// Tracks the active LSP document text for incremental `didChange` (char-offset based).
+    lsp_delta_calc: Option<DeltaCalculator>,
     /// 矩形选择模式（column/box selection）
     rect_selection_mode: bool,
     /// 矩形选择锚点（开始 selection 的位置）
@@ -234,6 +237,7 @@ impl App {
             syntax_highlighter: None,
             sublime_syntax: None,
             lsp: None,
+            lsp_delta_calc: None,
             rect_selection_mode: false,
             rect_selection_anchor: None,
             last_insert_time: None,
@@ -244,7 +248,11 @@ impl App {
             input_buffer: String::new(),
         };
 
-        app.maybe_enable_lsp(&content);
+        // `editor-core` normalizes CRLF/Lone-CR to LF internally.
+        // Keep the LSP document text consistent with the internal model to avoid offset/position
+        // drift when editing CRLF files.
+        let normalized_text = app.state_manager.editor().get_text();
+        app.maybe_enable_lsp(&normalized_text);
         app.configure_syntax_highlighting();
 
         Ok(app)
@@ -399,16 +407,6 @@ impl App {
         let root_uri = path_to_file_uri(&root_dir);
         let doc_uri = path_to_file_uri(&self.file_path);
 
-        let workspace_name = root_dir
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("workspace")
-            .to_string();
-        let workspace_folders = vec![json!({
-            "uri": root_uri.clone(),
-            "name": workspace_name,
-        })];
-
         let token_types = vec![
             "namespace",
             "type",
@@ -452,12 +450,7 @@ impl App {
         let init_params = json!({
             "processId": process::id(),
             "rootUri": root_uri,
-            "workspaceFolders": workspace_folders.clone(),
             "capabilities": {
-                "workspace": {
-                    "configuration": true,
-                    "workspaceFolders": true,
-                },
                 "textDocument": {
                     "semanticTokens": {
                         "dynamicRegistration": false,
@@ -483,7 +476,8 @@ impl App {
 
         let start = LspSessionStartOptions {
             cmd,
-            workspace_folders: workspace_folders.clone(),
+            // Single-document demo: keep workspace folder features disabled.
+            workspace_folders: Vec::new(),
             initialize_params: init_params,
             initialize_timeout: Duration::from_secs(3),
             document: LspDocument {
@@ -505,6 +499,7 @@ impl App {
                     .unwrap_or_else(|| cmd_name.clone());
 
                 self.lsp = Some(session);
+                self.lsp_delta_calc = Some(DeltaCalculator::from_text(initial_text));
                 self.status_message = format!("已连接 LSP: {}", server_label);
             }
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
@@ -719,8 +714,14 @@ impl App {
     }
 
     fn execute(&mut self, command: Command) -> bool {
+        let is_edit = matches!(command, Command::Edit(_));
         match self.state_manager.execute(command) {
-            Ok(_) => true,
+            Ok(_) => {
+                if is_edit {
+                    self.flush_lsp_did_change_from_delta();
+                }
+                true
+            }
             Err(err) => {
                 self.status_message = format!("命令失败: {}", err);
                 false
@@ -729,13 +730,87 @@ impl App {
     }
 
     fn execute_result(&mut self, command: Command) -> Option<CommandResult> {
+        let is_edit = matches!(command, Command::Edit(_));
         match self.state_manager.execute(command) {
-            Ok(result) => Some(result),
+            Ok(result) => {
+                if is_edit {
+                    self.flush_lsp_did_change_from_delta();
+                }
+                Some(result)
+            }
             Err(err) => {
                 self.status_message = format!("命令失败: {}", err);
                 None
             }
         }
+    }
+
+    fn flush_lsp_did_change_from_delta(&mut self) {
+        let Some(delta) = self.state_manager.take_last_text_delta() else {
+            return;
+        };
+        if delta.is_empty() {
+            return;
+        }
+
+        let Some(lsp) = self.lsp.as_mut() else {
+            return;
+        };
+        let Some(calc) = self.lsp_delta_calc.as_mut() else {
+            self.disable_lsp("LSP 增量同步状态丢失（已禁用）".to_string());
+            return;
+        };
+
+        let changes = Self::lsp_changes_for_text_delta(calc, &delta);
+        if changes.is_empty() {
+            return;
+        }
+
+        if let Err(reason) = lsp.did_change_many(changes) {
+            self.disable_lsp(reason);
+        }
+    }
+
+    fn lsp_changes_for_text_delta(
+        calc: &mut DeltaCalculator,
+        delta: &TextDelta,
+    ) -> Vec<LspContentChange> {
+        fn position_for_char_offset(calc: &DeltaCalculator, mut offset: usize) -> (usize, usize) {
+            let line_count = calc.line_count().max(1);
+            for line in 0..line_count {
+                let text = calc.get_line(line).unwrap_or("");
+                let len = text.chars().count();
+                if offset <= len {
+                    return (line, offset);
+                }
+                offset = offset.saturating_sub(len + 1);
+            }
+
+            let last_line = line_count.saturating_sub(1);
+            let last_len = calc.get_line(last_line).unwrap_or("").chars().count();
+            (last_line, last_len)
+        }
+
+        let mut out = Vec::<LspContentChange>::with_capacity(delta.edits.len());
+
+        for edit in &delta.edits {
+            let (start_line, start_char) = position_for_char_offset(calc, edit.start);
+            let (end_line, end_char) = position_for_char_offset(calc, edit.end());
+            let change = calc.calculate_replace_change(
+                start_line,
+                start_char,
+                end_line,
+                end_char,
+                edit.inserted_text.as_str(),
+            );
+            calc.apply_change(&change);
+            out.push(LspContentChange {
+                range: change.range,
+                text: change.text,
+            });
+        }
+
+        out
     }
 
     fn search_options_label(&self) -> String {
@@ -829,7 +904,7 @@ impl App {
 
     fn find_next(&mut self) {
         if self.search_query.is_empty() {
-            self.status_message = "查找内容为空（Ctrl+Shift+F 输入）".to_string();
+            self.status_message = "查找内容为空（Ctrl+F 输入）".to_string();
             return;
         }
 
@@ -854,7 +929,7 @@ impl App {
 
     fn find_prev(&mut self) {
         if self.search_query.is_empty() {
-            self.status_message = "查找内容为空（Ctrl+Shift+F 输入）".to_string();
+            self.status_message = "查找内容为空（Ctrl+F 输入）".to_string();
             return;
         }
 
@@ -879,14 +954,9 @@ impl App {
 
     fn replace_current(&mut self) {
         if self.search_query.is_empty() {
-            self.status_message = "查找内容为空（Ctrl+Shift+F 输入）".to_string();
+            self.status_message = "查找内容为空（Ctrl+F 输入）".to_string();
             return;
         }
-
-        let full_lsp_change = self.lsp.as_ref().map(|lsp| {
-            let old_char_count = self.state_manager.editor().char_count();
-            lsp.full_document_change(&self.state_manager.editor().line_index, old_char_count, "")
-        });
 
         let Some(result) = self.execute_result(Command::Edit(EditCommand::ReplaceCurrent {
             query: self.search_query.clone(),
@@ -904,23 +974,13 @@ impl App {
         self.rect_selection_anchor = None;
         self.last_insert_time = None;
         self.refresh_syntax_highlighting();
-
-        if let Some(mut change) = full_lsp_change {
-            change.text = self.state_manager.editor().get_text();
-            self.lsp_did_change(change);
-        }
     }
 
     fn replace_all(&mut self) {
         if self.search_query.is_empty() {
-            self.status_message = "查找内容为空（Ctrl+Shift+F 输入）".to_string();
+            self.status_message = "查找内容为空（Ctrl+F 输入）".to_string();
             return;
         }
-
-        let full_lsp_change = self.lsp.as_ref().map(|lsp| {
-            let old_char_count = self.state_manager.editor().char_count();
-            lsp.full_document_change(&self.state_manager.editor().line_index, old_char_count, "")
-        });
 
         let Some(result) = self.execute_result(Command::Edit(EditCommand::ReplaceAll {
             query: self.search_query.clone(),
@@ -938,11 +998,6 @@ impl App {
         self.rect_selection_anchor = None;
         self.last_insert_time = None;
         self.refresh_syntax_highlighting();
-
-        if let Some(mut change) = full_lsp_change {
-            change.text = self.state_manager.editor().get_text();
-            self.lsp_did_change(change);
-        }
     }
 
     fn maybe_end_undo_group_after_idle(&mut self) {
@@ -991,21 +1046,9 @@ impl App {
         }
     }
 
-    fn lsp_did_change(&mut self, change: LspContentChange) {
-        let result = {
-            let Some(lsp) = self.lsp.as_mut() else {
-                return;
-            };
-            lsp.did_change(change)
-        };
-
-        if let Err(reason) = result {
-            self.disable_lsp(reason);
-        }
-    }
-
     fn disable_lsp(&mut self, reason: String) {
         self.lsp = None;
+        self.lsp_delta_calc = None;
         clear_lsp_state(&mut self.state_manager);
         self.status_message = reason;
 
@@ -1032,29 +1075,6 @@ impl App {
         }
     }
 
-    fn cursor_offset(&self) -> usize {
-        let pos = self.state_manager.editor().cursor_position();
-        self.state_manager
-            .editor()
-            .line_index
-            .position_to_char_offset(pos.line, pos.column)
-    }
-
-    fn selection_offsets(&self) -> Option<(usize, usize)> {
-        let selection = self.state_manager.editor().selection()?;
-        let start_offset = self
-            .state_manager
-            .editor()
-            .line_index
-            .position_to_char_offset(selection.start.line, selection.start.column);
-        let end_offset = self
-            .state_manager
-            .editor()
-            .line_index
-            .position_to_char_offset(selection.end.line, selection.end.column);
-        Some((start_offset.min(end_offset), start_offset.max(end_offset)))
-    }
-
     fn is_logical_line_hidden(&self, logical_line: usize) -> bool {
         self.state_manager
             .editor()
@@ -1068,112 +1088,25 @@ impl App {
             })
     }
 
-    fn delete_selection(&mut self) {
-        let has_multi = !self
-            .state_manager
-            .editor()
-            .secondary_selections()
-            .is_empty();
-
-        let Some((start, end)) = self.selection_offsets() else {
-            return;
-        };
-
-        if start == end && !has_multi {
-            self.execute(Command::Cursor(CursorCommand::ClearSelection));
-            return;
-        }
-
-        let mut full_lsp_change = None::<LspContentChange>;
-        let mut lsp_change = None::<LspContentChange>;
-        if let Some(lsp) = self.lsp.as_ref() {
-            if has_multi {
-                let old_char_count = self.state_manager.editor().char_count();
-                full_lsp_change = Some(lsp.full_document_change(
-                    &self.state_manager.editor().line_index,
-                    old_char_count,
-                    "",
-                ));
-            } else {
-                lsp_change = Some(lsp.content_change_for_offsets(
-                    &self.state_manager.editor().line_index,
-                    start,
-                    end,
-                    "",
-                ));
-            }
-        }
-
-        let before_text = self.state_manager.editor().get_text();
-        if !self.execute(Command::Edit(EditCommand::Backspace)) {
-            return;
-        }
-        let after_text = self.state_manager.editor().get_text();
-        if after_text == before_text {
-            return;
-        }
-
-        self.rect_selection_anchor = None;
-        self.last_insert_time = None;
-        self.refresh_syntax_highlighting();
-        if let Some(change) = lsp_change {
-            self.lsp_did_change(change);
-        } else if let Some(mut change) = full_lsp_change {
-            change.text = after_text;
-            self.lsp_did_change(change);
-        }
-    }
-
     fn insert_text(&mut self, text: &str) {
         if text.is_empty() {
             return;
         }
 
-        let has_multi = !self
-            .state_manager
-            .editor()
-            .secondary_selections()
-            .is_empty();
-
-        let mut full_lsp_change = None::<LspContentChange>;
-        let mut lsp_change = None::<LspContentChange>;
-        if let Some(lsp) = self.lsp.as_ref() {
-            if has_multi {
-                let old_char_count = self.state_manager.editor().char_count();
-                full_lsp_change = Some(lsp.full_document_change(
-                    &self.state_manager.editor().line_index,
-                    old_char_count,
-                    "",
-                ));
-            } else {
-                let (start, end) = self.selection_offsets().unwrap_or_else(|| {
-                    let offset = self.cursor_offset();
-                    (offset, offset)
-                });
-                lsp_change = Some(lsp.content_change_for_offsets(
-                    &self.state_manager.editor().line_index,
-                    start,
-                    end,
-                    text,
-                ));
-            }
-        }
-
+        let before_version = self.state_manager.get_document_state().version;
         if !self.execute(Command::Edit(EditCommand::InsertText {
             text: text.to_string(),
         })) {
+            return;
+        }
+        let after_version = self.state_manager.get_document_state().version;
+        if after_version == before_version {
             return;
         }
 
         self.rect_selection_anchor = None;
         self.last_insert_time = Some(Instant::now());
         self.refresh_syntax_highlighting();
-        if let Some(change) = lsp_change {
-            self.lsp_did_change(change);
-        } else if let Some(mut change) = full_lsp_change {
-            change.text = self.state_manager.editor().get_text();
-            self.lsp_did_change(change);
-        }
     }
 
     /// 处理粘贴事件（IME 支持）
@@ -1196,148 +1129,50 @@ impl App {
 
     /// 插入 Tab（由 editor-core 根据 tab 设置决定插入 `\\t` 或空格）
     fn insert_tab(&mut self) {
-        let mut full_lsp_change = None::<LspContentChange>;
-        if let Some(lsp) = self.lsp.as_ref() {
-            // Tab 插入（特别是 spaces 模式）在不同光标/列上会产生不同插入文本；
-            // 为了保证 demo 的 LSP 同步正确，这里统一走全量替换。
-            let old_char_count = self.state_manager.editor().char_count();
-            full_lsp_change = Some(lsp.full_document_change(
-                &self.state_manager.editor().line_index,
-                old_char_count,
-                "",
-            ));
-        }
-
+        let before_version = self.state_manager.get_document_state().version;
         if !self.execute(Command::Edit(EditCommand::InsertTab)) {
+            return;
+        }
+        let after_version = self.state_manager.get_document_state().version;
+        if after_version == before_version {
             return;
         }
 
         self.rect_selection_anchor = None;
         self.last_insert_time = Some(Instant::now());
         self.refresh_syntax_highlighting();
-        if let Some(mut change) = full_lsp_change {
-            change.text = self.state_manager.editor().get_text();
-            self.lsp_did_change(change);
-        }
     }
 
     /// 退格删除
     fn backspace(&mut self) {
-        let has_multi = !self
-            .state_manager
-            .editor()
-            .secondary_selections()
-            .is_empty();
-
-        let cursor_state = self.state_manager.get_cursor_state();
-        let has_any_selection = cursor_state.selections.iter().any(|s| s.start != s.end);
-
-        if has_any_selection && !has_multi {
-            self.delete_selection();
+        let before_version = self.state_manager.get_document_state().version;
+        if !self.execute(Command::Edit(EditCommand::DeleteGraphemeBack)) {
             return;
         }
-
-        let mut full_lsp_change = None::<LspContentChange>;
-        let mut lsp_change = None::<LspContentChange>;
-        if let Some(lsp) = self.lsp.as_ref() {
-            if has_multi {
-                let old_char_count = self.state_manager.editor().char_count();
-                full_lsp_change = Some(lsp.full_document_change(
-                    &self.state_manager.editor().line_index,
-                    old_char_count,
-                    "",
-                ));
-            } else {
-                let offset = self.cursor_offset();
-                if offset > 0 {
-                    lsp_change = Some(lsp.content_change_for_offsets(
-                        &self.state_manager.editor().line_index,
-                        offset - 1,
-                        offset,
-                        "",
-                    ));
-                }
-            }
-        }
-
-        let before_text = self.state_manager.editor().get_text();
-        if !self.execute(Command::Edit(EditCommand::Backspace)) {
-            return;
-        }
-        let after_text = self.state_manager.editor().get_text();
-        if after_text == before_text {
+        let after_version = self.state_manager.get_document_state().version;
+        if after_version == before_version {
             return;
         }
 
         self.rect_selection_anchor = None;
         self.last_insert_time = None;
         self.refresh_syntax_highlighting();
-        if let Some(change) = lsp_change {
-            self.lsp_did_change(change);
-        } else if let Some(mut change) = full_lsp_change {
-            change.text = after_text;
-            self.lsp_did_change(change);
-        }
     }
 
     /// Delete 键删除
     fn delete(&mut self) {
-        let has_multi = !self
-            .state_manager
-            .editor()
-            .secondary_selections()
-            .is_empty();
-
-        let cursor_state = self.state_manager.get_cursor_state();
-        let has_any_selection = cursor_state.selections.iter().any(|s| s.start != s.end);
-
-        if has_any_selection && !has_multi {
-            self.delete_selection();
+        let before_version = self.state_manager.get_document_state().version;
+        if !self.execute(Command::Edit(EditCommand::DeleteGraphemeForward)) {
             return;
         }
-
-        let mut full_lsp_change = None::<LspContentChange>;
-        let mut lsp_change = None::<LspContentChange>;
-        if let Some(lsp) = self.lsp.as_ref() {
-            if has_multi {
-                let old_char_count = self.state_manager.editor().char_count();
-                full_lsp_change = Some(lsp.full_document_change(
-                    &self.state_manager.editor().line_index,
-                    old_char_count,
-                    "",
-                ));
-            } else {
-                let offset = self.cursor_offset();
-                let max_offset = self.state_manager.editor().char_count();
-                if offset < max_offset {
-                    lsp_change = Some(lsp.content_change_for_offsets(
-                        &self.state_manager.editor().line_index,
-                        offset,
-                        offset + 1,
-                        "",
-                    ));
-                }
-            }
-        }
-
-        let before_text = self.state_manager.editor().get_text();
-        if !self.execute(Command::Edit(EditCommand::DeleteForward)) {
-            return;
-        }
-        let after_text = self.state_manager.editor().get_text();
-        if after_text == before_text {
+        let after_version = self.state_manager.get_document_state().version;
+        if after_version == before_version {
             return;
         }
 
         self.rect_selection_anchor = None;
         self.last_insert_time = None;
         self.refresh_syntax_highlighting();
-        if let Some(change) = lsp_change {
-            self.lsp_did_change(change);
-        } else if let Some(mut change) = full_lsp_change {
-            change.text = after_text;
-            self.lsp_did_change(change);
-        }
     }
 
     /// 复制选中文本
@@ -1417,11 +1252,6 @@ impl App {
             return;
         }
 
-        let full_lsp_change = self.lsp.as_ref().map(|lsp| {
-            let old_char_count = self.state_manager.editor().char_count();
-            lsp.full_document_change(&self.state_manager.editor().line_index, old_char_count, "")
-        });
-
         if !self.execute(Command::Edit(EditCommand::Undo)) {
             return;
         }
@@ -1430,10 +1260,6 @@ impl App {
         self.rect_selection_anchor = None;
         self.last_insert_time = None;
         self.refresh_syntax_highlighting();
-        if let Some(mut change) = full_lsp_change {
-            change.text = self.state_manager.editor().get_text();
-            self.lsp_did_change(change);
-        }
     }
 
     /// 重做操作
@@ -1444,11 +1270,6 @@ impl App {
             return;
         }
 
-        let full_lsp_change = self.lsp.as_ref().map(|lsp| {
-            let old_char_count = self.state_manager.editor().char_count();
-            lsp.full_document_change(&self.state_manager.editor().line_index, old_char_count, "")
-        });
-
         if !self.execute(Command::Edit(EditCommand::Redo)) {
             return;
         }
@@ -1457,10 +1278,6 @@ impl App {
         self.rect_selection_anchor = None;
         self.last_insert_time = None;
         self.refresh_syntax_highlighting();
-        if let Some(mut change) = full_lsp_change {
-            change.text = self.state_manager.editor().get_text();
-            self.lsp_did_change(change);
-        }
     }
 
     fn toggle_fold_at_cursor(&mut self) {
@@ -1489,14 +1306,15 @@ impl App {
     /// 向左移动光标
     fn move_cursor_left(&mut self, selecting: bool) {
         let pos = self.state_manager.editor().cursor_position();
-        if pos.column > 0 {
-            let new_pos = Position::new(pos.line, pos.column - 1);
-            self.move_cursor_to(new_pos, selecting);
-        } else if pos.line > 0 {
-            // 移动到上一行的末尾
-            let mut prev_line = pos.line - 1;
+        if pos.column == 0 {
+            if pos.line == 0 {
+                return;
+            }
+
+            // Fold-aware: skip hidden logical lines when crossing line boundaries.
+            let mut prev_line = pos.line.saturating_sub(1);
             while prev_line > 0 && self.is_logical_line_hidden(prev_line) {
-                prev_line -= 1;
+                prev_line = prev_line.saturating_sub(1);
             }
 
             let prev_line_len = self
@@ -1507,9 +1325,51 @@ impl App {
                 .unwrap_or_default()
                 .chars()
                 .count();
-            let new_pos = Position::new(prev_line, prev_line_len);
-            self.move_cursor_to(new_pos, selecting);
+            self.move_cursor_to(Position::new(prev_line, prev_line_len), selecting);
+            return;
         }
+
+        if selecting {
+            if self.rect_selection_mode {
+                let anchor = match self.rect_selection_anchor {
+                    Some(anchor) => anchor,
+                    None => {
+                        self.rect_selection_anchor = Some(pos);
+                        pos
+                    }
+                };
+                self.execute(Command::Cursor(CursorCommand::MoveGraphemeLeft));
+                let active = self.state_manager.editor().cursor_position();
+                self.execute(Command::Cursor(CursorCommand::SetRectSelection {
+                    anchor,
+                    active,
+                }));
+                return;
+            }
+
+            // Keep demo behavior simple: selecting collapses any existing multi-cursor.
+            self.execute(Command::Cursor(CursorCommand::ClearSecondarySelections));
+            self.execute(Command::Cursor(CursorCommand::MoveGraphemeLeft));
+            let new_pos = self.state_manager.editor().cursor_position();
+            if self.state_manager.editor().selection().is_some() {
+                self.execute(Command::Cursor(CursorCommand::ExtendSelection {
+                    to: new_pos,
+                }));
+            } else {
+                self.execute(Command::Cursor(CursorCommand::SetSelection {
+                    start: pos,
+                    end: new_pos,
+                }));
+            }
+            return;
+        }
+
+        self.rect_selection_anchor = None;
+        if self.state_manager.editor().selection().is_some() {
+            self.execute(Command::Cursor(CursorCommand::ClearSelection));
+        }
+        self.execute(Command::Cursor(CursorCommand::ClearSecondarySelections));
+        self.execute(Command::Cursor(CursorCommand::MoveGraphemeLeft));
     }
 
     /// 向右移动光标
@@ -1523,11 +1383,12 @@ impl App {
             .unwrap_or_default();
         let line_len = current_line.chars().count();
 
-        if pos.column < line_len {
-            let new_pos = Position::new(pos.line, pos.column + 1);
-            self.move_cursor_to(new_pos, selecting);
-        } else if pos.line + 1 < self.state_manager.editor().line_count() {
-            // 移动到下一行的开头
+        if pos.column >= line_len {
+            if pos.line + 1 >= self.state_manager.editor().line_count() {
+                return;
+            }
+
+            // Fold-aware: skip hidden logical lines when crossing line boundaries.
             let mut next_line = pos.line + 1;
             while next_line < self.state_manager.editor().line_count()
                 && self.is_logical_line_hidden(next_line)
@@ -1535,10 +1396,51 @@ impl App {
                 next_line += 1;
             }
             if next_line < self.state_manager.editor().line_count() {
-                let new_pos = Position::new(next_line, 0);
-                self.move_cursor_to(new_pos, selecting);
+                self.move_cursor_to(Position::new(next_line, 0), selecting);
             }
+            return;
         }
+
+        if selecting {
+            if self.rect_selection_mode {
+                let anchor = match self.rect_selection_anchor {
+                    Some(anchor) => anchor,
+                    None => {
+                        self.rect_selection_anchor = Some(pos);
+                        pos
+                    }
+                };
+                self.execute(Command::Cursor(CursorCommand::MoveGraphemeRight));
+                let active = self.state_manager.editor().cursor_position();
+                self.execute(Command::Cursor(CursorCommand::SetRectSelection {
+                    anchor,
+                    active,
+                }));
+                return;
+            }
+
+            self.execute(Command::Cursor(CursorCommand::ClearSecondarySelections));
+            self.execute(Command::Cursor(CursorCommand::MoveGraphemeRight));
+            let new_pos = self.state_manager.editor().cursor_position();
+            if self.state_manager.editor().selection().is_some() {
+                self.execute(Command::Cursor(CursorCommand::ExtendSelection {
+                    to: new_pos,
+                }));
+            } else {
+                self.execute(Command::Cursor(CursorCommand::SetSelection {
+                    start: pos,
+                    end: new_pos,
+                }));
+            }
+            return;
+        }
+
+        self.rect_selection_anchor = None;
+        if self.state_manager.editor().selection().is_some() {
+            self.execute(Command::Cursor(CursorCommand::ClearSelection));
+        }
+        self.execute(Command::Cursor(CursorCommand::ClearSecondarySelections));
+        self.execute(Command::Cursor(CursorCommand::MoveGraphemeRight));
     }
 
     /// 向上移动光标
@@ -1761,7 +1663,7 @@ impl App {
 
     /// 保存文件
     fn save_file(&mut self) -> io::Result<()> {
-        let content = self.state_manager.editor().get_text();
+        let content = self.state_manager.get_text_for_saving();
         fs::write(&self.file_path, content)?;
         self.state_manager.mark_saved();
         Ok(())
@@ -2187,11 +2089,15 @@ impl App {
         let shortcuts = if self.confirm_quit {
             "Y:保存并退出  N:不保存退出  Esc:取消"
         } else {
-            "Ctrl-S:保存  Ctrl-X:退出  Ctrl-Z/Y:撤销/重做  Ctrl-C/V:复制/粘贴  Ctrl-B:矩形  Ctrl-F/U:折叠/全展开  Ctrl-Shift-F/H:查找/替换  F3:下一个  Shift-F3:上一个  Ctrl-Shift-R/A:替换/全部"
+            "Ctrl-S:保存  Ctrl-X:退出  Ctrl-Z/Y:撤销/重做  Ctrl-C/V:复制/粘贴  Ctrl-B:矩形  Ctrl-L/U:折叠/全展开  Ctrl-F:查找  Ctrl-Shift-H:替换  F3/Shift-F3:下一个/上一个  Ctrl-Shift-R/A:替换/全部"
         };
 
-        let shortcuts_line =
-            Paragraph::new(shortcuts).style(Style::default().bg(Color::Blue).fg(Color::White));
+        let shortcuts_line = Paragraph::new(shortcuts).style(
+            Style::default()
+                .bg(Color::Black)
+                .fg(Color::LightYellow)
+                .add_modifier(Modifier::BOLD),
+        );
 
         frame.render_widget(shortcuts_line, area);
     }
