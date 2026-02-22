@@ -3017,11 +3017,11 @@ impl CommandExecutor {
 
         let mut blocks: Vec<(usize, usize)> = Vec::new();
         for line in lines {
-            if let Some((_, end)) = blocks.last_mut() {
-                if *end + 1 == line {
-                    *end = line;
-                    continue;
-                }
+            if let Some((_, end)) = blocks.last_mut()
+                && *end + 1 == line
+            {
+                *end = line;
+                continue;
             }
             blocks.push((line, line));
         }
@@ -3713,7 +3713,7 @@ impl CommandExecutor {
                 .chars()
                 .last()
                 .is_some_and(|c| c == ' ' || c == '\t');
-            let right_trimmed_empty = next_text.chars().skip(leading_ws).next().is_none();
+            let right_trimmed_empty = next_text.chars().nth(leading_ws).is_none();
             let insert_space = !left_ends_with_ws && !line_text.is_empty() && !right_trimmed_empty;
 
             let inserted_text = if insert_space {

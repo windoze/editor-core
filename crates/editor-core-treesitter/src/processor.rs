@@ -189,10 +189,10 @@ impl TreeSitterProcessor {
             return point;
         };
 
-        point.column = point.column.saturating_add(first.as_bytes().len());
+        point.column = point.column.saturating_add(first.len());
         for part in parts {
             point.row = point.row.saturating_add(1);
-            point.column = part.as_bytes().len();
+            point.column = part.len();
         }
 
         point
@@ -211,8 +211,8 @@ impl TreeSitterProcessor {
             let deleted_chars = edit.deleted_text.chars().count();
 
             let start_byte = self.line_index.char_offset_to_byte_offset(start_char);
-            let old_end_byte = start_byte.saturating_add(edit.deleted_text.as_bytes().len());
-            let new_end_byte = start_byte.saturating_add(edit.inserted_text.as_bytes().len());
+            let old_end_byte = start_byte.saturating_add(edit.deleted_text.len());
+            let new_end_byte = start_byte.saturating_add(edit.inserted_text.len());
 
             let Some(old_slice) = self.text.get(start_byte..old_end_byte) else {
                 return Err(TreeSitterError::DeltaMismatch);

@@ -102,7 +102,7 @@ fn snippet_to_plain_text(snippet: &str) -> String {
                 Some('{') => {
                     chars.next(); // consume '{'
                     let mut content = String::new();
-                    while let Some(ch) = chars.next() {
+                    for ch in chars.by_ref() {
                         if ch == '}' {
                             break;
                         }

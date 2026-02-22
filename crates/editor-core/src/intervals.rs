@@ -532,8 +532,7 @@ impl FoldingManager {
                 idx -= 1;
             }
 
-            for i in idx..regions.len() {
-                let region = &regions[i];
+            for (i, region) in regions[idx..].iter().enumerate() {
                 if region.start_line != start_line {
                     break;
                 }
