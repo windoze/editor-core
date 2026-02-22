@@ -436,6 +436,13 @@ impl EditorStateManager {
                 | CursorCommand::SetSelections { .. }
                 | CursorCommand::ClearSecondarySelections
                 | CursorCommand::SetRectSelection { .. }
+                | CursorCommand::SelectLine
+                | CursorCommand::SelectWord
+                | CursorCommand::ExpandSelection
+                | CursorCommand::AddCursorAbove
+                | CursorCommand::AddCursorBelow
+                | CursorCommand::AddNextOccurrence { .. }
+                | CursorCommand::AddAllOccurrences { .. }
                 | CursorCommand::FindNext { .. }
                 | CursorCommand::FindPrev { .. },
             ) => Some(StateChangeType::SelectionChanged),

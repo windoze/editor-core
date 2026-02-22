@@ -12,6 +12,10 @@ snapshots and drive edits through the command/state APIs.
 - **Style + folding metadata** via interval trees (`IntervalTree`) and fold regions (`FoldingManager`).
 - **Headless snapshots** (`SnapshotGenerator` → `HeadlessGrid`) for building “text grid” UIs.
 - **Command interface** (`CommandExecutor`) and **state/query layer** (`EditorStateManager`).
+- **Kernel-level editing commands** for common editor UX:
+  - line ops: `DuplicateLines`, `DeleteLines`, `MoveLinesUp/Down`, `JoinLines`, `SplitLine`
+  - selection/multi-cursor ops: `SelectLine`, `SelectWord`, `ExpandSelection`, `AddCursorAbove/Below`,
+    `AddNextOccurrence`, `AddAllOccurrences`
 - **Search utilities** (`find_next`, `find_prev`, `find_all`) operating on character offsets.
 
 ## Design overview
