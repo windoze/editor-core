@@ -7,8 +7,10 @@
 
 pub mod editor;
 pub mod lsp_client;
+pub mod lsp_completion;
 pub mod lsp_decorations;
 pub mod lsp_events;
+pub mod lsp_highlights;
 pub mod lsp_locations;
 pub mod lsp_sync;
 pub mod lsp_text_edits;
@@ -21,11 +23,21 @@ pub use editor::{
     SemanticTokensLegend, clear_lsp_state, lsp_clear_edits, lsp_diagnostics_to_processing_edits,
 };
 pub use lsp_client::{LspClient, LspInbound, LspOutbound};
-pub use lsp_decorations::{lsp_inlay_hints_to_decorations, lsp_inlay_hints_to_processing_edit};
+pub use lsp_completion::{
+    CompletionTextEditMode, apply_completion_item, completion_item_to_text_edit_specs,
+};
+pub use lsp_decorations::{
+    lsp_code_lens_to_decorations, lsp_code_lens_to_processing_edit,
+    lsp_document_links_to_decorations, lsp_document_links_to_processing_edit,
+    lsp_inlay_hints_to_decorations, lsp_inlay_hints_to_processing_edit,
+};
 pub use lsp_events::{
     LspDiagnostic, LspDiagnosticSeverity, LspEvent, LspLogMessageParams, LspMessageType,
     LspNotification, LspProgressParams, LspPublishDiagnosticsParams, LspResponse, LspResponseError,
     LspServerRequest, LspServerRequestMode, LspServerRequestPolicy, LspShowMessageParams,
+};
+pub use lsp_highlights::{
+    lsp_document_highlights_to_intervals, lsp_document_highlights_to_processing_edit,
 };
 pub use lsp_locations::{LspLocation, locations_from_value};
 pub use lsp_sync::{

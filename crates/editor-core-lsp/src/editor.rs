@@ -34,7 +34,10 @@ use std::time::{Duration, Instant};
 /// Clear LSP-derived state in the editor:
 /// - `StyleLayerId::SEMANTIC_TOKENS`
 /// - `StyleLayerId::DIAGNOSTICS`
+/// - `StyleLayerId::DOCUMENT_HIGHLIGHTS`
 /// - `DecorationLayerId::INLAY_HINTS`
+/// - `DecorationLayerId::CODE_LENS`
+/// - `DecorationLayerId::DOCUMENT_LINKS`
 /// - all folding regions (typically sourced from LSP `foldingRange`)
 pub fn lsp_clear_edits() -> Vec<ProcessingEdit> {
     vec![
@@ -44,9 +47,18 @@ pub fn lsp_clear_edits() -> Vec<ProcessingEdit> {
         ProcessingEdit::ClearStyleLayer {
             layer: StyleLayerId::DIAGNOSTICS,
         },
+        ProcessingEdit::ClearStyleLayer {
+            layer: StyleLayerId::DOCUMENT_HIGHLIGHTS,
+        },
         ProcessingEdit::ClearDiagnostics,
         ProcessingEdit::ClearDecorations {
             layer: DecorationLayerId::INLAY_HINTS,
+        },
+        ProcessingEdit::ClearDecorations {
+            layer: DecorationLayerId::CODE_LENS,
+        },
+        ProcessingEdit::ClearDecorations {
+            layer: DecorationLayerId::DOCUMENT_LINKS,
         },
         ProcessingEdit::ClearFoldingRegions,
     ]

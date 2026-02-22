@@ -10,6 +10,13 @@ pub type StyleId = u32;
 /// Consumers should map this to a muted style.
 pub const FOLD_PLACEHOLDER_STYLE_ID: StyleId = 0x0300_0001;
 
+/// Built-in style id for LSP `textDocument/documentHighlight` (kind: Text/unspecified).
+pub const DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID: StyleId = 0x0400_0001;
+/// Built-in style id for LSP `textDocument/documentHighlight` (kind: Read).
+pub const DOCUMENT_HIGHLIGHT_READ_STYLE_ID: StyleId = 0x0400_0002;
+/// Built-in style id for LSP `textDocument/documentHighlight` (kind: Write).
+pub const DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID: StyleId = 0x0400_0003;
+
 /// Style layer ID
 ///
 /// Used to distinguish style sources (e.g., LSP semantic highlighting, simple syntax highlighting, diagnostics, etc.),
@@ -36,6 +43,9 @@ impl StyleLayerId {
     ///
     /// This is intended for underlines / gutter markers sourced from LSP diagnostics.
     pub const DIAGNOSTICS: Self = Self(4);
+
+    /// LSP `textDocument/documentHighlight` overlay layer.
+    pub const DOCUMENT_HIGHLIGHTS: Self = Self(5);
 }
 
 /// Interval structure
