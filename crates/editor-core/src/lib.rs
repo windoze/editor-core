@@ -118,7 +118,8 @@ pub mod workspace;
 
 pub use commands::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
-    Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, ViewCommand,
+    Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, TextEditSpec,
+    ViewCommand,
 };
 pub use decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
@@ -141,4 +142,6 @@ pub use state::{
     StyleState, UndoRedoState, ViewportState,
 };
 pub use storage::PieceTable;
-pub use workspace::{DocumentId, DocumentMetadata, Workspace, WorkspaceError};
+pub use workspace::{
+    DocumentId, DocumentMetadata, Workspace, WorkspaceError, WorkspaceSearchResult,
+};

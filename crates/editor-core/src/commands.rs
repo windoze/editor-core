@@ -113,6 +113,20 @@ pub enum TabKeyBehavior {
     Spaces,
 }
 
+/// A simple document text edit (character offsets, half-open).
+///
+/// This is commonly used for applying a batch of "simultaneous" edits (e.g. rename, refactor, or
+/// workspace-wide search/replace), where the edit list is expressed in **pre-edit** coordinates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextEditSpec {
+    /// Inclusive start character offset.
+    pub start: usize,
+    /// Exclusive end character offset.
+    pub end: usize,
+    /// Replacement text.
+    pub text: String,
+}
+
 /// Text editing commands
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditCommand {
@@ -194,6 +208,14 @@ pub enum EditCommand {
     ToggleComment {
         /// Comment tokens/config for the current language (data-driven).
         config: CommentConfig,
+    },
+    /// Apply a batch of text edits as a single undoable step.
+    ///
+    /// - Edits are interpreted in **pre-edit** character offsets.
+    /// - Edits must be non-overlapping; they are applied in descending offset order internally.
+    ApplyTextEdits {
+        /// The edit list (character offsets, half-open).
+        edits: Vec<TextEditSpec>,
     },
     /// Smart backspace: if the caret is in leading whitespace, delete back to the previous tab stop.
     ///
@@ -1618,6 +1640,7 @@ impl CommandExecutor {
             EditCommand::JoinLines => self.execute_join_lines_command(),
             EditCommand::SplitLine => self.execute_insert_newline_command(false),
             EditCommand::ToggleComment { config } => self.execute_toggle_comment_command(config),
+            EditCommand::ApplyTextEdits { edits } => self.execute_apply_text_edits_command(edits),
             EditCommand::Insert { offset, text } => self.execute_insert_command(offset, text),
             EditCommand::Delete { start, length } => self.execute_delete_command(start, length),
             EditCommand::Replace {
@@ -3536,6 +3559,140 @@ impl CommandExecutor {
                 primary_index,
             );
         }
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_apply_text_edits_command(
+        &mut self,
+        mut edits: Vec<TextEditSpec>,
+    ) -> Result<CommandResult, CommandError> {
+        self.undo_redo.end_group();
+
+        if edits.is_empty() {
+            return Ok(CommandResult::Success);
+        }
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+
+        let max_offset = before_char_count;
+
+        for edit in &mut edits {
+            if edit.start > edit.end {
+                return Err(CommandError::InvalidRange {
+                    start: edit.start,
+                    end: edit.end,
+                });
+            }
+            if edit.end > max_offset {
+                return Err(CommandError::InvalidRange {
+                    start: edit.start,
+                    end: edit.end,
+                });
+            }
+            edit.text = crate::text::normalize_crlf_to_lf_string(edit.text.clone());
+        }
+
+        edits.sort_by_key(|e| (e.start, e.end));
+
+        // Validate non-overlap (pre-edit coordinates).
+        let mut prev_end = 0usize;
+        for (idx, edit) in edits.iter().enumerate() {
+            if idx > 0 && edit.start < prev_end {
+                return Err(CommandError::Other(
+                    "ApplyTextEdits requires non-overlapping edits".to_string(),
+                ));
+            }
+            prev_end = prev_end.max(edit.end);
+        }
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(edits.len());
+        for edit in edits {
+            let delete_len = edit.end.saturating_sub(edit.start);
+            let deleted_text = if delete_len == 0 {
+                String::new()
+            } else {
+                self.editor.piece_table.get_range(edit.start, delete_len)
+            };
+
+            let inserted_text = edit.text;
+            let inserted_len = inserted_text.chars().count();
+
+            ops.push(Op {
+                start_before: edit.start,
+                start_after: edit.start,
+                delete_len,
+                deleted_text,
+                inserted_text,
+                inserted_len,
+            });
+        }
+
+        // Compute start_after using ascending order and delta accumulation.
+        let mut delta: i64 = 0;
+        for op in &mut ops {
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "ApplyTextEdits produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64 - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
 
         Ok(CommandResult::Success)
     }
