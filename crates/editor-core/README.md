@@ -9,7 +9,8 @@ snapshots and drive edits through the command/state APIs.
 - **Efficient text storage** via a Piece Table (`PieceTable`) for inserts/deletes.
 - **Fast line indexing** via a rope-backed `LineIndex` for line access and conversions.
 - **Soft wrapping layout** (`LayoutEngine`) with Unicode-aware cell widths.
-- **Style + folding metadata** via interval trees (`IntervalTree`) and fold regions (`FoldingManager`).
+- **Style + folding metadata** via interval trees (`IntervalTree`) and fold regions (`FoldingManager`)
+  (derived folds + stable user folds).
 - **Headless snapshots** (`SnapshotGenerator` → `HeadlessGrid`) for building “text grid” UIs.
 - **Command interface** (`CommandExecutor`) and **state/query layer** (`EditorStateManager`).
 - **Kernel-level editing commands** for common editor UX:

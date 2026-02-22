@@ -372,57 +372,99 @@ impl FoldRegion {
 
 /// Folding manager
 pub struct FoldingManager {
-    /// All fold regions
-    regions: Vec<FoldRegion>,
+    /// Fold regions sourced from external/derived providers (LSP, sublime syntax, etc.).
+    derived_regions: Vec<FoldRegion>,
+    /// Fold regions created explicitly by the user (via commands).
+    user_regions: Vec<FoldRegion>,
+    /// Cached merged view (sorted/deduplicated) used for rendering and coordinate mapping.
+    merged_regions: Vec<FoldRegion>,
 }
 
 impl FoldingManager {
     /// Create an empty folding manager.
     pub fn new() -> Self {
         Self {
-            regions: Vec::new(),
+            derived_regions: Vec::new(),
+            user_regions: Vec::new(),
+            merged_regions: Vec::new(),
         }
     }
 
-    /// Add fold region
+    fn rebuild_merged_regions(&mut self) {
+        self.merged_regions.clear();
+        self.merged_regions
+            .extend(self.derived_regions.iter().cloned());
+        self.merged_regions
+            .extend(self.user_regions.iter().cloned());
+
+        self.merged_regions
+            .sort_by_key(|r| (r.start_line, r.end_line));
+        self.merged_regions
+            .dedup_by(|a, b| a.start_line == b.start_line && a.end_line == b.end_line);
+    }
+
+    fn normalize_regions(regions: &mut Vec<FoldRegion>) {
+        regions.sort_by_key(|r| (r.start_line, r.end_line));
+        regions.dedup_by(|a, b| a.start_line == b.start_line && a.end_line == b.end_line);
+        regions.retain(|r| r.end_line > r.start_line);
+    }
+
+    fn clamp_regions(regions: &mut Vec<FoldRegion>, max_line: usize) {
+        for r in regions.iter_mut() {
+            r.start_line = r.start_line.min(max_line);
+            r.end_line = r.end_line.min(max_line);
+        }
+        Self::normalize_regions(regions);
+    }
+
+    /// Add a user-created fold region.
     pub fn add_region(&mut self, region: FoldRegion) {
-        // Keep sorted by start line
+        // Keep sorted by start line.
         let pos = self
-            .regions
+            .user_regions
             .binary_search_by_key(&region.start_line, |r| r.start_line)
             .unwrap_or_else(|pos| pos);
 
-        self.regions.insert(pos, region);
+        self.user_regions.insert(pos, region);
+        Self::normalize_regions(&mut self.user_regions);
+        self.rebuild_merged_regions();
     }
 
-    /// Remove fold region
+    /// Remove a user-created fold region.
     pub fn remove_region(&mut self, start_line: usize, end_line: usize) -> bool {
         if let Some(pos) = self
-            .regions
+            .user_regions
             .iter()
             .position(|r| r.start_line == start_line && r.end_line == end_line)
         {
-            self.regions.remove(pos);
+            self.user_regions.remove(pos);
+            self.rebuild_merged_regions();
             true
         } else {
             false
         }
     }
 
-    /// Get fold region containing specified line
+    /// Get fold region containing specified line (merged view).
     pub fn get_region_for_line(&self, line: usize) -> Option<&FoldRegion> {
-        self.regions.iter().find(|r| r.contains_line(line))
+        self.merged_regions.iter().find(|r| r.contains_line(line))
     }
 
-    /// Get mutable reference
+    /// Get mutable reference to a fold region containing specified line (prefers user folds).
     pub fn get_region_for_line_mut(&mut self, line: usize) -> Option<&mut FoldRegion> {
-        self.regions.iter_mut().find(|r| r.contains_line(line))
+        if let Some(region) = self.user_regions.iter_mut().find(|r| r.contains_line(line)) {
+            return Some(region);
+        }
+        self.derived_regions
+            .iter_mut()
+            .find(|r| r.contains_line(line))
     }
 
     /// Collapse specified line
     pub fn collapse_line(&mut self, line: usize) -> bool {
         if let Some(region) = self.get_region_for_line_mut(line) {
             region.collapse();
+            self.rebuild_merged_regions();
             true
         } else {
             false
@@ -433,6 +475,7 @@ impl FoldingManager {
     pub fn expand_line(&mut self, line: usize) -> bool {
         if let Some(region) = self.get_region_for_line_mut(line) {
             region.expand();
+            self.rebuild_merged_regions();
             true
         } else {
             false
@@ -443,6 +486,7 @@ impl FoldingManager {
     pub fn toggle_line(&mut self, line: usize) -> bool {
         if let Some(region) = self.get_region_for_line_mut(line) {
             region.toggle();
+            self.rebuild_merged_regions();
             true
         } else {
             false
@@ -455,44 +499,58 @@ impl FoldingManager {
     /// behave more intuitively when "cursor is on a start line", we choose:
     /// - Among all regions with `start_line == line`, the one with smallest `end_line` (innermost)
     pub fn toggle_region_starting_at_line(&mut self, start_line: usize) -> bool {
-        if self.regions.is_empty() {
+        if self.merged_regions.is_empty() {
             return false;
         }
 
-        let Ok(mut idx) = self
-            .regions
-            .binary_search_by_key(&start_line, |r| r.start_line)
-        else {
+        // Find the innermost region among both sources, preferring user folds on ties.
+        let mut best_source = None::<(bool, usize)>; // (is_user, index)
+        let mut best_end = usize::MAX;
+
+        for (is_user, regions) in [
+            (true, &mut self.user_regions),
+            (false, &mut self.derived_regions),
+        ] {
+            let Ok(mut idx) = regions.binary_search_by_key(&start_line, |r| r.start_line) else {
+                continue;
+            };
+
+            while idx > 0 && regions[idx - 1].start_line == start_line {
+                idx -= 1;
+            }
+
+            for i in idx..regions.len() {
+                let region = &regions[i];
+                if region.start_line != start_line {
+                    break;
+                }
+                if region.end_line <= region.start_line {
+                    continue;
+                }
+                if region.end_line < best_end
+                    || (region.end_line == best_end
+                        && best_source.is_some_and(|(prev_is_user, _)| !prev_is_user && is_user))
+                {
+                    best_end = region.end_line;
+                    best_source = Some((is_user, i));
+                }
+            }
+        }
+
+        let Some((is_user, idx)) = best_source else {
             return false;
         };
 
-        while idx > 0 && self.regions[idx - 1].start_line == start_line {
-            idx -= 1;
+        if is_user {
+            if let Some(region) = self.user_regions.get_mut(idx) {
+                region.toggle();
+            }
+        } else if let Some(region) = self.derived_regions.get_mut(idx) {
+            region.toggle();
         }
 
-        let mut best_idx = None::<usize>;
-        let mut best_end = usize::MAX;
-
-        for i in idx..self.regions.len() {
-            let region = &self.regions[i];
-            if region.start_line != start_line {
-                break;
-            }
-            if region.end_line <= region.start_line {
-                continue;
-            }
-            if region.end_line < best_end {
-                best_end = region.end_line;
-                best_idx = Some(i);
-            }
-        }
-
-        if let Some(i) = best_idx {
-            self.regions[i].toggle();
-            true
-        } else {
-            false
-        }
+        self.rebuild_merged_regions();
+        true
     }
 
     /// Calculate mapping from logical line to visual line
@@ -501,7 +559,7 @@ impl FoldingManager {
     pub fn logical_to_visual(&self, logical_line: usize, base_visual: usize) -> Option<usize> {
         let mut hidden_lines = 0;
 
-        for region in &self.regions {
+        for region in &self.merged_regions {
             if region.is_collapsed {
                 if logical_line > region.start_line && logical_line <= region.end_line {
                     // This line is folded
@@ -520,7 +578,7 @@ impl FoldingManager {
     pub fn visual_to_logical(&self, visual_line: usize, base_visual: usize) -> usize {
         let mut logical = visual_line - base_visual;
 
-        for region in &self.regions {
+        for region in &self.merged_regions {
             if region.is_collapsed {
                 let hidden_lines = region.end_line - region.start_line;
 
@@ -539,33 +597,103 @@ impl FoldingManager {
 
     /// Get all fold regions
     pub fn regions(&self) -> &[FoldRegion] {
-        &self.regions
+        &self.merged_regions
     }
 
-    /// Clear all fold regions
+    /// Get all derived fold regions.
+    pub fn derived_regions(&self) -> &[FoldRegion] {
+        &self.derived_regions
+    }
+
+    /// Get all user-created fold regions.
+    pub fn user_regions(&self) -> &[FoldRegion] {
+        &self.user_regions
+    }
+
+    /// Clear all fold regions (derived + user).
     pub fn clear(&mut self) {
-        self.regions.clear();
+        self.derived_regions.clear();
+        self.user_regions.clear();
+        self.merged_regions.clear();
     }
 
-    /// Replace fold regions with new list (will be sorted by start line and deduplicated).
-    pub fn replace_regions(&mut self, mut regions: Vec<FoldRegion>) {
-        regions.sort_by_key(|r| (r.start_line, r.end_line));
-        regions.dedup_by(|a, b| a.start_line == b.start_line && a.end_line == b.end_line);
-        self.regions = regions;
+    /// Clear all derived fold regions, leaving user folds intact.
+    pub fn clear_derived_regions(&mut self) {
+        self.derived_regions.clear();
+        self.rebuild_merged_regions();
+    }
+
+    /// Replace derived fold regions (will be sorted by start line and deduplicated).
+    pub fn replace_derived_regions(&mut self, mut regions: Vec<FoldRegion>) {
+        Self::normalize_regions(&mut regions);
+        self.derived_regions = regions;
+        self.rebuild_merged_regions();
+    }
+
+    /// Replace fold regions with new list (legacy API).
+    ///
+    /// This replaces *derived* fold regions, leaving user folds intact.
+    pub fn replace_regions(&mut self, regions: Vec<FoldRegion>) {
+        self.replace_derived_regions(regions);
     }
 
     /// Expand all folds
     pub fn expand_all(&mut self) {
-        for region in &mut self.regions {
+        for region in &mut self.derived_regions {
             region.expand();
         }
+        for region in &mut self.user_regions {
+            region.expand();
+        }
+        self.rebuild_merged_regions();
     }
 
     /// Collapse all regions
     pub fn collapse_all(&mut self) {
-        for region in &mut self.regions {
+        for region in &mut self.derived_regions {
             region.collapse();
         }
+        for region in &mut self.user_regions {
+            region.collapse();
+        }
+        self.rebuild_merged_regions();
+    }
+
+    /// Update fold regions to account for an edit that changes the number of logical lines.
+    ///
+    /// This is intended to keep **user folds** stable across newline insertions/deletions.
+    ///
+    /// - `edit_line` is the logical line where the edit occurred (pre-edit).
+    /// - `line_delta` is the net change in line count (`+n` for inserted newlines, `-n` for deleted).
+    pub fn apply_line_delta(&mut self, edit_line: usize, line_delta: isize) {
+        if line_delta == 0 {
+            return;
+        }
+
+        let apply = |regions: &mut Vec<FoldRegion>| {
+            for region in regions.iter_mut() {
+                if edit_line <= region.start_line {
+                    let start = region.start_line as isize + line_delta;
+                    let end = region.end_line as isize + line_delta;
+                    region.start_line = start.max(0) as usize;
+                    region.end_line = end.max(0) as usize;
+                } else if edit_line <= region.end_line {
+                    let end = region.end_line as isize + line_delta;
+                    region.end_line = end.max(region.start_line as isize) as usize;
+                }
+            }
+        };
+
+        apply(&mut self.derived_regions);
+        apply(&mut self.user_regions);
+    }
+
+    /// Clamp fold regions to the given `line_count` after a text edit, dropping invalid regions.
+    pub fn clamp_to_line_count(&mut self, line_count: usize) {
+        let max_line = line_count.saturating_sub(1);
+        Self::clamp_regions(&mut self.derived_regions, max_line);
+        Self::clamp_regions(&mut self.user_regions, max_line);
+        self.rebuild_merged_regions();
     }
 }
 

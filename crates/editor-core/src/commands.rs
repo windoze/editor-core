@@ -1819,6 +1819,30 @@ impl CommandExecutor {
         for &idx in &desc_indices {
             let op = &ops[idx];
 
+            let edit_line = self
+                .editor
+                .line_index
+                .char_offset_to_position(op.start_offset)
+                .0;
+            let deleted_newlines = op
+                .deleted_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let inserted_newlines = op
+                .insert_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+            if line_delta != 0 {
+                self.editor
+                    .folding_manager
+                    .apply_line_delta(edit_line, line_delta);
+            }
+
             if op.delete_len > 0 {
                 self.editor
                     .piece_table
@@ -1848,6 +1872,9 @@ impl CommandExecutor {
         // Rebuild derived structures once.
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.editor
+            .folding_manager
+            .clamp_to_line_count(self.editor.line_index.line_count());
         self.rebuild_layout_engine_from_text(&updated_text);
 
         // Update selection state: collapse to carets after typing.
@@ -2047,6 +2074,30 @@ impl CommandExecutor {
         for &idx in &desc_indices {
             let op = &ops[idx];
 
+            let edit_line = self
+                .editor
+                .line_index
+                .char_offset_to_position(op.start_offset)
+                .0;
+            let deleted_newlines = op
+                .deleted_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let inserted_newlines = op
+                .insert_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+            if line_delta != 0 {
+                self.editor
+                    .folding_manager
+                    .apply_line_delta(edit_line, line_delta);
+            }
+
             if op.delete_len > 0 {
                 self.editor
                     .piece_table
@@ -2076,6 +2127,9 @@ impl CommandExecutor {
         // Rebuild derived structures once.
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.editor
+            .folding_manager
+            .clamp_to_line_count(self.editor.line_index.line_count());
         self.rebuild_layout_engine_from_text(&updated_text);
 
         // Update selection state: collapse to carets after insertion.
@@ -4590,6 +4644,7 @@ impl CommandExecutor {
 
         let affected_line = self.editor.line_index.char_offset_to_position(offset).0;
         let inserts_newline = text.contains('\n');
+        let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
 
         // Execute insertion
         self.editor.piece_table.insert(offset, &text);
@@ -4597,6 +4652,14 @@ impl CommandExecutor {
         // Update line index
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        if inserted_newlines > 0 {
+            self.editor
+                .folding_manager
+                .apply_line_delta(affected_line, inserted_newlines as isize);
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
+        }
 
         // Update layout engine (soft wrappingneeds to stay consistent with text)
         if inserts_newline {
@@ -4682,6 +4745,11 @@ impl CommandExecutor {
         let deleted_text = self.editor.piece_table.get_range(start, length);
         let delta_deleted_text = deleted_text.clone();
         let deletes_newline = deleted_text.contains('\n');
+        let deleted_newlines = deleted_text
+            .as_bytes()
+            .iter()
+            .filter(|b| **b == b'\n')
+            .count();
         let affected_line = self.editor.line_index.char_offset_to_position(start).0;
 
         // Execute deletion
@@ -4690,6 +4758,14 @@ impl CommandExecutor {
         // Update line index
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        if deleted_newlines > 0 {
+            self.editor
+                .folding_manager
+                .apply_line_delta(affected_line, -(deleted_newlines as isize));
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
+        }
 
         // Update layout engine (soft wrappingneeds to stay consistent with text)
         if deletes_newline {
@@ -4779,6 +4855,13 @@ impl CommandExecutor {
         let delta_inserted_text = text.clone();
 
         let affected_line = self.editor.line_index.char_offset_to_position(start).0;
+        let deleted_newlines = deleted_text
+            .as_bytes()
+            .iter()
+            .filter(|b| **b == b'\n')
+            .count();
+        let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
+        let line_delta = inserted_newlines as isize - deleted_newlines as isize;
         let replace_affects_layout = deleted_text.contains('\n') || text.contains('\n');
 
         // Apply as a single operation (delete then insert at the same offset).
@@ -4806,6 +4889,14 @@ impl CommandExecutor {
         // Rebuild derived structures.
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        if line_delta != 0 {
+            self.editor
+                .folding_manager
+                .apply_line_delta(affected_line, line_delta);
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
+        }
 
         if replace_affects_layout {
             self.rebuild_layout_engine_from_text(&updated_text);
@@ -5349,6 +5440,23 @@ impl CommandExecutor {
                 continue;
             }
 
+            let edit_line = self
+                .editor
+                .line_index
+                .char_offset_to_position(op.start_offset)
+                .0;
+            let deleted_newlines = op
+                .deleted_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            if deleted_newlines > 0 {
+                self.editor
+                    .folding_manager
+                    .apply_line_delta(edit_line, -(deleted_newlines as isize));
+            }
+
             self.editor
                 .piece_table
                 .delete(op.start_offset, op.delete_len);
@@ -5363,6 +5471,9 @@ impl CommandExecutor {
         // Rebuild derived structures once.
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.editor
+            .folding_manager
+            .clamp_to_line_count(self.editor.line_index.line_count());
         self.rebuild_layout_engine_from_text(&updated_text);
 
         // Collapse selection state to carets at the start of deleted ranges.
@@ -5942,6 +6053,29 @@ impl CommandExecutor {
                 });
             }
 
+            let edit_line = self.editor.line_index.char_offset_to_position(start).0;
+            let deleted_text = if delete_len > 0 {
+                self.editor.piece_table.get_range(start, delete_len)
+            } else {
+                String::new()
+            };
+            let deleted_newlines = deleted_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let inserted_newlines = insert_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+            if line_delta != 0 {
+                self.editor
+                    .folding_manager
+                    .apply_line_delta(edit_line, line_delta);
+            }
+
             if delete_len > 0 {
                 self.editor.piece_table.delete(start, delete_len);
                 self.editor
@@ -5967,6 +6101,9 @@ impl CommandExecutor {
         // Rebuild derived structures.
         let updated_text = self.editor.piece_table.get_text();
         self.editor.line_index = LineIndex::from_text(&updated_text);
+        self.editor
+            .folding_manager
+            .clamp_to_line_count(self.editor.line_index.line_count());
         self.rebuild_layout_engine_from_text(&updated_text);
         self.normalize_cursor_and_selection();
 

@@ -30,6 +30,8 @@ pub enum ProcessingEdit {
     },
     /// Replace folding regions.
     ///
+    /// This affects the **derived** fold set (from external providers), leaving user-created folds intact.
+    ///
     /// If `preserve_collapsed` is true, regions that match an existing collapsed region
     /// (`start_line`, `end_line`) will remain collapsed after replacement.
     ReplaceFoldingRegions {
@@ -38,7 +40,7 @@ pub enum ProcessingEdit {
         /// Whether to preserve the collapsed/expanded state for regions that still exist.
         preserve_collapsed: bool,
     },
-    /// Clear all folding regions.
+    /// Clear all derived folding regions (leaves user-created folds intact).
     ClearFoldingRegions,
     /// Replace the current diagnostic list (character offsets).
     ReplaceDiagnostics {
