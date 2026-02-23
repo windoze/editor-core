@@ -3,8 +3,11 @@
 //!
 //! # Overview
 //!
-//! `editor-core` is a headless code editor kernel focused on state management, text metrics, and coordinate transformations.
-//! It does not involve the rendering process, assuming the upper layer provides a"text grid"(Text Grid)based view renderer, Support Unicode wide characters.
+//! `editor-core` is a headless code editor kernel focused on state management, text metrics, and
+//! coordinate transformations.
+//!
+//! It does not render UI. Hosts render from snapshots (e.g. [`HeadlessGrid`]) and drive edits via
+//! the command/state APIs.
 //!
 //! # Core Features
 //!
@@ -14,6 +17,8 @@
 //! - **Style Management**: Interval tree structure, O(log n + k) query complexity
 //! - **Code Folding**: Supports arbitrary levels of code folding
 //! - **State Tracking**: Version number mechanism and Change Notifications system
+//! - **Workspace model**: Multi-buffer + multi-view orchestration (`Workspace`, `BufferId`,
+//!   `ViewId`) for tabs and split panes
 //!
 //! # Architecture Layers
 //!
@@ -74,6 +79,27 @@
 //! println!("Line count: {}, Characters: {}", doc_state.line_count, doc_state.char_count);
 //! ```
 //!
+//! ## Using Workspace (multi-buffer / multi-view)
+//!
+//! ```rust
+//! use editor_core::{Command, CursorCommand, EditCommand, Workspace};
+//!
+//! let mut ws = Workspace::new();
+//! let opened = ws
+//!     .open_buffer(Some("file:///demo.txt".to_string()), "Hello\nWorld\n", 80)
+//!     .unwrap();
+//!
+//! // Commands always target a view.
+//! let view = opened.view_id;
+//! ws.execute(view, Command::Cursor(CursorCommand::MoveTo { line: 1, column: 0 }))
+//!     .unwrap();
+//! ws.execute(view, Command::Edit(EditCommand::InsertText { text: ">> ".into() }))
+//!     .unwrap();
+//!
+//! let grid = ws.get_viewport_content_styled(view, 0, 10).unwrap();
+//! assert!(grid.actual_line_count() > 0);
+//! ```
+//!
 //! # Module Description
 //!
 //! - [`storage`] - Piece Table text storage layer
@@ -95,7 +121,8 @@
 //!
 //! - UTF-8 internal encoding
 //! - Proper handling of CJK double-width characters
-//! - Support Grapheme Clusters (Emoji combinations)
+//! - Grapheme/word-aware cursor + delete commands (UAX #29), while keeping `char`-indexed
+//!   coordinates at the API boundary
 //! - via `editor-core-lsp` provides UTF-16 code unit coordinate conversion (for upper-layer protocols/integrations)
 //! - via `editor-core-sublime` provides `.sublime-syntax` syntax highlighting and folding (optional integration)
 

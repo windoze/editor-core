@@ -1,6 +1,7 @@
 # editor-core-lsp
 
-`editor-core-lsp` 为 `editor-core` 提供**语言服务器协议(LSP)**集成工具。它专为无头/编辑器内核使用而设计:无 UI 假设,无异步运行时要求,依赖面小。
+`editor-core-lsp` 为 `editor-core` 提供**语言服务器协议（LSP）**集成工具。它专为无头/编辑器内核使用而设计：
+无 UI 假设、无异步运行时要求、依赖面小。
 
 ## 特性
 
@@ -38,7 +39,10 @@
 - 折叠范围 → `ProcessingEdit::ReplaceFoldingRegions`
 - Inlay hints → `ProcessingEdit::ReplaceDecorations`(通常为 `DecorationLayerId::INLAY_HINTS`)
 
-宿主可以通过 `EditorStateManager::apply_processing_edits` 应用这些编辑。
+宿主可以通过以下方式应用这些编辑：
+
+- `EditorStateManager::apply_processing_edits`（单 buffer / 单 view）
+- `Workspace::apply_processing_edits(buffer_id, edits)`（多 buffer / 多 view）
 
 ### UX 桥接(手动/按需)
 
@@ -129,6 +133,24 @@ let mut session = session;
 session.poll(&mut state).unwrap();
 // 使用 `state.get_viewport_content(...)` 等进行渲染。
 ```
+
+### 多文档：接入 `editor_core::Workspace`
+
+如果你的宿主编辑器需要 tab/分屏，一般会使用 `editor_core::Workspace` 配合 `LspWorkspaceSync`
+（见 `crates/editor-core-lsp/src/workspace_sync.rs`）：
+
+- 通过 `Workspace::open_buffer` 或 `Workspace::set_buffer_uri` 确保每个打开的 buffer 都有稳定的 URI
+  （例如 `file:///...`）。
+- 当一个 buffer 需要被 LSP 会话跟踪时，调用
+  `LspWorkspaceSync::open_workspace_document(&workspace, buffer_id, language_id)`。
+- 本地编辑之后，调用
+  `LspWorkspaceSync::did_change_from_text_delta(&mut workspace, buffer_id)`，基于该 buffer 的最后一次
+  `TextDelta` 发送 `textDocument/didChange`。
+- 在主循环中调用 `LspWorkspaceSync::poll_workspace(&mut workspace)`，以：
+  - 将派生状态编辑（语义 token、折叠等）应用到当前活跃 buffer
+  - 根据 URI 把 `publishDiagnostics` 路由到正确的 buffer
+- 对于服务端触发的多文件编辑，调用
+  `LspWorkspaceSync::apply_workspace_edit(&mut workspace, &workspace_edit_value)`。
 
 ## 注意事项
 

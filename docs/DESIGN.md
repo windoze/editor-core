@@ -9,6 +9,18 @@ together. It is written for:
 If you only need API-level usage, start with the workspace `README.md` and the per-crate READMEs
 under `crates/*/README.md`.
 
+## Terminology: “workspace” vs `Workspace`
+
+This repo uses “workspace” in two different senses:
+
+- **Cargo workspace**: the Rust monorepo layout (multiple crates under one `Cargo.toml`).
+- **`editor_core::Workspace`**: the editor-kernel model for **multiple open buffers** and
+  **multiple views per buffer** (split panes).
+
+Most of this document is about the internal design of the crates in the Cargo workspace, but the
+`Workspace` type is also covered because it is the boundary where full editor hosts typically
+integrate (tabs/splits/multi-file operations).
+
 ## Goals and non-goals
 
 ### Goals
@@ -39,6 +51,8 @@ snapshots:
 
 ```text
 ┌──────────────────────────────────────────────┐
+│ Workspace (buffers + views) [optional]       │  multi-buffer/multi-view orchestration
+├──────────────────────────────────────────────┤
 │ State + commands (CommandExecutor/State)     │  public edit/query surface
 ├──────────────────────────────────────────────┤
 │ Snapshots (HeadlessGrid)                     │  UI reads + renders
@@ -323,6 +337,38 @@ This pattern allows multiple independent integrations to coexist:
 - an LSP session can populate `StyleLayerId::SEMANTIC_TOKENS` and folding regions
 - a diagnostics engine can populate `StyleLayerId::DIAGNOSTICS`
 
+### Workspace (multi-buffer + multi-view)
+
+File: `crates/editor-core/src/workspace.rs`
+
+`EditorStateManager` is a convenient “single buffer + single view” wrapper. Full editors
+typically need:
+
+- multiple open buffers (tabs)
+- multiple views into the same buffer (split panes)
+- workspace-wide operations (search across open buffers, apply multi-file edits from LSP)
+
+`editor_core::Workspace` provides this orchestration layer while staying UI-agnostic. It models:
+
+- **Buffer** (`BufferId`): document text + undo history + derived state tied to the text.
+  Internally this is a `CommandExecutor` + some metadata (like an optional URI).
+- **View** (`ViewId`): per-viewport state like selections/cursors, wrap configuration, and scroll.
+
+Key behavior:
+
+- `Workspace::execute(view_id, Command)` runs commands **against a specific view**.
+  - Cursor/selection state is view-local.
+  - Text edits mutate the underlying buffer.
+  - Any resulting `TextDelta` is broadcast to *all* views of the buffer (split panes stay in sync).
+- Derived metadata is stored at the buffer level and can be applied via
+  `Workspace::apply_processing_edits(buffer_id, edits)`, which notifies all views of that buffer.
+- For incremental consumers that want “one delta per buffer edit”, use
+  `Workspace::take_last_text_delta_for_buffer`.
+
+Conceptually, one `EditorStateManager` corresponds to “a `Workspace` with one buffer and one
+view”; `Workspace` makes the identities explicit and allows additional views to share the same
+buffer state.
+
 ## Snapshots
 
 File: `crates/editor-core/src/snapshot.rs`
@@ -405,6 +451,9 @@ It is meant as:
 - a functional integration test for the workspace
 - a reference for how a UI can consume snapshots and apply derived state
 
+For multi-buffer/multi-view wiring, see the `editor-core` workspace examples (e.g.
+`crates/editor-core/examples/multiview_workspace.rs`).
+
 ## Known limitations / extension points
 
 - **Grapheme clusters**: cursor movement/selection is `char`-based; if you need grapheme-aware UX,
@@ -416,4 +465,3 @@ It is meant as:
 - **Incrementality**: some operations rebuild derived structures from the full text for simplicity.
   The architecture is intentionally layered so internal components can be made more incremental
   over time without breaking the public API shape.
-

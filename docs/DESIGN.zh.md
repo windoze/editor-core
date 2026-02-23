@@ -7,6 +7,16 @@
 
 如果你只需要 API 级别的使用说明，请从工作空间的 `README.md` 和 `crates/*/README.md` 下的各 crate README 开始。
 
+## 术语："工作空间" vs `Workspace`
+
+本仓库里“工作空间”有两层含义：
+
+- **Cargo workspace**：Rust monorepo 的工程组织方式（一个 `Cargo.toml` 管多 crate）。
+- **`editor_core::Workspace`**：编辑器内核的**多 buffer** + **多 view（分屏）**模型。
+
+本文大部分内容在讲 Cargo workspace 中各 crate 的内部设计；但 `Workspace` 也是完整编辑器宿主最常接触
+的边界（tab/分屏/多文件操作等），因此也会在后文覆盖。
+
 ## 目标与非目标
 
 ### 目标
@@ -34,6 +44,8 @@
 
 ```text
 ┌──────────────────────────────────────────────┐
+│ Workspace（buffers + views，可选）           │  多 buffer/多 view 编排层
+├──────────────────────────────────────────────┤
 │ 状态 + 命令 (CommandExecutor/State)          │  公共编辑/查询接口
 ├──────────────────────────────────────────────┤
 │ 快照 (HeadlessGrid)                          │  UI 读取 + 渲染
@@ -299,6 +311,36 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 - LSP 会话可以填充 `StyleLayerId::SEMANTIC_TOKENS` 和折叠区域
 - 诊断引擎可以填充 `StyleLayerId::DIAGNOSTICS`
 
+### Workspace（多 buffer + 多 view）
+
+文件：`crates/editor-core/src/workspace.rs`
+
+`EditorStateManager` 是一个很方便的“单 buffer + 单 view”包装。但完整编辑器通常还需要：
+
+- 多个打开的 buffer（tab）
+- 同一 buffer 的多个 view（分屏）
+- 工作空间级操作（例如跨 buffer 搜索、应用 LSP 的多文件编辑）
+
+`editor_core::Workspace` 提供这层编排能力，同时保持 UI 无关。它把状态拆分为：
+
+- **Buffer**（`BufferId`）：文档文本 + 撤销历史 + 与文本绑定的派生状态。
+  内部实现上是一个 `CommandExecutor` 加上一些元数据（例如可选的 URI）。
+- **View**（`ViewId`）：面向具体视口的状态，例如选择/光标、换行配置、滚动位置。
+
+关键行为：
+
+- `Workspace::execute(view_id, Command)` 总是**针对某个 view 执行命令**。
+  - 光标/选择是 view 本地状态。
+  - 文本编辑会修改底层 buffer。
+  - 产生的 `TextDelta` 会广播给该 buffer 的所有 view（分屏保持一致）。
+- 派生元数据存储在 buffer 级别，可通过 `Workspace::apply_processing_edits(buffer_id, edits)`
+  应用，并通知该 buffer 的所有 view。
+- 对于希望“每次 buffer 编辑只消费一次 delta”的增量消费者，可使用
+  `Workspace::take_last_text_delta_for_buffer`。
+
+概念上，“一个 `EditorStateManager`”可以视为“`Workspace` 里一个 buffer + 一个 view”；
+`Workspace` 只是把身份（`BufferId`/`ViewId`）显式化，从而支持额外的 view 共享同一份 buffer 状态。
+
 ## 快照
 
 文件：`crates/editor-core/src/snapshot.rs`
@@ -379,6 +421,9 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 
 - 工作空间的功能集成测试
 - UI 如何消费快照和应用派生状态的参考
+
+如果你关心多 buffer/多 view 的接线方式，可以看 `editor-core` 的 workspace 示例（例如
+`crates/editor-core/examples/multiview_workspace.rs`）。
 
 ## 已知限制 / 扩展点
 

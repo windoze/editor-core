@@ -11,7 +11,10 @@ Headless editor engine + integrations for building UI-agnostic text editors.
 The project is intentionally **UI-agnostic**: frontends render from snapshots (`HeadlessGrid`) and
 drive edits through the command/state APIs.
 
-## Workspace crates
+## Workspace crates (Rust/Cargo workspace)
+
+> Note: this section lists the crates in this repository’s **Cargo workspace**. The editor’s
+> multi-buffer model is the `editor_core::Workspace` type (see “Workspace model” below).
 
 - `crates/editor-core/` — core headless editor engine (`PieceTable`, `LineIndex`, `LayoutEngine`, snapshots, commands/state).
   - See `crates/editor-core/README.md`
@@ -37,7 +40,9 @@ The editor consistently uses **character offsets** (Rust `char` indices) at API 
   to multiple visual rows.
 - **LSP positions**: `(line, character)` where `character` is **UTF-16 code units** (see `editor-core-lsp`).
 
-This project does *not* currently model “cursor movement by grapheme cluster” (e.g. family emoji like "👨‍👩‍👧‍👦" sequences are multiple `char`s). Many editors choose grapheme-cluster-aware movement; if you need that, you can layer it in your command logic.
+The canonical coordinate model is still `char`-indexed (Unicode scalar values), but the kernel
+also includes grapheme/word-aware cursor and delete commands (UAX #29). This means host UIs can
+opt into “move by grapheme/word” behavior without introducing a separate coordinate space.
 
 ### “Text grid” snapshots (rendering input)
 
@@ -56,6 +61,19 @@ represented as editor edits of **derived state**:
 - `EditorStateManager::apply_processing_edits` applies them (replacing style layers, folding regions, …).
 
 This makes high-level integrations composable and keeps the core engine UI-agnostic.
+
+### Workspace model (buffers + views)
+
+Full editors typically need more than “one document, one viewport”. `editor-core` provides an
+optional `Workspace` model with two core concepts:
+
+- **Buffer**: document text + undo/redo + derived metadata tied to the text (styles, folding,
+  diagnostics, decorations, symbols…).
+- **View**: per-viewport state like selections/cursors, wrap width/mode, and scroll position.
+
+In `editor_core::Workspace`, commands are executed **against a `ViewId`**. Text edits are applied
+to the underlying buffer, and any resulting `TextDelta` is broadcast to all views of that buffer
+(so split panes stay consistent).
 
 ## Quick start
 
@@ -116,14 +134,22 @@ Additional env vars:
 
 ## Using `editor-core` as a library
 
-The recommended entry point for most apps is `EditorStateManager`:
+There are two primary entry points, depending on whether you need multi-buffer/multi-view:
 
-- it wraps `CommandExecutor` + `EditorCore`
-- it tracks `version` + `is_modified`
-- it emits change notifications
-- it provides viewport/snapshot helpers
+- **Single-buffer / single-view**: `EditorStateManager`
+  - ergonomic wrapper around a `CommandExecutor`
+  - adds `version`, `is_modified`, and change notifications
+  - convenient for simple apps, tests, and “one file open” tools
+- **Multi-buffer / multi-view (split panes)**: `Workspace`
+  - owns multiple buffers and multiple views per buffer
+  - routes commands via `Workspace::execute(view_id, Command)`
+  - exposes buffer-wide utilities like search and applying multi-buffer edits (useful for LSP)
 
-### Minimal editing + rendering loop
+If you’re building a “single document” editor (or a code editor widget embedded in a larger app),
+start with `EditorStateManager`. If you need tabs/split panes/multi-file operations, use
+`Workspace` and treat each `ViewId` as a UI viewport.
+
+### Minimal editing + rendering loop (single view)
 
 ```rust
 use editor_core::{Command, EditCommand, EditorStateManager};
@@ -138,6 +164,26 @@ state.execute(Command::Edit(EditCommand::Insert {
 
 // Render a viewport snapshot (visual lines).
 let grid = state.get_viewport_content_styled(0, 20);
+assert!(grid.actual_line_count() > 0);
+```
+
+### Minimal multi-view editing (Workspace)
+
+```rust
+use editor_core::{Command, CursorCommand, EditCommand, Workspace};
+
+let mut ws = Workspace::new();
+let opened = ws
+    .open_buffer(Some("file:///demo.txt".to_string()), "Hello\nWorld\n", 80)
+    .unwrap();
+
+let view = opened.view_id;
+ws.execute(view, Command::Cursor(CursorCommand::MoveTo { line: 1, column: 0 }))
+    .unwrap();
+ws.execute(view, Command::Edit(EditCommand::InsertText { text: ">> ".into() }))
+    .unwrap();
+
+let grid = ws.get_viewport_content_styled(view, 0, 20).unwrap();
 assert!(grid.actual_line_count() > 0);
 ```
 
@@ -169,6 +215,8 @@ For richer syntax highlighting and folding, use:
 - API docs: `cargo doc --no-deps --open`
 - Examples:
   - `cargo run -p editor-core --example command_interface`
+  - `cargo run -p editor-core --example multiview_workspace`
+  - `cargo run -p editor-core --example workspace_search_apply`
   - `cargo run -p editor-core --example state_management`
   - `cargo run -p editor-core --example performance_milestones`
 

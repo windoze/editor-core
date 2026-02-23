@@ -42,7 +42,10 @@ This crate intentionally uses `serde_json::Value` instead of `lsp-types`:
 - Folding ranges → `ProcessingEdit::ReplaceFoldingRegions`
 - Inlay hints → `ProcessingEdit::ReplaceDecorations` (typically `DecorationLayerId::INLAY_HINTS`)
 
-Hosts can apply those edits via `EditorStateManager::apply_processing_edits`.
+Hosts can apply those edits via:
+
+- `EditorStateManager::apply_processing_edits` (single-buffer / single-view)
+- `Workspace::apply_processing_edits(buffer_id, edits)` (multi-buffer / multi-view)
 
 ### UX bridges (manual / on-demand)
 
@@ -134,6 +137,23 @@ let mut session = session;
 session.poll(&mut state).unwrap();
 // Render using `state.get_viewport_content(...)`, etc.
 ```
+
+### Multi-document: wire to `editor_core::Workspace`
+
+If your host editor has tabs/split panes, you’ll typically use `editor_core::Workspace` together
+with `LspWorkspaceSync` (from `crates/editor-core-lsp/src/workspace_sync.rs`):
+
+- Ensure each open buffer has a stable URI (e.g. `file:///...`) via `Workspace::open_buffer` or
+  `Workspace::set_buffer_uri`.
+- Call `LspWorkspaceSync::open_workspace_document(&workspace, buffer_id, language_id)` when a
+  buffer becomes open/tracked by the LSP session.
+- After local edits, call `LspWorkspaceSync::did_change_from_text_delta(&mut workspace, buffer_id)`
+  to emit `textDocument/didChange` based on the buffer’s last `TextDelta`.
+- In your main loop, call `LspWorkspaceSync::poll_workspace(&mut workspace)` to:
+  - apply derived-state edits (semantic tokens, folding, etc.) into the active workspace buffer
+  - route `publishDiagnostics` into the correct buffer by URI
+- For server-driven multi-file edits, call
+  `LspWorkspaceSync::apply_workspace_edit(&mut workspace, &workspace_edit_value)`.
 
 ## Notes
 

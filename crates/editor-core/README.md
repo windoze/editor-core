@@ -31,6 +31,40 @@ snapshots and drive edits through the command/state APIs.
     `AddNextOccurrence`, `AddAllOccurrences`
 - **Search utilities** (`find_next`, `find_prev`, `find_all`) operating on character offsets.
 
+## Choosing an API surface (single view vs workspace)
+
+`editor-core` is intentionally UI-agnostic, but there are a few different “levels” of API you can
+build on:
+
+- `CommandExecutor`: the lowest-level command runner for **one buffer**, including undo/redo.
+  - own it directly if you want maximum control and you already have your own state manager
+  - used internally by both `EditorStateManager` and `Workspace`
+- `EditorStateManager`: ergonomic **single-buffer / single-view** wrapper.
+  - adds `version`, `is_modified`, subscriptions, and structured query helpers
+  - great starting point for simple apps and tests
+- `Workspace`: **multi-buffer + multi-view** model (tabs + split panes).
+  - buffers are identified by `BufferId` and own text + undo + derived metadata
+  - views are identified by `ViewId` and own cursor/selection + viewport config + scroll
+
+### Relation to the older “single view” interface
+
+If you previously integrated `editor-core` by treating `EditorStateManager` as “the editor”, that
+model still works and is still supported. Conceptually, it corresponds to “a `Workspace` with one
+buffer and one view”. Moving to `Workspace` makes those identities explicit so that multiple views
+can share the same buffer state.
+
+### Migration cheat sheet (`EditorStateManager` → `Workspace`)
+
+- Run a command: `state.execute(cmd)` → `ws.execute(view_id, cmd)`
+- Render a viewport: `state.get_viewport_content_styled(start, count)` →
+  `ws.get_viewport_content_styled(view_id, start, count)`
+- Subscribe to changes: `state.subscribe(cb)` → `ws.subscribe_view(view_id, cb)`
+- Apply derived state: `state.apply_processing_edits(edits)` →
+  `ws.apply_processing_edits(buffer_id, edits)`
+- Observe text deltas: `state.take_last_text_delta()` →
+  `ws.take_last_text_delta_for_buffer(buffer_id)` (once per buffer edit) or
+  `ws.take_last_text_delta_for_view(view_id)` (per view)
+
 ## Design overview
 
 `editor-core` is organized as a set of small layers:

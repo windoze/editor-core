@@ -34,7 +34,8 @@ The workspace already provides:
   indentation primitives, Unicode segmentation (grapheme/word) commands.
 - Derived state: style layers + folding regions, first-class diagnostics model, decorations model.
 - Snapshots: `HeadlessGrid` text-grid snapshots with Unicode-aware cell widths.
-- Multi-document: `Workspace` + `DocumentId` + optional URI mapping.
+- Multi-document + split panes: `Workspace` with `BufferId` (documents) + `ViewId` (views), plus
+  optional URI mapping.
 - LSP utilities: UTF-16 conversions, `didChange` delta calculation, semantic tokens, folding,
   diagnostics, inlay hints, multi-document workspace sync + workspace edits.
 
@@ -168,13 +169,15 @@ Mainstream editors model:
 - **Buffer**: document text, undo history, derived metadata tied to the text.
 - **View**: selections/cursors, scroll position, wrap width, viewport configuration.
 
-This repo currently bundles “document + view” too tightly (an `EditorStateManager` acts like both),
-which blocks:
+Historically, `editor-core`’s ergonomic APIs bundled “document + view” too tightly (an
+`EditorStateManager` acts like both). The `Workspace` model separates them so hosts can build:
 
 - split panes and multiple views into the same buffer
 - per-view wrap width, folding visibility preferences, and independent cursors
 
-Proposed direction:
+**Status: done** (implemented in `crates/editor-core/src/workspace.rs`)
+
+Implementation shape:
 
 - Introduce `BufferId` and `ViewId`.
 - Workspace owns buffers; views reference buffers.
@@ -301,4 +304,3 @@ Provide headless diff building blocks for:
 4. **Folding stability** (P0.3): user folds that shift on edits + derived fold preservation policy.
 5. **Workspace search across open docs** (P0.4): APIs + tests.
 6. **LSP bridges v1** (P0.5): document highlights + links + code lens → derived-state edits.
-
