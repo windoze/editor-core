@@ -15,12 +15,19 @@ public protocol EditorCommandDispatchObserver: AnyObject {
 public final class EditorCommandDispatcher: EditorCommandDispatching {
     public weak var observer: EditorCommandDispatchObserver?
     public weak var engine: EditorEngineProtocol?
+    public var customCommandHandler: ((String, [String: String]) -> EditorCommandResult?)?
 
     public init(engine: EditorEngineProtocol? = nil) {
         self.engine = engine
     }
 
     public func dispatch(_ command: EditorCommand) {
+        if case .custom(let name, let payload) = command,
+           let handledResult = customCommandHandler?(name, payload) {
+            observer?.commandDispatcher(self, didSucceed: handledResult)
+            return
+        }
+
         guard let engine else {
             observer?.commandDispatcher(self, didFail: EditorCommandError("No engine attached"))
             return

@@ -70,6 +70,7 @@ public enum EditorCommand: Equatable, Sendable {
     case replaceCurrent(query: String, replacement: String, options: EditorSearchOptions)
     case replaceAll(query: String, replacement: String, options: EditorSearchOptions)
     case applyTextEdits([EditorTextEditSpec])
+    case custom(name: String, payload: [String: String])
 }
 
 public enum EditorCommandResult: Equatable, Sendable {

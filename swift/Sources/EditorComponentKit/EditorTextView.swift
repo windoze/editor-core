@@ -11,6 +11,8 @@ struct EditorTextLineMetric {
 final class EditorTextView: NSTextView {
     var keybindingRegistry: EditorKeybindingRegistry?
     var commandDispatcher: EditorCommandDispatching?
+    var hoverTooltipProvider: ((EditorPosition) -> EditorHoverTooltip?)?
+    var contextMenuProvider: ((EditorPosition) -> [EditorContextMenuItem])?
 
     var featureFlags: EditorFeatureFlags = .init() {
         didSet { needsDisplay = true }
@@ -27,6 +29,8 @@ final class EditorTextView: NSTextView {
     private var inlayFontScale: Double = 0.9
     private var inlayHorizontalPadding: CGFloat = 3
     private var offsetTranslator = EditorOffsetTranslator(text: "")
+    private var hoverTrackingArea: NSTrackingArea?
+    private let menuActionProxy = EditorMenuActionProxy()
 
     override func didChangeText() {
         super.didChangeText()
@@ -124,6 +128,77 @@ final class EditorTextView: NSTextView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         drawInlays(in: dirtyRect)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let tracking = NSTrackingArea(
+            rect: .zero,
+            options: [.inVisibleRect, .activeInKeyWindow, .mouseMoved],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(tracking)
+        hoverTrackingArea = tracking
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard let hoverTooltipProvider else {
+            toolTip = nil
+            super.mouseMoved(with: event)
+            return
+        }
+
+        let localPoint = convert(event.locationInWindow, from: nil)
+        if let position = editorPosition(at: localPoint),
+           let tooltip = hoverTooltipProvider(position) {
+            toolTip = tooltip.renderedText
+        } else {
+            toolTip = nil
+        }
+        super.mouseMoved(with: event)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let contextMenuProvider else {
+            return super.menu(for: event)
+        }
+
+        let point = convert(event.locationInWindow, from: nil)
+        guard let position = editorPosition(at: point) else {
+            return super.menu(for: event)
+        }
+
+        let items = contextMenuProvider(position)
+        guard !items.isEmpty else {
+            return super.menu(for: event)
+        }
+
+        let menu = NSMenu(title: "Editor Context")
+        menuActionProxy.reset()
+        for item in items {
+            if item.isSeparator {
+                menu.addItem(.separator())
+                continue
+            }
+
+            let action = combineAction(for: item)
+            let menuItem = NSMenuItem(
+                title: item.title,
+                action: #selector(EditorMenuActionProxy.performAction(_:)),
+                keyEquivalent: ""
+            )
+            menuItem.target = menuActionProxy
+            menuItem.isEnabled = item.isEnabled
+            menuActionProxy.attach(action: action, to: menuItem)
+            menu.addItem(menuItem)
+        }
+        return menu
     }
 
     override func keyDown(with event: NSEvent) {
@@ -263,10 +338,8 @@ final class EditorTextView: NSTextView {
             return
         }
 
-        let spaceWidth = max(
-            (" " as NSString).size(withAttributes: [.font: font as Any]).width,
-            1
-        )
+        let guideFont = font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let spaceWidth = max((" " as NSString).size(withAttributes: [.font: guideFont]).width, 1)
         let indentStep = CGFloat(guideIndentColumns) * spaceWidth
         let guideColor = NSColor.tertiaryLabelColor.withAlphaComponent(0.25)
 
@@ -298,6 +371,15 @@ final class EditorTextView: NSTextView {
         }
 
         path.stroke()
+    }
+
+    private func combineAction(for item: EditorContextMenuItem) -> () -> Void {
+        {
+            if let command = item.command {
+                self.commandDispatcher?.dispatch(command)
+            }
+            item.action?()
+        }
     }
 
     private func resolveCommand(from event: NSEvent) -> EditorCommand? {
@@ -516,6 +598,28 @@ final class EditorTextView: NSTextView {
         .underlineColor,
         .font
     ]
+}
+
+private final class EditorMenuActionProxy: NSObject {
+    private var actions: [Int: () -> Void] = [:]
+    private var nextTag: Int = 1
+
+    func reset() {
+        actions.removeAll()
+        nextTag = 1
+    }
+
+    func attach(action: @escaping () -> Void, to menuItem: NSMenuItem) {
+        let tag = nextTag
+        nextTag += 1
+        actions[tag] = action
+        menuItem.tag = tag
+    }
+
+    @objc
+    func performAction(_ sender: NSMenuItem) {
+        actions[sender.tag]?()
+    }
 }
 
 private extension Optional where Wrapped == String {

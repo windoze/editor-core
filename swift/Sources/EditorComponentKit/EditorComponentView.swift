@@ -8,6 +8,12 @@ public protocol EditorComponentDelegate: AnyObject {
 
 public final class EditorComponentView: NSView {
     public weak var delegate: EditorComponentDelegate?
+    public weak var hoverProvider: EditorHoverProvider? {
+        didSet { updateInteractionProviders() }
+    }
+    public weak var contextMenuProvider: EditorContextMenuProvider? {
+        didSet { updateInteractionProviders() }
+    }
 
     public var configuration: EditorComponentConfiguration {
         didSet {
@@ -28,6 +34,11 @@ public final class EditorComponentView: NSView {
             refreshChrome()
             reloadFromEngine()
         }
+    }
+
+    public var customCommandHandler: ((String, [String: String]) -> EditorCommandResult?)? {
+        get { commandDispatcher.customCommandHandler }
+        set { commandDispatcher.customCommandHandler = newValue }
     }
 
     public let scrollView: NSScrollView
@@ -87,6 +98,10 @@ public final class EditorComponentView: NSView {
         commandDispatcher.observer = self
         commandDispatcher.engine = engine
         gutterView.textView = textView
+        gutterView.onToggleFoldRegion = { [weak self] region in
+            self?.toggleFoldRegion(region)
+        }
+        updateInteractionProviders()
 
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
@@ -138,6 +153,18 @@ public final class EditorComponentView: NSView {
             width: max(bounds.width - gutterWidth - minimapWidth, 0),
             height: bounds.height
         )
+    }
+
+    public func dispatch(_ command: EditorCommand) {
+        commandDispatcher.dispatch(command)
+    }
+
+    public func bindKey(_ chord: EditorKeyChord, to command: EditorCommand) {
+        keybindingRegistry.bind(chord, command: command)
+    }
+
+    public func unbindKey(_ chord: EditorKeyChord) {
+        keybindingRegistry.unbind(chord)
     }
 
     public func reloadFromEngine() {
@@ -229,6 +256,34 @@ public final class EditorComponentView: NSView {
         minimapView.needsDisplay = true
         textView.needsDisplay = true
         updateViewportIndicators()
+    }
+
+    private func updateInteractionProviders() {
+        textView.hoverTooltipProvider = { [weak self] position in
+            guard let self, let provider = self.hoverProvider else {
+                return nil
+            }
+            return provider.editorComponent(self, hoverAt: position)
+        }
+
+        textView.contextMenuProvider = { [weak self] position in
+            guard let self, let provider = self.contextMenuProvider else {
+                return []
+            }
+            return provider.editorComponent(self, contextMenuItemsAt: position)
+        }
+    }
+
+    private func toggleFoldRegion(_ region: EditorFoldRegion) {
+        guard region.endLine > region.startLine else {
+            return
+        }
+
+        if region.isCollapsed {
+            commandDispatcher.dispatch(.unfold(startLine: region.startLine))
+        } else {
+            commandDispatcher.dispatch(.fold(startLine: region.startLine, endLine: region.endLine))
+        }
     }
 
     private func updateViewportIndicators() {

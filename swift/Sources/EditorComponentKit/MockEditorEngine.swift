@@ -102,7 +102,8 @@ public final class MockEditorEngine: EditorEngineProtocol {
              .setTabKeyBehavior,
              .replaceCurrent,
              .replaceAll,
-             .applyTextEdits:
+             .applyTextEdits,
+             .custom:
             return .success
         case .setSelection(let selection):
             self.selection = selection
