@@ -5,9 +5,23 @@ public final class MockEditorEngine: EditorEngineProtocol {
 
     private var selection: EditorSelection?
     private var version: UInt64 = 0
+    public var styleSpanData: [EditorStyleSpan]
+    public var inlayData: [EditorInlay]
+    public var foldRegionData: [EditorFoldRegion]
+    public var diagnosticsData: EditorDiagnosticsSnapshot
 
-    public init(text: String = "") {
+    public init(
+        text: String = "",
+        styleSpanData: [EditorStyleSpan] = [],
+        inlayData: [EditorInlay] = [],
+        foldRegionData: [EditorFoldRegion] = [],
+        diagnosticsData: EditorDiagnosticsSnapshot = .init(items: [])
+    ) {
         self.text = text
+        self.styleSpanData = styleSpanData
+        self.inlayData = inlayData
+        self.foldRegionData = foldRegionData
+        self.diagnosticsData = diagnosticsData
     }
 
     public func documentState() throws -> EditorDocumentState {
@@ -33,11 +47,46 @@ public final class MockEditorEngine: EditorEngineProtocol {
             text += inserted
             version &+= 1
             return .success
+        case .insertTab:
+            text += "\t"
+            version &+= 1
+            return .success
+        case .insertNewline:
+            text += "\n"
+            version &+= 1
+            return .success
         case .backspace:
             if !text.isEmpty {
                 text.removeLast()
                 version &+= 1
             }
+            return .success
+        case .fold(let startLine, let endLine):
+            if let index = foldRegionData.firstIndex(where: { $0.startLine == startLine }) {
+                foldRegionData[index].endLine = endLine
+                foldRegionData[index].isCollapsed = true
+            } else {
+                foldRegionData.append(
+                    EditorFoldRegion(
+                        startLine: startLine,
+                        endLine: endLine,
+                        isCollapsed: true
+                    )
+                )
+            }
+            version &+= 1
+            return .success
+        case .unfold(let startLine):
+            if let index = foldRegionData.firstIndex(where: { $0.startLine == startLine }) {
+                foldRegionData[index].isCollapsed = false
+            }
+            version &+= 1
+            return .success
+        case .unfoldAll:
+            for index in foldRegionData.indices {
+                foldRegionData[index].isCollapsed = false
+            }
+            version &+= 1
             return .success
         case .deleteForward,
              .undo,
@@ -51,14 +100,9 @@ public final class MockEditorEngine: EditorEngineProtocol {
              .setWrapIndent,
              .setTabWidth,
              .setTabKeyBehavior,
-             .fold,
-             .unfold,
-             .unfoldAll,
              .replaceCurrent,
              .replaceAll,
-             .applyTextEdits,
-             .insertTab,
-             .insertNewline:
+             .applyTextEdits:
             return .success
         case .setSelection(let selection):
             self.selection = selection
@@ -122,20 +166,22 @@ public final class MockEditorEngine: EditorEngineProtocol {
     }
 
     public func styleSpans(in range: Range<Int>) throws -> [EditorStyleSpan] {
-        _ = range
-        return []
+        styleSpanData.filter { span in
+            span.startOffset < range.upperBound && span.endOffset > range.lowerBound
+        }
     }
 
     public func inlays(in range: Range<Int>) throws -> [EditorInlay] {
-        _ = range
-        return []
+        inlayData.filter { inlay in
+            range.contains(inlay.offset) || inlay.offset == range.upperBound
+        }
     }
 
     public func foldRegions() throws -> [EditorFoldRegion] {
-        []
+        foldRegionData
     }
 
     public func diagnostics() throws -> EditorDiagnosticsSnapshot {
-        EditorDiagnosticsSnapshot(items: [])
+        diagnosticsData
     }
 }

@@ -24,6 +24,7 @@ target/
 *.dylib
 *.dll
 *.exe
+swift/.build/
 
 # 测试覆盖率
 *.profraw

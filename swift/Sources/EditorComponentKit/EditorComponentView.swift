@@ -36,6 +36,7 @@ public final class EditorComponentView: NSView {
     private let gutterView: EditorGutterView
     private let minimapView: EditorMinimapView
     private let commandDispatcher: EditorCommandDispatcher
+    private var foldRegions: [EditorFoldRegion] = []
 
     public override var isFlipped: Bool { true }
 
@@ -85,6 +86,15 @@ public final class EditorComponentView: NSView {
         textView.commandDispatcher = commandDispatcher
         commandDispatcher.observer = self
         commandDispatcher.engine = engine
+        gutterView.textView = textView
+
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleVisibleBoundsChanged),
+            name: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView
+        )
 
         addSubview(gutterView)
         addSubview(scrollView)
@@ -99,11 +109,20 @@ public final class EditorComponentView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     public override func layout() {
         super.layout()
 
         let minimapWidth: CGFloat = configuration.features.showsMinimap ? 120 : 0
-        let gutterWidth: CGFloat = configuration.features.showsGutter ? 56 : 0
+        let gutterWidth: CGFloat
+        if configuration.features.showsGutter {
+            gutterWidth = configuration.features.showsLineNumbers ? 56 : 18
+        } else {
+            gutterWidth = 0
+        }
 
         gutterView.frame = CGRect(x: 0, y: 0, width: gutterWidth, height: bounds.height)
         minimapView.frame = CGRect(
@@ -125,21 +144,44 @@ public final class EditorComponentView: NSView {
         guard let engine else {
             textView.string = ""
             gutterView.lineNumbers = []
+            gutterView.foldRegions = []
             minimapView.snapshot = .init(startVisualRow: 0, requestedCount: 0, lines: [])
+            minimapView.visibleVisualRange = nil
             return
         }
 
-        textView.string = engine.text
-
         do {
+            let newText = engine.text
+            if textView.string != newText {
+                textView.string = newText
+            }
+
+            let offsetTranslator = EditorOffsetTranslator(text: newText)
+            let styleSpans = try engine.styleSpans(in: 0..<offsetTranslator.scalarCount)
+            let inlays = try engine.inlays(in: 0..<offsetTranslator.scalarCount)
+            foldRegions = try engine.foldRegions()
+            let diagnostics = try engine.diagnostics()
+
+            textView.applyDecorations(
+                styleSpans: styleSpans,
+                inlays: inlays,
+                foldRegions: foldRegions,
+                diagnostics: diagnostics,
+                visualStyle: configuration.visualStyle,
+                featureFlags: configuration.features
+            )
+
             let state = try engine.documentState()
             gutterView.lineNumbers = Array(1...max(state.lineCount, 1))
+            gutterView.foldRegions = foldRegions
 
             if configuration.features.showsMinimap {
                 minimapView.snapshot = try engine.minimapViewport(
                     .init(startVisualRow: 0, rowCount: max(state.lineCount, 1))
                 )
             }
+
+            updateViewportIndicators()
         } catch {
             delegate?.editorComponent(
                 self,
@@ -157,23 +199,60 @@ public final class EditorComponentView: NSView {
         textView.defaultParagraphStyle = {
             let p = NSMutableParagraphStyle()
             p.lineHeightMultiple = style.lineHeightMultiplier
+            p.lineBreakMode = .byCharWrapping
             return p
         }()
+        textView.isAutomaticTextCompletionEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
 
         textView.isContinuousSpellCheckingEnabled = false
         textView.layoutManager?.allowsNonContiguousLayout = true
 
-        if style.enablesLigatures {
-            textView.typingAttributes[.ligature] = 1
-        } else {
-            textView.typingAttributes[.ligature] = 0
+        textView.typingAttributes[.ligature] = style.enablesLigatures ? 1 : 0
+        textView.featureFlags = configuration.features
+
+        minimapView.dominantStyleColorProvider = { [weak self] styleID in
+            guard let self else {
+                return nil
+            }
+            return self.configuration.visualStyle.stylePalette.styles[styleID]?.foreground?.nsColor
         }
     }
 
     private func refreshChrome() {
         gutterView.isHidden = !configuration.features.showsGutter
+        gutterView.showsLineNumbers = configuration.features.showsLineNumbers
         minimapView.isHidden = !configuration.features.showsMinimap
+        textView.featureFlags = configuration.features
         needsLayout = true
+        gutterView.needsDisplay = true
+        minimapView.needsDisplay = true
+        textView.needsDisplay = true
+        updateViewportIndicators()
+    }
+
+    private func updateViewportIndicators() {
+        guard configuration.features.showsMinimap else {
+            minimapView.visibleVisualRange = nil
+            return
+        }
+
+        let metrics = textView.logicalLineMetrics()
+        guard !metrics.isEmpty else {
+            minimapView.visibleVisualRange = nil
+            return
+        }
+
+        let visibleRect = scrollView.contentView.bounds
+        let lower = metrics.firstIndex { $0.rect.maxY >= visibleRect.minY } ?? 0
+        let upperExclusive = metrics.lastIndex { $0.rect.minY <= visibleRect.maxY }.map { $0 + 1 } ?? lower + 1
+        minimapView.visibleVisualRange = lower..<max(lower + 1, upperExclusive)
+    }
+
+    @objc
+    private func handleVisibleBoundsChanged(_ notification: Notification) {
+        _ = notification
+        updateViewportIndicators()
     }
 }
 
