@@ -24,6 +24,7 @@ target/
 *.dylib
 *.dll
 *.exe
+.build/
 swift/.build/
 
 # 测试覆盖率

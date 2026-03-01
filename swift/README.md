@@ -38,6 +38,18 @@ let engine = MockEditorEngine(text: "fn main() {\\n    println!(\\\"hello\\\")\\
 component.engine = engine
 ```
 
+### Feature Flags
+
+```swift
+component.configuration.features = .init(
+    showsGutter: true,
+    showsLineNumbers: true,
+    showsMinimap: true,
+    showsIndentGuides: true,
+    showsStructureGuides: true
+)
+```
+
 ### Configure Keybindings
 
 ```swift
@@ -77,6 +89,8 @@ final class MenuProvider: EditorContextMenuProvider {
 }
 ```
 
+`hoverProvider` and `contextMenuProvider` are weak references; keep strong references in your host controller/window owner.
+
 ## Demo
 
 Run the AppKit demo window:
@@ -103,3 +117,12 @@ swift test
 - viewport/minimap snapshots
 
 This keeps AppKit rendering and host UX fully native while editor semantics stay in Rust.
+
+## Current Implementation Status
+
+- AppKit container + TextKit rendering/input: implemented.
+- Styles, inlays, diagnostics rendering: implemented.
+- Gutter (line numbers/folding), minimap, indent/structure guides: implemented.
+- Custom keybindings, command dispatch, custom commands: implemented.
+- Hover/context menu provider interfaces: implemented.
+- Test suite and runnable demo target: implemented.

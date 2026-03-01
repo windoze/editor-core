@@ -71,6 +71,18 @@ public final class EditorComponentView: NSView {
         foldRegions
     }
 
+    var isGutterVisibleForTesting: Bool {
+        !gutterView.isHidden
+    }
+
+    var isMinimapVisibleForTesting: Bool {
+        !minimapView.isHidden
+    }
+
+    var showsLineNumbersForTesting: Bool {
+        gutterView.showsLineNumbers
+    }
+
     public init(
         frame frameRect: NSRect = .zero,
         configuration: EditorComponentConfiguration = .init(),
