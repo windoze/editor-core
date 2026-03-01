@@ -24,6 +24,7 @@ use crate::selection_set::selection_direction;
 use crate::{LineIndex, Position, Selection, TabKeyBehavior, ViewCommand};
 use crate::{StateChange, StateChangeCallback, StateChangeType, WrapIndent, WrapMode};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::Range;
 use std::sync::Arc;
 
 /// Opaque identifier for an open buffer in a [`Workspace`].
@@ -94,6 +95,7 @@ impl ViewCore {
     }
 
     fn apply_to_executor(&self, executor: &mut CommandExecutor) {
+        let mut invalidate_visual_rows = false;
         let editor = executor.editor_mut();
         editor.cursor_position = self.cursor_position;
         editor.selection = self.selection.clone();
@@ -101,12 +103,28 @@ impl ViewCore {
 
         if editor.viewport_width != self.viewport_width {
             editor.viewport_width = self.viewport_width;
+            invalidate_visual_rows = true;
         }
 
+        let before_wrap_mode = editor.layout_engine.wrap_mode();
+        let before_wrap_indent = editor.layout_engine.wrap_indent();
+        let before_tab_width = editor.layout_engine.tab_width();
+        let before_viewport_width = editor.layout_engine.viewport_width();
         editor.layout_engine.set_viewport_width(self.viewport_width);
         editor.layout_engine.set_wrap_mode(self.wrap_mode);
         editor.layout_engine.set_wrap_indent(self.wrap_indent);
         editor.layout_engine.set_tab_width(self.tab_width);
+        if before_wrap_mode != self.wrap_mode
+            || before_wrap_indent != self.wrap_indent
+            || before_tab_width != self.tab_width
+            || before_viewport_width != self.viewport_width
+        {
+            invalidate_visual_rows = true;
+        }
+
+        if invalidate_visual_rows {
+            editor.invalidate_visual_row_index_cache();
+        }
 
         executor.set_tab_key_behavior(self.tab_key_behavior);
         executor.set_preferred_x_cells(self.preferred_x_cells);
@@ -126,6 +144,8 @@ struct ViewEntry {
     version: u64,
     callbacks: Vec<StateChangeCallback>,
     scroll_top: usize,
+    scroll_sub_row_offset: u16,
+    overscan_rows: usize,
     viewport_height: Option<usize>,
     last_text_delta: Option<Arc<TextDelta>>,
 }
@@ -164,6 +184,36 @@ pub struct WorkspaceSearchResult {
     pub uri: Option<String>,
     /// All matches in this buffer (character offsets, half-open).
     pub matches: Vec<SearchMatch>,
+}
+
+/// Smooth-scrolling state for a view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewSmoothScrollState {
+    /// Top visual row anchor.
+    pub top_visual_row: usize,
+    /// Sub-row offset within `top_visual_row` (0..=65535, normalized).
+    pub sub_row_offset: u16,
+    /// Overscan rows for prefetching.
+    pub overscan_rows: usize,
+}
+
+/// Viewport state for a workspace view, including visual totals and smooth-scrolling metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceViewportState {
+    /// Viewport width (in cells).
+    pub width: usize,
+    /// Viewport height (line count, host-provided).
+    pub height: Option<usize>,
+    /// Current top visual row.
+    pub scroll_top: usize,
+    /// Visible visual range.
+    pub visible_lines: Range<usize>,
+    /// Total visual line count under current view config (wrap + folding aware).
+    pub total_visual_lines: usize,
+    /// Smooth-scroll metadata.
+    pub smooth_scroll: ViewSmoothScrollState,
+    /// Recommended prefetch range using overscan rows.
+    pub prefetch_lines: Range<usize>,
 }
 
 fn apply_char_offset_delta(mut offset: usize, delta: &TextDelta) -> usize {
@@ -407,6 +457,8 @@ impl Workspace {
                 version: 0,
                 callbacks: Vec::new(),
                 scroll_top: 0,
+                scroll_sub_row_offset: 0,
+                overscan_rows: 0,
                 viewport_height: None,
                 last_text_delta: None,
             },
@@ -455,6 +507,37 @@ impl Workspace {
             .get(&id)
             .map(|v| v.scroll_top)
             .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
+    /// Get the sub-row smooth-scroll offset for a view.
+    pub fn scroll_sub_row_offset_for_view(&self, id: ViewId) -> Result<u16, WorkspaceError> {
+        self.views
+            .get(&id)
+            .map(|v| v.scroll_sub_row_offset)
+            .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
+    /// Get overscan rows for a view.
+    pub fn overscan_rows_for_view(&self, id: ViewId) -> Result<usize, WorkspaceError> {
+        self.views
+            .get(&id)
+            .map(|v| v.overscan_rows)
+            .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
+    /// Get smooth-scroll state for a view.
+    pub fn smooth_scroll_state_for_view(
+        &self,
+        id: ViewId,
+    ) -> Result<ViewSmoothScrollState, WorkspaceError> {
+        let Some(view) = self.views.get(&id) else {
+            return Err(WorkspaceError::ViewNotFound(id));
+        };
+        Ok(ViewSmoothScrollState {
+            top_visual_row: view.scroll_top,
+            sub_row_offset: view.scroll_sub_row_offset,
+            overscan_rows: view.overscan_rows,
+        })
     }
 
     /// Update a buffer's uri/path.
@@ -738,6 +821,177 @@ impl Workspace {
         Ok(())
     }
 
+    /// Set sub-row smooth-scroll offset for a view.
+    pub fn set_scroll_sub_row_offset(
+        &mut self,
+        view_id: ViewId,
+        sub_row_offset: u16,
+    ) -> Result<(), WorkspaceError> {
+        let Some(view) = self.views.get_mut(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        view.scroll_sub_row_offset = sub_row_offset;
+        Ok(())
+    }
+
+    /// Set overscan rows for a view.
+    pub fn set_overscan_rows(
+        &mut self,
+        view_id: ViewId,
+        overscan_rows: usize,
+    ) -> Result<(), WorkspaceError> {
+        let Some(view) = self.views.get_mut(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        view.overscan_rows = overscan_rows;
+        Ok(())
+    }
+
+    /// Set smooth-scroll state for a view.
+    pub fn set_smooth_scroll_state(
+        &mut self,
+        view_id: ViewId,
+        state: ViewSmoothScrollState,
+    ) -> Result<(), WorkspaceError> {
+        let Some(view) = self.views.get_mut(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        view.scroll_top = state.top_visual_row;
+        view.scroll_sub_row_offset = state.sub_row_offset;
+        view.overscan_rows = state.overscan_rows;
+        Ok(())
+    }
+
+    /// Get viewport state for a view, including total visual lines and overscan prefetch range.
+    pub fn viewport_state_for_view(
+        &mut self,
+        view_id: ViewId,
+    ) -> Result<WorkspaceViewportState, WorkspaceError> {
+        let Some((
+            buffer_id,
+            view_core,
+            scroll_top,
+            viewport_height,
+            sub_row_offset,
+            overscan_rows,
+        )) = self.views.get(&view_id).map(|v| {
+            (
+                v.buffer,
+                v.core.clone(),
+                v.scroll_top,
+                v.viewport_height,
+                v.scroll_sub_row_offset,
+                v.overscan_rows,
+            )
+        })
+        else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        view_core.apply_to_executor(&mut buffer.executor);
+        let editor = buffer.executor.editor();
+
+        let total_visual_lines = editor.visual_line_count();
+        let visible_end = if let Some(height) = viewport_height {
+            scroll_top.saturating_add(height).min(total_visual_lines)
+        } else {
+            total_visual_lines
+        };
+        let visible_lines = scroll_top.min(total_visual_lines)..visible_end;
+        let prefetch_start = visible_lines.start.saturating_sub(overscan_rows);
+        let prefetch_end = visible_lines
+            .end
+            .saturating_add(overscan_rows)
+            .min(total_visual_lines);
+
+        Ok(WorkspaceViewportState {
+            width: editor.viewport_width,
+            height: viewport_height,
+            scroll_top,
+            visible_lines,
+            total_visual_lines,
+            smooth_scroll: ViewSmoothScrollState {
+                top_visual_row: scroll_top,
+                sub_row_offset,
+                overscan_rows,
+            },
+            prefetch_lines: prefetch_start..prefetch_end,
+        })
+    }
+
+    /// Get total visual lines for a view (wrap + folding aware).
+    pub fn total_visual_lines_for_view(
+        &mut self,
+        view_id: ViewId,
+    ) -> Result<usize, WorkspaceError> {
+        Ok(self.viewport_state_for_view(view_id)?.total_visual_lines)
+    }
+
+    /// Map global visual row to `(logical_line, visual_in_logical)` for a view.
+    pub fn visual_to_logical_for_view(
+        &mut self,
+        view_id: ViewId,
+        visual_row: usize,
+    ) -> Result<(usize, usize), WorkspaceError> {
+        let Some((buffer_id, view_core)) =
+            self.views.get(&view_id).map(|v| (v.buffer, v.core.clone()))
+        else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        view_core.apply_to_executor(&mut buffer.executor);
+        Ok(buffer.executor.editor().visual_to_logical_line(visual_row))
+    }
+
+    /// Map logical position to global visual `(row, x_cells)` for a view.
+    pub fn logical_to_visual_for_view(
+        &mut self,
+        view_id: ViewId,
+        line: usize,
+        column: usize,
+    ) -> Result<Option<(usize, usize)>, WorkspaceError> {
+        let Some((buffer_id, view_core)) =
+            self.views.get(&view_id).map(|v| (v.buffer, v.core.clone()))
+        else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        view_core.apply_to_executor(&mut buffer.executor);
+        Ok(buffer
+            .executor
+            .editor()
+            .logical_position_to_visual(line, column))
+    }
+
+    /// Map visual `(row, x_cells)` back to logical position for a view.
+    pub fn visual_position_to_logical_for_view(
+        &mut self,
+        view_id: ViewId,
+        visual_row: usize,
+        x_cells: usize,
+    ) -> Result<Option<Position>, WorkspaceError> {
+        let Some((buffer_id, view_core)) =
+            self.views.get(&view_id).map(|v| (v.buffer, v.core.clone()))
+        else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        view_core.apply_to_executor(&mut buffer.executor);
+        Ok(buffer
+            .executor
+            .editor()
+            .visual_position_to_logical(visual_row, x_cells))
+    }
+
     /// Get the full document text for a buffer.
     pub fn buffer_text(&self, buffer_id: BufferId) -> Result<String, WorkspaceError> {
         let Some(buffer) = self.buffers.get(&buffer_id) else {
@@ -772,6 +1026,34 @@ impl Workspace {
             .executor
             .editor()
             .get_headless_grid_styled(start_visual_row, count))
+    }
+
+    /// Get lightweight minimap content for a view (by visual line).
+    pub fn get_minimap_content(
+        &mut self,
+        view_id: ViewId,
+        start_visual_row: usize,
+        count: usize,
+    ) -> Result<crate::MinimapGrid, WorkspaceError> {
+        let Some(buffer_id) = self.views.get(&view_id).map(|v| v.buffer) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+
+        let view_core = self
+            .views
+            .get(&view_id)
+            .map(|v| v.core.clone())
+            .ok_or(WorkspaceError::ViewNotFound(view_id))?;
+
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+
+        view_core.apply_to_executor(&mut buffer.executor);
+        Ok(buffer
+            .executor
+            .editor()
+            .get_minimap_grid(start_visual_row, count))
     }
 
     /// Get a decoration-aware composed viewport snapshot for a view (by composed visual line).
@@ -872,6 +1154,10 @@ impl Workspace {
                         .editor_mut()
                         .folding_manager
                         .replace_derived_regions(regions);
+                    buffer
+                        .executor
+                        .editor_mut()
+                        .invalidate_visual_row_index_cache();
                     folding_changed = true;
                 }
                 ProcessingEdit::ClearFoldingRegions => {
@@ -880,6 +1166,10 @@ impl Workspace {
                         .editor_mut()
                         .folding_manager
                         .clear_derived_regions();
+                    buffer
+                        .executor
+                        .editor_mut()
+                        .invalidate_visual_row_index_cache();
                     folding_changed = true;
                 }
                 ProcessingEdit::ReplaceDiagnostics { diagnostics } => {

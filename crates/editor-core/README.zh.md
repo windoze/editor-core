@@ -13,6 +13,7 @@
 - **符号/大纲模型**：`DocumentOutline`、`DocumentSymbol`、`WorkspaceSymbol`，用于构建大纲树与符号搜索 UI
   （通常由 LSP 填充）。
 - **无头快照**：`SnapshotGenerator` → `HeadlessGrid`，用于构建“文本网格”UI。
+- **轻量 minimap 快照**：`MinimapGrid`，用于概览渲染（避免逐 `Cell` 负载）。
 - **支持装饰的组合快照**：`ComposedGrid` 可以注入虚拟文本（inlay hints、code lens），宿主无需重写布局规则即可从快照渲染。
 - **命令接口**：`CommandExecutor` 与 **状态/查询层**：`EditorStateManager`。
 - **Workspace 模型**（`Workspace`）支持多 buffer + 多 view（分屏）：
@@ -20,6 +21,9 @@
   - 创建额外 view：`Workspace::create_view`
   - 针对 view 执行命令：`Workspace::execute`
   - 从 view 渲染：`Workspace::get_viewport_content_styled`
+  - 从 view 查询视觉行映射：`Workspace::{total_visual_lines_for_view, visual_to_logical_for_view, logical_to_visual_for_view, visual_position_to_logical_for_view}`
+  - 从 view 查询视口 + 平滑滚动元数据：`Workspace::viewport_state_for_view`
+  - 从 view 渲染 minimap 摘要：`Workspace::get_minimap_content`
   - 跨打开 buffers 搜索：`Workspace::search_all_open_buffers`
   - 应用 workspace 范围文本编辑（每个 buffer 一次 undo 分组）：`Workspace::apply_text_edits`
 - **内核级编辑命令**（常见编辑器 UX）：
@@ -54,6 +58,10 @@
 - 执行命令：`state.execute(cmd)` → `ws.execute(view_id, cmd)`
 - 渲染视口：`state.get_viewport_content_styled(start, count)` →
   `ws.get_viewport_content_styled(view_id, start, count)`
+- 渲染轻量 minimap 摘要：`state.get_minimap_content(start, count)` →
+  `ws.get_minimap_content(view_id, start, count)`
+- 视觉行坐标查询：`state.visual_to_logical_line(...)` →
+  `ws.visual_to_logical_for_view(view_id, ...)`
 - 订阅变更：`state.subscribe(cb)` → `ws.subscribe_view(view_id, cb)`
 - 应用派生状态：`state.apply_processing_edits(edits)` →
   `ws.apply_processing_edits(buffer_id, edits)`

@@ -87,8 +87,27 @@ pub struct ViewportState {
     pub height: Option<usize>,
     /// Current scroll position (visual line number)
     pub scroll_top: usize,
+    /// Sub-row smooth-scroll offset (0..=65535, normalized).
+    pub sub_row_offset: u16,
+    /// Overscan rows used to compute `prefetch_lines`.
+    pub overscan_rows: usize,
     /// Visible visual line range
     pub visible_lines: Range<usize>,
+    /// Recommended prefetch range (visible range expanded by `overscan_rows`).
+    pub prefetch_lines: Range<usize>,
+    /// Total visual lines under current wrap/folding state.
+    pub total_visual_lines: usize,
+}
+
+/// Smooth-scrolling state for single-view manager.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SmoothScrollState {
+    /// Top visual row anchor.
+    pub top_visual_row: usize,
+    /// Sub-row offset within top row (0..=65535, normalized).
+    pub sub_row_offset: u16,
+    /// Overscan rows for prefetching.
+    pub overscan_rows: usize,
 }
 
 /// Undo/redo stack state
@@ -286,6 +305,10 @@ pub struct EditorStateManager {
     callbacks: Vec<StateChangeCallback>,
     /// Current scroll position
     scroll_top: usize,
+    /// Sub-row smooth-scroll offset.
+    scroll_sub_row_offset: u16,
+    /// Overscan rows for prefetching.
+    overscan_rows: usize,
     /// Viewport height (optional)
     viewport_height: Option<usize>,
     /// Structured text delta produced by the last document edit.
@@ -301,6 +324,8 @@ impl EditorStateManager {
             is_modified: false,
             callbacks: Vec::new(),
             scroll_top: 0,
+            scroll_sub_row_offset: 0,
+            overscan_rows: 0,
             viewport_height: None,
             last_text_delta: None,
         }
@@ -489,6 +514,53 @@ impl EditorStateManager {
         }
     }
 
+    /// Set sub-row smooth-scroll offset (normalized 0..=65535).
+    pub fn set_scroll_sub_row_offset(&mut self, sub_row_offset: u16) {
+        let old = self.scroll_sub_row_offset;
+        self.scroll_sub_row_offset = sub_row_offset;
+        if old != sub_row_offset {
+            self.notify_change(StateChangeType::ViewportChanged);
+        }
+    }
+
+    /// Set overscan rows for viewport prefetch range.
+    pub fn set_overscan_rows(&mut self, overscan_rows: usize) {
+        let old = self.overscan_rows;
+        self.overscan_rows = overscan_rows;
+        if old != overscan_rows {
+            self.notify_change(StateChangeType::ViewportChanged);
+        }
+    }
+
+    /// Set full smooth-scroll state.
+    pub fn set_smooth_scroll_state(&mut self, state: SmoothScrollState) {
+        let mut changed = false;
+        if self.scroll_top != state.top_visual_row {
+            self.scroll_top = state.top_visual_row;
+            changed = true;
+        }
+        if self.scroll_sub_row_offset != state.sub_row_offset {
+            self.scroll_sub_row_offset = state.sub_row_offset;
+            changed = true;
+        }
+        if self.overscan_rows != state.overscan_rows {
+            self.overscan_rows = state.overscan_rows;
+            changed = true;
+        }
+        if changed {
+            self.notify_change(StateChangeType::ViewportChanged);
+        }
+    }
+
+    /// Get smooth-scroll state.
+    pub fn get_smooth_scroll_state(&self) -> SmoothScrollState {
+        SmoothScrollState {
+            top_visual_row: self.scroll_top,
+            sub_row_offset: self.scroll_sub_row_offset,
+            overscan_rows: self.overscan_rows,
+        }
+    }
+
     /// Get complete editor state snapshot
     pub fn get_full_state(&self) -> EditorState {
         EditorState {
@@ -577,17 +649,28 @@ impl EditorStateManager {
     pub fn get_viewport_state(&self) -> ViewportState {
         let editor = self.executor.editor();
         let total_visual_lines = editor.visual_line_count();
+        let clamped_top = self.scroll_top.min(total_visual_lines);
         let visible_end = if let Some(height) = self.viewport_height {
-            self.scroll_top + height
+            clamped_top.saturating_add(height)
         } else {
             total_visual_lines
         };
+        let visible_lines = clamped_top..visible_end.min(total_visual_lines);
+        let prefetch_start = visible_lines.start.saturating_sub(self.overscan_rows);
+        let prefetch_end = visible_lines
+            .end
+            .saturating_add(self.overscan_rows)
+            .min(total_visual_lines);
 
         ViewportState {
             width: editor.viewport_width,
             height: self.viewport_height,
-            scroll_top: self.scroll_top,
-            visible_lines: self.scroll_top..visible_end.min(total_visual_lines),
+            scroll_top: clamped_top,
+            sub_row_offset: self.scroll_sub_row_offset,
+            overscan_rows: self.overscan_rows,
+            visible_lines,
+            prefetch_lines: prefetch_start..prefetch_end,
+            total_visual_lines,
         }
     }
 
@@ -802,12 +885,14 @@ impl EditorStateManager {
         self.editor_mut()
             .folding_manager
             .replace_derived_regions(regions);
+        self.editor_mut().invalidate_visual_row_index_cache();
         self.mark_modified(StateChangeType::FoldingChanged);
     }
 
     /// Clear all *derived* folding regions (leaves user folds intact).
     pub fn clear_folding_regions(&mut self) {
         self.editor_mut().folding_manager.clear_derived_regions();
+        self.editor_mut().invalidate_visual_row_index_cache();
         self.mark_modified(StateChangeType::FoldingChanged);
     }
 
@@ -893,6 +978,13 @@ impl EditorStateManager {
             .get_headless_grid_styled(start_visual_row, count)
     }
 
+    /// Get lightweight minimap content (by visual line).
+    pub fn get_minimap_content(&self, start_visual_row: usize, count: usize) -> crate::MinimapGrid {
+        self.executor
+            .editor()
+            .get_minimap_grid(start_visual_row, count)
+    }
+
     /// Get a decoration-aware composed viewport snapshot (by composed visual line).
     ///
     /// See [`EditorCore::get_headless_grid_composed`](crate::EditorCore::get_headless_grid_composed)
@@ -905,6 +997,34 @@ impl EditorStateManager {
         self.executor
             .editor()
             .get_headless_grid_composed(start_visual_row, count)
+    }
+
+    /// Get total visual line count under current wrap/folding state.
+    pub fn total_visual_lines(&self) -> usize {
+        self.executor.editor().visual_line_count()
+    }
+
+    /// Map global visual row to `(logical_line, visual_in_logical)`.
+    pub fn visual_to_logical_line(&self, visual_row: usize) -> (usize, usize) {
+        self.executor.editor().visual_to_logical_line(visual_row)
+    }
+
+    /// Map logical position to visual `(row, x_cells)`.
+    pub fn logical_position_to_visual(&self, line: usize, column: usize) -> Option<(usize, usize)> {
+        self.executor
+            .editor()
+            .logical_position_to_visual(line, column)
+    }
+
+    /// Map visual `(row, x_cells)` back to logical position.
+    pub fn visual_position_to_logical(
+        &self,
+        visual_row: usize,
+        x_cells: usize,
+    ) -> Option<Position> {
+        self.executor
+            .editor()
+            .visual_position_to_logical(visual_row, x_cells)
     }
 
     /// Subscribe to state change notifications
@@ -1282,5 +1402,48 @@ mod tests {
         assert_eq!(line1.cells[0].styles, vec![7]);
         assert_eq!(line1.cells[1].ch, 'e');
         assert_eq!(line1.cells[1].styles, Vec::<StyleId>::new());
+    }
+
+    #[test]
+    fn test_smooth_scroll_state_and_prefetch_lines() {
+        let mut manager = EditorStateManager::new("a\nb\nc\nd\n", 80);
+        manager.set_viewport_height(2);
+        manager.set_scroll_top(1);
+        manager.set_scroll_sub_row_offset(123);
+        manager.set_overscan_rows(2);
+
+        let smooth = manager.get_smooth_scroll_state();
+        assert_eq!(
+            smooth,
+            SmoothScrollState {
+                top_visual_row: 1,
+                sub_row_offset: 123,
+                overscan_rows: 2
+            }
+        );
+
+        let viewport = manager.get_viewport_state();
+        assert_eq!(viewport.visible_lines, 1..3);
+        assert_eq!(viewport.sub_row_offset, 123);
+        assert_eq!(viewport.overscan_rows, 2);
+        assert_eq!(viewport.prefetch_lines, 0..5);
+        assert_eq!(viewport.total_visual_lines, 5);
+    }
+
+    #[test]
+    fn test_minimap_content_returns_lightweight_summary() {
+        let mut manager = EditorStateManager::new("abc def\n", 80);
+        manager.replace_style_layer(StyleLayerId::SIMPLE_SYNTAX, vec![Interval::new(0, 3, 9)]);
+
+        let minimap = manager.get_minimap_content(0, 1);
+        assert_eq!(minimap.actual_line_count(), 1);
+        let line = &minimap.lines[0];
+        assert_eq!(line.logical_line_index, 0);
+        assert_eq!(line.visual_in_logical, 0);
+        assert_eq!(line.char_offset_start, 0);
+        assert_eq!(line.char_offset_end, 7);
+        assert!(line.total_cells >= line.non_whitespace_cells);
+        assert_eq!(line.dominant_style, Some(9));
+        assert!(!line.is_fold_placeholder_appended);
     }
 }

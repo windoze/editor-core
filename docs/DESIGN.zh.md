@@ -326,6 +326,7 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 - **Buffer**（`BufferId`）：文档文本 + 撤销历史 + 与文本绑定的派生状态。
   内部实现上是一个 `CommandExecutor` 加上一些元数据（例如可选的 URI）。
 - **View**（`ViewId`）：面向具体视口的状态，例如选择/光标、换行配置、滚动位置。
+  - 同时包含平滑滚动元数据（`sub_row_offset`、`overscan_rows`），用于计算预取区间。
 
 关键行为：
 
@@ -337,6 +338,12 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
   应用，并通知该 buffer 的所有 view。
 - 对于希望“每次 buffer 编辑只消费一次 delta”的增量消费者，可使用
   `Workspace::take_last_text_delta_for_buffer`。
+- `Workspace` 也提供 view 感知的视觉行查询 API：
+  - `total_visual_lines_for_view`
+  - `visual_to_logical_for_view`
+  - `logical_to_visual_for_view`
+  - `visual_position_to_logical_for_view`
+  - `viewport_state_for_view`（包含可见区间、预取区间和平滑滚动元数据）
 
 概念上，“一个 `EditorStateManager`”可以视为“`Workspace` 里一个 buffer + 一个 view”；
 `Workspace` 只是把身份（`BufferId`/`ViewId`）显式化，从而支持额外的 view 共享同一份 buffer 状态。
@@ -348,8 +355,10 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 快照格式有意设计得小巧且对 UI 友好：
 
 - `HeadlessGrid { lines, start_visual_row, count }`
-- `HeadlessLine { logical_line_index, is_wrapped_part, cells }`
+- `HeadlessLine { logical_line_index, is_wrapped_part, visual_in_logical, char_offset_start, char_offset_end, segment_x_start_cells, is_fold_placeholder_appended, cells }`
 - `Cell { ch, width, styles }`
+- `MinimapGrid { lines, start_visual_row, count }`（轻量概览快照）
+- `MinimapLine { logical_line_index, visual_in_logical, char_offset_start, char_offset_end, total_cells, non_whitespace_cells, dominant_style, is_fold_placeholder_appended }`
 
 有两种快照路径：
 
@@ -360,6 +369,9 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 2. `EditorCore::get_headless_grid_styled`（推荐用于真实 UI）：
    - 使用编辑器的实时 `LineIndex` + `LayoutEngine`
    - 合并样式并应用折叠
+3. `EditorCore::get_minimap_grid`：
+   - 使用与主视口相同的换行/折叠语义
+   - 返回按行聚合摘要（而非逐 `Cell` 负载），用于 minimap/概览场景
 
 ## 集成 crate
 

@@ -45,13 +45,14 @@ use crate::line_ending::LineEnding;
 use crate::search::{CharIndex, SearchMatch, SearchOptions, find_all, find_next, find_prev};
 use crate::snapshot::{
     Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
-    HeadlessGrid, HeadlessLine,
+    HeadlessGrid, HeadlessLine, MinimapGrid, MinimapLine,
 };
 use crate::{
     FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex, PieceTable,
 };
 use editor_core_lang::CommentConfig;
 use regex::RegexBuilder;
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use unicode_segmentation::UnicodeSegmentation;
@@ -796,6 +797,46 @@ impl UndoRedoManager {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct VisualRowSpan {
+    logical_line: usize,
+    start_visual_row: usize,
+    visual_line_count: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+struct VisualRowIndex {
+    spans: Vec<VisualRowSpan>,
+    total_visual_lines: usize,
+}
+
+impl VisualRowIndex {
+    fn total_visual_lines(&self) -> usize {
+        self.total_visual_lines
+    }
+
+    fn span_index_for_visual_row(&self, visual_row: usize) -> Option<usize> {
+        let idx = self
+            .spans
+            .partition_point(|span| span.start_visual_row + span.visual_line_count <= visual_row);
+        (idx < self.spans.len()).then_some(idx)
+    }
+
+    fn span_for_visual_row(&self, visual_row: usize) -> Option<(VisualRowSpan, usize)> {
+        let idx = self.span_index_for_visual_row(visual_row)?;
+        let span = self.spans[idx];
+        Some((span, visual_row.saturating_sub(span.start_visual_row)))
+    }
+
+    fn span_for_logical_line(&self, logical_line: usize) -> Option<VisualRowSpan> {
+        let idx = self
+            .spans
+            .binary_search_by_key(&logical_line, |span| span.logical_line)
+            .ok()?;
+        Some(self.spans[idx])
+    }
+}
+
 /// Editor Core state
 ///
 /// `EditorCore` aggregates all underlying editor components, including:
@@ -843,6 +884,7 @@ pub struct EditorCore {
     pub secondary_selections: Vec<Selection>,
     /// Viewport width
     pub viewport_width: usize,
+    visual_row_index_cache: RefCell<Option<VisualRowIndex>>,
 }
 
 impl EditorCore {
@@ -874,6 +916,7 @@ impl EditorCore {
             selection: None,
             secondary_selections: Vec::new(),
             viewport_width,
+            visual_row_index_cache: RefCell::new(None),
         }
     }
 
@@ -925,6 +968,54 @@ impl EditorCore {
             .unwrap_or(&[])
     }
 
+    /// Invalidate cached visual-row index (wrap/folding derived mapping).
+    pub fn invalidate_visual_row_index_cache(&mut self) {
+        *self.visual_row_index_cache.borrow_mut() = None;
+    }
+
+    fn with_visual_row_index<R>(&self, f: impl FnOnce(&VisualRowIndex) -> R) -> R {
+        if self.visual_row_index_cache.borrow().is_none() {
+            let index = self.build_visual_row_index();
+            *self.visual_row_index_cache.borrow_mut() = Some(index);
+        }
+        let cache = self.visual_row_index_cache.borrow();
+        let index = cache
+            .as_ref()
+            .expect("visual-row cache should be initialized");
+        f(index)
+    }
+
+    fn build_visual_row_index(&self) -> VisualRowIndex {
+        let regions = self.folding_manager.regions();
+        let mut spans = Vec::new();
+        let mut total_visual = 0usize;
+
+        for logical_line in 0..self.layout_engine.logical_line_count() {
+            if Self::is_logical_line_hidden(regions, logical_line) {
+                continue;
+            }
+
+            let visual_line_count = self
+                .layout_engine
+                .get_line_layout(logical_line)
+                .map(|l| l.visual_line_count)
+                .unwrap_or(1)
+                .max(1);
+
+            spans.push(VisualRowSpan {
+                logical_line,
+                start_visual_row: total_visual,
+                visual_line_count,
+            });
+            total_visual = total_visual.saturating_add(visual_line_count);
+        }
+
+        VisualRowIndex {
+            spans,
+            total_visual_lines: total_visual,
+        }
+    }
+
     /// Get styled headless grid snapshot (by visual line).
     ///
     /// - Supportsoft wrapping (based `layout_engine`)
@@ -933,126 +1024,289 @@ impl EditorCore {
     ///
     /// Note: This API is not responsible for mapping `StyleId` to specific colors.
     pub fn get_headless_grid_styled(&self, start_visual_row: usize, count: usize) -> HeadlessGrid {
-        let mut grid = HeadlessGrid::new(start_visual_row, count);
-        if count == 0 {
-            return grid;
-        }
-
-        let tab_width = self.layout_engine.tab_width();
-
-        let total_visual = self.visual_line_count();
-        if start_visual_row >= total_visual {
-            return grid;
-        }
-
-        let end_visual = start_visual_row.saturating_add(count).min(total_visual);
-
-        let mut current_visual = 0usize;
-        let logical_line_count = self.layout_engine.logical_line_count();
-        let regions = self.folding_manager.regions();
-
-        'outer: for logical_line in 0..logical_line_count {
-            if Self::is_logical_line_hidden(regions, logical_line) {
-                continue;
+        self.with_visual_row_index(|index| {
+            let mut grid = HeadlessGrid::new(start_visual_row, count);
+            if count == 0 {
+                return grid;
             }
 
-            let Some(layout) = self.layout_engine.get_line_layout(logical_line) else {
-                continue;
+            let total_visual = index.total_visual_lines();
+            if start_visual_row >= total_visual {
+                return grid;
+            }
+
+            let tab_width = self.layout_engine.tab_width();
+            let end_visual = start_visual_row.saturating_add(count).min(total_visual);
+            let regions = self.folding_manager.regions();
+
+            let Some(mut span_idx) = index.span_index_for_visual_row(start_visual_row) else {
+                return grid;
             };
+            let mut current_visual = start_visual_row;
+            let mut visual_in_line =
+                start_visual_row.saturating_sub(index.spans[span_idx].start_visual_row);
 
-            let line_text = self
-                .line_index
-                .get_line_text(logical_line)
-                .unwrap_or_default();
-            let line_char_len = line_text.chars().count();
-            let line_start_offset = self.line_index.position_to_char_offset(logical_line, 0);
+            while current_visual < end_visual && span_idx < index.spans.len() {
+                let span = index.spans[span_idx];
+                let logical_line = span.logical_line;
 
-            for visual_in_line in 0..layout.visual_line_count {
-                if current_visual >= end_visual {
-                    break 'outer;
+                let Some(layout) = self.layout_engine.get_line_layout(logical_line) else {
+                    let remaining_in_span = span.visual_line_count.saturating_sub(visual_in_line);
+                    current_visual = current_visual.saturating_add(remaining_in_span);
+                    span_idx = span_idx.saturating_add(1);
+                    visual_in_line = 0;
+                    continue;
+                };
+
+                let line_text = self
+                    .line_index
+                    .get_line_text(logical_line)
+                    .unwrap_or_default();
+                let line_char_len = line_text.chars().count();
+                let line_start_offset = self.line_index.position_to_char_offset(logical_line, 0);
+
+                let segment_start_col = if visual_in_line == 0 {
+                    0
+                } else {
+                    layout
+                        .wrap_points
+                        .get(visual_in_line - 1)
+                        .map(|wp| wp.char_index)
+                        .unwrap_or(0)
+                        .min(line_char_len)
+                };
+
+                let segment_end_col = if visual_in_line < layout.wrap_points.len() {
+                    layout.wrap_points[visual_in_line]
+                        .char_index
+                        .min(line_char_len)
+                } else {
+                    line_char_len
+                };
+
+                let mut headless_line = HeadlessLine::new(logical_line, visual_in_line > 0);
+                let mut segment_x_start_cells = 0usize;
+                if visual_in_line > 0 {
+                    let indent_cells = wrap_indent_cells_for_line_text(
+                        &line_text,
+                        self.layout_engine.wrap_indent(),
+                        self.viewport_width,
+                        tab_width,
+                    );
+                    segment_x_start_cells = indent_cells;
+                    for _ in 0..indent_cells {
+                        headless_line.add_cell(Cell::new(' ', 1));
+                    }
+                }
+                let mut x_in_line = visual_x_for_column(&line_text, segment_start_col, tab_width);
+
+                for (col, ch) in line_text
+                    .chars()
+                    .enumerate()
+                    .skip(segment_start_col)
+                    .take(segment_end_col.saturating_sub(segment_start_col))
+                {
+                    let offset = line_start_offset + col;
+                    let styles = self.styles_at_offset(offset);
+                    let w = cell_width_at(ch, x_in_line, tab_width);
+                    x_in_line = x_in_line.saturating_add(w);
+                    headless_line.add_cell(Cell::with_styles(ch, w, styles));
                 }
 
-                if current_visual >= start_visual_row {
-                    let segment_start_col = if visual_in_line == 0 {
-                        0
-                    } else {
-                        layout
-                            .wrap_points
-                            .get(visual_in_line - 1)
-                            .map(|wp| wp.char_index)
-                            .unwrap_or(0)
-                            .min(line_char_len)
-                    };
+                headless_line.set_visual_metadata(
+                    visual_in_line,
+                    line_start_offset.saturating_add(segment_start_col),
+                    line_start_offset.saturating_add(segment_end_col),
+                    segment_x_start_cells,
+                );
+                headless_line.set_fold_placeholder_appended(false);
 
-                    let segment_end_col = if visual_in_line < layout.wrap_points.len() {
-                        layout.wrap_points[visual_in_line]
-                            .char_index
-                            .min(line_char_len)
-                    } else {
-                        line_char_len
-                    };
-
-                    let mut headless_line = HeadlessLine::new(logical_line, visual_in_line > 0);
-                    if visual_in_line > 0 {
-                        let indent_cells = wrap_indent_cells_for_line_text(
-                            &line_text,
-                            self.layout_engine.wrap_indent(),
-                            self.viewport_width,
-                            tab_width,
-                        );
-                        for _ in 0..indent_cells {
-                            headless_line.add_cell(Cell::new(' ', 1));
-                        }
+                // For collapsed folding start line, append placeholder to the last segment.
+                if visual_in_line + 1 == layout.visual_line_count
+                    && let Some(region) = Self::collapsed_region_starting_at(regions, logical_line)
+                    && !region.placeholder.is_empty()
+                {
+                    if !headless_line.cells.is_empty() {
+                        x_in_line = x_in_line.saturating_add(char_width(' '));
+                        headless_line.add_cell(Cell::with_styles(
+                            ' ',
+                            char_width(' '),
+                            vec![FOLD_PLACEHOLDER_STYLE_ID],
+                        ));
                     }
-                    let mut x_in_line =
-                        visual_x_for_column(&line_text, segment_start_col, tab_width);
-
-                    for (col, ch) in line_text
-                        .chars()
-                        .enumerate()
-                        .skip(segment_start_col)
-                        .take(segment_end_col.saturating_sub(segment_start_col))
-                    {
-                        let offset = line_start_offset + col;
-                        let styles = self.styles_at_offset(offset);
+                    for ch in region.placeholder.chars() {
                         let w = cell_width_at(ch, x_in_line, tab_width);
                         x_in_line = x_in_line.saturating_add(w);
-                        headless_line.add_cell(Cell::with_styles(ch, w, styles));
+                        headless_line.add_cell(Cell::with_styles(
+                            ch,
+                            w,
+                            vec![FOLD_PLACEHOLDER_STYLE_ID],
+                        ));
                     }
-
-                    // For collapsed folding start line, append placeholder to the last segment.
-                    if visual_in_line + 1 == layout.visual_line_count
-                        && let Some(region) =
-                            Self::collapsed_region_starting_at(regions, logical_line)
-                        && !region.placeholder.is_empty()
-                    {
-                        if !headless_line.cells.is_empty() {
-                            x_in_line = x_in_line.saturating_add(char_width(' '));
-                            headless_line.add_cell(Cell::with_styles(
-                                ' ',
-                                char_width(' '),
-                                vec![FOLD_PLACEHOLDER_STYLE_ID],
-                            ));
-                        }
-                        for ch in region.placeholder.chars() {
-                            let w = cell_width_at(ch, x_in_line, tab_width);
-                            x_in_line = x_in_line.saturating_add(w);
-                            headless_line.add_cell(Cell::with_styles(
-                                ch,
-                                w,
-                                vec![FOLD_PLACEHOLDER_STYLE_ID],
-                            ));
-                        }
-                    }
-
-                    grid.add_line(headless_line);
+                    headless_line.set_fold_placeholder_appended(true);
                 }
 
+                grid.add_line(headless_line);
                 current_visual = current_visual.saturating_add(1);
+                visual_in_line = visual_in_line.saturating_add(1);
+                if visual_in_line >= span.visual_line_count {
+                    span_idx = span_idx.saturating_add(1);
+                    visual_in_line = 0;
+                }
             }
-        }
 
-        grid
+            grid
+        })
+    }
+
+    /// Get a lightweight minimap snapshot (by visual line).
+    ///
+    /// Compared with [`Self::get_headless_grid_styled`], this API returns aggregated per-line
+    /// summaries instead of per-character cells, which is intended for minimap-like overviews.
+    pub fn get_minimap_grid(&self, start_visual_row: usize, count: usize) -> MinimapGrid {
+        self.with_visual_row_index(|index| {
+            let mut grid = MinimapGrid::new(start_visual_row, count);
+            if count == 0 {
+                return grid;
+            }
+
+            let total_visual = index.total_visual_lines();
+            if start_visual_row >= total_visual {
+                return grid;
+            }
+
+            let tab_width = self.layout_engine.tab_width();
+            let end_visual = start_visual_row.saturating_add(count).min(total_visual);
+            let regions = self.folding_manager.regions();
+
+            let Some(mut span_idx) = index.span_index_for_visual_row(start_visual_row) else {
+                return grid;
+            };
+            let mut current_visual = start_visual_row;
+            let mut visual_in_line =
+                start_visual_row.saturating_sub(index.spans[span_idx].start_visual_row);
+
+            while current_visual < end_visual && span_idx < index.spans.len() {
+                let span = index.spans[span_idx];
+                let logical_line = span.logical_line;
+
+                let Some(layout) = self.layout_engine.get_line_layout(logical_line) else {
+                    let remaining_in_span = span.visual_line_count.saturating_sub(visual_in_line);
+                    current_visual = current_visual.saturating_add(remaining_in_span);
+                    span_idx = span_idx.saturating_add(1);
+                    visual_in_line = 0;
+                    continue;
+                };
+
+                let line_text = self
+                    .line_index
+                    .get_line_text(logical_line)
+                    .unwrap_or_default();
+                let line_char_len = line_text.chars().count();
+                let line_start_offset = self.line_index.position_to_char_offset(logical_line, 0);
+
+                let segment_start_col = if visual_in_line == 0 {
+                    0
+                } else {
+                    layout
+                        .wrap_points
+                        .get(visual_in_line - 1)
+                        .map(|wp| wp.char_index)
+                        .unwrap_or(0)
+                        .min(line_char_len)
+                };
+
+                let segment_end_col = if visual_in_line < layout.wrap_points.len() {
+                    layout.wrap_points[visual_in_line]
+                        .char_index
+                        .min(line_char_len)
+                } else {
+                    line_char_len
+                };
+
+                let mut total_cells = 0usize;
+                let mut non_whitespace_cells = 0usize;
+                let mut dominant_style_counts: HashMap<StyleId, usize> = HashMap::new();
+                if visual_in_line > 0 {
+                    let indent_cells = wrap_indent_cells_for_line_text(
+                        &line_text,
+                        self.layout_engine.wrap_indent(),
+                        self.viewport_width,
+                        tab_width,
+                    );
+                    total_cells = total_cells.saturating_add(indent_cells);
+                }
+                let mut x_in_line = visual_x_for_column(&line_text, segment_start_col, tab_width);
+
+                for (col, ch) in line_text
+                    .chars()
+                    .enumerate()
+                    .skip(segment_start_col)
+                    .take(segment_end_col.saturating_sub(segment_start_col))
+                {
+                    let offset = line_start_offset + col;
+                    let styles = self.styles_at_offset(offset);
+                    let w = cell_width_at(ch, x_in_line, tab_width);
+                    x_in_line = x_in_line.saturating_add(w);
+                    total_cells = total_cells.saturating_add(w);
+                    if !ch.is_whitespace() {
+                        non_whitespace_cells = non_whitespace_cells.saturating_add(w);
+                    }
+                    if let Some(style) = styles.first().copied() {
+                        let entry = dominant_style_counts.entry(style).or_insert(0);
+                        *entry = entry.saturating_add(w);
+                    }
+                }
+
+                let mut placeholder_appended = false;
+                if visual_in_line + 1 == layout.visual_line_count
+                    && let Some(region) = Self::collapsed_region_starting_at(regions, logical_line)
+                    && !region.placeholder.is_empty()
+                {
+                    placeholder_appended = true;
+                    if total_cells > 0 {
+                        total_cells = total_cells.saturating_add(char_width(' '));
+                    }
+                    for ch in region.placeholder.chars() {
+                        let w = cell_width_at(ch, x_in_line, tab_width);
+                        x_in_line = x_in_line.saturating_add(w);
+                        total_cells = total_cells.saturating_add(w);
+                        if !ch.is_whitespace() {
+                            non_whitespace_cells = non_whitespace_cells.saturating_add(w);
+                        }
+                        let entry = dominant_style_counts
+                            .entry(FOLD_PLACEHOLDER_STYLE_ID)
+                            .or_insert(0);
+                        *entry = entry.saturating_add(w);
+                    }
+                }
+
+                let dominant_style = dominant_style_counts
+                    .into_iter()
+                    .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(&a.0)))
+                    .map(|(style, _)| style);
+
+                grid.lines.push(MinimapLine {
+                    logical_line_index: logical_line,
+                    visual_in_logical: visual_in_line,
+                    char_offset_start: line_start_offset.saturating_add(segment_start_col),
+                    char_offset_end: line_start_offset.saturating_add(segment_end_col),
+                    total_cells,
+                    non_whitespace_cells,
+                    dominant_style,
+                    is_fold_placeholder_appended: placeholder_appended,
+                });
+
+                current_visual = current_visual.saturating_add(1);
+                visual_in_line = visual_in_line.saturating_add(1);
+                if visual_in_line >= span.visual_line_count {
+                    span_idx = span_idx.saturating_add(1);
+                    visual_in_line = 0;
+                }
+            }
+
+            grid
+        })
     }
 
     /// Get a decoration-aware composed grid snapshot (by composed visual line).
@@ -1362,51 +1616,21 @@ impl EditorCore {
 
     /// Get total visual line count (considering soft wrapping + folding).
     pub fn visual_line_count(&self) -> usize {
-        let regions = self.folding_manager.regions();
-        let mut total = 0usize;
-
-        for logical_line in 0..self.layout_engine.logical_line_count() {
-            if Self::is_logical_line_hidden(regions, logical_line) {
-                continue;
-            }
-
-            total = total.saturating_add(
-                self.layout_engine
-                    .get_line_layout(logical_line)
-                    .map(|l| l.visual_line_count)
-                    .unwrap_or(1),
-            );
-        }
-
-        total
+        self.with_visual_row_index(|index| index.total_visual_lines())
     }
 
     /// Map visual line number back to (logical_line, visual_in_logical), considering folding.
     pub fn visual_to_logical_line(&self, visual_line: usize) -> (usize, usize) {
-        let regions = self.folding_manager.regions();
-        let mut cumulative_visual = 0usize;
-        let mut last_visible = (0usize, 0usize);
-
-        for logical_line in 0..self.layout_engine.logical_line_count() {
-            if Self::is_logical_line_hidden(regions, logical_line) {
-                continue;
+        self.with_visual_row_index(|index| {
+            if index.total_visual_lines() == 0 {
+                return (0, 0);
             }
-
-            let visual_count = self
-                .layout_engine
-                .get_line_layout(logical_line)
-                .map(|l| l.visual_line_count)
-                .unwrap_or(1);
-
-            if cumulative_visual + visual_count > visual_line {
-                return (logical_line, visual_line - cumulative_visual);
-            }
-
-            cumulative_visual = cumulative_visual.saturating_add(visual_count);
-            last_visible = (logical_line, visual_count.saturating_sub(1));
-        }
-
-        last_visible
+            let clamped_visual = visual_line.min(index.total_visual_lines().saturating_sub(1));
+            index
+                .span_for_visual_row(clamped_visual)
+                .map(|(span, visual_in_logical)| (span.logical_line, visual_in_logical))
+                .unwrap_or((0, 0))
+        })
     }
 
     /// Convert logical coordinates (line, column) to visual coordinates (visual line number, in-line x cell offset), considering folding.
@@ -1621,25 +1845,11 @@ impl EditorCore {
         if logical_line >= self.layout_engine.logical_line_count() {
             return None;
         }
-
-        let regions = self.folding_manager.regions();
-        if Self::is_logical_line_hidden(regions, logical_line) {
-            return None;
-        }
-
-        let mut start = 0usize;
-        for line in 0..logical_line {
-            if Self::is_logical_line_hidden(regions, line) {
-                continue;
-            }
-            start = start.saturating_add(
-                self.layout_engine
-                    .get_line_layout(line)
-                    .map(|l| l.visual_line_count)
-                    .unwrap_or(1),
-            );
-        }
-        Some(start)
+        self.with_visual_row_index(|index| {
+            index
+                .span_for_logical_line(logical_line)
+                .map(|span| span.start_visual_row)
+        })
     }
 
     fn is_logical_line_hidden(regions: &[FoldRegion], logical_line: usize) -> bool {
@@ -1792,6 +2002,25 @@ impl CommandExecutor {
 
         // Save command to history
         self.command_history.push(command.clone());
+
+        let affects_visual_rows = matches!(
+            &command,
+            Command::Edit(_)
+                | Command::View(
+                    ViewCommand::SetViewportWidth { .. }
+                        | ViewCommand::SetWrapMode { .. }
+                        | ViewCommand::SetWrapIndent { .. }
+                        | ViewCommand::SetTabWidth { .. }
+                )
+                | Command::Style(
+                    StyleCommand::Fold { .. }
+                        | StyleCommand::Unfold { .. }
+                        | StyleCommand::UnfoldAll
+                )
+        );
+        if affects_visual_rows {
+            self.editor.invalidate_visual_row_index_cache();
+        }
 
         // Undo grouping: any non-edit command ends the current coalescing group.
         if !matches!(command, Command::Edit(_)) {

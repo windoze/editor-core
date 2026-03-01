@@ -1,4 +1,6 @@
-use editor_core::{Command, CursorCommand, EditCommand, OpenBufferResult, Workspace};
+use editor_core::{
+    Command, CursorCommand, EditCommand, OpenBufferResult, ViewSmoothScrollState, Workspace,
+};
 
 fn main() {
     let mut ws = Workspace::new();
@@ -31,6 +33,14 @@ fn main() {
         "right view visual lines: {}",
         right_grid.actual_line_count()
     );
+    println!(
+        "right total visual lines (query API): {}",
+        ws.total_visual_lines_for_view(right).unwrap()
+    );
+    println!(
+        "right visual row 1 => logical {:?}",
+        ws.visual_to_logical_for_view(right, 1).unwrap()
+    );
 
     ws.execute(
         left,
@@ -49,4 +59,23 @@ fn main() {
     let delta_right = ws.take_last_text_delta_for_view(right).unwrap();
     println!("left delta edits: {}", delta_left.edits.len());
     println!("right delta edits: {}", delta_right.edits.len());
+
+    ws.set_viewport_height(right, 1).unwrap();
+    ws.set_smooth_scroll_state(
+        right,
+        ViewSmoothScrollState {
+            top_visual_row: 1,
+            sub_row_offset: 2048,
+            overscan_rows: 2,
+        },
+    )
+    .unwrap();
+    let viewport = ws.viewport_state_for_view(right).unwrap();
+    println!(
+        "right viewport: visible={:?}, prefetch={:?}, sub_row_offset={}",
+        viewport.visible_lines, viewport.prefetch_lines, viewport.smooth_scroll.sub_row_offset
+    );
+
+    let minimap = ws.get_minimap_content(right, 0, 10).unwrap();
+    println!("right minimap lines: {}", minimap.actual_line_count());
 }

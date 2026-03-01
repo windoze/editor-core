@@ -82,9 +82,13 @@ fn main() {
         manager.get_viewport_state().scroll_top
     );
     manager.set_scroll_top(5);
+    manager.set_scroll_sub_row_offset(4096);
+    manager.set_overscan_rows(3);
     println!(
-        "  滚动后: scroll_top = {}",
-        manager.get_viewport_state().scroll_top
+        "  滚动后: scroll_top = {}, sub_row_offset = {}, overscan = {}",
+        manager.get_viewport_state().scroll_top,
+        manager.get_viewport_state().sub_row_offset,
+        manager.get_viewport_state().overscan_rows
     );
 
     // 版本跟踪
@@ -130,6 +134,19 @@ fn main() {
         println!("  行 {}: {} 个单元格", i, line.cells.len());
     }
 
+    println!("\n15. 轻量 minimap 内容：");
+    let minimap = manager.get_minimap_content(0, 5);
+    println!("  minimap 行数: {}", minimap.actual_line_count());
+    if let Some(first) = minimap.lines.first() {
+        println!(
+            "  第一行摘要: offsets={}..{}, 密度={}/{}",
+            first.char_offset_start,
+            first.char_offset_end,
+            first.non_whitespace_cells,
+            first.total_cells
+        );
+    }
+
     println!("\n=== 示例完成 ===");
 }
 
@@ -157,7 +174,11 @@ fn print_viewport_state(manager: &EditorStateManager) {
     println!("  宽度: {}", state.width);
     println!("  高度: {:?}", state.height);
     println!("  滚动位置: {}", state.scroll_top);
+    println!("  子行偏移: {}", state.sub_row_offset);
+    println!("  预取 overscan: {}", state.overscan_rows);
     println!("  可见行范围: {:?}", state.visible_lines);
+    println!("  预取行范围: {:?}", state.prefetch_lines);
+    println!("  总视觉行数: {}", state.total_visual_lines);
 }
 
 fn print_folding_state(manager: &EditorStateManager) {

@@ -14,6 +14,7 @@ snapshots and drive edits through the command/state APIs.
 - **Symbols/outline model** (`DocumentOutline`, `DocumentSymbol`, `WorkspaceSymbol`) for building
   outline trees and symbol search UIs (typically populated from LSP).
 - **Headless snapshots** (`SnapshotGenerator` → `HeadlessGrid`) for building “text grid” UIs.
+- **Lightweight minimap snapshots** (`MinimapGrid`) for overview rendering without per-cell payload.
 - **Decoration-aware composed snapshots** (`ComposedGrid`) that inject virtual text (inlay hints,
   code lens) so hosts can render from snapshot data without re-implementing layout rules.
 - **Command interface** (`CommandExecutor`) and **state/query layer** (`EditorStateManager`).
@@ -22,6 +23,9 @@ snapshots and drive edits through the command/state APIs.
   - create additional views: `Workspace::create_view`
   - execute commands against a view: `Workspace::execute`
   - render from a view: `Workspace::get_viewport_content_styled`
+  - query visual-row mappings from a view: `Workspace::{total_visual_lines_for_view, visual_to_logical_for_view, logical_to_visual_for_view, visual_position_to_logical_for_view}`
+  - query viewport + smooth-scroll metadata: `Workspace::viewport_state_for_view`
+  - render minimap summaries from a view: `Workspace::get_minimap_content`
   - search across open buffers: `Workspace::search_all_open_buffers`
   - apply workspace edits (per-buffer undo grouping): `Workspace::apply_text_edits`
 - **Kernel-level editing commands** for common editor UX:
@@ -58,6 +62,10 @@ can share the same buffer state.
 - Run a command: `state.execute(cmd)` → `ws.execute(view_id, cmd)`
 - Render a viewport: `state.get_viewport_content_styled(start, count)` →
   `ws.get_viewport_content_styled(view_id, start, count)`
+- Render lightweight minimap summaries: `state.get_minimap_content(start, count)` →
+  `ws.get_minimap_content(view_id, start, count)`
+- Visual row mapping queries: `state.visual_to_logical_line(...)` →
+  `ws.visual_to_logical_for_view(view_id, ...)`
 - Subscribe to changes: `state.subscribe(cb)` → `ws.subscribe_view(view_id, cb)`
 - Apply derived state: `state.apply_processing_edits(edits)` →
   `ws.apply_processing_edits(buffer_id, edits)`

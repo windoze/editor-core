@@ -42,6 +42,18 @@ pub struct HeadlessLine {
     pub logical_line_index: usize,
     /// Whether this is a part created by wrapping (soft wrap)
     pub is_wrapped_part: bool,
+    /// Which wrapped segment within the logical line (0-based).
+    pub visual_in_logical: usize,
+    /// Character offset (inclusive) of this segment in the document.
+    pub char_offset_start: usize,
+    /// Character offset (exclusive) of this segment in the document.
+    pub char_offset_end: usize,
+    /// Render x (in cells) where document text of this segment starts within the visual line.
+    ///
+    /// For wrapped segments this is typically the wrap-indent cells.
+    pub segment_x_start_cells: usize,
+    /// Whether a fold placeholder was appended to this segment.
+    pub is_fold_placeholder_appended: bool,
     /// List of cells
     pub cells: Vec<Cell>,
 }
@@ -52,8 +64,32 @@ impl HeadlessLine {
         Self {
             logical_line_index,
             is_wrapped_part,
+            visual_in_logical: if is_wrapped_part { 1 } else { 0 },
+            char_offset_start: 0,
+            char_offset_end: 0,
+            segment_x_start_cells: 0,
+            is_fold_placeholder_appended: false,
             cells: Vec::new(),
         }
+    }
+
+    /// Fill visual segment metadata for this line.
+    pub fn set_visual_metadata(
+        &mut self,
+        visual_in_logical: usize,
+        char_offset_start: usize,
+        char_offset_end: usize,
+        segment_x_start_cells: usize,
+    ) {
+        self.visual_in_logical = visual_in_logical;
+        self.char_offset_start = char_offset_start;
+        self.char_offset_end = char_offset_end;
+        self.segment_x_start_cells = segment_x_start_cells;
+    }
+
+    /// Mark whether this line has fold placeholder text appended.
+    pub fn set_fold_placeholder_appended(&mut self, appended: bool) {
+        self.is_fold_placeholder_appended = appended;
     }
 
     /// Append a cell to the line.
@@ -94,6 +130,54 @@ impl HeadlessGrid {
     }
 
     /// Get actual number of lines returned
+    pub fn actual_line_count(&self) -> usize {
+        self.lines.len()
+    }
+}
+
+/// A lightweight minimap summary for one visual line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MinimapLine {
+    /// Corresponding logical line index.
+    pub logical_line_index: usize,
+    /// Which wrapped segment within the logical line (0-based).
+    pub visual_in_logical: usize,
+    /// Character offset (inclusive) of this segment in the document.
+    pub char_offset_start: usize,
+    /// Character offset (exclusive) of this segment in the document.
+    pub char_offset_end: usize,
+    /// Total rendered cell width for this visual line (including wrap indent and fold placeholder).
+    pub total_cells: usize,
+    /// Number of non-whitespace rendered cells.
+    pub non_whitespace_cells: usize,
+    /// Dominant style id on this line (if any style exists).
+    pub dominant_style: Option<StyleId>,
+    /// Whether a fold placeholder was appended.
+    pub is_fold_placeholder_appended: bool,
+}
+
+/// Lightweight minimap snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MinimapGrid {
+    /// Minimap lines.
+    pub lines: Vec<MinimapLine>,
+    /// Requested start row.
+    pub start_visual_row: usize,
+    /// Requested row count.
+    pub count: usize,
+}
+
+impl MinimapGrid {
+    /// Create an empty minimap grid for a requested visual range.
+    pub fn new(start_visual_row: usize, count: usize) -> Self {
+        Self {
+            lines: Vec::new(),
+            start_visual_row,
+            count,
+        }
+    }
+
+    /// Get actual number of lines returned.
     pub fn actual_line_count(&self) -> usize {
         self.lines.len()
     }
@@ -308,6 +392,7 @@ impl SnapshotGenerator {
         let end_visual = start_visual_row.saturating_add(count).min(total_visual);
         let mut current_visual = 0usize;
 
+        let mut line_start_offset = 0usize;
         for logical_line in 0..self.layout_engine.logical_line_count() {
             let Some(layout) = self.layout_engine.get_line_layout(logical_line) else {
                 continue;
@@ -346,6 +431,7 @@ impl SnapshotGenerator {
                     };
 
                     let mut headless_line = HeadlessLine::new(logical_line, visual_in_line > 0);
+                    let mut segment_x_start_cells = 0usize;
                     if visual_in_line > 0 {
                         let indent_cells = wrap_indent_cells_for_line_text(
                             line_text,
@@ -353,6 +439,7 @@ impl SnapshotGenerator {
                             self.viewport_width,
                             self.tab_width,
                         );
+                        segment_x_start_cells = indent_cells;
                         for _ in 0..indent_cells {
                             headless_line.add_cell(Cell::new(' ', 1));
                         }
@@ -369,11 +456,22 @@ impl SnapshotGenerator {
                         x_in_line = x_in_line.saturating_add(w);
                         headless_line.add_cell(Cell::new(ch, w));
                     }
+                    headless_line.set_visual_metadata(
+                        visual_in_line,
+                        line_start_offset.saturating_add(segment_start_col),
+                        line_start_offset.saturating_add(segment_end_col),
+                        segment_x_start_cells,
+                    );
 
                     grid.add_line(headless_line);
                 }
 
                 current_visual = current_visual.saturating_add(1);
+            }
+
+            line_start_offset = line_start_offset.saturating_add(line_char_len);
+            if logical_line + 1 < self.layout_engine.logical_line_count() {
+                line_start_offset = line_start_offset.saturating_add(1);
             }
         }
 
@@ -420,6 +518,11 @@ mod tests {
 
         assert_eq!(line.logical_line_index, 0);
         assert!(!line.is_wrapped_part);
+        assert_eq!(line.visual_in_logical, 0);
+        assert_eq!(line.char_offset_start, 0);
+        assert_eq!(line.char_offset_end, 0);
+        assert_eq!(line.segment_x_start_cells, 0);
+        assert!(!line.is_fold_placeholder_appended);
         assert_eq!(line.cells.len(), 3);
         assert_eq!(line.visual_width(), 4); // 1 + 1 + 2
     }
@@ -450,6 +553,9 @@ mod tests {
         let line0 = &grid.lines[0];
         assert_eq!(line0.logical_line_index, 0);
         assert!(!line0.is_wrapped_part);
+        assert_eq!(line0.visual_in_logical, 0);
+        assert_eq!(line0.char_offset_start, 0);
+        assert_eq!(line0.char_offset_end, 6);
         assert_eq!(line0.cells.len(), 6); // "Line 1"
 
         // Get middle lines
@@ -471,10 +577,12 @@ mod tests {
 
         assert_eq!(grid.lines[0].logical_line_index, 0);
         assert!(!grid.lines[0].is_wrapped_part);
+        assert_eq!(grid.lines[0].visual_in_logical, 0);
         assert_eq!(line0_text, "ab");
 
         assert_eq!(grid.lines[1].logical_line_index, 0);
         assert!(grid.lines[1].is_wrapped_part);
+        assert_eq!(grid.lines[1].visual_in_logical, 1);
         assert_eq!(line1_text, "cd");
 
         // Starting from the 2nd visual line, get 1 line, should only return the wrapped part.

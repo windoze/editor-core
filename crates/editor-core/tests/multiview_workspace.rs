@@ -1,4 +1,7 @@
-use editor_core::{Command, CursorCommand, EditCommand, OpenBufferResult, Workspace};
+use editor_core::{
+    Command, CursorCommand, EditCommand, OpenBufferResult, Position, ViewSmoothScrollState,
+    Workspace,
+};
 
 #[test]
 fn test_two_views_share_buffer_but_keep_independent_view_state() {
@@ -38,6 +41,25 @@ fn test_two_views_share_buffer_but_keep_independent_view_state() {
     let grid_b = ws.get_viewport_content_styled(view_b, 0, 100).unwrap();
     assert_eq!(grid_a.actual_line_count(), 2); // "0123456789" + trailing empty line
     assert_eq!(grid_b.actual_line_count(), 3); // wrapped into 2 + trailing empty line
+    assert_eq!(ws.total_visual_lines_for_view(view_a).unwrap(), 2);
+    assert_eq!(ws.total_visual_lines_for_view(view_b).unwrap(), 3);
+
+    // View-local visual/logical mapping APIs.
+    assert_eq!(ws.visual_to_logical_for_view(view_b, 1).unwrap(), (0, 1));
+    assert_eq!(
+        ws.logical_to_visual_for_view(view_b, 0, 5).unwrap(),
+        Some((1, 0))
+    );
+    assert_eq!(
+        ws.visual_position_to_logical_for_view(view_b, 1, 2)
+            .unwrap(),
+        Some(Position::new(0, 7))
+    );
+
+    // Lightweight minimap path should also work off-viewport.
+    let minimap = ws.get_minimap_content(view_b, 0, 10).unwrap();
+    assert_eq!(minimap.actual_line_count(), 3);
+    assert_eq!(minimap.lines[0].logical_line_index, 0);
 
     // Edit in view A applies to the shared buffer and broadcasts the same delta to view B.
     ws.execute(
@@ -56,4 +78,21 @@ fn test_two_views_share_buffer_but_keep_independent_view_state() {
 
     // View B caret should shift by the inserted length.
     assert_eq!(ws.cursor_position_for_view(view_b).unwrap().column, 6);
+
+    // Smooth-scroll state and viewport query API are view-local.
+    ws.set_viewport_height(view_b, 1).unwrap();
+    ws.set_smooth_scroll_state(
+        view_b,
+        ViewSmoothScrollState {
+            top_visual_row: 1,
+            sub_row_offset: 123,
+            overscan_rows: 2,
+        },
+    )
+    .unwrap();
+    let viewport = ws.viewport_state_for_view(view_b).unwrap();
+    assert_eq!(viewport.scroll_top, 1);
+    assert_eq!(viewport.visible_lines, 1..2);
+    assert_eq!(viewport.smooth_scroll.sub_row_offset, 123);
+    assert_eq!(viewport.prefetch_lines, 0..4);
 }

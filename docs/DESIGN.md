@@ -353,6 +353,7 @@ typically need:
 - **Buffer** (`BufferId`): document text + undo history + derived state tied to the text.
   Internally this is a `CommandExecutor` + some metadata (like an optional URI).
 - **View** (`ViewId`): per-viewport state like selections/cursors, wrap configuration, and scroll.
+  - includes smooth-scrolling metadata (`sub_row_offset`, `overscan_rows`) used for prefetch range planning.
 
 Key behavior:
 
@@ -364,6 +365,12 @@ Key behavior:
   `Workspace::apply_processing_edits(buffer_id, edits)`, which notifies all views of that buffer.
 - For incremental consumers that want “one delta per buffer edit”, use
   `Workspace::take_last_text_delta_for_buffer`.
+- Visual-row query APIs are available on `Workspace` (view-aware):
+  - `total_visual_lines_for_view`
+  - `visual_to_logical_for_view`
+  - `logical_to_visual_for_view`
+  - `visual_position_to_logical_for_view`
+  - `viewport_state_for_view` (includes visible range + prefetch range + smooth-scroll metadata)
 
 Conceptually, one `EditorStateManager` corresponds to “a `Workspace` with one buffer and one
 view”; `Workspace` makes the identities explicit and allows additional views to share the same
@@ -376,8 +383,10 @@ File: `crates/editor-core/src/snapshot.rs`
 The snapshot format is intentionally small and UI-friendly:
 
 - `HeadlessGrid { lines, start_visual_row, count }`
-- `HeadlessLine { logical_line_index, is_wrapped_part, cells }`
+- `HeadlessLine { logical_line_index, is_wrapped_part, visual_in_logical, char_offset_start, char_offset_end, segment_x_start_cells, is_fold_placeholder_appended, cells }`
 - `Cell { ch, width, styles }`
+- `MinimapGrid { lines, start_visual_row, count }` (lightweight overview snapshot)
+- `MinimapLine { logical_line_index, visual_in_logical, char_offset_start, char_offset_end, total_cells, non_whitespace_cells, dominant_style, is_fold_placeholder_appended }`
 
 There are two snapshot paths:
 
@@ -388,6 +397,9 @@ There are two snapshot paths:
 2. `EditorCore::get_headless_grid_styled` (recommended for real UIs):
    - uses the editor’s live `LineIndex` + `LayoutEngine`
    - merges styles and applies folding
+3. `EditorCore::get_minimap_grid`:
+   - uses the same layout/folding semantics
+   - returns per-line aggregates instead of per-cell payload for minimap/overview scenarios
 
 ## Integration crates
 

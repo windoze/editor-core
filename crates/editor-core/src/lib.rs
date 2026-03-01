@@ -167,12 +167,12 @@ pub use processing::{DocumentProcessor, ProcessingEdit};
 pub use search::{SearchError, SearchMatch, SearchOptions};
 pub use snapshot::{
     Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
-    HeadlessGrid, HeadlessLine, SnapshotGenerator,
+    HeadlessGrid, HeadlessLine, MinimapGrid, MinimapLine, SnapshotGenerator,
 };
 pub use state::{
     CursorState, DecorationsState, DiagnosticsState, DocumentState, EditorState,
-    EditorStateManager, FoldingState, StateChange, StateChangeCallback, StateChangeType,
-    StyleState, UndoRedoState, ViewportState,
+    EditorStateManager, FoldingState, SmoothScrollState, StateChange, StateChangeCallback,
+    StateChangeType, StyleState, UndoRedoState, ViewportState,
 };
 pub use storage::PieceTable;
 pub use symbols::{
@@ -180,6 +180,6 @@ pub use symbols::{
     Utf16Range, WorkspaceSymbol,
 };
 pub use workspace::{
-    BufferId, BufferMetadata, OpenBufferResult, ViewId, Workspace, WorkspaceError,
-    WorkspaceSearchResult,
+    BufferId, BufferMetadata, OpenBufferResult, ViewId, ViewSmoothScrollState, Workspace,
+    WorkspaceError, WorkspaceSearchResult, WorkspaceViewportState,
 };
