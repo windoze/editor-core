@@ -21,6 +21,7 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate, EditorComp
     private var component: EditorComponentView?
     private let hoverProvider = DemoHoverProvider()
     private let contextMenuProvider = DemoContextMenuProvider()
+    private var demoEngine: EditorEngineProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = notification
@@ -94,7 +95,8 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate, EditorComp
             EditorKeyChord(key: "p", modifiers: [.command, .shift]),
             to: .custom(name: "showCommandPalette", payload: [:])
         )
-        component.engine = makeDemoEngine()
+        demoEngine = makeDemoEngine()
+        component.engine = demoEngine
 
         window.contentView?.addSubview(component)
         window.makeKeyAndOrderFront(nil)
@@ -118,7 +120,7 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate, EditorComp
         _ = commandResult
     }
 
-    private func makeDemoEngine() -> MockEditorEngine {
+    private func makeDemoEngine() -> EditorEngineProtocol {
         let text = """
         func greet(name: String) -> String {
             let emoji = "👋"
@@ -165,6 +167,69 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate, EditorComp
                 message: "Value propagated to return"
             )
         ])
+
+        if let ffiEngine = try? EditorCoreFFIEngine(initialText: text, viewportWidth: 120) {
+            let processingEditsJSON = """
+            [
+              {
+                "op": "replace_style_layer",
+                "layer": 131072,
+                "intervals": [
+                  { "start": \(styleSpans[0].startOffset), "end": \(styleSpans[0].endOffset), "style_id": \(styleSpans[0].styleID) },
+                  { "start": \(styleSpans[1].startOffset), "end": \(styleSpans[1].endOffset), "style_id": \(styleSpans[1].styleID) },
+                  { "start": \(styleSpans[2].startOffset), "end": \(styleSpans[2].endOffset), "style_id": \(styleSpans[2].styleID) },
+                  { "start": \(styleSpans[3].startOffset), "end": \(styleSpans[3].endOffset), "style_id": \(styleSpans[3].styleID) },
+                  { "start": \(styleSpans[4].startOffset), "end": \(styleSpans[4].endOffset), "style_id": \(styleSpans[4].styleID) },
+                  { "start": \(styleSpans[5].startOffset), "end": \(styleSpans[5].endOffset), "style_id": \(styleSpans[5].styleID) }
+                ]
+              },
+              {
+                "op": "replace_folding_regions",
+                "regions": [
+                  {
+                    "start_line": \(foldRegions[0].startLine),
+                    "end_line": \(foldRegions[0].endLine),
+                    "is_collapsed": \(foldRegions[0].isCollapsed ? "true" : "false"),
+                    "placeholder": "\(foldRegions[0].placeholder)"
+                  }
+                ],
+                "preserve_collapsed": false
+              },
+              {
+                "op": "replace_decorations",
+                "layer": 1,
+                "decorations": [
+                  {
+                    "range": { "start": \(inlays[0].offset), "end": \(inlays[0].offset) },
+                    "placement": "after",
+                    "kind": { "kind": "inlay_hint" },
+                    "text": "\(inlays[0].text)",
+                    "styles": \(inlays[0].styleIDs)
+                  },
+                  {
+                    "range": { "start": \(inlays[1].offset), "end": \(inlays[1].offset) },
+                    "placement": "above_line",
+                    "kind": { "kind": "code_lens" },
+                    "text": "\(inlays[1].text)",
+                    "styles": \(inlays[1].styleIDs)
+                  }
+                ]
+              },
+              {
+                "op": "replace_diagnostics",
+                "diagnostics": [
+                  {
+                    "range": { "start": \(diagnostics.items[0].startOffset), "end": \(diagnostics.items[0].endOffset) },
+                    "severity": "\(diagnostics.items[0].severity)",
+                    "message": "\(diagnostics.items[0].message)"
+                  }
+                ]
+              }
+            ]
+            """
+            try? ffiEngine.applyProcessingEditsJSON(processingEditsJSON)
+            return ffiEngine
+        }
 
         return MockEditorEngine(
             text: text,

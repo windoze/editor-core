@@ -118,6 +118,41 @@ swift test
 
 This keeps AppKit rendering and host UX fully native while editor semantics stay in Rust.
 
+## Production FFI Adapter
+
+`EditorCoreFFIEngine` is included and calls `editor-core-ffi` directly through the C ABI:
+
+```swift
+import EditorComponentKit
+
+let engine = try EditorCoreFFIEngine(
+    initialText: "fn main() {}\\n",
+    viewportWidth: 120
+)
+component.engine = engine
+```
+
+By default it tries to load the dynamic library from:
+
+1. `EDITOR_CORE_FFI_DYLIB_PATH`
+2. `EDITOR_CORE_REPO_ROOT/target/debug/<libeditor_core_ffi.*>`
+3. `../target/debug/<libeditor_core_ffi.*>` relative to current working directory
+
+You can also pass an explicit path via `libraryPath`.
+
+### LSP / Sublime / Tree-sitter Bridges
+
+- `EditorCoreFFILSPBridge`: URI and UTF-16 conversion helpers.
+- `EditorCoreFFIEngine.applyLSP*` methods: convert LSP JSON payloads to processing edits and apply them.
+- `EditorCoreFFISublimeProcessor`: apply Sublime syntax processing to the engine.
+- `EditorCoreFFITreeSitterProcessor`: apply Tree-sitter processing to the engine.
+
+### Build FFI Library
+
+```bash
+cargo build -p editor-core-ffi
+```
+
 ## Current Implementation Status
 
 - AppKit container + TextKit rendering/input: implemented.
