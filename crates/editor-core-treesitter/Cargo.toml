@@ -1,6 +1,6 @@
 [package]
 name = "editor-core-treesitter"
-version = "0.2.0"
+version.workspace = true
 description = "Tree-sitter integration for editor-core (highlighting, folding, incremental parsing)."
 authors.workspace = true
 edition.workspace = true
@@ -14,7 +14,7 @@ categories = ["text-editors", "text-processing"]
 readme = "README.md"
 
 [dependencies]
-editor-core = { version = "0.2.0", path = "../editor-core" }
+editor-core = { version = "0.3.0", path = "../editor-core" }
 streaming-iterator = "0.1"
 tree-sitter = "0.26"
 

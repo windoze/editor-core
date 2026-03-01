@@ -20,6 +20,8 @@
 - `crates/editor-core-lang/` — 轻量级语言配置（例如注释 token），用于驱动内核功能。
 - `crates/editor-core-lsp/` — LSP 集成（UTF-16 转换、语义 token 解码、stdio JSON-RPC 客户端/会话）。
   - 参见 `crates/editor-core-lsp/README.md`
+- `crates/editor-core-ffi/` — 面向 Swift/C++/C# 等原生宿主的 C ABI 桥接层（高频 typed API + 二进制视口快照 + JSON 控制平面）。
+  - 参见 `crates/editor-core-ffi/README.md` 与 `docs/abi-v1-draft.md`
 - `crates/editor-core-sublime/` — `.sublime-syntax` 高亮 + 折叠引擎（以样式区间 + 折叠区域形式输出无头数据）。
   - 参见 `crates/editor-core-sublime/README.md`
 - `crates/editor-core-treesitter/` — Tree-sitter 集成（增量解析 → 高亮 + 折叠）。

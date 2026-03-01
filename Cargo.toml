@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/editor-core",
+    "crates/editor-core-ffi",
     "crates/editor-core-lang",
     "crates/editor-core-lsp",
     "crates/editor-core-highlight-simple",
@@ -11,6 +12,7 @@ members = [
 ]
 
 [workspace.package]
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.91"
 license = "MIT OR Apache-2.0"

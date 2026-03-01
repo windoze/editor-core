@@ -21,6 +21,8 @@ drive edits through the command/state APIs.
 - `crates/editor-core-lang/` — lightweight language configs (e.g. comment tokens) for kernel features.
 - `crates/editor-core-lsp/` — LSP integration (UTF-16 conversions, semantic tokens decoding, stdio JSON-RPC client/session).
   - See `crates/editor-core-lsp/README.md`
+- `crates/editor-core-ffi/` — C ABI bridge for Swift/C++/C# and other native hosts (typed hot-path + binary viewport blobs + JSON control plane).
+  - See `crates/editor-core-ffi/README.md` and `docs/abi-v1-draft.md`
 - `crates/editor-core-sublime/` — `.sublime-syntax` highlighting + folding engine (headless output as style intervals + fold regions).
   - See `crates/editor-core-sublime/README.md`
 - `crates/editor-core-treesitter/` — Tree-sitter integration (incremental parsing → highlighting + folding).

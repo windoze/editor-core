@@ -32,6 +32,13 @@ use std::sync::Arc;
 pub struct BufferId(u64);
 
 impl BufferId {
+    /// Create a `BufferId` from a raw numeric id.
+    ///
+    /// This is intended for interoperability boundaries (e.g. FFI) that persist ids externally.
+    pub const fn from_raw(id: u64) -> Self {
+        Self(id)
+    }
+
     /// Get the underlying numeric id.
     pub fn get(self) -> u64 {
         self.0
@@ -43,6 +50,13 @@ impl BufferId {
 pub struct ViewId(u64);
 
 impl ViewId {
+    /// Create a `ViewId` from a raw numeric id.
+    ///
+    /// This is intended for interoperability boundaries (e.g. FFI) that persist ids externally.
+    pub const fn from_raw(id: u64) -> Self {
+        Self(id)
+    }
+
     /// Get the underlying numeric id.
     pub fn get(self) -> u64 {
         self.0

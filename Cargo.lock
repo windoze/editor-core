@@ -318,7 +318,7 @@ dependencies = [
 
 [[package]]
 name = "editor-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "editor-core-lang",
@@ -330,8 +330,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "editor-core-ffi"
+version = "0.3.0"
+dependencies = [
+ "editor-core",
+ "editor-core-lsp",
+ "editor-core-sublime",
+ "editor-core-treesitter",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "editor-core-highlight-simple"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "editor-core",
  "regex",
@@ -339,11 +353,11 @@ dependencies = [
 
 [[package]]
 name = "editor-core-lang"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "editor-core-lsp"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "editor-core",
  "serde_json",
@@ -351,7 +365,7 @@ dependencies = [
 
 [[package]]
 name = "editor-core-sublime"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "editor-core",
  "onig",
@@ -363,7 +377,7 @@ dependencies = [
 
 [[package]]
 name = "editor-core-treesitter"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "editor-core",
  "streaming-iterator",
@@ -1153,7 +1167,7 @@ dependencies = [
 
 [[package]]
 name = "tui-editor"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "crossterm",
  "editor-core",
