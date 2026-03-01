@@ -7,12 +7,18 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
-        .library(name: "EditorComponentKit", targets: ["EditorComponentKit"])
+        .library(name: "EditorComponentKit", targets: ["EditorComponentKit"]),
+        .executable(name: "EditorComponentDemo", targets: ["EditorComponentDemo"])
     ],
     targets: [
         .target(
             name: "EditorComponentKit",
             path: "Sources/EditorComponentKit"
+        ),
+        .executableTarget(
+            name: "EditorComponentDemo",
+            dependencies: ["EditorComponentKit"],
+            path: "Sources/EditorComponentDemo"
         ),
         .testTarget(
             name: "EditorComponentKitTests",

@@ -55,6 +55,22 @@ public final class EditorComponentView: NSView {
         textView.string
     }
 
+    var textViewForTesting: EditorTextView {
+        textView
+    }
+
+    var minimapSnapshotForTesting: EditorMinimapSnapshot {
+        minimapView.snapshot
+    }
+
+    var visibleMinimapRangeForTesting: Range<Int>? {
+        minimapView.visibleVisualRange
+    }
+
+    var foldRegionsForTesting: [EditorFoldRegion] {
+        foldRegions
+    }
+
     public init(
         frame frameRect: NSRect = .zero,
         configuration: EditorComponentConfiguration = .init(),
@@ -165,6 +181,13 @@ public final class EditorComponentView: NSView {
 
     public func unbindKey(_ chord: EditorKeyChord) {
         keybindingRegistry.unbind(chord)
+    }
+
+    public func toggleFold(startLine: Int) {
+        guard let region = foldRegions.first(where: { $0.startLine == startLine }) else {
+            return
+        }
+        toggleFoldRegion(region)
     }
 
     public func reloadFromEngine() {

@@ -120,6 +120,30 @@ final class EditorTextView: NSTextView {
         return position(forScalarOffset: scalarOffset)
     }
 
+    var debugInlayCount: Int {
+        inlays.count
+    }
+
+    var debugFoldRegionCount: Int {
+        foldRegions.count
+    }
+
+    func debugTemporaryAttributes(atUTF16Offset offset: Int) -> [NSAttributedString.Key: Any] {
+        guard let layoutManager else {
+            return [:]
+        }
+        let length = (string as NSString).length
+        guard length > 0 else {
+            return [:]
+        }
+        let clamped = max(0, min(offset, length - 1))
+        var effectiveRange = NSRange(location: 0, length: 0)
+        return layoutManager.temporaryAttributes(
+            atCharacterIndex: clamped,
+            effectiveRange: &effectiveRange
+        )
+    }
+
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         drawGuides(in: rect)

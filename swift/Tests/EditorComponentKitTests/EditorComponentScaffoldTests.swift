@@ -55,6 +55,20 @@ final class EditorCommandDispatcherTests: XCTestCase {
         XCTAssertNotNil(observer.lastError)
         XCTAssertNil(observer.lastResult)
     }
+
+    func testDispatchCustomCommandUsesHandlerWhenProvided() {
+        let dispatcher = EditorCommandDispatcher(engine: nil)
+        let observer = Observer()
+        dispatcher.observer = observer
+        dispatcher.customCommandHandler = { name, payload in
+            .text("\(name):\(payload["scope"] ?? "")")
+        }
+
+        dispatcher.dispatch(.custom(name: "palette", payload: ["scope": "editor"]))
+
+        XCTAssertEqual(observer.lastResult, .text("palette:editor"))
+        XCTAssertNil(observer.lastError)
+    }
 }
 
 #if canImport(AppKit)
