@@ -78,8 +78,14 @@ fn status_from_error(err: String) -> c_int {
 }
 
 const ECU_OK: c_int = 0;
+const ECU_ERR_INVALID_ARGUMENT: c_int = 1;
 const ECU_ERR_BUFFER_TOO_SMALL: c_int = 4;
 const ECU_ERR_INTERNAL: c_int = 7;
+
+fn status_from_invalid_argument(err: String) -> c_int {
+    set_last_error(err);
+    ECU_ERR_INVALID_ARGUMENT
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -111,6 +117,13 @@ pub struct EcuStyleColors {
     pub flags: u32,
     pub foreground: EcuRgba8,
     pub background: EcuRgba8,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct EcuSelectionRange {
+    pub start: u32,
+    pub end: u32,
 }
 
 const ECU_STYLE_FLAG_FOREGROUND: u32 = 1 << 0;
@@ -807,6 +820,152 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_move_grapheme_right(ui: *mut Edit
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_clear_secondary_selections(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.clear_secondary_selections()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_add_cursor_above(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.add_cursor_above()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_add_cursor_below(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.add_cursor_below()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_add_next_occurrence(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.add_next_occurrence(editor_core::SearchOptions::default())
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_add_all_occurrences(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.add_all_occurrences(editor_core::SearchOptions::default())
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_select_word(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.select_word().map(|_| ECU_OK).map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_select_line(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.select_line().map(|_| ECU_OK).map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_expand_selection(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.expand_selection()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_add_caret_at_char_offset(
+    ui: *mut EditorUi,
+    char_offset: u32,
+    make_primary: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.add_caret_at_char_offset(char_offset as usize, make_primary != 0)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_marked_text(
     ui: *mut EditorUi,
     text_utf8: *const c_char,
@@ -996,6 +1155,117 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_selection_offsets(
             *out_end = end as u32;
         }
         Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Get all selections (including primary) as character-offset ranges.
+///
+/// - `out_len` receives the required number of ranges.
+/// - `out_primary_index` receives the primary selection index.
+/// - If `out_ranges` is null or `out_cap` is insufficient, returns `ECU_ERR_BUFFER_TOO_SMALL`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_get_selections(
+    ui: *mut EditorUi,
+    out_ranges: *mut EcuSelectionRange,
+    out_cap: u32,
+    out_len: *mut u32,
+    out_primary_index: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_len.is_null() {
+            return Err("out_len is null".to_string());
+        }
+        if out_primary_index.is_null() {
+            return Err("out_primary_index is null".to_string());
+        }
+
+        let (ranges, primary) = ui.selections_offsets();
+        let required = ranges.len() as u32;
+        unsafe {
+            *out_len = required;
+            *out_primary_index = primary as u32;
+        }
+
+        if out_ranges.is_null() {
+            return Ok(ECU_ERR_BUFFER_TOO_SMALL);
+        }
+        if out_cap < required {
+            return Ok(ECU_ERR_BUFFER_TOO_SMALL);
+        }
+
+        // SAFETY: caller provided buffer with capacity >= required.
+        let dst = unsafe { slice::from_raw_parts_mut(out_ranges, required as usize) };
+        for (i, (start, end)) in ranges.into_iter().enumerate() {
+            dst[i] = EcuSelectionRange {
+                start: start as u32,
+                end: end as u32,
+            };
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Set the full selection set (including primary) from character-offset ranges.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_selections(
+    ui: *mut EditorUi,
+    ranges: *const EcuSelectionRange,
+    range_count: u32,
+    primary_index: u32,
+) -> c_int {
+    if range_count == 0 {
+        return status_from_invalid_argument("range_count must be > 0".to_string());
+    }
+    if ranges.is_null() {
+        return status_from_invalid_argument("ranges is null".to_string());
+    }
+
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+
+        let slice = unsafe { slice::from_raw_parts(ranges, range_count as usize) };
+        let mut vec = Vec::with_capacity(slice.len());
+        for r in slice {
+            vec.push((r.start as usize, r.end as usize));
+        }
+
+        ui.set_selections_offsets(vec.as_slice(), primary_index as usize)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Set a rectangular (box) selection from two character offsets.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_rect_selection(
+    ui: *mut EditorUi,
+    anchor_offset: u32,
+    active_offset: u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.set_rect_selection_offsets(anchor_offset as usize, active_offset as usize)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -1512,6 +1782,170 @@ contexts:
 
         // Comment starts at col=0 => x in [0..10]
         assert_eq!(pixel(&buf, 200, 5, 10), [1, 200, 2, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_get_set_selections_roundtrip_and_insert_applies_to_all() {
+        let initial = CString::new("abc\ndef\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let ranges = [
+            EcuSelectionRange { start: 0, end: 0 },
+            EcuSelectionRange { start: 4, end: 4 },
+        ];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            ECU_OK
+        );
+
+        let mut required: u32 = 0;
+        let mut primary: u32 = 0;
+        let code = editor_core_ui_ffi_editor_ui_get_selections(
+            ui,
+            ptr::null_mut(),
+            0,
+            &mut required,
+            &mut primary,
+        );
+        assert_eq!(code, ECU_ERR_BUFFER_TOO_SMALL);
+        assert_eq!(required, 2);
+        assert_eq!(primary, 0);
+
+        let mut out = vec![
+            EcuSelectionRange { start: 0, end: 0 };
+            required as usize
+        ];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selections(
+                ui,
+                out.as_mut_ptr(),
+                out.len() as u32,
+                &mut required,
+                &mut primary
+            ),
+            ECU_OK
+        );
+        assert_eq!(required as usize, out.len());
+        assert_eq!(out[0].start, 0);
+        assert_eq!(out[0].end, 0);
+        assert_eq!(out[1].start, 4);
+        assert_eq!(out[1].end, 4);
+
+        let insert = CString::new("X").unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_insert_text(ui, insert.as_ptr()),
+            ECU_OK
+        );
+
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        editor_core_ui_ffi_string_free(text_ptr);
+        assert_eq!(text, "Xabc\nXdef\n");
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_rect_selection_replaces_each_line_range() {
+        let initial = CString::new("abc\ndef\nghi\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        // anchor: offset 1 ('b'), active: offset 10 ('i')
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_rect_selection(ui, 1, 10),
+            ECU_OK
+        );
+
+        let insert = CString::new("X").unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_insert_text(ui, insert.as_ptr()),
+            ECU_OK
+        );
+
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        editor_core_ui_ffi_string_free(text_ptr);
+        assert_eq!(text, "aXc\ndXf\ngXi\n");
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_multi_cursor_commands_work() {
+        let initial = CString::new("aa\naa\naa\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        // One caret at line 1 col 1 => offset 4.
+        let ranges = [EcuSelectionRange { start: 4, end: 4 }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            ECU_OK
+        );
+
+        assert_eq!(editor_core_ui_ffi_editor_ui_add_cursor_above(ui), ECU_OK);
+
+        let insert = CString::new("X").unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_insert_text(ui, insert.as_ptr()),
+            ECU_OK
+        );
+
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        editor_core_ui_ffi_string_free(text_ptr);
+        assert_eq!(text, "aXa\naXa\naa\n");
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_clear_secondary_selections(ui),
+            ECU_OK
+        );
+
+        let mut required: u32 = 0;
+        let mut primary: u32 = 0;
+        let code = editor_core_ui_ffi_editor_ui_get_selections(
+            ui,
+            ptr::null_mut(),
+            0,
+            &mut required,
+            &mut primary,
+        );
+        assert_eq!(code, ECU_ERR_BUFFER_TOO_SMALL);
+        assert_eq!(required, 1);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_select_word_and_add_all_occurrences() {
+        let initial = CString::new("foo foo foo\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        // Place caret at start.
+        let ranges = [EcuSelectionRange { start: 0, end: 0 }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            ECU_OK
+        );
+
+        assert_eq!(editor_core_ui_ffi_editor_ui_select_word(ui), ECU_OK);
+        assert_eq!(editor_core_ui_ffi_editor_ui_add_all_occurrences(ui), ECU_OK);
+
+        let insert = CString::new("X").unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_insert_text(ui, insert.as_ptr()),
+            ECU_OK
+        );
+
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        editor_core_ui_ffi_string_free(text_ptr);
+        assert_eq!(text, "X X X\n");
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

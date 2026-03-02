@@ -457,6 +457,7 @@ dependencies = [
 name = "editor-core-ui-ffi"
 version = "0.3.0"
 dependencies = [
+ "editor-core",
  "editor-core-render-skia",
  "editor-core-ui",
  "libc",

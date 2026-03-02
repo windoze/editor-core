@@ -257,6 +257,84 @@ public final class EditorUI {
         return (start, end)
     }
 
+    public func selections() throws -> (ranges: [EcuSelectionRange], primaryIndex: UInt32) {
+        var required: UInt32 = 0
+        var primary: UInt32 = 0
+        var status = library.editorUiGetSelectionsFn(handle, nil, 0, &required, &primary)
+        guard let code = EcuStatus(rawValue: status) else {
+            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_get_selections(size_query)", message: "unknown status \(status)")
+        }
+        guard code == .bufferTooSmall || code == .ok else {
+            throw EditorCoreUIFFIError.ffiStatus(code: code, context: "editor_ui_get_selections(size_query)", message: library.lastErrorMessageString())
+        }
+
+        var ffiRanges = Array(repeating: _EcuSelectionRangeFFI(start: 0, end: 0), count: Int(required))
+        status = ffiRanges.withUnsafeMutableBufferPointer { ptr in
+            library.editorUiGetSelectionsFn(handle, ptr.baseAddress.map { UnsafeMutableRawPointer($0) }, UInt32(ptr.count), &required, &primary)
+        }
+        try library.ensureStatus(status, context: "editor_ui_get_selections")
+        let ranges = ffiRanges.map { EcuSelectionRange(start: $0.start, end: $0.end) }
+        return (ranges, primary)
+    }
+
+    public func setSelections(_ ranges: [EcuSelectionRange], primaryIndex: UInt32) throws {
+        let ffi = ranges.map { $0.ffi }
+        let status = ffi.withUnsafeBufferPointer { ptr in
+            library.editorUiSetSelectionsFn(handle, ptr.baseAddress.map { UnsafeRawPointer($0) }, UInt32(ptr.count), primaryIndex)
+        }
+        try library.ensureStatus(status, context: "editor_ui_set_selections")
+    }
+
+    public func setRectSelection(anchorOffset: UInt32, activeOffset: UInt32) throws {
+        let status = library.editorUiSetRectSelectionFn(handle, anchorOffset, activeOffset)
+        try library.ensureStatus(status, context: "editor_ui_set_rect_selection")
+    }
+
+    public func clearSecondarySelections() throws {
+        let status = library.editorUiClearSecondarySelectionsFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_clear_secondary_selections")
+    }
+
+    public func addCursorAbove() throws {
+        let status = library.editorUiAddCursorAboveFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_add_cursor_above")
+    }
+
+    public func addCursorBelow() throws {
+        let status = library.editorUiAddCursorBelowFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_add_cursor_below")
+    }
+
+    public func addNextOccurrence() throws {
+        let status = library.editorUiAddNextOccurrenceFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_add_next_occurrence")
+    }
+
+    public func addAllOccurrences() throws {
+        let status = library.editorUiAddAllOccurrencesFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_add_all_occurrences")
+    }
+
+    public func selectWord() throws {
+        let status = library.editorUiSelectWordFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_select_word")
+    }
+
+    public func selectLine() throws {
+        let status = library.editorUiSelectLineFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_select_line")
+    }
+
+    public func expandSelection() throws {
+        let status = library.editorUiExpandSelectionFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_expand_selection")
+    }
+
+    public func addCaret(atCharOffset charOffset: UInt32, makePrimary: Bool) throws {
+        let status = library.editorUiAddCaretAtCharOffsetFn(handle, charOffset, makePrimary ? 1 : 0)
+        try library.ensureStatus(status, context: "editor_ui_add_caret_at_char_offset")
+    }
+
     public func markedRange() throws -> (hasMarked: Bool, start: UInt32, len: UInt32) {
         var has: UInt8 = 0
         var start: UInt32 = 0

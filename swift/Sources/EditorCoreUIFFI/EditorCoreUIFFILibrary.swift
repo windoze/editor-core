@@ -58,6 +58,20 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiGetText = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
 
     typealias FnEditorUiGetSelectionOffsets = @convention(c) (OpaquePointer?, UnsafeMutablePointer<UInt32>?, UnsafeMutablePointer<UInt32>?) -> Int32
+    typealias FnEditorUiGetSelections = @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UnsafeMutablePointer<UInt32>?, UnsafeMutablePointer<UInt32>?) -> Int32
+    typealias FnEditorUiSetSelections = @convention(c) (OpaquePointer?, UnsafeRawPointer?, UInt32, UInt32) -> Int32
+    typealias FnEditorUiSetRectSelection = @convention(c) (OpaquePointer?, UInt32, UInt32) -> Int32
+
+    typealias FnEditorUiClearSecondarySelections = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiAddCursorAbove = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiAddCursorBelow = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiAddNextOccurrence = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiAddAllOccurrences = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiSelectWord = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiSelectLine = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiExpandSelection = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiAddCaretAtCharOffset = @convention(c) (OpaquePointer?, UInt32, UInt8) -> Int32
+
     typealias FnEditorUiGetMarkedRange = @convention(c) (OpaquePointer?, UnsafeMutablePointer<UInt8>?, UnsafeMutablePointer<UInt32>?, UnsafeMutablePointer<UInt32>?) -> Int32
     typealias FnEditorUiCharOffsetToViewPoint = @convention(c) (OpaquePointer?, UInt32, UnsafeMutablePointer<Float>?, UnsafeMutablePointer<Float>?, UnsafeMutablePointer<Float>?) -> Int32
     typealias FnEditorUiViewPointToCharOffset = @convention(c) (OpaquePointer?, Float, Float, UnsafeMutablePointer<UInt32>?) -> Int32
@@ -110,6 +124,20 @@ public final class EditorCoreUIFFILibrary {
     let editorUiRenderRGBAFn: FnEditorUiRenderRGBA
     let editorUiGetTextFn: FnEditorUiGetText
     let editorUiGetSelectionOffsetsFn: FnEditorUiGetSelectionOffsets
+    let editorUiGetSelectionsFn: FnEditorUiGetSelections
+    let editorUiSetSelectionsFn: FnEditorUiSetSelections
+    let editorUiSetRectSelectionFn: FnEditorUiSetRectSelection
+
+    let editorUiClearSecondarySelectionsFn: FnEditorUiClearSecondarySelections
+    let editorUiAddCursorAboveFn: FnEditorUiAddCursorAbove
+    let editorUiAddCursorBelowFn: FnEditorUiAddCursorBelow
+    let editorUiAddNextOccurrenceFn: FnEditorUiAddNextOccurrence
+    let editorUiAddAllOccurrencesFn: FnEditorUiAddAllOccurrences
+    let editorUiSelectWordFn: FnEditorUiSelectWord
+    let editorUiSelectLineFn: FnEditorUiSelectLine
+    let editorUiExpandSelectionFn: FnEditorUiExpandSelection
+    let editorUiAddCaretAtCharOffsetFn: FnEditorUiAddCaretAtCharOffset
+
     let editorUiGetMarkedRangeFn: FnEditorUiGetMarkedRange
     let editorUiCharOffsetToViewPointFn: FnEditorUiCharOffsetToViewPoint
     let editorUiViewPointToCharOffsetFn: FnEditorUiViewPointToCharOffset
@@ -183,6 +211,20 @@ public final class EditorCoreUIFFILibrary {
         editorUiGetTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_get_text", as: FnEditorUiGetText.self)
 
         editorUiGetSelectionOffsetsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_get_selection_offsets", as: FnEditorUiGetSelectionOffsets.self)
+        editorUiGetSelectionsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_get_selections", as: FnEditorUiGetSelections.self)
+        editorUiSetSelectionsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_selections", as: FnEditorUiSetSelections.self)
+        editorUiSetRectSelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_rect_selection", as: FnEditorUiSetRectSelection.self)
+
+        editorUiClearSecondarySelectionsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_clear_secondary_selections", as: FnEditorUiClearSecondarySelections.self)
+        editorUiAddCursorAboveFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_cursor_above", as: FnEditorUiAddCursorAbove.self)
+        editorUiAddCursorBelowFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_cursor_below", as: FnEditorUiAddCursorBelow.self)
+        editorUiAddNextOccurrenceFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_next_occurrence", as: FnEditorUiAddNextOccurrence.self)
+        editorUiAddAllOccurrencesFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_all_occurrences", as: FnEditorUiAddAllOccurrences.self)
+        editorUiSelectWordFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_select_word", as: FnEditorUiSelectWord.self)
+        editorUiSelectLineFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_select_line", as: FnEditorUiSelectLine.self)
+        editorUiExpandSelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_expand_selection", as: FnEditorUiExpandSelection.self)
+        editorUiAddCaretAtCharOffsetFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_caret_at_char_offset", as: FnEditorUiAddCaretAtCharOffset.self)
+
         editorUiGetMarkedRangeFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_get_marked_range", as: FnEditorUiGetMarkedRange.self)
         editorUiCharOffsetToViewPointFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_char_offset_to_view_point", as: FnEditorUiCharOffsetToViewPoint.self)
         editorUiViewPointToCharOffsetFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_view_point_to_char_offset", as: FnEditorUiViewPointToCharOffset.self)

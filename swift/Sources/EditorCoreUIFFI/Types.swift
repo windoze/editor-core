@@ -85,6 +85,22 @@ public struct EcuStyleColors: Equatable {
     }
 }
 
+@frozen
+public struct EcuSelectionRange: Equatable, Sendable {
+    public var start: UInt32
+    public var end: UInt32
+
+    public init(start: UInt32, end: UInt32) {
+        self.start = start
+        self.end = end
+    }
+
+    // Memory layout must match `EcuSelectionRange` in `editor_core_ui_ffi.h`.
+    var ffi: _EcuSelectionRangeFFI {
+        _EcuSelectionRangeFFI(start: start, end: end)
+    }
+}
+
 struct _EcuRgba8FFI {
     var r: UInt8
     var g: UInt8
@@ -107,4 +123,9 @@ struct _EcuStyleColorsFFI {
     var flags: UInt32
     var foreground: _EcuRgba8FFI
     var background: _EcuRgba8FFI
+}
+
+struct _EcuSelectionRangeFFI {
+    var start: UInt32
+    var end: UInt32
 }

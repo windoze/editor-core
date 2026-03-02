@@ -232,6 +232,71 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(pixel(rgba, widthPx: 200, x: 15, y: 10), [1, 200, 2, 255])
     }
 
+    func testMultiSelectionsSetGetAndInsertTextAppliesToAllCarets() throws {
+        let lib = try EditorCoreUIFFILibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc\ndef\n", viewportWidthCells: 80)
+
+        try ui.setSelections(
+            [
+                EcuSelectionRange(start: 0, end: 0),
+                EcuSelectionRange(start: 4, end: 4),
+            ],
+            primaryIndex: 0
+        )
+
+        let sels = try ui.selections()
+        XCTAssertEqual(sels.ranges.count, 2)
+        XCTAssertEqual(sels.primaryIndex, 0)
+        XCTAssertEqual(sels.ranges[0], EcuSelectionRange(start: 0, end: 0))
+        XCTAssertEqual(sels.ranges[1], EcuSelectionRange(start: 4, end: 4))
+
+        try ui.insertText("X")
+        XCTAssertEqual(try ui.text(), "Xabc\nXdef\n")
+    }
+
+    func testRectSelectionReplacesEachLineRange() throws {
+        let lib = try EditorCoreUIFFILibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc\ndef\nghi\n", viewportWidthCells: 80)
+
+        try ui.setRectSelection(anchorOffset: 1, activeOffset: 10)
+        try ui.insertText("X")
+        XCTAssertEqual(try ui.text(), "aXc\ndXf\ngXi\n")
+    }
+
+    func testSelectWordAndAddAllOccurrences() throws {
+        let lib = try EditorCoreUIFFILibrary()
+        let ui = try EditorUI(library: lib, initialText: "foo foo foo\n", viewportWidthCells: 80)
+
+        try ui.setSelections([EcuSelectionRange(start: 0, end: 0)], primaryIndex: 0)
+        try ui.selectWord()
+        try ui.addAllOccurrences()
+
+        let sels = try ui.selections()
+        XCTAssertEqual(sels.ranges.count, 3)
+
+        try ui.insertText("X")
+        XCTAssertEqual(try ui.text(), "X X X\n")
+    }
+
+    func testAddCursorAboveAndClearSecondarySelections() throws {
+        let lib = try EditorCoreUIFFILibrary()
+        let ui = try EditorUI(library: lib, initialText: "aa\naa\naa\n", viewportWidthCells: 80)
+
+        // line 1 col 1 => offset 4
+        try ui.setSelections([EcuSelectionRange(start: 4, end: 4)], primaryIndex: 0)
+        try ui.addCursorAbove()
+
+        let sels1 = try ui.selections()
+        XCTAssertEqual(sels1.ranges.count, 2)
+
+        try ui.insertText("X")
+        XCTAssertEqual(try ui.text(), "aXa\naXa\naa\n")
+
+        try ui.clearSecondarySelections()
+        let sels2 = try ui.selections()
+        XCTAssertEqual(sels2.ranges.count, 1)
+    }
+
     private func pixel(_ buf: [UInt8], widthPx: UInt32, x: UInt32, y: UInt32) -> [UInt8] {
         let idx = Int((y * widthPx + x) * 4)
         return [buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3]]

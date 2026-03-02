@@ -35,6 +35,11 @@ typedef struct EcuStyleColors {
   EcuRgba8 background;
 } EcuStyleColors;
 
+typedef struct EcuSelectionRange {
+  uint32_t start;
+  uint32_t end;
+} EcuSelectionRange;
+
 // Return codes (int32).
 // 0 = OK
 // 1 = invalid argument
@@ -132,6 +137,33 @@ char* editor_core_ui_ffi_editor_ui_get_text(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_get_selection_offsets(EditorUi* ui,
                                                            uint32_t* out_start,
                                                            uint32_t* out_end);
+
+int32_t editor_core_ui_ffi_editor_ui_get_selections(EditorUi* ui,
+                                                    EcuSelectionRange* out_ranges,
+                                                    uint32_t out_cap,
+                                                    uint32_t* out_len,
+                                                    uint32_t* out_primary_index);
+
+int32_t editor_core_ui_ffi_editor_ui_set_selections(EditorUi* ui,
+                                                    const EcuSelectionRange* ranges,
+                                                    uint32_t range_count,
+                                                    uint32_t primary_index);
+
+int32_t editor_core_ui_ffi_editor_ui_set_rect_selection(EditorUi* ui,
+                                                        uint32_t anchor_offset,
+                                                        uint32_t active_offset);
+
+int32_t editor_core_ui_ffi_editor_ui_clear_secondary_selections(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_add_cursor_above(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_add_cursor_below(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_add_next_occurrence(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_add_all_occurrences(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_select_word(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_select_line(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_expand_selection(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_add_caret_at_char_offset(EditorUi* ui,
+                                                              uint32_t char_offset,
+                                                              uint8_t make_primary);
 
 int32_t editor_core_ui_ffi_editor_ui_get_marked_range(EditorUi* ui,
                                                       uint8_t* out_has_marked,
