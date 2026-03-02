@@ -17,5 +17,5 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 editor-core-ui = { version = "0.3.0", path = "../editor-core-ui" }
+editor-core-render-skia = { version = "0.3.0", path = "../editor-core-render-skia" }
 libc = "0.2"
-
