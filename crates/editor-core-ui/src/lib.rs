@@ -11,7 +11,8 @@ use editor_core_render_skia::{
     RenderConfig, RenderError, RenderTheme, SkiaRenderer, StyleColors, VisualCaret, VisualSelection,
 };
 use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
-use std::collections::BTreeMap;
+use editor_core_treesitter::{TreeSitterProcessor, TreeSitterProcessorConfig};
+use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -30,6 +31,40 @@ struct MarkedRange {
     len: usize,
 }
 
+#[derive(Debug, Default)]
+struct TreeSitterCaptureMapper {
+    capture_to_id: HashMap<String, u32>,
+    id_to_capture: Vec<String>,
+}
+
+impl TreeSitterCaptureMapper {
+    /// Base prefix for Tree-sitter highlight capture `StyleId`s.
+    pub const BASE: u32 = 0x0500_0000;
+
+    pub fn style_id_for_capture(&mut self, capture_name: &str) -> u32 {
+        if let Some(&id) = self.capture_to_id.get(capture_name) {
+            return id;
+        }
+        let idx = self.id_to_capture.len() as u32 + 1;
+        let id = Self::BASE | idx;
+        self.id_to_capture.push(capture_name.to_string());
+        self.capture_to_id.insert(capture_name.to_string(), id);
+        id
+    }
+
+    pub fn capture_for_style_id(&self, style_id: u32) -> Option<&str> {
+        if style_id & 0xFF00_0000 != Self::BASE {
+            return None;
+        }
+        let raw = style_id & 0x00FF_FFFF;
+        if raw == 0 {
+            return None;
+        }
+        let idx = raw.saturating_sub(1) as usize;
+        self.id_to_capture.get(idx).map(|s| s.as_str())
+    }
+}
+
 /// A minimal "single buffer, single view" UI wrapper.
 ///
 /// Later we can add a `Workspace`-backed version for tabs/splits.
@@ -39,6 +74,8 @@ pub struct EditorUi {
     theme: RenderTheme,
     render_config: RenderConfig,
     sublime: Option<SublimeProcessor>,
+    treesitter: Option<TreeSitterProcessor>,
+    treesitter_capture_mapper: TreeSitterCaptureMapper,
     marked: Option<MarkedRange>,
     mouse_anchor: Option<Position>,
 }
@@ -51,6 +88,8 @@ impl EditorUi {
             theme: RenderTheme::default(),
             render_config: RenderConfig::default(),
             sublime: None,
+            treesitter: None,
+            treesitter_capture_mapper: TreeSitterCaptureMapper::default(),
             marked: None,
             mouse_anchor: None,
         }
@@ -179,6 +218,63 @@ impl EditorUi {
             ));
         };
         Ok(proc.scope_mapper.style_id_for_scope(scope))
+    }
+
+    pub fn set_treesitter_rust_default(&mut self) -> Result<(), UiError> {
+        self.set_treesitter_rust_with_queries(
+            tree_sitter_rust::HIGHLIGHTS_QUERY,
+            Some(
+                r#"
+                (function_item) @fold
+                (impl_item) @fold
+                (struct_item) @fold
+                (enum_item) @fold
+                (mod_item) @fold
+                (block) @fold
+                "#,
+            ),
+        )
+    }
+
+    pub fn set_treesitter_rust_with_queries(
+        &mut self,
+        highlights_query: &str,
+        folds_query: Option<&str>,
+    ) -> Result<(), UiError> {
+        let language: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+
+        let query = tree_sitter::Query::new(&language, highlights_query)
+            .map_err(|e| UiError::Processor(e.to_string()))?;
+
+        let mut capture_styles = BTreeMap::<String, u32>::new();
+        for name in query.capture_names() {
+            let style_id = self.treesitter_capture_mapper.style_id_for_capture(name);
+            capture_styles.insert(name.to_string(), style_id);
+        }
+
+        let mut config = TreeSitterProcessorConfig::new(language, highlights_query.to_string());
+        if let Some(folds_query) = folds_query {
+            config = config.with_folds_query(folds_query.to_string());
+        }
+        config.capture_styles = capture_styles;
+
+        self.treesitter =
+            Some(TreeSitterProcessor::new(config).map_err(|e| UiError::Processor(e.to_string()))?);
+        self.refresh_processing()
+    }
+
+    pub fn disable_treesitter(&mut self) {
+        self.treesitter = None;
+    }
+
+    pub fn treesitter_capture_for_style_id(&self, style_id: u32) -> Option<&str> {
+        self.treesitter_capture_mapper
+            .capture_for_style_id(style_id)
+    }
+
+    pub fn treesitter_style_id_for_capture(&mut self, capture_name: &str) -> u32 {
+        self.treesitter_capture_mapper
+            .style_id_for_capture(capture_name)
     }
 
     pub fn set_render_config(&mut self, config: RenderConfig) {
@@ -424,6 +520,11 @@ impl EditorUi {
                 .apply_processor(proc)
                 .map_err(|e| UiError::Processor(e.to_string()))?;
         }
+        if let Some(proc) = self.treesitter.as_mut() {
+            self.state
+                .apply_processor(proc)
+                .map_err(|e| UiError::Processor(e.to_string()))?;
+        }
         Ok(())
     }
 
@@ -473,6 +574,7 @@ impl EditorUi {
 mod tests {
     use super::*;
     use editor_core::CursorCommand;
+    use editor_core_treesitter::TreeSitterUpdateMode;
 
     #[test]
     fn ui_text_roundtrip() {
@@ -678,6 +780,78 @@ world
                 .flat_map(|l| l.cells.iter())
                 .any(|c| c.styles.contains(&comment_style)),
             "expected comment style after edit"
+        );
+    }
+
+    #[test]
+    fn ui_treesitter_highlight_and_folding_roundtrip() {
+        let highlights = r#"
+        (line_comment) @comment
+        (string_literal) @string
+        "#;
+        let folds = r#"
+        (function_item) @fold
+        "#;
+
+        let text = r#"// hi
+fn main() {
+  let s = "x";
+}
+"#;
+
+        let mut ui = EditorUi::new(text, 80);
+        ui.set_treesitter_rust_with_queries(highlights, Some(folds))
+            .unwrap();
+
+        let comment_style = ui.treesitter_style_id_for_capture("comment");
+        let string_style = ui.treesitter_style_id_for_capture("string");
+        assert_eq!(
+            ui.treesitter_capture_for_style_id(comment_style),
+            Some("comment")
+        );
+        assert_eq!(
+            ui.treesitter_capture_for_style_id(string_style),
+            Some("string")
+        );
+
+        let grid = ui.state.get_viewport_content_styled(0, 4);
+        assert!(
+            grid.lines
+                .iter()
+                .flat_map(|l| l.cells.iter())
+                .any(|c| c.styles.contains(&comment_style)),
+            "expected at least one comment-styled cell"
+        );
+        assert!(
+            grid.lines
+                .iter()
+                .flat_map(|l| l.cells.iter())
+                .any(|c| c.styles.contains(&string_style)),
+            "expected at least one string-styled cell"
+        );
+
+        let regions = ui.state.get_folding_state().regions;
+        assert!(
+            regions.iter().any(|r| r.start_line == 1 && r.end_line == 3),
+            "expected fold region for multi-line function"
+        );
+    }
+
+    #[test]
+    fn ui_treesitter_uses_incremental_updates_when_deltas_available() {
+        let highlights = r#"(line_comment) @comment"#;
+        let mut ui = EditorUi::new("// a\n", 80);
+        ui.set_treesitter_rust_with_queries(highlights, None)
+            .unwrap();
+        assert_eq!(
+            ui.treesitter.as_ref().unwrap().last_update_mode(),
+            TreeSitterUpdateMode::Initial
+        );
+
+        ui.insert_text("// b\n").unwrap();
+        assert_eq!(
+            ui.treesitter.as_ref().unwrap().last_update_mode(),
+            TreeSitterUpdateMode::Incremental
         );
     }
 }

@@ -63,6 +63,19 @@ int32_t editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope(EditorUi* ui,
                                                                 uint32_t* out_style_id);
 char* editor_core_ui_ffi_editor_ui_sublime_scope_for_style_id(EditorUi* ui, uint32_t style_id);
 
+// Tree-sitter integration (highlighting + folding).
+int32_t editor_core_ui_ffi_editor_ui_treesitter_rust_enable_default(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queries(
+    EditorUi* ui,
+    const char* highlights_query_utf8,
+    const char* folds_query_utf8 // nullable
+);
+void editor_core_ui_ffi_editor_ui_treesitter_disable(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(EditorUi* ui,
+                                                                     const char* capture_utf8,
+                                                                     uint32_t* out_style_id);
+char* editor_core_ui_ffi_editor_ui_treesitter_capture_for_style_id(EditorUi* ui, uint32_t style_id);
+
 int32_t editor_core_ui_ffi_editor_ui_set_render_metrics(EditorUi* ui,
                                                         float font_size,
                                                         float line_height_px,

@@ -444,8 +444,11 @@ dependencies = [
  "editor-core",
  "editor-core-render-skia",
  "editor-core-sublime",
+ "editor-core-treesitter",
  "pretty_assertions",
  "thiserror",
+ "tree-sitter",
+ "tree-sitter-rust",
 ]
 
 [[package]]

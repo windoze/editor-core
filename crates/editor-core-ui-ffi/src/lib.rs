@@ -405,6 +405,123 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_scope_for_style_id(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_rust_enable_default(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.set_treesitter_rust_default()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queries(
+    ui: *mut EditorUi,
+    highlights_query_utf8: *const c_char,
+    folds_query_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let highlights = require_cstr(highlights_query_utf8, "highlights_query_utf8")?
+            .to_str()
+            .map_err(|_| "highlights_query_utf8 is not valid UTF-8".to_string())?;
+
+        let folds = if folds_query_utf8.is_null() {
+            None
+        } else {
+            Some(
+                require_cstr(folds_query_utf8, "folds_query_utf8")?
+                    .to_str()
+                    .map_err(|_| "folds_query_utf8 is not valid UTF-8".to_string())?,
+            )
+        };
+
+        ui.set_treesitter_rust_with_queries(highlights, folds)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_disable(ui: *mut EditorUi) {
+    if ui.is_null() {
+        set_last_error("ui is null".to_string());
+        return;
+    }
+    unsafe { &mut *ui }.disable_treesitter();
+    clear_last_error();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(
+    ui: *mut EditorUi,
+    capture_utf8: *const c_char,
+    out_style_id: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_style_id.is_null() {
+            return Err("out_style_id is null".to_string());
+        }
+        let capture = require_cstr(capture_utf8, "capture_utf8")?
+            .to_str()
+            .map_err(|_| "capture_utf8 is not valid UTF-8".to_string())?;
+        let style_id = ui.treesitter_style_id_for_capture(capture);
+        unsafe {
+            *out_style_id = style_id;
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Map a Tree-sitter capture style id to its capture name.
+///
+/// Returns an allocated C string. Caller must free with [`editor_core_ui_ffi_string_free`].
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_capture_for_style_id(
+    ui: *mut EditorUi,
+    style_id: u32,
+) -> *mut c_char {
+    let default = ptr::null_mut();
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let name = ui
+            .treesitter_capture_for_style_id(style_id)
+            .ok_or_else(|| "unknown style_id".to_string())?;
+        Ok(make_c_string_ptr(name.to_string()))
+    }) {
+        Ok(ptr) => {
+            clear_last_error();
+            ptr
+        }
+        Err(err) => {
+            set_last_error(err);
+            default
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_render_metrics(
     ui: *mut EditorUi,
     font_size: c_float,
@@ -1232,6 +1349,115 @@ contexts:
 
         // "a #c" => '#' at col=2 => x in [20..30]
         assert_eq!(pixel(&buf, 200, 25, 10), [1, 200, 2, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_treesitter_highlight_capture_mapping_and_rendering() {
+        let initial = CString::new("// c\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let theme = EcuTheme {
+            background: EcuRgba8 {
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 255,
+            },
+            foreground: EcuRgba8 {
+                r: 250,
+                g: 250,
+                b: 250,
+                a: 255,
+            },
+            selection_background: EcuRgba8 {
+                r: 200,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            caret: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 200,
+                a: 255,
+            },
+        };
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 40, 1.0),
+            ECU_OK
+        );
+
+        let highlights = CString::new("(line_comment) @comment").unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queries(
+                ui,
+                highlights.as_ptr(),
+                ptr::null()
+            ),
+            ECU_OK
+        );
+
+        let capture = CString::new("comment").unwrap();
+        let mut style_id: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(
+                ui,
+                capture.as_ptr(),
+                &mut style_id
+            ),
+            ECU_OK
+        );
+
+        let name_ptr = editor_core_ui_ffi_editor_ui_treesitter_capture_for_style_id(ui, style_id);
+        assert!(!name_ptr.is_null());
+        let roundtrip = unsafe { CStr::from_ptr(name_ptr) }.to_str().unwrap();
+        assert_eq!(roundtrip, "comment");
+        editor_core_ui_ffi_string_free(name_ptr);
+
+        let styles = [EcuStyleColors {
+            style_id,
+            flags: ECU_STYLE_FLAG_BACKGROUND,
+            foreground: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            background: EcuRgba8 {
+                r: 1,
+                g: 200,
+                b: 2,
+                a: 255,
+            },
+        }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            ECU_OK
+        );
+
+        let mut out_len: u32 = 0;
+        let mut buf = vec![0u8; 200 * 40 * 4];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
+            ECU_OK
+        );
+        assert_eq!(out_len as usize, buf.len());
+
+        // Comment starts at col=0 => x in [0..10]
+        assert_eq!(pixel(&buf, 200, 5, 10), [1, 200, 2, 255]);
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

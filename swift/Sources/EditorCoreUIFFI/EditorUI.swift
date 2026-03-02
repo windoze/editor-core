@@ -69,6 +69,44 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    public func treeSitterRustEnableDefault() throws {
+        let status = library.editorUiTreeSitterRustEnableDefaultFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_treesitter_rust_enable_default")
+    }
+
+    public func treeSitterRustEnable(highlightsQuery: String, foldsQuery: String? = nil) throws {
+        let status: Int32 = highlightsQuery.withCString { highlightsCStr in
+            if let foldsQuery {
+                return foldsQuery.withCString { foldsCStr in
+                    library.editorUiTreeSitterRustEnableWithQueriesFn(handle, highlightsCStr, foldsCStr)
+                }
+            }
+            return library.editorUiTreeSitterRustEnableWithQueriesFn(handle, highlightsCStr, nil)
+        }
+        try library.ensureStatus(status, context: "editor_ui_treesitter_rust_enable_with_queries")
+    }
+
+    public func treeSitterDisable() {
+        library.editorUiTreeSitterDisableFn(handle)
+    }
+
+    public func treeSitterStyleId(forCapture captureName: String) throws -> UInt32 {
+        var out: UInt32 = 0
+        let status = captureName.withCString { cstr in
+            library.editorUiTreeSitterStyleIdForCaptureFn(handle, cstr, &out)
+        }
+        try library.ensureStatus(status, context: "editor_ui_treesitter_style_id_for_capture")
+        return out
+    }
+
+    public func treeSitterCapture(forStyleId styleId: UInt32) throws -> String {
+        guard let ptr = library.editorUiTreeSitterCaptureForStyleIdFn(handle, styleId) else {
+            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_treesitter_capture_for_style_id", message: library.lastErrorMessageString())
+        }
+        defer { library.stringFreeFn(ptr) }
+        return String(cString: ptr)
+    }
+
     public func setRenderMetrics(fontSize: Float, lineHeightPx: Float, cellWidthPx: Float, paddingXPx: Float, paddingYPx: Float) throws {
         let status = library.editorUiSetRenderMetricsFn(handle, fontSize, lineHeightPx, cellWidthPx, paddingXPx, paddingYPx)
         try library.ensureStatus(status, context: "editor_ui_set_render_metrics")

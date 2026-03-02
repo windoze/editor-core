@@ -15,6 +15,12 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiSublimeDisable = @convention(c) (OpaquePointer?) -> Void
     typealias FnEditorUiSublimeStyleIdForScope = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?, UnsafeMutablePointer<UInt32>?) -> Int32
     typealias FnEditorUiSublimeScopeForStyleId = @convention(c) (OpaquePointer?, UInt32) -> UnsafeMutablePointer<CChar>?
+
+    typealias FnEditorUiTreeSitterRustEnableDefault = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiTreeSitterRustEnableWithQueries = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Int32
+    typealias FnEditorUiTreeSitterDisable = @convention(c) (OpaquePointer?) -> Void
+    typealias FnEditorUiTreeSitterStyleIdForCapture = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?, UnsafeMutablePointer<UInt32>?) -> Int32
+    typealias FnEditorUiTreeSitterCaptureForStyleId = @convention(c) (OpaquePointer?, UInt32) -> UnsafeMutablePointer<CChar>?
     typealias FnEditorUiSetRenderMetrics = @convention(c) (OpaquePointer?, Float, Float, Float, Float, Float) -> Int32
     typealias FnEditorUiSetViewportPx = @convention(c) (OpaquePointer?, UInt32, UInt32, Float) -> Int32
     typealias FnEditorUiScrollByRows = @convention(c) (OpaquePointer?, Int32) -> Void
@@ -68,6 +74,12 @@ public final class EditorCoreUIFFILibrary {
     let editorUiSublimeDisableFn: FnEditorUiSublimeDisable
     let editorUiSublimeStyleIdForScopeFn: FnEditorUiSublimeStyleIdForScope
     let editorUiSublimeScopeForStyleIdFn: FnEditorUiSublimeScopeForStyleId
+
+    let editorUiTreeSitterRustEnableDefaultFn: FnEditorUiTreeSitterRustEnableDefault
+    let editorUiTreeSitterRustEnableWithQueriesFn: FnEditorUiTreeSitterRustEnableWithQueries
+    let editorUiTreeSitterDisableFn: FnEditorUiTreeSitterDisable
+    let editorUiTreeSitterStyleIdForCaptureFn: FnEditorUiTreeSitterStyleIdForCapture
+    let editorUiTreeSitterCaptureForStyleIdFn: FnEditorUiTreeSitterCaptureForStyleId
     let editorUiSetRenderMetricsFn: FnEditorUiSetRenderMetrics
     let editorUiSetViewportPxFn: FnEditorUiSetViewportPx
     let editorUiScrollByRowsFn: FnEditorUiScrollByRows
@@ -130,6 +142,12 @@ public final class EditorCoreUIFFILibrary {
         editorUiSublimeDisableFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_sublime_disable", as: FnEditorUiSublimeDisable.self)
         editorUiSublimeStyleIdForScopeFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope", as: FnEditorUiSublimeStyleIdForScope.self)
         editorUiSublimeScopeForStyleIdFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_sublime_scope_for_style_id", as: FnEditorUiSublimeScopeForStyleId.self)
+
+        editorUiTreeSitterRustEnableDefaultFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_treesitter_rust_enable_default", as: FnEditorUiTreeSitterRustEnableDefault.self)
+        editorUiTreeSitterRustEnableWithQueriesFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queries", as: FnEditorUiTreeSitterRustEnableWithQueries.self)
+        editorUiTreeSitterDisableFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_treesitter_disable", as: FnEditorUiTreeSitterDisable.self)
+        editorUiTreeSitterStyleIdForCaptureFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture", as: FnEditorUiTreeSitterStyleIdForCapture.self)
+        editorUiTreeSitterCaptureForStyleIdFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_treesitter_capture_for_style_id", as: FnEditorUiTreeSitterCaptureForStyleId.self)
         editorUiSetRenderMetricsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_render_metrics", as: FnEditorUiSetRenderMetrics.self)
         editorUiSetViewportPxFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_viewport_px", as: FnEditorUiSetViewportPx.self)
         editorUiScrollByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_scroll_by_rows", as: FnEditorUiScrollByRows.self)

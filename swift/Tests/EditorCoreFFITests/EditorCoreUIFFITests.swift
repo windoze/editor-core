@@ -135,6 +135,34 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(pixel(rgba, widthPx: 200, x: 25, y: 10), [1, 200, 2, 255])
     }
 
+    func testTreeSitterHighlightCaptureMappingAndRendering() throws {
+        let lib = try EditorCoreUIFFILibrary()
+        let ui = try EditorUI(library: lib, initialText: "// c\n", viewportWidthCells: 80)
+
+        try ui.setTheme(
+            EcuTheme(
+                background: EcuRgba8(r: 10, g: 20, b: 30, a: 255),
+                foreground: EcuRgba8(r: 250, g: 250, b: 250, a: 255),
+                selectionBackground: EcuRgba8(r: 200, g: 0, b: 0, a: 255),
+                caret: EcuRgba8(r: 0, g: 0, b: 200, a: 255)
+            )
+        )
+        try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 200, heightPx: 40, scale: 1)
+
+        try ui.treeSitterRustEnable(highlightsQuery: "(line_comment) @comment")
+        let styleId = try ui.treeSitterStyleId(forCapture: "comment")
+        XCTAssertEqual(try ui.treeSitterCapture(forStyleId: styleId), "comment")
+
+        try ui.setStyleColors([EcuStyleColors(styleId: styleId, background: EcuRgba8(r: 1, g: 200, b: 2, a: 255))])
+
+        var rgba: [UInt8] = []
+        _ = try ui.renderRGBA(into: &rgba)
+
+        // Comment starts at col=0 => x in [0..10]
+        XCTAssertEqual(pixel(rgba, widthPx: 200, x: 5, y: 10), [1, 200, 2, 255])
+    }
+
     private func pixel(_ buf: [UInt8], widthPx: UInt32, x: UInt32, y: UInt32) -> [UInt8] {
         let idx = Int((y * widthPx + x) * 4)
         return [buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3]]
