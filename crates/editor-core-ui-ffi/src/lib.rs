@@ -478,7 +478,8 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_render_rgba(
         unsafe { *out_len = required };
 
         if out_buf.is_null() {
-            return Err("out_buf is null".to_string());
+            // Two-call pattern: allow caller to query required size.
+            return Ok(ECU_ERR_BUFFER_TOO_SMALL);
         }
 
         if out_cap < required {
@@ -596,6 +597,23 @@ mod tests {
             buf.len() as u32,
             &mut out_len,
         );
+        assert_eq!(code, ECU_ERR_BUFFER_TOO_SMALL);
+        assert_eq!(out_len, 80 * 40 * 4);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_render_allows_out_buf_null_as_size_query() {
+        let initial = CString::new("").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0);
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 80, 40, 1.0);
+
+        let mut out_len: u32 = 0;
+        let code = editor_core_ui_ffi_editor_ui_render_rgba(ui, ptr::null_mut(), 0, &mut out_len);
         assert_eq!(code, ECU_ERR_BUFFER_TOO_SMALL);
         assert_eq!(out_len, 80 * 40 * 4);
 
