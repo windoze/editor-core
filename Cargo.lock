@@ -442,10 +442,12 @@ name = "editor-core-ui"
 version = "0.3.0"
 dependencies = [
  "editor-core",
+ "editor-core-lsp",
  "editor-core-render-skia",
  "editor-core-sublime",
  "editor-core-treesitter",
  "pretty_assertions",
+ "serde_json",
  "thiserror",
  "tree-sitter",
  "tree-sitter-rust",

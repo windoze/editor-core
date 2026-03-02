@@ -107,6 +107,20 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    public func lspApplyDiagnosticsJSON(_ publishDiagnosticsParamsJSON: String) throws {
+        let status = publishDiagnosticsParamsJSON.withCString { cstr in
+            library.editorUiLspApplyDiagnosticsJSONFn(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_apply_diagnostics_json")
+    }
+
+    public func lspApplySemanticTokens(_ data: [UInt32]) throws {
+        let status = data.withUnsafeBufferPointer { ptr in
+            library.editorUiLspApplySemanticTokensFn(handle, ptr.baseAddress, UInt32(ptr.count))
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_apply_semantic_tokens")
+    }
+
     public func setRenderMetrics(fontSize: Float, lineHeightPx: Float, cellWidthPx: Float, paddingXPx: Float, paddingYPx: Float) throws {
         let status = library.editorUiSetRenderMetricsFn(handle, fontSize, lineHeightPx, cellWidthPx, paddingXPx, paddingYPx)
         try library.ensureStatus(status, context: "editor_ui_set_render_metrics")

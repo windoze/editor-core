@@ -4,8 +4,12 @@
 //! implementation (Skia in `editor-core-render-skia`) to draw the viewport.
 
 use editor_core::{
-    Command, CommandResult, CursorCommand, EditCommand, EditorStateManager, Position, StyleCommand,
-    ViewCommand,
+    Command, CommandResult, CursorCommand, EditCommand, EditorStateManager, Position,
+    ProcessingEdit, StyleCommand, StyleLayerId, ViewCommand,
+};
+use editor_core_lsp::{
+    LspNotification, encode_semantic_style_id, lsp_diagnostics_to_processing_edits,
+    semantic_tokens_to_intervals,
 };
 use editor_core_render_skia::{
     RenderConfig, RenderError, RenderTheme, SkiaRenderer, StyleColors, VisualCaret, VisualSelection,
@@ -275,6 +279,39 @@ impl EditorUi {
     pub fn treesitter_style_id_for_capture(&mut self, capture_name: &str) -> u32 {
         self.treesitter_capture_mapper
             .style_id_for_capture(capture_name)
+    }
+
+    pub fn lsp_apply_publish_diagnostics_json(&mut self, params_json: &str) -> Result<(), UiError> {
+        let params_value: serde_json::Value =
+            serde_json::from_str(params_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        let notif = LspNotification::from_method_and_params(
+            "textDocument/publishDiagnostics",
+            &params_value,
+        )
+        .ok_or_else(|| UiError::Processor("invalid publishDiagnostics params".to_string()))?;
+
+        let LspNotification::PublishDiagnostics(params) = notif else {
+            return Err(UiError::Processor(
+                "failed to parse publishDiagnostics params".to_string(),
+            ));
+        };
+
+        let line_index = &self.state.editor().line_index;
+        let edits = lsp_diagnostics_to_processing_edits(line_index, &params);
+        self.state.apply_processing_edits(edits);
+        Ok(())
+    }
+
+    pub fn lsp_apply_semantic_tokens(&mut self, data: &[u32]) -> Result<(), UiError> {
+        let line_index = &self.state.editor().line_index;
+        let intervals = semantic_tokens_to_intervals(data, line_index, encode_semantic_style_id)
+            .map_err(|e| UiError::Processor(e.to_string()))?;
+        self.state
+            .apply_processing_edits(vec![ProcessingEdit::ReplaceStyleLayer {
+                layer: StyleLayerId::SEMANTIC_TOKENS,
+                intervals,
+            }]);
+        Ok(())
     }
 
     pub fn set_render_config(&mut self, config: RenderConfig) {
@@ -853,5 +890,98 @@ fn main() {
             ui.treesitter.as_ref().unwrap().last_update_mode(),
             TreeSitterUpdateMode::Incremental
         );
+    }
+
+    #[test]
+    fn ui_lsp_diagnostics_apply_style_layer() {
+        let mut ui = EditorUi::new("abc\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 40,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_theme(RenderTheme {
+            background: editor_core_render_skia::Rgba8::new(10, 20, 30, 255),
+            foreground: editor_core_render_skia::Rgba8::new(250, 250, 250, 255),
+            selection_background: editor_core_render_skia::Rgba8::new(200, 0, 0, 255),
+            caret: editor_core_render_skia::Rgba8::new(0, 0, 200, 255),
+            styles: {
+                let mut m = std::collections::BTreeMap::new();
+                // LSP diagnostics style id encoding: 0x0400_0000 | severity
+                m.insert(
+                    0x0400_0000 | 1,
+                    editor_core_render_skia::StyleColors::new(
+                        None,
+                        Some(editor_core_render_skia::Rgba8::new(1, 200, 2, 255)),
+                    ),
+                );
+                m
+            },
+        });
+        ui.set_viewport_px(200, 40, 1.0).unwrap();
+
+        let params_json = r#"{
+          "uri": "file:///test",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 1 },
+                "end": { "line": 0, "character": 2 }
+              },
+              "severity": 1,
+              "message": "unit"
+            }
+          ],
+          "version": 1
+        }"#;
+        ui.lsp_apply_publish_diagnostics_json(params_json).unwrap();
+
+        let rgba = ui.render_rgba_visible().unwrap();
+        // 'b' at col=1 => x in [10..20]
+        assert_eq!(pixel(&rgba, 200, 15, 10), [1, 200, 2, 255]);
+    }
+
+    #[test]
+    fn ui_lsp_semantic_tokens_apply_style_layer() {
+        let mut ui = EditorUi::new("abc\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 40,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        let style_id = (7u32 << 16) | 0u32;
+        ui.set_theme(RenderTheme {
+            background: editor_core_render_skia::Rgba8::new(10, 20, 30, 255),
+            foreground: editor_core_render_skia::Rgba8::new(250, 250, 250, 255),
+            selection_background: editor_core_render_skia::Rgba8::new(200, 0, 0, 255),
+            caret: editor_core_render_skia::Rgba8::new(0, 0, 200, 255),
+            styles: {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert(
+                    style_id,
+                    editor_core_render_skia::StyleColors::new(
+                        None,
+                        Some(editor_core_render_skia::Rgba8::new(1, 200, 2, 255)),
+                    ),
+                );
+                m
+            },
+        });
+        ui.set_viewport_px(200, 40, 1.0).unwrap();
+
+        // Highlight the 'b' as a semantic token:
+        // (deltaLine=0, deltaStart=1, length=1, tokenType=7, tokenModifiers=0)
+        ui.lsp_apply_semantic_tokens(&[0, 1, 1, 7, 0]).unwrap();
+
+        let rgba = ui.render_rgba_visible().unwrap();
+        assert_eq!(pixel(&rgba, 200, 15, 10), [1, 200, 2, 255]);
     }
 }

@@ -76,6 +76,15 @@ int32_t editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(EditorUi* u
                                                                      uint32_t* out_style_id);
 char* editor_core_ui_ffi_editor_ui_treesitter_capture_for_style_id(EditorUi* ui, uint32_t style_id);
 
+// LSP-derived state ingestion (diagnostics + semantic tokens).
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json(
+    EditorUi* ui,
+    const char* publish_diagnostics_json_utf8
+);
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(EditorUi* ui,
+                                                               const uint32_t* data,
+                                                               uint32_t data_len);
+
 int32_t editor_core_ui_ffi_editor_ui_set_render_metrics(EditorUi* ui,
                                                         float font_size,
                                                         float line_height_px,

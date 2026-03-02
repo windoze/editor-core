@@ -21,6 +21,10 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiTreeSitterDisable = @convention(c) (OpaquePointer?) -> Void
     typealias FnEditorUiTreeSitterStyleIdForCapture = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?, UnsafeMutablePointer<UInt32>?) -> Int32
     typealias FnEditorUiTreeSitterCaptureForStyleId = @convention(c) (OpaquePointer?, UInt32) -> UnsafeMutablePointer<CChar>?
+
+    typealias FnEditorUiLspApplyDiagnosticsJSON = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
+    typealias FnEditorUiLspApplySemanticTokens = @convention(c) (OpaquePointer?, UnsafePointer<UInt32>?, UInt32) -> Int32
+
     typealias FnEditorUiSetRenderMetrics = @convention(c) (OpaquePointer?, Float, Float, Float, Float, Float) -> Int32
     typealias FnEditorUiSetViewportPx = @convention(c) (OpaquePointer?, UInt32, UInt32, Float) -> Int32
     typealias FnEditorUiScrollByRows = @convention(c) (OpaquePointer?, Int32) -> Void
@@ -80,6 +84,10 @@ public final class EditorCoreUIFFILibrary {
     let editorUiTreeSitterDisableFn: FnEditorUiTreeSitterDisable
     let editorUiTreeSitterStyleIdForCaptureFn: FnEditorUiTreeSitterStyleIdForCapture
     let editorUiTreeSitterCaptureForStyleIdFn: FnEditorUiTreeSitterCaptureForStyleId
+
+    let editorUiLspApplyDiagnosticsJSONFn: FnEditorUiLspApplyDiagnosticsJSON
+    let editorUiLspApplySemanticTokensFn: FnEditorUiLspApplySemanticTokens
+
     let editorUiSetRenderMetricsFn: FnEditorUiSetRenderMetrics
     let editorUiSetViewportPxFn: FnEditorUiSetViewportPx
     let editorUiScrollByRowsFn: FnEditorUiScrollByRows
@@ -148,6 +156,10 @@ public final class EditorCoreUIFFILibrary {
         editorUiTreeSitterDisableFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_treesitter_disable", as: FnEditorUiTreeSitterDisable.self)
         editorUiTreeSitterStyleIdForCaptureFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture", as: FnEditorUiTreeSitterStyleIdForCapture.self)
         editorUiTreeSitterCaptureForStyleIdFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_treesitter_capture_for_style_id", as: FnEditorUiTreeSitterCaptureForStyleId.self)
+
+        editorUiLspApplyDiagnosticsJSONFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json", as: FnEditorUiLspApplyDiagnosticsJSON.self)
+        editorUiLspApplySemanticTokensFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens", as: FnEditorUiLspApplySemanticTokens.self)
+
         editorUiSetRenderMetricsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_render_metrics", as: FnEditorUiSetRenderMetrics.self)
         editorUiSetViewportPxFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_viewport_px", as: FnEditorUiSetViewportPx.self)
         editorUiScrollByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_scroll_by_rows", as: FnEditorUiScrollByRows.self)
