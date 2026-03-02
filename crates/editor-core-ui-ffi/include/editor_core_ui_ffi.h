@@ -53,6 +53,8 @@ void editor_core_ui_ffi_editor_ui_scroll_by_rows(EditorUi* ui, int32_t delta_row
 int32_t editor_core_ui_ffi_editor_ui_insert_text(EditorUi* ui, const char* text_utf8);
 int32_t editor_core_ui_ffi_editor_ui_backspace(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_delete_forward(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_undo(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_redo(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_visual_by_rows(EditorUi* ui, int32_t delta_rows);
 int32_t editor_core_ui_ffi_editor_ui_move_grapheme_left(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_grapheme_right(EditorUi* ui);

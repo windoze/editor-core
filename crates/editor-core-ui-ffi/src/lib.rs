@@ -314,6 +314,34 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_delete_forward(ui: *mut EditorUi)
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_undo(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.undo().map(|_| ECU_OK).map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_redo(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.redo().map(|_| ECU_OK).map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_move_visual_by_rows(
     ui: *mut EditorUi,
     delta_rows: c_int,
@@ -704,6 +732,14 @@ mod tests {
         let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, "!abc");
+
+        // undo/redo smoke
+        assert_eq!(editor_core_ui_ffi_editor_ui_undo(ui), ECU_OK);
+        let t2_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        let t2 = unsafe { CStr::from_ptr(t2_ptr) }.to_str().unwrap().to_string();
+        editor_core_ui_ffi_string_free(t2_ptr);
+        assert_eq!(t2, "abc");
+        assert_eq!(editor_core_ui_ffi_editor_ui_redo(ui), ECU_OK);
 
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 80 * 40 * 4];

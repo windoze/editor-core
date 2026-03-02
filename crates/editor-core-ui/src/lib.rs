@@ -180,6 +180,21 @@ impl EditorUi {
         Ok(())
     }
 
+    pub fn undo(&mut self) -> Result<(), UiError> {
+        self.state.execute(Command::Edit(EditCommand::Undo))?;
+        Ok(())
+    }
+
+    pub fn redo(&mut self) -> Result<(), UiError> {
+        self.state.execute(Command::Edit(EditCommand::Redo))?;
+        Ok(())
+    }
+
+    pub fn end_undo_group(&mut self) -> Result<(), UiError> {
+        self.state.execute(Command::Edit(EditCommand::EndUndoGroup))?;
+        Ok(())
+    }
+
     pub fn move_visual_by_rows(&mut self, delta_rows: isize) -> Result<(), UiError> {
         self.state
             .execute(Command::Cursor(CursorCommand::MoveVisualBy { delta_rows }))?;
@@ -376,6 +391,19 @@ mod tests {
         ui.backspace().unwrap();
         assert_eq!(ui.text(), "ab");
         ui.delete_forward().unwrap(); // no-op at end
+        assert_eq!(ui.text(), "ab");
+    }
+
+    #[test]
+    fn ui_undo_redo_roundtrip() {
+        let mut ui = EditorUi::new("", 80);
+        ui.insert_text("a").unwrap();
+        ui.end_undo_group().unwrap();
+        ui.insert_text("b").unwrap();
+        assert_eq!(ui.text(), "ab");
+        ui.undo().unwrap();
+        assert_eq!(ui.text(), "a");
+        ui.redo().unwrap();
         assert_eq!(ui.text(), "ab");
     }
 
