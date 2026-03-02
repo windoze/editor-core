@@ -29,8 +29,14 @@ impl SublimeScopeMapper {
             return id;
         }
 
-        // Keep IDs dense for fast reverse lookup. 0 is unused within this range.
-        let idx = self.id_to_scope.len() as u32 + 1;
+        // Keep IDs dense for fast reverse lookup.
+        //
+        // Reserved indices within `BASE` range:
+        // - 0: unused
+        // - 1: `editor_core::intervals::FOLD_PLACEHOLDER_STYLE_ID` (0x0300_0001)
+        //
+        // Actual Sublime scopes start at index 2 to avoid collisions.
+        let idx = self.id_to_scope.len() as u32 + 2;
         let id = Self::BASE | idx;
 
         self.id_to_scope.push(scope.to_string());
@@ -43,7 +49,32 @@ impl SublimeScopeMapper {
         if style_id & 0xFF00_0000 != Self::BASE {
             return None;
         }
-        let idx = (style_id & 0x00FF_FFFF).saturating_sub(1) as usize;
+        let raw = style_id & 0x00FF_FFFF;
+        if raw < 2 {
+            return None;
+        }
+        let idx = (raw - 2) as usize;
         self.id_to_scope.get(idx).map(|s| s.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mapper_reserves_fold_placeholder_style_id() {
+        let mut mapper = SublimeScopeMapper::new();
+
+        // The first allocated scope must not collide with FOLD_PLACEHOLDER_STYLE_ID (0x0300_0001).
+        let id = mapper.style_id_for_scope("comment.line.test");
+        assert_eq!(id, SublimeScopeMapper::BASE | 2);
+        assert_eq!(mapper.scope_for_style_id(id), Some("comment.line.test"));
+
+        // Index 1 is reserved and should not resolve to a scope string.
+        assert_eq!(
+            mapper.scope_for_style_id(SublimeScopeMapper::BASE | 1),
+            None
+        );
     }
 }
