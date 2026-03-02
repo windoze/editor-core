@@ -5,7 +5,8 @@
 
 use editor_core::{
     Command, CommandResult, CursorCommand, EditCommand, EditorStateManager, Position,
-    ProcessingEdit, StyleCommand, StyleLayerId, ViewCommand,
+    ProcessingEdit, SearchOptions, Selection, SelectionDirection, StyleCommand, StyleLayerId,
+    ViewCommand,
 };
 use editor_core_lsp::{
     LspNotification, encode_semantic_style_id, lsp_diagnostics_to_processing_edits,
@@ -120,6 +121,156 @@ impl EditorUi {
         } else {
             (cursor.offset, cursor.offset)
         }
+    }
+
+    /// Return all selections (including primary) as character-offset ranges, plus the primary index.
+    ///
+    /// Each range is inclusive-exclusive in Unicode scalar indices.
+    pub fn selections_offsets(&self) -> (Vec<(usize, usize)>, usize) {
+        let cursor = self.state.get_cursor_state();
+        let line_index = &self.state.editor().line_index;
+
+        let mut out = Vec::with_capacity(cursor.selections.len());
+        for sel in cursor.selections {
+            let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
+            let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
+            if a <= b {
+                out.push((a, b));
+            } else {
+                out.push((b, a));
+            }
+        }
+        (out, cursor.primary_selection_index)
+    }
+
+    /// Replace the current selection set (including primary) from character-offset ranges.
+    ///
+    /// Notes:
+    /// - Ranges are inclusive-exclusive, in Unicode scalar indices.
+    /// - Empty ranges represent carets.
+    pub fn set_selections_offsets(
+        &mut self,
+        ranges: &[(usize, usize)],
+        primary_index: usize,
+    ) -> Result<(), UiError> {
+        if ranges.is_empty() {
+            return Err(UiError::Processor(
+                "set_selections_offsets requires a non-empty selection list".to_string(),
+            ));
+        }
+
+        let line_index = &self.state.editor().line_index;
+        let mut selections: Vec<Selection> = Vec::with_capacity(ranges.len());
+        for (start, end) in ranges {
+            let (start_line, start_col) = line_index.char_offset_to_position(*start);
+            let (end_line, end_col) = line_index.char_offset_to_position(*end);
+            let start_pos = Position::new(start_line, start_col);
+            let end_pos = Position::new(end_line, end_col);
+            selections.push(Selection {
+                start: start_pos,
+                end: end_pos,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        self.state.execute(Command::Cursor(CursorCommand::SetSelections {
+            selections,
+            primary_index,
+        }))?;
+        Ok(())
+    }
+
+    pub fn clear_secondary_selections(&mut self) -> Result<(), UiError> {
+        self.state
+            .execute(Command::Cursor(CursorCommand::ClearSecondarySelections))?;
+        Ok(())
+    }
+
+    pub fn add_cursor_above(&mut self) -> Result<(), UiError> {
+        self.state
+            .execute(Command::Cursor(CursorCommand::AddCursorAbove))?;
+        Ok(())
+    }
+
+    pub fn add_cursor_below(&mut self) -> Result<(), UiError> {
+        self.state
+            .execute(Command::Cursor(CursorCommand::AddCursorBelow))?;
+        Ok(())
+    }
+
+    pub fn add_next_occurrence(&mut self, options: SearchOptions) -> Result<(), UiError> {
+        self.state.execute(Command::Cursor(CursorCommand::AddNextOccurrence {
+            options,
+        }))?;
+        Ok(())
+    }
+
+    pub fn add_all_occurrences(&mut self, options: SearchOptions) -> Result<(), UiError> {
+        self.state.execute(Command::Cursor(CursorCommand::AddAllOccurrences {
+            options,
+        }))?;
+        Ok(())
+    }
+
+    pub fn select_word(&mut self) -> Result<(), UiError> {
+        self.state.execute(Command::Cursor(CursorCommand::SelectWord))?;
+        Ok(())
+    }
+
+    pub fn select_line(&mut self) -> Result<(), UiError> {
+        self.state.execute(Command::Cursor(CursorCommand::SelectLine))?;
+        Ok(())
+    }
+
+    pub fn expand_selection(&mut self) -> Result<(), UiError> {
+        self.state
+            .execute(Command::Cursor(CursorCommand::ExpandSelection))?;
+        Ok(())
+    }
+
+    pub fn set_rect_selection_offsets(
+        &mut self,
+        anchor_offset: usize,
+        active_offset: usize,
+    ) -> Result<(), UiError> {
+        let line_index = &self.state.editor().line_index;
+        let (a_line, a_col) = line_index.char_offset_to_position(anchor_offset);
+        let (b_line, b_col) = line_index.char_offset_to_position(active_offset);
+        self.state.execute(Command::Cursor(CursorCommand::SetRectSelection {
+            anchor: Position::new(a_line, a_col),
+            active: Position::new(b_line, b_col),
+        }))?;
+        Ok(())
+    }
+
+    pub fn add_caret_at_char_offset(
+        &mut self,
+        char_offset: usize,
+        make_primary: bool,
+    ) -> Result<(), UiError> {
+        let line_index = &self.state.editor().line_index;
+        let (line, column) = line_index.char_offset_to_position(char_offset);
+        let pos = Position::new(line, column);
+
+        let cursor = self.state.get_cursor_state();
+        let mut selections = cursor.selections;
+        selections.push(Selection {
+            start: pos,
+            end: pos,
+            direction: SelectionDirection::Forward,
+        });
+
+        let primary_index = if make_primary {
+            selections.len().saturating_sub(1)
+        } else {
+            cursor.primary_selection_index
+        };
+
+        self.state.execute(Command::Cursor(CursorCommand::SetSelections {
+            selections,
+            primary_index,
+        }))?;
+        Ok(())
     }
 
     /// Return the current IME marked text range as `(start, len)` in character offsets.
@@ -778,6 +929,74 @@ mod tests {
 
         // View hit-test.
         assert_eq!(ui.view_point_to_char_offset(25.0, 10.0).unwrap(), 2);
+    }
+
+    #[test]
+    fn ui_set_selections_offsets_and_insert_text_applies_to_all_carets() {
+        let mut ui = EditorUi::new("abc\ndef\n", 80);
+
+        // Two carets: start of line 0 (offset 0) and start of line 1 (offset 4).
+        ui.set_selections_offsets(&[(0, 0), (4, 4)], 0).unwrap();
+        let (ranges, primary) = ui.selections_offsets();
+        assert_eq!(ranges, vec![(0, 0), (4, 4)]);
+        assert_eq!(primary, 0);
+
+        ui.insert_text("X").unwrap();
+        assert_eq!(ui.text(), "Xabc\nXdef\n");
+    }
+
+    #[test]
+    fn ui_rect_selection_replaces_each_line_range() {
+        let mut ui = EditorUi::new("abc\ndef\nghi\n", 80);
+
+        // Box select column 1..2 across lines 0..2.
+        // anchor: line0 col1 => offset 1 ('b')
+        // active:  line2 col2 => offset 10 ('i')
+        ui.set_rect_selection_offsets(1, 10).unwrap();
+
+        let (ranges, _primary) = ui.selections_offsets();
+        assert_eq!(ranges.len(), 3);
+        assert_eq!(ranges[0], (1, 2));
+        assert_eq!(ranges[1], (5, 6));
+        assert_eq!(ranges[2], (9, 10));
+
+        ui.insert_text("X").unwrap();
+        assert_eq!(ui.text(), "aXc\ndXf\ngXi\n");
+    }
+
+    #[test]
+    fn ui_add_all_occurrences_selects_all_matches() {
+        let mut ui = EditorUi::new("foo foo foo\n", 80);
+
+        // Put caret at start.
+        ui.execute(Command::Cursor(CursorCommand::MoveTo { line: 0, column: 0 }))
+            .unwrap();
+        ui.select_word().unwrap();
+        ui.add_all_occurrences(SearchOptions::default()).unwrap();
+
+        let (ranges, _primary) = ui.selections_offsets();
+        assert_eq!(ranges.len(), 3);
+
+        ui.insert_text("X").unwrap();
+        assert_eq!(ui.text(), "X X X\n");
+    }
+
+    #[test]
+    fn ui_add_cursor_above_and_clear_secondary() {
+        let mut ui = EditorUi::new("aa\naa\naa\n", 80);
+        ui.execute(Command::Cursor(CursorCommand::MoveTo { line: 1, column: 1 }))
+            .unwrap();
+
+        ui.add_cursor_above().unwrap();
+        let (ranges, _primary) = ui.selections_offsets();
+        assert_eq!(ranges.len(), 2);
+
+        ui.insert_text("X").unwrap();
+        assert_eq!(ui.text(), "aXa\naXa\naa\n");
+
+        ui.clear_secondary_selections().unwrap();
+        let (ranges, _primary) = ui.selections_offsets();
+        assert_eq!(ranges.len(), 1);
     }
 
     fn pixel(buf: &[u8], width_px: u32, x: u32, y: u32) -> [u8; 4] {
