@@ -10,6 +10,7 @@ use editor_core::{
 use editor_core_render_skia::{
     RenderConfig, RenderError, RenderTheme, SkiaRenderer, StyleColors, VisualCaret, VisualSelection,
 };
+use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -19,6 +20,8 @@ pub enum UiError {
     Command(#[from] editor_core::CommandError),
     #[error("render error: {0}")]
     Render(#[from] RenderError),
+    #[error("processor error: {0}")]
+    Processor(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +38,7 @@ pub struct EditorUi {
     renderer: SkiaRenderer,
     theme: RenderTheme,
     render_config: RenderConfig,
+    sublime: Option<SublimeProcessor>,
     marked: Option<MarkedRange>,
     mouse_anchor: Option<Position>,
 }
@@ -46,6 +50,7 @@ impl EditorUi {
             renderer: SkiaRenderer::new(),
             theme: RenderTheme::default(),
             render_config: RenderConfig::default(),
+            sublime: None,
             marked: None,
             mouse_anchor: None,
         }
@@ -139,6 +144,43 @@ impl EditorUi {
         self.theme.styles.clear();
     }
 
+    pub fn set_sublime_syntax_yaml(&mut self, yaml: &str) -> Result<(), UiError> {
+        let mut set = SublimeSyntaxSet::new();
+        let syntax = set
+            .load_from_str(yaml)
+            .map_err(|e| UiError::Processor(e.to_string()))?;
+        self.sublime = Some(SublimeProcessor::new(syntax, set));
+        self.refresh_processing()
+    }
+
+    pub fn set_sublime_syntax_path(&mut self, path: &std::path::Path) -> Result<(), UiError> {
+        let mut set = SublimeSyntaxSet::new();
+        let syntax = set
+            .load_from_path(path)
+            .map_err(|e| UiError::Processor(e.to_string()))?;
+        self.sublime = Some(SublimeProcessor::new(syntax, set));
+        self.refresh_processing()
+    }
+
+    pub fn disable_sublime_syntax(&mut self) {
+        self.sublime = None;
+    }
+
+    pub fn sublime_scope_for_style_id(&self, style_id: u32) -> Option<&str> {
+        self.sublime
+            .as_ref()
+            .and_then(|p| p.scope_mapper.scope_for_style_id(style_id))
+    }
+
+    pub fn sublime_style_id_for_scope(&mut self, scope: &str) -> Result<u32, UiError> {
+        let Some(proc) = self.sublime.as_mut() else {
+            return Err(UiError::Processor(
+                "sublime syntax processor is not enabled".to_string(),
+            ));
+        };
+        Ok(proc.scope_mapper.style_id_for_scope(scope))
+    }
+
     pub fn set_render_config(&mut self, config: RenderConfig) {
         self.render_config = config;
     }
@@ -183,17 +225,20 @@ impl EditorUi {
         self.state.execute(Command::Edit(EditCommand::InsertText {
             text: text.to_string(),
         }))?;
+        self.refresh_processing()?;
         Ok(())
     }
 
     pub fn backspace(&mut self) -> Result<(), UiError> {
         self.state.execute(Command::Edit(EditCommand::Backspace))?;
+        self.refresh_processing()?;
         Ok(())
     }
 
     pub fn delete_forward(&mut self) -> Result<(), UiError> {
         self.state
             .execute(Command::Edit(EditCommand::DeleteForward))?;
+        self.refresh_processing()?;
         Ok(())
     }
 
@@ -203,6 +248,7 @@ impl EditorUi {
             end,
             style_id,
         }))?;
+        self.refresh_processing()?;
         Ok(())
     }
 
@@ -213,6 +259,7 @@ impl EditorUi {
                 end,
                 style_id,
             }))?;
+        self.refresh_processing()?;
         Ok(())
     }
 
@@ -277,6 +324,7 @@ impl EditorUi {
             length: len,
             text: text.to_string(),
         }))?;
+        self.refresh_processing()?;
 
         self.marked = Some(MarkedRange {
             start,
@@ -305,6 +353,7 @@ impl EditorUi {
                 length: marked.len,
                 text: text.to_string(),
             }))?;
+            self.refresh_processing()?;
 
             let end = marked.start + text.chars().count();
             let (line, column) = self.state.editor().line_index.char_offset_to_position(end);
@@ -367,6 +416,15 @@ impl EditorUi {
         Ok(self
             .renderer
             .render_rgba(&grid, caret, selection, self.render_config, &self.theme)?)
+    }
+
+    fn refresh_processing(&mut self) -> Result<(), UiError> {
+        if let Some(proc) = self.sublime.as_mut() {
+            self.state
+                .apply_processor(proc)
+                .map_err(|e| UiError::Processor(e.to_string()))?;
+        }
+        Ok(())
     }
 
     fn primary_caret_visual(&self) -> Option<VisualCaret> {
@@ -553,5 +611,73 @@ mod tests {
     fn pixel(buf: &[u8], width_px: u32, x: u32, y: u32) -> [u8; 4] {
         let idx = ((y * width_px + x) * 4) as usize;
         [buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3]]
+    }
+
+    #[test]
+    fn ui_sublime_highlight_and_folding_roundtrip() {
+        let yaml = include_str!("../../editor-core-sublime/tests/fixtures/TOML.sublime-syntax");
+        let text = r#"title = "TOML Example" # comment
+numbers = [
+  1,
+  2,
+  3,
+]
+multiline = """
+hello
+world
+"""
+"#;
+
+        let mut ui = EditorUi::new(text, 80);
+        ui.set_sublime_syntax_yaml(yaml).unwrap();
+
+        let comment_style = ui
+            .sublime_style_id_for_scope("comment.line.number-sign.toml")
+            .unwrap();
+        assert_eq!(
+            ui.sublime_scope_for_style_id(comment_style),
+            Some("comment.line.number-sign.toml")
+        );
+
+        let grid = ui.state.get_viewport_content_styled(0, 8);
+        assert!(
+            grid.lines
+                .iter()
+                .flat_map(|l| l.cells.iter())
+                .any(|c| c.styles.contains(&comment_style)),
+            "expected at least one comment-styled cell"
+        );
+
+        let regions = ui.state.get_folding_state().regions;
+        assert!(
+            regions.iter().any(|r| r.start_line == 1 && r.end_line == 5),
+            "expected fold region for multi-line array (lines 1..=5)"
+        );
+        assert!(
+            regions.iter().any(|r| r.start_line == 6 && r.end_line == 9),
+            "expected fold region for multi-line basic string (lines 6..=9)"
+        );
+    }
+
+    #[test]
+    fn ui_sublime_refreshes_after_edit() {
+        let yaml = include_str!("../../editor-core-sublime/tests/fixtures/TOML.sublime-syntax");
+        let mut ui = EditorUi::new("title = 1\n", 80);
+        ui.set_sublime_syntax_yaml(yaml).unwrap();
+
+        // Insert a comment; `insert_text` should auto-refresh processors.
+        ui.insert_text("# comment\n").unwrap();
+
+        let comment_style = ui
+            .sublime_style_id_for_scope("comment.line.number-sign.toml")
+            .unwrap();
+        let grid = ui.state.get_viewport_content_styled(0, 2);
+        assert!(
+            grid.lines
+                .iter()
+                .flat_map(|l| l.cells.iter())
+                .any(|c| c.styles.contains(&comment_style)),
+            "expected comment style after edit"
+        );
     }
 }

@@ -34,6 +34,41 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_style_colors")
     }
 
+    public func sublimeSetSyntaxYAML(_ yaml: String) throws {
+        let status = yaml.withCString { cstr in
+            library.editorUiSublimeSetSyntaxYAMLFn(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_sublime_set_syntax_yaml")
+    }
+
+    public func sublimeSetSyntaxPath(_ path: String) throws {
+        let status = path.withCString { cstr in
+            library.editorUiSublimeSetSyntaxPathFn(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_sublime_set_syntax_path")
+    }
+
+    public func sublimeDisable() {
+        library.editorUiSublimeDisableFn(handle)
+    }
+
+    public func sublimeStyleId(forScope scope: String) throws -> UInt32 {
+        var out: UInt32 = 0
+        let status = scope.withCString { cstr in
+            library.editorUiSublimeStyleIdForScopeFn(handle, cstr, &out)
+        }
+        try library.ensureStatus(status, context: "editor_ui_sublime_style_id_for_scope")
+        return out
+    }
+
+    public func sublimeScope(forStyleId styleId: UInt32) throws -> String {
+        guard let ptr = library.editorUiSublimeScopeForStyleIdFn(handle, styleId) else {
+            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_sublime_scope_for_style_id", message: library.lastErrorMessageString())
+        }
+        defer { library.stringFreeFn(ptr) }
+        return String(cString: ptr)
+    }
+
     public func setRenderMetrics(fontSize: Float, lineHeightPx: Float, cellWidthPx: Float, paddingXPx: Float, paddingYPx: Float) throws {
         let status = library.editorUiSetRenderMetricsFn(handle, fontSize, lineHeightPx, cellWidthPx, paddingXPx, paddingYPx)
         try library.ensureStatus(status, context: "editor_ui_set_render_metrics")

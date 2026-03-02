@@ -443,6 +443,7 @@ version = "0.3.0"
 dependencies = [
  "editor-core",
  "editor-core-render-skia",
+ "editor-core-sublime",
  "pretty_assertions",
  "thiserror",
 ]

@@ -296,6 +296,115 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_style_colors(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_set_syntax_yaml(
+    ui: *mut EditorUi,
+    yaml_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let yaml = require_cstr(yaml_utf8, "yaml_utf8")?
+            .to_str()
+            .map_err(|_| "yaml_utf8 is not valid UTF-8".to_string())?;
+        ui.set_sublime_syntax_yaml(yaml)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_set_syntax_path(
+    ui: *mut EditorUi,
+    path_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let path = require_cstr(path_utf8, "path_utf8")?
+            .to_str()
+            .map_err(|_| "path_utf8 is not valid UTF-8".to_string())?;
+        ui.set_sublime_syntax_path(std::path::Path::new(path))
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_disable(ui: *mut EditorUi) {
+    if ui.is_null() {
+        set_last_error("ui is null".to_string());
+        return;
+    }
+    unsafe { &mut *ui }.disable_sublime_syntax();
+    clear_last_error();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope(
+    ui: *mut EditorUi,
+    scope_utf8: *const c_char,
+    out_style_id: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_style_id.is_null() {
+            return Err("out_style_id is null".to_string());
+        }
+        let scope = require_cstr(scope_utf8, "scope_utf8")?
+            .to_str()
+            .map_err(|_| "scope_utf8 is not valid UTF-8".to_string())?;
+        let style_id = ui.sublime_style_id_for_scope(scope).map_err(map_ui_error)?;
+        unsafe {
+            *out_style_id = style_id;
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Map a Sublime `StyleId` to its original scope string.
+///
+/// Returns an allocated C string. Caller must free with [`editor_core_ui_ffi_string_free`].
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_scope_for_style_id(
+    ui: *mut EditorUi,
+    style_id: u32,
+) -> *mut c_char {
+    let default = ptr::null_mut();
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let scope = ui
+            .sublime_scope_for_style_id(style_id)
+            .ok_or_else(|| "unknown style_id (or Sublime not enabled)".to_string())?;
+        Ok(make_c_string_ptr(scope.to_string()))
+    }) {
+        Ok(ptr) => {
+            clear_last_error();
+            ptr
+        }
+        Err(err) => {
+            set_last_error(err);
+            default
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_render_metrics(
     ui: *mut EditorUi,
     font_size: c_float,
@@ -1007,6 +1116,122 @@ mod tests {
 
         // Cell 'b' is at x in [10..20], pick a center pixel at y=10.
         assert_eq!(pixel(&buf, 80, 15, 10), [1, 200, 2, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_sublime_highlight_scope_mapping_and_rendering() {
+        let initial = CString::new("a #c\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let theme = EcuTheme {
+            background: EcuRgba8 {
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 255,
+            },
+            foreground: EcuRgba8 {
+                r: 250,
+                g: 250,
+                b: 250,
+                a: 255,
+            },
+            selection_background: EcuRgba8 {
+                r: 200,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            caret: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 200,
+                a: 255,
+            },
+        };
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 40, 1.0),
+            ECU_OK
+        );
+
+        let yaml = CString::new(
+            r##"%YAML 1.2
+---
+name: Demo
+scope: source.demo
+contexts:
+  main:
+    - match: "#.*$"
+      scope: comment.line.demo
+"##,
+        )
+        .unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_sublime_set_syntax_yaml(ui, yaml.as_ptr()),
+            ECU_OK
+        );
+
+        let scope = CString::new("comment.line.demo").unwrap();
+        let mut style_id: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope(
+                ui,
+                scope.as_ptr(),
+                &mut style_id
+            ),
+            ECU_OK
+        );
+
+        let scope_ptr = editor_core_ui_ffi_editor_ui_sublime_scope_for_style_id(ui, style_id);
+        assert!(!scope_ptr.is_null());
+        let roundtrip = unsafe { CStr::from_ptr(scope_ptr) }.to_str().unwrap();
+        assert_eq!(roundtrip, "comment.line.demo");
+        editor_core_ui_ffi_string_free(scope_ptr);
+
+        let styles = [EcuStyleColors {
+            style_id,
+            flags: ECU_STYLE_FLAG_BACKGROUND,
+            foreground: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            background: EcuRgba8 {
+                r: 1,
+                g: 200,
+                b: 2,
+                a: 255,
+            },
+        }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            ECU_OK
+        );
+
+        let mut out_len: u32 = 0;
+        let mut buf = vec![0u8; 200 * 40 * 4];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
+            ECU_OK
+        );
+        assert_eq!(out_len as usize, buf.len());
+
+        // "a #c" => '#' at col=2 => x in [20..30]
+        assert_eq!(pixel(&buf, 200, 25, 10), [1, 200, 2, 255]);
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

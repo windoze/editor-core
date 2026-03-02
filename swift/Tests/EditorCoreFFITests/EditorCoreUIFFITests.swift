@@ -96,6 +96,45 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(pixel(rgba, widthPx: 80, x: 15, y: 10), [1, 200, 2, 255])
     }
 
+    func testSublimeHighlightScopeMappingAndRendering() throws {
+        let lib = try EditorCoreUIFFILibrary()
+        let ui = try EditorUI(library: lib, initialText: "a #c\n", viewportWidthCells: 80)
+
+        try ui.setTheme(
+            EcuTheme(
+                background: EcuRgba8(r: 10, g: 20, b: 30, a: 255),
+                foreground: EcuRgba8(r: 250, g: 250, b: 250, a: 255),
+                selectionBackground: EcuRgba8(r: 200, g: 0, b: 0, a: 255),
+                caret: EcuRgba8(r: 0, g: 0, b: 200, a: 255)
+            )
+        )
+        try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 200, heightPx: 40, scale: 1)
+
+        let yaml = """
+        %YAML 1.2
+        ---
+        name: Demo
+        scope: source.demo
+        contexts:
+          main:
+            - match: "#.*$"
+              scope: comment.line.demo
+        """
+        try ui.sublimeSetSyntaxYAML(yaml)
+
+        let styleId = try ui.sublimeStyleId(forScope: "comment.line.demo")
+        XCTAssertEqual(try ui.sublimeScope(forStyleId: styleId), "comment.line.demo")
+
+        try ui.setStyleColors([EcuStyleColors(styleId: styleId, background: EcuRgba8(r: 1, g: 200, b: 2, a: 255))])
+
+        var rgba: [UInt8] = []
+        _ = try ui.renderRGBA(into: &rgba)
+
+        // "a #c" => '#' at col=2 => x in [20..30]
+        XCTAssertEqual(pixel(rgba, widthPx: 200, x: 25, y: 10), [1, 200, 2, 255])
+    }
+
     private func pixel(_ buf: [UInt8], widthPx: UInt32, x: UInt32, y: UInt32) -> [UInt8] {
         let idx = Int((y * widthPx + x) * 4)
         return [buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3]]

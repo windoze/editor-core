@@ -53,6 +53,16 @@ int32_t editor_core_ui_ffi_editor_ui_set_theme(EditorUi* ui, const EcuTheme* the
 int32_t editor_core_ui_ffi_editor_ui_set_style_colors(EditorUi* ui,
                                                       const EcuStyleColors* styles,
                                                       uint32_t style_count);
+
+// Sublime syntax integration (highlighting + folding).
+int32_t editor_core_ui_ffi_editor_ui_sublime_set_syntax_yaml(EditorUi* ui, const char* yaml_utf8);
+int32_t editor_core_ui_ffi_editor_ui_sublime_set_syntax_path(EditorUi* ui, const char* path_utf8);
+void editor_core_ui_ffi_editor_ui_sublime_disable(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope(EditorUi* ui,
+                                                                const char* scope_utf8,
+                                                                uint32_t* out_style_id);
+char* editor_core_ui_ffi_editor_ui_sublime_scope_for_style_id(EditorUi* ui, uint32_t style_id);
+
 int32_t editor_core_ui_ffi_editor_ui_set_render_metrics(EditorUi* ui,
                                                         float font_size,
                                                         float line_height_px,

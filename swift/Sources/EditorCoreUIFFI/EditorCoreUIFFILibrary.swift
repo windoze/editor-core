@@ -10,6 +10,11 @@ public final class EditorCoreUIFFILibrary {
 
     typealias FnEditorUiSetTheme = @convention(c) (OpaquePointer?, UnsafeRawPointer?) -> Int32
     typealias FnEditorUiSetStyleColors = @convention(c) (OpaquePointer?, UnsafeRawPointer?, UInt32) -> Int32
+    typealias FnEditorUiSublimeSetSyntaxYAML = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
+    typealias FnEditorUiSublimeSetSyntaxPath = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
+    typealias FnEditorUiSublimeDisable = @convention(c) (OpaquePointer?) -> Void
+    typealias FnEditorUiSublimeStyleIdForScope = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?, UnsafeMutablePointer<UInt32>?) -> Int32
+    typealias FnEditorUiSublimeScopeForStyleId = @convention(c) (OpaquePointer?, UInt32) -> UnsafeMutablePointer<CChar>?
     typealias FnEditorUiSetRenderMetrics = @convention(c) (OpaquePointer?, Float, Float, Float, Float, Float) -> Int32
     typealias FnEditorUiSetViewportPx = @convention(c) (OpaquePointer?, UInt32, UInt32, Float) -> Int32
     typealias FnEditorUiScrollByRows = @convention(c) (OpaquePointer?, Int32) -> Void
@@ -58,6 +63,11 @@ public final class EditorCoreUIFFILibrary {
     let editorUiFreeFn: FnEditorUiFree
     let editorUiSetThemeFn: FnEditorUiSetTheme
     let editorUiSetStyleColorsFn: FnEditorUiSetStyleColors
+    let editorUiSublimeSetSyntaxYAMLFn: FnEditorUiSublimeSetSyntaxYAML
+    let editorUiSublimeSetSyntaxPathFn: FnEditorUiSublimeSetSyntaxPath
+    let editorUiSublimeDisableFn: FnEditorUiSublimeDisable
+    let editorUiSublimeStyleIdForScopeFn: FnEditorUiSublimeStyleIdForScope
+    let editorUiSublimeScopeForStyleIdFn: FnEditorUiSublimeScopeForStyleId
     let editorUiSetRenderMetricsFn: FnEditorUiSetRenderMetrics
     let editorUiSetViewportPxFn: FnEditorUiSetViewportPx
     let editorUiScrollByRowsFn: FnEditorUiScrollByRows
@@ -115,6 +125,11 @@ public final class EditorCoreUIFFILibrary {
         editorUiFreeFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_free", as: FnEditorUiFree.self)
         editorUiSetThemeFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_theme", as: FnEditorUiSetTheme.self)
         editorUiSetStyleColorsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_style_colors", as: FnEditorUiSetStyleColors.self)
+        editorUiSublimeSetSyntaxYAMLFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_sublime_set_syntax_yaml", as: FnEditorUiSublimeSetSyntaxYAML.self)
+        editorUiSublimeSetSyntaxPathFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_sublime_set_syntax_path", as: FnEditorUiSublimeSetSyntaxPath.self)
+        editorUiSublimeDisableFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_sublime_disable", as: FnEditorUiSublimeDisable.self)
+        editorUiSublimeStyleIdForScopeFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope", as: FnEditorUiSublimeStyleIdForScope.self)
+        editorUiSublimeScopeForStyleIdFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_sublime_scope_for_style_id", as: FnEditorUiSublimeScopeForStyleId.self)
         editorUiSetRenderMetricsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_render_metrics", as: FnEditorUiSetRenderMetrics.self)
         editorUiSetViewportPxFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_viewport_px", as: FnEditorUiSetViewportPx.self)
         editorUiScrollByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_scroll_by_rows", as: FnEditorUiScrollByRows.self)

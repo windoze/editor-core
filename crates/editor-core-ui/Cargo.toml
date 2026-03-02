@@ -15,8 +15,8 @@ categories = ["text-editors"]
 [dependencies]
 editor-core = { version = "0.3.0", path = "../editor-core" }
 editor-core-render-skia = { version = "0.3.0", path = "../editor-core-render-skia" }
+editor-core-sublime = { version = "0.3.0", path = "../editor-core-sublime" }
 thiserror = "2"
 
 [dev-dependencies]
 pretty_assertions = "1"
-
