@@ -544,11 +544,11 @@ impl EditorUi {
             .unwrap_or(viewport.total_visual_lines.saturating_sub(start_row));
 
         let grid = self.state.get_viewport_content_styled(start_row, row_count);
-        let caret = self.primary_caret_visual();
-        let selection = self.primary_selection_visual();
+        let selections = self.all_selections_visual();
+        let carets = self.all_carets_visual();
         Ok(self
             .renderer
-            .render_rgba(&grid, caret, selection, self.render_config, &self.theme)?)
+            .render_rgba(&grid, carets.as_slice(), selections.as_slice(), self.render_config, &self.theme)?)
     }
 
     fn refresh_processing(&mut self) -> Result<(), UiError> {
@@ -565,31 +565,64 @@ impl EditorUi {
         Ok(())
     }
 
-    fn primary_caret_visual(&self) -> Option<VisualCaret> {
+    fn all_selections_visual(&self) -> Vec<VisualSelection> {
         let cursor = self.state.get_cursor_state();
-        self.state
-            .logical_position_to_visual(cursor.position.line, cursor.position.column)
-            .map(|(row, x_cells)| VisualCaret {
-                row: row as u32,
-                x_cells: x_cells as u32,
-            })
+        let mut out = Vec::new();
+
+        for sel in cursor.selections {
+            if sel.start == sel.end {
+                continue;
+            }
+            let Some((a_row, a_x)) = self
+                .state
+                .logical_position_to_visual(sel.start.line, sel.start.column)
+            else {
+                continue;
+            };
+            let Some((b_row, b_x)) = self
+                .state
+                .logical_position_to_visual(sel.end.line, sel.end.column)
+            else {
+                continue;
+            };
+            out.push(VisualSelection {
+                start_row: a_row as u32,
+                start_x_cells: a_x as u32,
+                end_row: b_row as u32,
+                end_x_cells: b_x as u32,
+            });
+        }
+
+        out
     }
 
-    fn primary_selection_visual(&self) -> Option<VisualSelection> {
+    fn all_carets_visual(&self) -> Vec<VisualCaret> {
         let cursor = self.state.get_cursor_state();
-        let sel = cursor.selection?;
-        let (a_row, a_x) = self
-            .state
-            .logical_position_to_visual(sel.start.line, sel.start.column)?;
-        let (b_row, b_x) = self
-            .state
-            .logical_position_to_visual(sel.end.line, sel.end.column)?;
-        Some(VisualSelection {
-            start_row: a_row as u32,
-            start_x_cells: a_x as u32,
-            end_row: b_row as u32,
-            end_x_cells: b_x as u32,
-        })
+        let primary_idx = cursor.primary_selection_index;
+
+        let mut secondary = Vec::new();
+        let mut primary = Vec::new();
+        for (idx, sel) in cursor.selections.iter().enumerate() {
+            let Some((row, x_cells)) = self
+                .state
+                .logical_position_to_visual(sel.end.line, sel.end.column)
+            else {
+                continue;
+            };
+
+            // Draw primary caret last so it wins in overlaps.
+            let caret = VisualCaret {
+                row: row as u32,
+                x_cells: x_cells as u32,
+            };
+            if idx == primary_idx {
+                primary.push(caret);
+            } else {
+                secondary.push(caret);
+            }
+        }
+        secondary.extend(primary);
+        secondary
     }
 
     fn pixel_to_visual(&self, x_px: f32, y_px: f32) -> (usize, usize) {

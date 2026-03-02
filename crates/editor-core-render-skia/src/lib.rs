@@ -149,8 +149,8 @@ impl SkiaRenderer {
     pub fn render_rgba(
         &mut self,
         grid: &HeadlessGrid,
-        caret: Option<VisualCaret>,
-        selection: Option<VisualSelection>,
+        carets: &[VisualCaret],
+        selections: &[VisualSelection],
         config: RenderConfig,
         theme: &RenderTheme,
     ) -> Result<Vec<u8>, RenderError> {
@@ -185,9 +185,9 @@ impl SkiaRenderer {
         let canvas = surface.canvas();
         canvas.clear(rgba_to_skia_color4f(theme.background));
 
-        // Selection first (under text).
-        if let Some(sel) = selection {
-            draw_selection(canvas, grid, sel, config, theme.selection_background);
+        // Selections first (under text).
+        for sel in selections {
+            draw_selection(canvas, grid, *sel, config, theme.selection_background);
         }
 
         // Text.
@@ -225,9 +225,9 @@ impl SkiaRenderer {
             }
         }
 
-        // Caret on top.
-        if let Some(caret) = caret {
-            draw_caret(canvas, grid, caret, config, theme.caret);
+        // Carets on top.
+        for caret in carets {
+            draw_caret(canvas, grid, *caret, config, theme.caret);
         }
 
         Ok(pixels)
@@ -362,8 +362,8 @@ mod tests {
         let err = renderer
             .render_rgba(
                 &grid,
-                Some(VisualCaret { row: 0, x_cells: 0 }),
-                None,
+                &[VisualCaret { row: 0, x_cells: 0 }],
+                &[],
                 RenderConfig {
                     width_px: 0,
                     height_px: 10,
@@ -408,13 +408,13 @@ mod tests {
         let rgba = renderer
             .render_rgba(
                 &grid,
-                Some(VisualCaret { row: 0, x_cells: 3 }),
-                Some(VisualSelection {
+                &[VisualCaret { row: 0, x_cells: 3 }],
+                &[VisualSelection {
                     start_row: 0,
                     start_x_cells: 0,
                     end_row: 0,
                     end_x_cells: 2,
-                }),
+                }],
                 cfg,
                 &theme,
             )
@@ -466,7 +466,7 @@ mod tests {
         };
 
         let rgba = renderer
-            .render_rgba(&grid, None, None, cfg, &theme)
+            .render_rgba(&grid, &[], &[], cfg, &theme)
             .unwrap();
 
         // Cell 'b' is at x in [10..20], pick center pixel.
@@ -476,5 +476,69 @@ mod tests {
     fn pixel(buf: &[u8], width_px: u32, x: u32, y: u32) -> [u8; 4] {
         let idx = ((y * width_px + x) * 4) as usize;
         [buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3]]
+    }
+
+    #[test]
+    fn render_draws_multiple_carets_and_selections() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        for ch in ['a', 'b', 'c', 'd', 'e'] {
+            line.add_cell(Cell::new(ch, 1));
+        }
+        grid.add_line(line);
+
+        let theme = RenderTheme {
+            background: Rgba8::new(10, 20, 30, 255),
+            foreground: Rgba8::new(250, 250, 250, 255),
+            selection_background: Rgba8::new(200, 0, 0, 255),
+            caret: Rgba8::new(0, 0, 200, 255),
+            styles: BTreeMap::new(),
+        };
+
+        let cfg = RenderConfig {
+            width_px: 120,
+            height_px: 40,
+            scale: 1.0,
+            font_size: 12.0,
+            line_height_px: 20.0,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+        };
+
+        let carets = [
+            VisualCaret { row: 0, x_cells: 1 },
+            VisualCaret { row: 0, x_cells: 4 },
+        ];
+        let selections = [
+            VisualSelection {
+                start_row: 0,
+                start_x_cells: 0,
+                end_row: 0,
+                end_x_cells: 1,
+            },
+            VisualSelection {
+                start_row: 0,
+                start_x_cells: 3,
+                end_row: 0,
+                end_x_cells: 5,
+            },
+        ];
+
+        let rgba = renderer
+            .render_rgba(&grid, &carets, &selections, cfg, &theme)
+            .unwrap();
+
+        // Selection 1 should be red at x ~ 5.
+        assert_eq!(pixel(&rgba, cfg.width_px, 5, 10), [200, 0, 0, 255]);
+        // Selection 2 should be red at x ~ 35.
+        assert_eq!(pixel(&rgba, cfg.width_px, 35, 10), [200, 0, 0, 255]);
+
+        // Caret 1 at x=10.
+        assert_eq!(pixel(&rgba, cfg.width_px, 10, 10), [0, 0, 200, 255]);
+        // Caret 2 at x=40.
+        assert_eq!(pixel(&rgba, cfg.width_px, 40, 10), [0, 0, 200, 255]);
     }
 }
