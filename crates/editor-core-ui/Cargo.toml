@@ -1,0 +1,22 @@
+[package]
+name = "editor-core-ui"
+version.workspace = true
+description = "UI composition layer for editor-core (input mapping + rendering)."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["editor", "ui"]
+categories = ["text-editors"]
+
+[dependencies]
+editor-core = { version = "0.3.0", path = "../editor-core" }
+editor-core-render-skia = { version = "0.3.0", path = "../editor-core-render-skia" }
+thiserror = "2"
+
+[dev-dependencies]
+pretty_assertions = "1"
+

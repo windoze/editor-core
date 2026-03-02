@@ -1,0 +1,21 @@
+[package]
+name = "editor-core-render-skia"
+version.workspace = true
+description = "Skia-based renderer for editor-core viewport snapshots."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["editor", "skia", "rendering"]
+categories = ["graphics", "text-editors"]
+
+[dependencies]
+editor-core = { version = "0.3.0", path = "../editor-core" }
+thiserror = "2"
+
+[dev-dependencies]
+pretty_assertions = "1"
+

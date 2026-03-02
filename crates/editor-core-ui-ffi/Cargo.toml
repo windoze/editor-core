@@ -1,0 +1,21 @@
+[package]
+name = "editor-core-ui-ffi"
+version.workspace = true
+description = "C ABI bridge for editor-core UI component (Skia renderer + input mapping)."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["editor", "ffi", "skia"]
+categories = ["api-bindings", "text-editors"]
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+editor-core-ui = { version = "0.3.0", path = "../editor-core-ui" }
+libc = "0.2"
+
