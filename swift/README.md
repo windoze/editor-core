@@ -50,3 +50,19 @@ swift test
 
 如果你的环境没有 `cargo`，测试会自动 `skip`（只验证 Swift 侧可编译）。
 
+## AppKit 组件（最小版）
+
+新增了一个最小可用的 AppKit 组件：`EditorCoreTextView`（内部用 `NSTextView`）。
+
+- 组件：`Sources/EditorCoreAppKit/`
+- Demo：`Sources/EditorCoreAppKitDemo/`
+
+运行方式：
+
+```bash
+# 先确保 Rust dylib 已生成
+cargo build -p editor-core-ffi
+
+cd swift
+swift run EditorCoreAppKitDemo
+```

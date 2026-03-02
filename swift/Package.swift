@@ -8,17 +8,29 @@ let package = Package(
     ],
     products: [
         .library(name: "EditorCoreFFI", targets: ["EditorCoreFFI"]),
-        .executable(name: "EditorCoreFFIDemo", targets: ["EditorCoreFFIDemo"])
+        .library(name: "EditorCoreAppKit", targets: ["EditorCoreAppKit"]),
+        .executable(name: "EditorCoreFFIDemo", targets: ["EditorCoreFFIDemo"]),
+        .executable(name: "EditorCoreAppKitDemo", targets: ["EditorCoreAppKitDemo"])
     ],
     targets: [
         .target(
             name: "EditorCoreFFI",
             path: "Sources/EditorCoreFFI"
         ),
+        .target(
+            name: "EditorCoreAppKit",
+            dependencies: ["EditorCoreFFI"],
+            path: "Sources/EditorCoreAppKit"
+        ),
         .executableTarget(
             name: "EditorCoreFFIDemo",
             dependencies: ["EditorCoreFFI"],
             path: "Sources/EditorCoreFFIDemo"
+        ),
+        .executableTarget(
+            name: "EditorCoreAppKitDemo",
+            dependencies: ["EditorCoreAppKit", "EditorCoreFFI"],
+            path: "Sources/EditorCoreAppKitDemo"
         ),
         .testTarget(
             name: "EditorCoreFFITests",
@@ -27,4 +39,3 @@ let package = Package(
         ),
     ]
 )
-

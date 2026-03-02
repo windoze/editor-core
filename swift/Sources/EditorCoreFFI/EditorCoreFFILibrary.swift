@@ -381,6 +381,13 @@ public final class EditorCoreFFILibrary {
         return String(cString: ptr)
     }
 
+    /// 获取最近一次 FFI 调用失败时的错误消息（线程局部）。
+    ///
+    /// - 注意：成功调用通常会清空错误消息；不同 API 的时机略有差异。
+    public func lastErrorMessageString() -> String {
+        lastErrorMessage()
+    }
+
     func takeOwnedCString(_ ptr: UnsafeMutablePointer<CChar>?, context: String) throws -> String {
         guard let ptr else {
             let message = lastErrorMessage()
