@@ -5,7 +5,10 @@
 //! composition layer (editor state + input mapping + rendering).
 
 use editor_core::snapshot::HeadlessGrid;
-use skia_safe::{surfaces, AlphaType, Color, Color4f, ColorSpace, ColorType, Font, ImageInfo, Paint, Point, Rect};
+use skia_safe::{
+    AlphaType, Color, Color4f, ColorSpace, ColorType, Font, ImageInfo, Paint, Point, Rect, surfaces,
+};
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 /// RGBA (premultiplied) 8-bit color.
@@ -30,6 +33,8 @@ pub struct RenderTheme {
     pub foreground: Rgba8,
     pub selection_background: Rgba8,
     pub caret: Rgba8,
+    /// Optional per-style overrides (`StyleId -> colors`).
+    pub styles: BTreeMap<u32, StyleColors>,
 }
 
 impl Default for RenderTheme {
@@ -39,6 +44,23 @@ impl Default for RenderTheme {
             foreground: Rgba8::new(0x00, 0x00, 0x00, 0xFF),
             selection_background: Rgba8::new(0xC7, 0xDD, 0xFF, 0xFF),
             caret: Rgba8::new(0x00, 0x00, 0x00, 0xFF),
+            styles: BTreeMap::new(),
+        }
+    }
+}
+
+/// Per-style color overrides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StyleColors {
+    pub foreground: Option<Rgba8>,
+    pub background: Option<Rgba8>,
+}
+
+impl StyleColors {
+    pub const fn new(foreground: Option<Rgba8>, background: Option<Rgba8>) -> Self {
+        Self {
+            foreground,
+            background,
         }
     }
 }
@@ -147,10 +169,7 @@ impl SkiaRenderer {
         let width = config.width_px as i32;
         let height = config.height_px as i32;
 
-        let bytes_per_row = config
-            .width_px
-            .checked_mul(4)
-            .expect("width*4 overflow") as usize;
+        let bytes_per_row = config.width_px.checked_mul(4).expect("width*4 overflow") as usize;
         let mut pixels = vec![0u8; bytes_per_row * config.height_px as usize];
 
         let info = ImageInfo::new(
@@ -172,10 +191,6 @@ impl SkiaRenderer {
         }
 
         // Text.
-        let mut paint = Paint::default();
-        paint.set_anti_alias(true);
-        paint.set_color(rgba_to_skia_color(theme.foreground));
-
         let (_spacing, metrics) = self.font.metrics();
         let baseline_offset = -metrics.ascent;
 
@@ -186,7 +201,26 @@ impl SkiaRenderer {
             let mut x_cells = line.segment_x_start_cells as f32;
             for cell in &line.cells {
                 let x_px = config.padding_x_px + x_cells * config.cell_width_px;
-                canvas.draw_str(cell.ch.to_string(), Point::new(x_px, baseline_y), &self.font, &paint);
+                let (fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
+
+                if bg != theme.background {
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
+                    let mut bg_paint = Paint::default();
+                    bg_paint.set_anti_alias(false);
+                    bg_paint.set_color(rgba_to_skia_color(bg));
+                    canvas.draw_rect(rect, &bg_paint);
+                }
+
+                let mut paint = Paint::default();
+                paint.set_anti_alias(true);
+                paint.set_color(rgba_to_skia_color(fg));
+                canvas.draw_str(
+                    cell.ch.to_string(),
+                    Point::new(x_px, baseline_y),
+                    &self.font,
+                    &paint,
+                );
                 x_cells += cell.width as f32;
             }
         }
@@ -277,11 +311,7 @@ fn draw_selection(
             None => continue,
         };
 
-        let line_total_cells: i64 = line
-            .cells
-            .iter()
-            .map(|c| c.width as i64)
-            .sum::<i64>()
+        let line_total_cells: i64 = line.cells.iter().map(|c| c.width as i64).sum::<i64>()
             + line.segment_x_start_cells as i64;
 
         let start_x = if row == a_row { a_x } else { 0 };
@@ -297,6 +327,22 @@ fn draw_selection(
         let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
         canvas.draw_rect(rect, &paint);
     }
+}
+
+fn resolve_cell_colors(style_ids: &[u32], theme: &RenderTheme) -> (Rgba8, Rgba8) {
+    let mut fg = theme.foreground;
+    let mut bg = theme.background;
+    for id in style_ids {
+        if let Some(colors) = theme.styles.get(id) {
+            if let Some(f) = colors.foreground {
+                fg = f;
+            }
+            if let Some(b) = colors.background {
+                bg = b;
+            }
+        }
+    }
+    (fg, bg)
 }
 
 #[cfg(test)]
@@ -345,6 +391,7 @@ mod tests {
             foreground: Rgba8::new(250, 250, 250, 255),
             selection_background: Rgba8::new(200, 0, 0, 255),
             caret: Rgba8::new(0, 0, 200, 255),
+            styles: BTreeMap::new(),
         };
 
         let cfg = RenderConfig {
@@ -383,6 +430,47 @@ mod tests {
 
         // Caret should be caret color (x=30, y=10).
         assert_eq!(pixel(&rgba, cfg.width_px, 30, 10), [0, 0, 200, 255]);
+    }
+
+    #[test]
+    fn render_applies_style_background_overrides() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        line.add_cell(Cell::new('a', 1));
+        line.add_cell(Cell::with_styles('b', 1, vec![42]));
+        line.add_cell(Cell::new('c', 1));
+        grid.add_line(line);
+
+        let mut theme = RenderTheme {
+            background: Rgba8::new(10, 20, 30, 255),
+            foreground: Rgba8::new(250, 250, 250, 255),
+            selection_background: Rgba8::new(200, 0, 0, 255),
+            caret: Rgba8::new(0, 0, 200, 255),
+            styles: BTreeMap::new(),
+        };
+        theme
+            .styles
+            .insert(42, StyleColors::new(None, Some(Rgba8::new(1, 200, 2, 255))));
+
+        let cfg = RenderConfig {
+            width_px: 80,
+            height_px: 40,
+            scale: 1.0,
+            font_size: 12.0,
+            line_height_px: 20.0,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+        };
+
+        let rgba = renderer
+            .render_rgba(&grid, None, None, cfg, &theme)
+            .unwrap();
+
+        // Cell 'b' is at x in [10..20], pick center pixel.
+        assert_eq!(pixel(&rgba, cfg.width_px, 15, 10), [1, 200, 2, 255]);
     }
 
     fn pixel(buf: &[u8], width_px: u32, x: u32, y: u32) -> [u8; 4] {

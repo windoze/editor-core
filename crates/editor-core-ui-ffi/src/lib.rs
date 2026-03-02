@@ -15,6 +15,7 @@ use editor_core_render_skia::{RenderConfig, RenderTheme, Rgba8};
 use editor_core_ui::{EditorUi, UiError};
 use libc::{c_char, c_float, c_int};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::ptr;
 use std::slice;
@@ -100,8 +101,18 @@ pub struct EcuTheme {
 
 fn theme_from_ffi(theme: &EcuTheme) -> RenderTheme {
     RenderTheme {
-        background: Rgba8::new(theme.background.r, theme.background.g, theme.background.b, theme.background.a),
-        foreground: Rgba8::new(theme.foreground.r, theme.foreground.g, theme.foreground.b, theme.foreground.a),
+        background: Rgba8::new(
+            theme.background.r,
+            theme.background.g,
+            theme.background.b,
+            theme.background.a,
+        ),
+        foreground: Rgba8::new(
+            theme.foreground.r,
+            theme.foreground.g,
+            theme.foreground.b,
+            theme.foreground.a,
+        ),
         selection_background: Rgba8::new(
             theme.selection_background.r,
             theme.selection_background.g,
@@ -109,6 +120,7 @@ fn theme_from_ffi(theme: &EcuTheme) -> RenderTheme {
             theme.selection_background.a,
         ),
         caret: Rgba8::new(theme.caret.r, theme.caret.g, theme.caret.b, theme.caret.a),
+        styles: BTreeMap::new(),
     }
 }
 
@@ -256,7 +268,10 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_viewport_px(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_rows(ui: *mut EditorUi, delta_rows: c_int) {
+pub extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_rows(
+    ui: *mut EditorUi,
+    delta_rows: c_int,
+) {
     if ui.is_null() {
         set_last_error("ui is null".to_string());
         return;
@@ -364,7 +379,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_move_visual_by_rows(
 pub extern "C" fn editor_core_ui_ffi_editor_ui_move_grapheme_left(ui: *mut EditorUi) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.move_grapheme_left().map(|_| ECU_OK).map_err(map_ui_error)
+        ui.move_grapheme_left()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -400,7 +417,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_marked_text(
         let text = require_cstr(text_utf8, "text_utf8")?
             .to_str()
             .map_err(|_| "text_utf8 is not valid UTF-8".to_string())?;
-        ui.set_marked_text(text).map(|_| ECU_OK).map_err(map_ui_error)
+        ui.set_marked_text(text)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -447,7 +466,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_mouse_down(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.mouse_down(x_px, y_px).map(|_| ECU_OK).map_err(map_ui_error)
+        ui.mouse_down(x_px, y_px)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -465,7 +486,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_mouse_dragged(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.mouse_dragged(x_px, y_px).map(|_| ECU_OK).map_err(map_ui_error)
+        ui.mouse_dragged(x_px, y_px)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -706,10 +729,30 @@ mod tests {
 
         // Configure rendering for deterministic pixel tests.
         let theme = EcuTheme {
-            background: EcuRgba8 { r: 10, g: 20, b: 30, a: 255 },
-            foreground: EcuRgba8 { r: 250, g: 250, b: 250, a: 255 },
-            selection_background: EcuRgba8 { r: 200, g: 0, b: 0, a: 255 },
-            caret: EcuRgba8 { r: 0, g: 0, b: 200, a: 255 },
+            background: EcuRgba8 {
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 255,
+            },
+            foreground: EcuRgba8 {
+                r: 250,
+                g: 250,
+                b: 250,
+                a: 255,
+            },
+            selection_background: EcuRgba8 {
+                r: 200,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            caret: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 200,
+                a: 255,
+            },
         };
         assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
         assert_eq!(
@@ -729,14 +772,20 @@ mod tests {
 
         let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
         assert!(!text_ptr.is_null());
-        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, "!abc");
 
         // undo/redo smoke
         assert_eq!(editor_core_ui_ffi_editor_ui_undo(ui), ECU_OK);
         let t2_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
-        let t2 = unsafe { CStr::from_ptr(t2_ptr) }.to_str().unwrap().to_string();
+        let t2 = unsafe { CStr::from_ptr(t2_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
         editor_core_ui_ffi_string_free(t2_ptr);
         assert_eq!(t2, "abc");
         assert_eq!(editor_core_ui_ffi_editor_ui_redo(ui), ECU_OK);
@@ -803,7 +852,10 @@ mod tests {
         let code = editor_core_ui_ffi_editor_ui_insert_text(ptr::null_mut(), ptr::null());
         assert_eq!(code, ECU_ERR_INTERNAL);
         let msg_ptr = editor_core_ui_ffi_last_error_message();
-        let msg = unsafe { CStr::from_ptr(msg_ptr) }.to_str().unwrap().to_string();
+        let msg = unsafe { CStr::from_ptr(msg_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
         editor_core_ui_ffi_string_free(msg_ptr);
         assert!(msg.contains("ui is null") || msg.contains("text_utf8 is null"));
     }

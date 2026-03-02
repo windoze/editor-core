@@ -79,7 +79,11 @@ impl EditorUi {
 
     /// Map a character offset (Unicode scalar index) to visual `(row, x_cells)`.
     pub fn char_offset_to_visual(&self, char_offset: usize) -> Option<(usize, usize)> {
-        let (line, column) = self.state.editor().line_index.char_offset_to_position(char_offset);
+        let (line, column) = self
+            .state
+            .editor()
+            .line_index
+            .char_offset_to_position(char_offset);
         self.state.logical_position_to_visual(line, column)
     }
 
@@ -103,8 +107,10 @@ impl EditorUi {
         let viewport = self.state.get_viewport_state();
         let local_row = row.saturating_sub(viewport.scroll_top);
 
-        let x_px = self.render_config.padding_x_px + x_cells as f32 * self.render_config.cell_width_px;
-        let y_px = self.render_config.padding_y_px + local_row as f32 * self.render_config.line_height_px;
+        let x_px =
+            self.render_config.padding_x_px + x_cells as f32 * self.render_config.cell_width_px;
+        let y_px =
+            self.render_config.padding_y_px + local_row as f32 * self.render_config.line_height_px;
         Some((x_px, y_px))
     }
 
@@ -176,7 +182,8 @@ impl EditorUi {
     }
 
     pub fn delete_forward(&mut self) -> Result<(), UiError> {
-        self.state.execute(Command::Edit(EditCommand::DeleteForward))?;
+        self.state
+            .execute(Command::Edit(EditCommand::DeleteForward))?;
         Ok(())
     }
 
@@ -191,7 +198,8 @@ impl EditorUi {
     }
 
     pub fn end_undo_group(&mut self) -> Result<(), UiError> {
-        self.state.execute(Command::Edit(EditCommand::EndUndoGroup))?;
+        self.state
+            .execute(Command::Edit(EditCommand::EndUndoGroup))?;
         Ok(())
     }
 
@@ -241,7 +249,10 @@ impl EditorUi {
             text: text.to_string(),
         }))?;
 
-        self.marked = Some(MarkedRange { start, len: new_len });
+        self.marked = Some(MarkedRange {
+            start,
+            len: new_len,
+        });
 
         // Place caret at the end of marked text.
         let (line, column) = self
@@ -279,11 +290,10 @@ impl EditorUi {
     pub fn mouse_down(&mut self, x_px: f32, y_px: f32) -> Result<(), UiError> {
         let (row, x_cells) = self.pixel_to_visual(x_px, y_px);
         if let Some(pos) = self.state.visual_position_to_logical(row, x_cells) {
-            self.state
-                .execute(Command::Cursor(CursorCommand::MoveTo {
-                    line: pos.line,
-                    column: pos.column,
-                }))?;
+            self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+                line: pos.line,
+                column: pos.column,
+            }))?;
             self.state
                 .execute(Command::Cursor(CursorCommand::ClearSelection))?;
             self.mouse_anchor = Some(pos);
@@ -318,18 +328,16 @@ impl EditorUi {
     pub fn render_rgba_visible(&mut self) -> Result<Vec<u8>, UiError> {
         let viewport = self.state.get_viewport_state();
         let start_row = viewport.scroll_top;
-        let row_count = viewport.height.unwrap_or(viewport.total_visual_lines.saturating_sub(start_row));
+        let row_count = viewport
+            .height
+            .unwrap_or(viewport.total_visual_lines.saturating_sub(start_row));
 
         let grid = self.state.get_viewport_content_styled(start_row, row_count);
         let caret = self.primary_caret_visual();
         let selection = self.primary_selection_visual();
-        Ok(self.renderer.render_rgba(
-            &grid,
-            caret,
-            selection,
-            self.render_config,
-            &self.theme,
-        )?)
+        Ok(self
+            .renderer
+            .render_rgba(&grid, caret, selection, self.render_config, &self.theme)?)
     }
 
     fn primary_caret_visual(&self) -> Option<VisualCaret> {
@@ -345,12 +353,12 @@ impl EditorUi {
     fn primary_selection_visual(&self) -> Option<VisualSelection> {
         let cursor = self.state.get_cursor_state();
         let sel = cursor.selection?;
-        let (a_row, a_x) =
-            self.state
-                .logical_position_to_visual(sel.start.line, sel.start.column)?;
-        let (b_row, b_x) =
-            self.state
-                .logical_position_to_visual(sel.end.line, sel.end.column)?;
+        let (a_row, a_x) = self
+            .state
+            .logical_position_to_visual(sel.start.line, sel.start.column)?;
+        let (b_row, b_x) = self
+            .state
+            .logical_position_to_visual(sel.end.line, sel.end.column)?;
         Some(VisualSelection {
             start_row: a_row as u32,
             start_x_cells: a_x as u32,
@@ -363,7 +371,9 @@ impl EditorUi {
         let x = (x_px - self.render_config.padding_x_px).max(0.0);
         let y = (y_px - self.render_config.padding_y_px).max(0.0);
 
-        let col = (x / self.render_config.cell_width_px.max(1.0)).floor().max(0.0) as usize;
+        let col = (x / self.render_config.cell_width_px.max(1.0))
+            .floor()
+            .max(0.0) as usize;
         let local_row = (y / self.render_config.line_height_px.max(1.0))
             .floor()
             .max(0.0) as usize;
@@ -460,12 +470,16 @@ mod tests {
             foreground: editor_core_render_skia::Rgba8::new(250, 250, 250, 255),
             selection_background: editor_core_render_skia::Rgba8::new(200, 0, 0, 255),
             caret: editor_core_render_skia::Rgba8::new(0, 0, 200, 255),
+            styles: std::collections::BTreeMap::new(),
         });
         ui.set_viewport_px(80, 40, 1.0).unwrap();
 
         // Put caret after 'c' (x=3).
-        ui.execute(Command::Cursor(CursorCommand::MoveTo { line: 0, column: 3 }))
-            .unwrap();
+        ui.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: 0,
+            column: 3,
+        }))
+        .unwrap();
         let rgba = ui.render_rgba_visible().unwrap();
         assert_eq!(pixel(&rgba, 80, 30, 10), [0, 0, 200, 255]);
         assert_eq!(pixel(&rgba, 80, 70, 30), [10, 20, 30, 255]);
