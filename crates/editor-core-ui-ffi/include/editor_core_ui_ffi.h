@@ -87,6 +87,11 @@ int32_t editor_core_ui_ffi_editor_ui_char_offset_to_view_point(EditorUi* ui,
                                                                float* out_y,
                                                                float* out_line_height_px);
 
+int32_t editor_core_ui_ffi_editor_ui_view_point_to_char_offset(EditorUi* ui,
+                                                               float x_px,
+                                                               float y_px,
+                                                               uint32_t* out_char_offset);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

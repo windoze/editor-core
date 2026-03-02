@@ -108,6 +108,13 @@ impl EditorUi {
         Some((x_px, y_px))
     }
 
+    /// Hit-test a point in the view coordinate space (pixels, top-left origin) and return the
+    /// corresponding character offset (Unicode scalar index).
+    pub fn view_point_to_char_offset(&self, x_px: f32, y_px: f32) -> Option<usize> {
+        let (row, x_cells) = self.pixel_to_visual(x_px, y_px);
+        self.visual_to_char_offset(row, x_cells)
+    }
+
     pub fn line_height_px(&self) -> f32 {
         self.render_config.line_height_px
     }
@@ -467,6 +474,9 @@ mod tests {
         let (x_px, y_px) = ui.char_offset_to_view_point_px(2).unwrap();
         assert_eq!((x_px, y_px), (20.0, 0.0));
         assert_eq!(ui.line_height_px(), 20.0);
+
+        // View hit-test.
+        assert_eq!(ui.view_point_to_char_offset(25.0, 10.0).unwrap(), 2);
     }
 
     fn pixel(buf: &[u8], width_px: u32, x: u32, y: u32) -> [u8; 4] {

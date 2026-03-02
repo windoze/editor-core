@@ -638,6 +638,33 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
     }
 }
 
+/// Hit-test a view point (pixels, top-left origin) and return the corresponding character offset.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_view_point_to_char_offset(
+    ui: *mut EditorUi,
+    x_px: c_float,
+    y_px: c_float,
+    out_char_offset: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_char_offset.is_null() {
+            return Err("out_char_offset is null".to_string());
+        }
+        let offset = ui
+            .view_point_to_char_offset(x_px, y_px)
+            .ok_or_else(|| "failed to hit-test view point".to_string())?;
+        unsafe { *out_char_offset = offset as u32 };
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -777,6 +804,26 @@ mod tests {
         );
         assert_eq!(has, 1);
         assert_eq!(ml, 1);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_view_point_hit_test_returns_char_offset() {
+        let initial = CString::new("abcd\nefgh\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0);
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 60, 1.0);
+
+        // Point at row 0, col ~2.
+        let mut off: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 25.0, 10.0, &mut off),
+            ECU_OK
+        );
+        assert_eq!(off, 2);
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }
