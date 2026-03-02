@@ -57,6 +57,61 @@ impl EditorUi {
         self.state.get_cursor_state()
     }
 
+    /// Return the primary selection range as `(start_offset, end_offset)` in character offsets.
+    ///
+    /// If there is no selection, `start == end == caret_offset`.
+    pub fn primary_selection_offsets(&self) -> (usize, usize) {
+        let cursor = self.state.get_cursor_state();
+        let line_index = &self.state.editor().line_index;
+        if let Some(sel) = cursor.selection {
+            let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
+            let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
+            if a <= b { (a, b) } else { (b, a) }
+        } else {
+            (cursor.offset, cursor.offset)
+        }
+    }
+
+    /// Return the current IME marked text range as `(start, len)` in character offsets.
+    pub fn marked_range(&self) -> Option<(usize, usize)> {
+        self.marked.map(|m| (m.start, m.len))
+    }
+
+    /// Map a character offset (Unicode scalar index) to visual `(row, x_cells)`.
+    pub fn char_offset_to_visual(&self, char_offset: usize) -> Option<(usize, usize)> {
+        let (line, column) = self.state.editor().line_index.char_offset_to_position(char_offset);
+        self.state.logical_position_to_visual(line, column)
+    }
+
+    /// Map a visual `(row, x_cells)` position to a character offset.
+    pub fn visual_to_char_offset(&self, row: usize, x_cells: usize) -> Option<usize> {
+        let pos = self.state.visual_position_to_logical(row, x_cells)?;
+        Some(
+            self.state
+                .editor()
+                .line_index
+                .position_to_char_offset(pos.line, pos.column),
+        )
+    }
+
+    /// Map a character offset to a point in the view coordinate space (pixels).
+    ///
+    /// - `x_px` is left-to-right (in pixels)
+    /// - `y_px` is top-to-bottom (in pixels), aligned to the top of the visual row
+    pub fn char_offset_to_view_point_px(&self, char_offset: usize) -> Option<(f32, f32)> {
+        let (row, x_cells) = self.char_offset_to_visual(char_offset)?;
+        let viewport = self.state.get_viewport_state();
+        let local_row = row.saturating_sub(viewport.scroll_top);
+
+        let x_px = self.render_config.padding_x_px + x_cells as f32 * self.render_config.cell_width_px;
+        let y_px = self.render_config.padding_y_px + local_row as f32 * self.render_config.line_height_px;
+        Some((x_px, y_px))
+    }
+
+    pub fn line_height_px(&self) -> f32 {
+        self.render_config.line_height_px
+    }
+
     pub fn set_theme(&mut self, theme: RenderTheme) {
         self.theme = theme;
     }
@@ -379,6 +434,39 @@ mod tests {
         let rgba = ui.render_rgba_visible().unwrap();
         assert_eq!(pixel(&rgba, 80, 30, 10), [0, 0, 200, 255]);
         assert_eq!(pixel(&rgba, 80, 70, 30), [10, 20, 30, 255]);
+    }
+
+    #[test]
+    fn ui_exposes_selection_offsets_and_offset_mapping() {
+        let mut ui = EditorUi::new("abcd\nefgh\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 60,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(200, 60, 1.0).unwrap();
+
+        // Select "bc" in first line (offsets 1..3).
+        ui.execute(Command::Cursor(CursorCommand::SetSelection {
+            start: Position::new(0, 1),
+            end: Position::new(0, 3),
+        }))
+        .unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (1, 3));
+
+        // Offset -> visual mapping.
+        let (row, x) = ui.char_offset_to_visual(2).unwrap();
+        assert_eq!((row, x), (0, 2));
+        assert_eq!(ui.visual_to_char_offset(0, 2).unwrap(), 2);
+
+        // Offset -> view point mapping (top-left origin).
+        let (x_px, y_px) = ui.char_offset_to_view_point_px(2).unwrap();
+        assert_eq!((x_px, y_px), (20.0, 0.0));
+        assert_eq!(ui.line_height_px(), 20.0);
     }
 
     fn pixel(buf: &[u8], width_px: u32, x: u32, y: u32) -> [u8; 4] {

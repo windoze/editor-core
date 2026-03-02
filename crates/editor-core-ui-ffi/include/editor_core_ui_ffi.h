@@ -72,7 +72,21 @@ int32_t editor_core_ui_ffi_editor_ui_render_rgba(EditorUi* ui,
 
 char* editor_core_ui_ffi_editor_ui_get_text(EditorUi* ui);
 
+int32_t editor_core_ui_ffi_editor_ui_get_selection_offsets(EditorUi* ui,
+                                                           uint32_t* out_start,
+                                                           uint32_t* out_end);
+
+int32_t editor_core_ui_ffi_editor_ui_get_marked_range(EditorUi* ui,
+                                                      uint8_t* out_has_marked,
+                                                      uint32_t* out_start,
+                                                      uint32_t* out_len);
+
+int32_t editor_core_ui_ffi_editor_ui_char_offset_to_view_point(EditorUi* ui,
+                                                               uint32_t char_offset,
+                                                               float* out_x,
+                                                               float* out_y,
+                                                               float* out_line_height_px);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
-

@@ -523,6 +523,121 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_text(ui: *mut EditorUi) -> *m
     }
 }
 
+/// Get primary selection offsets (character offsets).
+///
+/// Writes `start` and `end` (inclusive-exclusive) offsets.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_get_selection_offsets(
+    ui: *mut EditorUi,
+    out_start: *mut u32,
+    out_end: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_start.is_null() {
+            return Err("out_start is null".to_string());
+        }
+        if out_end.is_null() {
+            return Err("out_end is null".to_string());
+        }
+        let (start, end) = ui.primary_selection_offsets();
+        unsafe {
+            *out_start = start as u32;
+            *out_end = end as u32;
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Get IME marked text range.
+///
+/// If there is no marked text, writes `has_marked = 0` and `out_start/out_len = 0`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_get_marked_range(
+    ui: *mut EditorUi,
+    out_has_marked: *mut u8,
+    out_start: *mut u32,
+    out_len: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_has_marked.is_null() {
+            return Err("out_has_marked is null".to_string());
+        }
+        if out_start.is_null() {
+            return Err("out_start is null".to_string());
+        }
+        if out_len.is_null() {
+            return Err("out_len is null".to_string());
+        }
+
+        let (has, start, len) = match ui.marked_range() {
+            Some((s, l)) => (1u8, s as u32, l as u32),
+            None => (0u8, 0u32, 0u32),
+        };
+        unsafe {
+            *out_has_marked = has;
+            *out_start = start;
+            *out_len = len;
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Map a character offset to a view point (in pixels, top-left origin).
+///
+/// Writes `out_x/out_y` and `out_line_height_px`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
+    ui: *mut EditorUi,
+    char_offset: u32,
+    out_x: *mut c_float,
+    out_y: *mut c_float,
+    out_line_height_px: *mut c_float,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_x.is_null() {
+            return Err("out_x is null".to_string());
+        }
+        if out_y.is_null() {
+            return Err("out_y is null".to_string());
+        }
+        if out_line_height_px.is_null() {
+            return Err("out_line_height_px is null".to_string());
+        }
+
+        let (x, y) = ui
+            .char_offset_to_view_point_px(char_offset as usize)
+            .ok_or_else(|| "failed to map char offset to view point".to_string())?;
+
+        unsafe {
+            *out_x = x;
+            *out_y = y;
+            *out_line_height_px = ui.line_height_px();
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -628,6 +743,42 @@ mod tests {
         let msg = unsafe { CStr::from_ptr(msg_ptr) }.to_str().unwrap().to_string();
         editor_core_ui_ffi_string_free(msg_ptr);
         assert!(msg.contains("ui is null") || msg.contains("text_utf8 is null"));
+    }
+
+    #[test]
+    fn ffi_selection_and_marked_range_queries() {
+        let initial = CString::new("abcd").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        // Configure minimal metrics/viewport so offset mapping can work.
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0);
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 60, 1.0);
+
+        // Default selection is caret at 0.
+        let mut start: u32 = 0;
+        let mut end: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (0, 0));
+
+        // Marked text.
+        let marked = CString::new("你").unwrap();
+        editor_core_ui_ffi_editor_ui_set_marked_text(ui, marked.as_ptr());
+
+        let mut has: u8 = 0;
+        let mut ms: u32 = 0;
+        let mut ml: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_marked_range(ui, &mut has, &mut ms, &mut ml),
+            ECU_OK
+        );
+        assert_eq!(has, 1);
+        assert_eq!(ml, 1);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
     }
 
     fn pixel(buf: &[u8], width_px: u32, x: u32, y: u32) -> [u8; 4] {
