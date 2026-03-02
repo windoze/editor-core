@@ -8,9 +8,11 @@ let package = Package(
     ],
     products: [
         .library(name: "EditorCoreFFI", targets: ["EditorCoreFFI"]),
+        .library(name: "EditorCoreUIFFI", targets: ["EditorCoreUIFFI"]),
         .library(name: "EditorCoreAppKit", targets: ["EditorCoreAppKit"]),
         .executable(name: "EditorCoreFFIDemo", targets: ["EditorCoreFFIDemo"]),
-        .executable(name: "EditorCoreAppKitDemo", targets: ["EditorCoreAppKitDemo"])
+        .executable(name: "EditorCoreAppKitDemo", targets: ["EditorCoreAppKitDemo"]),
+        .executable(name: "EditorCoreSkiaAppKitDemo", targets: ["EditorCoreSkiaAppKitDemo"])
     ],
     targets: [
         .target(
@@ -18,8 +20,12 @@ let package = Package(
             path: "Sources/EditorCoreFFI"
         ),
         .target(
+            name: "EditorCoreUIFFI",
+            path: "Sources/EditorCoreUIFFI"
+        ),
+        .target(
             name: "EditorCoreAppKit",
-            dependencies: ["EditorCoreFFI"],
+            dependencies: ["EditorCoreFFI", "EditorCoreUIFFI"],
             path: "Sources/EditorCoreAppKit"
         ),
         .executableTarget(
@@ -32,9 +38,14 @@ let package = Package(
             dependencies: ["EditorCoreAppKit", "EditorCoreFFI"],
             path: "Sources/EditorCoreAppKitDemo"
         ),
+        .executableTarget(
+            name: "EditorCoreSkiaAppKitDemo",
+            dependencies: ["EditorCoreAppKit", "EditorCoreUIFFI"],
+            path: "Sources/EditorCoreSkiaAppKitDemo"
+        ),
         .testTarget(
             name: "EditorCoreFFITests",
-            dependencies: ["EditorCoreFFI"],
+            dependencies: ["EditorCoreFFI", "EditorCoreUIFFI"],
             path: "Tests/EditorCoreFFITests"
         ),
     ]
