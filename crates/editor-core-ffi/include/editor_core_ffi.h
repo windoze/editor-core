@@ -83,6 +83,9 @@ bool editor_core_ffi_editor_state_apply_processing_edits_json(EcfEditorState* st
 char* editor_core_ffi_editor_state_full_state_json(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_text(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_text_for_saving(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_document_symbols_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_diagnostics_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_decorations_json(const EcfEditorState* state);
 bool editor_core_ffi_editor_state_set_line_ending(EcfEditorState* state, const char* line_ending);
 char* editor_core_ffi_editor_state_get_line_ending(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, size_t start_visual_row, size_t count);
@@ -185,6 +188,10 @@ EcfTreeSitterProcessor* editor_core_ffi_treesitter_processor_new(
     const char* capture_styles_json,
     uint32_t style_layer,
     bool preserve_collapsed_folds);
+
+/* Built-in Tree-sitter Rust language */
+const void* editor_core_ffi_treesitter_language_rust(void);
+
 void editor_core_ffi_treesitter_processor_free(EcfTreeSitterProcessor* processor);
 char* editor_core_ffi_treesitter_processor_process_json(EcfTreeSitterProcessor* processor, const EcfEditorState* state);
 bool editor_core_ffi_treesitter_processor_apply(EcfTreeSitterProcessor* processor, EcfEditorState* state);

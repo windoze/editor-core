@@ -2,28 +2,29 @@
 import PackageDescription
 
 let package = Package(
-    name: "EditorComponentKit",
+    name: "EditorCoreFFI",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .library(name: "EditorComponentKit", targets: ["EditorComponentKit"]),
-        .executable(name: "EditorComponentDemo", targets: ["EditorComponentDemo"])
+        .library(name: "EditorCoreFFI", targets: ["EditorCoreFFI"]),
+        .executable(name: "EditorCoreFFIDemo", targets: ["EditorCoreFFIDemo"])
     ],
     targets: [
         .target(
-            name: "EditorComponentKit",
-            path: "Sources/EditorComponentKit"
+            name: "EditorCoreFFI",
+            path: "Sources/EditorCoreFFI"
         ),
         .executableTarget(
-            name: "EditorComponentDemo",
-            dependencies: ["EditorComponentKit"],
-            path: "Sources/EditorComponentDemo"
+            name: "EditorCoreFFIDemo",
+            dependencies: ["EditorCoreFFI"],
+            path: "Sources/EditorCoreFFIDemo"
         ),
         .testTarget(
-            name: "EditorComponentKitTests",
-            dependencies: ["EditorComponentKit"],
-            path: "Tests/EditorComponentKitTests"
-        )
+            name: "EditorCoreFFITests",
+            dependencies: ["EditorCoreFFI"],
+            path: "Tests/EditorCoreFFITests"
+        ),
     ]
 )
+

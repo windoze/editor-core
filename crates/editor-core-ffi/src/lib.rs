@@ -2154,6 +2154,66 @@ pub extern "C" fn editor_core_ffi_editor_state_text_for_saving(
     })
 }
 
+/// Return current document symbols / outline as JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_document_symbols_json(
+    state: *const EcfEditorState,
+) -> *mut c_char {
+    result_json_ptr(ptr::null_mut(), || {
+        let state = require_ref(state, "state")?;
+        let symbols = &state.inner.editor().document_symbols;
+        Ok(json!({
+            "symbols": symbols
+                .symbols
+                .iter()
+                .map(value_document_symbol)
+                .collect::<Vec<_>>()
+        }))
+    })
+}
+
+/// Return current diagnostics list as JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_diagnostics_json(
+    state: *const EcfEditorState,
+) -> *mut c_char {
+    result_json_ptr(ptr::null_mut(), || {
+        let state = require_ref(state, "state")?;
+        Ok(json!({
+            "diagnostics": state
+                .inner
+                .editor()
+                .diagnostics
+                .iter()
+                .map(value_diagnostic)
+                .collect::<Vec<_>>()
+        }))
+    })
+}
+
+/// Return current decorations list as JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_decorations_json(
+    state: *const EcfEditorState,
+) -> *mut c_char {
+    result_json_ptr(ptr::null_mut(), || {
+        let state = require_ref(state, "state")?;
+        let layers = state
+            .inner
+            .editor()
+            .decorations
+            .iter()
+            .map(|(layer, decorations)| {
+                json!({
+                    "layer": layer.0,
+                    "decorations": decorations.iter().map(value_decoration).collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({ "layers": layers }))
+    })
+}
+
 /// Set preferred line ending (`"lf"` or `"crlf"`).
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_editor_state_set_line_ending(
@@ -3167,6 +3227,16 @@ pub extern "C" fn editor_core_ffi_sublime_processor_scope_for_style_id(
 
 /// Tree-sitter language function pointer type expected by this FFI.
 pub type EcfTreeSitterLanguageFn = unsafe extern "C" fn() -> *const ();
+
+/// Built-in Tree-sitter Rust language function.
+///
+/// This is provided so FFI consumers (including Swift tests/wrappers) can use Tree-sitter
+/// without separately linking a language grammar.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ffi_treesitter_language_rust() -> *const () {
+    let language_fn = tree_sitter_rust::LANGUAGE.into_raw();
+    unsafe { language_fn() }
+}
 
 /// Create a Tree-sitter processor.
 ///
