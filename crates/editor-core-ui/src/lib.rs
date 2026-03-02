@@ -4,11 +4,13 @@
 //! implementation (Skia in `editor-core-render-skia`) to draw the viewport.
 
 use editor_core::{
-    Command, CommandResult, CursorCommand, EditCommand, EditorStateManager, Position, ViewCommand,
+    Command, CommandResult, CursorCommand, EditCommand, EditorStateManager, Position, StyleCommand,
+    ViewCommand,
 };
 use editor_core_render_skia::{
-    RenderConfig, RenderError, RenderTheme, SkiaRenderer, VisualCaret, VisualSelection,
+    RenderConfig, RenderError, RenderTheme, SkiaRenderer, StyleColors, VisualCaret, VisualSelection,
 };
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -129,6 +131,14 @@ impl EditorUi {
         self.theme = theme;
     }
 
+    pub fn set_style_colors(&mut self, styles: BTreeMap<u32, StyleColors>) {
+        self.theme.styles = styles;
+    }
+
+    pub fn clear_style_colors(&mut self) {
+        self.theme.styles.clear();
+    }
+
     pub fn set_render_config(&mut self, config: RenderConfig) {
         self.render_config = config;
     }
@@ -184,6 +194,25 @@ impl EditorUi {
     pub fn delete_forward(&mut self) -> Result<(), UiError> {
         self.state
             .execute(Command::Edit(EditCommand::DeleteForward))?;
+        Ok(())
+    }
+
+    pub fn add_style(&mut self, start: usize, end: usize, style_id: u32) -> Result<(), UiError> {
+        self.state.execute(Command::Style(StyleCommand::AddStyle {
+            start,
+            end,
+            style_id,
+        }))?;
+        Ok(())
+    }
+
+    pub fn remove_style(&mut self, start: usize, end: usize, style_id: u32) -> Result<(), UiError> {
+        self.state
+            .execute(Command::Style(StyleCommand::RemoveStyle {
+                start,
+                end,
+                style_id,
+            }))?;
         Ok(())
     }
 

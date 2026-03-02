@@ -70,9 +70,34 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(hit, 2)
     }
 
+    func testStyleColorsOverrideAffectsRendering() throws {
+        let lib = try EditorCoreUIFFILibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc", viewportWidthCells: 80)
+
+        try ui.setTheme(
+            EcuTheme(
+                background: EcuRgba8(r: 10, g: 20, b: 30, a: 255),
+                foreground: EcuRgba8(r: 250, g: 250, b: 250, a: 255),
+                selectionBackground: EcuRgba8(r: 200, g: 0, b: 0, a: 255),
+                caret: EcuRgba8(r: 0, g: 0, b: 200, a: 255)
+            )
+        )
+        try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 80, heightPx: 40, scale: 1)
+
+        // 给中间字符 'b' 加一个 style id，然后下发该 style 的背景色覆盖。
+        try ui.addStyle(start: 1, end: 2, styleId: 42)
+        try ui.setStyleColors([EcuStyleColors(styleId: 42, background: EcuRgba8(r: 1, g: 200, b: 2, a: 255))])
+
+        var rgba: [UInt8] = []
+        _ = try ui.renderRGBA(into: &rgba)
+
+        // 'b' 对应 x in [10..20]，取中心像素。
+        XCTAssertEqual(pixel(rgba, widthPx: 80, x: 15, y: 10), [1, 200, 2, 255])
+    }
+
     private func pixel(_ buf: [UInt8], widthPx: UInt32, x: UInt32, y: UInt32) -> [UInt8] {
         let idx = Int((y * widthPx + x) * 4)
         return [buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3]]
     }
 }
-

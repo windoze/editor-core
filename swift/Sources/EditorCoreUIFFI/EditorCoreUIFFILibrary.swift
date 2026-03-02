@@ -9,6 +9,7 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiFree = @convention(c) (OpaquePointer?) -> Void
 
     typealias FnEditorUiSetTheme = @convention(c) (OpaquePointer?, UnsafeRawPointer?) -> Int32
+    typealias FnEditorUiSetStyleColors = @convention(c) (OpaquePointer?, UnsafeRawPointer?, UInt32) -> Int32
     typealias FnEditorUiSetRenderMetrics = @convention(c) (OpaquePointer?, Float, Float, Float, Float, Float) -> Int32
     typealias FnEditorUiSetViewportPx = @convention(c) (OpaquePointer?, UInt32, UInt32, Float) -> Int32
     typealias FnEditorUiScrollByRows = @convention(c) (OpaquePointer?, Int32) -> Void
@@ -16,6 +17,8 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiInsertText = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
     typealias FnEditorUiBackspace = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiDeleteForward = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiAddStyle = @convention(c) (OpaquePointer?, UInt32, UInt32, UInt32) -> Int32
+    typealias FnEditorUiRemoveStyle = @convention(c) (OpaquePointer?, UInt32, UInt32, UInt32) -> Int32
     typealias FnEditorUiUndo = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiRedo = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveVisualByRows = @convention(c) (OpaquePointer?, Int32) -> Int32
@@ -54,12 +57,15 @@ public final class EditorCoreUIFFILibrary {
     let editorUiNewFn: FnEditorUiNew
     let editorUiFreeFn: FnEditorUiFree
     let editorUiSetThemeFn: FnEditorUiSetTheme
+    let editorUiSetStyleColorsFn: FnEditorUiSetStyleColors
     let editorUiSetRenderMetricsFn: FnEditorUiSetRenderMetrics
     let editorUiSetViewportPxFn: FnEditorUiSetViewportPx
     let editorUiScrollByRowsFn: FnEditorUiScrollByRows
     let editorUiInsertTextFn: FnEditorUiInsertText
     let editorUiBackspaceFn: FnEditorUiBackspace
     let editorUiDeleteForwardFn: FnEditorUiDeleteForward
+    let editorUiAddStyleFn: FnEditorUiAddStyle
+    let editorUiRemoveStyleFn: FnEditorUiRemoveStyle
     let editorUiUndoFn: FnEditorUiUndo
     let editorUiRedoFn: FnEditorUiRedo
     let editorUiMoveVisualByRowsFn: FnEditorUiMoveVisualByRows
@@ -108,12 +114,15 @@ public final class EditorCoreUIFFILibrary {
         editorUiNewFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_new", as: FnEditorUiNew.self)
         editorUiFreeFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_free", as: FnEditorUiFree.self)
         editorUiSetThemeFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_theme", as: FnEditorUiSetTheme.self)
+        editorUiSetStyleColorsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_style_colors", as: FnEditorUiSetStyleColors.self)
         editorUiSetRenderMetricsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_render_metrics", as: FnEditorUiSetRenderMetrics.self)
         editorUiSetViewportPxFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_viewport_px", as: FnEditorUiSetViewportPx.self)
         editorUiScrollByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_scroll_by_rows", as: FnEditorUiScrollByRows.self)
         editorUiInsertTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_insert_text", as: FnEditorUiInsertText.self)
         editorUiBackspaceFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_backspace", as: FnEditorUiBackspace.self)
         editorUiDeleteForwardFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_delete_forward", as: FnEditorUiDeleteForward.self)
+        editorUiAddStyleFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_style", as: FnEditorUiAddStyle.self)
+        editorUiRemoveStyleFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_remove_style", as: FnEditorUiRemoveStyle.self)
         editorUiUndoFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_undo", as: FnEditorUiUndo.self)
         editorUiRedoFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_redo", as: FnEditorUiRedo.self)
         editorUiMoveVisualByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_visual_by_rows", as: FnEditorUiMoveVisualByRows.self)

@@ -26,6 +26,14 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_theme")
     }
 
+    public func setStyleColors(_ styles: [EcuStyleColors]) throws {
+        let ffi = styles.map { $0.ffi }
+        let status = ffi.withUnsafeBufferPointer { ptr in
+            library.editorUiSetStyleColorsFn(handle, ptr.baseAddress.map { UnsafeRawPointer($0) }, UInt32(ptr.count))
+        }
+        try library.ensureStatus(status, context: "editor_ui_set_style_colors")
+    }
+
     public func setRenderMetrics(fontSize: Float, lineHeightPx: Float, cellWidthPx: Float, paddingXPx: Float, paddingYPx: Float) throws {
         let status = library.editorUiSetRenderMetricsFn(handle, fontSize, lineHeightPx, cellWidthPx, paddingXPx, paddingYPx)
         try library.ensureStatus(status, context: "editor_ui_set_render_metrics")
@@ -55,6 +63,16 @@ public final class EditorUI {
     public func deleteForward() throws {
         let status = library.editorUiDeleteForwardFn(handle)
         try library.ensureStatus(status, context: "editor_ui_delete_forward")
+    }
+
+    public func addStyle(start: UInt32, end: UInt32, styleId: UInt32) throws {
+        let status = library.editorUiAddStyleFn(handle, start, end, styleId)
+        try library.ensureStatus(status, context: "editor_ui_add_style")
+    }
+
+    public func removeStyle(start: UInt32, end: UInt32, styleId: UInt32) throws {
+        let status = library.editorUiRemoveStyleFn(handle, start, end, styleId)
+        try library.ensureStatus(status, context: "editor_ui_remove_style")
     }
 
     public func undo() throws {

@@ -11,7 +11,7 @@
 //! - event collection (IME/keyboard/mouse/scroll)
 //! - presenting the rendered pixels (RGBA buffer) to screen
 
-use editor_core_render_skia::{RenderConfig, RenderTheme, Rgba8};
+use editor_core_render_skia::{RenderConfig, RenderTheme, Rgba8, StyleColors};
 use editor_core_ui::{EditorUi, UiError};
 use libc::{c_char, c_float, c_int};
 use std::cell::RefCell;
@@ -99,6 +99,23 @@ pub struct EcuTheme {
     pub caret: EcuRgba8,
 }
 
+/// A single `StyleId` override entry.
+///
+/// `flags` is a bitmask:
+/// - bit 0: foreground is present
+/// - bit 1: background is present
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct EcuStyleColors {
+    pub style_id: u32,
+    pub flags: u32,
+    pub foreground: EcuRgba8,
+    pub background: EcuRgba8,
+}
+
+const ECU_STYLE_FLAG_FOREGROUND: u32 = 1 << 0;
+const ECU_STYLE_FLAG_BACKGROUND: u32 = 1 << 1;
+
 fn theme_from_ffi(theme: &EcuTheme) -> RenderTheme {
     RenderTheme {
         background: Rgba8::new(
@@ -122,6 +139,32 @@ fn theme_from_ffi(theme: &EcuTheme) -> RenderTheme {
         caret: Rgba8::new(theme.caret.r, theme.caret.g, theme.caret.b, theme.caret.a),
         styles: BTreeMap::new(),
     }
+}
+
+fn style_colors_from_ffi(entry: &EcuStyleColors) -> (u32, StyleColors) {
+    let fg = if entry.flags & ECU_STYLE_FLAG_FOREGROUND != 0 {
+        Some(Rgba8::new(
+            entry.foreground.r,
+            entry.foreground.g,
+            entry.foreground.b,
+            entry.foreground.a,
+        ))
+    } else {
+        None
+    };
+
+    let bg = if entry.flags & ECU_STYLE_FLAG_BACKGROUND != 0 {
+        Some(Rgba8::new(
+            entry.background.r,
+            entry.background.g,
+            entry.background.b,
+            entry.background.a,
+        ))
+    } else {
+        None
+    };
+
+    (entry.style_id, StyleColors::new(fg, bg))
 }
 
 fn map_ui_error(err: UiError) -> String {
@@ -208,6 +251,40 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_theme(
         }
         let theme = unsafe { &*theme };
         ui.set_theme(theme_from_ffi(theme));
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Replace the current theme's `StyleId -> colors` override map.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_style_colors(
+    ui: *mut EditorUi,
+    styles: *const EcuStyleColors,
+    style_count: u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if styles.is_null() && style_count != 0 {
+            return Err("styles is null".to_string());
+        }
+
+        let mut map = BTreeMap::<u32, StyleColors>::new();
+        if style_count != 0 {
+            // SAFETY: caller provided `style_count` entries.
+            let slice = unsafe { slice::from_raw_parts(styles, style_count as usize) };
+            for entry in slice {
+                let (style_id, colors) = style_colors_from_ffi(entry);
+                map.insert(style_id, colors);
+            }
+        }
+
+        ui.set_style_colors(map);
         Ok(ECU_OK)
     }) {
         Ok(code) => {
@@ -319,6 +396,48 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_delete_forward(ui: *mut EditorUi)
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         ui.delete_forward().map(|_| ECU_OK).map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_add_style(
+    ui: *mut EditorUi,
+    start: u32,
+    end: u32,
+    style_id: u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.add_style(start as usize, end as usize, style_id)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_remove_style(
+    ui: *mut EditorUi,
+    start: u32,
+    end: u32,
+    style_id: u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.remove_style(start as usize, end as usize, style_id)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -803,6 +922,91 @@ mod tests {
         );
         assert_eq!(out_len as usize, buf.len());
         assert_eq!(pixel(&buf, 80, 70, 30), [10, 20, 30, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_set_style_colors_affects_rendering() {
+        let initial = CString::new("abc").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let theme = EcuTheme {
+            background: EcuRgba8 {
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 255,
+            },
+            foreground: EcuRgba8 {
+                r: 250,
+                g: 250,
+                b: 250,
+                a: 255,
+            },
+            selection_background: EcuRgba8 {
+                r: 200,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            caret: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 200,
+                a: 255,
+            },
+        };
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 80, 40, 1.0),
+            ECU_OK
+        );
+
+        // Apply style id 42 to the middle cell ('b').
+        assert_eq!(editor_core_ui_ffi_editor_ui_add_style(ui, 1, 2, 42), ECU_OK);
+
+        let styles = [EcuStyleColors {
+            style_id: 42,
+            flags: ECU_STYLE_FLAG_BACKGROUND,
+            foreground: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            background: EcuRgba8 {
+                r: 1,
+                g: 200,
+                b: 2,
+                a: 255,
+            },
+        }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            ECU_OK
+        );
+
+        let mut out_len: u32 = 0;
+        let mut buf = vec![0u8; 80 * 40 * 4];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
+            ECU_OK
+        );
+        assert_eq!(out_len as usize, buf.len());
+
+        // Cell 'b' is at x in [10..20], pick a center pixel at y=10.
+        assert_eq!(pixel(&buf, 80, 15, 10), [1, 200, 2, 255]);
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

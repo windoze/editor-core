@@ -56,6 +56,35 @@ public struct EcuTheme: Equatable {
     }
 }
 
+@frozen
+public struct EcuStyleColors: Equatable {
+    public var styleId: UInt32
+    public var foreground: EcuRgba8?
+    public var background: EcuRgba8?
+
+    public init(styleId: UInt32, foreground: EcuRgba8? = nil, background: EcuRgba8? = nil) {
+        self.styleId = styleId
+        self.foreground = foreground
+        self.background = background
+    }
+
+    // Memory layout must match `EcuStyleColors` in `editor_core_ui_ffi.h`.
+    var ffi: _EcuStyleColorsFFI {
+        var flags: UInt32 = 0
+        if foreground != nil { flags |= _EcuStyleColorsFFI.flagForeground }
+        if background != nil { flags |= _EcuStyleColorsFFI.flagBackground }
+
+        let fg = foreground ?? EcuRgba8(r: 0, g: 0, b: 0, a: 0)
+        let bg = background ?? EcuRgba8(r: 0, g: 0, b: 0, a: 0)
+        return _EcuStyleColorsFFI(
+            style_id: styleId,
+            flags: flags,
+            foreground: _EcuRgba8FFI(r: fg.r, g: fg.g, b: fg.b, a: fg.a),
+            background: _EcuRgba8FFI(r: bg.r, g: bg.g, b: bg.b, a: bg.a)
+        )
+    }
+}
+
 struct _EcuRgba8FFI {
     var r: UInt8
     var g: UInt8
@@ -68,4 +97,14 @@ struct _EcuThemeFFI {
     var foreground: _EcuRgba8FFI
     var selection_background: _EcuRgba8FFI
     var caret: _EcuRgba8FFI
+}
+
+struct _EcuStyleColorsFFI {
+    static let flagForeground: UInt32 = 1 << 0
+    static let flagBackground: UInt32 = 1 << 1
+
+    var style_id: UInt32
+    var flags: UInt32
+    var foreground: _EcuRgba8FFI
+    var background: _EcuRgba8FFI
 }

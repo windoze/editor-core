@@ -23,6 +23,18 @@ typedef struct EcuTheme {
   EcuRgba8 caret;
 } EcuTheme;
 
+// A single StyleId override entry.
+//
+// flags bitmask:
+// - bit 0: foreground present
+// - bit 1: background present
+typedef struct EcuStyleColors {
+  uint32_t style_id;
+  uint32_t flags;
+  EcuRgba8 foreground;
+  EcuRgba8 background;
+} EcuStyleColors;
+
 // Return codes (int32).
 // 0 = OK
 // 1 = invalid argument
@@ -38,6 +50,9 @@ EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8,
 void editor_core_ui_ffi_editor_ui_free(EditorUi* ui);
 
 int32_t editor_core_ui_ffi_editor_ui_set_theme(EditorUi* ui, const EcuTheme* theme);
+int32_t editor_core_ui_ffi_editor_ui_set_style_colors(EditorUi* ui,
+                                                      const EcuStyleColors* styles,
+                                                      uint32_t style_count);
 int32_t editor_core_ui_ffi_editor_ui_set_render_metrics(EditorUi* ui,
                                                         float font_size,
                                                         float line_height_px,
@@ -53,6 +68,14 @@ void editor_core_ui_ffi_editor_ui_scroll_by_rows(EditorUi* ui, int32_t delta_row
 int32_t editor_core_ui_ffi_editor_ui_insert_text(EditorUi* ui, const char* text_utf8);
 int32_t editor_core_ui_ffi_editor_ui_backspace(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_delete_forward(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_add_style(EditorUi* ui,
+                                               uint32_t start,
+                                               uint32_t end,
+                                               uint32_t style_id);
+int32_t editor_core_ui_ffi_editor_ui_remove_style(EditorUi* ui,
+                                                  uint32_t start,
+                                                  uint32_t end,
+                                                  uint32_t style_id);
 int32_t editor_core_ui_ffi_editor_ui_undo(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_redo(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_visual_by_rows(EditorUi* ui, int32_t delta_rows);
