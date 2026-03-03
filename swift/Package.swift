@@ -48,5 +48,10 @@ let package = Package(
             dependencies: ["EditorCoreFFI", "EditorCoreUIFFI"],
             path: "Tests/EditorCoreFFITests"
         ),
+        .testTarget(
+            name: "EditorCoreAppKitTests",
+            dependencies: ["EditorCoreAppKit"],
+            path: "Tests/EditorCoreAppKitTests"
+        ),
     ]
 )
