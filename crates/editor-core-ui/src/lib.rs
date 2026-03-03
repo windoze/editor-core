@@ -1384,6 +1384,96 @@ mod tests {
     }
 
     #[test]
+    fn ui_nested_fold_unfold_sequence_keeps_inner_toggleable() {
+        // Regression for: fold inner -> fold outer -> unfold outer -> inner must still unfold.
+        let text = "fn main() {\n  if true {\n    if true {\n      println!(\"hi\");\n    }\n  }\n}\n";
+        let mut ui = EditorUi::new(text, 80);
+        ui.set_treesitter_rust_default().unwrap();
+        ui.set_render_config(RenderConfig {
+            width_px: 260,
+            height_px: 200,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(260, 200, 1.0).unwrap();
+        ui.set_gutter_width_cells(2).unwrap();
+
+        let regions = ui.state.get_folding_state().regions;
+        assert!(regions.len() >= 2, "expected nested fold regions from Tree-sitter");
+
+        // Pick an innermost region and its closest outer region.
+        let inner = regions
+            .iter()
+            .filter(|r| r.end_line > r.start_line)
+            .min_by_key(|r| r.end_line - r.start_line)
+            .cloned()
+            .expect("expected at least one fold region");
+        let outer = regions
+            .iter()
+            .filter(|r| r.start_line < inner.start_line && r.end_line >= inner.end_line)
+            .min_by_key(|r| r.end_line - r.start_line)
+            .cloned()
+            .expect("expected an outer region containing inner");
+
+        let click_gutter_at_start_line = |ui: &mut EditorUi, start_line: usize| {
+            let (row, _x_cells) = ui
+                .state
+                .logical_position_to_visual(start_line, 0)
+                .expect("start line should be visible");
+            let y = row as f32 * ui.render_config.line_height_px + ui.render_config.line_height_px * 0.5;
+            ui.mouse_down(5.0, y).unwrap();
+            ui.mouse_up();
+        };
+
+        // 1) Fold inner.
+        click_gutter_at_start_line(&mut ui, inner.start_line);
+        assert!(
+            ui.state
+                .get_folding_state()
+                .regions
+                .iter()
+                .any(|r| r.start_line == inner.start_line && r.end_line == inner.end_line && r.is_collapsed),
+            "expected inner region to be collapsed"
+        );
+
+        // 2) Fold outer.
+        click_gutter_at_start_line(&mut ui, outer.start_line);
+        assert!(
+            ui.state
+                .get_folding_state()
+                .regions
+                .iter()
+                .any(|r| r.start_line == outer.start_line && r.end_line == outer.end_line && r.is_collapsed),
+            "expected outer region to be collapsed"
+        );
+
+        // 3) Unfold outer.
+        click_gutter_at_start_line(&mut ui, outer.start_line);
+        assert!(
+            ui.state
+                .get_folding_state()
+                .regions
+                .iter()
+                .any(|r| r.start_line == outer.start_line && r.end_line == outer.end_line && !r.is_collapsed),
+            "expected outer region to be expanded"
+        );
+
+        // 4) Unfold inner (must still be toggleable).
+        click_gutter_at_start_line(&mut ui, inner.start_line);
+        assert!(
+            ui.state
+                .get_folding_state()
+                .regions
+                .iter()
+                .any(|r| r.start_line == inner.start_line && r.end_line == inner.end_line && !r.is_collapsed),
+            "expected inner region to be expanded after outer unfolded"
+        );
+    }
+
+    #[test]
     fn ui_set_selections_offsets_and_insert_text_applies_to_all_carets() {
         let mut ui = EditorUi::new("abc\ndef\n", 80);
 
