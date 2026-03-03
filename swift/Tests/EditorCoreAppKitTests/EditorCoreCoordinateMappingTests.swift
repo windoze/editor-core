@@ -32,17 +32,24 @@ final class EditorCoreCoordinateMappingTests: XCTestCase {
         let view = FlippedView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
         window.contentView = view
 
-        let viewPoint = NSPoint(x: 10, y: 15) // view 坐标：top-left origin，y 向下
-        let windowPoint = NSPoint(x: viewPoint.x, y: view.frame.height - viewPoint.y) // window 坐标：bottom-left origin
+        let backingSize = view.convertToBacking(view.bounds.size)
 
-        let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
-            windowPoint: windowPoint,
-            view: view
+        let p0 = view.convert(NSPoint(x: 0, y: 0), to: nil)
+        let p1 = view.convert(NSPoint(x: 0, y: view.bounds.height), to: nil)
+        let topLeftInWindow = (p0.y >= p1.y) ? p0 : p1
+
+        let bottomRightInWindow = NSPoint(
+            x: topLeftInWindow.x + view.bounds.width,
+            y: topLeftInWindow.y - view.bounds.height
         )
 
-        let expected = view.convertToBacking(viewPoint)
-        XCTAssertEqual(Double(xPx), Double(expected.x), accuracy: 0.0001)
-        XCTAssertEqual(Double(yPx), Double(expected.y), accuracy: 0.0001)
+        let (x0, y0) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(windowPoint: topLeftInWindow, view: view)
+        XCTAssertEqual(Double(x0), 0, accuracy: 0.0001)
+        XCTAssertEqual(Double(y0), 0, accuracy: 0.0001)
+
+        let (x1, y1) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(windowPoint: bottomRightInWindow, view: view)
+        XCTAssertEqual(Double(x1), Double(backingSize.width), accuracy: 0.0001)
+        XCTAssertEqual(Double(y1), Double(backingSize.height), accuracy: 0.0001)
     }
 
     func test_window_point_to_view_backing_px_for_offset_flipped_subview() throws {
@@ -58,20 +65,23 @@ final class EditorCoreCoordinateMappingTests: XCTestCase {
         let view = FlippedView(frame: NSRect(x: 20, y: 30, width: 200, height: 100))
         container.addSubview(view)
 
-        let viewPoint = NSPoint(x: 7, y: 9)
-        // 对 flipped view：window Y = frame.minY + frame.height - viewY
-        let windowPoint = NSPoint(
-            x: view.frame.minX + viewPoint.x,
-            y: view.frame.minY + view.frame.height - viewPoint.y
+        let backingSize = view.convertToBacking(view.bounds.size)
+
+        let p0 = view.convert(NSPoint(x: 0, y: 0), to: nil)
+        let p1 = view.convert(NSPoint(x: 0, y: view.bounds.height), to: nil)
+        let topLeftInWindow = (p0.y >= p1.y) ? p0 : p1
+
+        let bottomRightInWindow = NSPoint(
+            x: topLeftInWindow.x + view.bounds.width,
+            y: topLeftInWindow.y - view.bounds.height
         )
 
-        let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
-            windowPoint: windowPoint,
-            view: view
-        )
+        let (x0, y0) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(windowPoint: topLeftInWindow, view: view)
+        XCTAssertEqual(Double(x0), 0, accuracy: 0.0001)
+        XCTAssertEqual(Double(y0), 0, accuracy: 0.0001)
 
-        let expected = view.convertToBacking(viewPoint)
-        XCTAssertEqual(Double(xPx), Double(expected.x), accuracy: 0.0001)
-        XCTAssertEqual(Double(yPx), Double(expected.y), accuracy: 0.0001)
+        let (x1, y1) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(windowPoint: bottomRightInWindow, view: view)
+        XCTAssertEqual(Double(x1), Double(backingSize.width), accuracy: 0.0001)
+        XCTAssertEqual(Double(y1), Double(backingSize.height), accuracy: 0.0001)
     }
 }
