@@ -147,6 +147,10 @@ pub struct FoldMarker {
 pub enum RenderError {
     #[error("invalid render size {width_px}x{height_px}")]
     InvalidSize { width_px: u32, height_px: u32 },
+    #[error("render size overflows buffer length: {width_px}x{height_px}")]
+    SizeOverflow { width_px: u32, height_px: u32 },
+    #[error("output buffer too small: required {required} bytes, provided {provided} bytes")]
+    BufferTooSmall { required: usize, provided: usize },
     #[error("failed to create Skia surface")]
     SurfaceCreateFailed,
 }
@@ -167,6 +171,22 @@ impl SkiaRenderer {
         Self { font }
     }
 
+    pub fn required_rgba_len(config: RenderConfig) -> Result<usize, RenderError> {
+        if config.width_px == 0 || config.height_px == 0 {
+            return Err(RenderError::InvalidSize {
+                width_px: config.width_px,
+                height_px: config.height_px,
+            });
+        }
+        (config.width_px as usize)
+            .checked_mul(config.height_px as usize)
+            .and_then(|v| v.checked_mul(4))
+            .ok_or(RenderError::SizeOverflow {
+                width_px: config.width_px,
+                height_px: config.height_px,
+            })
+    }
+
     /// Render a viewport `grid` to an RGBA8 buffer (premultiplied).
     ///
     /// The returned buffer length is `width_px * height_px * 4`.
@@ -179,10 +199,39 @@ impl SkiaRenderer {
         config: RenderConfig,
         theme: &RenderTheme,
     ) -> Result<Vec<u8>, RenderError> {
-        if config.width_px == 0 || config.height_px == 0 {
-            return Err(RenderError::InvalidSize {
-                width_px: config.width_px,
-                height_px: config.height_px,
+        let required = Self::required_rgba_len(config)?;
+
+        let mut pixels = vec![0u8; required];
+        self.render_rgba_into(
+            grid,
+            carets,
+            selections,
+            fold_markers,
+            config,
+            theme,
+            pixels.as_mut_slice(),
+        )?;
+        Ok(pixels)
+    }
+
+    /// Render a viewport `grid` into a caller-provided RGBA8 buffer (premultiplied).
+    ///
+    /// Only the first `width_px * height_px * 4` bytes are written.
+    pub fn render_rgba_into(
+        &mut self,
+        grid: &HeadlessGrid,
+        carets: &[VisualCaret],
+        selections: &[VisualSelection],
+        fold_markers: &[FoldMarker],
+        config: RenderConfig,
+        theme: &RenderTheme,
+        out_rgba: &mut [u8],
+    ) -> Result<(), RenderError> {
+        let required = Self::required_rgba_len(config)?;
+        if out_rgba.len() < required {
+            return Err(RenderError::BufferTooSmall {
+                required,
+                provided: out_rgba.len(),
             });
         }
 
@@ -194,8 +243,8 @@ impl SkiaRenderer {
         let width = config.width_px as i32;
         let height = config.height_px as i32;
 
-        let bytes_per_row = config.width_px.checked_mul(4).expect("width*4 overflow") as usize;
-        let mut pixels = vec![0u8; bytes_per_row * config.height_px as usize];
+        let bytes_per_row = config.width_px as usize * 4;
+        let pixels = &mut out_rgba[..required];
 
         let info = ImageInfo::new(
             (width, height),
@@ -204,7 +253,7 @@ impl SkiaRenderer {
             Some(ColorSpace::new_srgb()),
         );
 
-        let mut surface = surfaces::wrap_pixels(&info, pixels.as_mut_slice(), bytes_per_row, None)
+        let mut surface = surfaces::wrap_pixels(&info, pixels, bytes_per_row, None)
             .ok_or(RenderError::SurfaceCreateFailed)?;
 
         let canvas = surface.canvas();
@@ -313,7 +362,7 @@ impl SkiaRenderer {
             draw_caret(canvas, grid, *caret, text_origin_x, config, theme.caret);
         }
 
-        Ok(pixels)
+        Ok(())
     }
 }
 
@@ -720,5 +769,34 @@ mod tests {
 
         // Caret at x_cells=2 => x = 20 + 2*10 = 40.
         assert_eq!(pixel(&rgba, cfg.width_px, 40, 10), [0, 0, 200, 255]);
+    }
+
+    #[test]
+    fn render_rgba_into_rejects_too_small_output_buffer() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        line.add_cell(Cell::new('a', 1));
+        grid.add_line(line);
+
+        let cfg = RenderConfig {
+            width_px: 80,
+            height_px: 40,
+            scale: 1.0,
+            font_size: 12.0,
+            line_height_px: 20.0,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            gutter_width_cells: 0,
+        };
+
+        let required = SkiaRenderer::required_rgba_len(cfg).unwrap();
+        let mut out = vec![0u8; required.saturating_sub(1)];
+        let err = renderer
+            .render_rgba_into(&grid, &[], &[], &[], cfg, &RenderTheme::default(), out.as_mut_slice())
+            .unwrap_err();
+        assert!(matches!(err, RenderError::BufferTooSmall { .. }));
     }
 }

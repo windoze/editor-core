@@ -1101,8 +1101,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_render_rgba(
             return Err("out_len is null".to_string());
         }
 
-        let pixels = ui.render_rgba_visible().map_err(map_ui_error)?;
-        let required = pixels.len() as u32;
+        let required = ui.required_rgba_len() as u32;
         unsafe { *out_len = required };
 
         if out_buf.is_null() {
@@ -1115,12 +1114,10 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_render_rgba(
         }
 
         // SAFETY: caller provided buffer with capacity >= required.
-        unsafe {
-            let dst = slice::from_raw_parts_mut(out_buf, required as usize);
-            dst.copy_from_slice(&pixels);
-        }
-
-        Ok(ECU_OK)
+        let dst = unsafe { slice::from_raw_parts_mut(out_buf, required as usize) };
+        ui.render_rgba_visible_into(dst)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();

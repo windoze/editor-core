@@ -755,6 +755,19 @@ impl EditorUi {
     }
 
     pub fn render_rgba_visible(&mut self) -> Result<Vec<u8>, UiError> {
+        let required = SkiaRenderer::required_rgba_len(self.render_config)?;
+        let mut out = vec![0u8; required];
+        self.render_rgba_visible_into(out.as_mut_slice())?;
+        Ok(out)
+    }
+
+    pub fn required_rgba_len(&self) -> usize {
+        (self.render_config.width_px as usize)
+            .saturating_mul(self.render_config.height_px as usize)
+            .saturating_mul(4)
+    }
+
+    pub fn render_rgba_visible_into(&mut self, out_rgba: &mut [u8]) -> Result<usize, UiError> {
         let viewport = self.state.get_viewport_state();
         let start_row = viewport.scroll_top;
         let row_count = viewport
@@ -775,16 +788,17 @@ impl EditorUi {
                 is_collapsed: region.is_collapsed,
             });
         }
-        Ok(self
-            .renderer
-            .render_rgba(
-                &grid,
-                carets.as_slice(),
-                selections.as_slice(),
-                fold_markers.as_slice(),
-                self.render_config,
-                &self.theme,
-            )?)
+        let required = SkiaRenderer::required_rgba_len(self.render_config)?;
+        self.renderer.render_rgba_into(
+            &grid,
+            carets.as_slice(),
+            selections.as_slice(),
+            fold_markers.as_slice(),
+            self.render_config,
+            &self.theme,
+            out_rgba,
+        )?;
+        Ok(required)
     }
 
     fn refresh_processing(&mut self) -> Result<(), UiError> {
