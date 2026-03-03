@@ -5,9 +5,10 @@
 
 use editor_core::{
     Command, CommandResult, CursorCommand, EditCommand, EditorStateManager, Position,
-    ProcessingEdit, SearchOptions, Selection, SelectionDirection, StyleCommand, StyleLayerId,
-    ViewCommand,
+    IME_MARKED_TEXT_STYLE_ID, ProcessingEdit, SearchOptions, Selection, SelectionDirection,
+    StyleCommand, StyleLayerId, ViewCommand,
 };
+use editor_core::intervals::Interval;
 use editor_core_lsp::{
     LspNotification, encode_semantic_style_id, lsp_diagnostics_to_processing_edits,
     semantic_tokens_to_intervals,
@@ -690,8 +691,27 @@ impl EditorUi {
     /// as a replaceable range in the document, tracking its `(start, len)` in char offsets.
     pub fn set_marked_text(&mut self, text: &str) -> Result<(), UiError> {
         let new_len = text.chars().count();
+        self.set_marked_text_with_selection(text, new_len, 0, None)
+    }
 
-        let (start, len) = if let Some(marked) = self.marked {
+    /// Set IME marked text (composition) with an explicit selection inside the marked string.
+    ///
+    /// - `selected_start/selected_len` are **character offsets** (Unicode scalar count) within `text`.
+    /// - `replace_range` (when provided) is a document range in **character offsets** to replace.
+    ///
+    /// This matches how `NSTextInputClient.setMarkedText` communicates selection and replacement.
+    pub fn set_marked_text_with_selection(
+        &mut self,
+        text: &str,
+        selected_start: usize,
+        selected_len: usize,
+        replace_range: Option<(usize, usize)>,
+    ) -> Result<(), UiError> {
+        let new_len = text.chars().count();
+
+        let (start, len) = if let Some((start, len)) = replace_range {
+            (start, len)
+        } else if let Some(marked) = self.marked {
             (marked.start, marked.len)
         } else {
             let cursor = self.state.get_cursor_state();
@@ -713,24 +733,63 @@ impl EditorUi {
         }))?;
         self.refresh_processing()?;
 
-        self.marked = Some(MarkedRange {
-            start,
-            len: new_len,
-        });
+        if new_len == 0 {
+            self.marked = None;
+            self.state
+                .apply_processing_edits([ProcessingEdit::ClearStyleLayer {
+                    layer: StyleLayerId::IME_MARKED_TEXT,
+                }]);
+            return Ok(());
+        }
 
-        // Place caret at the end of marked text.
-        let (line, column) = self
-            .state
-            .editor()
-            .line_index
-            .char_offset_to_position(start + new_len);
+        self.marked = Some(MarkedRange { start, len: new_len });
+
+        // Apply a dedicated style layer so the renderer can draw preedit (underline/background).
         self.state
-            .execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
+            .apply_processing_edits([ProcessingEdit::ReplaceStyleLayer {
+                layer: StyleLayerId::IME_MARKED_TEXT,
+                intervals: vec![Interval::new(
+                    start,
+                    start.saturating_add(new_len),
+                    IME_MARKED_TEXT_STYLE_ID,
+                )],
+            }]);
+
+        // Honor selection inside marked text (preedit caret / selection).
+        let sel_start = selected_start.min(new_len);
+        let sel_end = selected_start
+            .saturating_add(selected_len)
+            .min(new_len);
+
+        let a_off = start.saturating_add(sel_start);
+        let b_off = start.saturating_add(sel_end);
+
+        let line_index = &self.state.editor().line_index;
+        let (a_line, a_col) = line_index.char_offset_to_position(a_off);
+        let (b_line, b_col) = line_index.char_offset_to_position(b_off);
+
+        if sel_end > sel_start {
+            self.state.execute(Command::Cursor(CursorCommand::SetSelection {
+                start: Position::new(a_line, a_col),
+                end: Position::new(b_line, b_col),
+            }))?;
+        } else {
+            self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+                line: b_line,
+                column: b_col,
+            }))?;
+            self.state
+                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        }
         Ok(())
     }
 
     pub fn unmark_text(&mut self) {
         self.marked = None;
+        self.state
+            .apply_processing_edits([ProcessingEdit::ClearStyleLayer {
+                layer: StyleLayerId::IME_MARKED_TEXT,
+            }]);
     }
 
     pub fn commit_text(&mut self, text: &str) -> Result<(), UiError> {
@@ -746,6 +805,11 @@ impl EditorUi {
             let (line, column) = self.state.editor().line_index.char_offset_to_position(end);
             self.state
                 .execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
+
+            self.state
+                .apply_processing_edits([ProcessingEdit::ClearStyleLayer {
+                    layer: StyleLayerId::IME_MARKED_TEXT,
+                }]);
             Ok(())
         } else {
             self.insert_text(text)
@@ -1007,6 +1071,41 @@ mod tests {
         assert_eq!(ui.text(), "你好");
         ui.commit_text("你好!").unwrap();
         assert_eq!(ui.text(), "你好!");
+    }
+
+    #[test]
+    fn ui_marked_text_honors_selection_and_applies_style_layer() {
+        let mut ui = EditorUi::new("", 80);
+
+        // Marked text = "你好", caret inside composition after the first char.
+        ui.set_marked_text_with_selection("你好", 1, 0, None).unwrap();
+        assert_eq!(ui.text(), "你好");
+
+        // Cursor is at offset 1 => (line 0, column 1).
+        assert_eq!(ui.cursor_state().position, Position::new(0, 1));
+
+        let grid = ui.state.get_viewport_content_styled(0, 1);
+        assert_eq!(grid.lines.len(), 1);
+        assert_eq!(grid.lines[0].cells.len(), 2);
+        assert!(grid.lines[0].cells[0]
+            .styles
+            .iter()
+            .any(|&id| id == IME_MARKED_TEXT_STYLE_ID));
+        assert!(grid.lines[0].cells[1]
+            .styles
+            .iter()
+            .any(|&id| id == IME_MARKED_TEXT_STYLE_ID));
+
+        // Committing clears the marked style layer.
+        ui.commit_text("你好!").unwrap();
+        let grid2 = ui.state.get_viewport_content_styled(0, 1);
+        assert!(
+            grid2.lines[0]
+                .cells
+                .iter()
+                .all(|c| !c.styles.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID)),
+            "expected IME marked text style to be cleared after commit"
+        );
     }
 
     #[test]

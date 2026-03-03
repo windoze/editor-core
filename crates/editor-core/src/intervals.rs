@@ -17,6 +17,11 @@ pub const DOCUMENT_HIGHLIGHT_READ_STYLE_ID: StyleId = 0x0400_0002;
 /// Built-in style id for LSP `textDocument/documentHighlight` (kind: Write).
 pub const DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID: StyleId = 0x0400_0003;
 
+/// Built-in style id for IME marked text (composition / preedit).
+///
+/// This is intended for underline/background styling of inline IME preedit strings.
+pub const IME_MARKED_TEXT_STYLE_ID: StyleId = 0x0700_0001;
+
 /// Style layer ID
 ///
 /// Used to distinguish style sources (e.g., LSP semantic highlighting, simple syntax highlighting, diagnostics, etc.),
@@ -49,6 +54,9 @@ impl StyleLayerId {
 
     /// Tree-sitter syntax highlighting style layer.
     pub const TREE_SITTER: Self = Self(6);
+
+    /// IME marked text (composition / preedit) overlay layer.
+    pub const IME_MARKED_TEXT: Self = Self(7);
 }
 
 /// Interval structure
