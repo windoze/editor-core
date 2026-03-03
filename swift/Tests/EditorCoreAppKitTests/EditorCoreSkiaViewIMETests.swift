@@ -44,6 +44,29 @@ final class EditorCoreSkiaViewIMETests: XCTestCase {
         XCTAssertEqual(sel.start, 2)
         XCTAssertEqual(sel.end, 2)
     }
+
+    func testCancelOperationRestoresOriginalReplacedSelection() throws {
+        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let view = try EditorCoreSkiaView(library: lib, initialText: "abcXYZdef", viewportWidthCells: 80)
+
+        // Select "XYZ" (char offsets).
+        try view.editor.setSelections([EcuSelectionRange(start: 3, end: 6)], primaryIndex: 0)
+
+        // Start composition without explicit replacementRange (Rust should use the current selection).
+        view.setMarkedText(
+            "你",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        XCTAssertEqual(try view.editor.text(), "abc你def")
+
+        // Escape: cancel composition => restore original text + selection.
+        view.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        XCTAssertEqual(try view.editor.text(), "abcXYZdef")
+        let sel = try view.editor.selectionOffsets()
+        XCTAssertEqual(sel.start, 3)
+        XCTAssertEqual(sel.end, 6)
+    }
 }
 
 final class EditorCoreAppKitTestSupport: @unchecked Sendable {
@@ -178,4 +201,3 @@ final class EditorCoreAppKitTestSupport: @unchecked Sendable {
         #endif
     }
 }
-

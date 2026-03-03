@@ -32,10 +32,15 @@ pub enum UiError {
     Processor(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct MarkedRange {
     start: usize,
     len: usize,
+    /// Text that was replaced when the IME composition started.
+    ///
+    /// Needed to support "cancel composition" without losing the original selection.
+    original_text: String,
+    original_len: usize,
 }
 
 #[derive(Debug, Default)]
@@ -277,7 +282,7 @@ impl EditorUi {
 
     /// Return the current IME marked text range as `(start, len)` in character offsets.
     pub fn marked_range(&self) -> Option<(usize, usize)> {
-        self.marked.map(|m| (m.start, m.len))
+        self.marked.as_ref().map(|m| (m.start, m.len))
     }
 
     /// Map a character offset (Unicode scalar index) to visual `(row, x_cells)`.
@@ -724,40 +729,88 @@ impl EditorUi {
     ) -> Result<(), UiError> {
         let new_len = text.chars().count();
 
-        let (start, len) = if let Some((start, len)) = replace_range {
-            (start, len)
-        } else if let Some(marked) = self.marked {
-            (marked.start, marked.len)
-        } else {
-            let cursor = self.state.get_cursor_state();
-            let line_index = &self.state.editor().line_index;
-            if let Some(sel) = cursor.selection {
-                let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
-                let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
-                let (start, end) = if a <= b { (a, b) } else { (b, a) };
-                (start, end.saturating_sub(start))
+        // Determine which document range is being replaced, and the "original" text
+        // (the selection at the moment composition starts) so we can restore it if
+        // composition is cancelled (e.g. Escape / IME clears marked text).
+        let (start, replace_len, original_text, original_len) =
+            if let Some((start, len)) = replace_range {
+                let original = self.state.editor().piece_table.get_range(start, len);
+                (start, len, original, len)
+            } else if let Some(marked) = self.marked.as_ref() {
+                (
+                    marked.start,
+                    marked.len,
+                    marked.original_text.clone(),
+                    marked.original_len,
+                )
             } else {
-                (cursor.offset, 0)
-            }
-        };
+                let cursor = self.state.get_cursor_state();
+                let line_index = &self.state.editor().line_index;
+                if let Some(sel) = cursor.selection {
+                    let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
+                    let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
+                    let (start, end) = if a <= b { (a, b) } else { (b, a) };
+                    let len = end.saturating_sub(start);
+                    let original = self.state.editor().piece_table.get_range(start, len);
+                    (start, len, original, len)
+                } else {
+                    (cursor.offset, 0, String::new(), 0)
+                }
+            };
 
-        self.state.execute(Command::Edit(EditCommand::Replace {
-            start,
-            length: len,
-            text: text.to_string(),
-        }))?;
-        self.refresh_processing()?;
-
+        // Empty marked text means "cancel/clear composition": restore original replaced text.
         if new_len == 0 {
+            if replace_len > 0 || !original_text.is_empty() {
+                self.state.execute(Command::Edit(EditCommand::Replace {
+                    start,
+                    length: replace_len,
+                    text: original_text.clone(),
+                }))?;
+                self.refresh_processing()?;
+            }
+
             self.marked = None;
             self.state
                 .apply_processing_edits([ProcessingEdit::ClearStyleLayer {
                     layer: StyleLayerId::IME_MARKED_TEXT,
                 }]);
+
+            // Restore selection to the original range (best-effort).
+            let a_off = start;
+            let b_off = start.saturating_add(original_len);
+            let line_index = &self.state.editor().line_index;
+            let (a_line, a_col) = line_index.char_offset_to_position(a_off);
+            let (b_line, b_col) = line_index.char_offset_to_position(b_off);
+
+            if original_len > 0 {
+                self.state.execute(Command::Cursor(CursorCommand::SetSelection {
+                    start: Position::new(a_line, a_col),
+                    end: Position::new(b_line, b_col),
+                }))?;
+            } else {
+                self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+                    line: a_line,
+                    column: a_col,
+                }))?;
+                self.state
+                    .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+            }
             return Ok(());
         }
 
-        self.marked = Some(MarkedRange { start, len: new_len });
+        self.state.execute(Command::Edit(EditCommand::Replace {
+            start,
+            length: replace_len,
+            text: text.to_string(),
+        }))?;
+        self.refresh_processing()?;
+
+        self.marked = Some(MarkedRange {
+            start,
+            len: new_len,
+            original_text,
+            original_len,
+        });
 
         // Apply a dedicated style layer so the renderer can draw preedit (underline/background).
         self.state
@@ -1086,6 +1139,30 @@ mod tests {
         assert_eq!(ui.text(), "你好");
         ui.commit_text("你好!").unwrap();
         assert_eq!(ui.text(), "你好!");
+    }
+
+    #[test]
+    fn ui_marked_text_empty_cancels_and_restores_original_text_and_selection() {
+        // Start composition by replacing a selection, then cancel it by setting empty marked text.
+        let mut ui = EditorUi::new("abcXYZdef", 80);
+        ui.set_marked_text_with_selection("你", 1, 0, Some((3, 3)))
+            .unwrap();
+        assert_eq!(ui.text(), "abc你def");
+
+        // Cancel: empty marked text should restore the original "XYZ" and selection.
+        ui.set_marked_text_with_selection("", 0, 0, None).unwrap();
+        assert_eq!(ui.text(), "abcXYZdef");
+        assert_eq!(ui.primary_selection_offsets(), (3, 6));
+
+        // Also cover the common case: composition started at a caret (no selection).
+        let mut ui2 = EditorUi::new("abc", 80);
+        ui2.execute(Command::Cursor(CursorCommand::MoveTo { line: 0, column: 3 }))
+            .unwrap();
+        ui2.set_marked_text("你").unwrap();
+        assert_eq!(ui2.text(), "abc你");
+        ui2.set_marked_text("").unwrap();
+        assert_eq!(ui2.text(), "abc");
+        assert_eq!(ui2.primary_selection_offsets(), (3, 3));
     }
 
     #[test]

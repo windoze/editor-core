@@ -28,6 +28,11 @@ public final class EditorCoreSkiaView: NSView {
 
     private lazy var textInputContext = NSTextInputContext(client: self)
 
+    private func invalidateIMECharacterCoordinates() {
+        // 用于 IME 候选窗定位：当 caret/marked range 或 viewport 变化时，需要通知系统重新查询 firstRect。
+        textInputContext.invalidateCharacterCoordinates()
+    }
+
     public override var acceptsFirstResponder: Bool { true }
     public override var isFlipped: Bool { true }
     public override var inputContext: NSTextInputContext? { textInputContext }
@@ -182,6 +187,7 @@ public final class EditorCoreSkiaView: NSView {
         }
 
         needsDisplay = true
+        invalidateIMECharacterCoordinates()
     }
 
     public override func draw(_ dirtyRect: NSRect) {
@@ -314,6 +320,7 @@ public final class EditorCoreSkiaView: NSView {
             NSSound.beep()
         }
         needsDisplay = true
+        invalidateIMECharacterCoordinates()
     }
 
     public override func mouseDragged(with event: NSEvent) {
@@ -333,12 +340,14 @@ public final class EditorCoreSkiaView: NSView {
             NSSound.beep()
         }
         needsDisplay = true
+        invalidateIMECharacterCoordinates()
     }
 
     public override func mouseUp(with event: NSEvent) {
         rectSelectionAnchorOffset = nil
         editor.mouseUp()
         needsDisplay = true
+        invalidateIMECharacterCoordinates()
     }
 
     public override func scrollWheel(with event: NSEvent) {
@@ -349,6 +358,7 @@ public final class EditorCoreSkiaView: NSView {
             if rows != 0 {
                 editor.scrollByRows(-rows)
                 needsDisplay = true
+                invalidateIMECharacterCoordinates()
             }
         }
     }
@@ -376,6 +386,7 @@ public final class EditorCoreSkiaView: NSView {
             NSSound.beep()
         }
         needsDisplay = true
+        invalidateIMECharacterCoordinates()
     }
 
     public func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -419,11 +430,13 @@ public final class EditorCoreSkiaView: NSView {
             NSSound.beep()
         }
         needsDisplay = true
+        invalidateIMECharacterCoordinates()
     }
 
     public func unmarkText() {
         editor.unmarkText()
         needsDisplay = true
+        invalidateIMECharacterCoordinates()
     }
 
     public override func doCommand(by selector: Selector) {
@@ -464,6 +477,12 @@ public final class EditorCoreSkiaView: NSView {
                 try editor.commitText("\n")
             case #selector(insertTab(_:)):
                 try editor.commitText("\t")
+            case #selector(cancelOperation(_:)):
+                // Escape: cancel marked text / composition (restore original replaced range).
+                let marked = try editor.markedRange()
+                if marked.hasMarked {
+                    try editor.setMarkedText("", selectedStart: 0, selectedLen: 0)
+                }
             case Selector(("undo:")):
                 try editor.undo()
             case Selector(("redo:")):
@@ -475,6 +494,7 @@ public final class EditorCoreSkiaView: NSView {
             NSSound.beep()
         }
         needsDisplay = true
+        invalidateIMECharacterCoordinates()
     }
 
     // MARK: - NSTextInputClient state queries
