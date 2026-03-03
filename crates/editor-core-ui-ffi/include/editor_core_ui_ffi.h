@@ -91,11 +91,13 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(EditorUi* ui,
                                                                uint32_t data_len);
 
 int32_t editor_core_ui_ffi_editor_ui_set_render_metrics(EditorUi* ui,
-                                                        float font_size,
-                                                        float line_height_px,
-                                                        float cell_width_px,
-                                                        float padding_x_px,
-                                                        float padding_y_px);
+                                                       float font_size,
+                                                       float line_height_px,
+                                                       float cell_width_px,
+                                                       float padding_x_px,
+                                                       float padding_y_px);
+int32_t editor_core_ui_ffi_editor_ui_set_font_families_csv(EditorUi* ui,
+                                                           const char* families_utf8);
 int32_t editor_core_ui_ffi_editor_ui_set_gutter_width_cells(EditorUi* ui, uint32_t width_cells);
 int32_t editor_core_ui_ffi_editor_ui_set_viewport_px(EditorUi* ui,
                                                      uint32_t width_px,

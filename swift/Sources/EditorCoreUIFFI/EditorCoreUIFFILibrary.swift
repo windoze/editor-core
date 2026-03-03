@@ -26,6 +26,7 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiLspApplySemanticTokens = @convention(c) (OpaquePointer?, UnsafePointer<UInt32>?, UInt32) -> Int32
 
     typealias FnEditorUiSetRenderMetrics = @convention(c) (OpaquePointer?, Float, Float, Float, Float, Float) -> Int32
+    typealias FnEditorUiSetFontFamiliesCSV = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
     typealias FnEditorUiSetGutterWidthCells = @convention(c) (OpaquePointer?, UInt32) -> Int32
     typealias FnEditorUiSetViewportPx = @convention(c) (OpaquePointer?, UInt32, UInt32, Float) -> Int32
     typealias FnEditorUiScrollByRows = @convention(c) (OpaquePointer?, Int32) -> Void
@@ -108,6 +109,7 @@ public final class EditorCoreUIFFILibrary {
     let editorUiLspApplySemanticTokensFn: FnEditorUiLspApplySemanticTokens
 
     let editorUiSetRenderMetricsFn: FnEditorUiSetRenderMetrics
+    let editorUiSetFontFamiliesCSVFn: FnEditorUiSetFontFamiliesCSV
     let editorUiSetGutterWidthCellsFn: FnEditorUiSetGutterWidthCells
     let editorUiSetViewportPxFn: FnEditorUiSetViewportPx
     let editorUiScrollByRowsFn: FnEditorUiScrollByRows
@@ -199,6 +201,7 @@ public final class EditorCoreUIFFILibrary {
         editorUiLspApplySemanticTokensFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens", as: FnEditorUiLspApplySemanticTokens.self)
 
         editorUiSetRenderMetricsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_render_metrics", as: FnEditorUiSetRenderMetrics.self)
+        editorUiSetFontFamiliesCSVFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_font_families_csv", as: FnEditorUiSetFontFamiliesCSV.self)
         editorUiSetGutterWidthCellsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_gutter_width_cells", as: FnEditorUiSetGutterWidthCells.self)
         editorUiSetViewportPxFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_viewport_px", as: FnEditorUiSetViewportPx.self)
         editorUiScrollByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_scroll_by_rows", as: FnEditorUiScrollByRows.self)

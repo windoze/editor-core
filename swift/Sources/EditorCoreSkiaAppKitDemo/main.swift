@@ -132,7 +132,13 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             }
             """
 
-            let editorView = try EditorCoreSkiaView(library: library, initialText: initialText, viewportWidthCells: 120)
+            let fontFamiliesCSV = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_FONT_FAMILIES"]
+            let editorView = try EditorCoreSkiaView(
+                library: library,
+                initialText: initialText,
+                viewportWidthCells: 120,
+                fontFamiliesCSV: fontFamiliesCSV
+            )
             // Demo: enable Tree-sitter (Rust) for highlighting + folding regions.
             try editorView.editor.treeSitterRustEnableDefault()
 

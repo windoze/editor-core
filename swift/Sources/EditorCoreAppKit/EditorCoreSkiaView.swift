@@ -32,7 +32,12 @@ public final class EditorCoreSkiaView: NSView {
     public override var isFlipped: Bool { true }
     public override var inputContext: NSTextInputContext? { textInputContext }
 
-    public init(library: EditorCoreUIFFILibrary, initialText: String = "", viewportWidthCells: UInt32 = 120) throws {
+    public init(
+        library: EditorCoreUIFFILibrary,
+        initialText: String = "",
+        viewportWidthCells: UInt32 = 120,
+        fontFamiliesCSV: String? = nil
+    ) throws {
         self.editor = try EditorUI(library: library, initialText: initialText, viewportWidthCells: viewportWidthCells)
         super.init(frame: .zero)
 
@@ -65,6 +70,10 @@ public final class EditorCoreSkiaView: NSView {
             EcuStyleColors(styleId: foldExpanded, background: EcuRgba8(r: 0xAA, g: 0xAA, b: 0xAA, a: 0xFF)),
             EcuStyleColors(styleId: foldCollapsed, background: EcuRgba8(r: 0x77, g: 0x77, b: 0x77, a: 0xFF)),
         ])
+
+        if let fontFamiliesCSV, fontFamiliesCSV.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            try editor.setFontFamiliesCSV(fontFamiliesCSV)
+        }
     }
 
     @available(*, unavailable, message: "请使用 init(library:initialText:viewportWidthCells:) 构造。")

@@ -126,6 +126,19 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_render_metrics")
     }
 
+    /// Configure a font fallback list for rendering (comma-separated family names).
+    ///
+    /// Example: `"Menlo, PingFang SC, Apple Color Emoji"`.
+    ///
+    /// Notes:
+    /// - This affects glyph rasterization only; layout remains monospace-grid based.
+    public func setFontFamiliesCSV(_ families: String) throws {
+        let status = families.withCString { cstr in
+            library.editorUiSetFontFamiliesCSVFn(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_set_font_families_csv")
+    }
+
     public func setGutterWidthCells(_ widthCells: UInt32) throws {
         let status = library.editorUiSetGutterWidthCellsFn(handle, widthCells)
         try library.ensureStatus(status, context: "editor_ui_set_gutter_width_cells")

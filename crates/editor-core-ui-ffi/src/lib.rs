@@ -617,6 +617,27 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_render_metrics(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_font_families_csv(
+    ui: *mut EditorUi,
+    families_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let families = require_cstr(families_utf8, "families_utf8")?
+            .to_str()
+            .map_err(|_| "families_utf8 is not valid UTF-8".to_string())?;
+        ui.set_font_families_csv(families);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_gutter_width_cells(
     ui: *mut EditorUi,
     width_cells: u32,

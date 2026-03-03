@@ -489,6 +489,21 @@ impl EditorUi {
         self.render_config.padding_y_px = padding_y_px;
     }
 
+    /// Configure font fallback list for rendering (comma-separated family names).
+    ///
+    /// This mirrors how VS Code allows configuring `editor.fontFamily` as a list.
+    ///
+    /// Notes:
+    /// - This does not affect layout metrics; the editor remains monospace-grid based.
+    /// - The renderer will pick the first font that contains a glyph for each character.
+    pub fn set_font_families_csv(&mut self, families_csv: &str) {
+        let families: Vec<String> = families_csv
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
+        self.renderer.set_font_families(families);
+    }
+
     pub fn set_gutter_width_cells(&mut self, width_cells: u32) -> Result<(), UiError> {
         self.render_config.gutter_width_cells = width_cells;
         // Keep wrap width in sync with the available text area.

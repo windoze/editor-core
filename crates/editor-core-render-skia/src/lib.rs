@@ -9,7 +9,7 @@ use skia_safe::{
     AlphaType, Color, Color4f, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle,
     ImageInfo, Paint, Point, Rect, surfaces,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
 
 /// RGBA (premultiplied) 8-bit color.
@@ -162,26 +162,95 @@ pub enum RenderError {
 /// incrementally with deterministic tests.
 #[derive(Debug)]
 pub struct SkiaRenderer {
-    font: Font,
+    fonts: Vec<Font>,
+    font_families: Vec<String>,
+    font_size: f32,
+    glyph_font_cache: HashMap<char, usize>,
 }
 
 impl SkiaRenderer {
     pub fn new() -> Self {
-        let mut font = Font::default();
+        let font_size = RenderConfig::default().font_size;
+        let families: Vec<String> = default_font_families()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect();
+        let fonts = load_fonts_from_families(families.as_slice(), font_size);
+        Self {
+            fonts,
+            font_families: families,
+            font_size,
+            glyph_font_cache: HashMap::new(),
+        }
+    }
 
-        // Make text rendering deterministic-ish and avoid relying on Skia's implicit default typeface,
-        // which can be missing/empty on some setups (leading to “selection visible but no glyphs”).
-        if let Some(tf) = pick_reasonable_monospace_typeface() {
-            font.set_typeface(tf);
+    /// Configure the font fallback chain (first match wins).
+    ///
+    /// Notes:
+    /// - This keeps the renderer "monospace-grid" layout model: glyph shaping/advance does not affect
+    ///   cell metrics; only glyph rasterization uses fallbacks.
+    /// - If no provided family can be loaded, we fall back to a reasonable monospace default.
+    pub fn set_font_families(&mut self, families: Vec<String>) {
+        let normalized: Vec<String> = families
+            .into_iter()
+            .map(|s| normalize_font_family_name(s.as_str()))
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        let fonts = if normalized.is_empty() {
+            load_fonts_from_families(
+                default_font_families()
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                self.font_size,
+            )
+        } else {
+            load_fonts_from_families(normalized.as_slice(), self.font_size)
+        };
+
+        self.font_families = normalized;
+        self.fonts = fonts;
+        self.glyph_font_cache.clear();
+    }
+
+    fn ensure_font_size(&mut self, size: f32) {
+        if (self.font_size - size).abs() <= f32::EPSILON {
+            return;
+        }
+        self.font_size = size;
+        for f in &mut self.fonts {
+            f.set_size(size);
+        }
+    }
+
+    fn font_index_for_char(&mut self, ch: char) -> usize {
+        if self.fonts.len() <= 1 {
+            return 0;
+        }
+        if let Some(&idx) = self.glyph_font_cache.get(&ch) {
+            return idx;
         }
 
-        // Prefer grayscale AA: it produces consistent RGBA output and avoids LCD/subpixel quirks.
-        font.set_subpixel(false);
-        font.set_hinting(FontHinting::Normal);
-        font.set_edging(skia_safe::font::Edging::AntiAlias);
+        let mut idx = 0usize;
+        for (i, f) in self.fonts.iter().enumerate() {
+            let tf = f.typeface();
+            // Skia returns glyph id 0 for missing glyphs / .notdef.
+            if tf.unichar_to_glyph(ch as i32) != 0 {
+                idx = i;
+                break;
+            }
+        }
 
-        font.set_size(RenderConfig::default().font_size);
-        Self { font }
+        self.glyph_font_cache.insert(ch, idx);
+        idx
+    }
+
+    fn font_for_char(&mut self, ch: char) -> &Font {
+        let idx = self.font_index_for_char(ch);
+        // Safety: `idx` always comes from `fonts` indices or defaults to 0.
+        &self.fonts[idx.min(self.fonts.len().saturating_sub(1))]
     }
 
     pub fn required_rgba_len(config: RenderConfig) -> Result<usize, RenderError> {
@@ -248,10 +317,7 @@ impl SkiaRenderer {
             });
         }
 
-        // Keep renderer font size in sync with config.
-        if (self.font.size() - config.font_size).abs() > f32::EPSILON {
-            self.font.set_size(config.font_size);
-        }
+        self.ensure_font_size(config.font_size);
 
         let width = config.width_px as i32;
         let height = config.height_px as i32;
@@ -305,7 +371,11 @@ impl SkiaRenderer {
         }
 
         // Text.
-        let (_spacing, metrics) = self.font.metrics();
+        debug_assert!(
+            !self.fonts.is_empty(),
+            "SkiaRenderer must always have at least one font"
+        );
+        let (_spacing, metrics) = { self.fonts[0].metrics() };
         let mut baseline_offset = -metrics.ascent;
         if !baseline_offset.is_finite() {
             baseline_offset = config.line_height_px * 0.8;
@@ -344,7 +414,7 @@ impl SkiaRenderer {
 
                 let line_no = (line.logical_line_index + 1).to_string();
                 let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
-                canvas.draw_str(line_no, Point::new(x_px, baseline_y), &self.font, &paint);
+                canvas.draw_str(line_no, Point::new(x_px, baseline_y), &self.fonts[0], &paint);
             }
 
             let mut x_cells = line.segment_x_start_cells as f32;
@@ -367,7 +437,7 @@ impl SkiaRenderer {
                 canvas.draw_str(
                     cell.ch.to_string(),
                     Point::new(x_px, baseline_y),
-                    &self.font,
+                    self.font_for_char(cell.ch),
                     &paint,
                 );
 
@@ -394,6 +464,99 @@ impl SkiaRenderer {
 
         Ok(())
     }
+}
+
+fn normalize_font_family_name(name: &str) -> String {
+    let trimmed = name.trim();
+    if trimmed.len() >= 2 {
+        let bytes = trimmed.as_bytes();
+        let first = bytes[0] as char;
+        let last = bytes[bytes.len() - 1] as char;
+        if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+            return trimmed[1..trimmed.len() - 1].trim().to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+fn default_font_families() -> Vec<&'static str> {
+    // Keep the list fairly small and ordered by preference.
+    //
+    // For CJK + emoji correctness we include explicit fallbacks after the primary monospace.
+    if cfg!(target_os = "macos") {
+        vec![
+            // Primary monospace candidates.
+            "Menlo",
+            "SF Mono",
+            "Monaco",
+            "Courier New",
+            "Courier",
+            // CJK fallbacks.
+            "PingFang SC",
+            "Hiragino Sans GB",
+            "Heiti SC",
+            // Emoji fallback.
+            "Apple Color Emoji",
+        ]
+    } else if cfg!(target_os = "windows") {
+        vec![
+            "Consolas",
+            "Cascadia Mono",
+            "Courier New",
+            // CJK + emoji best-effort.
+            "Microsoft YaHei",
+            "Segoe UI Emoji",
+            "Segoe UI Symbol",
+        ]
+    } else {
+        vec![
+            "DejaVu Sans Mono",
+            "Noto Sans Mono",
+            "Liberation Mono",
+            "Monospace",
+            // CJK + emoji best-effort.
+            "Noto Sans CJK SC",
+            "Noto Color Emoji",
+            "Noto Emoji",
+        ]
+    }
+}
+
+fn make_configured_font(typeface: Option<skia_safe::Typeface>, size: f32) -> Font {
+    let mut font = Font::default();
+    if let Some(tf) = typeface {
+        font.set_typeface(tf);
+    }
+
+    // Prefer grayscale AA: it produces consistent RGBA output and avoids LCD/subpixel quirks.
+    font.set_subpixel(false);
+    font.set_hinting(FontHinting::Normal);
+    font.set_edging(skia_safe::font::Edging::AntiAlias);
+
+    font.set_size(size);
+    font
+}
+
+fn load_fonts_from_families(families: &[String], size: f32) -> Vec<Font> {
+    let mgr = FontMgr::new();
+    let style = FontStyle::normal();
+    let mut out = Vec::<Font>::new();
+
+    for raw in families {
+        let name = normalize_font_family_name(raw.as_str());
+        if name.is_empty() {
+            continue;
+        }
+        if let Some(tf) = mgr.match_family_style(name.as_str(), style) {
+            out.push(make_configured_font(Some(tf), size));
+        }
+    }
+
+    if out.is_empty() {
+        out.push(make_configured_font(pick_reasonable_monospace_typeface(), size));
+    }
+
+    out
 }
 
 fn pick_reasonable_monospace_typeface() -> Option<skia_safe::Typeface> {
