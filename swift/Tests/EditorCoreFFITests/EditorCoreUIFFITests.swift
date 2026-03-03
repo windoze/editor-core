@@ -297,6 +297,28 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(sels2.ranges.count, 1)
     }
 
+    func testMoveAndModifySelectionExtendsFromAnchor() throws {
+        let lib = try EditorCoreUIFFILibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc\n", viewportWidthCells: 80)
+
+        try ui.setSelections([EcuSelectionRange(start: 2, end: 2)], primaryIndex: 0)
+
+        try ui.moveGraphemeLeftAndModifySelection()
+        var sel = try ui.selectionOffsets()
+        XCTAssertEqual(sel.start, 1)
+        XCTAssertEqual(sel.end, 2)
+
+        try ui.moveGraphemeLeftAndModifySelection()
+        sel = try ui.selectionOffsets()
+        XCTAssertEqual(sel.start, 0)
+        XCTAssertEqual(sel.end, 2)
+
+        try ui.moveGraphemeRightAndModifySelection()
+        sel = try ui.selectionOffsets()
+        XCTAssertEqual(sel.start, 1)
+        XCTAssertEqual(sel.end, 2)
+    }
+
     func testGutterRendersFoldMarkerAndClickTogglesFold() throws {
         let lib = try EditorCoreUIFFILibrary()
         let ui = try EditorUI(library: lib, initialText: "fn main() {\n  let x = 1;\n}\n", viewportWidthCells: 80)

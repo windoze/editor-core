@@ -192,6 +192,21 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_move_grapheme_right")
     }
 
+    public func moveGraphemeLeftAndModifySelection() throws {
+        let status = library.editorUiMoveGraphemeLeftAndModifySelectionFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_grapheme_left_and_modify_selection")
+    }
+
+    public func moveGraphemeRightAndModifySelection() throws {
+        let status = library.editorUiMoveGraphemeRightAndModifySelectionFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_grapheme_right_and_modify_selection")
+    }
+
+    public func moveVisualByRowsAndModifySelection(_ deltaRows: Int32) throws {
+        let status = library.editorUiMoveVisualByRowsAndModifySelectionFn(handle, deltaRows)
+        try library.ensureStatus(status, context: "editor_ui_move_visual_by_rows_and_modify_selection")
+    }
+
     public func setMarkedText(_ text: String) throws {
         let status = text.withCString { cstr in
             library.editorUiSetMarkedTextFn(handle, cstr)

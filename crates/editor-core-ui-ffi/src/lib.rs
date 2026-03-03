@@ -839,6 +839,61 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_move_grapheme_right(ui: *mut Edit
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_grapheme_left_and_modify_selection(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_grapheme_left_and_modify_selection()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_grapheme_right_and_modify_selection(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_grapheme_right_and_modify_selection()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_visual_by_rows_and_modify_selection(
+    ui: *mut EditorUi,
+    delta_rows: c_int,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_visual_by_rows_and_modify_selection(delta_rows as isize)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_clear_secondary_selections(
     ui: *mut EditorUi,
 ) -> c_int {
@@ -2138,6 +2193,53 @@ contexts:
             ECU_OK
         );
         assert_eq!(pixel(&buf, 200, 5, 10), [9, 9, 9, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_move_and_modify_selection_extends_from_anchor() {
+        let initial = CString::new("abc\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let ranges = [EcuSelectionRange { start: 2, end: 2 }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            ECU_OK
+        );
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_move_grapheme_left_and_modify_selection(ui),
+            ECU_OK
+        );
+        let mut s: u32 = 0;
+        let mut e: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut s, &mut e),
+            ECU_OK
+        );
+        assert_eq!((s, e), (1, 2));
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_move_grapheme_left_and_modify_selection(ui),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut s, &mut e),
+            ECU_OK
+        );
+        assert_eq!((s, e), (0, 2));
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_move_grapheme_right_and_modify_selection(ui),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut s, &mut e),
+            ECU_OK
+        );
+        assert_eq!((s, e), (1, 2));
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

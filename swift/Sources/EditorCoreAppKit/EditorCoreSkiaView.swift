@@ -20,6 +20,9 @@ public final class EditorCoreSkiaView: NSView {
     private var scaleFactor: CGFloat = 1
 
     private var lineHeightPx: Float = 18
+    private var gutterWidthCells: UInt32 = 4
+
+    private var rectSelectionAnchorOffset: UInt32?
 
     private lazy var textInputContext = NSTextInputContext(client: self)
 
@@ -42,6 +45,24 @@ public final class EditorCoreSkiaView: NSView {
                 caret: EcuRgba8(r: 0x11, g: 0x11, b: 0x11, a: 0xFF)
             )
         )
+
+        // 让 gutter 可见（行号 + 折叠标记）。
+        try editor.setGutterWidthCells(gutterWidthCells)
+
+        // Reserved overlay StyleId（见 `crates/editor-core-render-skia/src/lib.rs`）。
+        // 这里先用一套默认配色，后续可由 host 主题系统统一下发。
+        let gutterBg: UInt32 = 0x0600_0001
+        let gutterFg: UInt32 = 0x0600_0002
+        let gutterSep: UInt32 = 0x0600_0003
+        let foldCollapsed: UInt32 = 0x0600_0004
+        let foldExpanded: UInt32 = 0x0600_0005
+        try editor.setStyleColors([
+            EcuStyleColors(styleId: gutterBg, background: EcuRgba8(r: 0xF5, g: 0xF5, b: 0xF5, a: 0xFF)),
+            EcuStyleColors(styleId: gutterFg, foreground: EcuRgba8(r: 0x88, g: 0x88, b: 0x88, a: 0xFF)),
+            EcuStyleColors(styleId: gutterSep, foreground: EcuRgba8(r: 0xDD, g: 0xDD, b: 0xDD, a: 0xFF)),
+            EcuStyleColors(styleId: foldExpanded, background: EcuRgba8(r: 0xAA, g: 0xAA, b: 0xAA, a: 0xFF)),
+            EcuStyleColors(styleId: foldCollapsed, background: EcuRgba8(r: 0x77, g: 0x77, b: 0x77, a: 0xFF)),
+        ])
     }
 
     @available(*, unavailable, message: "请使用 init(library:initialText:viewportWidthCells:) 构造。")
@@ -163,8 +184,29 @@ public final class EditorCoreSkiaView: NSView {
         let p = convert(event.locationInWindow, from: nil)
         let xPx = Float(p.x * scaleFactor)
         let yPx = Float(p.y * scaleFactor)
+
+        rectSelectionAnchorOffset = nil
+
         do {
-            try editor.mouseDown(xPx: xPx, yPx: yPx)
+            if event.modifierFlags.contains(.command) {
+                // Cmd+Click: add a new caret at point (multi-cursor).
+                let offset = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
+                try editor.addCaret(atCharOffset: offset, makePrimary: true)
+            } else if event.modifierFlags.contains(.option) {
+                // Option+Drag: rectangular (box) selection.
+                let anchor = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
+                rectSelectionAnchorOffset = anchor
+                try editor.setRectSelection(anchorOffset: anchor, activeOffset: anchor)
+            } else {
+                try editor.mouseDown(xPx: xPx, yPx: yPx)
+
+                // Double/triple click selection.
+                if event.clickCount == 2 {
+                    try editor.selectWord()
+                } else if event.clickCount >= 3 {
+                    try editor.selectLine()
+                }
+            }
         } catch {
             NSSound.beep()
         }
@@ -176,7 +218,12 @@ public final class EditorCoreSkiaView: NSView {
         let xPx = Float(p.x * scaleFactor)
         let yPx = Float(p.y * scaleFactor)
         do {
-            try editor.mouseDragged(xPx: xPx, yPx: yPx)
+            if let anchor = rectSelectionAnchorOffset {
+                let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
+                try editor.setRectSelection(anchorOffset: anchor, activeOffset: active)
+            } else {
+                try editor.mouseDragged(xPx: xPx, yPx: yPx)
+            }
         } catch {
             NSSound.beep()
         }
@@ -184,6 +231,7 @@ public final class EditorCoreSkiaView: NSView {
     }
 
     public override func mouseUp(with event: NSEvent) {
+        rectSelectionAnchorOffset = nil
         editor.mouseUp()
         needsDisplay = true
     }
@@ -252,13 +300,32 @@ public final class EditorCoreSkiaView: NSView {
         do {
             switch selector {
             case #selector(moveLeft(_:)):
-                try editor.moveGraphemeLeft()
+                // 非 shift：如果有选区，先折叠选区到起点（符合多数编辑器习惯）。
+                let sel = try editor.selectionOffsets()
+                if sel.start != sel.end {
+                    try editor.setSelections([EcuSelectionRange(start: sel.start, end: sel.start)], primaryIndex: 0)
+                } else {
+                    try editor.moveGraphemeLeft()
+                }
             case #selector(moveRight(_:)):
-                try editor.moveGraphemeRight()
+                let sel = try editor.selectionOffsets()
+                if sel.start != sel.end {
+                    try editor.setSelections([EcuSelectionRange(start: sel.end, end: sel.end)], primaryIndex: 0)
+                } else {
+                    try editor.moveGraphemeRight()
+                }
             case #selector(moveUp(_:)):
                 try editor.moveVisualByRows(-1)
             case #selector(moveDown(_:)):
                 try editor.moveVisualByRows(1)
+            case #selector(moveLeftAndModifySelection(_:)):
+                try editor.moveGraphemeLeftAndModifySelection()
+            case #selector(moveRightAndModifySelection(_:)):
+                try editor.moveGraphemeRightAndModifySelection()
+            case #selector(moveUpAndModifySelection(_:)):
+                try editor.moveVisualByRowsAndModifySelection(-1)
+            case #selector(moveDownAndModifySelection(_:)):
+                try editor.moveVisualByRowsAndModifySelection(1)
             case #selector(deleteBackward(_:)):
                 try editor.backspace()
             case #selector(deleteForward(_:)):

@@ -40,6 +40,9 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiMoveVisualByRows = @convention(c) (OpaquePointer?, Int32) -> Int32
     typealias FnEditorUiMoveGraphemeLeft = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveGraphemeRight = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveGraphemeLeftAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveGraphemeRightAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveVisualByRowsAndModifySelection = @convention(c) (OpaquePointer?, Int32) -> Int32
 
     typealias FnEditorUiSetMarkedText = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
     typealias FnEditorUiUnmarkText = @convention(c) (OpaquePointer?) -> Void
@@ -117,6 +120,9 @@ public final class EditorCoreUIFFILibrary {
     let editorUiMoveVisualByRowsFn: FnEditorUiMoveVisualByRows
     let editorUiMoveGraphemeLeftFn: FnEditorUiMoveGraphemeLeft
     let editorUiMoveGraphemeRightFn: FnEditorUiMoveGraphemeRight
+    let editorUiMoveGraphemeLeftAndModifySelectionFn: FnEditorUiMoveGraphemeLeftAndModifySelection
+    let editorUiMoveGraphemeRightAndModifySelectionFn: FnEditorUiMoveGraphemeRightAndModifySelection
+    let editorUiMoveVisualByRowsAndModifySelectionFn: FnEditorUiMoveVisualByRowsAndModifySelection
     let editorUiSetMarkedTextFn: FnEditorUiSetMarkedText
     let editorUiUnmarkTextFn: FnEditorUiUnmarkText
     let editorUiCommitTextFn: FnEditorUiCommitText
@@ -204,6 +210,9 @@ public final class EditorCoreUIFFILibrary {
         editorUiMoveVisualByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_visual_by_rows", as: FnEditorUiMoveVisualByRows.self)
         editorUiMoveGraphemeLeftFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_left", as: FnEditorUiMoveGraphemeLeft.self)
         editorUiMoveGraphemeRightFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_right", as: FnEditorUiMoveGraphemeRight.self)
+        editorUiMoveGraphemeLeftAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_left_and_modify_selection", as: FnEditorUiMoveGraphemeLeftAndModifySelection.self)
+        editorUiMoveGraphemeRightAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_right_and_modify_selection", as: FnEditorUiMoveGraphemeRightAndModifySelection.self)
+        editorUiMoveVisualByRowsAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_visual_by_rows_and_modify_selection", as: FnEditorUiMoveVisualByRowsAndModifySelection.self)
         editorUiSetMarkedTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_marked_text", as: FnEditorUiSetMarkedText.self)
         editorUiUnmarkTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_unmark_text", as: FnEditorUiUnmarkText.self)
         editorUiCommitTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_commit_text", as: FnEditorUiCommitText.self)

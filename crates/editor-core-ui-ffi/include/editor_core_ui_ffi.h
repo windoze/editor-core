@@ -119,6 +119,10 @@ int32_t editor_core_ui_ffi_editor_ui_redo(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_visual_by_rows(EditorUi* ui, int32_t delta_rows);
 int32_t editor_core_ui_ffi_editor_ui_move_grapheme_left(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_grapheme_right(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_grapheme_left_and_modify_selection(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_grapheme_right_and_modify_selection(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_visual_by_rows_and_modify_selection(EditorUi* ui,
+                                                                             int32_t delta_rows);
 
 int32_t editor_core_ui_ffi_editor_ui_set_marked_text(EditorUi* ui, const char* text_utf8);
 void editor_core_ui_ffi_editor_ui_unmark_text(EditorUi* ui);

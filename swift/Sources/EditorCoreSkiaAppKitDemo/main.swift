@@ -19,15 +19,28 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             //
             // 支持：
             // - 输入/删除/选区（鼠标拖拽）
+            // - 多光标：Cmd+Click
+            // - 矩形选择：Option+Drag
+            // - Shift+方向键扩选
+            // - gutter（行号 + 折叠标记），点击 gutter 折叠/展开
             // - 中文输入（marked text / commit text）
             // - Cmd-Z / Cmd-Shift-Z（undo/redo）
             //
             // TODO：
-            // - StyleId -> Theme 映射（高亮/折叠/诊断渲染）
+            // - 更完整的主题系统（StyleId -> Theme 映射）
             // - GPU 后端（Metal）与增量重绘
+            //
+            // 下面是一段 Rust 代码（用于 Tree-sitter folds 演示，需 host 启用 Tree-sitter）：
+            fn main() {
+              if true {
+                println!("hello");
+              }
+            }
             """
 
             let editorView = try EditorCoreSkiaView(library: library, initialText: initialText, viewportWidthCells: 120)
+            // Demo: enable Tree-sitter (Rust) for highlighting + folding regions.
+            try editorView.editor.treeSitterRustEnableDefault()
 
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
@@ -89,4 +102,3 @@ struct EditorCoreSkiaAppKitDemoMain {
         app.run()
     }
 }
-

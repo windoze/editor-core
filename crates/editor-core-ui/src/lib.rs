@@ -614,6 +614,76 @@ impl EditorUi {
         Ok(())
     }
 
+    pub fn move_grapheme_left_and_modify_selection(&mut self) -> Result<(), UiError> {
+        let cursor = self.state.get_cursor_state();
+        let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
+        let active = cursor.position;
+
+        // Move the internal caret to the active end, clear selection so movement applies, then restore.
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: active.line,
+            column: active.column,
+        }))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveGraphemeLeft))?;
+
+        let new_active = self.state.editor().cursor_position();
+        self.state.execute(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
+        Ok(())
+    }
+
+    pub fn move_grapheme_right_and_modify_selection(&mut self) -> Result<(), UiError> {
+        let cursor = self.state.get_cursor_state();
+        let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
+        let active = cursor.position;
+
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: active.line,
+            column: active.column,
+        }))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveGraphemeRight))?;
+
+        let new_active = self.state.editor().cursor_position();
+        self.state.execute(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
+        Ok(())
+    }
+
+    pub fn move_visual_by_rows_and_modify_selection(
+        &mut self,
+        delta_rows: isize,
+    ) -> Result<(), UiError> {
+        let cursor = self.state.get_cursor_state();
+        let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
+        let active = cursor.position;
+
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: active.line,
+            column: active.column,
+        }))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveVisualBy { delta_rows }))?;
+
+        let new_active = self.state.editor().cursor_position();
+        self.state.execute(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
+        Ok(())
+    }
+
     /// Set IME marked text (composition).
     ///
     /// This is UI-layer behavior (not editor-core kernel): we represent the marked string
@@ -1168,6 +1238,21 @@ mod tests {
         ui.clear_secondary_selections().unwrap();
         let (ranges, _primary) = ui.selections_offsets();
         assert_eq!(ranges.len(), 1);
+    }
+
+    #[test]
+    fn ui_move_and_modify_selection_extends_from_anchor() {
+        let mut ui = EditorUi::new("abc\n", 80);
+        ui.set_selections_offsets(&[(2, 2)], 0).unwrap(); // caret at offset 2
+
+        ui.move_grapheme_left_and_modify_selection().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (1, 2));
+
+        ui.move_grapheme_left_and_modify_selection().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (0, 2));
+
+        ui.move_grapheme_right_and_modify_selection().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (1, 2));
     }
 
     fn pixel(buf: &[u8], width_px: u32, x: u32, y: u32) -> [u8; 4] {
