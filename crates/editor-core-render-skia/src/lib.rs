@@ -724,6 +724,61 @@ mod tests {
     use editor_core::snapshot::{Cell, HeadlessGrid, HeadlessLine};
 
     #[test]
+    fn normalize_font_family_name_strips_quotes() {
+        assert_eq!(normalize_font_family_name("Menlo"), "Menlo");
+        assert_eq!(normalize_font_family_name(" \"Menlo\" "), "Menlo");
+        assert_eq!(normalize_font_family_name("'Menlo'"), "Menlo");
+    }
+
+    #[test]
+    fn set_font_families_unknown_still_renders_via_fallback() {
+        let mut renderer = SkiaRenderer::new();
+        renderer.set_font_families(vec!["ThisFontShouldNotExist-xyz".to_string()]);
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        line.add_cell(Cell::new('a', 1));
+        grid.add_line(line);
+
+        let cfg = RenderConfig {
+            width_px: 40,
+            height_px: 40,
+            scale: 1.0,
+            font_size: 20.0,
+            line_height_px: 40.0,
+            cell_width_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            gutter_width_cells: 0,
+        };
+
+        let _ = renderer
+            .render_rgba(&grid, &[], &[], &[], cfg, &RenderTheme::default())
+            .unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn font_fallback_picks_second_family_for_cjk_when_first_missing() {
+        let mgr = FontMgr::new();
+        let style = FontStyle::normal();
+
+        if mgr.match_family_style("Menlo", style).is_none()
+            || mgr.match_family_style("PingFang SC", style).is_none()
+        {
+            // Some minimal macOS environments might not ship all fonts.
+            return;
+        }
+
+        let mut renderer = SkiaRenderer::new();
+        renderer.set_font_families(vec!["Menlo".to_string(), "PingFang SC".to_string()]);
+        assert!(renderer.fonts.len() >= 2);
+
+        // Menlo should not have glyph for '你', so the renderer must fall back to PingFang.
+        assert_eq!(renderer.font_index_for_char('你'), 1);
+    }
+
+    #[test]
     fn render_draws_some_text_pixels() {
         let mut renderer = SkiaRenderer::new();
 

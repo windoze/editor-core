@@ -1124,6 +1124,26 @@ mod tests {
     }
 
     #[test]
+    fn ui_marked_text_replacement_range_overrides_current_selection() {
+        // Replacement range should allow host IME to replace an arbitrary document slice
+        // (e.g. when the input method decides to replace a previously inserted segment).
+        let mut ui = EditorUi::new("abcXYZdef", 80);
+
+        // Replace "XYZ" with IME marked text "你" (selection at end of marked text).
+        ui.set_marked_text_with_selection("你", 1, 0, Some((3, 3)))
+            .unwrap();
+        assert_eq!(ui.text(), "abc你def");
+
+        let marked = ui.marked_range().unwrap();
+        assert_eq!(marked, (3, 1));
+
+        // Commit should replace the marked range (not insert).
+        ui.commit_text("你好").unwrap();
+        assert_eq!(ui.text(), "abc你好def");
+        assert!(ui.marked_range().is_none());
+    }
+
+    #[test]
     fn ui_mouse_sets_cursor_and_selection() {
         let mut ui = EditorUi::new("abcd\nefgh\n", 80);
         ui.set_render_config(RenderConfig {

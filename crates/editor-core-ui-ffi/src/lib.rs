@@ -2510,6 +2510,44 @@ contexts:
     }
 
     #[test]
+    fn ffi_set_font_families_csv_accepts_unknown_and_rejects_invalid_utf8() {
+        let initial = CString::new("").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let fonts = CString::new("Menlo, PingFang SC, Apple Color Emoji").unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_font_families_csv(ui, fonts.as_ptr()),
+            ECU_OK
+        );
+
+        // Unknown fonts should still succeed (renderer falls back to a default typeface).
+        let unknown = CString::new("ThisFontShouldNotExist-xyz").unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_font_families_csv(ui, unknown.as_ptr()),
+            ECU_OK
+        );
+
+        // Invalid UTF-8 must be rejected with a non-empty last error message.
+        let bad_bytes: [u8; 2] = [0xFF, 0x00];
+        let code = editor_core_ui_ffi_editor_ui_set_font_families_csv(
+            ui,
+            bad_bytes.as_ptr() as *const c_char,
+        );
+        assert_ne!(code, ECU_OK);
+
+        let msg_ptr = editor_core_ui_ffi_last_error_message();
+        let msg = unsafe { CStr::from_ptr(msg_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        editor_core_ui_ffi_string_free(msg_ptr);
+        assert!(msg.to_lowercase().contains("utf-8") || !msg.is_empty());
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
     fn ffi_render_buffer_too_small_sets_out_len() {
         let initial = CString::new("").unwrap();
         let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
