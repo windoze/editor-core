@@ -139,6 +139,9 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
                 viewportWidthCells: 120,
                 fontFamiliesCSV: fontFamiliesCSV
             )
+            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_ENABLE_LIGATURES"] == "1" {
+                try editorView.editor.setFontLigaturesEnabled(true)
+            }
             // Demo: enable Tree-sitter (Rust) for highlighting + folding regions.
             try editorView.editor.treeSitterRustEnableDefault()
 

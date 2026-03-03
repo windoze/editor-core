@@ -139,6 +139,15 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_font_families_csv")
     }
 
+    /// Enable/disable font ligatures (e.g. Fira Code `->`, `!=`) in the Skia renderer.
+    ///
+    /// Notes:
+    /// - This is visual-only; the editor model and hit-testing remain monospace-grid based.
+    public func setFontLigaturesEnabled(_ enabled: Bool) throws {
+        let status = library.editorUiSetFontLigaturesEnabledFn(handle, enabled ? 1 : 0)
+        try library.ensureStatus(status, context: "editor_ui_set_font_ligatures_enabled")
+    }
+
     public func setGutterWidthCells(_ widthCells: UInt32) throws {
         let status = library.editorUiSetGutterWidthCellsFn(handle, widthCells)
         try library.ensureStatus(status, context: "editor_ui_set_gutter_width_cells")

@@ -14,7 +14,7 @@ categories = ["graphics", "text-editors"]
 
 [dependencies]
 editor-core = { version = "0.3.0", path = "../editor-core" }
-skia-safe = "0.93.1"
+skia-safe = { version = "0.93.1", features = ["textlayout"] }
 thiserror = "2"
 
 [dev-dependencies]

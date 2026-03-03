@@ -605,6 +605,11 @@ impl EditorUi {
         self.renderer.set_font_families(families);
     }
 
+    /// Enable/disable font ligatures in the renderer (visual-only).
+    pub fn set_font_ligatures_enabled(&mut self, enabled: bool) {
+        self.render_config.enable_ligatures = enabled;
+    }
+
     pub fn set_gutter_width_cells(&mut self, width_cells: u32) -> Result<(), UiError> {
         self.render_config.gutter_width_cells = width_cells;
         // Keep wrap width in sync with the available text area.

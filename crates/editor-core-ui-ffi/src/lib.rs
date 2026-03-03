@@ -638,6 +638,24 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_font_families_csv(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_font_ligatures_enabled(
+    ui: *mut EditorUi,
+    enabled: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.set_font_ligatures_enabled(enabled != 0);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_gutter_width_cells(
     ui: *mut EditorUi,
     width_cells: u32,
@@ -2582,6 +2600,42 @@ contexts:
             .to_string();
         editor_core_ui_ffi_string_free(msg_ptr);
         assert!(msg.to_lowercase().contains("utf-8") || !msg.is_empty());
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_set_font_ligatures_enabled_smoke() {
+        let initial = CString::new("a->b != c").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0);
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 40, 1.0);
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_font_ligatures_enabled(ui, 1),
+            ECU_OK
+        );
+
+        let mut out_len: u32 = 0;
+        let mut buf = vec![0u8; 200 * 40 * 4];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
+            ECU_OK
+        );
+        assert_eq!(out_len as usize, buf.len());
+
+        // Turning ligatures off again should also succeed.
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_font_ligatures_enabled(ui, 0),
+            ECU_OK
+        );
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

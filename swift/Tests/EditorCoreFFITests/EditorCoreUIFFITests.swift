@@ -50,6 +50,8 @@ final class EditorCoreUIFFITests: XCTestCase {
         try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
         // 多字体 fallback：确保主字体缺字时仍能显示 CJK/Emoji（渲染层按字符挑选可用字体）。
         try ui.setFontFamiliesCSV("Menlo, PingFang SC, Apple Color Emoji")
+        // Font ligatures (visual-only): should not crash even if the selected font has no ligatures.
+        try ui.setFontLigaturesEnabled(true)
         try ui.setViewportPx(widthPx: 80, heightPx: 40, scale: 1)
 
         var rgba: [UInt8] = []

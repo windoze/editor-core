@@ -7,8 +7,9 @@
 use editor_core::{snapshot::HeadlessGrid, IME_MARKED_TEXT_STYLE_ID};
 use skia_safe::{
     AlphaType, Color, Color4f, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle,
-    ImageInfo, Paint, Point, Rect, surfaces,
+    FourByteTag, ImageInfo, Paint, Point, Rect, surfaces,
 };
+use skia_safe::{shaper::TextBlobBuilderRunHandler, shaper::Feature, Shaper};
 use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
 
@@ -101,6 +102,13 @@ pub struct RenderConfig {
     /// When non-zero, the renderer draws a gutter (line numbers + fold markers) and shifts the
     /// document text by `gutter_width_cells * cell_width_px`.
     pub gutter_width_cells: u32,
+
+    /// Enable font ligatures (e.g. Fira Code) for ASCII runs.
+    ///
+    /// Notes:
+    /// - The editor still uses a monospace "cell grid" model; ligature shaping is purely visual.
+    /// - Cursor/selection hit-testing remains cell-based.
+    pub enable_ligatures: bool,
 }
 
 impl Default for RenderConfig {
@@ -115,6 +123,7 @@ impl Default for RenderConfig {
             padding_x_px: 8.0,
             padding_y_px: 8.0,
             gutter_width_cells: 0,
+            enable_ligatures: false,
         }
     }
 }
@@ -166,6 +175,7 @@ pub struct SkiaRenderer {
     font_families: Vec<String>,
     font_size: f32,
     glyph_font_cache: HashMap<char, usize>,
+    shaper: Shaper,
 }
 
 impl SkiaRenderer {
@@ -181,6 +191,7 @@ impl SkiaRenderer {
             font_families: families,
             font_size,
             glyph_font_cache: HashMap::new(),
+            shaper: Shaper::new(None),
         }
     }
 
@@ -251,6 +262,82 @@ impl SkiaRenderer {
         let idx = self.font_index_for_char(ch);
         // Safety: `idx` always comes from `fonts` indices or defaults to 0.
         &self.fonts[idx.min(self.fonts.len().saturating_sub(1))]
+    }
+
+    fn ligature_features(enabled: bool) -> [Feature; 3] {
+        let v = if enabled { 1 } else { 0 };
+        [
+            make_shaper_feature(FourByteTag::from_chars('l', 'i', 'g', 'a'), v),
+            make_shaper_feature(FourByteTag::from_chars('c', 'a', 'l', 't'), v),
+            make_shaper_feature(FourByteTag::from_chars('c', 'l', 'i', 'g'), v),
+        ]
+    }
+
+    fn draw_shaped_run(
+        &self,
+        canvas: &skia_safe::Canvas,
+        run_text: &str,
+        font: &Font,
+        x_px: f32,
+        baseline_y: f32,
+        desired_width_px: f32,
+        paint: &Paint,
+        enable_ligatures: bool,
+    ) {
+        if run_text.is_empty() {
+            return;
+        }
+
+        let width = 1_000_000.0;
+        let features = Self::ligature_features(enable_ligatures);
+        let utf8_len = run_text.as_bytes().len();
+
+        let mut font_it = Shaper::new_trivial_font_run_iterator(font, utf8_len);
+        let mut bidi_it = skia_safe::shapers::primitive::trivial_bidi_run_iterator(0, utf8_len);
+        let mut script_it = skia_safe::shapers::primitive::trivial_script_run_iterator(0, utf8_len);
+        let mut lang_it = Shaper::new_trivial_language_run_iterator("en", utf8_len);
+
+        let mut builder = TextBlobBuilderRunHandler::new(run_text, Point::new(0.0, 0.0));
+        self.shaper.shape_with_iterators_and_features(
+            run_text,
+            &mut font_it,
+            &mut bidi_it,
+            &mut script_it,
+            &mut lang_it,
+            features.as_slice(),
+            width,
+            &mut builder,
+        );
+
+        let natural_width_px = builder.end_point().x;
+        let Some(blob) = builder.make_blob() else {
+            // Fallback: draw without shaping (no ligatures), but avoid dropping text.
+            canvas.draw_str(run_text, Point::new(x_px, baseline_y), font, paint);
+            return;
+        };
+
+        let mut scale_x = 1.0;
+        if desired_width_px.is_finite()
+            && desired_width_px > 0.0
+            && natural_width_px.is_finite()
+            && natural_width_px > 0.0
+        {
+            scale_x = desired_width_px / natural_width_px;
+        }
+
+        // Avoid extreme scales; if something is off with metrics, just draw unscaled.
+        if !scale_x.is_finite() || scale_x <= 0.0 || scale_x > 4.0 {
+            scale_x = 1.0;
+        }
+
+        if (scale_x - 1.0).abs() > 0.001 {
+            let _ = canvas.save();
+            canvas.scale((scale_x, 1.0));
+            canvas.draw_text_blob(blob, Point::new(x_px / scale_x, baseline_y), paint);
+            canvas.restore();
+        } else {
+            canvas.draw_text_blob(blob, Point::new(x_px, baseline_y), paint);
+        }
     }
 
     pub fn required_rgba_len(config: RenderConfig) -> Result<usize, RenderError> {
@@ -417,9 +504,49 @@ impl SkiaRenderer {
                 canvas.draw_str(line_no, Point::new(x_px, baseline_y), &self.fonts[0], &paint);
             }
 
-            let mut x_cells = line.segment_x_start_cells as f32;
+            #[derive(Debug)]
+            struct PendingRun {
+                start_x_cells: u32,
+                cell_count: u32,
+                font_index: usize,
+                fg: Rgba8,
+                text: String,
+            }
+
+            let mut pending: Option<PendingRun> = None;
+            let mut underlines: Vec<(f32, f32, f32, Rgba8)> = Vec::new();
+
+            let mut x_cells = line.segment_x_start_cells as u32;
+
+            let flush = |renderer: &mut SkiaRenderer, pending: &mut Option<PendingRun>| {
+                let Some(run) = pending.take() else {
+                    return;
+                };
+                if run.text.is_empty() || run.cell_count == 0 {
+                    return;
+                }
+                let x_px = text_origin_x + run.start_x_cells as f32 * config.cell_width_px;
+                let desired_w = run.cell_count as f32 * config.cell_width_px;
+
+                let mut paint = Paint::default();
+                paint.set_anti_alias(true);
+                paint.set_color(rgba_to_skia_color(run.fg));
+
+                let font = &renderer.fonts[run.font_index.min(renderer.fonts.len().saturating_sub(1))];
+                renderer.draw_shaped_run(
+                    canvas,
+                    run.text.as_str(),
+                    font,
+                    x_px,
+                    baseline_y,
+                    desired_w,
+                    &paint,
+                    config.enable_ligatures,
+                );
+            };
+
             for cell in &line.cells {
-                let x_px = text_origin_x + x_cells * config.cell_width_px;
+                let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
                 let (fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
 
                 if bg != theme.background {
@@ -431,29 +558,60 @@ impl SkiaRenderer {
                     canvas.draw_rect(rect, &bg_paint);
                 }
 
-                let mut paint = Paint::default();
-                paint.set_anti_alias(true);
-                paint.set_color(rgba_to_skia_color(fg));
-                canvas.draw_str(
-                    cell.ch.to_string(),
-                    Point::new(x_px, baseline_y),
-                    self.font_for_char(cell.ch),
-                    &paint,
-                );
-
-                // IME marked text (inline preedit) underline.
+                // Record IME marked text underline to draw *after* text, so it stays visible.
                 if cell.styles.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID) {
                     let underline_h = config.scale.clamp(1.0, 2.0);
                     let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
                     let w_px = cell.width as f32 * config.cell_width_px;
-                    let rect = Rect::from_xywh(x_px, underline_y, w_px, underline_h);
-
-                    let mut u_paint = Paint::default();
-                    u_paint.set_anti_alias(false);
-                    u_paint.set_color(rgba_to_skia_color(fg));
-                    canvas.draw_rect(rect, &u_paint);
+                    underlines.push((x_px, underline_y, w_px, fg));
                 }
-                x_cells += cell.width as f32;
+
+                let eligible_for_ligatures = config.enable_ligatures && cell.width == 1 && cell.ch.is_ascii();
+                if eligible_for_ligatures {
+                    let font_index = self.font_index_for_char(cell.ch);
+
+                    let can_extend = pending.as_ref().is_some_and(|r| r.font_index == font_index && r.fg == fg);
+                    if !can_extend {
+                        flush(self, &mut pending);
+                        pending = Some(PendingRun {
+                            start_x_cells: x_cells,
+                            cell_count: 0,
+                            font_index,
+                            fg,
+                            text: String::new(),
+                        });
+                    }
+
+                    if let Some(r) = pending.as_mut() {
+                        r.text.push(cell.ch);
+                        r.cell_count += 1;
+                    }
+                } else {
+                    flush(self, &mut pending);
+
+                    let mut paint = Paint::default();
+                    paint.set_anti_alias(true);
+                    paint.set_color(rgba_to_skia_color(fg));
+                    canvas.draw_str(
+                        cell.ch.to_string(),
+                        Point::new(x_px, baseline_y),
+                        self.font_for_char(cell.ch),
+                        &paint,
+                    );
+                }
+
+                x_cells = x_cells.saturating_add(cell.width as u32);
+            }
+
+            flush(self, &mut pending);
+
+            // Underlines last.
+            for (x_px, underline_y, w_px, fg) in underlines {
+                let rect = Rect::from_xywh(x_px, underline_y, w_px, config.scale.clamp(1.0, 2.0));
+                let mut u_paint = Paint::default();
+                u_paint.set_anti_alias(false);
+                u_paint.set_color(rgba_to_skia_color(fg));
+                canvas.draw_rect(rect, &u_paint);
             }
         }
 
@@ -595,6 +753,15 @@ fn rgba_to_skia_color4f(c: Rgba8) -> Color4f {
     )
 }
 
+fn make_shaper_feature(tag: FourByteTag, value: u32) -> Feature {
+    Feature {
+        tag: *tag,
+        value,
+        start: 0,
+        end: usize::MAX,
+    }
+}
+
 fn draw_caret(
     canvas: &skia_safe::Canvas,
     grid: &HeadlessGrid,
@@ -722,6 +889,7 @@ fn resolve_cell_colors(style_ids: &[u32], theme: &RenderTheme) -> (Rgba8, Rgba8)
 mod tests {
     use super::*;
     use editor_core::snapshot::{Cell, HeadlessGrid, HeadlessLine};
+    use skia_safe::TextBlobIter;
 
     #[test]
     fn normalize_font_family_name_strips_quotes() {
@@ -750,6 +918,7 @@ mod tests {
             padding_x_px: 0.0,
             padding_y_px: 0.0,
             gutter_width_cells: 0,
+            enable_ligatures: false,
         };
 
         let _ = renderer
@@ -807,6 +976,7 @@ mod tests {
             padding_x_px: 0.0,
             padding_y_px: 0.0,
             gutter_width_cells: 0,
+            enable_ligatures: false,
         };
 
         let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
@@ -849,6 +1019,7 @@ mod tests {
             padding_x_px: 0.0,
             padding_y_px: 0.0,
             gutter_width_cells: 0,
+            enable_ligatures: false,
         };
 
         let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
@@ -913,6 +1084,7 @@ mod tests {
             padding_x_px: 0.0,
             padding_y_px: 0.0,
             gutter_width_cells: 0,
+            enable_ligatures: false,
         };
 
         let rgba = renderer
@@ -976,6 +1148,7 @@ mod tests {
             padding_x_px: 0.0,
             padding_y_px: 0.0,
             gutter_width_cells: 0,
+            enable_ligatures: false,
         };
 
         let rgba = renderer
@@ -1021,6 +1194,7 @@ mod tests {
             padding_x_px: 0.0,
             padding_y_px: 0.0,
             gutter_width_cells: 0,
+            enable_ligatures: false,
         };
 
         let carets = [
@@ -1100,6 +1274,7 @@ mod tests {
             padding_x_px: 0.0,
             padding_y_px: 0.0,
             gutter_width_cells: 2,
+            enable_ligatures: false,
         };
 
         let carets = [VisualCaret { row: 0, x_cells: 2 }];
@@ -1149,6 +1324,7 @@ mod tests {
             padding_x_px: 0.0,
             padding_y_px: 0.0,
             gutter_width_cells: 0,
+            enable_ligatures: false,
         };
 
         let required = SkiaRenderer::required_rgba_len(cfg).unwrap();
@@ -1157,5 +1333,107 @@ mod tests {
             .render_rgba_into(&grid, &[], &[], &[], cfg, &RenderTheme::default(), out.as_mut_slice())
             .unwrap_err();
         assert!(matches!(err, RenderError::BufferTooSmall { .. }));
+    }
+
+    fn shape_glyph_count(shaper: &Shaper, text: &str, font: &Font, enable_ligatures: bool) -> usize {
+        let features = SkiaRenderer::ligature_features(enable_ligatures);
+        let width = 1_000_000.0;
+        let utf8_len = text.as_bytes().len();
+
+        let mut font_it = Shaper::new_trivial_font_run_iterator(font, utf8_len);
+        let mut bidi_it = skia_safe::shapers::primitive::trivial_bidi_run_iterator(0, utf8_len);
+        let mut script_it = skia_safe::shapers::primitive::trivial_script_run_iterator(0, utf8_len);
+        let mut lang_it = Shaper::new_trivial_language_run_iterator("en", utf8_len);
+
+        let mut builder = TextBlobBuilderRunHandler::new(text, Point::new(0.0, 0.0));
+        shaper.shape_with_iterators_and_features(
+            text,
+            &mut font_it,
+            &mut bidi_it,
+            &mut script_it,
+            &mut lang_it,
+            features.as_ref(),
+            width,
+            &mut builder,
+        );
+
+        let Some(blob) = builder.make_blob() else {
+            return 0;
+        };
+
+        TextBlobIter::new(&blob)
+            .map(|run| run.glyph_indices.len())
+            .sum()
+    }
+
+    #[test]
+    fn ligature_shaping_can_reduce_glyph_count_for_fi_in_some_system_font() {
+        let mgr = FontMgr::new();
+        let style = FontStyle::normal();
+
+        // On macOS, at least one of these should exist and support `fi` ligatures.
+        // We keep the list short to avoid enumerating all families.
+        let candidates: &[&str] = if cfg!(target_os = "macos") {
+            &["Times New Roman", "Times", "Georgia", "Helvetica", "Arial"]
+        } else if cfg!(target_os = "windows") {
+            &["Times New Roman", "Georgia", "Arial"]
+        } else {
+            &["DejaVu Serif", "Liberation Serif", "Noto Serif"]
+        };
+
+        let shaper = Shaper::new(None);
+        let mut found = false;
+        for name in candidates {
+            let Some(tf) = mgr.match_family_style(name, style) else {
+                continue;
+            };
+
+            let font = make_configured_font(Some(tf), 32.0);
+            let off = shape_glyph_count(&shaper, "fi", &font, false);
+            let on = shape_glyph_count(&shaper, "fi", &font, true);
+
+            if off > 0 && on > 0 && on < off {
+                found = true;
+                break;
+            }
+        }
+
+        if cfg!(target_os = "macos") {
+            // On macOS we expect at least one of the common serif fonts to exist and expose `fi`.
+            assert!(found, "expected a system font where `fi` forms a ligature when enabled");
+        } else if !found {
+            // Some minimal environments may not ship serif fonts with classic ligatures.
+            // Keep this as a soft assertion so CI can still run headless.
+            eprintln!("no candidate font produced a detectable 'fi' ligature; skipping hard assertion");
+        }
+    }
+
+    #[test]
+    fn render_with_ligatures_enabled_smoke() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        for ch in "a->b != c".chars() {
+            line.add_cell(Cell::new(ch, 1));
+        }
+        grid.add_line(line);
+
+        let cfg = RenderConfig {
+            width_px: 200,
+            height_px: 40,
+            scale: 1.0,
+            font_size: 20.0,
+            line_height_px: 40.0,
+            cell_width_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            gutter_width_cells: 0,
+            enable_ligatures: true,
+        };
+
+        let _ = renderer
+            .render_rgba(&grid, &[], &[], &[], cfg, &RenderTheme::default())
+            .unwrap();
     }
 }
