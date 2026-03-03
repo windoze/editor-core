@@ -467,12 +467,53 @@ impl FoldingManager {
 
     /// Get mutable reference to a fold region containing specified line (prefers user folds).
     pub fn get_region_for_line_mut(&mut self, line: usize) -> Option<&mut FoldRegion> {
-        if let Some(region) = self.user_regions.iter_mut().find(|r| r.contains_line(line)) {
-            return Some(region);
+        // Important: a line can be covered by multiple (nested) fold regions.
+        //
+        // When a user clicks a fold marker on an inner block (nested inside an outer fold),
+        // we must act on the *innermost* region for that line. Otherwise, unfolding the
+        // inner region can accidentally target the outer region again (because it also
+        // "contains" the line), making the inner fold appear "stuck".
+        //
+        // Choose the smallest region (end-start) among all regions that contain `line`,
+        // preferring user regions on ties.
+        let mut best: Option<(bool /*is_user*/, usize /*idx*/, usize /*len*/, usize /*end*/, usize /*start*/)> = None;
+
+        for (is_user, regions) in [
+            (true, self.user_regions.as_slice()),
+            (false, self.derived_regions.as_slice()),
+        ] {
+            for (idx, region) in regions.iter().enumerate() {
+                if !region.contains_line(line) {
+                    continue;
+                }
+                let len = region.end_line.saturating_sub(region.start_line);
+                let candidate = (is_user, idx, len, region.end_line, region.start_line);
+                match best {
+                    None => best = Some(candidate),
+                    Some((best_is_user, _best_idx, best_len, best_end, best_start)) => {
+                        let better_range = (len, region.end_line, region.start_line)
+                            < (best_len, best_end, best_start);
+                        let prefer_user_tie = (len, region.end_line, region.start_line)
+                            == (best_len, best_end, best_start)
+                            && is_user
+                            && !best_is_user;
+                        if better_range || prefer_user_tie {
+                            best = Some(candidate);
+                        }
+                    }
+                }
+            }
         }
-        self.derived_regions
-            .iter_mut()
-            .find(|r| r.contains_line(line))
+
+        let Some((is_user, idx, _len, _end, _start)) = best else {
+            return None;
+        };
+
+        if is_user {
+            self.user_regions.get_mut(idx)
+        } else {
+            self.derived_regions.get_mut(idx)
+        }
     }
 
     /// Collapse specified line
@@ -863,6 +904,47 @@ mod tests {
 
         assert!(manager.expand_line(7));
         assert!(!manager.get_region_for_line(7).unwrap().is_collapsed);
+    }
+
+    #[test]
+    fn test_nested_folds_can_unfold_inner_after_outer_unfold() {
+        let mut manager = FoldingManager::new();
+
+        // Outer region: 1..=10
+        let mut outer = FoldRegion::new(1, 10);
+        outer.collapse();
+        manager.add_region(outer);
+
+        // Inner region: 3..=5 (nested inside outer)
+        let mut inner = FoldRegion::new(3, 5);
+        inner.collapse();
+        manager.add_region(inner);
+
+        // Step 1: inner is folded.
+        let inner_before = manager
+            .regions()
+            .iter()
+            .find(|r| r.start_line == 3 && r.end_line == 5)
+            .unwrap();
+        assert!(inner_before.is_collapsed);
+
+        // Step 2/3: unfold outer.
+        assert!(manager.expand_line(1));
+        let outer_after = manager
+            .regions()
+            .iter()
+            .find(|r| r.start_line == 1 && r.end_line == 10)
+            .unwrap();
+        assert!(!outer_after.is_collapsed);
+
+        // Step 4: now we should still be able to unfold the inner region by line 3.
+        assert!(manager.expand_line(3));
+        let inner_after = manager
+            .regions()
+            .iter()
+            .find(|r| r.start_line == 3 && r.end_line == 5)
+            .unwrap();
+        assert!(!inner_after.is_collapsed);
     }
 
     #[test]
