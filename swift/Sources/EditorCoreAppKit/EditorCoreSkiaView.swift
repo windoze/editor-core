@@ -18,6 +18,7 @@ public final class EditorCoreSkiaView: NSView {
     private var viewportWidthPx: UInt32 = 0
     private var viewportHeightPx: UInt32 = 0
     private var scaleFactor: CGFloat = 1
+    private var didLogScaleDebugOnce: Bool = false
 
     private var lineHeightPx: Float = 18
     private var gutterWidthCells: UInt32 = 4
@@ -77,12 +78,29 @@ public final class EditorCoreSkiaView: NSView {
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        updateLayerContentsScaleIfNeeded()
         updateViewportIfNeeded()
+    }
+
+    public override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateLayerContentsScaleIfNeeded()
+        updateViewportIfNeeded()
+        needsDisplay = true
     }
 
     public override func layout() {
         super.layout()
         updateViewportIfNeeded()
+    }
+
+    private func updateLayerContentsScaleIfNeeded() {
+        guard let window else { return }
+        // 在某些 layer-backed 组合/缩放配置下，如果 contentsScale 不跟随 window 的 backingScaleFactor，
+        // 会导致“画面贴屏”和“事件坐标 hit-test”不在同一套像素坐标系里（表现为点击/光标不对齐）。
+        if layer?.contentsScale != window.backingScaleFactor {
+            layer?.contentsScale = window.backingScaleFactor
+        }
     }
 
     private func updateViewportIfNeeded() {
@@ -139,6 +157,20 @@ public final class EditorCoreSkiaView: NSView {
             pixelBuffer = Array(repeating: 0, count: required)
         }
 
+        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_SCALE"] == "1" {
+            if didLogScaleDebugOnce == false {
+                didLogScaleDebugOnce = true
+                NSLog(
+                    "EditorCoreSkiaView scale debug: bounds(points)=%@ backingSize(px)=%@ newScale=%.3f window.backingScaleFactor=%.3f layer.contentsScale=%.3f",
+                    NSStringFromSize(pointsSize),
+                    NSStringFromSize(backingSize),
+                    Double(newScale),
+                    Double(window?.backingScaleFactor ?? 0),
+                    Double(layer?.contentsScale ?? 0)
+                )
+            }
+        }
+
         needsDisplay = true
     }
 
@@ -162,6 +194,16 @@ public final class EditorCoreSkiaView: NSView {
         ctx.saveGState()
         ctx.interpolationQuality = .none
         ctx.setShouldAntialias(false)
+
+        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_SCALE"] == "1" {
+            NSLog(
+                "EditorCoreSkiaView draw debug: ctm=%@ viewport=%ux%u scaleFactor=%.3f",
+                String(describing: ctx.ctm),
+                viewportWidthPx,
+                viewportHeightPx,
+                Double(scaleFactor)
+            )
+        }
 
         pixelBuffer.withUnsafeBytes { raw in
             guard let base = raw.baseAddress else { return }
@@ -187,10 +229,10 @@ public final class EditorCoreSkiaView: NSView {
 
     public override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        let p = convert(event.locationInWindow, from: nil)
-        let bp = convertToBacking(p)
-        let xPx = Float(bp.x)
-        let yPx = Float(bp.y)
+        let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
+            windowPoint: event.locationInWindow,
+            view: self
+        )
 
         rectSelectionAnchorOffset = nil
 
@@ -221,10 +263,10 @@ public final class EditorCoreSkiaView: NSView {
     }
 
     public override func mouseDragged(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
-        let bp = convertToBacking(p)
-        let xPx = Float(bp.x)
-        let yPx = Float(bp.y)
+        let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
+            windowPoint: event.locationInWindow,
+            view: self
+        )
         do {
             if let anchor = rectSelectionAnchorOffset {
                 let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
@@ -418,9 +460,10 @@ public final class EditorCoreSkiaView: NSView {
     public func characterIndex(for point: NSPoint) -> Int {
         // point 是 view 坐标（points），我们做 hit-test 并返回 UTF-16 index
         guard let text = try? editor.text() else { return 0 }
-        let bp = convertToBacking(point)
-        let xPx = Float(bp.x)
-        let yPx = Float(bp.y)
+        let (xPx, yPx) = EditorCoreCoordinateMapping.viewPointToViewBackingPx(
+            viewPoint: point,
+            view: self
+        )
         guard let scalar = try? editor.viewPointToCharOffset(xPx: xPx, yPx: yPx) else { return 0 }
         return Self.utf16Offset(fromScalarOffset: Int(scalar), in: text)
     }
