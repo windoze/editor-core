@@ -86,9 +86,25 @@ public final class EditorCoreSkiaView: NSView {
     }
 
     private func updateViewportIfNeeded() {
-        let newScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
-        let widthPx = UInt32(max(1, Int(bounds.width * newScale)))
-        let heightPx = UInt32(max(1, Int(bounds.height * newScale)))
+        let pointsSize = bounds.size
+        let backingSize: NSSize
+        if window != nil {
+            backingSize = convertToBacking(pointsSize)
+        } else {
+            let fallbackScale = NSScreen.main?.backingScaleFactor ?? 1
+            backingSize = NSSize(width: pointsSize.width * fallbackScale, height: pointsSize.height * fallbackScale)
+        }
+
+        let widthPx = UInt32(max(1, Int(backingSize.width.rounded())))
+        let heightPx = UInt32(max(1, Int(backingSize.height.rounded())))
+        let newScale: CGFloat
+        if pointsSize.width > 0, pointsSize.height > 0 {
+            let sx = backingSize.width / pointsSize.width
+            let sy = backingSize.height / pointsSize.height
+            newScale = (sx + sy) * 0.5
+        } else {
+            newScale = NSScreen.main?.backingScaleFactor ?? 1
+        }
 
         guard widthPx != viewportWidthPx || heightPx != viewportHeightPx || newScale != scaleFactor else {
             return
@@ -172,8 +188,9 @@ public final class EditorCoreSkiaView: NSView {
     public override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let p = convert(event.locationInWindow, from: nil)
-        let xPx = Float(p.x * scaleFactor)
-        let yPx = Float(p.y * scaleFactor)
+        let bp = convertToBacking(p)
+        let xPx = Float(bp.x)
+        let yPx = Float(bp.y)
 
         rectSelectionAnchorOffset = nil
 
@@ -205,8 +222,9 @@ public final class EditorCoreSkiaView: NSView {
 
     public override func mouseDragged(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        let xPx = Float(p.x * scaleFactor)
-        let yPx = Float(p.y * scaleFactor)
+        let bp = convertToBacking(p)
+        let xPx = Float(bp.x)
+        let yPx = Float(bp.y)
         do {
             if let anchor = rectSelectionAnchorOffset {
                 let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
@@ -228,7 +246,7 @@ public final class EditorCoreSkiaView: NSView {
 
     public override func scrollWheel(with event: NSEvent) {
         // scrollingDeltaY：正值通常代表向上滚动（内容向下），这里换算成“行数”增量
-        let lineHeightPt = CGFloat(max(1, lineHeightPx)) / scaleFactor
+        let lineHeightPt = convertFromBacking(NSSize(width: 0, height: CGFloat(max(1, lineHeightPx)))).height
         if lineHeightPt > 0 {
             let rows = Int32((event.scrollingDeltaY / lineHeightPt).rounded())
             if rows != 0 {
@@ -385,9 +403,12 @@ public final class EditorCoreSkiaView: NSView {
 
         guard let pt = try? editor.charOffsetToViewPoint(offset: UInt32(scalarOffset)) else { return .zero }
 
-        let xPt = CGFloat(pt.xPx) / scaleFactor
-        let yPt = CGFloat(pt.yPx) / scaleFactor
-        let hPt = CGFloat(pt.lineHeightPx) / scaleFactor
+        let viewPoint = convertFromBacking(NSPoint(x: CGFloat(pt.xPx), y: CGFloat(pt.yPx)))
+        let viewLineHeight = convertFromBacking(NSSize(width: 0, height: CGFloat(pt.lineHeightPx))).height
+
+        let xPt = viewPoint.x
+        let yPt = viewPoint.y
+        let hPt = viewLineHeight
 
         let rectInView = NSRect(x: xPt, y: yPt, width: 1, height: hPt)
         let rectInWindow = convert(rectInView, to: nil)
@@ -397,8 +418,9 @@ public final class EditorCoreSkiaView: NSView {
     public func characterIndex(for point: NSPoint) -> Int {
         // point 是 view 坐标（points），我们做 hit-test 并返回 UTF-16 index
         guard let text = try? editor.text() else { return 0 }
-        let xPx = Float(point.x * scaleFactor)
-        let yPx = Float(point.y * scaleFactor)
+        let bp = convertToBacking(point)
+        let xPx = Float(bp.x)
+        let yPx = Float(bp.y)
         guard let scalar = try? editor.viewPointToCharOffset(xPx: xPx, yPx: yPx) else { return 0 }
         return Self.utf16Offset(fromScalarOffset: Int(scalar), in: text)
     }
