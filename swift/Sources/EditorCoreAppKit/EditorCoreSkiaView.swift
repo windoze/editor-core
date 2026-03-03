@@ -19,6 +19,7 @@ public final class EditorCoreSkiaView: NSView {
     private var viewportHeightPx: UInt32 = 0
     private var scaleFactor: CGFloat = 1
     private var didLogScaleDebugOnce: Bool = false
+    private var lastInputDebugLogUptime: TimeInterval = 0
 
     private var lineHeightPx: Float = 18
     private var gutterWidthCells: UInt32 = 4
@@ -227,12 +228,55 @@ public final class EditorCoreSkiaView: NSView {
 
     // MARK: - Mouse
 
+    private func debugLogInput(_ event: NSEvent, xPx: Float, yPx: Float, phase: String, force: Bool) {
+        guard ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_INPUT"] == "1" else { return }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        if force == false, now - lastInputDebugLogUptime < 0.1 {
+            return
+        }
+        lastInputDebugLogUptime = now
+
+        let windowPoint = event.locationInWindow
+        let viewPoint = convert(windowPoint, from: nil)
+        let boundsSize = bounds.size
+        let backingSize = convertToBacking(boundsSize)
+        let sx = boundsSize.width > 0 ? (backingSize.width / boundsSize.width) : 0
+        let sy = boundsSize.height > 0 ? (backingSize.height / boundsSize.height) : 0
+
+        var extra = ""
+        if let scalar = try? editor.viewPointToCharOffset(xPx: xPx, yPx: yPx) {
+            if let snapped = try? editor.charOffsetToViewPoint(offset: scalar) {
+                let dx = snapped.xPx - xPx
+                let dy = snapped.yPx - yPx
+                extra = String(format: " off=%u snapped=(%.1f,%.1f) d=(%.1f,%.1f)", scalar, snapped.xPx, snapped.yPx, dx, dy)
+            } else {
+                extra = " off=\(scalar)"
+            }
+        }
+
+        NSLog(
+            "EditorCoreSkiaView input %@: window=%@ view=%@ sx=%.3f sy=%.3f -> px=(%.1f,%.1f) viewport=%ux%u%@",
+            phase,
+            NSStringFromPoint(windowPoint),
+            NSStringFromPoint(viewPoint),
+            Double(sx),
+            Double(sy),
+            Double(xPx),
+            Double(yPx),
+            viewportWidthPx,
+            viewportHeightPx,
+            extra
+        )
+    }
+
     public override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
             windowPoint: event.locationInWindow,
             view: self
         )
+        debugLogInput(event, xPx: xPx, yPx: yPx, phase: "down", force: true)
 
         rectSelectionAnchorOffset = nil
 
@@ -267,6 +311,7 @@ public final class EditorCoreSkiaView: NSView {
             windowPoint: event.locationInWindow,
             view: self
         )
+        debugLogInput(event, xPx: xPx, yPx: yPx, phase: "drag", force: false)
         do {
             if let anchor = rectSelectionAnchorOffset {
                 let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
