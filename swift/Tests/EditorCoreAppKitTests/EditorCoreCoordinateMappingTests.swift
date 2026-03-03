@@ -32,11 +32,6 @@ final class EditorCoreCoordinateMappingTests: XCTestCase {
         let view = FlippedView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
         window.contentView = view
 
-        let p0 = window.convertPointToBacking(NSPoint(x: 0, y: 0))
-        let p1 = window.convertPointToBacking(NSPoint(x: 1, y: 1))
-        let sx = p1.x - p0.x
-        let sy = p1.y - p0.y
-
         let viewPoint = NSPoint(x: 10, y: 15) // view 坐标：top-left origin，y 向下
         let windowPoint = NSPoint(x: viewPoint.x, y: view.frame.height - viewPoint.y) // window 坐标：bottom-left origin
 
@@ -45,8 +40,9 @@ final class EditorCoreCoordinateMappingTests: XCTestCase {
             view: view
         )
 
-        XCTAssertEqual(Double(xPx), Double(viewPoint.x * sx), accuracy: 0.0001)
-        XCTAssertEqual(Double(yPx), Double(viewPoint.y * sy), accuracy: 0.0001)
+        let expected = view.convertToBacking(viewPoint)
+        XCTAssertEqual(Double(xPx), Double(expected.x), accuracy: 0.0001)
+        XCTAssertEqual(Double(yPx), Double(expected.y), accuracy: 0.0001)
     }
 
     func test_window_point_to_view_backing_px_for_offset_flipped_subview() throws {
@@ -62,11 +58,6 @@ final class EditorCoreCoordinateMappingTests: XCTestCase {
         let view = FlippedView(frame: NSRect(x: 20, y: 30, width: 200, height: 100))
         container.addSubview(view)
 
-        let p0 = window.convertPointToBacking(NSPoint(x: 0, y: 0))
-        let p1 = window.convertPointToBacking(NSPoint(x: 1, y: 1))
-        let sx = p1.x - p0.x
-        let sy = p1.y - p0.y
-
         let viewPoint = NSPoint(x: 7, y: 9)
         // 对 flipped view：window Y = frame.minY + frame.height - viewY
         let windowPoint = NSPoint(
@@ -79,7 +70,8 @@ final class EditorCoreCoordinateMappingTests: XCTestCase {
             view: view
         )
 
-        XCTAssertEqual(Double(xPx), Double(viewPoint.x * sx), accuracy: 0.0001)
-        XCTAssertEqual(Double(yPx), Double(viewPoint.y * sy), accuracy: 0.0001)
+        let expected = view.convertToBacking(viewPoint)
+        XCTAssertEqual(Double(xPx), Double(expected.x), accuracy: 0.0001)
+        XCTAssertEqual(Double(yPx), Double(expected.y), accuracy: 0.0001)
     }
 }

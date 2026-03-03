@@ -5,30 +5,19 @@ enum EditorCoreCoordinateMapping {
     /// coordinate space (origin top-left, y grows downward).
     ///
     /// Why this exists:
-    /// - `NSEvent.locationInWindow` is always in window points (bottom-left origin).
-    /// - The Rust rendering/hit-test APIs in `editor-core-ui` operate in pixels with a top-left origin.
-    /// - Under某些 macOS 缩放/HiDPI 组合里，直接 `view.convertToBacking(view.convert(...))` 会出现点击位置与光标不一致；
-    ///   这里统一走 `window.convertToBacking` 的“窗口 backing 坐标”，再用 view 的 top-left 做相对差值，
-    ///   使输入与渲染始终对齐在同一套 backing 像素坐标系中。
+    /// - `NSEvent.locationInWindow` 是 window 坐标（points，原点在左下）。
+    /// - Swift/AppKit 侧事件命中需要对齐到 Rust 的坐标系：像素（backing px）+ 左上原点（y 向下）。
+    ///
+    /// 实现选择：
+    /// - 这里优先使用 `view.convert(..., from: nil)` + `view.convertToBacking(...)`，
+    ///   保证事件坐标与我们计算 viewport（同样基于 view 的 `convertToBacking`）落在同一套坐标系里。
+    /// - 在某些缩放模式下，`NSWindow.convertPointToBacking` 与 view 的 backing 映射可能不一致，
+    ///   导致“选区/光标移动速度不对”之类的比例问题。
     @MainActor
     static func windowPointToViewBackingPx(windowPoint: NSPoint, view: NSView) -> (xPx: Float, yPx: Float) {
-        guard let window = view.window else {
-            let p = view.convert(windowPoint, from: nil)
-            let bp = view.convertToBacking(p)
-            return (Float(bp.x), Float(bp.y))
-        }
-
-        let pWindowBacking = window.convertPointToBacking(windowPoint)
-
-        // For a flipped view, `.zero` is the top-left corner in view coordinates.
-        let viewTopLeftInWindowPoints = view.convert(NSPoint(x: 0, y: 0), to: nil)
-        let viewTopLeftInWindowBacking = window.convertPointToBacking(viewTopLeftInWindowPoints)
-
-        // Window backing space is still bottom-left origin; we convert it to a top-left origin
-        // local to the view by subtracting from the view's top-left.
-        let x = pWindowBacking.x - viewTopLeftInWindowBacking.x
-        let y = viewTopLeftInWindowBacking.y - pWindowBacking.y
-        return (Float(x), Float(y))
+        let viewPoint = view.convert(windowPoint, from: nil)
+        let backingPoint = view.convertToBacking(viewPoint)
+        return (Float(backingPoint.x), Float(backingPoint.y))
     }
 
     @MainActor
