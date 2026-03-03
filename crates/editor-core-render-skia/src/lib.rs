@@ -4,7 +4,7 @@
 //! It does **not** own editor state. See `editor-core-ui` for the UI-facing
 //! composition layer (editor state + input mapping + rendering).
 
-use editor_core::snapshot::HeadlessGrid;
+use editor_core::{snapshot::HeadlessGrid, IME_MARKED_TEXT_STYLE_ID};
 use skia_safe::{
     AlphaType, Color, Color4f, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle,
     ImageInfo, Paint, Point, Rect, surfaces,
@@ -370,6 +370,19 @@ impl SkiaRenderer {
                     &self.font,
                     &paint,
                 );
+
+                // IME marked text (inline preedit) underline.
+                if cell.styles.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID) {
+                    let underline_h = config.scale.clamp(1.0, 2.0);
+                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    let rect = Rect::from_xywh(x_px, underline_y, w_px, underline_h);
+
+                    let mut u_paint = Paint::default();
+                    u_paint.set_anti_alias(false);
+                    u_paint.set_color(rgba_to_skia_color(fg));
+                    canvas.draw_rect(rect, &u_paint);
+                }
                 x_cells += cell.width as f32;
             }
         }
@@ -585,6 +598,45 @@ mod tests {
             rgba.chunks_exact(4).any(|p| p != bg_px),
             "expected at least one non-background pixel from glyph rendering"
         );
+    }
+
+    #[test]
+    fn render_draws_ime_marked_underline_even_for_space() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        let mut cell = Cell::new(' ', 1);
+        cell.styles.push(IME_MARKED_TEXT_STYLE_ID);
+        line.add_cell(cell);
+        grid.add_line(line);
+
+        let bg = Rgba8::new(10, 20, 30, 255);
+        let fg = Rgba8::new(250, 250, 250, 255);
+        let theme = RenderTheme {
+            background: bg,
+            foreground: fg,
+            selection_background: bg,
+            caret: bg,
+            styles: BTreeMap::new(),
+        };
+
+        let cfg = RenderConfig {
+            width_px: 20,
+            height_px: 10,
+            scale: 1.0,
+            font_size: 10.0,
+            line_height_px: 10.0,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            gutter_width_cells: 0,
+        };
+
+        let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
+        let bytes_per_row = cfg.width_px as usize * 4;
+        let idx = 9 * bytes_per_row + 5 * 4; // y=9 (underline), x=5
+        assert_eq!(&rgba[idx..idx + 4], &[fg.r, fg.g, fg.b, fg.a]);
     }
 
     #[test]
