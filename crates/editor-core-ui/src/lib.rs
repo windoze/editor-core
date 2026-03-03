@@ -1402,7 +1402,8 @@ fn main() {
 
     #[test]
     fn ui_lsp_diagnostics_apply_style_layer() {
-        let mut ui = EditorUi::new("abc\n", 80);
+        // Use a space at the highlighted location so glyph rasterization does not affect the pixel sample.
+        let mut ui = EditorUi::new("a c\n", 80);
         ui.set_render_config(RenderConfig {
             width_px: 200,
             height_px: 40,
@@ -1449,13 +1450,14 @@ fn main() {
         ui.lsp_apply_publish_diagnostics_json(params_json).unwrap();
 
         let rgba = ui.render_rgba_visible().unwrap();
-        // 'b' at col=1 => x in [10..20]
+        // Highlighted cell at col=1 => x in [10..20]
         assert_eq!(pixel(&rgba, 200, 15, 10), [1, 200, 2, 255]);
     }
 
     #[test]
     fn ui_lsp_semantic_tokens_apply_style_layer() {
-        let mut ui = EditorUi::new("abc\n", 80);
+        // Use a space at the highlighted location so glyph rasterization does not affect the pixel sample.
+        let mut ui = EditorUi::new("a c\n", 80);
         ui.set_render_config(RenderConfig {
             width_px: 200,
             height_px: 40,

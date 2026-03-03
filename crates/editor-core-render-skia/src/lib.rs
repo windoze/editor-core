@@ -6,7 +6,8 @@
 
 use editor_core::snapshot::HeadlessGrid;
 use skia_safe::{
-    AlphaType, Color, Color4f, ColorSpace, ColorType, Font, ImageInfo, Paint, Point, Rect, surfaces,
+    AlphaType, Color, Color4f, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle,
+    ImageInfo, Paint, Point, Rect, surfaces,
 };
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -167,6 +168,18 @@ pub struct SkiaRenderer {
 impl SkiaRenderer {
     pub fn new() -> Self {
         let mut font = Font::default();
+
+        // Make text rendering deterministic-ish and avoid relying on Skia's implicit default typeface,
+        // which can be missing/empty on some setups (leading to “selection visible but no glyphs”).
+        if let Some(tf) = pick_reasonable_monospace_typeface() {
+            font.set_typeface(tf);
+        }
+
+        // Prefer grayscale AA: it produces consistent RGBA output and avoids LCD/subpixel quirks.
+        font.set_subpixel(false);
+        font.set_hinting(FontHinting::Normal);
+        font.set_edging(skia_safe::font::Edging::AntiAlias);
+
         font.set_size(RenderConfig::default().font_size);
         Self { font }
     }
@@ -293,7 +306,11 @@ impl SkiaRenderer {
 
         // Text.
         let (_spacing, metrics) = self.font.metrics();
-        let baseline_offset = -metrics.ascent;
+        let mut baseline_offset = -metrics.ascent;
+        if !baseline_offset.is_finite() {
+            baseline_offset = config.line_height_px * 0.8;
+        }
+        baseline_offset = baseline_offset.clamp(0.0, config.line_height_px.max(1.0));
 
         for (row_idx, line) in grid.lines.iter().enumerate() {
             let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
@@ -364,6 +381,29 @@ impl SkiaRenderer {
 
         Ok(())
     }
+}
+
+fn pick_reasonable_monospace_typeface() -> Option<skia_safe::Typeface> {
+    let mgr = FontMgr::new();
+    let style = FontStyle::normal();
+
+    // Keep the list small; we just need *something* that exists on the platform.
+    // If none match, fall back to the system default.
+    let candidates: &[&str] = if cfg!(target_os = "macos") {
+        &["Menlo", "SF Mono", "Monaco", "Courier New", "Courier"]
+    } else if cfg!(target_os = "windows") {
+        &["Consolas", "Cascadia Mono", "Courier New"]
+    } else {
+        &["DejaVu Sans Mono", "Noto Sans Mono", "Liberation Mono", "Monospace"]
+    };
+
+    for name in candidates {
+        if let Some(tf) = mgr.match_family_style(name, style) {
+            return Some(tf);
+        }
+    }
+
+    mgr.legacy_make_typeface(None, style)
 }
 
 fn rgba_to_skia_color(c: Rgba8) -> Color {
@@ -508,6 +548,46 @@ mod tests {
     use editor_core::snapshot::{Cell, HeadlessGrid, HeadlessLine};
 
     #[test]
+    fn render_draws_some_text_pixels() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        line.add_cell(Cell::new('M', 1));
+        grid.add_line(line);
+
+        let bg = Rgba8::new(10, 20, 30, 255);
+        let theme = RenderTheme {
+            background: bg,
+            foreground: Rgba8::new(250, 250, 250, 255),
+            // Make selection/caret invisible so only text can affect pixels.
+            selection_background: bg,
+            caret: bg,
+            styles: BTreeMap::new(),
+        };
+
+        let cfg = RenderConfig {
+            width_px: 40,
+            height_px: 40,
+            scale: 1.0,
+            font_size: 20.0,
+            line_height_px: 40.0,
+            cell_width_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            gutter_width_cells: 0,
+        };
+
+        let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
+
+        let bg_px = [bg.r, bg.g, bg.b, bg.a];
+        assert!(
+            rgba.chunks_exact(4).any(|p| p != bg_px),
+            "expected at least one non-background pixel from glyph rendering"
+        );
+    }
+
+    #[test]
     fn render_rejects_zero_size() {
         let mut renderer = SkiaRenderer::new();
 
@@ -539,9 +619,10 @@ mod tests {
 
         let mut grid = HeadlessGrid::new(0, 1);
         let mut line = HeadlessLine::new(0, false);
-        line.add_cell(Cell::new('a', 1));
-        line.add_cell(Cell::new('b', 1));
-        line.add_cell(Cell::new('c', 1));
+        // Use spaces so text glyph rasterization does not affect selection/caret pixel assertions.
+        line.add_cell(Cell::new(' ', 1));
+        line.add_cell(Cell::new(' ', 1));
+        line.add_cell(Cell::new(' ', 1));
         grid.add_line(line);
 
         let theme = RenderTheme {
@@ -598,8 +679,9 @@ mod tests {
 
         let mut grid = HeadlessGrid::new(0, 1);
         let mut line = HeadlessLine::new(0, false);
+        // Use a space so glyph rasterization does not affect the background override pixel sample.
         line.add_cell(Cell::new('a', 1));
-        line.add_cell(Cell::with_styles('b', 1, vec![42]));
+        line.add_cell(Cell::with_styles(' ', 1, vec![42]));
         line.add_cell(Cell::new('c', 1));
         grid.add_line(line);
 
@@ -645,7 +727,8 @@ mod tests {
 
         let mut grid = HeadlessGrid::new(0, 1);
         let mut line = HeadlessLine::new(0, false);
-        for ch in ['a', 'b', 'c', 'd', 'e'] {
+        // Use spaces so glyph rasterization does not affect selection/caret pixel assertions.
+        for ch in [' ', ' ', ' ', ' ', ' '] {
             line.add_cell(Cell::new(ch, 1));
         }
         grid.add_line(line);
@@ -710,7 +793,8 @@ mod tests {
 
         let mut grid = HeadlessGrid::new(0, 1);
         let mut line = HeadlessLine::new(0, false);
-        for ch in ['a', 'b', 'c'] {
+        // Use spaces so glyph rasterization does not affect selection/caret pixel assertions.
+        for ch in [' ', ' ', ' '] {
             line.add_cell(Cell::new(ch, 1));
         }
         grid.add_line(line);
@@ -725,6 +809,11 @@ mod tests {
         theme.styles.insert(
             GUTTER_BACKGROUND_STYLE_ID,
             StyleColors::new(None, Some(Rgba8::new(1, 2, 3, 255))),
+        );
+        // Hide line number glyphs by matching the gutter background color.
+        theme.styles.insert(
+            GUTTER_FOREGROUND_STYLE_ID,
+            StyleColors::new(Some(Rgba8::new(1, 2, 3, 255)), None),
         );
         theme.styles.insert(
             FOLD_MARKER_EXPANDED_STYLE_ID,

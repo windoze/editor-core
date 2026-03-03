@@ -1549,7 +1549,8 @@ mod tests {
 
     #[test]
     fn ffi_set_style_colors_affects_rendering() {
-        let initial = CString::new("abc").unwrap();
+        // Use a space in the styled cell so glyph rasterization does not affect the pixel sample.
+        let initial = CString::new("a c").unwrap();
         let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
         assert!(!ui.is_null());
 
@@ -1589,7 +1590,7 @@ mod tests {
             ECU_OK
         );
 
-        // Apply style id 42 to the middle cell ('b').
+        // Apply style id 42 to the middle cell (a space).
         assert_eq!(editor_core_ui_ffi_editor_ui_add_style(ui, 1, 2, 42), ECU_OK);
 
         let styles = [EcuStyleColors {
@@ -1626,7 +1627,7 @@ mod tests {
         );
         assert_eq!(out_len as usize, buf.len());
 
-        // Cell 'b' is at x in [10..20], pick a center pixel at y=10.
+        // Styled cell is at x in [10..20], pick a center pixel at y=10.
         assert_eq!(pixel(&buf, 80, 15, 10), [1, 200, 2, 255]);
 
         editor_core_ui_ffi_editor_ui_free(ui);
@@ -1634,7 +1635,8 @@ mod tests {
 
     #[test]
     fn ffi_sublime_highlight_scope_mapping_and_rendering() {
-        let initial = CString::new("a #c\n").unwrap();
+        // Put a space after '#' so we can sample a highlighted cell without glyph pixels.
+        let initial = CString::new("a # \n").unwrap();
         let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
         assert!(!ui.is_null());
 
@@ -1742,8 +1744,8 @@ contexts:
         );
         assert_eq!(out_len as usize, buf.len());
 
-        // "a #c" => '#' at col=2 => x in [20..30]
-        assert_eq!(pixel(&buf, 200, 25, 10), [1, 200, 2, 255]);
+        // "a # " => space at col=3 is highlighted => x in [30..40]
+        assert_eq!(pixel(&buf, 200, 35, 10), [1, 200, 2, 255]);
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }
@@ -1851,8 +1853,8 @@ contexts:
         );
         assert_eq!(out_len as usize, buf.len());
 
-        // Comment starts at col=0 => x in [0..10]
-        assert_eq!(pixel(&buf, 200, 5, 10), [1, 200, 2, 255]);
+        // Comment contains a space at col=2 => x in [20..30]
+        assert_eq!(pixel(&buf, 200, 25, 10), [1, 200, 2, 255]);
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }
@@ -2246,7 +2248,8 @@ contexts:
 
     #[test]
     fn ffi_lsp_diagnostics_affect_rendering() {
-        let initial = CString::new("abc\n").unwrap();
+        // Use a space in the highlighted range so glyph rasterization does not affect the pixel sample.
+        let initial = CString::new("a c\n").unwrap();
         let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
         assert!(!ui.is_null());
 
@@ -2350,7 +2353,8 @@ contexts:
 
     #[test]
     fn ffi_lsp_semantic_tokens_affect_rendering() {
-        let initial = CString::new("abc\n").unwrap();
+        // Use a space in the highlighted range so glyph rasterization does not affect the pixel sample.
+        let initial = CString::new("a c\n").unwrap();
         let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
         assert!(!ui.is_null());
 
