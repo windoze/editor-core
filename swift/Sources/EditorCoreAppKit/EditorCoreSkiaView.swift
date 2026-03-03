@@ -215,11 +215,12 @@ public final class EditorCoreSkiaView: NSView {
                 byteCount: raw.count
             ) else { return }
 
-            let dstRect = SkiaRasterCGImage.destinationRectInCurrentContext(
-                viewBounds: bounds,
-                viewScaleFactor: scaleFactor,
-                ctx: ctx
-            )
+            // 这里不要把 `bounds` 乘以 `scaleFactor`：
+            // - 在 AppKit/Retina 下，`CGContext` 的 user space 往往仍然是 “points”，即使 `ctm` 看起来是 identity；
+            //   实际的像素密度由系统（backing store / layer.contentsScale）负责映射。
+            // - 如果我们把 dstRect 放大（例如 bounds * scaleFactor），就会把 2x 的 backing buffer 再放大一遍，
+            //   结果表现为：光标/选区移动速度不对、鼠标 hit-test 看起来“跑偏”。
+            let dstRect = bounds
             SkiaRasterCGImage.drawCGImage(img, in: ctx, dstRect: dstRect, viewIsFlipped: isFlipped)
         }
 
