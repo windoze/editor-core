@@ -156,7 +156,12 @@ public final class EditorCoreSkiaView: NSView {
                 byteCount: raw.count
             ) else { return }
 
-            SkiaRasterCGImage.drawCGImage(img, in: ctx, dstRect: bounds, viewIsFlipped: isFlipped)
+            let dstRect = SkiaRasterCGImage.destinationRectInCurrentContext(
+                viewBounds: bounds,
+                viewScaleFactor: scaleFactor,
+                ctx: ctx
+            )
+            SkiaRasterCGImage.drawCGImage(img, in: ctx, dstRect: dstRect, viewIsFlipped: isFlipped)
         }
 
         ctx.restoreGState()

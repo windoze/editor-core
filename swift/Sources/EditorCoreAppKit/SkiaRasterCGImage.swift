@@ -66,5 +66,28 @@ enum SkiaRasterCGImage {
             ctx.draw(image, in: dstRect)
         }
     }
-}
 
+    /// Convert a view's logical bounds (points) into the destination rect in the current context's
+    /// user space, so that an RGBA buffer sized using `viewScaleFactor` draws 1:1 without implicit
+    /// downsampling when the context is already in backing pixels.
+    static func destinationRectInCurrentContext(
+        viewBounds: CGRect,
+        viewScaleFactor: CGFloat,
+        ctx: CGContext
+    ) -> CGRect {
+        let sx = abs(ctx.ctm.a)
+        let sy = abs(ctx.ctm.d)
+
+        // If the context is already in points, `sx/sy` should be close to `viewScaleFactor`.
+        // If the context is in pixels, `sx/sy` will be ~1.0.
+        let rx = sx > 0 ? (viewScaleFactor / sx) : viewScaleFactor
+        let ry = sy > 0 ? (viewScaleFactor / sy) : viewScaleFactor
+
+        return CGRect(
+            x: viewBounds.origin.x * rx,
+            y: viewBounds.origin.y * ry,
+            width: viewBounds.size.width * rx,
+            height: viewBounds.size.height * ry
+        )
+    }
+}
