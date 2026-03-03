@@ -51,6 +51,12 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(marked2.hasMarked)
         XCTAssertEqual(marked2.len, 2)
 
+        // Inline/preedit: caret inside marked text (after first char of "你好").
+        try ui.setMarkedText("你好", selectedStart: 1, selectedLen: 0)
+        let selIme = try ui.selectionOffsets()
+        XCTAssertEqual(selIme.start, 4) // "abc" (3) + 1
+        XCTAssertEqual(selIme.end, 4)
+
         try ui.commitText("你好!")
         let marked3 = try ui.markedRange()
         XCTAssertFalse(marked3.hasMarked)

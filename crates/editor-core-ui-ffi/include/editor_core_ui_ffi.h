@@ -125,6 +125,12 @@ int32_t editor_core_ui_ffi_editor_ui_move_visual_by_rows_and_modify_selection(Ed
                                                                              int32_t delta_rows);
 
 int32_t editor_core_ui_ffi_editor_ui_set_marked_text(EditorUi* ui, const char* text_utf8);
+int32_t editor_core_ui_ffi_editor_ui_set_marked_text_ex(EditorUi* ui,
+                                                        const char* text_utf8,
+                                                        uint32_t selected_start,
+                                                        uint32_t selected_len,
+                                                        uint32_t replace_start,
+                                                        uint32_t replace_len);
 void editor_core_ui_ffi_editor_ui_unmark_text(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_commit_text(EditorUi* ui, const char* text_utf8);
 

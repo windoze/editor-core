@@ -380,7 +380,32 @@ public final class EditorCoreSkiaView: NSView {
         }
 
         do {
-            try editor.setMarkedText(text)
+            // `selectedRange` 是 marked string 内部的 UTF-16 range（caret/selection in preedit）。
+            // 我们转换成 Unicode scalar offsets 并交给 Rust，以支持 inline/preedit 模式下
+            // caret 在组合串内部移动（例如拼音候选、选词时）。
+            let selStartScalar = Self.scalarOffset(fromUTF16Offset: selectedRange.location, in: text)
+            let selEndScalar = Self.scalarOffset(fromUTF16Offset: selectedRange.location + selectedRange.length, in: text)
+            let selLenScalar = max(0, selEndScalar - selStartScalar)
+
+            // `replacementRange` 是 document 内的 UTF-16 range；大多数情况下为 NSNotFound，
+            // 此时 Rust 会优先替换“已有 marked range”，否则替换当前 selection/caret。
+            var replaceStart: UInt32 = UInt32.max
+            var replaceLen: UInt32 = 0
+            if replacementRange.location != NSNotFound {
+                let doc = try editor.text()
+                let a = Self.scalarOffset(fromUTF16Offset: replacementRange.location, in: doc)
+                let b = Self.scalarOffset(fromUTF16Offset: replacementRange.location + replacementRange.length, in: doc)
+                replaceStart = UInt32(max(0, a))
+                replaceLen = UInt32(max(0, b - a))
+            }
+
+            try editor.setMarkedText(
+                text,
+                selectedStart: UInt32(max(0, selStartScalar)),
+                selectedLen: UInt32(selLenScalar),
+                replaceStart: replaceStart,
+                replaceLen: replaceLen
+            )
         } catch {
             NSSound.beep()
         }

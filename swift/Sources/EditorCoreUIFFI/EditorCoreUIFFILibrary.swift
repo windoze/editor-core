@@ -45,6 +45,7 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiMoveVisualByRowsAndModifySelection = @convention(c) (OpaquePointer?, Int32) -> Int32
 
     typealias FnEditorUiSetMarkedText = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
+    typealias FnEditorUiSetMarkedTextEx = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?, UInt32, UInt32, UInt32, UInt32) -> Int32
     typealias FnEditorUiUnmarkText = @convention(c) (OpaquePointer?) -> Void
     typealias FnEditorUiCommitText = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
 
@@ -124,6 +125,7 @@ public final class EditorCoreUIFFILibrary {
     let editorUiMoveGraphemeRightAndModifySelectionFn: FnEditorUiMoveGraphemeRightAndModifySelection
     let editorUiMoveVisualByRowsAndModifySelectionFn: FnEditorUiMoveVisualByRowsAndModifySelection
     let editorUiSetMarkedTextFn: FnEditorUiSetMarkedText
+    let editorUiSetMarkedTextExFn: FnEditorUiSetMarkedTextEx
     let editorUiUnmarkTextFn: FnEditorUiUnmarkText
     let editorUiCommitTextFn: FnEditorUiCommitText
     let editorUiMouseDownFn: FnEditorUiMouseDown
@@ -214,6 +216,7 @@ public final class EditorCoreUIFFILibrary {
         editorUiMoveGraphemeRightAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_right_and_modify_selection", as: FnEditorUiMoveGraphemeRightAndModifySelection.self)
         editorUiMoveVisualByRowsAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_visual_by_rows_and_modify_selection", as: FnEditorUiMoveVisualByRowsAndModifySelection.self)
         editorUiSetMarkedTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_marked_text", as: FnEditorUiSetMarkedText.self)
+        editorUiSetMarkedTextExFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_marked_text_ex", as: FnEditorUiSetMarkedTextEx.self)
         editorUiUnmarkTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_unmark_text", as: FnEditorUiUnmarkText.self)
         editorUiCommitTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_commit_text", as: FnEditorUiCommitText.self)
         editorUiMouseDownFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_mouse_down", as: FnEditorUiMouseDown.self)

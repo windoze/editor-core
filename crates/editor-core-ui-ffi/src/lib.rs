@@ -1061,6 +1061,50 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_marked_text(
     }
 }
 
+/// Set IME marked text with explicit selection and optional replacement range.
+///
+/// - `selected_start/selected_len`: selection within `text` (character offsets).
+/// - `replace_start/replace_len`: document char-offset range to replace.
+///   If `replace_start == UINT32_MAX`, the UI layer will use the current marked range (if any),
+///   otherwise it falls back to the current selection/caret.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_marked_text_ex(
+    ui: *mut EditorUi,
+    text_utf8: *const c_char,
+    selected_start: u32,
+    selected_len: u32,
+    replace_start: u32,
+    replace_len: u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let text = require_cstr(text_utf8, "text_utf8")?
+            .to_str()
+            .map_err(|_| "text_utf8 is not valid UTF-8".to_string())?;
+
+        let replace_range = if replace_start == u32::MAX {
+            None
+        } else {
+            Some((replace_start as usize, replace_len as usize))
+        };
+
+        ui.set_marked_text_with_selection(
+            text,
+            selected_start as usize,
+            selected_len as usize,
+            replace_range,
+        )
+        .map(|_| ECU_OK)
+        .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_unmark_text(ui: *mut EditorUi) {
     if ui.is_null() {
@@ -2529,6 +2573,25 @@ contexts:
         );
         assert_eq!(has, 1);
         assert_eq!(ml, 1);
+
+        // Inline/preedit: selection inside marked string.
+        let marked2 = CString::new("你好").unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_marked_text_ex(
+                ui,
+                marked2.as_ptr(),
+                1,                 // selected_start inside "你好"
+                0,                 // selected_len
+                u32::MAX,          // replace_start: use existing marked range
+                0                  // replace_len (ignored)
+            ),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (1, 1));
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

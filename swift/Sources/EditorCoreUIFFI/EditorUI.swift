@@ -214,6 +214,24 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_marked_text")
     }
 
+    /// Set IME marked text (preedit) with selection and optional replacement range.
+    ///
+    /// - `selectedStart/selectedLen`: selection within `text` (Unicode scalar offsets).
+    /// - `replaceStart/replaceLen`: document char-offset range to replace.
+    ///   Pass `UInt32.max` for `replaceStart` to let Rust pick (existing marked range / current selection).
+    public func setMarkedText(
+        _ text: String,
+        selectedStart: UInt32,
+        selectedLen: UInt32,
+        replaceStart: UInt32 = UInt32.max,
+        replaceLen: UInt32 = 0
+    ) throws {
+        let status = text.withCString { cstr in
+            library.editorUiSetMarkedTextExFn(handle, cstr, selectedStart, selectedLen, replaceStart, replaceLen)
+        }
+        try library.ensureStatus(status, context: "editor_ui_set_marked_text_ex")
+    }
+
     public func unmarkText() {
         library.editorUiUnmarkTextFn(handle)
     }
