@@ -11,7 +11,7 @@
 //! - event collection (IME/keyboard/mouse/scroll)
 //! - presenting the rendered pixels (RGBA buffer) to screen
 
-use editor_core_render_skia::{RenderConfig, RenderTheme, Rgba8, StyleColors};
+use editor_core_render_skia::{RenderTheme, Rgba8, StyleColors};
 use editor_core_ui::{EditorUi, UiError};
 use libc::{c_char, c_float, c_int};
 use std::cell::RefCell;
@@ -599,14 +599,33 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_render_metrics(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        let mut cfg = RenderConfig::default();
-        cfg.font_size = font_size;
-        cfg.line_height_px = line_height_px;
-        cfg.cell_width_px = cell_width_px;
-        cfg.padding_x_px = padding_x_px;
-        cfg.padding_y_px = padding_y_px;
-        ui.set_render_config(cfg);
+        ui.set_render_metrics(
+            font_size,
+            line_height_px,
+            cell_width_px,
+            padding_x_px,
+            padding_y_px,
+        );
         Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_gutter_width_cells(
+    ui: *mut EditorUi,
+    width_cells: u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.set_gutter_width_cells(width_cells)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -1946,6 +1965,182 @@ contexts:
         let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, "X X X\n");
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_gutter_renders_fold_marker_and_click_toggles_fold() {
+        let initial = CString::new("fn main() {\n  let x = 1;\n}\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let theme = EcuTheme {
+            background: EcuRgba8 {
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 255,
+            },
+            foreground: EcuRgba8 {
+                r: 250,
+                g: 250,
+                b: 250,
+                a: 255,
+            },
+            selection_background: EcuRgba8 {
+                r: 200,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            caret: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 200,
+                a: 255,
+            },
+        };
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 60, 1.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_treesitter_rust_enable_default(ui),
+            ECU_OK
+        );
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_gutter_width_cells(ui, 2),
+            ECU_OK
+        );
+
+        let styles = [
+            // Make the gutter background visible and keep digits "invisible" to keep pixel tests deterministic.
+            EcuStyleColors {
+                style_id: editor_core_render_skia::GUTTER_BACKGROUND_STYLE_ID,
+                flags: ECU_STYLE_FLAG_BACKGROUND,
+                foreground: EcuRgba8 {
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                    a: 0,
+                },
+                background: EcuRgba8 {
+                    r: 1,
+                    g: 2,
+                    b: 3,
+                    a: 255,
+                },
+            },
+            EcuStyleColors {
+                style_id: editor_core_render_skia::GUTTER_FOREGROUND_STYLE_ID,
+                flags: ECU_STYLE_FLAG_FOREGROUND,
+                foreground: EcuRgba8 {
+                    r: 1,
+                    g: 2,
+                    b: 3,
+                    a: 255,
+                },
+                background: EcuRgba8 {
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                    a: 0,
+                },
+            },
+            EcuStyleColors {
+                style_id: editor_core_render_skia::FOLD_MARKER_EXPANDED_STYLE_ID,
+                flags: ECU_STYLE_FLAG_BACKGROUND,
+                foreground: EcuRgba8 {
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                    a: 0,
+                },
+                background: EcuRgba8 {
+                    r: 9,
+                    g: 9,
+                    b: 9,
+                    a: 255,
+                },
+            },
+            EcuStyleColors {
+                style_id: editor_core_render_skia::FOLD_MARKER_COLLAPSED_STYLE_ID,
+                flags: ECU_STYLE_FLAG_BACKGROUND,
+                foreground: EcuRgba8 {
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                    a: 0,
+                },
+                background: EcuRgba8 {
+                    r: 8,
+                    g: 8,
+                    b: 8,
+                    a: 255,
+                },
+            },
+        ];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            ECU_OK
+        );
+
+        let mut out_len: u32 = 0;
+        let mut buf = vec![0u8; 200 * 60 * 4];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
+            ECU_OK
+        );
+        assert_eq!(out_len as usize, buf.len());
+
+        // Expanded fold marker at first gutter cell.
+        assert_eq!(pixel(&buf, 200, 5, 10), [9, 9, 9, 255]);
+        // Gutter background in second cell (avoid line number glyph area).
+        assert_eq!(pixel(&buf, 200, 19, 10), [1, 2, 3, 255]);
+
+        // Click in gutter should toggle fold collapse.
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_mouse_down(ui, 5.0, 10.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
+            ECU_OK
+        );
+        assert_eq!(pixel(&buf, 200, 5, 10), [8, 8, 8, 255]);
+
+        // And expand again on second click.
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_mouse_down(ui, 5.0, 10.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
+            ECU_OK
+        );
+        assert_eq!(pixel(&buf, 200, 5, 10), [9, 9, 9, 255]);
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

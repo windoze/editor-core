@@ -13,7 +13,8 @@ use editor_core_lsp::{
     semantic_tokens_to_intervals,
 };
 use editor_core_render_skia::{
-    RenderConfig, RenderError, RenderTheme, SkiaRenderer, StyleColors, VisualCaret, VisualSelection,
+    FoldMarker, RenderConfig, RenderError, RenderTheme, SkiaRenderer, StyleColors, VisualCaret,
+    VisualSelection,
 };
 use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
 use editor_core_treesitter::{TreeSitterProcessor, TreeSitterProcessorConfig};
@@ -308,8 +309,11 @@ impl EditorUi {
         let viewport = self.state.get_viewport_state();
         let local_row = row.saturating_sub(viewport.scroll_top);
 
-        let x_px =
-            self.render_config.padding_x_px + x_cells as f32 * self.render_config.cell_width_px;
+        let gutter_px =
+            self.render_config.gutter_width_cells as f32 * self.render_config.cell_width_px;
+        let x_px = self.render_config.padding_x_px
+            + gutter_px
+            + x_cells as f32 * self.render_config.cell_width_px;
         let y_px =
             self.render_config.padding_y_px + local_row as f32 * self.render_config.line_height_px;
         Some((x_px, y_px))
@@ -469,6 +473,32 @@ impl EditorUi {
         self.render_config = config;
     }
 
+    pub fn set_render_metrics(
+        &mut self,
+        font_size: f32,
+        line_height_px: f32,
+        cell_width_px: f32,
+        padding_x_px: f32,
+        padding_y_px: f32,
+    ) {
+        self.render_config.font_size = font_size;
+        self.render_config.line_height_px = line_height_px;
+        self.render_config.cell_width_px = cell_width_px;
+        self.render_config.padding_x_px = padding_x_px;
+        self.render_config.padding_y_px = padding_y_px;
+    }
+
+    pub fn set_gutter_width_cells(&mut self, width_cells: u32) -> Result<(), UiError> {
+        self.render_config.gutter_width_cells = width_cells;
+        // Keep wrap width in sync with the available text area.
+        self.set_viewport_px(
+            self.render_config.width_px,
+            self.render_config.height_px,
+            self.render_config.scale,
+        )?;
+        Ok(())
+    }
+
     /// Update pixel viewport size and keep editor-core's viewport width/height in sync.
     ///
     /// This is important for soft-wrapping: editor-core's layout uses "cells", while
@@ -483,7 +513,10 @@ impl EditorUi {
         self.render_config.height_px = height_px;
         self.render_config.scale = scale;
 
-        let usable_w = (width_px as f32 - self.render_config.padding_x_px * 2.0).max(1.0);
+        let gutter_px =
+            self.render_config.gutter_width_cells as f32 * self.render_config.cell_width_px;
+        let usable_w =
+            (width_px as f32 - self.render_config.padding_x_px * 2.0 - gutter_px).max(1.0);
         let cell_w = self.render_config.cell_width_px.max(1.0);
         let width_cells = (usable_w / cell_w).floor().max(1.0) as usize;
         self.state
@@ -650,6 +683,40 @@ impl EditorUi {
     }
 
     pub fn mouse_down(&mut self, x_px: f32, y_px: f32) -> Result<(), UiError> {
+        // Gutter interaction: click-to-toggle fold state for a fold start line.
+        if self.render_config.gutter_width_cells > 0 {
+            let gutter_px =
+                self.render_config.gutter_width_cells as f32 * self.render_config.cell_width_px;
+            let gutter_end_x = self.render_config.padding_x_px + gutter_px;
+            if x_px < gutter_end_x {
+                let (row, _x_cells) = self.pixel_to_visual(x_px, y_px);
+                if let Some(pos) = self.state.visual_position_to_logical(row, 0) {
+                    if let Some(region) = self
+                        .state
+                        .get_folding_state()
+                        .regions
+                        .iter()
+                        .filter(|r| r.start_line == pos.line)
+                        .min_by_key(|r| r.end_line)
+                        .cloned()
+                    {
+                        if region.is_collapsed {
+                            self.state.execute(Command::Style(StyleCommand::Unfold {
+                                start_line: region.start_line,
+                            }))?;
+                        } else {
+                            self.state.execute(Command::Style(StyleCommand::Fold {
+                                start_line: region.start_line,
+                                end_line: region.end_line,
+                            }))?;
+                        }
+                        self.mouse_anchor = None;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
         let (row, x_cells) = self.pixel_to_visual(x_px, y_px);
         if let Some(pos) = self.state.visual_position_to_logical(row, x_cells) {
             self.state.execute(Command::Cursor(CursorCommand::MoveTo {
@@ -697,9 +764,27 @@ impl EditorUi {
         let grid = self.state.get_viewport_content_styled(start_row, row_count);
         let selections = self.all_selections_visual();
         let carets = self.all_carets_visual();
+
+        let mut fold_markers = Vec::<FoldMarker>::new();
+        for region in &self.state.get_folding_state().regions {
+            if region.end_line <= region.start_line {
+                continue;
+            }
+            fold_markers.push(FoldMarker {
+                logical_line: region.start_line as u32,
+                is_collapsed: region.is_collapsed,
+            });
+        }
         Ok(self
             .renderer
-            .render_rgba(&grid, carets.as_slice(), selections.as_slice(), self.render_config, &self.theme)?)
+            .render_rgba(
+                &grid,
+                carets.as_slice(),
+                selections.as_slice(),
+                fold_markers.as_slice(),
+                self.render_config,
+                &self.theme,
+            )?)
     }
 
     fn refresh_processing(&mut self) -> Result<(), UiError> {
@@ -777,7 +862,9 @@ impl EditorUi {
     }
 
     fn pixel_to_visual(&self, x_px: f32, y_px: f32) -> (usize, usize) {
-        let x = (x_px - self.render_config.padding_x_px).max(0.0);
+        let gutter_px =
+            self.render_config.gutter_width_cells as f32 * self.render_config.cell_width_px;
+        let x = (x_px - self.render_config.padding_x_px - gutter_px).max(0.0);
         let y = (y_px - self.render_config.padding_y_px).max(0.0);
 
         let col = (x / self.render_config.cell_width_px.max(1.0))
@@ -929,6 +1016,76 @@ mod tests {
 
         // View hit-test.
         assert_eq!(ui.view_point_to_char_offset(25.0, 10.0).unwrap(), 2);
+    }
+
+    #[test]
+    fn ui_gutter_shifts_view_point_mapping() {
+        let mut ui = EditorUi::new("abc\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 40,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(200, 40, 1.0).unwrap();
+        ui.set_gutter_width_cells(2).unwrap(); // gutter = 20px
+
+        let (x_px, y_px) = ui.char_offset_to_view_point_px(0).unwrap();
+        assert_eq!((x_px, y_px), (20.0, 0.0));
+
+        // Hit-testing inside gutter should clamp to column 0.
+        assert_eq!(ui.view_point_to_char_offset(5.0, 10.0).unwrap(), 0);
+    }
+
+    #[test]
+    fn ui_gutter_click_toggles_fold_state() {
+        let text = "fn main() {\n  let x = 1;\n}\n";
+        let mut ui = EditorUi::new(text, 80);
+        ui.set_treesitter_rust_default().unwrap();
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 80,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(200, 80, 1.0).unwrap();
+        ui.set_gutter_width_cells(2).unwrap();
+
+        assert!(
+            ui.state
+                .get_folding_state()
+                .regions
+                .iter()
+                .any(|r| r.start_line == 0 && !r.is_collapsed),
+            "expected a fold region starting at line 0"
+        );
+
+        // Click in gutter at visual row 0.
+        ui.mouse_down(5.0, 10.0).unwrap();
+        assert!(
+            ui.state
+                .get_folding_state()
+                .regions
+                .iter()
+                .any(|r| r.start_line == 0 && r.is_collapsed),
+            "expected fold region to become collapsed after gutter click"
+        );
+
+        ui.mouse_down(5.0, 10.0).unwrap();
+        assert!(
+            ui.state
+                .get_folding_state()
+                .regions
+                .iter()
+                .any(|r| r.start_line == 0 && !r.is_collapsed),
+            "expected fold region to expand after second gutter click"
+        );
     }
 
     #[test]

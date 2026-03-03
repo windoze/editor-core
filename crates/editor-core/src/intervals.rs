@@ -405,10 +405,12 @@ impl FoldingManager {
 
     fn rebuild_merged_regions(&mut self) {
         self.merged_regions.clear();
+        // User folds should override derived folds when they share the same (start, end) range.
+        // This makes toggling/collapsing derived regions from the UI deterministic: we can record
+        // the user's collapsed/expanded choice as a user region and have it win in the merged view.
+        self.merged_regions.extend(self.user_regions.iter().cloned());
         self.merged_regions
             .extend(self.derived_regions.iter().cloned());
-        self.merged_regions
-            .extend(self.user_regions.iter().cloned());
 
         self.merged_regions
             .sort_by_key(|r| (r.start_line, r.end_line));

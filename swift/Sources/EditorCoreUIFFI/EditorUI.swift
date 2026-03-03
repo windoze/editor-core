@@ -126,6 +126,11 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_render_metrics")
     }
 
+    public func setGutterWidthCells(_ widthCells: UInt32) throws {
+        let status = library.editorUiSetGutterWidthCellsFn(handle, widthCells)
+        try library.ensureStatus(status, context: "editor_ui_set_gutter_width_cells")
+    }
+
     public func setViewportPx(widthPx: UInt32, heightPx: UInt32, scale: Float) throws {
         let status = library.editorUiSetViewportPxFn(handle, widthPx, heightPx, scale)
         try library.ensureStatus(status, context: "editor_ui_set_viewport_px")

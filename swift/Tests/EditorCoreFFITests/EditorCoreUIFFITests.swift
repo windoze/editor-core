@@ -297,6 +297,52 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(sels2.ranges.count, 1)
     }
 
+    func testGutterRendersFoldMarkerAndClickTogglesFold() throws {
+        let lib = try EditorCoreUIFFILibrary()
+        let ui = try EditorUI(library: lib, initialText: "fn main() {\n  let x = 1;\n}\n", viewportWidthCells: 80)
+
+        try ui.setTheme(
+            EcuTheme(
+                background: EcuRgba8(r: 10, g: 20, b: 30, a: 255),
+                foreground: EcuRgba8(r: 250, g: 250, b: 250, a: 255),
+                selectionBackground: EcuRgba8(r: 200, g: 0, b: 0, a: 255),
+                caret: EcuRgba8(r: 0, g: 0, b: 200, a: 255)
+            )
+        )
+        try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 200, heightPx: 60, scale: 1)
+        try ui.treeSitterRustEnableDefault()
+        try ui.setGutterWidthCells(2)
+
+        // Reserved overlay style ids (see `editor-core-render-skia`).
+        let gutterBg: UInt32 = 0x0600_0001
+        let gutterFg: UInt32 = 0x0600_0002
+        let foldCollapsed: UInt32 = 0x0600_0004
+        let foldExpanded: UInt32 = 0x0600_0005
+
+        try ui.setStyleColors([
+            // Make gutter background visible; keep numbers "invisible" for deterministic pixel tests.
+            EcuStyleColors(styleId: gutterBg, background: EcuRgba8(r: 1, g: 2, b: 3, a: 255)),
+            EcuStyleColors(styleId: gutterFg, foreground: EcuRgba8(r: 1, g: 2, b: 3, a: 255)),
+            EcuStyleColors(styleId: foldExpanded, background: EcuRgba8(r: 9, g: 9, b: 9, a: 255)),
+            EcuStyleColors(styleId: foldCollapsed, background: EcuRgba8(r: 8, g: 8, b: 8, a: 255)),
+        ])
+
+        var rgba: [UInt8] = []
+        _ = try ui.renderRGBA(into: &rgba)
+        XCTAssertEqual(pixel(rgba, widthPx: 200, x: 5, y: 10), [9, 9, 9, 255])
+        XCTAssertEqual(pixel(rgba, widthPx: 200, x: 19, y: 10), [1, 2, 3, 255])
+
+        // Click in gutter to toggle fold.
+        try ui.mouseDown(xPx: 5, yPx: 10)
+        _ = try ui.renderRGBA(into: &rgba)
+        XCTAssertEqual(pixel(rgba, widthPx: 200, x: 5, y: 10), [8, 8, 8, 255])
+
+        try ui.mouseDown(xPx: 5, yPx: 10)
+        _ = try ui.renderRGBA(into: &rgba)
+        XCTAssertEqual(pixel(rgba, widthPx: 200, x: 5, y: 10), [9, 9, 9, 255])
+    }
+
     private func pixel(_ buf: [UInt8], widthPx: UInt32, x: UInt32, y: UInt32) -> [UInt8] {
         let idx = Int((y * widthPx + x) * 4)
         return [buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3]]

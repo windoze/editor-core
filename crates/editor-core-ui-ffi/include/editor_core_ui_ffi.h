@@ -96,6 +96,7 @@ int32_t editor_core_ui_ffi_editor_ui_set_render_metrics(EditorUi* ui,
                                                         float cell_width_px,
                                                         float padding_x_px,
                                                         float padding_y_px);
+int32_t editor_core_ui_ffi_editor_ui_set_gutter_width_cells(EditorUi* ui, uint32_t width_cells);
 int32_t editor_core_ui_ffi_editor_ui_set_viewport_px(EditorUi* ui,
                                                      uint32_t width_px,
                                                      uint32_t height_px,

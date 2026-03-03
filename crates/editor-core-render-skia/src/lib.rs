@@ -37,6 +37,17 @@ pub struct RenderTheme {
     pub styles: BTreeMap<u32, StyleColors>,
 }
 
+/// Reserved StyleIds for UI chrome rendered outside the document text grid (gutter, fold markers, ...).
+///
+/// These are rendered by the Skia renderer itself (not by `editor-core`), but can still be themed via
+/// `RenderTheme.styles`.
+pub const UI_OVERLAY_BASE_STYLE_ID: u32 = 0x0600_0000;
+pub const GUTTER_BACKGROUND_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 1;
+pub const GUTTER_FOREGROUND_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 2;
+pub const GUTTER_SEPARATOR_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 3;
+pub const FOLD_MARKER_COLLAPSED_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 4;
+pub const FOLD_MARKER_EXPANDED_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 5;
+
 impl Default for RenderTheme {
     fn default() -> Self {
         Self {
@@ -84,6 +95,11 @@ pub struct RenderConfig {
     pub padding_x_px: f32,
     /// Top padding in pixels.
     pub padding_y_px: f32,
+    /// Gutter width in "cells" (monospace columns).
+    ///
+    /// When non-zero, the renderer draws a gutter (line numbers + fold markers) and shifts the
+    /// document text by `gutter_width_cells * cell_width_px`.
+    pub gutter_width_cells: u32,
 }
 
 impl Default for RenderConfig {
@@ -97,6 +113,7 @@ impl Default for RenderConfig {
             cell_width_px: 8.0,
             padding_x_px: 8.0,
             padding_y_px: 8.0,
+            gutter_width_cells: 0,
         }
     }
 }
@@ -117,6 +134,13 @@ pub struct VisualSelection {
     pub start_x_cells: u32,
     pub end_row: u32,
     pub end_x_cells: u32,
+}
+
+/// Fold marker metadata for gutter rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FoldMarker {
+    pub logical_line: u32,
+    pub is_collapsed: bool,
 }
 
 #[derive(Debug, Error)]
@@ -151,6 +175,7 @@ impl SkiaRenderer {
         grid: &HeadlessGrid,
         carets: &[VisualCaret],
         selections: &[VisualSelection],
+        fold_markers: &[FoldMarker],
         config: RenderConfig,
         theme: &RenderTheme,
     ) -> Result<Vec<u8>, RenderError> {
@@ -185,9 +210,36 @@ impl SkiaRenderer {
         let canvas = surface.canvas();
         canvas.clear(rgba_to_skia_color4f(theme.background));
 
+        let gutter_x = config.padding_x_px;
+        let gutter_w_px = config.gutter_width_cells as f32 * config.cell_width_px;
+        let text_origin_x = gutter_x + gutter_w_px;
+
+        if config.gutter_width_cells > 0 && gutter_w_px > 0.0 {
+            let gutter_bg = resolve_style_background(GUTTER_BACKGROUND_STYLE_ID, theme, theme.background);
+            let rect = Rect::from_xywh(gutter_x, 0.0, gutter_w_px, config.height_px as f32);
+            let mut paint = Paint::default();
+            paint.set_anti_alias(false);
+            paint.set_color(rgba_to_skia_color(gutter_bg));
+            canvas.draw_rect(rect, &paint);
+
+            let sep = resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
+            let sep_rect = Rect::from_xywh(text_origin_x, 0.0, 1.0, config.height_px as f32);
+            let mut sep_paint = Paint::default();
+            sep_paint.set_anti_alias(false);
+            sep_paint.set_color(rgba_to_skia_color(sep));
+            canvas.draw_rect(sep_rect, &sep_paint);
+        }
+
         // Selections first (under text).
         for sel in selections {
-            draw_selection(canvas, grid, *sel, config, theme.selection_background);
+            draw_selection(
+                canvas,
+                grid,
+                *sel,
+                text_origin_x,
+                config,
+                theme.selection_background,
+            );
         }
 
         // Text.
@@ -198,9 +250,40 @@ impl SkiaRenderer {
             let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
             let baseline_y = y_top + baseline_offset;
 
+            if config.gutter_width_cells > 0 && line.visual_in_logical == 0 {
+                let marker_state =
+                    fold_marker_state_for_line(line.logical_line_index as u32, fold_markers);
+                if let Some(is_collapsed) = marker_state {
+                    let style_id = if is_collapsed {
+                        FOLD_MARKER_COLLAPSED_STYLE_ID
+                    } else {
+                        FOLD_MARKER_EXPANDED_STYLE_ID
+                    };
+                    let marker_color =
+                        resolve_style_background(style_id, theme, theme.foreground);
+                    let rect =
+                        Rect::from_xywh(gutter_x, y_top, config.cell_width_px, config.line_height_px);
+                    let mut paint = Paint::default();
+                    paint.set_anti_alias(false);
+                    paint.set_color(rgba_to_skia_color(marker_color));
+                    canvas.draw_rect(rect, &paint);
+                }
+
+                // Line number text (best-effort; tests should not depend on glyph rasterization).
+                let gutter_fg =
+                    resolve_style_foreground(GUTTER_FOREGROUND_STYLE_ID, theme, theme.foreground);
+                let mut paint = Paint::default();
+                paint.set_anti_alias(false);
+                paint.set_color(rgba_to_skia_color(gutter_fg));
+
+                let line_no = (line.logical_line_index + 1).to_string();
+                let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
+                canvas.draw_str(line_no, Point::new(x_px, baseline_y), &self.font, &paint);
+            }
+
             let mut x_cells = line.segment_x_start_cells as f32;
             for cell in &line.cells {
-                let x_px = config.padding_x_px + x_cells * config.cell_width_px;
+                let x_px = text_origin_x + x_cells * config.cell_width_px;
                 let (fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
 
                 if bg != theme.background {
@@ -227,7 +310,7 @@ impl SkiaRenderer {
 
         // Carets on top.
         for caret in carets {
-            draw_caret(canvas, grid, *caret, config, theme.caret);
+            draw_caret(canvas, grid, *caret, text_origin_x, config, theme.caret);
         }
 
         Ok(pixels)
@@ -251,6 +334,7 @@ fn draw_caret(
     canvas: &skia_safe::Canvas,
     grid: &HeadlessGrid,
     caret: VisualCaret,
+    text_origin_x: f32,
     config: RenderConfig,
     color: Rgba8,
 ) {
@@ -264,7 +348,7 @@ fn draw_caret(
         return;
     }
 
-    let x_px = config.padding_x_px + caret.x_cells as f32 * config.cell_width_px;
+    let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
     let y_top = config.padding_y_px + local_row as f32 * config.line_height_px;
 
     let caret_width = (config.scale.max(1.0)).min(2.0);
@@ -280,6 +364,7 @@ fn draw_selection(
     canvas: &skia_safe::Canvas,
     grid: &HeadlessGrid,
     selection: VisualSelection,
+    text_origin_x: f32,
     config: RenderConfig,
     color: Rgba8,
 ) {
@@ -321,12 +406,35 @@ fn draw_selection(
             continue;
         }
 
-        let x_px = config.padding_x_px + start_x as f32 * config.cell_width_px;
+        let x_px = text_origin_x + start_x as f32 * config.cell_width_px;
         let w_px = (end_x - start_x) as f32 * config.cell_width_px;
         let y_top = config.padding_y_px + local_row as f32 * config.line_height_px;
         let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
         canvas.draw_rect(rect, &paint);
     }
+}
+
+fn fold_marker_state_for_line(logical_line: u32, fold_markers: &[FoldMarker]) -> Option<bool> {
+    fold_markers
+        .iter()
+        .find(|m| m.logical_line == logical_line)
+        .map(|m| m.is_collapsed)
+}
+
+fn resolve_style_foreground(style_id: u32, theme: &RenderTheme, fallback: Rgba8) -> Rgba8 {
+    theme
+        .styles
+        .get(&style_id)
+        .and_then(|c| c.foreground)
+        .unwrap_or(fallback)
+}
+
+fn resolve_style_background(style_id: u32, theme: &RenderTheme, fallback: Rgba8) -> Rgba8 {
+    theme
+        .styles
+        .get(&style_id)
+        .and_then(|c| c.background)
+        .unwrap_or(fallback)
 }
 
 fn resolve_cell_colors(style_ids: &[u32], theme: &RenderTheme) -> (Rgba8, Rgba8) {
@@ -363,6 +471,7 @@ mod tests {
             .render_rgba(
                 &grid,
                 &[VisualCaret { row: 0, x_cells: 0 }],
+                &[],
                 &[],
                 RenderConfig {
                     width_px: 0,
@@ -403,6 +512,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            gutter_width_cells: 0,
         };
 
         let rgba = renderer
@@ -415,6 +525,7 @@ mod tests {
                     end_row: 0,
                     end_x_cells: 2,
                 }],
+                &[],
                 cfg,
                 &theme,
             )
@@ -463,10 +574,11 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            gutter_width_cells: 0,
         };
 
         let rgba = renderer
-            .render_rgba(&grid, &[], &[], cfg, &theme)
+            .render_rgba(&grid, &[], &[], &[], cfg, &theme)
             .unwrap();
 
         // Cell 'b' is at x in [10..20], pick center pixel.
@@ -506,6 +618,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            gutter_width_cells: 0,
         };
 
         let carets = [
@@ -528,7 +641,7 @@ mod tests {
         ];
 
         let rgba = renderer
-            .render_rgba(&grid, &carets, &selections, cfg, &theme)
+            .render_rgba(&grid, &carets, &selections, &[], cfg, &theme)
             .unwrap();
 
         // Selection 1 should be red at x ~ 5.
@@ -539,6 +652,73 @@ mod tests {
         // Caret 1 at x=10.
         assert_eq!(pixel(&rgba, cfg.width_px, 10, 10), [0, 0, 200, 255]);
         // Caret 2 at x=40.
+        assert_eq!(pixel(&rgba, cfg.width_px, 40, 10), [0, 0, 200, 255]);
+    }
+
+    #[test]
+    fn render_draws_gutter_and_fold_marker_and_offsets_text_overlays() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        for ch in ['a', 'b', 'c'] {
+            line.add_cell(Cell::new(ch, 1));
+        }
+        grid.add_line(line);
+
+        let mut theme = RenderTheme {
+            background: Rgba8::new(10, 20, 30, 255),
+            foreground: Rgba8::new(250, 250, 250, 255),
+            selection_background: Rgba8::new(200, 0, 0, 255),
+            caret: Rgba8::new(0, 0, 200, 255),
+            styles: BTreeMap::new(),
+        };
+        theme.styles.insert(
+            GUTTER_BACKGROUND_STYLE_ID,
+            StyleColors::new(None, Some(Rgba8::new(1, 2, 3, 255))),
+        );
+        theme.styles.insert(
+            FOLD_MARKER_EXPANDED_STYLE_ID,
+            StyleColors::new(None, Some(Rgba8::new(9, 9, 9, 255))),
+        );
+
+        let cfg = RenderConfig {
+            width_px: 80,
+            height_px: 40,
+            scale: 1.0,
+            font_size: 12.0,
+            line_height_px: 20.0,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            gutter_width_cells: 2,
+        };
+
+        let carets = [VisualCaret { row: 0, x_cells: 2 }];
+        let selections = [VisualSelection {
+            start_row: 0,
+            start_x_cells: 0,
+            end_row: 0,
+            end_x_cells: 1,
+        }];
+        let fold_markers = [FoldMarker {
+            logical_line: 0,
+            is_collapsed: false,
+        }];
+
+        let rgba = renderer
+            .render_rgba(&grid, &carets, &selections, &fold_markers, cfg, &theme)
+            .unwrap();
+
+        // Fold marker fills first cell of the gutter (x in [0..10]).
+        assert_eq!(pixel(&rgba, cfg.width_px, 5, 10), [9, 9, 9, 255]);
+        // Gutter background fills remaining gutter area (x in [10..20]).
+        assert_eq!(pixel(&rgba, cfg.width_px, 15, 10), [1, 2, 3, 255]);
+
+        // Selection should be offset by the gutter (text starts at x=20).
+        assert_eq!(pixel(&rgba, cfg.width_px, 25, 10), [200, 0, 0, 255]);
+
+        // Caret at x_cells=2 => x = 20 + 2*10 = 40.
         assert_eq!(pixel(&rgba, cfg.width_px, 40, 10), [0, 0, 200, 255]);
     }
 }
