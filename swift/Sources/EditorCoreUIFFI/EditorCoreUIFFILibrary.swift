@@ -75,6 +75,8 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiAddAllOccurrences = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiSelectWord = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiSelectLine = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiSelectParagraphAtCharOffset = @convention(c) (OpaquePointer?, UInt32) -> Int32
+    typealias FnEditorUiSetParagraphSelectionOffsets = @convention(c) (OpaquePointer?, UInt32, UInt32) -> Int32
     typealias FnEditorUiExpandSelection = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiAddCaretAtCharOffset = @convention(c) (OpaquePointer?, UInt32, UInt8) -> Int32
 
@@ -147,6 +149,8 @@ public final class EditorCoreUIFFILibrary {
     let editorUiAddAllOccurrencesFn: FnEditorUiAddAllOccurrences
     let editorUiSelectWordFn: FnEditorUiSelectWord
     let editorUiSelectLineFn: FnEditorUiSelectLine
+    let editorUiSelectParagraphAtCharOffsetFn: FnEditorUiSelectParagraphAtCharOffset
+    let editorUiSetParagraphSelectionOffsetsFn: FnEditorUiSetParagraphSelectionOffsets
     let editorUiExpandSelectionFn: FnEditorUiExpandSelection
     let editorUiAddCaretAtCharOffsetFn: FnEditorUiAddCaretAtCharOffset
 
@@ -240,6 +244,8 @@ public final class EditorCoreUIFFILibrary {
         editorUiAddAllOccurrencesFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_all_occurrences", as: FnEditorUiAddAllOccurrences.self)
         editorUiSelectWordFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_select_word", as: FnEditorUiSelectWord.self)
         editorUiSelectLineFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_select_line", as: FnEditorUiSelectLine.self)
+        editorUiSelectParagraphAtCharOffsetFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_select_paragraph_at_char_offset", as: FnEditorUiSelectParagraphAtCharOffset.self)
+        editorUiSetParagraphSelectionOffsetsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_paragraph_selection_offsets", as: FnEditorUiSetParagraphSelectionOffsets.self)
         editorUiExpandSelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_expand_selection", as: FnEditorUiExpandSelection.self)
         editorUiAddCaretAtCharOffsetFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_caret_at_char_offset", as: FnEditorUiAddCaretAtCharOffset.self)
 

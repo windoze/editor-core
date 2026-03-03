@@ -229,6 +229,49 @@ impl EditorUi {
         Ok(())
     }
 
+    /// 选择一个“段落”（以空行分隔的连续行块）。
+    ///
+    /// - 段落定义：连续的“空行”或连续的“非空行”构成一个段落。
+    /// - 选区行为：类似 `SelectLine`，会尽量包含段落末尾的换行（若存在下一行）。
+    pub fn select_paragraph_at_char_offset(&mut self, char_offset: usize) -> Result<(), UiError> {
+        let line_index = &self.state.editor().line_index;
+        let line_count = line_index.line_count();
+        if line_count == 0 {
+            return Ok(());
+        }
+
+        let (line, _col) = line_index.char_offset_to_position(char_offset);
+        let (start_line, end_line) = self.paragraph_line_range_for_line(line);
+        let (start, end) = self.paragraph_offsets_for_line_range(start_line, end_line);
+        self.set_selections_offsets(&[(start, end)], 0)?;
+        Ok(())
+    }
+
+    /// 按段落扩展选择：给定 anchor/active 两个 char offset，选择覆盖它们所在段落的并集。
+    pub fn set_paragraph_selection_offsets(
+        &mut self,
+        anchor_offset: usize,
+        active_offset: usize,
+    ) -> Result<(), UiError> {
+        let line_index = &self.state.editor().line_index;
+        let line_count = line_index.line_count();
+        if line_count == 0 {
+            return Ok(());
+        }
+
+        let (a_line, _a_col) = line_index.char_offset_to_position(anchor_offset);
+        let (b_line, _b_col) = line_index.char_offset_to_position(active_offset);
+
+        let (a_start, a_end) = self.paragraph_line_range_for_line(a_line);
+        let (b_start, b_end) = self.paragraph_line_range_for_line(b_line);
+
+        let start_line = a_start.min(b_start);
+        let end_line = a_end.max(b_end);
+        let (start, end) = self.paragraph_offsets_for_line_range(start_line, end_line);
+        self.set_selections_offsets(&[(start, end)], 0)?;
+        Ok(())
+    }
+
     pub fn expand_selection(&mut self) -> Result<(), UiError> {
         self.state
             .execute(Command::Cursor(CursorCommand::ExpandSelection))?;
@@ -278,6 +321,59 @@ impl EditorUi {
             primary_index,
         }))?;
         Ok(())
+    }
+
+    fn is_blank_line(&self, line: usize) -> bool {
+        self.state
+            .editor()
+            .line_index
+            .get_line_text(line)
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
+    }
+
+    fn paragraph_line_range_for_line(&self, line: usize) -> (usize, usize) {
+        let line_index = &self.state.editor().line_index;
+        let line_count = line_index.line_count();
+        if line_count == 0 {
+            return (0, 0);
+        }
+
+        let mut start = line.min(line_count.saturating_sub(1));
+        let mut end = start;
+
+        let want_blank = self.is_blank_line(start);
+
+        while start > 0 && self.is_blank_line(start - 1) == want_blank {
+            start -= 1;
+        }
+        while end + 1 < line_count && self.is_blank_line(end + 1) == want_blank {
+            end += 1;
+        }
+
+        (start, end)
+    }
+
+    fn paragraph_offsets_for_line_range(&self, start_line: usize, end_line: usize) -> (usize, usize) {
+        let line_index = &self.state.editor().line_index;
+        let line_count = line_index.line_count();
+        if line_count == 0 {
+            return (0, 0);
+        }
+
+        let start_line = start_line.min(line_count.saturating_sub(1));
+        let end_line = end_line.min(line_count.saturating_sub(1));
+
+        let start = line_index.position_to_char_offset(start_line, 0);
+        let end = if end_line + 1 < line_count {
+            line_index.position_to_char_offset(end_line + 1, 0)
+        } else {
+            let line_text = line_index.get_line_text(end_line).unwrap_or_default();
+            line_index.position_to_char_offset(end_line, line_text.chars().count())
+        };
+
+        (start, end)
     }
 
     /// Return the current IME marked text range as `(start, len)` in character offsets.

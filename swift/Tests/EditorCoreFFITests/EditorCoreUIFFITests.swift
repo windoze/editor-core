@@ -8,6 +8,32 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertFalse(lib.versionString().isEmpty)
     }
 
+    func testParagraphSelectionAPIs() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "aa\nbb\n\ncc\ndd", viewportWidthCells: 80)
+
+        try ui.selectParagraph(atCharOffset: 0)
+        let p1 = try ui.selectionOffsets()
+        XCTAssertEqual(p1.start, 0)
+        XCTAssertEqual(p1.end, 6) // "aa\nbb\n"
+
+        try ui.selectParagraph(atCharOffset: 6)
+        let blank = try ui.selectionOffsets()
+        XCTAssertEqual(blank.start, 6)
+        XCTAssertEqual(blank.end, 7) // the blank line's newline
+
+        try ui.selectParagraph(atCharOffset: 8)
+        let p2 = try ui.selectionOffsets()
+        XCTAssertEqual(p2.start, 7)
+        XCTAssertEqual(p2.end, 12) // "cc\ndd"
+
+        // Union selection: from first paragraph into second paragraph.
+        try ui.setParagraphSelection(anchorOffset: 0, activeOffset: 8)
+        let u = try ui.selectionOffsets()
+        XCTAssertEqual(u.start, 0)
+        XCTAssertEqual(u.end, 12)
+    }
+
     func testCreateInsertUndoRedoRenderAndQueries() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)
