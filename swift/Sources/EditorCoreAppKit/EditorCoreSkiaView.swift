@@ -147,31 +147,16 @@ public final class EditorCoreSkiaView: NSView {
         ctx.interpolationQuality = .none
         ctx.setShouldAntialias(false)
 
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bytesPerRow = Int(viewportWidthPx) * 4
-        let bitmapInfo = CGBitmapInfo.byteOrder32Big.union(
-            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
-        )
-
         pixelBuffer.withUnsafeBytes { raw in
             guard let base = raw.baseAddress else { return }
-            let data = NSData(bytesNoCopy: UnsafeMutableRawPointer(mutating: base), length: raw.count, freeWhenDone: false)
-            guard let provider = CGDataProvider(data: data) else { return }
-            guard let img = CGImage(
-                width: Int(viewportWidthPx),
-                height: Int(viewportHeightPx),
-                bitsPerComponent: 8,
-                bitsPerPixel: 32,
-                bytesPerRow: bytesPerRow,
-                space: colorSpace,
-                bitmapInfo: bitmapInfo,
-                provider: provider,
-                decode: nil,
-                shouldInterpolate: false,
-                intent: .defaultIntent
+            guard let img = SkiaRasterCGImage.makeCGImageRGBA8888Premul(
+                widthPx: Int(viewportWidthPx),
+                heightPx: Int(viewportHeightPx),
+                rgbaBytes: base,
+                byteCount: raw.count
             ) else { return }
 
-            ctx.draw(img, in: bounds)
+            SkiaRasterCGImage.drawCGImage(img, in: ctx, dstRect: bounds, viewIsFlipped: isFlipped)
         }
 
         ctx.restoreGState()
