@@ -94,6 +94,10 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_json(
     EditorUi* ui,
     const char* code_lens_result_json_utf8
 );
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_links_json(
+    EditorUi* ui,
+    const char* document_links_result_json_utf8
+);
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(EditorUi* ui,
                                                                const uint32_t* data,
                                                                uint32_t data_len);

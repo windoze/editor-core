@@ -157,6 +157,7 @@ pub use diagnostics::{Diagnostic, DiagnosticRange, DiagnosticSeverity};
 pub use editor_core_lang::CommentConfig;
 pub use intervals::{
     CODE_LENS_STYLE_ID,
+    DOCUMENT_LINK_STYLE_ID,
     DOCUMENT_HIGHLIGHT_READ_STYLE_ID, DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
     DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, FOLD_PLACEHOLDER_STYLE_ID, IME_MARKED_TEXT_STYLE_ID,
     INLAY_HINT_STYLE_ID, FoldRegion, FoldingManager, IntervalTree, StyleLayerId,

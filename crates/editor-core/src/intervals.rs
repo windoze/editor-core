@@ -32,6 +32,11 @@ pub const INLAY_HINT_STYLE_ID: StyleId = 0x0800_0001;
 /// Renderers should map this to a muted / link-like style.
 pub const CODE_LENS_STYLE_ID: StyleId = 0x0800_0002;
 
+/// Built-in style id for LSP document links (`textDocument/documentLink`).
+///
+/// Renderers should typically draw this as an underline and/or link-like foreground color.
+pub const DOCUMENT_LINK_STYLE_ID: StyleId = 0x0800_0003;
+
 /// Style layer ID
 ///
 /// Used to distinguish style sources (e.g., LSP semantic highlighting, simple syntax highlighting, diagnostics, etc.),
@@ -67,6 +72,11 @@ impl StyleLayerId {
 
     /// IME marked text (composition / preedit) overlay layer.
     pub const IME_MARKED_TEXT: Self = Self(7);
+
+    /// LSP document links overlay layer.
+    ///
+    /// This is intended for underlines / click targets sourced from `textDocument/documentLink`.
+    pub const DOCUMENT_LINKS: Self = Self(8);
 }
 
 /// Interval structure

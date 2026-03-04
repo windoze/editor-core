@@ -30,6 +30,7 @@ pub use lsp_completion::{
 pub use lsp_decorations::{
     lsp_code_lens_to_decorations, lsp_code_lens_to_processing_edit,
     lsp_document_links_to_decorations, lsp_document_links_to_processing_edit,
+    lsp_document_links_to_processing_edits, lsp_document_links_to_style_intervals,
     lsp_inlay_hints_to_decorations, lsp_inlay_hints_to_processing_edit,
 };
 pub use lsp_events::{

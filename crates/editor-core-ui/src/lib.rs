@@ -12,7 +12,8 @@ use editor_core::{
 use editor_core::intervals::Interval;
 use editor_core_lsp::{
     LspNotification, encode_semantic_style_id, lsp_code_lens_to_processing_edit,
-    lsp_diagnostics_to_processing_edits, lsp_inlay_hints_to_processing_edit,
+    lsp_diagnostics_to_processing_edits, lsp_document_links_to_processing_edits,
+    lsp_inlay_hints_to_processing_edit,
     semantic_tokens_to_intervals,
 };
 use editor_core_render_skia::{
@@ -662,6 +663,20 @@ impl EditorUi {
         let line_index = &self.state.editor().line_index;
         let edit = lsp_code_lens_to_processing_edit(line_index, &result_value);
         self.state.apply_processing_edits([edit]);
+        Ok(())
+    }
+
+    /// Apply LSP document links result payload (`DocumentLink[] | null`) as:
+    /// - decorations (payload / click targets)
+    /// - style intervals (rendering underline)
+    ///
+    /// The caller should pass the raw `result` JSON from `textDocument/documentLink`.
+    pub fn lsp_apply_document_links_json(&mut self, result_json: &str) -> Result<(), UiError> {
+        let result_value: serde_json::Value =
+            serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        let line_index = &self.state.editor().line_index;
+        let edits = lsp_document_links_to_processing_edits(line_index, &result_value);
+        self.state.apply_processing_edits(edits);
         Ok(())
     }
 
@@ -2352,5 +2367,71 @@ fn main() {
 
         let rgba = ui.render_rgba_visible().unwrap();
         assert_eq!(pixel(&rgba, 200, 15, 10), [1, 200, 2, 255]);
+    }
+
+    #[test]
+    fn ui_lsp_document_links_apply_decorations_and_underline_style_layer() {
+        // Use a space inside the link range so glyph rasterization does not affect pixel samples.
+        let mut ui = EditorUi::new("a c\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 20,
+            cell_width_px: 10.0,
+            line_height_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_theme(RenderTheme {
+            background: editor_core_render_skia::Rgba8::new(10, 20, 30, 255),
+            foreground: editor_core_render_skia::Rgba8::new(250, 250, 250, 255),
+            selection_background: editor_core_render_skia::Rgba8::new(200, 0, 0, 255),
+            caret: editor_core_render_skia::Rgba8::new(0, 0, 200, 255),
+            styles: {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert(
+                    editor_core::DOCUMENT_LINK_STYLE_ID,
+                    editor_core_render_skia::StyleColors::new(
+                        Some(editor_core_render_skia::Rgba8::new(1, 200, 2, 255)),
+                        None,
+                    ),
+                );
+                m
+            },
+        });
+        ui.set_viewport_px(200, 20, 1.0).unwrap();
+
+        let result_json = r#"[
+          {
+            "range": {
+              "start": { "line": 0, "character": 1 },
+              "end": { "line": 0, "character": 2 }
+            },
+            "target": "https://example.com"
+          }
+        ]"#;
+        ui.lsp_apply_document_links_json(result_json).unwrap();
+
+        let decorations = ui
+            .state
+            .editor()
+            .decorations
+            .get(&editor_core::DecorationLayerId::DOCUMENT_LINKS)
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(decorations.len(), 1, "expected one document link decoration");
+
+        let grid = ui.state.get_viewport_content_styled(0, 1);
+        assert!(
+            grid.lines
+                .iter()
+                .flat_map(|l| l.cells.iter())
+                .any(|c| c.styles.contains(&editor_core::DOCUMENT_LINK_STYLE_ID)),
+            "expected at least one cell to carry DOCUMENT_LINK_STYLE_ID"
+        );
+
+        let rgba = ui.render_rgba_visible().unwrap();
+        // Underline is drawn at y = line_height_px - 1 (scale=1), i.e. y=9.
+        assert_eq!(pixel(&rgba, 200, 15, 9), [1, 200, 2, 255]);
     }
 }

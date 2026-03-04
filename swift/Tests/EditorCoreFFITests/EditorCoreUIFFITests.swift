@@ -477,6 +477,42 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(pixel(rgba, widthPx: 200, x: 5, y: 10), [1, 200, 2, 255])
     }
 
+    func testLspDocumentLinksAffectRendering() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        // Use a space in the link range so glyph rasterization does not affect the pixel sample.
+        let ui = try EditorUI(library: lib, initialText: "a c\n", viewportWidthCells: 80)
+
+        try ui.setTheme(
+            EcuTheme(
+                background: EcuRgba8(r: 10, g: 20, b: 30, a: 255),
+                foreground: EcuRgba8(r: 250, g: 250, b: 250, a: 255),
+                selectionBackground: EcuRgba8(r: 200, g: 0, b: 0, a: 255),
+                caret: EcuRgba8(r: 0, g: 0, b: 200, a: 255)
+            )
+        )
+        try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 10, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 200, heightPx: 20, scale: 1)
+
+        // Built-in style id for LSP document links underline: 0x0800_0003
+        try ui.setStyleColors([EcuStyleColors(styleId: 0x0800_0003, foreground: EcuRgba8(r: 1, g: 200, b: 2, a: 255))])
+
+        let result = """
+        [
+          {
+            "range": { "start": { "line": 0, "character": 1 }, "end": { "line": 0, "character": 2 } },
+            "target": "https://example.com"
+          }
+        ]
+        """
+        try ui.lspApplyDocumentLinksJSON(result)
+
+        var rgba: [UInt8] = []
+        _ = try ui.renderRGBA(into: &rgba)
+
+        // Underline is drawn at y = line_height_px - 1 (scale=1), i.e. y=9.
+        XCTAssertEqual(pixel(rgba, widthPx: 200, x: 15, y: 9), [1, 200, 2, 255])
+    }
+
     func testMultiSelectionsSetGetAndInsertTextAppliesToAllCarets() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "abc\ndef\n", viewportWidthCells: 80)

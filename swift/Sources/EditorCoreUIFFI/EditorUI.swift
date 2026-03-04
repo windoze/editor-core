@@ -128,6 +128,13 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_lsp_apply_code_lens_json")
     }
 
+    public func lspApplyDocumentLinksJSON(_ documentLinksResultJSON: String) throws {
+        let status = documentLinksResultJSON.withCString { cstr in
+            library.editorUiLspApplyDocumentLinksJSONFn(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_apply_document_links_json")
+    }
+
     public func lspApplySemanticTokens(_ data: [UInt32]) throws {
         let status = data.withUnsafeBufferPointer { ptr in
             library.editorUiLspApplySemanticTokensFn(handle, ptr.baseAddress, UInt32(ptr.count))
