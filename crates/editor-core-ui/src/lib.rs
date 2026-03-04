@@ -652,6 +652,24 @@ impl EditorUi {
         self.render_config.enable_ligatures = enabled;
     }
 
+    /// Override the ASCII word-boundary character set used by editor-friendly "word" operations.
+    ///
+    /// This is similar in spirit to VSCode's `wordSeparators`.
+    pub fn set_word_boundary_ascii_boundary_chars(&mut self, boundary_chars: &str) -> Result<(), UiError> {
+        self.state
+            .execute(Command::View(ViewCommand::SetWordBoundaryAsciiBoundaryChars {
+                boundary_chars: boundary_chars.to_string(),
+            }))?;
+        Ok(())
+    }
+
+    /// Reset word-boundary configuration to the default (ASCII identifier-like words).
+    pub fn reset_word_boundary_defaults(&mut self) -> Result<(), UiError> {
+        self.state
+            .execute(Command::View(ViewCommand::ResetWordBoundaryDefaults))?;
+        Ok(())
+    }
+
     pub fn set_gutter_width_cells(&mut self, width_cells: u32) -> Result<(), UiError> {
         self.render_config.gutter_width_cells = width_cells;
         // Keep wrap width in sync with the available text area.
@@ -1303,6 +1321,29 @@ mod tests {
 	        .unwrap();
 	        assert_eq!(ui.primary_selection_offsets(), (0, 13)); // "one two three"
 	    }
+
+    #[test]
+    fn ui_word_boundary_config_affects_select_word() {
+        let mut ui = EditorUi::new("foo-bar", 80);
+        ui.execute(Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 }))
+            .unwrap();
+        ui.select_word().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (0, 3)); // "foo"
+
+        ui.set_word_boundary_ascii_boundary_chars(".").unwrap();
+        ui.execute(Command::Cursor(CursorCommand::ClearSelection)).unwrap();
+        ui.execute(Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 }))
+            .unwrap();
+        ui.select_word().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (0, 7)); // "foo-bar"
+
+        ui.reset_word_boundary_defaults().unwrap();
+        ui.execute(Command::Cursor(CursorCommand::ClearSelection)).unwrap();
+        ui.execute(Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 }))
+            .unwrap();
+        ui.select_word().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (0, 3)); // "foo"
+    }
 
     #[test]
     fn ui_marked_text_replace_and_commit() {
