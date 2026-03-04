@@ -467,6 +467,7 @@ impl EditorStateManager {
                 | CursorCommand::SelectLine
                 | CursorCommand::SelectWord
                 | CursorCommand::ExpandSelection
+                | CursorCommand::ExpandSelectionBy { .. }
                 | CursorCommand::AddCursorAbove
                 | CursorCommand::AddCursorBelow
                 | CursorCommand::AddNextOccurrence { .. }

@@ -146,8 +146,8 @@ pub mod workspace;
 
 pub use commands::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
-    Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, TextEditSpec,
-    ViewCommand,
+    ExpandSelectionDirection, ExpandSelectionUnit, Position, Selection, SelectionDirection,
+    StyleCommand, TabKeyBehavior, TextEditSpec, ViewCommand,
 };
 pub use decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,

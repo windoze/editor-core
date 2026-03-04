@@ -107,6 +107,26 @@ pub enum SelectionDirection {
     Backward,
 }
 
+/// Selection expansion unit for [`CursorCommand::ExpandSelectionBy`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpandSelectionUnit {
+    /// Expand by Unicode scalar values (Rust `char` indices).
+    Character,
+    /// Expand by "word" units (configured word boundary rules).
+    Word,
+    /// Expand by logical lines.
+    Line,
+}
+
+/// Selection expansion direction for [`CursorCommand::ExpandSelectionBy`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpandSelectionDirection {
+    /// Expand towards the beginning of the document.
+    Backward,
+    /// Expand towards the end of the document.
+    Forward,
+}
+
 /// Controls how a Tab key press is handled by the editor when using [`EditCommand::InsertTab`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TabKeyBehavior {
@@ -355,6 +375,20 @@ pub enum CursorCommand {
     /// - If the selection is empty, expands to the word under the caret.
     /// - If the selection is non-empty, expands to full line(s).
     ExpandSelection,
+    /// Expand selection by a configurable unit and direction.
+    ///
+    /// Notes:
+    /// - This is an **expand-only** operation: it never shrinks the current selection.
+    /// - The expansion direction is absolute (backward/forward in document order). If you call
+    ///   it with different directions over time, the selection can expand on both ends.
+    ExpandSelectionBy {
+        /// Expansion unit.
+        unit: ExpandSelectionUnit,
+        /// Number of units to expand by. `0` is a no-op.
+        count: usize,
+        /// Expansion direction in document order.
+        direction: ExpandSelectionDirection,
+    },
     /// Add a new caret above each existing caret/selection (at the same column, clamped to line length).
     AddCursorAbove,
     /// Add a new caret below each existing caret/selection (at the same column, clamped to line length).
@@ -565,6 +599,78 @@ struct SelectionSetSnapshot {
 enum TextBoundary {
     Grapheme,
     Word,
+}
+
+/// Word boundary configuration used by editor-friendly "word" operations (selection expansion,
+/// double-click selection, etc.).
+///
+/// This intentionally follows a **code-editor** notion of "word":
+/// - By default, **ASCII identifier-like runs** are treated as words.
+/// - Non-ASCII characters are treated as word boundaries (so they form single-character "word units").
+/// - Whitespace always separates words.
+#[derive(Debug, Clone)]
+pub struct WordBoundaryConfig {
+    ascii_is_boundary: [bool; 128],
+}
+
+impl Default for WordBoundaryConfig {
+    fn default() -> Self {
+        let mut ascii_is_boundary = [true; 128];
+        for b in 0u8..=127 {
+            let ch = b as char;
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ascii_is_boundary[b as usize] = false;
+            }
+        }
+        // Always treat ASCII whitespace as boundary.
+        ascii_is_boundary[b' ' as usize] = true;
+        ascii_is_boundary[b'\t' as usize] = true;
+        ascii_is_boundary[b'\n' as usize] = true;
+        ascii_is_boundary[b'\r' as usize] = true;
+        Self { ascii_is_boundary }
+    }
+}
+
+impl WordBoundaryConfig {
+    /// Override the ASCII "word boundary" character set.
+    ///
+    /// - Non-ASCII characters are always treated as boundaries (and therefore form single-character word units).
+    /// - ASCII whitespace is always treated as boundary.
+    ///
+    /// This is similar in spirit to VSCode's `wordSeparators`.
+    pub fn set_ascii_boundary_chars(&mut self, boundary_chars: &str) {
+        self.ascii_is_boundary = [false; 128];
+        // Always treat ASCII whitespace as boundary.
+        self.ascii_is_boundary[b' ' as usize] = true;
+        self.ascii_is_boundary[b'\t' as usize] = true;
+        self.ascii_is_boundary[b'\n' as usize] = true;
+        self.ascii_is_boundary[b'\r' as usize] = true;
+
+        for ch in boundary_chars.chars() {
+            if ch.is_ascii() {
+                self.ascii_is_boundary[ch as usize] = true;
+            }
+        }
+    }
+
+    fn is_ascii_word_char(&self, ch: char) -> bool {
+        if !ch.is_ascii() {
+            return false;
+        }
+        !self.ascii_is_boundary[ch as usize]
+    }
+
+    fn is_word_token_char(&self, ch: char) -> bool {
+        if ch.is_whitespace() {
+            return false;
+        }
+        if ch.is_ascii() {
+            self.is_ascii_word_char(ch)
+        } else {
+            // Treat non-ASCII as "word units" of length 1.
+            true
+        }
+    }
 }
 
 fn byte_offset_for_char_column(text: &str, column: usize) -> usize {
@@ -884,6 +990,7 @@ pub struct EditorCore {
     pub secondary_selections: Vec<Selection>,
     /// Viewport width
     pub viewport_width: usize,
+    word_boundary: WordBoundaryConfig,
     visual_row_index_cache: RefCell<Option<VisualRowIndex>>,
 }
 
@@ -916,6 +1023,7 @@ impl EditorCore {
             selection: None,
             secondary_selections: Vec::new(),
             viewport_width,
+            word_boundary: WordBoundaryConfig::default(),
             visual_row_index_cache: RefCell::new(None),
         }
     }
@@ -938,6 +1046,18 @@ impl EditorCore {
     /// Get total character count
     pub fn char_count(&self) -> usize {
         self.piece_table.char_count()
+    }
+
+    /// Override the ASCII word-boundary character set used by editor-friendly "word" operations.
+    ///
+    /// See [`WordBoundaryConfig::set_ascii_boundary_chars`].
+    pub fn set_word_boundary_ascii_boundary_chars(&mut self, boundary_chars: &str) {
+        self.word_boundary.set_ascii_boundary_chars(boundary_chars);
+    }
+
+    /// Reset word-boundary configuration to the default (ASCII identifier-like words).
+    pub fn reset_word_boundary_defaults(&mut self) {
+        self.word_boundary = WordBoundaryConfig::default();
     }
 
     /// Get cursor position
@@ -4893,68 +5013,66 @@ impl CommandExecutor {
         Ok(CommandResult::Success)
     }
 
-    fn is_word_char(ch: char) -> bool {
-        ch == '_' || ch.is_alphanumeric()
-    }
-
-    fn word_range_in_line(line_text: &str, column: usize) -> Option<(usize, usize)> {
+    fn word_token_range_in_line(&self, line_text: &str, column: usize) -> Option<(usize, usize)> {
         if line_text.is_empty() {
             return None;
         }
 
-        let mut parts: Vec<(usize, usize, &str)> = Vec::new();
-        for (start, part) in line_text.split_word_bound_indices() {
-            let end = start + part.len();
-            parts.push((start, end, part));
-        }
-        if parts.is_empty() {
+        let chars: Vec<char> = line_text.chars().collect();
+        if chars.is_empty() {
             return None;
         }
 
-        let byte_pos =
-            byte_offset_for_char_column(line_text, column.min(line_text.chars().count()));
+        let len = chars.len();
+        let col = column.min(len);
+        let idx = if col < len { col } else { len.saturating_sub(1) };
 
-        let mut part_idx = parts
-            .iter()
-            .position(|(s, e, _)| *s <= byte_pos && byte_pos < *e)
-            .or_else(|| parts.iter().position(|(s, _, _)| *s == byte_pos))
-            .unwrap_or_else(|| parts.len().saturating_sub(1));
+        let classify = |ch: char| self.editor.word_boundary.is_word_token_char(ch);
 
-        let pick_part = |idx: usize, parts: &[(usize, usize, &str)]| -> Option<(usize, usize)> {
-            let (s, e, text) = parts.get(idx)?;
-            if text.chars().any(Self::is_word_char) {
-                Some((*s, *e))
+        let token_span_at = |i: usize| -> (usize, usize) {
+            let is_token = classify(chars[i]);
+            if !is_token {
+                return (i, i + 1);
+            }
+            if chars[i].is_ascii() && self.editor.word_boundary.is_ascii_word_char(chars[i]) {
+                let mut start = i;
+                while start > 0
+                    && chars[start - 1].is_ascii()
+                    && self.editor.word_boundary.is_ascii_word_char(chars[start - 1])
+                {
+                    start -= 1;
+                }
+                let mut end = i + 1;
+                while end < len
+                    && chars[end].is_ascii()
+                    && self.editor.word_boundary.is_ascii_word_char(chars[end])
+                {
+                    end += 1;
+                }
+                (start, end)
             } else {
-                None
+                (i, i + 1)
             }
         };
 
-        // Prefer the part under the caret.
-        if let Some((s, e)) = pick_part(part_idx, &parts) {
-            return Some((
-                char_column_for_byte_offset(line_text, s),
-                char_column_for_byte_offset(line_text, e),
-            ));
+        // Prefer the token under the caret (or the last char if at EOL).
+        if classify(chars[idx]) {
+            return Some(token_span_at(idx));
         }
 
         // Search to the right.
-        for idx in part_idx + 1..parts.len() {
-            if let Some((s, e)) = pick_part(idx, &parts) {
-                return Some((
-                    char_column_for_byte_offset(line_text, s),
-                    char_column_for_byte_offset(line_text, e),
-                ));
+        for i in (idx + 1)..len {
+            if classify(chars[i]) {
+                return Some(token_span_at(i));
             }
         }
 
         // Search to the left.
-        while part_idx > 0 {
-            part_idx -= 1;
-            if let Some((s, e)) = pick_part(part_idx, &parts) {
-                return Some((
-                    char_column_for_byte_offset(line_text, s),
-                    char_column_for_byte_offset(line_text, e),
-                ));
+        let mut i = idx;
+        while i > 0 {
+            i -= 1;
+            if classify(chars[i]) {
+                return Some(token_span_at(i));
             }
         }
 
@@ -5031,7 +5149,7 @@ impl CommandExecutor {
                 .unwrap_or_default();
             let col = caret.column.min(line_text.chars().count());
 
-            let Some((start_col, end_col)) = Self::word_range_in_line(&line_text, col) else {
+            let Some((start_col, end_col)) = self.word_token_range_in_line(&line_text, col) else {
                 next.push(sel);
                 continue;
             };
@@ -5062,6 +5180,235 @@ impl CommandExecutor {
             self.execute_select_line_command()
         } else {
             self.execute_select_word_command()
+        }
+    }
+
+    fn execute_expand_selection_by_command(
+        &mut self,
+        unit: ExpandSelectionUnit,
+        count: usize,
+        direction: ExpandSelectionDirection,
+    ) -> Result<CommandResult, CommandError> {
+        if count == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let snapshot = self.snapshot_selection_set();
+        let selections = snapshot.selections;
+        let primary_index = snapshot.primary_index;
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let mut next: Vec<Selection> = Vec::with_capacity(selections.len());
+        for sel in selections {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(&sel);
+            let mut start = min_pos;
+            let mut end = max_pos;
+
+            match direction {
+                ExpandSelectionDirection::Backward => {
+                    start = self.expand_position_by_unit(start, unit, count, direction);
+                }
+                ExpandSelectionDirection::Forward => {
+                    end = self.expand_position_by_unit(end, unit, count, direction);
+                }
+            }
+
+            next.push(Selection {
+                start,
+                end,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        // Delegate to SetSelections so normalization rules are shared.
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: next,
+            primary_index,
+        })?;
+        Ok(CommandResult::Success)
+    }
+
+    fn expand_position_by_unit(
+        &self,
+        pos: Position,
+        unit: ExpandSelectionUnit,
+        count: usize,
+        direction: ExpandSelectionDirection,
+    ) -> Position {
+        match unit {
+            ExpandSelectionUnit::Character => self.expand_position_by_char(pos, count, direction),
+            ExpandSelectionUnit::Word => self.expand_position_by_word(pos, count, direction),
+            ExpandSelectionUnit::Line => self.expand_position_by_line(pos, count, direction),
+        }
+    }
+
+    fn expand_position_by_char(
+        &self,
+        pos: Position,
+        count: usize,
+        direction: ExpandSelectionDirection,
+    ) -> Position {
+        let line_index = &self.editor.line_index;
+        let mut offset = line_index.position_to_char_offset(pos.line, pos.column);
+        let char_count = self.editor.char_count();
+
+        offset = match direction {
+            ExpandSelectionDirection::Backward => offset.saturating_sub(count),
+            ExpandSelectionDirection::Forward => offset.saturating_add(count).min(char_count),
+        };
+
+        let (line, col) = line_index.char_offset_to_position(offset);
+        Position::new(line, col)
+    }
+
+    fn expand_position_by_line(
+        &self,
+        pos: Position,
+        count: usize,
+        direction: ExpandSelectionDirection,
+    ) -> Position {
+        let line_index = &self.editor.line_index;
+        let line_count = line_index.line_count();
+        if line_count == 0 {
+            return Position::new(0, 0);
+        }
+
+        let mut line = pos.line.min(line_count.saturating_sub(1));
+        line = match direction {
+            ExpandSelectionDirection::Backward => line.saturating_sub(count),
+            ExpandSelectionDirection::Forward => line.saturating_add(count),
+        };
+
+        if line >= line_count {
+            let line_text = line_index.get_line_text(line_count.saturating_sub(1)).unwrap_or_default();
+            return Position::new(line_count.saturating_sub(1), line_text.chars().count());
+        }
+
+        Position::new(line, 0)
+    }
+
+    fn expand_position_by_word(
+        &self,
+        mut pos: Position,
+        count: usize,
+        direction: ExpandSelectionDirection,
+    ) -> Position {
+        for _ in 0..count {
+            let next = match direction {
+                ExpandSelectionDirection::Backward => self.prev_word_boundary_position(pos),
+                ExpandSelectionDirection::Forward => self.next_word_boundary_position(pos),
+            };
+            if next == pos {
+                break;
+            }
+            pos = next;
+        }
+        pos
+    }
+
+    fn next_word_boundary_position(&self, pos: Position) -> Position {
+        let line_index = &self.editor.line_index;
+        let line_count = line_index.line_count();
+        if line_count == 0 {
+            return Position::new(0, 0);
+        }
+
+        let mut line = pos.line.min(line_count.saturating_sub(1));
+        let mut col = pos.column;
+
+        loop {
+            let line_text = line_index.get_line_text(line).unwrap_or_default();
+            let chars: Vec<char> = line_text.chars().collect();
+            let len = chars.len();
+            col = col.min(len);
+
+            // Find next token start (a "word unit") in this line.
+            let mut i = col;
+            while i < len && !self.editor.word_boundary.is_word_token_char(chars[i]) {
+                i += 1;
+            }
+
+            if i < len {
+                // Consume one token.
+                if chars[i].is_ascii() && self.editor.word_boundary.is_ascii_word_char(chars[i]) {
+                    let mut end = i + 1;
+                    while end < len
+                        && chars[end].is_ascii()
+                        && self.editor.word_boundary.is_ascii_word_char(chars[end])
+                    {
+                        end += 1;
+                    }
+                    return Position::new(line, end);
+                }
+                return Position::new(line, i + 1);
+            }
+
+            // No token on this line - move to next line.
+            if line + 1 >= line_count {
+                return Position::new(line, len);
+            }
+            line += 1;
+            col = 0;
+        }
+    }
+
+    fn prev_word_boundary_position(&self, pos: Position) -> Position {
+        let line_index = &self.editor.line_index;
+        let line_count = line_index.line_count();
+        if line_count == 0 {
+            return Position::new(0, 0);
+        }
+
+        let mut line = pos.line.min(line_count.saturating_sub(1));
+        let mut col = pos.column;
+
+        loop {
+            let line_text = line_index.get_line_text(line).unwrap_or_default();
+            let chars: Vec<char> = line_text.chars().collect();
+            let len = chars.len();
+            col = col.min(len);
+
+            if col == 0 {
+                if line == 0 {
+                    return Position::new(0, 0);
+                }
+                line -= 1;
+                col = usize::MAX;
+                continue;
+            }
+
+            let mut i = col.saturating_sub(1).min(len.saturating_sub(1));
+            while i < len && !self.editor.word_boundary.is_word_token_char(chars[i]) {
+                if i == 0 {
+                    break;
+                }
+                i -= 1;
+            }
+
+            if self.editor.word_boundary.is_word_token_char(chars[i]) {
+                // If ASCII word token, walk to token start.
+                if chars[i].is_ascii() && self.editor.word_boundary.is_ascii_word_char(chars[i]) {
+                    while i > 0
+                        && chars[i - 1].is_ascii()
+                        && self.editor.word_boundary.is_ascii_word_char(chars[i - 1])
+                    {
+                        i -= 1;
+                    }
+                    return Position::new(line, i);
+                }
+                return Position::new(line, i);
+            }
+
+            // No token found on this line - move to previous line.
+            if line == 0 {
+                return Position::new(0, 0);
+            }
+            line -= 1;
+            col = usize::MAX;
         }
     }
 
@@ -5139,7 +5486,7 @@ impl CommandExecutor {
             .get_line_text(caret.line)
             .unwrap_or_default();
         let col = caret.column.min(line_text.chars().count());
-        let (start_col, end_col) = Self::word_range_in_line(&line_text, col)?;
+        let (start_col, end_col) = self.word_token_range_in_line(&line_text, col)?;
         if start_col == end_col {
             return None;
         }
@@ -7259,6 +7606,11 @@ impl CommandExecutor {
             CursorCommand::SelectLine => self.execute_select_line_command(),
             CursorCommand::SelectWord => self.execute_select_word_command(),
             CursorCommand::ExpandSelection => self.execute_expand_selection_command(),
+            CursorCommand::ExpandSelectionBy {
+                unit,
+                count,
+                direction,
+            } => self.execute_expand_selection_by_command(unit, count, direction),
             CursorCommand::AddCursorAbove => self.execute_add_cursor_vertical_command(true),
             CursorCommand::AddCursorBelow => self.execute_add_cursor_vertical_command(false),
             CursorCommand::AddNextOccurrence { options } => {
