@@ -513,6 +513,32 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(pixel(rgba, widthPx: 200, x: 15, y: 9), [1, 200, 2, 255])
     }
 
+    func testDocumentLinkHitTestReturnsPayloadJSON() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "a c\n", viewportWidthCells: 80)
+
+        try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 10, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 200, heightPx: 20, scale: 1)
+
+        let result = """
+        [
+          {
+            "range": { "start": { "line": 0, "character": 1 }, "end": { "line": 0, "character": 2 } },
+            "target": "https://example.com"
+          }
+        ]
+        """
+        try ui.lspApplyDocumentLinksJSON(result)
+
+        let p = try ui.charOffsetToViewPoint(offset: 1)
+        let json = try ui.documentLinkJSONAtViewPoint(xPx: p.xPx + 1, yPx: p.yPx + 1)
+        XCTAssertNotNil(json)
+        XCTAssertTrue(json?.contains("https://example.com") == true)
+
+        let none = try ui.documentLinkJSONAtViewPoint(xPx: 1, yPx: 1)
+        XCTAssertNil(none)
+    }
+
     func testLspDocumentHighlightsAffectRendering() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         // Use a space in the highlighted range so glyph rasterization does not affect the pixel sample.

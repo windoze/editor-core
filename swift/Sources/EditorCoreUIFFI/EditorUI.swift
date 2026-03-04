@@ -684,4 +684,17 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_view_point_to_char_offset")
         return offset
     }
+
+    /// Hit-test a view point and return the raw LSP `DocumentLink` JSON payload (if present).
+    public func documentLinkJSONAtViewPoint(xPx: Float, yPx: Float) throws -> String? {
+        var has: UInt8 = 0
+        var ptr: UnsafeMutablePointer<CChar>?
+        let status = library.editorUiGetDocumentLinkJSONAtViewPointFn(handle, xPx, yPx, &has, &ptr)
+        try library.ensureStatus(status, context: "editor_ui_get_document_link_json_at_view_point")
+        guard has != 0, let ptr else {
+            return nil
+        }
+        defer { library.stringFreeFn(ptr) }
+        return String(cString: ptr)
+    }
 }

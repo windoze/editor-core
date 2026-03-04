@@ -2318,6 +2318,59 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_view_point_to_char_offset(
     }
 }
 
+/// Hit-test a view point and return the raw LSP `DocumentLink` JSON payload (if present).
+///
+/// - `out_has_link` is set to 1 when a link is present.
+/// - `out_json_utf8` receives a newly allocated string that must be freed with
+///   `editor_core_ui_ffi_string_free` (or is set to NULL when no link is present).
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(
+    ui: *mut EditorUi,
+    x_px: c_float,
+    y_px: c_float,
+    out_has_link: *mut u8,
+    out_json_utf8: *mut *mut c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_has_link.is_null() {
+            return Err("out_has_link is null".to_string());
+        }
+
+        unsafe {
+            *out_has_link = 0;
+        }
+        if !out_json_utf8.is_null() {
+            unsafe {
+                *out_json_utf8 = ptr::null_mut();
+            }
+        }
+
+        let Some(json) = ui.document_link_json_at_view_point_px(x_px, y_px) else {
+            return Ok(ECU_OK);
+        };
+
+        unsafe {
+            *out_has_link = 1;
+        }
+
+        if out_json_utf8.is_null() {
+            return Ok(ECU_OK);
+        }
+
+        unsafe {
+            *out_json_utf8 = make_c_string_ptr(json);
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3769,6 +3822,85 @@ contexts:
 
         // Underline is at y = line_height_px - 1 (scale=1), i.e. y=9. Link range is at col=1 => x in [10..20].
         assert_eq!(pixel(&buf, 200, 15, 9), [1, 200, 2, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_document_link_hit_test_returns_payload_json() {
+        let initial = CString::new("a c\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 10.0, 10.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 20, 1.0),
+            ECU_OK
+        );
+
+        let result = CString::new(
+            r#"[
+              {
+                "range": { "start": { "line": 0, "character": 1 }, "end": { "line": 0, "character": 2 } },
+                "target": "https://example.com"
+              }
+            ]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_lsp_apply_document_links_json(ui, result.as_ptr()),
+            ECU_OK
+        );
+
+        let mut x: c_float = 0.0;
+        let mut y: c_float = 0.0;
+        let mut lh: c_float = 0.0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_char_offset_to_view_point(ui, 1, &mut x, &mut y, &mut lh),
+            ECU_OK
+        );
+        assert!(lh > 0.0);
+
+        let mut has: u8 = 0;
+        let mut json_ptr: *mut c_char = ptr::null_mut();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(
+                ui,
+                x + 1.0,
+                y + 1.0,
+                &mut has,
+                &mut json_ptr
+            ),
+            ECU_OK
+        );
+        assert_eq!(has, 1);
+        assert!(!json_ptr.is_null());
+
+        let json = unsafe { CStr::from_ptr(json_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        editor_core_ui_ffi_string_free(json_ptr);
+        assert!(json.contains("https://example.com"));
+
+        // No link at col=0.
+        let mut has2: u8 = 0;
+        let mut json_ptr2: *mut c_char = ptr::null_mut();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(
+                ui,
+                1.0,
+                1.0,
+                &mut has2,
+                &mut json_ptr2
+            ),
+            ECU_OK
+        );
+        assert_eq!(has2, 0);
+        assert!(json_ptr2.is_null());
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

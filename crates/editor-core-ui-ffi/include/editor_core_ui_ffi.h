@@ -291,6 +291,20 @@ int32_t editor_core_ui_ffi_editor_ui_view_point_to_char_offset(EditorUi* ui,
                                                                float y_px,
                                                                uint32_t* out_char_offset);
 
+// Hit-test a view point and return an LSP `DocumentLink` JSON payload (if present).
+//
+// - On success, returns `ECU_OK` and sets:
+//   - `out_has_link = 1` and `out_json_utf8` to a newly allocated string (caller frees via
+//     `editor_core_ui_ffi_string_free`), or
+//   - `out_has_link = 0` and `out_json_utf8 = NULL` when there is no link at the point.
+int32_t editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(
+    EditorUi* ui,
+    float x_px,
+    float y_px,
+    uint8_t* out_has_link,
+    char** out_json_utf8
+);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

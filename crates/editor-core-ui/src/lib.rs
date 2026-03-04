@@ -4,7 +4,8 @@
 //! implementation (Skia in `editor-core-render-skia`) to draw the viewport.
 
 use editor_core::{
-    Command, CommandResult, CursorCommand, EditCommand, EditorStateManager,
+    Command, CommandResult, CursorCommand, DecorationKind, DecorationLayerId, EditCommand,
+    EditorStateManager,
     ExpandSelectionDirection, ExpandSelectionUnit, Position, IME_MARKED_TEXT_STYLE_ID,
     MATCH_HIGHLIGHT_STYLE_ID, ProcessingEdit, SearchOptions, Selection, SelectionDirection,
     StyleCommand, StyleLayerId, ViewCommand,
@@ -588,6 +589,51 @@ impl EditorUi {
 
         let (row, x_cells) = self.pixel_to_visual(x_px, y_px);
         self.visual_to_char_offset(row, x_cells)
+    }
+
+    /// Hit-test and return the raw LSP `DocumentLink` JSON (if any) at the given character offset.
+    ///
+    /// Notes:
+    /// - Offsets are Unicode scalar indices.
+    /// - Uses `DecorationLayerId::DOCUMENT_LINKS` and returns the `data_json` payload embedded by
+    ///   `editor-core-lsp`.
+    pub fn document_link_json_at_char_offset(&self, char_offset: usize) -> Option<String> {
+        let layer = self
+            .state
+            .editor()
+            .decorations
+            .get(&DecorationLayerId::DOCUMENT_LINKS)?;
+
+        let mut best: Option<&editor_core::Decoration> = None;
+        let mut best_len: usize = usize::MAX;
+
+        for d in layer {
+            if d.kind != DecorationKind::DocumentLink {
+                continue;
+            }
+            let contains = if d.range.start == d.range.end {
+                char_offset == d.range.start
+            } else {
+                char_offset >= d.range.start && char_offset < d.range.end
+            };
+            if !contains {
+                continue;
+            }
+
+            let len = d.range.end.saturating_sub(d.range.start);
+            if len < best_len {
+                best = Some(d);
+                best_len = len;
+            }
+        }
+
+        best.and_then(|d| d.data_json.clone())
+    }
+
+    /// Hit-test and return the raw LSP `DocumentLink` JSON (if any) at the given view point.
+    pub fn document_link_json_at_view_point_px(&self, x_px: f32, y_px: f32) -> Option<String> {
+        let off = self.view_point_to_char_offset(x_px, y_px)?;
+        self.document_link_json_at_char_offset(off)
     }
 
     pub fn line_height_px(&self) -> f32 {
@@ -3054,6 +3100,42 @@ fn main() {
         let rgba = ui.render_rgba_visible().unwrap();
         // Underline is drawn at y = line_height_px - 1 (scale=1), i.e. y=9.
         assert_eq!(pixel(&rgba, 200, 15, 9), [1, 200, 2, 255]);
+    }
+
+    #[test]
+    fn ui_document_link_hit_test_returns_payload_json() {
+        let mut ui = EditorUi::new("abc\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 40,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(200, 40, 1.0).unwrap();
+
+        let result_json = r#"[
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 1 }
+            },
+            "target": "https://example.com"
+          }
+        ]"#;
+        ui.lsp_apply_document_links_json(result_json).unwrap();
+
+        let (x, y) = ui.char_offset_to_view_point_px(0).unwrap();
+        let json = ui
+            .document_link_json_at_view_point_px(x + 1.0, y + 1.0)
+            .expect("expected document link json at point");
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            v.get("target").and_then(|t| t.as_str()),
+            Some("https://example.com")
+        );
     }
 
     #[test]

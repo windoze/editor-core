@@ -139,6 +139,13 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiGetMarkedRange = @convention(c) (OpaquePointer?, UnsafeMutablePointer<UInt8>?, UnsafeMutablePointer<UInt32>?, UnsafeMutablePointer<UInt32>?) -> Int32
     typealias FnEditorUiCharOffsetToViewPoint = @convention(c) (OpaquePointer?, UInt32, UnsafeMutablePointer<Float>?, UnsafeMutablePointer<Float>?, UnsafeMutablePointer<Float>?) -> Int32
     typealias FnEditorUiViewPointToCharOffset = @convention(c) (OpaquePointer?, Float, Float, UnsafeMutablePointer<UInt32>?) -> Int32
+    typealias FnEditorUiGetDocumentLinkJSONAtViewPoint = @convention(c) (
+        OpaquePointer?,
+        Float,
+        Float,
+        UnsafeMutablePointer<UInt8>?,
+        UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+    ) -> Int32
 
     private let dylib: DynamicLibrary
     public let resolvedLibraryPath: String
@@ -247,6 +254,7 @@ public final class EditorCoreUIFFILibrary {
     let editorUiGetMarkedRangeFn: FnEditorUiGetMarkedRange
     let editorUiCharOffsetToViewPointFn: FnEditorUiCharOffsetToViewPoint
     let editorUiViewPointToCharOffsetFn: FnEditorUiViewPointToCharOffset
+    let editorUiGetDocumentLinkJSONAtViewPointFn: FnEditorUiGetDocumentLinkJSONAtViewPoint
 
     public init(explicitPath: String? = nil) throws {
         let candidates = Self.candidateLibraryPaths(explicitPath: explicitPath)
@@ -376,6 +384,10 @@ public final class EditorCoreUIFFILibrary {
         editorUiGetMarkedRangeFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_get_marked_range", as: FnEditorUiGetMarkedRange.self)
         editorUiCharOffsetToViewPointFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_char_offset_to_view_point", as: FnEditorUiCharOffsetToViewPoint.self)
         editorUiViewPointToCharOffsetFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_view_point_to_char_offset", as: FnEditorUiViewPointToCharOffset.self)
+        editorUiGetDocumentLinkJSONAtViewPointFn = try dylib.loadSymbol(
+            "editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point",
+            as: FnEditorUiGetDocumentLinkJSONAtViewPoint.self
+        )
     }
 
     public func versionString() -> String {
