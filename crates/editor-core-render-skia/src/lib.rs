@@ -7,9 +7,11 @@
 use editor_core::{snapshot::HeadlessGrid, IME_MARKED_TEXT_STYLE_ID};
 use skia_safe::{
     AlphaType, Color, Color4f, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle,
-    FourByteTag, ImageInfo, Paint, Point, Rect, surfaces,
+    FourByteTag, GlyphId, ImageInfo, Paint, Point, Rect, surfaces,
 };
-use skia_safe::{shaper::TextBlobBuilderRunHandler, shaper::Feature, Shaper};
+use skia_safe::shaper::run_handler::{Buffer, RunInfo};
+use skia_safe::shaper::{Feature, RunHandler};
+use skia_safe::Shaper;
 use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
 
@@ -280,12 +282,45 @@ impl SkiaRenderer {
         font: &Font,
         x_px: f32,
         baseline_y: f32,
-        desired_width_px: f32,
+        cell_width_px: f32,
         paint: &Paint,
         enable_ligatures: bool,
     ) {
         if run_text.is_empty() {
             return;
+        }
+
+        #[derive(Default)]
+        struct CollectGlyphsRunHandler {
+            glyphs: Vec<GlyphId>,
+            positions: Vec<Point>,
+            clusters: Vec<u32>,
+            out_glyphs: Vec<GlyphId>,
+            out_clusters: Vec<u32>,
+        }
+
+        impl RunHandler for CollectGlyphsRunHandler {
+            fn begin_line(&mut self) {}
+            fn run_info(&mut self, _info: &RunInfo) {}
+            fn commit_run_info(&mut self) {}
+            fn run_buffer(&mut self, info: &RunInfo) -> Buffer<'_> {
+                let count = info.glyph_count;
+                self.glyphs.resize(count, GlyphId::default());
+                self.positions.resize(count, Point::default());
+                self.clusters.resize(count, 0);
+                Buffer {
+                    glyphs: self.glyphs.as_mut_slice(),
+                    positions: self.positions.as_mut_slice(),
+                    offsets: None,
+                    clusters: Some(self.clusters.as_mut_slice()),
+                    point: Point::default(),
+                }
+            }
+            fn commit_run_buffer(&mut self, _info: &RunInfo) {
+                self.out_glyphs.extend_from_slice(&self.glyphs);
+                self.out_clusters.extend_from_slice(&self.clusters);
+            }
+            fn commit_line(&mut self) {}
         }
 
         let width = 1_000_000.0;
@@ -294,10 +329,11 @@ impl SkiaRenderer {
 
         let mut font_it = Shaper::new_trivial_font_run_iterator(font, utf8_len);
         let mut bidi_it = skia_safe::shapers::primitive::trivial_bidi_run_iterator(0, utf8_len);
-        let mut script_it = skia_safe::shapers::primitive::trivial_script_run_iterator(0, utf8_len);
+        let mut script_it =
+            skia_safe::shapers::primitive::trivial_script_run_iterator(0, utf8_len);
         let mut lang_it = Shaper::new_trivial_language_run_iterator("en", utf8_len);
 
-        let mut builder = TextBlobBuilderRunHandler::new(run_text, Point::new(0.0, 0.0));
+        let mut handler = CollectGlyphsRunHandler::default();
         self.shaper.shape_with_iterators_and_features(
             run_text,
             &mut font_it,
@@ -306,38 +342,35 @@ impl SkiaRenderer {
             &mut lang_it,
             features.as_slice(),
             width,
-            &mut builder,
+            &mut handler,
         );
 
-        let natural_width_px = builder.end_point().x;
-        let Some(blob) = builder.make_blob() else {
+        if handler.out_glyphs.is_empty() || handler.out_glyphs.len() != handler.out_clusters.len() {
             // Fallback: draw without shaping (no ligatures), but avoid dropping text.
             canvas.draw_str(run_text, Point::new(x_px, baseline_y), font, paint);
             return;
-        };
-
-        let mut scale_x = 1.0;
-        if desired_width_px.is_finite()
-            && desired_width_px > 0.0
-            && natural_width_px.is_finite()
-            && natural_width_px > 0.0
-        {
-            scale_x = desired_width_px / natural_width_px;
         }
 
-        // Avoid extreme scales; if something is off with metrics, just draw unscaled.
-        if !scale_x.is_finite() || scale_x <= 0.0 || scale_x > 4.0 {
-            scale_x = 1.0;
+        // IMPORTANT:
+        // We do *not* use the shaper-provided glyph positions here.
+        // The editor's layout model is a fixed-width "cell grid", so we place glyphs on cell
+        // boundaries to avoid kerning/positioning drifting away from the grid.
+        //
+        // Ligature fonts like Fira Code encode ligature glyphs whose advance spans multiple cells,
+        // so drawing the ligature glyph at the cluster-start cell produces the expected effect.
+        let mut positions = Vec::<Point>::with_capacity(handler.out_glyphs.len());
+        for &cluster in &handler.out_clusters {
+            let x_cells = cluster as f32; // ASCII => utf8 byte offset == char index == cell index
+            positions.push(Point::new(x_cells * cell_width_px, 0.0));
         }
 
-        if (scale_x - 1.0).abs() > 0.001 {
-            let _ = canvas.save();
-            canvas.scale((scale_x, 1.0));
-            canvas.draw_text_blob(blob, Point::new(x_px / scale_x, baseline_y), paint);
-            canvas.restore();
-        } else {
-            canvas.draw_text_blob(blob, Point::new(x_px, baseline_y), paint);
-        }
+        canvas.draw_glyphs_at(
+            handler.out_glyphs.as_slice(),
+            positions.as_slice(),
+            Point::new(x_px, baseline_y),
+            font,
+            paint,
+        );
     }
 
     pub fn required_rgba_len(config: RenderConfig) -> Result<usize, RenderError> {
@@ -507,7 +540,6 @@ impl SkiaRenderer {
             #[derive(Debug)]
             struct PendingRun {
                 start_x_cells: u32,
-                cell_count: u32,
                 font_index: usize,
                 fg: Rgba8,
                 text: String,
@@ -522,11 +554,10 @@ impl SkiaRenderer {
                 let Some(run) = pending.take() else {
                     return;
                 };
-                if run.text.is_empty() || run.cell_count == 0 {
+                if run.text.is_empty() {
                     return;
                 }
                 let x_px = text_origin_x + run.start_x_cells as f32 * config.cell_width_px;
-                let desired_w = run.cell_count as f32 * config.cell_width_px;
 
                 let mut paint = Paint::default();
                 paint.set_anti_alias(true);
@@ -539,7 +570,7 @@ impl SkiaRenderer {
                     font,
                     x_px,
                     baseline_y,
-                    desired_w,
+                    config.cell_width_px,
                     &paint,
                     config.enable_ligatures,
                 );
@@ -575,7 +606,6 @@ impl SkiaRenderer {
                         flush(self, &mut pending);
                         pending = Some(PendingRun {
                             start_x_cells: x_cells,
-                            cell_count: 0,
                             font_index,
                             fg,
                             text: String::new(),
@@ -584,7 +614,6 @@ impl SkiaRenderer {
 
                     if let Some(r) = pending.as_mut() {
                         r.text.push(cell.ch);
-                        r.cell_count += 1;
                     }
                 } else {
                     flush(self, &mut pending);
@@ -889,6 +918,7 @@ fn resolve_cell_colors(style_ids: &[u32], theme: &RenderTheme) -> (Rgba8, Rgba8)
 mod tests {
     use super::*;
     use editor_core::snapshot::{Cell, HeadlessGrid, HeadlessLine};
+    use skia_safe::shaper::TextBlobBuilderRunHandler;
     use skia_safe::TextBlobIter;
 
     #[test]
