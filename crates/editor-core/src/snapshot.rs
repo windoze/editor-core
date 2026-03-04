@@ -233,6 +233,17 @@ pub enum ComposedLineKind {
 pub struct ComposedLine {
     /// Line kind / anchor info.
     pub kind: ComposedLineKind,
+    /// Character offset (inclusive) of this visual line segment in the document.
+    ///
+    /// For [`ComposedLineKind::Document`], this is the segment start offset.
+    /// For [`ComposedLineKind::VirtualAboveLine`], this is the anchor offset (typically the start
+    /// of the associated logical line).
+    pub char_offset_start: usize,
+    /// Character offset (exclusive) of this visual line segment in the document.
+    ///
+    /// For [`ComposedLineKind::Document`], this is the segment end offset.
+    /// For [`ComposedLineKind::VirtualAboveLine`], this equals [`Self::char_offset_start`].
+    pub char_offset_end: usize,
     /// Rendered cells for this line.
     pub cells: Vec<ComposedCell>,
 }

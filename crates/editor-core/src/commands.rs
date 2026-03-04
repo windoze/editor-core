@@ -1570,6 +1570,8 @@ impl EditorCore {
 
                         grid.lines.push(ComposedLine {
                             kind: ComposedLineKind::VirtualAboveLine { logical_line },
+                            char_offset_start: vt.anchor,
+                            char_offset_end: vt.anchor,
                             cells,
                         });
                     }
@@ -1737,6 +1739,8 @@ impl EditorCore {
                         logical_line,
                         visual_in_logical: visual_in_line,
                     },
+                    char_offset_start: segment_start_offset,
+                    char_offset_end: line_start_offset + segment_end_col,
                     cells,
                 });
 
