@@ -41,6 +41,8 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiInsertText = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
     typealias FnEditorUiBackspace = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiDeleteForward = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiDeleteWordBack = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiDeleteWordForward = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiAddStyle = @convention(c) (OpaquePointer?, UInt32, UInt32, UInt32) -> Int32
     typealias FnEditorUiRemoveStyle = @convention(c) (OpaquePointer?, UInt32, UInt32, UInt32) -> Int32
     typealias FnEditorUiUndo = @convention(c) (OpaquePointer?) -> Int32
@@ -48,8 +50,12 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiMoveVisualByRows = @convention(c) (OpaquePointer?, Int32) -> Int32
     typealias FnEditorUiMoveGraphemeLeft = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveGraphemeRight = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveWordLeft = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveWordRight = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveGraphemeLeftAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveGraphemeRightAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveWordLeftAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveWordRightAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveVisualByRowsAndModifySelection = @convention(c) (OpaquePointer?, Int32) -> Int32
 
     typealias FnEditorUiSetMarkedText = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
@@ -136,6 +142,8 @@ public final class EditorCoreUIFFILibrary {
     let editorUiInsertTextFn: FnEditorUiInsertText
     let editorUiBackspaceFn: FnEditorUiBackspace
     let editorUiDeleteForwardFn: FnEditorUiDeleteForward
+    let editorUiDeleteWordBackFn: FnEditorUiDeleteWordBack
+    let editorUiDeleteWordForwardFn: FnEditorUiDeleteWordForward
     let editorUiAddStyleFn: FnEditorUiAddStyle
     let editorUiRemoveStyleFn: FnEditorUiRemoveStyle
     let editorUiUndoFn: FnEditorUiUndo
@@ -143,8 +151,12 @@ public final class EditorCoreUIFFILibrary {
     let editorUiMoveVisualByRowsFn: FnEditorUiMoveVisualByRows
     let editorUiMoveGraphemeLeftFn: FnEditorUiMoveGraphemeLeft
     let editorUiMoveGraphemeRightFn: FnEditorUiMoveGraphemeRight
+    let editorUiMoveWordLeftFn: FnEditorUiMoveWordLeft
+    let editorUiMoveWordRightFn: FnEditorUiMoveWordRight
     let editorUiMoveGraphemeLeftAndModifySelectionFn: FnEditorUiMoveGraphemeLeftAndModifySelection
     let editorUiMoveGraphemeRightAndModifySelectionFn: FnEditorUiMoveGraphemeRightAndModifySelection
+    let editorUiMoveWordLeftAndModifySelectionFn: FnEditorUiMoveWordLeftAndModifySelection
+    let editorUiMoveWordRightAndModifySelectionFn: FnEditorUiMoveWordRightAndModifySelection
     let editorUiMoveVisualByRowsAndModifySelectionFn: FnEditorUiMoveVisualByRowsAndModifySelection
     let editorUiSetMarkedTextFn: FnEditorUiSetMarkedText
     let editorUiSetMarkedTextExFn: FnEditorUiSetMarkedTextEx
@@ -241,6 +253,8 @@ public final class EditorCoreUIFFILibrary {
         editorUiInsertTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_insert_text", as: FnEditorUiInsertText.self)
         editorUiBackspaceFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_backspace", as: FnEditorUiBackspace.self)
         editorUiDeleteForwardFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_delete_forward", as: FnEditorUiDeleteForward.self)
+        editorUiDeleteWordBackFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_delete_word_back", as: FnEditorUiDeleteWordBack.self)
+        editorUiDeleteWordForwardFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_delete_word_forward", as: FnEditorUiDeleteWordForward.self)
         editorUiAddStyleFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_style", as: FnEditorUiAddStyle.self)
         editorUiRemoveStyleFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_remove_style", as: FnEditorUiRemoveStyle.self)
         editorUiUndoFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_undo", as: FnEditorUiUndo.self)
@@ -248,8 +262,12 @@ public final class EditorCoreUIFFILibrary {
         editorUiMoveVisualByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_visual_by_rows", as: FnEditorUiMoveVisualByRows.self)
         editorUiMoveGraphemeLeftFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_left", as: FnEditorUiMoveGraphemeLeft.self)
         editorUiMoveGraphemeRightFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_right", as: FnEditorUiMoveGraphemeRight.self)
+        editorUiMoveWordLeftFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_word_left", as: FnEditorUiMoveWordLeft.self)
+        editorUiMoveWordRightFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_word_right", as: FnEditorUiMoveWordRight.self)
         editorUiMoveGraphemeLeftAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_left_and_modify_selection", as: FnEditorUiMoveGraphemeLeftAndModifySelection.self)
         editorUiMoveGraphemeRightAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_right_and_modify_selection", as: FnEditorUiMoveGraphemeRightAndModifySelection.self)
+        editorUiMoveWordLeftAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_word_left_and_modify_selection", as: FnEditorUiMoveWordLeftAndModifySelection.self)
+        editorUiMoveWordRightAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_word_right_and_modify_selection", as: FnEditorUiMoveWordRightAndModifySelection.self)
         editorUiMoveVisualByRowsAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_visual_by_rows_and_modify_selection", as: FnEditorUiMoveVisualByRowsAndModifySelection.self)
         editorUiSetMarkedTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_marked_text", as: FnEditorUiSetMarkedText.self)
         editorUiSetMarkedTextExFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_marked_text_ex", as: FnEditorUiSetMarkedTextEx.self)

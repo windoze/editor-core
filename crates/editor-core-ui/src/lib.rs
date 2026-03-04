@@ -908,6 +908,19 @@ impl EditorUi {
         Ok(())
     }
 
+    pub fn delete_word_back(&mut self) -> Result<(), UiError> {
+        self.state.execute(Command::Edit(EditCommand::DeleteWordBack))?;
+        self.refresh_processing()?;
+        Ok(())
+    }
+
+    pub fn delete_word_forward(&mut self) -> Result<(), UiError> {
+        self.state
+            .execute(Command::Edit(EditCommand::DeleteWordForward))?;
+        self.refresh_processing()?;
+        Ok(())
+    }
+
     pub fn add_style(&mut self, start: usize, end: usize, style_id: u32) -> Result<(), UiError> {
         self.state.execute(Command::Style(StyleCommand::AddStyle {
             start,
@@ -973,6 +986,18 @@ impl EditorUi {
         Ok(())
     }
 
+    pub fn move_word_left(&mut self) -> Result<(), UiError> {
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveWordLeft))?;
+        Ok(())
+    }
+
+    pub fn move_word_right(&mut self) -> Result<(), UiError> {
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveWordRight))?;
+        Ok(())
+    }
+
     pub fn move_grapheme_left_and_modify_selection(&mut self) -> Result<(), UiError> {
         let cursor = self.state.get_cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
@@ -996,6 +1021,28 @@ impl EditorUi {
         Ok(())
     }
 
+    pub fn move_word_left_and_modify_selection(&mut self) -> Result<(), UiError> {
+        let cursor = self.state.get_cursor_state();
+        let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
+        let active = cursor.position;
+
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: active.line,
+            column: active.column,
+        }))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveWordLeft))?;
+
+        let new_active = self.state.editor().cursor_position();
+        self.state.execute(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
+        Ok(())
+    }
+
     pub fn move_grapheme_right_and_modify_selection(&mut self) -> Result<(), UiError> {
         let cursor = self.state.get_cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
@@ -1009,6 +1056,28 @@ impl EditorUi {
             .execute(Command::Cursor(CursorCommand::ClearSelection))?;
         self.state
             .execute(Command::Cursor(CursorCommand::MoveGraphemeRight))?;
+
+        let new_active = self.state.editor().cursor_position();
+        self.state.execute(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
+        Ok(())
+    }
+
+    pub fn move_word_right_and_modify_selection(&mut self) -> Result<(), UiError> {
+        let cursor = self.state.get_cursor_state();
+        let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
+        let active = cursor.position;
+
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: active.line,
+            column: active.column,
+        }))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveWordRight))?;
 
         let new_active = self.state.editor().cursor_position();
         self.state.execute(Command::Cursor(CursorCommand::SetSelection {
@@ -1771,6 +1840,38 @@ mod tests {
         ui.set_selections_offsets(&[(1, 1)], 0).unwrap();
         ui.delete_selections_only().unwrap();
         assert_eq!(ui.text(), " two ");
+    }
+
+    #[test]
+    fn ui_word_movement_and_word_deletion() {
+        let mut ui = EditorUi::new("one two", 80);
+
+        // Move by word boundaries.
+        assert_eq!(ui.primary_selection_offsets(), (0, 0));
+        ui.move_word_right().unwrap(); // 0 -> 3 ("one| two")
+        assert_eq!(ui.primary_selection_offsets(), (3, 3));
+        ui.move_word_right().unwrap(); // 3 -> 4 ("one |two")
+        assert_eq!(ui.primary_selection_offsets(), (4, 4));
+        ui.move_word_left().unwrap(); // 4 -> 3
+        assert_eq!(ui.primary_selection_offsets(), (3, 3));
+
+        // Shift+Option behavior (modify selection).
+        ui.set_selections_offsets(&[(0, 0)], 0).unwrap();
+        ui.move_word_right_and_modify_selection().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (0, 3));
+        ui.move_word_right_and_modify_selection().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (0, 4));
+
+        // Delete word back/forward.
+        let mut ui2 = EditorUi::new("one two", 80);
+        ui2.set_selections_offsets(&[(7, 7)], 0).unwrap();
+        ui2.delete_word_back().unwrap();
+        assert_eq!(ui2.text(), "one ");
+
+        let mut ui3 = EditorUi::new("one two", 80);
+        ui3.set_selections_offsets(&[(0, 0)], 0).unwrap();
+        ui3.delete_word_forward().unwrap();
+        assert_eq!(ui3.text(), " two");
     }
 
     #[test]

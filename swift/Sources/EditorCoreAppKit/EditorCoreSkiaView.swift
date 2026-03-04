@@ -522,6 +522,18 @@ public final class EditorCoreSkiaView: NSView {
                 } else {
                     try editor.moveGraphemeRight()
                 }
+            case #selector(moveWordLeft(_:)):
+                let sel = try editor.selectionOffsets()
+                if sel.start != sel.end {
+                    try editor.setSelections([EcuSelectionRange(start: sel.start, end: sel.start)], primaryIndex: 0)
+                }
+                try editor.moveWordLeft()
+            case #selector(moveWordRight(_:)):
+                let sel = try editor.selectionOffsets()
+                if sel.start != sel.end {
+                    try editor.setSelections([EcuSelectionRange(start: sel.end, end: sel.end)], primaryIndex: 0)
+                }
+                try editor.moveWordRight()
             case #selector(moveUp(_:)):
                 try editor.moveVisualByRows(-1)
             case #selector(moveDown(_:)):
@@ -530,6 +542,10 @@ public final class EditorCoreSkiaView: NSView {
                 try editor.moveGraphemeLeftAndModifySelection()
             case #selector(moveRightAndModifySelection(_:)):
                 try editor.moveGraphemeRightAndModifySelection()
+            case #selector(moveWordLeftAndModifySelection(_:)):
+                try editor.moveWordLeftAndModifySelection()
+            case #selector(moveWordRightAndModifySelection(_:)):
+                try editor.moveWordRightAndModifySelection()
             case #selector(moveUpAndModifySelection(_:)):
                 try editor.moveVisualByRowsAndModifySelection(-1)
             case #selector(moveDownAndModifySelection(_:)):
@@ -538,6 +554,10 @@ public final class EditorCoreSkiaView: NSView {
                 try editor.backspace()
             case #selector(deleteForward(_:)):
                 try editor.deleteForward()
+            case #selector(deleteWordBackward(_:)):
+                try editor.deleteWordBack()
+            case #selector(deleteWordForward(_:)):
+                try editor.deleteWordForward()
             case #selector(insertNewline(_:)):
                 try editor.commitText("\n")
             case #selector(insertTab(_:)):

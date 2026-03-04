@@ -227,6 +227,16 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_delete_forward")
     }
 
+    public func deleteWordBack() throws {
+        let status = library.editorUiDeleteWordBackFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_delete_word_back")
+    }
+
+    public func deleteWordForward() throws {
+        let status = library.editorUiDeleteWordForwardFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_delete_word_forward")
+    }
+
     public func addStyle(start: UInt32, end: UInt32, styleId: UInt32) throws {
         let status = library.editorUiAddStyleFn(handle, start, end, styleId)
         try library.ensureStatus(status, context: "editor_ui_add_style")
@@ -262,6 +272,16 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_move_grapheme_right")
     }
 
+    public func moveWordLeft() throws {
+        let status = library.editorUiMoveWordLeftFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_word_left")
+    }
+
+    public func moveWordRight() throws {
+        let status = library.editorUiMoveWordRightFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_word_right")
+    }
+
     public func moveGraphemeLeftAndModifySelection() throws {
         let status = library.editorUiMoveGraphemeLeftAndModifySelectionFn(handle)
         try library.ensureStatus(status, context: "editor_ui_move_grapheme_left_and_modify_selection")
@@ -270,6 +290,16 @@ public final class EditorUI {
     public func moveGraphemeRightAndModifySelection() throws {
         let status = library.editorUiMoveGraphemeRightAndModifySelectionFn(handle)
         try library.ensureStatus(status, context: "editor_ui_move_grapheme_right_and_modify_selection")
+    }
+
+    public func moveWordLeftAndModifySelection() throws {
+        let status = library.editorUiMoveWordLeftAndModifySelectionFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_word_left_and_modify_selection")
+    }
+
+    public func moveWordRightAndModifySelection() throws {
+        let status = library.editorUiMoveWordRightAndModifySelectionFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_word_right_and_modify_selection")
     }
 
     public func moveVisualByRowsAndModifySelection(_ deltaRows: Int32) throws {

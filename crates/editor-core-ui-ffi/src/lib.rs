@@ -892,6 +892,38 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_delete_forward(ui: *mut EditorUi)
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_delete_word_back(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.delete_word_back()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_delete_word_forward(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.delete_word_forward()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_add_style(
     ui: *mut EditorUi,
     start: u32,
@@ -1013,6 +1045,36 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_move_grapheme_right(ui: *mut Edit
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_word_left(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_word_left().map(|_| ECU_OK).map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_word_right(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_word_right()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_move_grapheme_left_and_modify_selection(
     ui: *mut EditorUi,
 ) -> c_int {
@@ -1037,6 +1099,42 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_move_grapheme_right_and_modify_se
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         ui.move_grapheme_right_and_modify_selection()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_word_left_and_modify_selection(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_word_left_and_modify_selection()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_word_right_and_modify_selection(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_word_right_and_modify_selection()
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
     }) {
@@ -2528,6 +2626,52 @@ contexts:
             ECU_OK
         );
         assert_eq!((start, end), (0, 3)); // "foo"
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_word_movement_and_word_deletion_roundtrip() {
+        let initial = CString::new("one two").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        // Move word right: 0 -> 3.
+        assert_eq!(editor_core_ui_ffi_editor_ui_move_word_right(ui), ECU_OK);
+        let mut start: u32 = 0;
+        let mut end: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (3, 3));
+
+        // Shift+Option right: extend selection to next boundary (3..4).
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_move_word_right_and_modify_selection(ui),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (3, 4));
+
+        // Delete word back from end.
+        let ranges = [EcuSelectionRange { start: 7, end: 7 }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), 1, 0),
+            ECU_OK
+        );
+        assert_eq!(editor_core_ui_ffi_editor_ui_delete_word_back(ui), ECU_OK);
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        assert!(!text_ptr.is_null());
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        editor_core_ui_ffi_string_free(text_ptr);
+        assert_eq!(text, "one ");
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }
