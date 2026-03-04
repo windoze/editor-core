@@ -1,4 +1,6 @@
-use editor_core::{DecorationKind, DecorationLayerId, DecorationPlacement, LineIndex};
+use editor_core::{
+    DecorationKind, DecorationLayerId, DecorationPlacement, LineIndex, INLAY_HINT_STYLE_ID,
+};
 use editor_core_lsp::{lsp_inlay_hints_to_decorations, lsp_inlay_hints_to_processing_edit};
 use serde_json::json;
 
@@ -25,6 +27,7 @@ fn test_inlay_hints_convert_utf16_positions_to_char_offsets() {
     assert_eq!(deco.kind, DecorationKind::InlayHint);
     assert_eq!(deco.placement, DecorationPlacement::After);
     assert_eq!(deco.text.as_deref(), Some(" : u32"));
+    assert_eq!(deco.styles, vec![INLAY_HINT_STYLE_ID]);
     assert_eq!(deco.tooltip.as_deref(), Some("hint"));
     assert!(deco.data_json.as_ref().unwrap().contains("\"label\""));
 

@@ -6,7 +6,8 @@
 use crate::lsp_sync::{LspCoordinateConverter, LspPosition};
 use editor_core::processing::ProcessingEdit;
 use editor_core::{
-    Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange, LineIndex,
+    CODE_LENS_STYLE_ID, INLAY_HINT_STYLE_ID, Decoration, DecorationKind, DecorationLayerId,
+    DecorationPlacement, DecorationRange, LineIndex,
 };
 use serde_json::Value;
 
@@ -110,7 +111,7 @@ pub fn lsp_inlay_hints_to_decorations(line_index: &LineIndex, result: &Value) ->
             placement: DecorationPlacement::After,
             kind: DecorationKind::InlayHint,
             text: if label.is_empty() { None } else { Some(label) },
-            styles: Vec::new(),
+            styles: vec![INLAY_HINT_STYLE_ID],
             tooltip,
             data_json: Some(hint.to_string()),
         });
@@ -212,7 +213,7 @@ pub fn lsp_code_lens_to_decorations(line_index: &LineIndex, result: &Value) -> V
             placement: DecorationPlacement::AboveLine,
             kind: DecorationKind::CodeLens,
             text: Some(title),
-            styles: Vec::new(),
+            styles: vec![CODE_LENS_STYLE_ID],
             tooltip: None,
             data_json: Some(lens.to_string()),
         });

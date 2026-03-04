@@ -1,4 +1,6 @@
-use editor_core::{DecorationKind, DecorationLayerId, DecorationPlacement, LineIndex};
+use editor_core::{
+    CODE_LENS_STYLE_ID, DecorationKind, DecorationLayerId, DecorationPlacement, LineIndex,
+};
 use editor_core_lsp::{
     lsp_code_lens_to_decorations, lsp_code_lens_to_processing_edit,
     lsp_document_links_to_decorations, lsp_document_links_to_processing_edit,
@@ -56,6 +58,7 @@ fn test_code_lens_maps_to_above_line_decorations() {
     assert_eq!(deco.kind, DecorationKind::CodeLens);
     assert_eq!(deco.placement, DecorationPlacement::AboveLine);
     assert_eq!(deco.text.as_deref(), Some("Run tests"));
+    assert_eq!(deco.styles, vec![CODE_LENS_STYLE_ID]);
 
     let expected_offset = line_index.position_to_char_offset(1, 0);
     assert_eq!(deco.range.start, expected_offset);

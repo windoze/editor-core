@@ -156,9 +156,10 @@ pub use delta::{TextDelta, TextDeltaEdit};
 pub use diagnostics::{Diagnostic, DiagnosticRange, DiagnosticSeverity};
 pub use editor_core_lang::CommentConfig;
 pub use intervals::{
+    CODE_LENS_STYLE_ID,
     DOCUMENT_HIGHLIGHT_READ_STYLE_ID, DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
     DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, FOLD_PLACEHOLDER_STYLE_ID, IME_MARKED_TEXT_STYLE_ID,
-    FoldRegion, FoldingManager, IntervalTree, StyleLayerId,
+    INLAY_HINT_STYLE_ID, FoldRegion, FoldingManager, IntervalTree, StyleLayerId,
 };
 pub use layout::{LayoutEngine, WrapIndent, WrapMode};
 pub use line_ending::LineEnding;

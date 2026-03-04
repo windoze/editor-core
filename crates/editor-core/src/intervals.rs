@@ -22,6 +22,16 @@ pub const DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID: StyleId = 0x0400_0003;
 /// This is intended for underline/background styling of inline IME preedit strings.
 pub const IME_MARKED_TEXT_STYLE_ID: StyleId = 0x0700_0001;
 
+/// Built-in style id for LSP inlay hints virtual text (`textDocument/inlayHint`).
+///
+/// Renderers should map this to a muted / secondary foreground, and optionally a subtle background.
+pub const INLAY_HINT_STYLE_ID: StyleId = 0x0800_0001;
+
+/// Built-in style id for LSP code lens virtual text (`textDocument/codeLens`).
+///
+/// Renderers should map this to a muted / link-like style.
+pub const CODE_LENS_STYLE_ID: StyleId = 0x0800_0002;
+
 /// Style layer ID
 ///
 /// Used to distinguish style sources (e.g., LSP semantic highlighting, simple syntax highlighting, diagnostics, etc.),
