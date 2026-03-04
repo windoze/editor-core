@@ -46,6 +46,12 @@ struct MarkedRange {
     original_len: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SearchQueryState {
+    query: String,
+    options: SearchOptions,
+}
+
 #[derive(Debug, Default)]
 struct TreeSitterCaptureMapper {
     capture_to_id: HashMap<String, u32>,
@@ -92,6 +98,7 @@ pub struct EditorUi {
     treesitter: Option<TreeSitterProcessor>,
     treesitter_capture_mapper: TreeSitterCaptureMapper,
     marked: Option<MarkedRange>,
+    search_query: Option<SearchQueryState>,
     mouse_anchor: Option<Position>,
 }
 
@@ -106,6 +113,7 @@ impl EditorUi {
             treesitter: None,
             treesitter_capture_mapper: TreeSitterCaptureMapper::default(),
             marked: None,
+            search_query: None,
             mouse_anchor: None,
         }
     }
@@ -621,6 +629,111 @@ impl EditorUi {
         }
         self.state
             .replace_style_layer(StyleLayerId::MATCH_HIGHLIGHTS, intervals);
+    }
+
+    /// Set an active search query and update match highlights accordingly.
+    ///
+    /// Returns the number of matches found.
+    ///
+    /// Notes:
+    /// - This is intentionally a "UI-level convenience" API. It does not affect the core cursor
+    ///   find/replace commands; it only updates the `MATCH_HIGHLIGHTS` style layer for rendering.
+    /// - Passing an empty query clears match highlights.
+    pub fn search_set_query(&mut self, query: &str, options: SearchOptions) -> Result<usize, UiError> {
+        if query.is_empty() {
+            self.search_query = None;
+            self.set_match_highlights_offsets(&[]);
+            return Ok(0);
+        }
+
+        self.search_query = Some(SearchQueryState {
+            query: query.to_string(),
+            options,
+        });
+        self.search_refresh_matches()
+    }
+
+    /// Clear active search query and match highlights.
+    pub fn search_clear(&mut self) {
+        self.search_query = None;
+        self.set_match_highlights_offsets(&[]);
+    }
+
+    /// Refresh match highlights for the current search query (if any).
+    ///
+    /// Returns the number of matches found.
+    pub fn search_refresh_matches(&mut self) -> Result<usize, UiError> {
+        let Some(q) = self.search_query.as_ref() else {
+            self.set_match_highlights_offsets(&[]);
+            return Ok(0);
+        };
+
+        let text = self.state.editor().piece_table.get_text();
+        let matches = editor_core::search::find_all(&text, q.query.as_str(), q.options)
+            .map_err(|e| UiError::Processor(e.to_string()))?;
+        let ranges: Vec<(usize, usize)> = matches.iter().map(|m| (m.start, m.end)).collect();
+        self.set_match_highlights_offsets(&ranges);
+        Ok(matches.len())
+    }
+
+    /// Find next match and select it (primary selection only).
+    ///
+    /// Returns `true` when a match was found.
+    pub fn find_next(&mut self, query: &str, options: SearchOptions) -> Result<bool, UiError> {
+        let result = self.state.execute(Command::Cursor(CursorCommand::FindNext {
+            query: query.to_string(),
+            options,
+        }))?;
+        Ok(matches!(result, CommandResult::SearchMatch { .. }))
+    }
+
+    /// Find previous match and select it (primary selection only).
+    ///
+    /// Returns `true` when a match was found.
+    pub fn find_prev(&mut self, query: &str, options: SearchOptions) -> Result<bool, UiError> {
+        let result = self.state.execute(Command::Cursor(CursorCommand::FindPrev {
+            query: query.to_string(),
+            options,
+        }))?;
+        Ok(matches!(result, CommandResult::SearchMatch { .. }))
+    }
+
+    /// Replace the current match (based on selection/caret) and return the number of replacements performed.
+    pub fn replace_current(
+        &mut self,
+        query: &str,
+        replacement: &str,
+        options: SearchOptions,
+    ) -> Result<usize, UiError> {
+        let result = self.state.execute(Command::Edit(EditCommand::ReplaceCurrent {
+            query: query.to_string(),
+            replacement: replacement.to_string(),
+            options,
+        }))?;
+        self.refresh_processing()?;
+        match result {
+            CommandResult::ReplaceResult { replaced } => Ok(replaced),
+            _ => Ok(0),
+        }
+    }
+
+    /// Replace all matches and return the number of replacements performed.
+    pub fn replace_all(
+        &mut self,
+        query: &str,
+        replacement: &str,
+        options: SearchOptions,
+    ) -> Result<usize, UiError> {
+        let result = self.state.execute(Command::Edit(EditCommand::ReplaceAll {
+            query: query.to_string(),
+            replacement: replacement.to_string(),
+            options,
+        }))?;
+        self.refresh_processing()?;
+        match result {
+            CommandResult::ReplaceResult { replaced } => Ok(replaced),
+            _ => Ok(0),
+        }
     }
 
     pub fn set_sublime_syntax_yaml(&mut self, yaml: &str) -> Result<(), UiError> {
@@ -3028,5 +3141,87 @@ fn main() {
 
         let rgba = ui.render_rgba_visible().unwrap();
         assert_eq!(pixel(&rgba, 200, 15, 10), [1, 200, 2, 255]);
+    }
+
+    #[test]
+    fn ui_search_set_query_finds_matches_and_sets_match_highlights() {
+        // Use spaces as matches so glyph rasterization does not affect pixel samples.
+        let mut ui = EditorUi::new("a c a\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 40,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_theme(RenderTheme {
+            background: editor_core_render_skia::Rgba8::new(10, 20, 30, 255),
+            foreground: editor_core_render_skia::Rgba8::new(250, 250, 250, 255),
+            selection_background: editor_core_render_skia::Rgba8::new(200, 0, 0, 255),
+            caret: editor_core_render_skia::Rgba8::new(10, 20, 30, 255), // invisible
+            styles: {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert(
+                    editor_core::MATCH_HIGHLIGHT_STYLE_ID,
+                    editor_core_render_skia::StyleColors::new(
+                        None,
+                        Some(editor_core_render_skia::Rgba8::new(1, 200, 2, 255)),
+                    ),
+                );
+                m
+            },
+        });
+        ui.set_viewport_px(200, 40, 1.0).unwrap();
+
+        let count = ui
+            .search_set_query(" ", editor_core::SearchOptions::default())
+            .unwrap();
+        assert_eq!(count, 2);
+
+        let rgba = ui.render_rgba_visible().unwrap();
+        // First space at col=1 => x in [10..20]
+        assert_eq!(pixel(&rgba, 200, 15, 10), [1, 200, 2, 255]);
+        // Second space at col=3 => x in [30..40]
+        assert_eq!(pixel(&rgba, 200, 35, 10), [1, 200, 2, 255]);
+    }
+
+    #[test]
+    fn ui_find_next_and_replace_current_and_all() {
+        let mut ui = EditorUi::new("foo foo foo\n", 80);
+        ui.set_selections_offsets(&[(0, 0)], 0).unwrap();
+
+        let found = ui
+            .find_next("foo", editor_core::SearchOptions::default())
+            .unwrap();
+        assert!(found);
+        assert_eq!(
+            ui.primary_selection_offsets(),
+            (0, 3),
+            "first find_next should select first 'foo'"
+        );
+
+        let found = ui
+            .find_next("foo", editor_core::SearchOptions::default())
+            .unwrap();
+        assert!(found);
+        assert_eq!(
+            ui.primary_selection_offsets(),
+            (4, 7),
+            "second find_next should select second 'foo'"
+        );
+
+        let replaced = ui
+            .replace_current("foo", "bar", editor_core::SearchOptions::default())
+            .unwrap();
+        assert_eq!(replaced, 1);
+        assert_eq!(ui.text(), "foo bar foo\n");
+
+        let replaced_all = ui
+            .replace_all("foo", "baz", editor_core::SearchOptions::default())
+            .unwrap();
+        assert_eq!(replaced_all, 2);
+        assert_eq!(ui.text(), "baz bar baz\n");
     }
 }

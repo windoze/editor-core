@@ -112,6 +112,23 @@ public enum EcuExpandSelectionDirection: UInt32, Sendable {
     case forward = 1
 }
 
+@frozen
+public struct EcuSearchOptions: Equatable, Sendable {
+    public var caseSensitive: Bool
+    public var wholeWord: Bool
+    public var regex: Bool
+
+    public init(caseSensitive: Bool = true, wholeWord: Bool = false, regex: Bool = false) {
+        self.caseSensitive = caseSensitive
+        self.wholeWord = wholeWord
+        self.regex = regex
+    }
+
+    var ffiCaseSensitive: UInt8 { caseSensitive ? 1 : 0 }
+    var ffiWholeWord: UInt8 { wholeWord ? 1 : 0 }
+    var ffiRegex: UInt8 { regex ? 1 : 0 }
+}
+
 struct _EcuRgba8FFI {
     var r: UInt8
     var g: UInt8

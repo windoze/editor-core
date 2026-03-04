@@ -258,6 +258,95 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_match_highlights")
     }
 
+    /// Set an active search query and update match highlights accordingly.
+    ///
+    /// Returns the match count.
+    public func setSearchQuery(_ query: String, options: EcuSearchOptions = EcuSearchOptions()) throws -> UInt32 {
+        var count: UInt32 = 0
+        let status = query.withCString { cstr in
+            library.editorUiSearchSetQueryFn(handle, cstr, options.ffiCaseSensitive, options.ffiWholeWord, options.ffiRegex, &count)
+        }
+        try library.ensureStatus(status, context: "editor_ui_search_set_query")
+        return count
+    }
+
+    public func clearSearchQuery() throws {
+        let status = library.editorUiSearchClearFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_search_clear")
+    }
+
+    /// Find the next occurrence of `query` and select it (primary selection only).
+    ///
+    /// Returns `true` when a match was found.
+    public func findNext(_ query: String, options: EcuSearchOptions = EcuSearchOptions()) throws -> Bool {
+        var found: UInt8 = 0
+        let status = query.withCString { cstr in
+            library.editorUiFindNextFn(handle, cstr, options.ffiCaseSensitive, options.ffiWholeWord, options.ffiRegex, &found)
+        }
+        try library.ensureStatus(status, context: "editor_ui_find_next")
+        return found != 0
+    }
+
+    /// Find the previous occurrence of `query` and select it (primary selection only).
+    ///
+    /// Returns `true` when a match was found.
+    public func findPrev(_ query: String, options: EcuSearchOptions = EcuSearchOptions()) throws -> Bool {
+        var found: UInt8 = 0
+        let status = query.withCString { cstr in
+            library.editorUiFindPrevFn(handle, cstr, options.ffiCaseSensitive, options.ffiWholeWord, options.ffiRegex, &found)
+        }
+        try library.ensureStatus(status, context: "editor_ui_find_prev")
+        return found != 0
+    }
+
+    /// Replace the current match (based on selection/caret) and return how many occurrences were replaced.
+    public func replaceCurrent(
+        query: String,
+        replacement: String,
+        options: EcuSearchOptions = EcuSearchOptions()
+    ) throws -> UInt32 {
+        var replaced: UInt32 = 0
+        let status = query.withCString { queryCStr in
+            replacement.withCString { replCStr in
+                library.editorUiReplaceCurrentFn(
+                    handle,
+                    queryCStr,
+                    replCStr,
+                    options.ffiCaseSensitive,
+                    options.ffiWholeWord,
+                    options.ffiRegex,
+                    &replaced
+                )
+            }
+        }
+        try library.ensureStatus(status, context: "editor_ui_replace_current")
+        return replaced
+    }
+
+    /// Replace all matches and return how many occurrences were replaced.
+    public func replaceAll(
+        query: String,
+        replacement: String,
+        options: EcuSearchOptions = EcuSearchOptions()
+    ) throws -> UInt32 {
+        var replaced: UInt32 = 0
+        let status = query.withCString { queryCStr in
+            replacement.withCString { replCStr in
+                library.editorUiReplaceAllFn(
+                    handle,
+                    queryCStr,
+                    replCStr,
+                    options.ffiCaseSensitive,
+                    options.ffiWholeWord,
+                    options.ffiRegex,
+                    &replaced
+                )
+            }
+        }
+        try library.ensureStatus(status, context: "editor_ui_replace_all")
+        return replaced
+    }
+
     public func undo() throws {
         let status = library.editorUiUndoFn(handle)
         try library.ensureStatus(status, context: "editor_ui_undo")

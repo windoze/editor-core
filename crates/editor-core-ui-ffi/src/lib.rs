@@ -73,6 +73,12 @@ fn require_cstr<'a>(ptr: *const c_char, name: &str) -> Result<&'a CStr, String> 
     Ok(unsafe { CStr::from_ptr(ptr) })
 }
 
+fn require_str<'a>(ptr: *const c_char, name: &str) -> Result<&'a str, String> {
+    let cstr = require_cstr(ptr, name)?;
+    cstr.to_str()
+        .map_err(|_| format!("{name} is not valid UTF-8"))
+}
+
 fn status_from_error(err: String) -> c_int {
     set_last_error(err);
     ECU_ERR_INTERNAL
@@ -993,6 +999,194 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_match_highlights(
         }
 
         ui.set_match_highlights_offsets(&out);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_search_set_query(
+    ui: *mut EditorUi,
+    query_utf8: *const c_char,
+    case_sensitive: u8,
+    whole_word: u8,
+    regex: u8,
+    out_match_count: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let query = require_str(query_utf8, "query_utf8")?;
+        let options = editor_core::SearchOptions {
+            case_sensitive: case_sensitive != 0,
+            whole_word: whole_word != 0,
+            regex: regex != 0,
+        };
+        let count = ui.search_set_query(query, options).map_err(map_ui_error)?;
+        if !out_match_count.is_null() {
+            unsafe {
+                *out_match_count = count as u32;
+            }
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_search_clear(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.search_clear();
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_find_next(
+    ui: *mut EditorUi,
+    query_utf8: *const c_char,
+    case_sensitive: u8,
+    whole_word: u8,
+    regex: u8,
+    out_found: *mut u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let query = require_str(query_utf8, "query_utf8")?;
+        let options = editor_core::SearchOptions {
+            case_sensitive: case_sensitive != 0,
+            whole_word: whole_word != 0,
+            regex: regex != 0,
+        };
+        let found = ui.find_next(query, options).map_err(map_ui_error)?;
+        if !out_found.is_null() {
+            unsafe {
+                *out_found = if found { 1 } else { 0 };
+            }
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_find_prev(
+    ui: *mut EditorUi,
+    query_utf8: *const c_char,
+    case_sensitive: u8,
+    whole_word: u8,
+    regex: u8,
+    out_found: *mut u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let query = require_str(query_utf8, "query_utf8")?;
+        let options = editor_core::SearchOptions {
+            case_sensitive: case_sensitive != 0,
+            whole_word: whole_word != 0,
+            regex: regex != 0,
+        };
+        let found = ui.find_prev(query, options).map_err(map_ui_error)?;
+        if !out_found.is_null() {
+            unsafe {
+                *out_found = if found { 1 } else { 0 };
+            }
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_replace_current(
+    ui: *mut EditorUi,
+    query_utf8: *const c_char,
+    replacement_utf8: *const c_char,
+    case_sensitive: u8,
+    whole_word: u8,
+    regex: u8,
+    out_replaced: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let query = require_str(query_utf8, "query_utf8")?;
+        let replacement = require_str(replacement_utf8, "replacement_utf8")?;
+        let options = editor_core::SearchOptions {
+            case_sensitive: case_sensitive != 0,
+            whole_word: whole_word != 0,
+            regex: regex != 0,
+        };
+        let replaced = ui
+            .replace_current(query, replacement, options)
+            .map_err(map_ui_error)?;
+        if !out_replaced.is_null() {
+            unsafe {
+                *out_replaced = replaced as u32;
+            }
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_replace_all(
+    ui: *mut EditorUi,
+    query_utf8: *const c_char,
+    replacement_utf8: *const c_char,
+    case_sensitive: u8,
+    whole_word: u8,
+    regex: u8,
+    out_replaced: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let query = require_str(query_utf8, "query_utf8")?;
+        let replacement = require_str(replacement_utf8, "replacement_utf8")?;
+        let options = editor_core::SearchOptions {
+            case_sensitive: case_sensitive != 0,
+            whole_word: whole_word != 0,
+            regex: regex != 0,
+        };
+        let replaced = ui
+            .replace_all(query, replacement, options)
+            .map_err(map_ui_error)?;
+        if !out_replaced.is_null() {
+            unsafe {
+                *out_replaced = replaced as u32;
+            }
+        }
         Ok(ECU_OK)
     }) {
         Ok(code) => {
@@ -3763,6 +3957,177 @@ contexts:
 
         // Highlighted cell at col=1 => x in [10..20]
         assert_eq!(pixel(&buf, 200, 15, 10), [1, 200, 2, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_search_set_query_sets_match_highlights_and_returns_count() {
+        // Use spaces as matches so glyph rasterization does not affect the pixel sample.
+        let initial = CString::new("a c a\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let theme = EcuTheme {
+            background: EcuRgba8 {
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 255,
+            },
+            foreground: EcuRgba8 {
+                r: 250,
+                g: 250,
+                b: 250,
+                a: 255,
+            },
+            selection_background: EcuRgba8 {
+                r: 200,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            caret: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 200,
+                a: 255,
+            },
+        };
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 40, 1.0),
+            ECU_OK
+        );
+
+        // Built-in match highlight style id: 0x0800_0004
+        let styles = [EcuStyleColors {
+            style_id: 0x0800_0004,
+            flags: ECU_STYLE_FLAG_BACKGROUND,
+            foreground: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            background: EcuRgba8 {
+                r: 1,
+                g: 200,
+                b: 2,
+                a: 255,
+            },
+        }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            ECU_OK
+        );
+
+        let query = CString::new(" ").unwrap();
+        let mut count: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_search_set_query(ui, query.as_ptr(), 1, 0, 0, &mut count),
+            ECU_OK
+        );
+        assert_eq!(count, 2);
+
+        let mut out_len: u32 = 0;
+        let mut buf = vec![0u8; 200 * 40 * 4];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
+            ECU_OK
+        );
+        assert_eq!(out_len as usize, buf.len());
+
+        // First space at col=1 => x in [10..20]
+        assert_eq!(pixel(&buf, 200, 15, 10), [1, 200, 2, 255]);
+        // Second space at col=3 => x in [30..40]
+        assert_eq!(pixel(&buf, 200, 35, 10), [1, 200, 2, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_find_next_and_replace_roundtrip() {
+        let initial = CString::new("foo foo foo\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let query = CString::new("foo").unwrap();
+        let mut found: u8 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_find_next(ui, query.as_ptr(), 1, 0, 0, &mut found),
+            ECU_OK
+        );
+        assert_eq!(found, 1);
+
+        let mut sel_start: u32 = 0;
+        let mut sel_end: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut sel_start, &mut sel_end),
+            ECU_OK
+        );
+        assert_eq!((sel_start, sel_end), (0, 3));
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_find_next(ui, query.as_ptr(), 1, 0, 0, &mut found),
+            ECU_OK
+        );
+        assert_eq!(found, 1);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut sel_start, &mut sel_end),
+            ECU_OK
+        );
+        assert_eq!((sel_start, sel_end), (4, 7));
+
+        let replacement = CString::new("bar").unwrap();
+        let mut replaced: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_replace_current(
+                ui,
+                query.as_ptr(),
+                replacement.as_ptr(),
+                1,
+                0,
+                0,
+                &mut replaced
+            ),
+            ECU_OK
+        );
+        assert_eq!(replaced, 1);
+
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        editor_core_ui_ffi_string_free(text_ptr);
+        assert_eq!(text, "foo bar foo\n");
+
+        let replacement_all = CString::new("baz").unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_replace_all(
+                ui,
+                query.as_ptr(),
+                replacement_all.as_ptr(),
+                1,
+                0,
+                0,
+                &mut replaced
+            ),
+            ECU_OK
+        );
+        assert_eq!(replaced, 2);
+
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        editor_core_ui_ffi_string_free(text_ptr);
+        assert_eq!(text, "baz bar baz\n");
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

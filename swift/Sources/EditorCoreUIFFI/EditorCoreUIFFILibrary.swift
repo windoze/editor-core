@@ -46,6 +46,34 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiAddStyle = @convention(c) (OpaquePointer?, UInt32, UInt32, UInt32) -> Int32
     typealias FnEditorUiRemoveStyle = @convention(c) (OpaquePointer?, UInt32, UInt32, UInt32) -> Int32
     typealias FnEditorUiSetMatchHighlights = @convention(c) (OpaquePointer?, UnsafeRawPointer?, UInt32) -> Int32
+    typealias FnEditorUiSearchSetQuery = @convention(c) (
+        OpaquePointer?,
+        UnsafePointer<CChar>?,
+        UInt8,
+        UInt8,
+        UInt8,
+        UnsafeMutablePointer<UInt32>?
+    ) -> Int32
+    typealias FnEditorUiSearchClear = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiFindNext = @convention(c) (
+        OpaquePointer?,
+        UnsafePointer<CChar>?,
+        UInt8,
+        UInt8,
+        UInt8,
+        UnsafeMutablePointer<UInt8>?
+    ) -> Int32
+    typealias FnEditorUiFindPrev = FnEditorUiFindNext
+    typealias FnEditorUiReplaceCurrent = @convention(c) (
+        OpaquePointer?,
+        UnsafePointer<CChar>?,
+        UnsafePointer<CChar>?,
+        UInt8,
+        UInt8,
+        UInt8,
+        UnsafeMutablePointer<UInt32>?
+    ) -> Int32
+    typealias FnEditorUiReplaceAll = FnEditorUiReplaceCurrent
     typealias FnEditorUiUndo = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiRedo = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveVisualByRows = @convention(c) (OpaquePointer?, Int32) -> Int32
@@ -158,6 +186,12 @@ public final class EditorCoreUIFFILibrary {
     let editorUiAddStyleFn: FnEditorUiAddStyle
     let editorUiRemoveStyleFn: FnEditorUiRemoveStyle
     let editorUiSetMatchHighlightsFn: FnEditorUiSetMatchHighlights
+    let editorUiSearchSetQueryFn: FnEditorUiSearchSetQuery
+    let editorUiSearchClearFn: FnEditorUiSearchClear
+    let editorUiFindNextFn: FnEditorUiFindNext
+    let editorUiFindPrevFn: FnEditorUiFindPrev
+    let editorUiReplaceCurrentFn: FnEditorUiReplaceCurrent
+    let editorUiReplaceAllFn: FnEditorUiReplaceAll
     let editorUiUndoFn: FnEditorUiUndo
     let editorUiRedoFn: FnEditorUiRedo
     let editorUiMoveVisualByRowsFn: FnEditorUiMoveVisualByRows
@@ -280,6 +314,12 @@ public final class EditorCoreUIFFILibrary {
         editorUiAddStyleFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_style", as: FnEditorUiAddStyle.self)
         editorUiRemoveStyleFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_remove_style", as: FnEditorUiRemoveStyle.self)
         editorUiSetMatchHighlightsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_match_highlights", as: FnEditorUiSetMatchHighlights.self)
+        editorUiSearchSetQueryFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_search_set_query", as: FnEditorUiSearchSetQuery.self)
+        editorUiSearchClearFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_search_clear", as: FnEditorUiSearchClear.self)
+        editorUiFindNextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_find_next", as: FnEditorUiFindNext.self)
+        editorUiFindPrevFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_find_prev", as: FnEditorUiFindPrev.self)
+        editorUiReplaceCurrentFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_replace_current", as: FnEditorUiReplaceCurrent.self)
+        editorUiReplaceAllFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_replace_all", as: FnEditorUiReplaceAll.self)
         editorUiUndoFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_undo", as: FnEditorUiUndo.self)
         editorUiRedoFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_redo", as: FnEditorUiRedo.self)
         editorUiMoveVisualByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_visual_by_rows", as: FnEditorUiMoveVisualByRows.self)

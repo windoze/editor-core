@@ -143,6 +143,43 @@ int32_t editor_core_ui_ffi_editor_ui_remove_style(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_set_match_highlights(EditorUi* ui,
                                                           const EcuSelectionRange* ranges,
                                                           uint32_t range_count);
+
+// Search helpers (find/replace + match highlights).
+//
+// `case_sensitive/whole_word/regex` correspond to `editor_core::SearchOptions`.
+int32_t editor_core_ui_ffi_editor_ui_search_set_query(EditorUi* ui,
+                                                      const char* query_utf8,
+                                                      uint8_t case_sensitive,
+                                                      uint8_t whole_word,
+                                                      uint8_t regex,
+                                                      uint32_t* out_match_count);
+int32_t editor_core_ui_ffi_editor_ui_search_clear(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_find_next(EditorUi* ui,
+                                               const char* query_utf8,
+                                               uint8_t case_sensitive,
+                                               uint8_t whole_word,
+                                               uint8_t regex,
+                                               uint8_t* out_found);
+int32_t editor_core_ui_ffi_editor_ui_find_prev(EditorUi* ui,
+                                               const char* query_utf8,
+                                               uint8_t case_sensitive,
+                                               uint8_t whole_word,
+                                               uint8_t regex,
+                                               uint8_t* out_found);
+int32_t editor_core_ui_ffi_editor_ui_replace_current(EditorUi* ui,
+                                                     const char* query_utf8,
+                                                     const char* replacement_utf8,
+                                                     uint8_t case_sensitive,
+                                                     uint8_t whole_word,
+                                                     uint8_t regex,
+                                                     uint32_t* out_replaced);
+int32_t editor_core_ui_ffi_editor_ui_replace_all(EditorUi* ui,
+                                                 const char* query_utf8,
+                                                 const char* replacement_utf8,
+                                                 uint8_t case_sensitive,
+                                                 uint8_t whole_word,
+                                                 uint8_t regex,
+                                                 uint32_t* out_replaced);
 int32_t editor_core_ui_ffi_editor_ui_undo(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_redo(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_visual_by_rows(EditorUi* ui, int32_t delta_rows);
