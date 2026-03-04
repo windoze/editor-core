@@ -247,6 +247,17 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_remove_style")
     }
 
+    /// Replace match highlight ranges (e.g. search matches) as a dedicated overlay layer.
+    ///
+    /// Passing an empty array clears the layer.
+    public func setMatchHighlights(_ ranges: [EcuSelectionRange]) throws {
+        let ffi = ranges.map { $0.ffi }
+        let status = ffi.withUnsafeBufferPointer { ptr in
+            library.editorUiSetMatchHighlightsFn(handle, ptr.baseAddress.map { UnsafeRawPointer($0) }, UInt32(ptr.count))
+        }
+        try library.ensureStatus(status, context: "editor_ui_set_match_highlights")
+    }
+
     public func undo() throws {
         let status = library.editorUiUndoFn(handle)
         try library.ensureStatus(status, context: "editor_ui_undo")

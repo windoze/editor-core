@@ -160,7 +160,8 @@ pub use intervals::{
     DOCUMENT_LINK_STYLE_ID,
     DOCUMENT_HIGHLIGHT_READ_STYLE_ID, DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
     DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, FOLD_PLACEHOLDER_STYLE_ID, IME_MARKED_TEXT_STYLE_ID,
-    INLAY_HINT_STYLE_ID, FoldRegion, FoldingManager, IntervalTree, StyleLayerId,
+    INLAY_HINT_STYLE_ID, MATCH_HIGHLIGHT_STYLE_ID, FoldRegion, FoldingManager, IntervalTree,
+    StyleLayerId,
 };
 pub use layout::{LayoutEngine, WrapIndent, WrapMode};
 pub use line_ending::LineEnding;

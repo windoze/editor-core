@@ -37,6 +37,9 @@ pub const CODE_LENS_STYLE_ID: StyleId = 0x0800_0002;
 /// Renderers should typically draw this as an underline and/or link-like foreground color.
 pub const DOCUMENT_LINK_STYLE_ID: StyleId = 0x0800_0003;
 
+/// Built-in style id for match highlights (e.g. search matches, bracket matches).
+pub const MATCH_HIGHLIGHT_STYLE_ID: StyleId = 0x0800_0004;
+
 /// Style layer ID
 ///
 /// Used to distinguish style sources (e.g., LSP semantic highlighting, simple syntax highlighting, diagnostics, etc.),
@@ -77,6 +80,9 @@ impl StyleLayerId {
     ///
     /// This is intended for underlines / click targets sourced from `textDocument/documentLink`.
     pub const DOCUMENT_LINKS: Self = Self(8);
+
+    /// Match highlights overlay layer (search matches, bracket highlights, etc).
+    pub const MATCH_HIGHLIGHTS: Self = Self(9);
 }
 
 /// Interval structure

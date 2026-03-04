@@ -965,6 +965,44 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_remove_style(
     }
 }
 
+/// Replace match highlight ranges (e.g. search matches) as a style overlay layer.
+///
+/// - `ranges` are character-offset ranges (inclusive-exclusive).
+/// - Passing `range_count = 0` clears the layer (and allows `ranges` to be null).
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_match_highlights(
+    ui: *mut EditorUi,
+    ranges: *const EcuSelectionRange,
+    range_count: u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+
+        if range_count == 0 {
+            ui.set_match_highlights_offsets(&[]);
+            return Ok(ECU_OK);
+        }
+        if ranges.is_null() {
+            return Err("ranges is null".to_string());
+        }
+
+        let ranges = unsafe { slice::from_raw_parts(ranges, range_count as usize) };
+        let mut out: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
+        for r in ranges {
+            out.push((r.start as usize, r.end as usize));
+        }
+
+        ui.set_match_highlights_offsets(&out);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_undo(ui: *mut EditorUi) -> c_int {
     match ffi_catch(|| {
@@ -3617,6 +3655,96 @@ contexts:
         .unwrap();
         assert_eq!(
             editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_json(ui, result.as_ptr()),
+            ECU_OK
+        );
+
+        let mut out_len: u32 = 0;
+        let mut buf = vec![0u8; 200 * 40 * 4];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
+            ECU_OK
+        );
+        assert_eq!(out_len as usize, buf.len());
+
+        // Highlighted cell at col=1 => x in [10..20]
+        assert_eq!(pixel(&buf, 200, 15, 10), [1, 200, 2, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_match_highlights_affect_rendering() {
+        // Use a space in the highlighted range so glyph rasterization does not affect the pixel sample.
+        let initial = CString::new("a c\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let theme = EcuTheme {
+            background: EcuRgba8 {
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 255,
+            },
+            foreground: EcuRgba8 {
+                r: 250,
+                g: 250,
+                b: 250,
+                a: 255,
+            },
+            selection_background: EcuRgba8 {
+                r: 200,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            caret: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 200,
+                a: 255,
+            },
+        };
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 40, 1.0),
+            ECU_OK
+        );
+
+        // Built-in match highlight style id: 0x0800_0004
+        let styles = [EcuStyleColors {
+            style_id: 0x0800_0004,
+            flags: ECU_STYLE_FLAG_BACKGROUND,
+            foreground: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            background: EcuRgba8 {
+                r: 1,
+                g: 200,
+                b: 2,
+                a: 255,
+            },
+        }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            ECU_OK
+        );
+
+        let ranges = [EcuSelectionRange { start: 1, end: 2 }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_match_highlights(ui, ranges.as_ptr(), 1),
             ECU_OK
         );
 

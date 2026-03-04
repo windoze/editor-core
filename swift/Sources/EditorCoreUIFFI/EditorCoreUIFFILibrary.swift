@@ -45,6 +45,7 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiDeleteWordForward = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiAddStyle = @convention(c) (OpaquePointer?, UInt32, UInt32, UInt32) -> Int32
     typealias FnEditorUiRemoveStyle = @convention(c) (OpaquePointer?, UInt32, UInt32, UInt32) -> Int32
+    typealias FnEditorUiSetMatchHighlights = @convention(c) (OpaquePointer?, UnsafeRawPointer?, UInt32) -> Int32
     typealias FnEditorUiUndo = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiRedo = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveVisualByRows = @convention(c) (OpaquePointer?, Int32) -> Int32
@@ -156,6 +157,7 @@ public final class EditorCoreUIFFILibrary {
     let editorUiDeleteWordForwardFn: FnEditorUiDeleteWordForward
     let editorUiAddStyleFn: FnEditorUiAddStyle
     let editorUiRemoveStyleFn: FnEditorUiRemoveStyle
+    let editorUiSetMatchHighlightsFn: FnEditorUiSetMatchHighlights
     let editorUiUndoFn: FnEditorUiUndo
     let editorUiRedoFn: FnEditorUiRedo
     let editorUiMoveVisualByRowsFn: FnEditorUiMoveVisualByRows
@@ -277,6 +279,7 @@ public final class EditorCoreUIFFILibrary {
         editorUiDeleteWordForwardFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_delete_word_forward", as: FnEditorUiDeleteWordForward.self)
         editorUiAddStyleFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_style", as: FnEditorUiAddStyle.self)
         editorUiRemoveStyleFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_remove_style", as: FnEditorUiRemoveStyle.self)
+        editorUiSetMatchHighlightsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_match_highlights", as: FnEditorUiSetMatchHighlights.self)
         editorUiUndoFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_undo", as: FnEditorUiUndo.self)
         editorUiRedoFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_redo", as: FnEditorUiRedo.self)
         editorUiMoveVisualByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_visual_by_rows", as: FnEditorUiMoveVisualByRows.self)

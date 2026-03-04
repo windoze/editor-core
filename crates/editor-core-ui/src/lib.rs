@@ -6,8 +6,8 @@
 use editor_core::{
     Command, CommandResult, CursorCommand, EditCommand, EditorStateManager,
     ExpandSelectionDirection, ExpandSelectionUnit, Position, IME_MARKED_TEXT_STYLE_ID,
-    ProcessingEdit, SearchOptions, Selection, SelectionDirection, StyleCommand, StyleLayerId,
-    ViewCommand,
+    MATCH_HIGHLIGHT_STYLE_ID, ProcessingEdit, SearchOptions, Selection, SelectionDirection,
+    StyleCommand, StyleLayerId, ViewCommand,
 };
 use editor_core::intervals::Interval;
 use editor_core_lsp::{
@@ -596,6 +596,31 @@ impl EditorUi {
 
     pub fn clear_style_colors(&mut self) {
         self.theme.styles.clear();
+    }
+
+    /// Replace match highlight ranges (e.g. search matches) as a dedicated overlay style layer.
+    ///
+    /// Notes:
+    /// - Ranges are character offsets (Unicode scalar indices), half-open `[start, end)`.
+    /// - Passing an empty slice clears the layer.
+    pub fn set_match_highlights_offsets(&mut self, ranges: &[(usize, usize)]) {
+        if ranges.is_empty() {
+            self.state.clear_style_layer(StyleLayerId::MATCH_HIGHLIGHTS);
+            return;
+        }
+
+        let doc_len = self.state.editor().piece_table.char_count();
+        let mut intervals: Vec<Interval> = Vec::with_capacity(ranges.len());
+        for (start, end) in ranges {
+            let s = (*start).min(doc_len);
+            let e = (*end).min(doc_len);
+            let (s, e) = if s <= e { (s, e) } else { (e, s) };
+            if s < e {
+                intervals.push(Interval::new(s, e, MATCH_HIGHLIGHT_STYLE_ID));
+            }
+        }
+        self.state
+            .replace_style_layer(StyleLayerId::MATCH_HIGHLIGHTS, intervals);
     }
 
     pub fn set_sublime_syntax_yaml(&mut self, yaml: &str) -> Result<(), UiError> {
@@ -2963,6 +2988,45 @@ fn main() {
 
         let rgba = ui.render_rgba_visible().unwrap();
         // Highlighted cell at col=1 => x in [10..20]
+        assert_eq!(pixel(&rgba, 200, 15, 10), [1, 200, 2, 255]);
+    }
+
+    #[test]
+    fn ui_match_highlights_apply_style_layer() {
+        // Use a space at the highlighted location so glyph rasterization does not affect pixel samples.
+        let mut ui = EditorUi::new("a c\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 40,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_theme(RenderTheme {
+            background: editor_core_render_skia::Rgba8::new(10, 20, 30, 255),
+            foreground: editor_core_render_skia::Rgba8::new(250, 250, 250, 255),
+            selection_background: editor_core_render_skia::Rgba8::new(200, 0, 0, 255),
+            caret: editor_core_render_skia::Rgba8::new(10, 20, 30, 255), // invisible
+            styles: {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert(
+                    editor_core::MATCH_HIGHLIGHT_STYLE_ID,
+                    editor_core_render_skia::StyleColors::new(
+                        None,
+                        Some(editor_core_render_skia::Rgba8::new(1, 200, 2, 255)),
+                    ),
+                );
+                m
+            },
+        });
+        ui.set_viewport_px(200, 40, 1.0).unwrap();
+
+        // Highlight the space at offset 1..2.
+        ui.set_match_highlights_offsets(&[(1, 2)]);
+
+        let rgba = ui.render_rgba_visible().unwrap();
         assert_eq!(pixel(&rgba, 200, 15, 10), [1, 200, 2, 255]);
     }
 }

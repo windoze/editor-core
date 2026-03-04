@@ -140,6 +140,9 @@ int32_t editor_core_ui_ffi_editor_ui_remove_style(EditorUi* ui,
                                                   uint32_t start,
                                                   uint32_t end,
                                                   uint32_t style_id);
+int32_t editor_core_ui_ffi_editor_ui_set_match_highlights(EditorUi* ui,
+                                                          const EcuSelectionRange* ranges,
+                                                          uint32_t range_count);
 int32_t editor_core_ui_ffi_editor_ui_undo(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_redo(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_visual_by_rows(EditorUi* ui, int32_t delta_rows);
