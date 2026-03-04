@@ -48,7 +48,8 @@ fn test_lsp_diagnostics_to_processing_edits_utf16_ranges() {
             assert_eq!(intervals.len(), 1);
             assert_eq!(intervals[0].start, 1);
             assert_eq!(intervals[0].end, 2);
-            assert_eq!(intervals[0].style_id, 0x0400_0000 | 1);
+            // LSP diagnostics style id encoding: 0x0400_0100 | severity
+            assert_eq!(intervals[0].style_id, 0x0400_0100 | 1);
         }
         other => panic!("unexpected edit: {:?}", other),
     }

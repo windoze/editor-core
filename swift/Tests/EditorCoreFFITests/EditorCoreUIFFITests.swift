@@ -315,8 +315,8 @@ final class EditorCoreUIFFITests: XCTestCase {
         try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
         try ui.setViewportPx(widthPx: 200, heightPx: 40, scale: 1)
 
-        // LSP diagnostics style id encoding: 0x0400_0000 | severity
-        try ui.setStyleColors([EcuStyleColors(styleId: 0x0400_0000 | 1, background: EcuRgba8(r: 1, g: 200, b: 2, a: 255))])
+        // LSP diagnostics style id encoding: 0x0400_0100 | severity
+        try ui.setStyleColors([EcuStyleColors(styleId: 0x0400_0100 | 1, background: EcuRgba8(r: 1, g: 200, b: 2, a: 255))])
 
         let params = """
         {

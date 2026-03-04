@@ -1936,9 +1936,9 @@ fn main() {
             caret: editor_core_render_skia::Rgba8::new(0, 0, 200, 255),
             styles: {
                 let mut m = std::collections::BTreeMap::new();
-                // LSP diagnostics style id encoding: 0x0400_0000 | severity
+                // LSP diagnostics style id encoding: 0x0400_0100 | severity
                 m.insert(
-                    0x0400_0000 | 1,
+                    0x0400_0100 | 1,
                     editor_core_render_skia::StyleColors::new(
                         None,
                         Some(editor_core_render_skia::Rgba8::new(1, 200, 2, 255)),

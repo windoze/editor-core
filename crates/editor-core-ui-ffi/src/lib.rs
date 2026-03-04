@@ -2617,9 +2617,9 @@ contexts:
             ECU_OK
         );
 
-        // LSP diagnostics style id encoding: 0x0400_0000 | severity.
+        // LSP diagnostics style id encoding: 0x0400_0100 | severity.
         let styles = [EcuStyleColors {
-            style_id: 0x0400_0000 | 1,
+            style_id: 0x0400_0100 | 1,
             flags: ECU_STYLE_FLAG_BACKGROUND,
             foreground: EcuRgba8 {
                 r: 0,

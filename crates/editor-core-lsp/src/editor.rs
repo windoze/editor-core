@@ -1809,7 +1809,10 @@ fn diagnostic_style_id(severity: Option<crate::lsp_events::LspDiagnosticSeverity
     // Headless encoding:
     // - keep it stable and easy for UIs to map
     // - low bits store severity (1..=4), 0 means "unspecified"
-    const BASE: StyleId = 0x0400_0000;
+    //
+    // Note: 0x0400_0001..0x0400_0003 are reserved for LSP `documentHighlight` style ids.
+    // Keep diagnostics in a non-overlapping sub-range.
+    const BASE: StyleId = 0x0400_0100;
     let sev_bits = match severity {
         Some(crate::lsp_events::LspDiagnosticSeverity::Error) => 1,
         Some(crate::lsp_events::LspDiagnosticSeverity::Warning) => 2,
