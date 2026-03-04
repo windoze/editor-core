@@ -1125,6 +1125,8 @@ enum FfiViewCommandInput {
     SetWrapIndent { indent: FfiWrapIndent },
     SetTabWidth { width: usize },
     SetTabKeyBehavior { behavior: FfiTabKeyBehavior },
+    SetWordBoundaryAsciiBoundaryChars { boundary_chars: String },
+    ResetWordBoundaryDefaults,
     ScrollTo { line: usize },
     GetViewport { start_row: usize, count: usize },
 }
@@ -1141,6 +1143,10 @@ impl FfiViewCommandInput {
             Self::SetTabKeyBehavior { behavior } => ViewCommand::SetTabKeyBehavior {
                 behavior: behavior.into(),
             },
+            Self::SetWordBoundaryAsciiBoundaryChars { boundary_chars } => {
+                ViewCommand::SetWordBoundaryAsciiBoundaryChars { boundary_chars }
+            }
+            Self::ResetWordBoundaryDefaults => ViewCommand::ResetWordBoundaryDefaults,
             Self::ScrollTo { line } => ViewCommand::ScrollTo { line },
             Self::GetViewport { start_row, count } => ViewCommand::GetViewport { start_row, count },
         }
