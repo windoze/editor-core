@@ -808,14 +808,19 @@ impl EditorUi {
     }
 
     pub fn backspace(&mut self) -> Result<(), UiError> {
-        self.state.execute(Command::Edit(EditCommand::Backspace))?;
+        // UI-friendly default: delete the previous grapheme cluster (UAX #29).
+        //
+        // This matches typical native text behavior (e.g. emoji / combining marks) and
+        // keeps deletion consistent with the grapheme-aware cursor movement APIs we expose.
+        self.state
+            .execute(Command::Edit(EditCommand::DeleteGraphemeBack))?;
         self.refresh_processing()?;
         Ok(())
     }
 
     pub fn delete_forward(&mut self) -> Result<(), UiError> {
         self.state
-            .execute(Command::Edit(EditCommand::DeleteForward))?;
+            .execute(Command::Edit(EditCommand::DeleteGraphemeForward))?;
         self.refresh_processing()?;
         Ok(())
     }
@@ -1646,6 +1651,24 @@ mod tests {
         ui.move_visual_by_rows(1).unwrap();
         assert!(ui.cursor_state().selection.is_none());
         assert_eq!(ui.primary_selection_offsets(), (11, 11));
+    }
+
+    #[test]
+    fn ui_backspace_and_delete_forward_are_grapheme_aware() {
+        // "á" = 'a' + COMBINING ACUTE ACCENT (2 Unicode scalar values, 1 grapheme cluster).
+        let s = "a\u{0301}";
+
+        // Backspace at end should delete the whole grapheme cluster.
+        let mut ui = EditorUi::new(s, 80);
+        ui.set_selections_offsets(&[(2, 2)], 0).unwrap(); // caret at end (scalar offset 2)
+        ui.backspace().unwrap();
+        assert_eq!(ui.text(), "");
+
+        // Delete-forward at start should also delete the whole grapheme cluster.
+        let mut ui2 = EditorUi::new(s, 80);
+        ui2.set_selections_offsets(&[(0, 0)], 0).unwrap(); // caret at start
+        ui2.delete_forward().unwrap();
+        assert_eq!(ui2.text(), "");
     }
 
     #[test]
