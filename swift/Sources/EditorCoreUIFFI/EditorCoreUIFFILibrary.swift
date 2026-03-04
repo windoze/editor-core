@@ -52,10 +52,20 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiMoveGraphemeRight = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveWordLeft = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveWordRight = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveToVisualLineStart = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveToVisualLineEnd = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveToDocumentStart = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveToDocumentEnd = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveVisualByPages = @convention(c) (OpaquePointer?, Int32) -> Int32
     typealias FnEditorUiMoveGraphemeLeftAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveGraphemeRightAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveWordLeftAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiMoveWordRightAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveToVisualLineStartAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveToVisualLineEndAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveToDocumentStartAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveToDocumentEndAndModifySelection = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiMoveVisualByPagesAndModifySelection = @convention(c) (OpaquePointer?, Int32) -> Int32
     typealias FnEditorUiMoveVisualByRowsAndModifySelection = @convention(c) (OpaquePointer?, Int32) -> Int32
 
     typealias FnEditorUiSetMarkedText = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
@@ -153,10 +163,20 @@ public final class EditorCoreUIFFILibrary {
     let editorUiMoveGraphemeRightFn: FnEditorUiMoveGraphemeRight
     let editorUiMoveWordLeftFn: FnEditorUiMoveWordLeft
     let editorUiMoveWordRightFn: FnEditorUiMoveWordRight
+    let editorUiMoveToVisualLineStartFn: FnEditorUiMoveToVisualLineStart
+    let editorUiMoveToVisualLineEndFn: FnEditorUiMoveToVisualLineEnd
+    let editorUiMoveToDocumentStartFn: FnEditorUiMoveToDocumentStart
+    let editorUiMoveToDocumentEndFn: FnEditorUiMoveToDocumentEnd
+    let editorUiMoveVisualByPagesFn: FnEditorUiMoveVisualByPages
     let editorUiMoveGraphemeLeftAndModifySelectionFn: FnEditorUiMoveGraphemeLeftAndModifySelection
     let editorUiMoveGraphemeRightAndModifySelectionFn: FnEditorUiMoveGraphemeRightAndModifySelection
     let editorUiMoveWordLeftAndModifySelectionFn: FnEditorUiMoveWordLeftAndModifySelection
     let editorUiMoveWordRightAndModifySelectionFn: FnEditorUiMoveWordRightAndModifySelection
+    let editorUiMoveToVisualLineStartAndModifySelectionFn: FnEditorUiMoveToVisualLineStartAndModifySelection
+    let editorUiMoveToVisualLineEndAndModifySelectionFn: FnEditorUiMoveToVisualLineEndAndModifySelection
+    let editorUiMoveToDocumentStartAndModifySelectionFn: FnEditorUiMoveToDocumentStartAndModifySelection
+    let editorUiMoveToDocumentEndAndModifySelectionFn: FnEditorUiMoveToDocumentEndAndModifySelection
+    let editorUiMoveVisualByPagesAndModifySelectionFn: FnEditorUiMoveVisualByPagesAndModifySelection
     let editorUiMoveVisualByRowsAndModifySelectionFn: FnEditorUiMoveVisualByRowsAndModifySelection
     let editorUiSetMarkedTextFn: FnEditorUiSetMarkedText
     let editorUiSetMarkedTextExFn: FnEditorUiSetMarkedTextEx
@@ -264,10 +284,20 @@ public final class EditorCoreUIFFILibrary {
         editorUiMoveGraphemeRightFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_right", as: FnEditorUiMoveGraphemeRight.self)
         editorUiMoveWordLeftFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_word_left", as: FnEditorUiMoveWordLeft.self)
         editorUiMoveWordRightFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_word_right", as: FnEditorUiMoveWordRight.self)
+        editorUiMoveToVisualLineStartFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_to_visual_line_start", as: FnEditorUiMoveToVisualLineStart.self)
+        editorUiMoveToVisualLineEndFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_to_visual_line_end", as: FnEditorUiMoveToVisualLineEnd.self)
+        editorUiMoveToDocumentStartFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_to_document_start", as: FnEditorUiMoveToDocumentStart.self)
+        editorUiMoveToDocumentEndFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_to_document_end", as: FnEditorUiMoveToDocumentEnd.self)
+        editorUiMoveVisualByPagesFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_visual_by_pages", as: FnEditorUiMoveVisualByPages.self)
         editorUiMoveGraphemeLeftAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_left_and_modify_selection", as: FnEditorUiMoveGraphemeLeftAndModifySelection.self)
         editorUiMoveGraphemeRightAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_grapheme_right_and_modify_selection", as: FnEditorUiMoveGraphemeRightAndModifySelection.self)
         editorUiMoveWordLeftAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_word_left_and_modify_selection", as: FnEditorUiMoveWordLeftAndModifySelection.self)
         editorUiMoveWordRightAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_word_right_and_modify_selection", as: FnEditorUiMoveWordRightAndModifySelection.self)
+        editorUiMoveToVisualLineStartAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_to_visual_line_start_and_modify_selection", as: FnEditorUiMoveToVisualLineStartAndModifySelection.self)
+        editorUiMoveToVisualLineEndAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_to_visual_line_end_and_modify_selection", as: FnEditorUiMoveToVisualLineEndAndModifySelection.self)
+        editorUiMoveToDocumentStartAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_to_document_start_and_modify_selection", as: FnEditorUiMoveToDocumentStartAndModifySelection.self)
+        editorUiMoveToDocumentEndAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_to_document_end_and_modify_selection", as: FnEditorUiMoveToDocumentEndAndModifySelection.self)
+        editorUiMoveVisualByPagesAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_visual_by_pages_and_modify_selection", as: FnEditorUiMoveVisualByPagesAndModifySelection.self)
         editorUiMoveVisualByRowsAndModifySelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_move_visual_by_rows_and_modify_selection", as: FnEditorUiMoveVisualByRowsAndModifySelection.self)
         editorUiSetMarkedTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_marked_text", as: FnEditorUiSetMarkedText.self)
         editorUiSetMarkedTextExFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_marked_text_ex", as: FnEditorUiSetMarkedTextEx.self)

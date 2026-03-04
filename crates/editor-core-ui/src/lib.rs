@@ -998,6 +998,70 @@ impl EditorUi {
         Ok(())
     }
 
+    pub fn move_to_visual_line_start(&mut self) -> Result<(), UiError> {
+        if self.state.get_cursor_state().selection.is_some() {
+            self.state
+                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        }
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveToVisualLineStart))?;
+        Ok(())
+    }
+
+    pub fn move_to_visual_line_end(&mut self) -> Result<(), UiError> {
+        if self.state.get_cursor_state().selection.is_some() {
+            self.state
+                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        }
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveToVisualLineEnd))?;
+        Ok(())
+    }
+
+    pub fn move_to_document_start(&mut self) -> Result<(), UiError> {
+        if self.state.get_cursor_state().selection.is_some() {
+            self.state
+                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        }
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: 0,
+            column: 0,
+        }))?;
+        Ok(())
+    }
+
+    pub fn move_to_document_end(&mut self) -> Result<(), UiError> {
+        if self.state.get_cursor_state().selection.is_some() {
+            self.state
+                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        }
+
+        let line_count = self.state.editor().line_index.line_count();
+        if line_count == 0 {
+            return Ok(());
+        }
+        let last_line = line_count.saturating_sub(1);
+        let text = self
+            .state
+            .editor()
+            .line_index
+            .get_line_text(last_line)
+            .unwrap_or_default();
+        let col = text.chars().count();
+
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: last_line,
+            column: col,
+        }))?;
+        Ok(())
+    }
+
+    pub fn move_visual_by_pages(&mut self, delta_pages: isize) -> Result<(), UiError> {
+        let height_rows = self.state.get_viewport_state().height.unwrap_or(1) as isize;
+        let height_rows = height_rows.max(1);
+        self.move_visual_by_rows(delta_pages.saturating_mul(height_rows))
+    }
+
     pub fn move_grapheme_left_and_modify_selection(&mut self) -> Result<(), UiError> {
         let cursor = self.state.get_cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
@@ -1085,6 +1149,121 @@ impl EditorUi {
             end: new_active,
         }))?;
         Ok(())
+    }
+
+    pub fn move_to_visual_line_start_and_modify_selection(&mut self) -> Result<(), UiError> {
+        let cursor = self.state.get_cursor_state();
+        let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
+        let active = cursor.position;
+
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: active.line,
+            column: active.column,
+        }))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveToVisualLineStart))?;
+
+        let new_active = self.state.editor().cursor_position();
+        self.state.execute(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
+        Ok(())
+    }
+
+    pub fn move_to_visual_line_end_and_modify_selection(&mut self) -> Result<(), UiError> {
+        let cursor = self.state.get_cursor_state();
+        let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
+        let active = cursor.position;
+
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: active.line,
+            column: active.column,
+        }))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveToVisualLineEnd))?;
+
+        let new_active = self.state.editor().cursor_position();
+        self.state.execute(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
+        Ok(())
+    }
+
+    pub fn move_to_document_start_and_modify_selection(&mut self) -> Result<(), UiError> {
+        let cursor = self.state.get_cursor_state();
+        let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
+        let active = cursor.position;
+
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: active.line,
+            column: active.column,
+        }))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: 0,
+            column: 0,
+        }))?;
+
+        let new_active = self.state.editor().cursor_position();
+        self.state.execute(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
+        Ok(())
+    }
+
+    pub fn move_to_document_end_and_modify_selection(&mut self) -> Result<(), UiError> {
+        let cursor = self.state.get_cursor_state();
+        let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
+        let active = cursor.position;
+
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: active.line,
+            column: active.column,
+        }))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+
+        let line_count = self.state.editor().line_index.line_count();
+        if line_count == 0 {
+            return Ok(());
+        }
+        let last_line = line_count.saturating_sub(1);
+        let text = self
+            .state
+            .editor()
+            .line_index
+            .get_line_text(last_line)
+            .unwrap_or_default();
+        let col = text.chars().count();
+
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: last_line,
+            column: col,
+        }))?;
+
+        let new_active = self.state.editor().cursor_position();
+        self.state.execute(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
+        Ok(())
+    }
+
+    pub fn move_visual_by_pages_and_modify_selection(
+        &mut self,
+        delta_pages: isize,
+    ) -> Result<(), UiError> {
+        let height_rows = self.state.get_viewport_state().height.unwrap_or(1) as isize;
+        let height_rows = height_rows.max(1);
+        self.move_visual_by_rows_and_modify_selection(delta_pages.saturating_mul(height_rows))
     }
 
     pub fn move_visual_by_rows_and_modify_selection(
@@ -1872,6 +2051,41 @@ mod tests {
         ui3.set_selections_offsets(&[(0, 0)], 0).unwrap();
         ui3.delete_word_forward().unwrap();
         assert_eq!(ui3.text(), " two");
+    }
+
+    #[test]
+    fn ui_line_document_and_page_navigation() {
+        let mut ui = EditorUi::new("abc\ndef", 80);
+
+        // Visual line start/end.
+        ui.set_selections_offsets(&[(2, 2)], 0).unwrap(); // "ab|c"
+        ui.move_to_visual_line_start().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (0, 0));
+        ui.move_to_visual_line_end().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (3, 3)); // end of "abc"
+
+        // Document start/end.
+        ui.move_to_document_end().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (7, 7)); // end of "def"
+        ui.move_to_document_start().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (0, 0));
+
+        // Page movement uses viewport height in rows.
+        let mut ui2 = EditorUi::new("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", 80);
+        ui2.set_render_metrics(12.0, 10.0, 10.0, 0.0, 0.0);
+        ui2.set_viewport_px(100, 30, 1.0).unwrap(); // 3 rows
+
+        ui2.set_selections_offsets(&[(0, 0)], 0).unwrap();
+        ui2.move_visual_by_pages(1).unwrap();
+        assert_eq!(ui2.cursor_state().position.line, 3);
+
+        ui2.move_visual_by_pages(-1).unwrap();
+        assert_eq!(ui2.cursor_state().position.line, 0);
+
+        // Shift+PageDown extends selection by pages.
+        ui2.set_selections_offsets(&[(0, 0)], 0).unwrap();
+        ui2.move_visual_by_pages_and_modify_selection(1).unwrap();
+        assert_eq!(ui2.primary_selection_offsets(), (0, 6)); // line 3 start offset = 3 * 2
     }
 
     #[test]

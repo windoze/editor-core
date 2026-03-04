@@ -147,10 +147,21 @@ int32_t editor_core_ui_ffi_editor_ui_move_grapheme_left(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_grapheme_right(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_word_left(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_word_right(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_to_visual_line_start(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_to_visual_line_end(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_to_document_start(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_to_document_end(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_visual_by_pages(EditorUi* ui, int32_t delta_pages);
 int32_t editor_core_ui_ffi_editor_ui_move_grapheme_left_and_modify_selection(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_grapheme_right_and_modify_selection(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_word_left_and_modify_selection(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_word_right_and_modify_selection(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_to_visual_line_start_and_modify_selection(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_to_visual_line_end_and_modify_selection(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_to_document_start_and_modify_selection(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_to_document_end_and_modify_selection(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_visual_by_pages_and_modify_selection(EditorUi* ui,
+                                                                              int32_t delta_pages);
 int32_t editor_core_ui_ffi_editor_ui_move_visual_by_rows_and_modify_selection(EditorUi* ui,
                                                                              int32_t delta_rows);
 

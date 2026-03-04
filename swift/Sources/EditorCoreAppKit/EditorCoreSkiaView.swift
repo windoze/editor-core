@@ -534,6 +534,18 @@ public final class EditorCoreSkiaView: NSView {
                     try editor.setSelections([EcuSelectionRange(start: sel.end, end: sel.end)], primaryIndex: 0)
                 }
                 try editor.moveWordRight()
+            case #selector(moveToBeginningOfLine(_:)):
+                try editor.moveToVisualLineStart()
+            case #selector(moveToEndOfLine(_:)):
+                try editor.moveToVisualLineEnd()
+            case #selector(moveToBeginningOfDocument(_:)):
+                try editor.moveToDocumentStart()
+            case #selector(moveToEndOfDocument(_:)):
+                try editor.moveToDocumentEnd()
+            case #selector(pageUp(_:)):
+                try editor.moveVisualByPages(-1)
+            case #selector(pageDown(_:)):
+                try editor.moveVisualByPages(1)
             case #selector(moveUp(_:)):
                 try editor.moveVisualByRows(-1)
             case #selector(moveDown(_:)):
@@ -546,6 +558,18 @@ public final class EditorCoreSkiaView: NSView {
                 try editor.moveWordLeftAndModifySelection()
             case #selector(moveWordRightAndModifySelection(_:)):
                 try editor.moveWordRightAndModifySelection()
+            case #selector(moveToBeginningOfLineAndModifySelection(_:)):
+                try editor.moveToVisualLineStartAndModifySelection()
+            case #selector(moveToEndOfLineAndModifySelection(_:)):
+                try editor.moveToVisualLineEndAndModifySelection()
+            case #selector(moveToBeginningOfDocumentAndModifySelection(_:)):
+                try editor.moveToDocumentStartAndModifySelection()
+            case #selector(moveToEndOfDocumentAndModifySelection(_:)):
+                try editor.moveToDocumentEndAndModifySelection()
+            case #selector(pageUpAndModifySelection(_:)):
+                try editor.moveVisualByPagesAndModifySelection(-1)
+            case #selector(pageDownAndModifySelection(_:)):
+                try editor.moveVisualByPagesAndModifySelection(1)
             case #selector(moveUpAndModifySelection(_:)):
                 try editor.moveVisualByRowsAndModifySelection(-1)
             case #selector(moveDownAndModifySelection(_:)):

@@ -1075,6 +1075,89 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_move_word_right(ui: *mut EditorUi
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_visual_line_start(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_to_visual_line_start()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_visual_line_end(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_to_visual_line_end()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_document_start(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_to_document_start()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_document_end(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_to_document_end()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_visual_by_pages(
+    ui: *mut EditorUi,
+    delta_pages: c_int,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_visual_by_pages(delta_pages as isize)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_move_grapheme_left_and_modify_selection(
     ui: *mut EditorUi,
 ) -> c_int {
@@ -1135,6 +1218,97 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_move_word_right_and_modify_select
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         ui.move_word_right_and_modify_selection()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_visual_line_start_and_modify_selection(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_to_visual_line_start_and_modify_selection()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_visual_line_end_and_modify_selection(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_to_visual_line_end_and_modify_selection()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_document_start_and_modify_selection(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_to_document_start_and_modify_selection()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_document_end_and_modify_selection(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_to_document_end_and_modify_selection()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_visual_by_pages_and_modify_selection(
+    ui: *mut EditorUi,
+    delta_pages: c_int,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_visual_by_pages_and_modify_selection(delta_pages as isize)
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
     }) {
@@ -2672,6 +2846,75 @@ contexts:
             .to_string();
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, "one ");
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_line_document_and_page_navigation_roundtrip() {
+        // Line/document navigation.
+        let initial = CString::new("abc\ndef").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        // Caret at offset 2 ("ab|c").
+        let ranges = [EcuSelectionRange { start: 2, end: 2 }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), 1, 0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_move_to_visual_line_start(ui),
+            ECU_OK
+        );
+        let mut start: u32 = 0;
+        let mut end: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (0, 0));
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_move_to_document_end(ui),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (7, 7));
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+
+        // Page navigation depends on viewport height rows.
+        let initial = CString::new("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 10.0, 10.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 100, 30, 1.0),
+            ECU_OK
+        ); // 3 rows
+
+        let ranges = [EcuSelectionRange { start: 0, end: 0 }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), 1, 0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_move_visual_by_pages(ui, 1),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (6, 6));
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

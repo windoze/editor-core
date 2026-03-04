@@ -282,6 +282,31 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_move_word_right")
     }
 
+    public func moveToVisualLineStart() throws {
+        let status = library.editorUiMoveToVisualLineStartFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_to_visual_line_start")
+    }
+
+    public func moveToVisualLineEnd() throws {
+        let status = library.editorUiMoveToVisualLineEndFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_to_visual_line_end")
+    }
+
+    public func moveToDocumentStart() throws {
+        let status = library.editorUiMoveToDocumentStartFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_to_document_start")
+    }
+
+    public func moveToDocumentEnd() throws {
+        let status = library.editorUiMoveToDocumentEndFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_to_document_end")
+    }
+
+    public func moveVisualByPages(_ deltaPages: Int32) throws {
+        let status = library.editorUiMoveVisualByPagesFn(handle, deltaPages)
+        try library.ensureStatus(status, context: "editor_ui_move_visual_by_pages")
+    }
+
     public func moveGraphemeLeftAndModifySelection() throws {
         let status = library.editorUiMoveGraphemeLeftAndModifySelectionFn(handle)
         try library.ensureStatus(status, context: "editor_ui_move_grapheme_left_and_modify_selection")
@@ -300,6 +325,31 @@ public final class EditorUI {
     public func moveWordRightAndModifySelection() throws {
         let status = library.editorUiMoveWordRightAndModifySelectionFn(handle)
         try library.ensureStatus(status, context: "editor_ui_move_word_right_and_modify_selection")
+    }
+
+    public func moveToVisualLineStartAndModifySelection() throws {
+        let status = library.editorUiMoveToVisualLineStartAndModifySelectionFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_to_visual_line_start_and_modify_selection")
+    }
+
+    public func moveToVisualLineEndAndModifySelection() throws {
+        let status = library.editorUiMoveToVisualLineEndAndModifySelectionFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_to_visual_line_end_and_modify_selection")
+    }
+
+    public func moveToDocumentStartAndModifySelection() throws {
+        let status = library.editorUiMoveToDocumentStartAndModifySelectionFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_to_document_start_and_modify_selection")
+    }
+
+    public func moveToDocumentEndAndModifySelection() throws {
+        let status = library.editorUiMoveToDocumentEndAndModifySelectionFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_to_document_end_and_modify_selection")
+    }
+
+    public func moveVisualByPagesAndModifySelection(_ deltaPages: Int32) throws {
+        let status = library.editorUiMoveVisualByPagesAndModifySelectionFn(handle, deltaPages)
+        try library.ensureStatus(status, context: "editor_ui_move_visual_by_pages_and_modify_selection")
     }
 
     public func moveVisualByRowsAndModifySelection(_ deltaRows: Int32) throws {
