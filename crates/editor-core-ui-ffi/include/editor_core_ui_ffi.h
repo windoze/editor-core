@@ -174,6 +174,9 @@ int32_t editor_core_ui_ffi_editor_ui_add_next_occurrence(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_add_all_occurrences(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_select_word(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_select_line(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_set_line_selection_offsets(EditorUi* ui,
+                                                                uint32_t anchor_offset,
+                                                                uint32_t active_offset);
 int32_t editor_core_ui_ffi_editor_ui_select_paragraph_at_char_offset(EditorUi* ui,
                                                                      uint32_t char_offset);
 int32_t editor_core_ui_ffi_editor_ui_set_paragraph_selection_offsets(EditorUi* ui,

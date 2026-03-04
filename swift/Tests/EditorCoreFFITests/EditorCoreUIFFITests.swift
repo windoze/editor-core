@@ -34,6 +34,29 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(u.end, 12)
     }
 
+    func testLineSelectionOffsetsAPI() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "aa\nbb\n\ncc\ndd", viewportWidthCells: 80)
+
+        // Anchor in line 0, drag into line 3 (inside "cc").
+        try ui.setLineSelection(anchorOffset: 0, activeOffset: 8)
+        let a = try ui.selectionOffsets()
+        XCTAssertEqual(a.start, 0)
+        XCTAssertEqual(a.end, 10) // "aa\nbb\n\ncc\n"
+
+        // Reverse direction should produce the same range.
+        try ui.setLineSelection(anchorOffset: 8, activeOffset: 0)
+        let b = try ui.selectionOffsets()
+        XCTAssertEqual(b.start, 0)
+        XCTAssertEqual(b.end, 10)
+
+        // Last line has no trailing newline.
+        try ui.setLineSelection(anchorOffset: 10, activeOffset: 11)
+        let last = try ui.selectionOffsets()
+        XCTAssertEqual(last.start, 10)
+        XCTAssertEqual(last.end, 12)
+    }
+
     func testCreateInsertUndoRedoRenderAndQueries() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)

@@ -385,6 +385,11 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_select_line")
     }
 
+    public func setLineSelection(anchorOffset: UInt32, activeOffset: UInt32) throws {
+        let status = library.editorUiSetLineSelectionOffsetsFn(handle, anchorOffset, activeOffset)
+        try library.ensureStatus(status, context: "editor_ui_set_line_selection_offsets")
+    }
+
     public func selectParagraph(atCharOffset charOffset: UInt32) throws {
         let status = library.editorUiSelectParagraphAtCharOffsetFn(handle, charOffset)
         try library.ensureStatus(status, context: "editor_ui_select_paragraph_at_char_offset")

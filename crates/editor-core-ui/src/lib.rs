@@ -229,6 +229,32 @@ impl EditorUi {
         Ok(())
     }
 
+    /// 按行扩展选择：给定 anchor/active 两个 char offset，选择覆盖它们所在行的并集。
+    ///
+    /// 语义类似 “三击选中行后拖拽按行扩展”：
+    /// - start 为最上面一行的行首
+    /// - end 尽量包含最下面一行的换行（若存在下一行）
+    pub fn set_line_selection_offsets(
+        &mut self,
+        anchor_offset: usize,
+        active_offset: usize,
+    ) -> Result<(), UiError> {
+        let line_index = &self.state.editor().line_index;
+        let line_count = line_index.line_count();
+        if line_count == 0 {
+            return Ok(());
+        }
+
+        let (a_line, _a_col) = line_index.char_offset_to_position(anchor_offset);
+        let (b_line, _b_col) = line_index.char_offset_to_position(active_offset);
+
+        let start_line = a_line.min(b_line);
+        let end_line = a_line.max(b_line);
+        let (start, end) = self.paragraph_offsets_for_line_range(start_line, end_line);
+        self.set_selections_offsets(&[(start, end)], 0)?;
+        Ok(())
+    }
+
     /// 选择一个“段落”（以空行分隔的连续行块）。
     ///
     /// - 段落定义：连续的“空行”或连续的“非空行”构成一个段落。
