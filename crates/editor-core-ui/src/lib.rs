@@ -13,7 +13,7 @@ use editor_core::intervals::Interval;
 use editor_core_lsp::{
     LspNotification, encode_semantic_style_id, lsp_code_lens_to_processing_edit,
     lsp_diagnostics_to_processing_edits, lsp_document_links_to_processing_edits,
-    lsp_inlay_hints_to_processing_edit,
+    lsp_document_highlights_to_processing_edit, lsp_inlay_hints_to_processing_edit,
     semantic_tokens_to_intervals,
 };
 use editor_core_render_skia::{
@@ -639,6 +639,18 @@ impl EditorUi {
                 layer: StyleLayerId::SEMANTIC_TOKENS,
                 intervals,
             }]);
+        Ok(())
+    }
+
+    /// Apply LSP document highlight result payload (`DocumentHighlight[] | null`) as a style layer.
+    ///
+    /// The caller should pass the raw `result` JSON from `textDocument/documentHighlight`.
+    pub fn lsp_apply_document_highlights_json(&mut self, result_json: &str) -> Result<(), UiError> {
+        let result_value: serde_json::Value =
+            serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        let line_index = &self.state.editor().line_index;
+        let edit = lsp_document_highlights_to_processing_edit(line_index, &result_value);
+        self.state.apply_processing_edits([edit]);
         Ok(())
     }
 
@@ -2433,5 +2445,53 @@ fn main() {
         let rgba = ui.render_rgba_visible().unwrap();
         // Underline is drawn at y = line_height_px - 1 (scale=1), i.e. y=9.
         assert_eq!(pixel(&rgba, 200, 15, 9), [1, 200, 2, 255]);
+    }
+
+    #[test]
+    fn ui_lsp_document_highlights_apply_style_layer() {
+        // Use a space at the highlighted location so glyph rasterization does not affect the pixel sample.
+        let mut ui = EditorUi::new("a c\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 40,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_theme(RenderTheme {
+            background: editor_core_render_skia::Rgba8::new(10, 20, 30, 255),
+            foreground: editor_core_render_skia::Rgba8::new(250, 250, 250, 255),
+            selection_background: editor_core_render_skia::Rgba8::new(200, 0, 0, 255),
+            caret: editor_core_render_skia::Rgba8::new(10, 20, 30, 255), // invisible
+            styles: {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert(
+                    editor_core::DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
+                    editor_core_render_skia::StyleColors::new(
+                        None,
+                        Some(editor_core_render_skia::Rgba8::new(1, 200, 2, 255)),
+                    ),
+                );
+                m
+            },
+        });
+        ui.set_viewport_px(200, 40, 1.0).unwrap();
+
+        let result_json = r#"[
+          {
+            "range": {
+              "start": { "line": 0, "character": 1 },
+              "end": { "line": 0, "character": 2 }
+            },
+            "kind": 1
+          }
+        ]"#;
+        ui.lsp_apply_document_highlights_json(result_json).unwrap();
+
+        let rgba = ui.render_rgba_visible().unwrap();
+        // Highlighted cell at col=1 => x in [10..20]
+        assert_eq!(pixel(&rgba, 200, 15, 10), [1, 200, 2, 255]);
     }
 }

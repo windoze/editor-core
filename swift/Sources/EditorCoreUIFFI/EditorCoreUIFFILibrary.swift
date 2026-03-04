@@ -26,6 +26,7 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiLspApplyInlayHintsJSON = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
     typealias FnEditorUiLspApplyCodeLensJSON = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
     typealias FnEditorUiLspApplyDocumentLinksJSON = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
+    typealias FnEditorUiLspApplyDocumentHighlightsJSON = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
     typealias FnEditorUiLspApplySemanticTokens = @convention(c) (OpaquePointer?, UnsafePointer<UInt32>?, UInt32) -> Int32
 
     typealias FnEditorUiSetRenderMetrics = @convention(c) (OpaquePointer?, Float, Float, Float, Float, Float) -> Int32
@@ -119,6 +120,7 @@ public final class EditorCoreUIFFILibrary {
     let editorUiLspApplyInlayHintsJSONFn: FnEditorUiLspApplyInlayHintsJSON
     let editorUiLspApplyCodeLensJSONFn: FnEditorUiLspApplyCodeLensJSON
     let editorUiLspApplyDocumentLinksJSONFn: FnEditorUiLspApplyDocumentLinksJSON
+    let editorUiLspApplyDocumentHighlightsJSONFn: FnEditorUiLspApplyDocumentHighlightsJSON
     let editorUiLspApplySemanticTokensFn: FnEditorUiLspApplySemanticTokens
 
     let editorUiSetRenderMetricsFn: FnEditorUiSetRenderMetrics
@@ -221,6 +223,7 @@ public final class EditorCoreUIFFILibrary {
         editorUiLspApplyInlayHintsJSONFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_json", as: FnEditorUiLspApplyInlayHintsJSON.self)
         editorUiLspApplyCodeLensJSONFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_json", as: FnEditorUiLspApplyCodeLensJSON.self)
         editorUiLspApplyDocumentLinksJSONFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_lsp_apply_document_links_json", as: FnEditorUiLspApplyDocumentLinksJSON.self)
+        editorUiLspApplyDocumentHighlightsJSONFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_json", as: FnEditorUiLspApplyDocumentHighlightsJSON.self)
         editorUiLspApplySemanticTokensFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens", as: FnEditorUiLspApplySemanticTokens.self)
 
         editorUiSetRenderMetricsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_render_metrics", as: FnEditorUiSetRenderMetrics.self)

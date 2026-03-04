@@ -631,6 +631,31 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_document_links_json(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_json(
+    ui: *mut EditorUi,
+    document_highlights_result_json_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let json = require_cstr(
+            document_highlights_result_json_utf8,
+            "document_highlights_result_json_utf8",
+        )?
+        .to_str()
+        .map_err(|_| "document_highlights_result_json_utf8 is not valid UTF-8".to_string())?;
+        ui.lsp_apply_document_highlights_json(json)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(
     ui: *mut EditorUi,
     data: *const u32,
@@ -3039,6 +3064,104 @@ contexts:
 
         // Underline is at y = line_height_px - 1 (scale=1), i.e. y=9. Link range is at col=1 => x in [10..20].
         assert_eq!(pixel(&buf, 200, 15, 9), [1, 200, 2, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_lsp_document_highlights_affect_rendering() {
+        // Use a space in the highlighted range so glyph rasterization does not affect the pixel sample.
+        let initial = CString::new("a c\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let theme = EcuTheme {
+            background: EcuRgba8 {
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 255,
+            },
+            foreground: EcuRgba8 {
+                r: 250,
+                g: 250,
+                b: 250,
+                a: 255,
+            },
+            selection_background: EcuRgba8 {
+                r: 200,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            caret: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 200,
+                a: 255,
+            },
+        };
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 40, 1.0),
+            ECU_OK
+        );
+
+        // Built-in style id for LSP document highlight text: 0x0400_0001
+        let styles = [EcuStyleColors {
+            style_id: 0x0400_0001,
+            flags: ECU_STYLE_FLAG_BACKGROUND,
+            foreground: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            background: EcuRgba8 {
+                r: 1,
+                g: 200,
+                b: 2,
+                a: 255,
+            },
+        }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            ECU_OK
+        );
+
+        let result = CString::new(
+            r#"[
+              {
+                "range": { "start": { "line": 0, "character": 1 }, "end": { "line": 0, "character": 2 } },
+                "kind": 1
+              }
+            ]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_json(ui, result.as_ptr()),
+            ECU_OK
+        );
+
+        let mut out_len: u32 = 0;
+        let mut buf = vec![0u8; 200 * 40 * 4];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
+            ECU_OK
+        );
+        assert_eq!(out_len as usize, buf.len());
+
+        // Highlighted cell at col=1 => x in [10..20]
+        assert_eq!(pixel(&buf, 200, 15, 10), [1, 200, 2, 255]);
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }
