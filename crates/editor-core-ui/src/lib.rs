@@ -11,8 +11,8 @@ use editor_core::{
 };
 use editor_core::intervals::Interval;
 use editor_core_lsp::{
-    LspNotification, encode_semantic_style_id, lsp_diagnostics_to_processing_edits,
-    lsp_inlay_hints_to_processing_edit,
+    LspNotification, encode_semantic_style_id, lsp_code_lens_to_processing_edit,
+    lsp_diagnostics_to_processing_edits, lsp_inlay_hints_to_processing_edit,
     semantic_tokens_to_intervals,
 };
 use editor_core_render_skia::{
@@ -649,6 +649,18 @@ impl EditorUi {
             serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
         let line_index = &self.state.editor().line_index;
         let edit = lsp_inlay_hints_to_processing_edit(line_index, &result_value);
+        self.state.apply_processing_edits([edit]);
+        Ok(())
+    }
+
+    /// Apply LSP code lens result payload (`CodeLens[] | null`) as decorations.
+    ///
+    /// The caller should pass the raw `result` JSON from `textDocument/codeLens`.
+    pub fn lsp_apply_code_lens_json(&mut self, result_json: &str) -> Result<(), UiError> {
+        let result_value: serde_json::Value =
+            serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        let line_index = &self.state.editor().line_index;
+        let edit = lsp_code_lens_to_processing_edit(line_index, &result_value);
         self.state.apply_processing_edits([edit]);
         Ok(())
     }

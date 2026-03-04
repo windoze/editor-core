@@ -441,6 +441,42 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(pt.lineHeightPx, 20)
     }
 
+    func testLspCodeLensAffectRendering() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        // Use a space in the code lens title so glyph rasterization does not affect the pixel sample.
+        let ui = try EditorUI(library: lib, initialText: "line1\nline2\n", viewportWidthCells: 80)
+
+        try ui.setTheme(
+            EcuTheme(
+                background: EcuRgba8(r: 10, g: 20, b: 30, a: 255),
+                foreground: EcuRgba8(r: 250, g: 250, b: 250, a: 255),
+                selectionBackground: EcuRgba8(r: 200, g: 0, b: 0, a: 255),
+                caret: EcuRgba8(r: 0, g: 0, b: 200, a: 255)
+            )
+        )
+        try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 200, heightPx: 40, scale: 1)
+
+        // Built-in style id for LSP code lens virtual text: 0x0800_0002
+        try ui.setStyleColors([EcuStyleColors(styleId: 0x0800_0002, background: EcuRgba8(r: 1, g: 200, b: 2, a: 255))])
+
+        let result = """
+        [
+          {
+            "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+            "command": { "title": " ", "command": "noop" }
+          }
+        ]
+        """
+        try ui.lspApplyCodeLensJSON(result)
+
+        var rgba: [UInt8] = []
+        _ = try ui.renderRGBA(into: &rgba)
+
+        // Code lens is an above-line virtual line inserted at the very top => row=0, col=0.
+        XCTAssertEqual(pixel(rgba, widthPx: 200, x: 5, y: 10), [1, 200, 2, 255])
+    }
+
     func testMultiSelectionsSetGetAndInsertTextAppliesToAllCarets() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "abc\ndef\n", viewportWidthCells: 80)
