@@ -481,7 +481,29 @@ impl SkiaRenderer {
             canvas.draw_rect(sep_rect, &sep_paint);
         }
 
-        // Selections first (under text).
+        // 1) Draw per-cell backgrounds (including styled backgrounds).
+        //
+        // Selection is an overlay and must win over style backgrounds, so we draw it in a
+        // separate pass *after* this.
+        for (row_idx, line) in grid.lines.iter().enumerate() {
+            let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
+            let mut x_cells = line.segment_x_start_cells as u32;
+            for cell in &line.cells {
+                let (_fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
+                if bg != theme.background {
+                    let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
+                    let mut bg_paint = Paint::default();
+                    bg_paint.set_anti_alias(false);
+                    bg_paint.set_color(rgba_to_skia_color(bg));
+                    canvas.draw_rect(rect, &bg_paint);
+                }
+                x_cells = x_cells.saturating_add(cell.width as u32);
+            }
+        }
+
+        // 2) Selection overlay (under text, over backgrounds).
         for sel in selections {
             draw_selection(
                 canvas,
@@ -505,6 +527,7 @@ impl SkiaRenderer {
         }
         baseline_offset = baseline_offset.clamp(0.0, config.line_height_px.max(1.0));
 
+        // Text + underlines.
         for (row_idx, line) in grid.lines.iter().enumerate() {
             let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
             let baseline_y = y_top + baseline_offset;
@@ -581,16 +604,7 @@ impl SkiaRenderer {
 
             for cell in &line.cells {
                 let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
-                let (fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
-
-                if bg != theme.background {
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
-                    let mut bg_paint = Paint::default();
-                    bg_paint.set_anti_alias(false);
-                    bg_paint.set_color(rgba_to_skia_color(bg));
-                    canvas.draw_rect(rect, &bg_paint);
-                }
+                let (fg, _bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
 
                 // Record IME marked text underline to draw *after* text, so it stays visible.
                 if cell.styles.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID) {
@@ -763,6 +777,70 @@ impl SkiaRenderer {
         }
         baseline_offset = baseline_offset.clamp(0.0, config.line_height_px.max(1.0));
 
+        // 1) Draw per-cell backgrounds (including styled backgrounds).
+        for (row_idx, line) in grid.lines.iter().enumerate() {
+            let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
+            let mut x_cells: u32 = 0;
+            for cell in &line.cells {
+                let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
+                let (_fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
+                if bg != theme.background {
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
+                    let mut bg_paint = Paint::default();
+                    bg_paint.set_anti_alias(false);
+                    bg_paint.set_color(rgba_to_skia_color(bg));
+                    canvas.draw_rect(rect, &bg_paint);
+                }
+                x_cells = x_cells.saturating_add(cell.width as u32);
+            }
+        }
+
+        // 2) Selection overlay (under text, over backgrounds).
+        //
+        // Note: selection highlight is applied only to document cells. Virtual text is not
+        // considered part of the selection.
+        let mut sel_ranges: Vec<(usize, usize)> = Vec::new();
+        for (a, b) in selection_ranges {
+            if *a == *b {
+                continue;
+            }
+            if *a <= *b {
+                sel_ranges.push((*a, *b));
+            } else {
+                sel_ranges.push((*b, *a));
+            }
+        }
+
+        if !sel_ranges.is_empty() {
+            for (row_idx, line) in grid.lines.iter().enumerate() {
+                if !matches!(line.kind, ComposedLineKind::Document { .. }) {
+                    continue;
+                }
+                let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
+                let mut x_cells: u32 = 0;
+                for cell in &line.cells {
+                    let selected = match cell.source {
+                        ComposedCellSource::Document { offset } => sel_ranges
+                            .iter()
+                            .any(|(s, e)| offset >= *s && offset < *e),
+                        _ => false,
+                    };
+                    if selected {
+                        let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
+                        let w_px = cell.width as f32 * config.cell_width_px;
+                        let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
+                        let mut sel_paint = Paint::default();
+                        sel_paint.set_anti_alias(false);
+                        sel_paint.set_color(rgba_to_skia_color(theme.selection_background));
+                        canvas.draw_rect(rect, &sel_paint);
+                    }
+                    x_cells = x_cells.saturating_add(cell.width as u32);
+                }
+            }
+        }
+
+        // 3) Text + underlines.
         for (row_idx, line) in grid.lines.iter().enumerate() {
             let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
             let baseline_y = y_top + baseline_offset;
@@ -854,48 +932,9 @@ impl SkiaRenderer {
                 );
             };
 
-            // Precompute selection ranges once (small list).
-            let mut sel_ranges: Vec<(usize, usize)> = Vec::new();
-            for (a, b) in selection_ranges {
-                if *a == *b {
-                    continue;
-                }
-                if *a <= *b {
-                    sel_ranges.push((*a, *b));
-                } else {
-                    sel_ranges.push((*b, *a));
-                }
-            }
-
             for cell in &line.cells {
                 let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
-                let (fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
-
-                // Selection (under text, document-only).
-                if !sel_ranges.is_empty() {
-                    if let ComposedCellSource::Document { offset } = cell.source {
-                        if sel_ranges
-                            .iter()
-                            .any(|(s, e)| offset >= *s && offset < *e)
-                        {
-                            let w_px = cell.width as f32 * config.cell_width_px;
-                            let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
-                            let mut sel_paint = Paint::default();
-                            sel_paint.set_anti_alias(false);
-                            sel_paint.set_color(rgba_to_skia_color(theme.selection_background));
-                            canvas.draw_rect(rect, &sel_paint);
-                        }
-                    }
-                }
-
-                if bg != theme.background {
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
-                    let mut bg_paint = Paint::default();
-                    bg_paint.set_anti_alias(false);
-                    bg_paint.set_color(rgba_to_skia_color(bg));
-                    canvas.draw_rect(rect, &bg_paint);
-                }
+                let (fg, _bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
 
                 // Record IME marked text underline to draw *after* text, so it stays visible.
                 if cell.styles.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID) {
@@ -1672,6 +1711,129 @@ mod tests {
 
         // Cell 'b' is at x in [10..20], pick center pixel.
         assert_eq!(pixel(&rgba, cfg.width_px, 15, 10), [1, 200, 2, 255]);
+    }
+
+    #[test]
+    fn render_selection_overrides_style_background() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        // Use a styled space so glyph rasterization does not affect the background pixel sample.
+        line.add_cell(Cell::new('a', 1));
+        line.add_cell(Cell::with_styles(' ', 1, vec![42]));
+        line.add_cell(Cell::new('c', 1));
+        grid.add_line(line);
+
+        let mut theme = RenderTheme {
+            background: Rgba8::new(10, 20, 30, 255),
+            foreground: Rgba8::new(250, 250, 250, 255),
+            selection_background: Rgba8::new(200, 0, 0, 255),
+            caret: Rgba8::new(10, 20, 30, 255), // invisible
+            styles: BTreeMap::new(),
+        };
+        theme
+            .styles
+            .insert(42, StyleColors::new(None, Some(Rgba8::new(1, 200, 2, 255))));
+
+        let cfg = RenderConfig {
+            width_px: 80,
+            height_px: 40,
+            scale: 1.0,
+            font_size: 12.0,
+            line_height_px: 20.0,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            gutter_width_cells: 0,
+            enable_ligatures: false,
+        };
+
+        let rgba = renderer
+            .render_rgba(
+                &grid,
+                &[],
+                &[VisualSelection {
+                    start_row: 0,
+                    start_x_cells: 1,
+                    end_row: 0,
+                    end_x_cells: 2,
+                }],
+                &[],
+                cfg,
+                &theme,
+            )
+            .unwrap();
+
+        // The styled cell would normally be green-ish, but selection must win.
+        assert_eq!(pixel(&rgba, cfg.width_px, 15, 10), [200, 0, 0, 255]);
+    }
+
+    #[test]
+    fn render_composed_selection_overrides_style_background() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = ComposedGrid::new(0, 1);
+        grid.lines.push(ComposedLine {
+            kind: ComposedLineKind::Document {
+                logical_line: 0,
+                visual_in_logical: 0,
+            },
+            char_offset_start: 0,
+            char_offset_end: 3,
+            cells: vec![
+                ComposedCell {
+                    ch: 'a',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Document { offset: 0 },
+                },
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: vec![42],
+                    source: ComposedCellSource::Document { offset: 1 },
+                },
+                ComposedCell {
+                    ch: 'c',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Document { offset: 2 },
+                },
+            ],
+        });
+
+        let mut theme = RenderTheme {
+            background: Rgba8::new(10, 20, 30, 255),
+            foreground: Rgba8::new(250, 250, 250, 255),
+            selection_background: Rgba8::new(200, 0, 0, 255),
+            caret: Rgba8::new(10, 20, 30, 255), // invisible
+            styles: BTreeMap::new(),
+        };
+        theme
+            .styles
+            .insert(42, StyleColors::new(None, Some(Rgba8::new(1, 200, 2, 255))));
+
+        let cfg = RenderConfig {
+            width_px: 80,
+            height_px: 40,
+            scale: 1.0,
+            font_size: 12.0,
+            line_height_px: 20.0,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            gutter_width_cells: 0,
+            enable_ligatures: false,
+        };
+
+        let mut out = vec![0u8; (cfg.width_px * cfg.height_px * 4) as usize];
+        renderer
+            .render_composed_rgba_into(&grid, &[], &[(1, 2)], &[], cfg, &theme, &mut out)
+            .unwrap();
+
+        // Selected styled cell: x in [10..20], pick center pixel.
+        assert_eq!(pixel(&out, cfg.width_px, 15, 10), [200, 0, 0, 255]);
     }
 
     #[test]
