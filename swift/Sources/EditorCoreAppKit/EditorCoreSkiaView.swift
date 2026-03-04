@@ -25,7 +25,7 @@ public final class EditorCoreSkiaView: NSView {
     private var gutterWidthCells: UInt32 = 4
 
     private var rectSelectionAnchorOffset: UInt32?
-    private var paragraphSelectionAnchorOffset: UInt32?
+    private var lineSelectionAnchorOffset: UInt32?
 
     private lazy var textInputContext = NSTextInputContext(client: self)
 
@@ -296,7 +296,7 @@ public final class EditorCoreSkiaView: NSView {
         debugLogInput(event, xPx: xPx, yPx: yPx, phase: "down", force: true)
 
         rectSelectionAnchorOffset = nil
-        paragraphSelectionAnchorOffset = nil
+        lineSelectionAnchorOffset = nil
 
         do {
             if event.modifierFlags.contains(.command) {
@@ -316,10 +316,9 @@ public final class EditorCoreSkiaView: NSView {
                 } else if event.clickCount >= 3 {
                     // Triple-click: select line (code editor behavior).
                     //
-                    // If user keeps dragging after triple-click, we switch to paragraph-union selection
-                    // (see `mouseDragged`) to support "triple-click-then-drag selects by paragraph".
+                    // If user keeps dragging after triple-click, we extend the selection by full lines.
                     let anchor = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-                    paragraphSelectionAnchorOffset = anchor
+                    lineSelectionAnchorOffset = anchor
                     try editor.mouseDown(xPx: xPx, yPx: yPx)
                     try editor.selectLine()
                 } else {
@@ -343,9 +342,9 @@ public final class EditorCoreSkiaView: NSView {
             if let anchor = rectSelectionAnchorOffset {
                 let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
                 try editor.setRectSelection(anchorOffset: anchor, activeOffset: active)
-            } else if let anchor = paragraphSelectionAnchorOffset {
+            } else if let anchor = lineSelectionAnchorOffset {
                 let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-                try editor.setParagraphSelection(anchorOffset: anchor, activeOffset: active)
+                try editor.setLineSelection(anchorOffset: anchor, activeOffset: active)
             } else {
                 try editor.mouseDragged(xPx: xPx, yPx: yPx)
             }
@@ -358,7 +357,7 @@ public final class EditorCoreSkiaView: NSView {
 
     public override func mouseUp(with event: NSEvent) {
         rectSelectionAnchorOffset = nil
-        paragraphSelectionAnchorOffset = nil
+        lineSelectionAnchorOffset = nil
         editor.mouseUp()
         needsDisplay = true
         invalidateIMECharacterCoordinates()
