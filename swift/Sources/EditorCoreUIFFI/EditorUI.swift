@@ -148,6 +148,26 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_font_ligatures_enabled")
     }
 
+    /// Configure the ASCII word-boundary character set for editor-friendly "word" operations.
+    ///
+    /// This is similar in spirit to VSCode's `wordSeparators`.
+    ///
+    /// Notes:
+    /// - Only ASCII characters are configurable here; non-ASCII characters are always treated as boundaries.
+    /// - ASCII whitespace is always treated as a boundary.
+    public func setWordBoundaryAsciiBoundaryChars(_ boundaryChars: String) throws {
+        let status = boundaryChars.withCString { cstr in
+            library.editorUiSetWordBoundaryAsciiBoundaryCharsFn(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_set_word_boundary_ascii_boundary_chars")
+    }
+
+    /// Reset word-boundary configuration to the default (ASCII identifier-like words).
+    public func resetWordBoundaryDefaults() throws {
+        let status = library.editorUiResetWordBoundaryDefaultsFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_reset_word_boundary_defaults")
+    }
+
     public func setGutterWidthCells(_ widthCells: UInt32) throws {
         let status = library.editorUiSetGutterWidthCellsFn(handle, widthCells)
         try library.ensureStatus(status, context: "editor_ui_set_gutter_width_cells")

@@ -74,6 +74,33 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(s2.end, 13)
     }
 
+    func testWordBoundaryConfigAffectsSelectWord() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "foo-bar", viewportWidthCells: 80)
+
+        try ui.setSelections([EcuSelectionRange(start: 1, end: 1)], primaryIndex: 0)
+        try ui.selectWord()
+        let s1 = try ui.selectionOffsets()
+        XCTAssertEqual(s1.start, 0)
+        XCTAssertEqual(s1.end, 3)
+
+        // Make '-' a word char by not including it in the boundary set.
+        try ui.setWordBoundaryAsciiBoundaryChars(".")
+        try ui.setSelections([EcuSelectionRange(start: 1, end: 1)], primaryIndex: 0)
+        try ui.selectWord()
+        let s2 = try ui.selectionOffsets()
+        XCTAssertEqual(s2.start, 0)
+        XCTAssertEqual(s2.end, 7)
+
+        // Reset defaults: '-' becomes a boundary again.
+        try ui.resetWordBoundaryDefaults()
+        try ui.setSelections([EcuSelectionRange(start: 1, end: 1)], primaryIndex: 0)
+        try ui.selectWord()
+        let s3 = try ui.selectionOffsets()
+        XCTAssertEqual(s3.start, 0)
+        XCTAssertEqual(s3.end, 3)
+    }
+
     func testCreateInsertUndoRedoRenderAndQueries() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)
