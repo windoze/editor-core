@@ -357,12 +357,29 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    /// Get selected text (primary + secondary selections), joined with `\\n`.
+    public func selectedText() throws -> String {
+        guard let ptr = library.editorUiGetSelectedTextFn(handle) else {
+            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_get_selected_text", message: library.lastErrorMessageString())
+        }
+        defer { library.stringFreeFn(ptr) }
+        return String(cString: ptr)
+    }
+
     public func selectionOffsets() throws -> (start: UInt32, end: UInt32) {
         var start: UInt32 = 0
         var end: UInt32 = 0
         let status = library.editorUiGetSelectionOffsetsFn(handle, &start, &end)
         try library.ensureStatus(status, context: "editor_ui_get_selection_offsets")
         return (start, end)
+    }
+
+    /// Delete only non-empty selections (primary + secondary), keeping empty carets intact.
+    ///
+    /// Intended for clipboard "cut" behavior.
+    public func deleteSelectionsOnly() throws {
+        let status = library.editorUiDeleteSelectionsOnlyFn(handle)
+        try library.ensureStatus(status, context: "editor_ui_delete_selections_only")
     }
 
     public func selections() throws -> (ranges: [EcuSelectionRange], primaryIndex: UInt32) {

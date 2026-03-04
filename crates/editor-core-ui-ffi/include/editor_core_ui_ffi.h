@@ -169,9 +169,15 @@ int32_t editor_core_ui_ffi_editor_ui_render_rgba(EditorUi* ui,
 
 char* editor_core_ui_ffi_editor_ui_get_text(EditorUi* ui);
 
+// Selected text (primary + secondary selections), joined with '\n'.
+char* editor_core_ui_ffi_editor_ui_get_selected_text(EditorUi* ui);
+
 int32_t editor_core_ui_ffi_editor_ui_get_selection_offsets(EditorUi* ui,
                                                            uint32_t* out_start,
                                                            uint32_t* out_end);
+
+// Delete only non-empty selections (primary + secondary), keeping empty carets intact.
+int32_t editor_core_ui_ffi_editor_ui_delete_selections_only(EditorUi* ui);
 
 int32_t editor_core_ui_ffi_editor_ui_get_selections(EditorUi* ui,
                                                     EcuSelectionRange* out_ranges,

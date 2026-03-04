@@ -133,6 +133,53 @@ impl EditorUi {
         }
     }
 
+    /// Get the selected text (primary + secondary selections), joined with `'\n'`.
+    ///
+    /// Notes:
+    /// - Empty selections (carets) are ignored.
+    /// - The primary selection is placed first, followed by secondary selections in their
+    ///   current order.
+    pub fn selected_text(&self) -> String {
+        let cursor = self.state.get_cursor_state();
+        let line_index = &self.state.editor().line_index;
+
+        let mut order: Vec<usize> = Vec::with_capacity(cursor.selections.len());
+        if cursor.primary_selection_index < cursor.selections.len() {
+            order.push(cursor.primary_selection_index);
+        }
+        for idx in 0..cursor.selections.len() {
+            if idx != cursor.primary_selection_index {
+                order.push(idx);
+            }
+        }
+
+        let mut parts: Vec<String> = Vec::new();
+        for idx in order {
+            let sel = match cursor.selections.get(idx) {
+                Some(s) => s,
+                None => continue,
+            };
+            if sel.start == sel.end {
+                continue;
+            }
+
+            let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
+            let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
+            let (start, end) = if a <= b { (a, b) } else { (b, a) };
+            let len = end.saturating_sub(start);
+            if len == 0 {
+                continue;
+            }
+            parts.push(self.state.editor().piece_table.get_range(start, len));
+        }
+
+        if parts.len() == 1 {
+            parts.remove(0)
+        } else {
+            parts.join("\n")
+        }
+    }
+
     /// Return all selections (including primary) as character-offset ranges, plus the primary index.
     ///
     /// Each range is inclusive-exclusive in Unicode scalar indices.
@@ -151,6 +198,42 @@ impl EditorUi {
             }
         }
         (out, cursor.primary_selection_index)
+    }
+
+    /// Delete only non-empty selections (primary + secondary), keeping empty carets intact.
+    ///
+    /// This is intended for clipboard "cut" behavior.
+    pub fn delete_selections_only(&mut self) -> Result<(), UiError> {
+        let cursor = self.state.get_cursor_state();
+        let line_index = &self.state.editor().line_index;
+
+        let mut edits: Vec<editor_core::TextEditSpec> = Vec::new();
+        for sel in &cursor.selections {
+            if sel.start == sel.end {
+                continue;
+            }
+
+            let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
+            let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
+            let (start, end) = if a <= b { (a, b) } else { (b, a) };
+            if start == end {
+                continue;
+            }
+            edits.push(editor_core::TextEditSpec {
+                start,
+                end,
+                text: String::new(),
+            });
+        }
+
+        if edits.is_empty() {
+            return Ok(());
+        }
+
+        self.state
+            .execute(Command::Edit(EditCommand::ApplyTextEdits { edits }))?;
+        self.refresh_processing()?;
+        Ok(())
     }
 
     /// Replace the current selection set (including primary) from character-offset ranges.
@@ -1669,6 +1752,25 @@ mod tests {
         ui2.set_selections_offsets(&[(0, 0)], 0).unwrap(); // caret at start
         ui2.delete_forward().unwrap();
         assert_eq!(ui2.text(), "");
+    }
+
+    #[test]
+    fn ui_selected_text_and_delete_selections_only() {
+        let mut ui = EditorUi::new("one two three", 80);
+
+        // Multi-selection: "one" and "three" (skip the caret between them).
+        ui.set_selections_offsets(&[(0, 3), (4, 4), (8, 13)], 0)
+            .unwrap();
+        assert_eq!(ui.selected_text(), "one\nthree");
+
+        // Cut should delete only the non-empty selections.
+        ui.delete_selections_only().unwrap();
+        assert_eq!(ui.text(), " two ");
+
+        // With no selection, delete_selections_only is a no-op.
+        ui.set_selections_offsets(&[(1, 1)], 0).unwrap();
+        ui.delete_selections_only().unwrap();
+        assert_eq!(ui.text(), " two ");
     }
 
     #[test]

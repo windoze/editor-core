@@ -69,8 +69,10 @@ public final class EditorCoreUIFFILibrary {
     ) -> Int32
 
     typealias FnEditorUiGetText = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
+    typealias FnEditorUiGetSelectedText = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
 
     typealias FnEditorUiGetSelectionOffsets = @convention(c) (OpaquePointer?, UnsafeMutablePointer<UInt32>?, UnsafeMutablePointer<UInt32>?) -> Int32
+    typealias FnEditorUiDeleteSelectionsOnly = @convention(c) (OpaquePointer?) -> Int32
     typealias FnEditorUiGetSelections = @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UnsafeMutablePointer<UInt32>?, UnsafeMutablePointer<UInt32>?) -> Int32
     typealias FnEditorUiSetSelections = @convention(c) (OpaquePointer?, UnsafeRawPointer?, UInt32, UInt32) -> Int32
     typealias FnEditorUiSetRectSelection = @convention(c) (OpaquePointer?, UInt32, UInt32) -> Int32
@@ -153,7 +155,9 @@ public final class EditorCoreUIFFILibrary {
     let editorUiMouseUpFn: FnEditorUiMouseUp
     let editorUiRenderRGBAFn: FnEditorUiRenderRGBA
     let editorUiGetTextFn: FnEditorUiGetText
+    let editorUiGetSelectedTextFn: FnEditorUiGetSelectedText
     let editorUiGetSelectionOffsetsFn: FnEditorUiGetSelectionOffsets
+    let editorUiDeleteSelectionsOnlyFn: FnEditorUiDeleteSelectionsOnly
     let editorUiGetSelectionsFn: FnEditorUiGetSelections
     let editorUiSetSelectionsFn: FnEditorUiSetSelections
     let editorUiSetRectSelectionFn: FnEditorUiSetRectSelection
@@ -256,8 +260,10 @@ public final class EditorCoreUIFFILibrary {
         editorUiMouseUpFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_mouse_up", as: FnEditorUiMouseUp.self)
         editorUiRenderRGBAFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_render_rgba", as: FnEditorUiRenderRGBA.self)
         editorUiGetTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_get_text", as: FnEditorUiGetText.self)
+        editorUiGetSelectedTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_get_selected_text", as: FnEditorUiGetSelectedText.self)
 
         editorUiGetSelectionOffsetsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_get_selection_offsets", as: FnEditorUiGetSelectionOffsets.self)
+        editorUiDeleteSelectionsOnlyFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_delete_selections_only", as: FnEditorUiDeleteSelectionsOnly.self)
         editorUiGetSelectionsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_get_selections", as: FnEditorUiGetSelections.self)
         editorUiSetSelectionsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_selections", as: FnEditorUiSetSelections.self)
         editorUiSetRectSelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_rect_selection", as: FnEditorUiSetRectSelection.self)

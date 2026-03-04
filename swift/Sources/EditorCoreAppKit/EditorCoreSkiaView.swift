@@ -14,6 +14,11 @@ import Foundation
 public final class EditorCoreSkiaView: NSView {
     public let editor: EditorUI
 
+    /// Pasteboard used for copy/cut/paste. Defaults to `NSPasteboard.general`.
+    ///
+    /// Tests can override this to avoid touching the real system clipboard.
+    public var pasteboard: NSPasteboard = .general
+
     private var pixelBuffer: [UInt8] = []
     private var viewportWidthPx: UInt32 = 0
     private var viewportHeightPx: UInt32 = 0
@@ -496,6 +501,12 @@ public final class EditorCoreSkiaView: NSView {
     public override func doCommand(by selector: Selector) {
         do {
             switch selector {
+            case #selector(copy(_:)):
+                copy(nil)
+            case #selector(cut(_:)):
+                cut(nil)
+            case #selector(paste(_:)):
+                paste(nil)
             case #selector(moveLeft(_:)):
                 // 非 shift：如果有选区，先折叠选区到起点（符合多数编辑器习惯）。
                 let sel = try editor.selectionOffsets()
@@ -544,6 +555,47 @@ public final class EditorCoreSkiaView: NSView {
             default:
                 break
             }
+        } catch {
+            NSSound.beep()
+        }
+        needsDisplay = true
+        invalidateIMECharacterCoordinates()
+    }
+
+    // MARK: - Clipboard
+
+    @objc(copy:)
+    public func copy(_ sender: Any?) {
+        do {
+            let text = try editor.selectedText()
+            guard text.isEmpty == false else { return }
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    @objc(cut:)
+    public func cut(_ sender: Any?) {
+        do {
+            let text = try editor.selectedText()
+            guard text.isEmpty == false else { return }
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            try editor.deleteSelectionsOnly()
+            needsDisplay = true
+            invalidateIMECharacterCoordinates()
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    @objc(paste:)
+    public func paste(_ sender: Any?) {
+        guard let text = pasteboard.string(forType: .string), text.isEmpty == false else { return }
+        do {
+            try editor.commitText(text)
         } catch {
             NSSound.beep()
         }

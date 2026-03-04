@@ -1523,6 +1523,27 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_text(ui: *mut EditorUi) -> *m
     }
 }
 
+/// Get selected text (primary + secondary selections) as UTF-8, joined with `'\n'`.
+///
+/// Returns an allocated C string. Caller must free with [`editor_core_ui_ffi_string_free`].
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_get_selected_text(ui: *mut EditorUi) -> *mut c_char {
+    let default = ptr::null_mut();
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        Ok(make_c_string_ptr(ui.selected_text()))
+    }) {
+        Ok(ptr) => {
+            clear_last_error();
+            ptr
+        }
+        Err(err) => {
+            set_last_error(err);
+            default
+        }
+    }
+}
+
 /// Get primary selection offsets (character offsets).
 ///
 /// Writes `start` and `end` (inclusive-exclusive) offsets.
@@ -1546,6 +1567,23 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_selection_offsets(
             *out_end = end as u32;
         }
         Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Delete only non-empty selections (primary + secondary), keeping empty carets intact.
+///
+/// This is intended for clipboard "cut" behavior.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_delete_selections_only(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.delete_selections_only().map(|_| ECU_OK).map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -1863,6 +1901,54 @@ mod tests {
         );
         assert_eq!(out_len as usize, buf.len());
         assert_eq!(pixel(&buf, 80, 70, 30), [10, 20, 30, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_selected_text_and_delete_selections_only_roundtrip() {
+        let initial = CString::new("one two three").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        // Selections: "one", caret, "three".
+        let ranges = [
+            EcuSelectionRange { start: 0, end: 3 },
+            EcuSelectionRange { start: 4, end: 4 },
+            EcuSelectionRange { start: 8, end: 13 },
+        ];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(
+                ui,
+                ranges.as_ptr(),
+                ranges.len() as u32,
+                0
+            ),
+            ECU_OK
+        );
+
+        let sel_ptr = editor_core_ui_ffi_editor_ui_get_selected_text(ui);
+        assert!(!sel_ptr.is_null());
+        let sel = unsafe { CStr::from_ptr(sel_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        editor_core_ui_ffi_string_free(sel_ptr);
+        assert_eq!(sel, "one\nthree");
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_delete_selections_only(ui),
+            ECU_OK
+        );
+
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        assert!(!text_ptr.is_null());
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        editor_core_ui_ffi_string_free(text_ptr);
+        assert_eq!(text, " two ");
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }
