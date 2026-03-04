@@ -26,6 +26,7 @@ public final class EditorCoreSkiaView: NSView {
 
     private var rectSelectionAnchorOffset: UInt32?
     private var lineSelectionAnchorOffset: UInt32?
+    private var wordSelectionAnchorOffset: UInt32?
 
     private lazy var textInputContext = NSTextInputContext(client: self)
 
@@ -297,6 +298,7 @@ public final class EditorCoreSkiaView: NSView {
 
         rectSelectionAnchorOffset = nil
         lineSelectionAnchorOffset = nil
+        wordSelectionAnchorOffset = nil
 
         do {
             if event.modifierFlags.contains(.command) {
@@ -311,6 +313,8 @@ public final class EditorCoreSkiaView: NSView {
             } else {
                 // Double/triple click selection.
                 if event.clickCount == 2 {
+                    let anchor = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
+                    wordSelectionAnchorOffset = anchor
                     try editor.mouseDown(xPx: xPx, yPx: yPx)
                     try editor.selectWord()
                 } else if event.clickCount >= 3 {
@@ -345,6 +349,9 @@ public final class EditorCoreSkiaView: NSView {
             } else if let anchor = lineSelectionAnchorOffset {
                 let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
                 try editor.setLineSelection(anchorOffset: anchor, activeOffset: active)
+            } else if wordSelectionAnchorOffset != nil {
+                let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
+                try expandWordSelectionToward(activeOffset: active)
             } else {
                 try editor.mouseDragged(xPx: xPx, yPx: yPx)
             }
@@ -358,9 +365,32 @@ public final class EditorCoreSkiaView: NSView {
     public override func mouseUp(with event: NSEvent) {
         rectSelectionAnchorOffset = nil
         lineSelectionAnchorOffset = nil
+        wordSelectionAnchorOffset = nil
         editor.mouseUp()
         needsDisplay = true
         invalidateIMECharacterCoordinates()
+    }
+
+    private func expandWordSelectionToward(activeOffset: UInt32) throws {
+        // Expand-only (no shrinking): keep expanding by one word until the active point is inside
+        // the selection. Guard with a step limit to avoid infinite loops if the backend can't
+        // make progress (e.g. at document boundaries).
+        var remaining = 2048
+        while remaining > 0 {
+            let s = try editor.selectionOffsets()
+            if activeOffset < s.start {
+                try editor.expandSelectionBy(unit: .word, count: 1, direction: .backward)
+                let next = try editor.selectionOffsets()
+                if next.start == s.start { break }
+            } else if activeOffset > s.end {
+                try editor.expandSelectionBy(unit: .word, count: 1, direction: .forward)
+                let next = try editor.selectionOffsets()
+                if next.end == s.end { break }
+            } else {
+                break
+            }
+            remaining -= 1
+        }
     }
 
     public override func scrollWheel(with event: NSEvent) {
