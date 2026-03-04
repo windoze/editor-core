@@ -447,6 +447,19 @@ pub enum ViewCommand {
         /// Tab key behavior.
         behavior: TabKeyBehavior,
     },
+    /// Override the ASCII word-boundary character set used by editor-friendly "word" operations.
+    ///
+    /// This is similar in spirit to VSCode's `wordSeparators`.
+    ///
+    /// Notes:
+    /// - Only ASCII characters are configurable here; non-ASCII characters are always treated as boundaries.
+    /// - ASCII whitespace is always treated as a boundary.
+    SetWordBoundaryAsciiBoundaryChars {
+        /// ASCII word-boundary characters (as a string of separators).
+        boundary_chars: String,
+    },
+    /// Reset word-boundary configuration to the default (ASCII identifier-like words).
+    ResetWordBoundaryDefaults,
     /// Scroll to specified line
     ScrollTo {
         /// Logical line index to scroll to.
@@ -7662,6 +7675,15 @@ impl CommandExecutor {
             }
             ViewCommand::SetTabKeyBehavior { behavior } => {
                 self.tab_key_behavior = behavior;
+                Ok(CommandResult::Success)
+            }
+            ViewCommand::SetWordBoundaryAsciiBoundaryChars { boundary_chars } => {
+                self.editor
+                    .set_word_boundary_ascii_boundary_chars(&boundary_chars);
+                Ok(CommandResult::Success)
+            }
+            ViewCommand::ResetWordBoundaryDefaults => {
+                self.editor.reset_word_boundary_defaults();
                 Ok(CommandResult::Success)
             }
             ViewCommand::ScrollTo { line } => {

@@ -483,6 +483,8 @@ impl EditorStateManager {
             ) => Some(StateChangeType::ViewportChanged),
             Command::View(
                 ViewCommand::SetTabKeyBehavior { .. }
+                | ViewCommand::SetWordBoundaryAsciiBoundaryChars { .. }
+                | ViewCommand::ResetWordBoundaryDefaults
                 | ViewCommand::ScrollTo { .. }
                 | ViewCommand::GetViewport { .. },
             ) => None,
