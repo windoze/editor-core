@@ -4,7 +4,10 @@
 //! It does **not** own editor state. See `editor-core-ui` for the UI-facing
 //! composition layer (editor state + input mapping + rendering).
 
-use editor_core::{snapshot::HeadlessGrid, IME_MARKED_TEXT_STYLE_ID};
+use editor_core::{
+    snapshot::{ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind, HeadlessGrid},
+    IME_MARKED_TEXT_STYLE_ID,
+};
 use skia_safe::{
     AlphaType, Color, Color4f, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle,
     FourByteTag, GlyphId, ImageInfo, Paint, Point, Rect, surfaces,
@@ -663,6 +666,405 @@ impl SkiaRenderer {
 
         Ok(())
     }
+
+    /// Render a decoration-aware composed viewport `grid` into a caller-provided RGBA8 buffer.
+    ///
+    /// Differences from [`Self::render_rgba_into`]:
+    /// - Accepts carets and selections in **character offsets** (Unicode scalar indices), so the
+    ///   renderer can position them correctly even when virtual text (inlay hints, fold
+    ///   placeholders, wrap indent) is present.
+    /// - Selection highlight is applied only to document cells (`ComposedCellSource::Document`);
+    ///   virtual text is not considered part of the selection.
+    pub fn render_composed_rgba_into(
+        &mut self,
+        grid: &ComposedGrid,
+        caret_offsets: &[usize],
+        selection_ranges: &[(usize, usize)],
+        fold_markers: &[FoldMarker],
+        config: RenderConfig,
+        theme: &RenderTheme,
+        out_rgba: &mut [u8],
+    ) -> Result<(), RenderError> {
+        let required = Self::required_rgba_len(config)?;
+        if out_rgba.len() < required {
+            return Err(RenderError::BufferTooSmall {
+                required,
+                provided: out_rgba.len(),
+            });
+        }
+
+        self.ensure_font_size(config.font_size);
+
+        let width = config.width_px as i32;
+        let height = config.height_px as i32;
+
+        let bytes_per_row = config.width_px as usize * 4;
+        let pixels = &mut out_rgba[..required];
+
+        let info = ImageInfo::new(
+            (width, height),
+            ColorType::RGBA8888,
+            AlphaType::Premul,
+            Some(ColorSpace::new_srgb()),
+        );
+
+        let mut surface = surfaces::wrap_pixels(&info, pixels, bytes_per_row, None)
+            .ok_or(RenderError::SurfaceCreateFailed)?;
+
+        let canvas = surface.canvas();
+        canvas.clear(rgba_to_skia_color4f(theme.background));
+
+        let gutter_x = config.padding_x_px;
+        let gutter_w_px = config.gutter_width_cells as f32 * config.cell_width_px;
+        let text_origin_x = gutter_x + gutter_w_px;
+
+        if config.gutter_width_cells > 0 && gutter_w_px > 0.0 {
+            let gutter_bg =
+                resolve_style_background(GUTTER_BACKGROUND_STYLE_ID, theme, theme.background);
+            let rect = Rect::from_xywh(gutter_x, 0.0, gutter_w_px, config.height_px as f32);
+            let mut paint = Paint::default();
+            paint.set_anti_alias(false);
+            paint.set_color(rgba_to_skia_color(gutter_bg));
+            canvas.draw_rect(rect, &paint);
+
+            let sep =
+                resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
+            let sep_rect = Rect::from_xywh(text_origin_x, 0.0, 1.0, config.height_px as f32);
+            let mut sep_paint = Paint::default();
+            sep_paint.set_anti_alias(false);
+            sep_paint.set_color(rgba_to_skia_color(sep));
+            canvas.draw_rect(sep_rect, &sep_paint);
+        }
+
+        // Resolve caret positions in the composed grid (visible subset only).
+        #[derive(Debug, Clone, Copy)]
+        struct PendingCaret {
+            local_row: usize,
+            x_cells: u32,
+        }
+        let mut pending_carets: Vec<PendingCaret> = Vec::new();
+        for &caret_offset in caret_offsets {
+            let Some(local_row) = composed_line_index_for_offset(grid, caret_offset) else {
+                continue;
+            };
+            let line = &grid.lines[local_row];
+            let x_cells = caret_x_cells_in_composed_line(line, caret_offset);
+            pending_carets.push(PendingCaret { local_row, x_cells });
+        }
+
+        debug_assert!(
+            !self.fonts.is_empty(),
+            "SkiaRenderer must always have at least one font"
+        );
+        let (_spacing, metrics) = { self.fonts[0].metrics() };
+        let mut baseline_offset = -metrics.ascent;
+        if !baseline_offset.is_finite() {
+            baseline_offset = config.line_height_px * 0.8;
+        }
+        baseline_offset = baseline_offset.clamp(0.0, config.line_height_px.max(1.0));
+
+        for (row_idx, line) in grid.lines.iter().enumerate() {
+            let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
+            let baseline_y = y_top + baseline_offset;
+
+            // Gutter: fold markers + line numbers for document lines (first visual segment only).
+            if config.gutter_width_cells > 0 {
+                if let ComposedLineKind::Document {
+                    logical_line,
+                    visual_in_logical,
+                } = line.kind
+                {
+                    if visual_in_logical == 0 {
+                        let marker_state =
+                            fold_marker_state_for_line(logical_line as u32, fold_markers);
+                        if let Some(is_collapsed) = marker_state {
+                            let style_id = if is_collapsed {
+                                FOLD_MARKER_COLLAPSED_STYLE_ID
+                            } else {
+                                FOLD_MARKER_EXPANDED_STYLE_ID
+                            };
+                            let marker_color =
+                                resolve_style_background(style_id, theme, theme.foreground);
+                            let rect = Rect::from_xywh(
+                                gutter_x,
+                                y_top,
+                                config.cell_width_px,
+                                config.line_height_px,
+                            );
+                            let mut paint = Paint::default();
+                            paint.set_anti_alias(false);
+                            paint.set_color(rgba_to_skia_color(marker_color));
+                            canvas.draw_rect(rect, &paint);
+                        }
+
+                        // Line number text (best-effort; tests should not depend on glyph rasterization).
+                        let gutter_fg = resolve_style_foreground(
+                            GUTTER_FOREGROUND_STYLE_ID,
+                            theme,
+                            theme.foreground,
+                        );
+                        let mut paint = Paint::default();
+                        paint.set_anti_alias(false);
+                        paint.set_color(rgba_to_skia_color(gutter_fg));
+
+                        let line_no = (logical_line + 1).to_string();
+                        let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
+                        canvas.draw_str(line_no, Point::new(x_px, baseline_y), &self.fonts[0], &paint);
+                    }
+                }
+            }
+
+            #[derive(Debug)]
+            struct PendingRun {
+                start_x_cells: u32,
+                font_index: usize,
+                fg: Rgba8,
+                text: String,
+            }
+
+            let mut pending: Option<PendingRun> = None;
+            let mut underlines: Vec<(f32, f32, f32, Rgba8)> = Vec::new();
+
+            let mut x_cells: u32 = 0;
+
+            let flush = |renderer: &mut SkiaRenderer, pending: &mut Option<PendingRun>| {
+                let Some(run) = pending.take() else {
+                    return;
+                };
+                if run.text.is_empty() {
+                    return;
+                }
+                let x_px = text_origin_x + run.start_x_cells as f32 * config.cell_width_px;
+
+                let mut paint = Paint::default();
+                paint.set_anti_alias(true);
+                paint.set_color(rgba_to_skia_color(run.fg));
+
+                let font =
+                    &renderer.fonts[run.font_index.min(renderer.fonts.len().saturating_sub(1))];
+                renderer.draw_shaped_run(
+                    canvas,
+                    run.text.as_str(),
+                    font,
+                    x_px,
+                    baseline_y,
+                    config.cell_width_px,
+                    &paint,
+                    config.enable_ligatures,
+                );
+            };
+
+            // Precompute selection ranges once (small list).
+            let mut sel_ranges: Vec<(usize, usize)> = Vec::new();
+            for (a, b) in selection_ranges {
+                if *a == *b {
+                    continue;
+                }
+                if *a <= *b {
+                    sel_ranges.push((*a, *b));
+                } else {
+                    sel_ranges.push((*b, *a));
+                }
+            }
+
+            for cell in &line.cells {
+                let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
+                let (fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
+
+                // Selection (under text, document-only).
+                if !sel_ranges.is_empty() {
+                    if let ComposedCellSource::Document { offset } = cell.source {
+                        if sel_ranges
+                            .iter()
+                            .any(|(s, e)| offset >= *s && offset < *e)
+                        {
+                            let w_px = cell.width as f32 * config.cell_width_px;
+                            let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
+                            let mut sel_paint = Paint::default();
+                            sel_paint.set_anti_alias(false);
+                            sel_paint.set_color(rgba_to_skia_color(theme.selection_background));
+                            canvas.draw_rect(rect, &sel_paint);
+                        }
+                    }
+                }
+
+                if bg != theme.background {
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
+                    let mut bg_paint = Paint::default();
+                    bg_paint.set_anti_alias(false);
+                    bg_paint.set_color(rgba_to_skia_color(bg));
+                    canvas.draw_rect(rect, &bg_paint);
+                }
+
+                // Record IME marked text underline to draw *after* text, so it stays visible.
+                if cell.styles.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID) {
+                    let underline_h = config.scale.clamp(1.0, 2.0);
+                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    underlines.push((x_px, underline_y, w_px, fg));
+                }
+
+                // Record LSP diagnostics underline (style-layer based).
+                if let Some(&diag_id) = cell
+                    .styles
+                    .iter()
+                    .find(|&&id| is_lsp_diagnostics_style_id(id))
+                {
+                    let underline_h = config.scale.clamp(1.0, 2.0);
+                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    let u_color = resolve_underline_color(diag_id, theme, fg);
+                    underlines.push((x_px, underline_y, w_px, u_color));
+                }
+
+                let eligible_for_ligatures =
+                    config.enable_ligatures && cell.width == 1 && cell.ch.is_ascii();
+                if eligible_for_ligatures {
+                    let font_index = self.font_index_for_char(cell.ch);
+
+                    let can_extend = pending
+                        .as_ref()
+                        .is_some_and(|r| r.font_index == font_index && r.fg == fg);
+                    if !can_extend {
+                        flush(self, &mut pending);
+                        pending = Some(PendingRun {
+                            start_x_cells: x_cells,
+                            font_index,
+                            fg,
+                            text: String::new(),
+                        });
+                    }
+
+                    if let Some(r) = pending.as_mut() {
+                        r.text.push(cell.ch);
+                    }
+                } else {
+                    flush(self, &mut pending);
+
+                    let mut paint = Paint::default();
+                    paint.set_anti_alias(true);
+                    paint.set_color(rgba_to_skia_color(fg));
+                    canvas.draw_str(
+                        cell.ch.to_string(),
+                        Point::new(x_px, baseline_y),
+                        self.font_for_char(cell.ch),
+                        &paint,
+                    );
+                }
+
+                x_cells = x_cells.saturating_add(cell.width as u32);
+            }
+
+            flush(self, &mut pending);
+
+            // Underlines last.
+            for (x_px, underline_y, w_px, fg) in underlines {
+                let rect =
+                    Rect::from_xywh(x_px, underline_y, w_px, config.scale.clamp(1.0, 2.0));
+                let mut u_paint = Paint::default();
+                u_paint.set_anti_alias(false);
+                u_paint.set_color(rgba_to_skia_color(fg));
+                canvas.draw_rect(rect, &u_paint);
+            }
+        }
+
+        // Carets on top.
+        for caret in pending_carets {
+            let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
+            let y_top = config.padding_y_px + caret.local_row as f32 * config.line_height_px;
+
+            let caret_width = (config.scale.max(1.0)).min(2.0);
+            let rect = Rect::from_xywh(x_px, y_top, caret_width, config.line_height_px);
+
+            let mut paint = Paint::default();
+            paint.set_anti_alias(false);
+            paint.set_color(rgba_to_skia_color(theme.caret));
+            canvas.draw_rect(rect, &paint);
+        }
+
+        Ok(())
+    }
+}
+
+fn composed_line_index_for_offset(grid: &ComposedGrid, char_offset: usize) -> Option<usize> {
+    for (idx, line) in grid.lines.iter().enumerate() {
+        if !matches!(line.kind, ComposedLineKind::Document { .. }) {
+            continue;
+        }
+
+        let start = line.char_offset_start;
+        let end = line.char_offset_end;
+
+        if char_offset < start {
+            // Monotonic by construction; safe early break.
+            break;
+        }
+        if char_offset > end {
+            continue;
+        }
+        if char_offset < end {
+            return Some(idx);
+        }
+        // char_offset == end
+        //
+        // Prefer the next document line if it starts at the same offset (wrap boundary).
+        if let Some(next) = grid.lines.get(idx + 1) {
+            if matches!(next.kind, ComposedLineKind::Document { .. })
+                && next.char_offset_start == char_offset
+            {
+                continue;
+            }
+        }
+        return Some(idx);
+    }
+    None
+}
+
+fn indent_prefix_cell_count(line: &ComposedLine) -> usize {
+    let mut count = 0usize;
+    for cell in &line.cells {
+        match cell.source {
+            ComposedCellSource::Virtual { .. } => {
+                if !cell.styles.is_empty() || !cell.ch.is_whitespace() {
+                    break;
+                }
+                count = count.saturating_add(1);
+            }
+            ComposedCellSource::Document { .. } => break,
+        }
+    }
+    count
+}
+
+fn caret_x_cells_in_composed_line(line: &ComposedLine, char_offset: usize) -> u32 {
+    let indent_prefix = indent_prefix_cell_count(line);
+    let mut x_cells: u32 = 0;
+    for (idx, cell) in line.cells.iter().enumerate() {
+        let anchor = match cell.source {
+            ComposedCellSource::Document { offset } => offset,
+            ComposedCellSource::Virtual { anchor_offset } => anchor_offset,
+        };
+
+        if anchor < char_offset {
+            x_cells = x_cells.saturating_add(cell.width as u32);
+            continue;
+        }
+        if anchor > char_offset {
+            break;
+        }
+
+        // anchor == char_offset
+        //
+        // Wrap-indent virtual spaces should appear *before* the caret at the segment start.
+        let is_indent_prefix = idx < indent_prefix;
+        if is_indent_prefix {
+            x_cells = x_cells.saturating_add(cell.width as u32);
+            continue;
+        }
+        break;
+    }
+    x_cells
 }
 
 fn normalize_font_family_name(name: &str) -> String {
@@ -952,7 +1354,10 @@ fn resolve_underline_color(style_id: u32, theme: &RenderTheme, fallback: Rgba8) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use editor_core::snapshot::{Cell, HeadlessGrid, HeadlessLine};
+    use editor_core::snapshot::{
+        Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
+        HeadlessGrid, HeadlessLine,
+    };
     use skia_safe::shaper::TextBlobBuilderRunHandler;
     use skia_safe::TextBlobIter;
 
@@ -1267,6 +1672,151 @@ mod tests {
 
         // Cell 'b' is at x in [10..20], pick center pixel.
         assert_eq!(pixel(&rgba, cfg.width_px, 15, 10), [1, 200, 2, 255]);
+    }
+
+    #[test]
+    fn render_composed_selection_ignores_virtual_cells() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = ComposedGrid::new(0, 1);
+        grid.lines.push(ComposedLine {
+            kind: ComposedLineKind::Document {
+                logical_line: 0,
+                visual_in_logical: 0,
+            },
+            char_offset_start: 0,
+            char_offset_end: 1,
+            cells: vec![
+                // Virtual cell at offset 0 (e.g. inlay hint) - should NOT be selected.
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Virtual { anchor_offset: 0 },
+                },
+                // Document cell at offset 0 - should be selected for range 0..1.
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Document { offset: 0 },
+                },
+            ],
+        });
+
+        let theme = RenderTheme {
+            background: Rgba8::new(10, 20, 30, 255),
+            foreground: Rgba8::new(250, 250, 250, 255),
+            selection_background: Rgba8::new(200, 0, 0, 255),
+            caret: Rgba8::new(10, 20, 30, 255), // invisible
+            styles: BTreeMap::new(),
+        };
+
+        let cfg = RenderConfig {
+            width_px: 40,
+            height_px: 20,
+            scale: 1.0,
+            font_size: 12.0,
+            line_height_px: 20.0,
+            cell_width_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            gutter_width_cells: 0,
+            enable_ligatures: false,
+        };
+
+        let mut out = vec![0u8; (cfg.width_px * cfg.height_px * 4) as usize];
+        renderer
+            .render_composed_rgba_into(
+                &grid,
+                &[],
+                &[(0, 1)], // select the single document char
+                &[],
+                cfg,
+                &theme,
+                out.as_mut_slice(),
+            )
+            .unwrap();
+
+        // Virtual cell area (x in [0..20]) stays background.
+        assert_eq!(pixel(&out, cfg.width_px, 10, 10), [10, 20, 30, 255]);
+
+        // Document cell area (x in [20..40]) is selection color.
+        assert_eq!(pixel(&out, cfg.width_px, 30, 10), [200, 0, 0, 255]);
+    }
+
+    #[test]
+    fn render_composed_caret_skips_wrap_indent_prefix() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = ComposedGrid::new(0, 1);
+        grid.lines.push(ComposedLine {
+            kind: ComposedLineKind::Document {
+                logical_line: 0,
+                visual_in_logical: 1, // wrapped segment
+            },
+            char_offset_start: 0,
+            char_offset_end: 1,
+            cells: vec![
+                // Wrap indent (virtual, whitespace, no styles) - should be before caret.
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Virtual { anchor_offset: 0 },
+                },
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Virtual { anchor_offset: 0 },
+                },
+                // First document char at offset 0.
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Document { offset: 0 },
+                },
+            ],
+        });
+
+        let theme = RenderTheme {
+            background: Rgba8::new(10, 20, 30, 255),
+            foreground: Rgba8::new(250, 250, 250, 255),
+            selection_background: Rgba8::new(10, 20, 30, 255), // invisible
+            caret: Rgba8::new(0, 0, 200, 255),
+            styles: BTreeMap::new(),
+        };
+
+        let cfg = RenderConfig {
+            width_px: 60,
+            height_px: 20,
+            scale: 1.0,
+            font_size: 12.0,
+            line_height_px: 20.0,
+            cell_width_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            gutter_width_cells: 0,
+            enable_ligatures: false,
+        };
+
+        let mut out = vec![0u8; (cfg.width_px * cfg.height_px * 4) as usize];
+        renderer
+            .render_composed_rgba_into(
+                &grid,
+                &[0], // caret at the segment start
+                &[],
+                &[],
+                cfg,
+                &theme,
+                out.as_mut_slice(),
+            )
+            .unwrap();
+
+        // Caret should be at x=40 (2 indent cells * 20px), y=10.
+        assert_eq!(pixel(&out, cfg.width_px, 40, 10), [0, 0, 200, 255]);
     }
 
     fn pixel(buf: &[u8], width_px: u32, x: u32, y: u32) -> [u8; 4] {
