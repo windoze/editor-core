@@ -183,6 +183,10 @@ int32_t editor_core_ui_ffi_editor_ui_set_paragraph_selection_offsets(EditorUi* u
                                                                      uint32_t anchor_offset,
                                                                      uint32_t active_offset);
 int32_t editor_core_ui_ffi_editor_ui_expand_selection(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_expand_selection_by(EditorUi* ui,
+                                                         uint32_t unit,
+                                                         uint32_t count,
+                                                         uint32_t direction);
 int32_t editor_core_ui_ffi_editor_ui_add_caret_at_char_offset(EditorUi* ui,
                                                               uint32_t char_offset,
                                                               uint8_t make_primary);

@@ -12,6 +12,7 @@
 //! - presenting the rendered pixels (RGBA buffer) to screen
 
 use editor_core_render_skia::{RenderTheme, Rgba8, StyleColors};
+use editor_core::{ExpandSelectionDirection, ExpandSelectionUnit};
 use editor_core_ui::{EditorUi, UiError};
 use libc::{c_char, c_float, c_int};
 use std::cell::RefCell;
@@ -1118,6 +1119,49 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_expand_selection(ui: *mut EditorU
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_expand_selection_by(
+    ui: *mut EditorUi,
+    unit: u32,
+    count: u32,
+    direction: u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+
+        let unit = match unit {
+            0 => ExpandSelectionUnit::Character,
+            1 => ExpandSelectionUnit::Word,
+            2 => ExpandSelectionUnit::Line,
+            _ => {
+                return Err(format!(
+                    "invalid expand selection unit {unit} (expected 0=character, 1=word, 2=line)"
+                ));
+            }
+        };
+
+        let direction = match direction {
+            0 => ExpandSelectionDirection::Backward,
+            1 => ExpandSelectionDirection::Forward,
+            _ => {
+                return Err(format!(
+                    "invalid expand selection direction {direction} (expected 0=backward, 1=forward)"
+                ));
+            }
+        };
+
+        ui.expand_selection_by(unit, count as usize, direction)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_add_caret_at_char_offset(
     ui: *mut EditorUi,
     char_offset: u32,
@@ -2136,10 +2180,10 @@ contexts:
     }
 
     #[test]
-    fn ffi_select_word_and_add_all_occurrences() {
-        let initial = CString::new("foo foo foo\n").unwrap();
-        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
-        assert!(!ui.is_null());
+	    fn ffi_select_word_and_add_all_occurrences() {
+	        let initial = CString::new("foo foo foo\n").unwrap();
+	        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+	        assert!(!ui.is_null());
 
         // Place caret at start.
         let ranges = [EcuSelectionRange { start: 0, end: 0 }];
@@ -2162,13 +2206,54 @@ contexts:
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, "X X X\n");
 
-        editor_core_ui_ffi_editor_ui_free(ui);
-    }
+	        editor_core_ui_ffi_editor_ui_free(ui);
+	    }
 
-    #[test]
-    fn ffi_gutter_renders_fold_marker_and_click_toggles_fold() {
-        let initial = CString::new("fn main() {\n  let x = 1;\n}\n").unwrap();
-        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+	    #[test]
+	    fn ffi_expand_selection_by_word_is_expand_only() {
+	        let initial = CString::new("one two three").unwrap();
+	        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+	        assert!(!ui.is_null());
+
+	        // caret at start of "two" (offset 4)
+	        let ranges = [EcuSelectionRange { start: 4, end: 4 }];
+	        assert_eq!(
+	            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+	            ECU_OK
+	        );
+
+	        // 1 = word, 1 = forward
+	        assert_eq!(
+	            editor_core_ui_ffi_editor_ui_expand_selection_by(ui, 1, 2, 1),
+	            ECU_OK
+	        );
+
+	        let mut start: u32 = 0;
+	        let mut end: u32 = 0;
+	        assert_eq!(
+	            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+	            ECU_OK
+	        );
+	        assert_eq!((start, end), (4, 13));
+
+	        // Change direction: 0 = backward. Expand-only means we keep the end and extend start.
+	        assert_eq!(
+	            editor_core_ui_ffi_editor_ui_expand_selection_by(ui, 1, 1, 0),
+	            ECU_OK
+	        );
+	        assert_eq!(
+	            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+	            ECU_OK
+	        );
+	        assert_eq!((start, end), (0, 13));
+
+	        editor_core_ui_ffi_editor_ui_free(ui);
+	    }
+
+	    #[test]
+	    fn ffi_gutter_renders_fold_marker_and_click_toggles_fold() {
+	        let initial = CString::new("fn main() {\n  let x = 1;\n}\n").unwrap();
+	        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
         assert!(!ui.is_null());
 
         let theme = EcuTheme {

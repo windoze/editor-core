@@ -405,6 +405,11 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_expand_selection")
     }
 
+    public func expandSelectionBy(unit: EcuExpandSelectionUnit, count: UInt32, direction: EcuExpandSelectionDirection) throws {
+        let status = library.editorUiExpandSelectionByFn(handle, unit.rawValue, count, direction.rawValue)
+        try library.ensureStatus(status, context: "editor_ui_expand_selection_by")
+    }
+
     public func addCaret(atCharOffset charOffset: UInt32, makePrimary: Bool) throws {
         let status = library.editorUiAddCaretAtCharOffsetFn(handle, charOffset, makePrimary ? 1 : 0)
         try library.ensureStatus(status, context: "editor_ui_add_caret_at_char_offset")

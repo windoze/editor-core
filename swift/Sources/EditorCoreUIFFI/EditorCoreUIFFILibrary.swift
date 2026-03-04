@@ -80,6 +80,7 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiSelectParagraphAtCharOffset = @convention(c) (OpaquePointer?, UInt32) -> Int32
     typealias FnEditorUiSetParagraphSelectionOffsets = @convention(c) (OpaquePointer?, UInt32, UInt32) -> Int32
     typealias FnEditorUiExpandSelection = @convention(c) (OpaquePointer?) -> Int32
+    typealias FnEditorUiExpandSelectionBy = @convention(c) (OpaquePointer?, UInt32, UInt32, UInt32) -> Int32
     typealias FnEditorUiAddCaretAtCharOffset = @convention(c) (OpaquePointer?, UInt32, UInt8) -> Int32
 
     typealias FnEditorUiGetMarkedRange = @convention(c) (OpaquePointer?, UnsafeMutablePointer<UInt8>?, UnsafeMutablePointer<UInt32>?, UnsafeMutablePointer<UInt32>?) -> Int32
@@ -156,6 +157,7 @@ public final class EditorCoreUIFFILibrary {
     let editorUiSelectParagraphAtCharOffsetFn: FnEditorUiSelectParagraphAtCharOffset
     let editorUiSetParagraphSelectionOffsetsFn: FnEditorUiSetParagraphSelectionOffsets
     let editorUiExpandSelectionFn: FnEditorUiExpandSelection
+    let editorUiExpandSelectionByFn: FnEditorUiExpandSelectionBy
     let editorUiAddCaretAtCharOffsetFn: FnEditorUiAddCaretAtCharOffset
 
     let editorUiGetMarkedRangeFn: FnEditorUiGetMarkedRange
@@ -253,6 +255,7 @@ public final class EditorCoreUIFFILibrary {
         editorUiSelectParagraphAtCharOffsetFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_select_paragraph_at_char_offset", as: FnEditorUiSelectParagraphAtCharOffset.self)
         editorUiSetParagraphSelectionOffsetsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_paragraph_selection_offsets", as: FnEditorUiSetParagraphSelectionOffsets.self)
         editorUiExpandSelectionFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_expand_selection", as: FnEditorUiExpandSelection.self)
+        editorUiExpandSelectionByFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_expand_selection_by", as: FnEditorUiExpandSelectionBy.self)
         editorUiAddCaretAtCharOffsetFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_add_caret_at_char_offset", as: FnEditorUiAddCaretAtCharOffset.self)
 
         editorUiGetMarkedRangeFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_get_marked_range", as: FnEditorUiGetMarkedRange.self)

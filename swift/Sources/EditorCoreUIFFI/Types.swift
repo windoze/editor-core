@@ -101,6 +101,17 @@ public struct EcuSelectionRange: Equatable, Sendable {
     }
 }
 
+public enum EcuExpandSelectionUnit: UInt32, Sendable {
+    case character = 0
+    case word = 1
+    case line = 2
+}
+
+public enum EcuExpandSelectionDirection: UInt32, Sendable {
+    case backward = 0
+    case forward = 1
+}
+
 struct _EcuRgba8FFI {
     var r: UInt8
     var g: UInt8

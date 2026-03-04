@@ -4,9 +4,10 @@
 //! implementation (Skia in `editor-core-render-skia`) to draw the viewport.
 
 use editor_core::{
-    Command, CommandResult, CursorCommand, EditCommand, EditorStateManager, Position,
-    IME_MARKED_TEXT_STYLE_ID, ProcessingEdit, SearchOptions, Selection, SelectionDirection,
-    StyleCommand, StyleLayerId, ViewCommand,
+    Command, CommandResult, CursorCommand, EditCommand, EditorStateManager,
+    ExpandSelectionDirection, ExpandSelectionUnit, Position, IME_MARKED_TEXT_STYLE_ID,
+    ProcessingEdit, SearchOptions, Selection, SelectionDirection, StyleCommand, StyleLayerId,
+    ViewCommand,
 };
 use editor_core::intervals::Interval;
 use editor_core_lsp::{
@@ -301,6 +302,21 @@ impl EditorUi {
     pub fn expand_selection(&mut self) -> Result<(), UiError> {
         self.state
             .execute(Command::Cursor(CursorCommand::ExpandSelection))?;
+        Ok(())
+    }
+
+    pub fn expand_selection_by(
+        &mut self,
+        unit: ExpandSelectionUnit,
+        count: usize,
+        direction: ExpandSelectionDirection,
+    ) -> Result<(), UiError> {
+        self.state
+            .execute(Command::Cursor(CursorCommand::ExpandSelectionBy {
+                unit,
+                count,
+                direction,
+            }))?;
         Ok(())
     }
 
@@ -1245,17 +1261,48 @@ mod tests {
     }
 
     #[test]
-    fn ui_undo_redo_roundtrip() {
-        let mut ui = EditorUi::new("", 80);
-        ui.insert_text("a").unwrap();
-        ui.end_undo_group().unwrap();
-        ui.insert_text("b").unwrap();
-        assert_eq!(ui.text(), "ab");
-        ui.undo().unwrap();
-        assert_eq!(ui.text(), "a");
-        ui.redo().unwrap();
-        assert_eq!(ui.text(), "ab");
-    }
+	    fn ui_undo_redo_roundtrip() {
+	        let mut ui = EditorUi::new("", 80);
+	        ui.insert_text("a").unwrap();
+	        ui.end_undo_group().unwrap();
+	        ui.insert_text("b").unwrap();
+	        assert_eq!(ui.text(), "ab");
+	        ui.undo().unwrap();
+	        assert_eq!(ui.text(), "a");
+	        ui.redo().unwrap();
+	        assert_eq!(ui.text(), "ab");
+	    }
+
+	    #[test]
+	    fn ui_expand_selection_by_word_is_expand_only() {
+	        let mut ui = EditorUi::new("one two three", 80);
+	        ui.execute(Command::Cursor(CursorCommand::MoveTo { line: 0, column: 4 }))
+	            .unwrap(); // at "two"
+
+	        ui.expand_selection_by(
+	            ExpandSelectionUnit::Word,
+	            1,
+	            ExpandSelectionDirection::Forward,
+	        )
+	        .unwrap();
+	        assert_eq!(ui.primary_selection_offsets(), (4, 7)); // "two"
+
+	        ui.expand_selection_by(
+	            ExpandSelectionUnit::Word,
+	            1,
+	            ExpandSelectionDirection::Forward,
+	        )
+	        .unwrap();
+	        assert_eq!(ui.primary_selection_offsets(), (4, 13)); // "two three"
+
+	        ui.expand_selection_by(
+	            ExpandSelectionUnit::Word,
+	            1,
+	            ExpandSelectionDirection::Backward,
+	        )
+	        .unwrap();
+	        assert_eq!(ui.primary_selection_offsets(), (0, 13)); // "one two three"
+	    }
 
     #[test]
     fn ui_marked_text_replace_and_commit() {

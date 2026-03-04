@@ -57,6 +57,23 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(last.end, 12)
     }
 
+    func testExpandSelectionByWordAPI() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "one two three", viewportWidthCells: 80)
+
+        try ui.setSelections([EcuSelectionRange(start: 4, end: 4)], primaryIndex: 0)
+        try ui.expandSelectionBy(unit: .word, count: 2, direction: .forward)
+        let s1 = try ui.selectionOffsets()
+        XCTAssertEqual(s1.start, 4)
+        XCTAssertEqual(s1.end, 13)
+
+        // Expand-only: changing direction extends the other end without shrinking.
+        try ui.expandSelectionBy(unit: .word, count: 1, direction: .backward)
+        let s2 = try ui.selectionOffsets()
+        XCTAssertEqual(s2.start, 0)
+        XCTAssertEqual(s2.end, 13)
+    }
+
     func testCreateInsertUndoRedoRenderAndQueries() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)
