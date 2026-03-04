@@ -19,6 +19,11 @@ public final class EditorCoreSkiaView: NSView {
     /// Tests can override this to avoid touching the real system clipboard.
     public var pasteboard: NSPasteboard = .general
 
+    /// Hook for opening URLs (e.g. LSP `DocumentLink.target`). Defaults to `NSWorkspace.shared.open`.
+    public var onOpenURL: (URL) -> Void = { url in
+        NSWorkspace.shared.open(url)
+    }
+
     private var pixelBuffer: [UInt8] = []
     private var viewportWidthPx: UInt32 = 0
     private var viewportHeightPx: UInt32 = 0
@@ -309,6 +314,10 @@ public final class EditorCoreSkiaView: NSView {
 
         do {
             if event.modifierFlags.contains(.command) {
+                // Cmd+Click: prefer opening document links (VSCode-style) when a link is present.
+                if event.clickCount == 1, openDocumentLinkIfPresent(xPx: xPx, yPx: yPx) {
+                    return
+                }
                 // Cmd+Click: add a new caret at point (multi-cursor).
                 let offset = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
                 try editor.addCaret(atCharOffset: offset, makePrimary: true)
@@ -342,6 +351,38 @@ public final class EditorCoreSkiaView: NSView {
         }
         needsDisplay = true
         invalidateIMECharacterCoordinates()
+    }
+
+    /// Try to open an LSP document link at the given view point (in backing pixels).
+    ///
+    /// Returns `true` when a link was found and opened.
+    @discardableResult
+    public func openDocumentLinkIfPresent(xPx: Float, yPx: Float) -> Bool {
+        do {
+            guard let json = try editor.documentLinkJSONAtViewPoint(xPx: xPx, yPx: yPx) else {
+                return false
+            }
+            guard let url = Self.documentLinkTargetURL(from: json) else {
+                return false
+            }
+            onOpenURL(url)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func documentLinkTargetURL(from json: String) -> URL? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        guard let target = obj["target"] as? String, target.isEmpty == false else { return nil }
+
+        // LSP `DocumentLink.target` is typically a URI string (file://, https://, ...).
+        if let url = URL(string: target), url.scheme != nil {
+            return url
+        }
+        // Fallback: treat it as a filesystem path.
+        return URL(fileURLWithPath: target)
     }
 
     public override func mouseDragged(with event: NSEvent) {
