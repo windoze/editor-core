@@ -657,6 +657,45 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_font_ligatures_enabled(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(
+    ui: *mut EditorUi,
+    boundary_chars_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let boundary_chars = require_cstr(boundary_chars_utf8, "boundary_chars_utf8")?
+            .to_str()
+            .map_err(|_| "boundary_chars_utf8 is not valid UTF-8".to_string())?;
+        ui.set_word_boundary_ascii_boundary_chars(boundary_chars)
+            .map_err(map_ui_error)?;
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_reset_word_boundary_defaults(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.reset_word_boundary_defaults().map_err(map_ui_error)?;
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_gutter_width_cells(
     ui: *mut EditorUi,
     width_cells: u32,
@@ -2249,6 +2288,68 @@ contexts:
 
 	        editor_core_ui_ffi_editor_ui_free(ui);
 	    }
+
+    #[test]
+    fn ffi_word_boundary_config_affects_select_word() {
+        let initial = CString::new("foo-bar").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        // caret inside "foo"
+        let ranges = [EcuSelectionRange { start: 1, end: 1 }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            ECU_OK
+        );
+        assert_eq!(editor_core_ui_ffi_editor_ui_select_word(ui), ECU_OK);
+
+        let mut start: u32 = 0;
+        let mut end: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (0, 3)); // "foo"
+
+        // Make '-' a word char (do not include it in boundary chars).
+        let boundary = CString::new(".").unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(ui, boundary.as_ptr()),
+            ECU_OK
+        );
+
+        // Clear selection and select word again to observe config change.
+        let ranges = [EcuSelectionRange { start: 1, end: 1 }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            ECU_OK
+        );
+        assert_eq!(editor_core_ui_ffi_editor_ui_select_word(ui), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (0, 7)); // "foo-bar"
+
+        // Reset defaults: '-' becomes boundary again.
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_reset_word_boundary_defaults(ui),
+            ECU_OK
+        );
+        let ranges = [EcuSelectionRange { start: 1, end: 1 }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            ECU_OK
+        );
+        assert_eq!(editor_core_ui_ffi_editor_ui_select_word(ui), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (0, 3)); // "foo"
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
 
 	    #[test]
 	    fn ffi_gutter_renders_fold_marker_and_click_toggles_fold() {
