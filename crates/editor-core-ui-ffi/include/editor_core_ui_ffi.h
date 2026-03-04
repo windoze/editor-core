@@ -86,6 +86,10 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json(
     EditorUi* ui,
     const char* publish_diagnostics_json_utf8
 );
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_json(
+    EditorUi* ui,
+    const char* inlay_hints_result_json_utf8
+);
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(EditorUi* ui,
                                                                const uint32_t* data,
                                                                uint32_t data_len);

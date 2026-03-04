@@ -12,6 +12,7 @@ use editor_core::{
 use editor_core::intervals::Interval;
 use editor_core_lsp::{
     LspNotification, encode_semantic_style_id, lsp_diagnostics_to_processing_edits,
+    lsp_inlay_hints_to_processing_edit,
     semantic_tokens_to_intervals,
 };
 use editor_core_render_skia::{
@@ -613,6 +614,18 @@ impl EditorUi {
         Ok(())
     }
 
+    /// Apply LSP inlay hints result payload (`InlayHint[] | null`) as decorations.
+    ///
+    /// The caller should pass the raw `result` JSON from `textDocument/inlayHint`.
+    pub fn lsp_apply_inlay_hints_json(&mut self, result_json: &str) -> Result<(), UiError> {
+        let result_value: serde_json::Value =
+            serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        let line_index = &self.state.editor().line_index;
+        let edit = lsp_inlay_hints_to_processing_edit(line_index, &result_value);
+        self.state.apply_processing_edits([edit]);
+        Ok(())
+    }
+
     pub fn set_render_config(&mut self, config: RenderConfig) {
         self.render_config = config;
     }
@@ -1137,9 +1150,8 @@ impl EditorUi {
             .height
             .unwrap_or(viewport.total_visual_lines.saturating_sub(start_row));
 
-        let grid = self.state.get_viewport_content_styled(start_row, row_count);
-        let selections = self.all_selections_visual();
-        let carets = self.all_carets_visual();
+        let (selection_ranges, _primary_idx) = self.selections_offsets();
+        let caret_offsets = self.all_caret_offsets();
 
         let mut fold_markers = Vec::<FoldMarker>::new();
         for region in &self.state.get_folding_state().regions {
@@ -1149,19 +1161,43 @@ impl EditorUi {
             fold_markers.push(FoldMarker {
                 logical_line: region.start_line as u32,
                 is_collapsed: region.is_collapsed,
-            });
+                });
         }
         let required = SkiaRenderer::required_rgba_len(self.render_config)?;
-        self.renderer.render_rgba_into(
-            &grid,
-            carets.as_slice(),
-            selections.as_slice(),
-            fold_markers.as_slice(),
-            self.render_config,
-            &self.theme,
-            out_rgba,
-        )?;
+        if self.has_virtual_text_decorations() {
+            let grid = self.state.get_viewport_content_composed(start_row, row_count);
+            self.renderer.render_composed_rgba_into(
+                &grid,
+                caret_offsets.as_slice(),
+                selection_ranges.as_slice(),
+                fold_markers.as_slice(),
+                self.render_config,
+                &self.theme,
+                out_rgba,
+            )?;
+        } else {
+            let grid = self.state.get_viewport_content_styled(start_row, row_count);
+            let selections = self.all_selections_visual();
+            let carets = self.all_carets_visual();
+            self.renderer.render_rgba_into(
+                &grid,
+                carets.as_slice(),
+                selections.as_slice(),
+                fold_markers.as_slice(),
+                self.render_config,
+                &self.theme,
+                out_rgba,
+            )?;
+        }
         Ok(required)
+    }
+
+    fn has_virtual_text_decorations(&self) -> bool {
+        self.state
+            .editor()
+            .decorations
+            .values()
+            .any(|layer| layer.iter().any(|d| d.text.as_ref().is_some_and(|t| !t.is_empty())))
     }
 
     fn refresh_processing(&mut self) -> Result<(), UiError> {
@@ -1232,6 +1268,25 @@ impl EditorUi {
                 primary.push(caret);
             } else {
                 secondary.push(caret);
+            }
+        }
+        secondary.extend(primary);
+        secondary
+    }
+
+    fn all_caret_offsets(&self) -> Vec<usize> {
+        let cursor = self.state.get_cursor_state();
+        let line_index = &self.state.editor().line_index;
+        let primary_idx = cursor.primary_selection_index;
+
+        let mut secondary = Vec::new();
+        let mut primary = Vec::new();
+        for (idx, sel) in cursor.selections.iter().enumerate() {
+            let offset = line_index.position_to_char_offset(sel.end.line, sel.end.column);
+            if idx == primary_idx {
+                primary.push(offset);
+            } else {
+                secondary.push(offset);
             }
         }
         secondary.extend(primary);

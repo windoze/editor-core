@@ -114,6 +114,13 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_lsp_apply_diagnostics_json")
     }
 
+    public func lspApplyInlayHintsJSON(_ inlayHintsResultJSON: String) throws {
+        let status = inlayHintsResultJSON.withCString { cstr in
+            library.editorUiLspApplyInlayHintsJSONFn(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_apply_inlay_hints_json")
+    }
+
     public func lspApplySemanticTokens(_ data: [UInt32]) throws {
         let status = data.withUnsafeBufferPointer { ptr in
             library.editorUiLspApplySemanticTokensFn(handle, ptr.baseAddress, UInt32(ptr.count))
