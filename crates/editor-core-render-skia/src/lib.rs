@@ -597,6 +597,18 @@ impl SkiaRenderer {
                     underlines.push((x_px, underline_y, w_px, fg));
                 }
 
+                // Record LSP diagnostics underline (style-layer based).
+                //
+                // This is rendered *after* text (like IME underlines) so it stays visible even on
+                // whitespace / styled backgrounds.
+                if let Some(&diag_id) = cell.styles.iter().find(|&&id| is_lsp_diagnostics_style_id(id)) {
+                    let underline_h = config.scale.clamp(1.0, 2.0);
+                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    let u_color = resolve_underline_color(diag_id, theme, fg);
+                    underlines.push((x_px, underline_y, w_px, u_color));
+                }
+
                 let eligible_for_ligatures = config.enable_ligatures && cell.width == 1 && cell.ch.is_ascii();
                 if eligible_for_ligatures {
                     let font_index = self.font_index_for_char(cell.ch);
@@ -914,6 +926,29 @@ fn resolve_cell_colors(style_ids: &[u32], theme: &RenderTheme) -> (Rgba8, Rgba8)
     (fg, bg)
 }
 
+fn is_lsp_diagnostics_style_id(style_id: u32) -> bool {
+    // Matches `editor-core-lsp` encoding: 0x0400_0100 | severity(1..=4).
+    const BASE: u32 = 0x0400_0100;
+    if (style_id & 0xFFFF_FF00) != BASE {
+        return false;
+    }
+    let sev = style_id & 0xFF;
+    (1..=4).contains(&sev)
+}
+
+fn resolve_underline_color(style_id: u32, theme: &RenderTheme, fallback: Rgba8) -> Rgba8 {
+    // Prefer explicit foreground; fall back to background; then to theme foreground.
+    if let Some(colors) = theme.styles.get(&style_id) {
+        if let Some(fg) = colors.foreground {
+            return fg;
+        }
+        if let Some(bg) = colors.background {
+            return bg;
+        }
+    }
+    fallback
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1056,6 +1091,51 @@ mod tests {
         let bytes_per_row = cfg.width_px as usize * 4;
         let idx = 9 * bytes_per_row + 5 * 4; // y=9 (underline), x=5
         assert_eq!(&rgba[idx..idx + 4], &[fg.r, fg.g, fg.b, fg.a]);
+    }
+
+    #[test]
+    fn render_draws_lsp_diagnostics_underline_even_for_space() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        let mut cell = Cell::new(' ', 1);
+        // LSP diagnostics style id encoding: 0x0400_0100 | severity.
+        cell.styles.push(0x0400_0100 | 1);
+        line.add_cell(cell);
+        grid.add_line(line);
+
+        let bg = Rgba8::new(10, 20, 30, 255);
+        let diag = Rgba8::new(1, 200, 2, 255);
+        let theme = RenderTheme {
+            background: bg,
+            foreground: Rgba8::new(250, 250, 250, 255),
+            selection_background: bg,
+            caret: bg,
+            styles: {
+                let mut m = BTreeMap::new();
+                m.insert(0x0400_0100 | 1, StyleColors::new(Some(diag), None));
+                m
+            },
+        };
+
+        let cfg = RenderConfig {
+            width_px: 20,
+            height_px: 10,
+            scale: 1.0,
+            font_size: 10.0,
+            line_height_px: 10.0,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            gutter_width_cells: 0,
+            enable_ligatures: false,
+        };
+
+        let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
+        let bytes_per_row = cfg.width_px as usize * 4;
+        let idx = 9 * bytes_per_row + 5 * 4; // y=9 (underline), x=5
+        assert_eq!(&rgba[idx..idx + 4], &[diag.r, diag.g, diag.b, diag.a]);
     }
 
     #[test]
