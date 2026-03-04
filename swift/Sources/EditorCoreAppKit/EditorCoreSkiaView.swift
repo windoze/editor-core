@@ -314,10 +314,14 @@ public final class EditorCoreSkiaView: NSView {
                     try editor.mouseDown(xPx: xPx, yPx: yPx)
                     try editor.selectWord()
                 } else if event.clickCount >= 3 {
-                    // Triple-click: select paragraph (macOS standard behavior).
+                    // Triple-click: select line (code editor behavior).
+                    //
+                    // If user keeps dragging after triple-click, we switch to paragraph-union selection
+                    // (see `mouseDragged`) to support "triple-click-then-drag selects by paragraph".
                     let anchor = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
                     paragraphSelectionAnchorOffset = anchor
-                    try editor.selectParagraph(atCharOffset: anchor)
+                    try editor.mouseDown(xPx: xPx, yPx: yPx)
+                    try editor.selectLine()
                 } else {
                     try editor.mouseDown(xPx: xPx, yPx: yPx)
                 }

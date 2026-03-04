@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewParagraphSelectionTests: XCTestCase {
-    func testTripleClickThenDragSelectsParagraphUnion() throws {
+    func testTripleClickSelectsLineThenDragSelectsParagraphUnion() throws {
         let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "aa\nbb\n\ncc\ndd", viewportWidthCells: 80)
 
@@ -19,14 +19,14 @@ final class EditorCoreSkiaViewParagraphSelectionTests: XCTestCase {
         window.makeKeyAndOrderFront(nil)
         view.layoutSubtreeIfNeeded()
 
-        // 1) Triple click at the beginning => select first paragraph ("aa\nbb\n").
+        // 1) Triple click at the beginning => select first line ("aa\n").
         let p0 = try windowPointForCharOffset(0, in: view)
         let down = try makeMouseEvent(type: .leftMouseDown, locationInWindow: p0, window: window, clickCount: 3)
         view.mouseDown(with: down)
 
         let s1 = try view.editor.selectionOffsets()
         XCTAssertEqual(s1.start, 0)
-        XCTAssertEqual(s1.end, 6)
+        XCTAssertEqual(s1.end, 3)
 
         // 2) Drag to the second paragraph => union selection should cover both paragraphs and the blank line between.
         let p8 = try windowPointForCharOffset(8, in: view) // inside "cc"
@@ -82,4 +82,3 @@ private func makeMouseEvent(
     }
     return e
 }
-
