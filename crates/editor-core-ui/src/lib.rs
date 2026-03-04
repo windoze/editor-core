@@ -858,6 +858,16 @@ impl EditorUi {
     }
 
     pub fn move_visual_by_rows(&mut self, delta_rows: isize) -> Result<(), UiError> {
+        // UI-friendly behavior: if there is an active selection, moving vertically should
+        // collapse it to the current caret before moving (matches common editor behavior).
+        //
+        // Without this, some hosts may appear "stuck" because the selection remains visible
+        // while the caret movement is not obvious (and some cursor movement strategies can
+        // also depend on a clear selection).
+        if self.state.get_cursor_state().selection.is_some() {
+            self.state
+                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        }
         self.state
             .execute(Command::Cursor(CursorCommand::MoveVisualBy { delta_rows }))?;
         Ok(())
@@ -1615,6 +1625,27 @@ mod tests {
         assert_eq!(ui.text(), "ab");
         ui.delete_forward().unwrap(); // no-op at end
         assert_eq!(ui.text(), "ab");
+    }
+
+    #[test]
+    fn ui_move_visual_by_rows_collapses_selection_to_caret() {
+        let mut ui = EditorUi::new("aaa\nbbb\nccc", 80);
+
+        // Select "bbb" (offset 4..7). This also places the caret at the active end (offset 7).
+        ui.set_selections_offsets(&[(4, 7)], 0).unwrap();
+        assert!(ui.cursor_state().selection.is_some());
+        assert_eq!(ui.cursor_state().offset, 7);
+
+        // Move up: should first clear selection (caret stays at 7), then move to line 0 col 3 => offset 3.
+        ui.move_visual_by_rows(-1).unwrap();
+        assert!(ui.cursor_state().selection.is_none());
+        assert_eq!(ui.primary_selection_offsets(), (3, 3));
+
+        // Re-create selection and move down: should clear selection, then move to line 2 col 3 => offset 11.
+        ui.set_selections_offsets(&[(4, 7)], 0).unwrap();
+        ui.move_visual_by_rows(1).unwrap();
+        assert!(ui.cursor_state().selection.is_none());
+        assert_eq!(ui.primary_selection_offsets(), (11, 11));
     }
 
     #[test]
