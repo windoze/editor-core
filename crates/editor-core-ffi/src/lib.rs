@@ -5,7 +5,8 @@
 
 use editor_core::commands::{
     Command, CommandResult, CursorCommand, EditCommand, Position, Selection, SelectionDirection,
-    StyleCommand, TabKeyBehavior, TextEditSpec, ViewCommand,
+    ExpandSelectionDirection, ExpandSelectionUnit, StyleCommand, TabKeyBehavior, TextEditSpec,
+    ViewCommand,
 };
 use editor_core::decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
@@ -938,6 +939,40 @@ impl FfiEditCommandInput {
     }
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FfiExpandSelectionUnit {
+    Character,
+    Word,
+    Line,
+}
+
+impl From<FfiExpandSelectionUnit> for ExpandSelectionUnit {
+    fn from(value: FfiExpandSelectionUnit) -> Self {
+        match value {
+            FfiExpandSelectionUnit::Character => ExpandSelectionUnit::Character,
+            FfiExpandSelectionUnit::Word => ExpandSelectionUnit::Word,
+            FfiExpandSelectionUnit::Line => ExpandSelectionUnit::Line,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FfiExpandSelectionDirection {
+    Backward,
+    Forward,
+}
+
+impl From<FfiExpandSelectionDirection> for ExpandSelectionDirection {
+    fn from(value: FfiExpandSelectionDirection) -> Self {
+        match value {
+            FfiExpandSelectionDirection::Backward => ExpandSelectionDirection::Backward,
+            FfiExpandSelectionDirection::Forward => ExpandSelectionDirection::Forward,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum FfiCursorCommandInput {
@@ -984,6 +1019,11 @@ enum FfiCursorCommandInput {
     SelectLine,
     SelectWord,
     ExpandSelection,
+    ExpandSelectionBy {
+        unit: FfiExpandSelectionUnit,
+        count: usize,
+        direction: FfiExpandSelectionDirection,
+    },
     AddCursorAbove,
     AddCursorBelow,
     AddNextOccurrence {
@@ -1048,6 +1088,15 @@ impl FfiCursorCommandInput {
             Self::SelectLine => CursorCommand::SelectLine,
             Self::SelectWord => CursorCommand::SelectWord,
             Self::ExpandSelection => CursorCommand::ExpandSelection,
+            Self::ExpandSelectionBy {
+                unit,
+                count,
+                direction,
+            } => CursorCommand::ExpandSelectionBy {
+                unit: unit.into(),
+                count,
+                direction: direction.into(),
+            },
             Self::AddCursorAbove => CursorCommand::AddCursorAbove,
             Self::AddCursorBelow => CursorCommand::AddCursorBelow,
             Self::AddNextOccurrence { options } => CursorCommand::AddNextOccurrence {
