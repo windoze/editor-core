@@ -27,6 +27,7 @@ public final class EditorCoreSkiaView: NSView {
     private var rectSelectionAnchorOffset: UInt32?
     private var lineSelectionAnchorOffset: UInt32?
     private var wordSelectionAnchorOffset: UInt32?
+    private var wordSelectionOrigin: (start: UInt32, end: UInt32)?
 
     private lazy var textInputContext = NSTextInputContext(client: self)
 
@@ -299,6 +300,7 @@ public final class EditorCoreSkiaView: NSView {
         rectSelectionAnchorOffset = nil
         lineSelectionAnchorOffset = nil
         wordSelectionAnchorOffset = nil
+        wordSelectionOrigin = nil
 
         do {
             if event.modifierFlags.contains(.command) {
@@ -317,6 +319,7 @@ public final class EditorCoreSkiaView: NSView {
                     wordSelectionAnchorOffset = anchor
                     try editor.mouseDown(xPx: xPx, yPx: yPx)
                     try editor.selectWord()
+                    wordSelectionOrigin = try editor.selectionOffsets()
                 } else if event.clickCount >= 3 {
                     // Triple-click: select line (code editor behavior).
                     //
@@ -349,9 +352,9 @@ public final class EditorCoreSkiaView: NSView {
             } else if let anchor = lineSelectionAnchorOffset {
                 let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
                 try editor.setLineSelection(anchorOffset: anchor, activeOffset: active)
-            } else if wordSelectionAnchorOffset != nil {
+            } else if wordSelectionAnchorOffset != nil, let origin = wordSelectionOrigin {
                 let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-                try expandWordSelectionToward(activeOffset: active)
+                try expandWordSelectionToward(activeOffset: active, origin: origin)
             } else {
                 try editor.mouseDragged(xPx: xPx, yPx: yPx)
             }
@@ -366,15 +369,23 @@ public final class EditorCoreSkiaView: NSView {
         rectSelectionAnchorOffset = nil
         lineSelectionAnchorOffset = nil
         wordSelectionAnchorOffset = nil
+        wordSelectionOrigin = nil
         editor.mouseUp()
         needsDisplay = true
         invalidateIMECharacterCoordinates()
     }
 
-    private func expandWordSelectionToward(activeOffset: UInt32) throws {
-        // Expand-only (no shrinking): keep expanding by one word until the active point is inside
-        // the selection. Guard with a step limit to avoid infinite loops if the backend can't
-        // make progress (e.g. at document boundaries).
+    private func expandWordSelectionToward(activeOffset: UInt32, origin: (start: UInt32, end: UInt32)) throws {
+        // Normal "double-click then drag" behavior:
+        // - anchor to the original word selection
+        // - extend by word towards the active point
+        // - allow shrinking when the drag direction changes by resetting to the origin first
+        //
+        // The core `ExpandSelectionBy` command is expand-only by design, so the view resets the
+        // selection to the original word range on every drag event.
+        try editor.setSelections([EcuSelectionRange(start: origin.start, end: origin.end)], primaryIndex: 0)
+
+        // Now expand by one word at a time until the active point is inside the selection.
         var remaining = 2048
         while remaining > 0 {
             let s = try editor.selectionOffsets()

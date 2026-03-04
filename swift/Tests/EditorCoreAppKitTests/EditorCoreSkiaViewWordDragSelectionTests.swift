@@ -37,14 +37,15 @@ final class EditorCoreSkiaViewWordDragSelectionTests: XCTestCase {
         XCTAssertEqual(s2.start, 4)
         XCTAssertEqual(s2.end, 13)
 
-        // Change drag direction: expand-only means we extend to include "one" as well.
+        // Change drag direction: selection should now extend from the original word ("two")
+        // towards the new direction (left), allowing the previous right extension to shrink away.
         let p0 = try windowPointForCharOffset(0, in: view)
         let drag2 = try makeMouseEvent(type: .leftMouseDragged, locationInWindow: p0, window: window, clickCount: 2)
         view.mouseDragged(with: drag2)
 
         let s3 = try view.editor.selectionOffsets()
         XCTAssertEqual(s3.start, 0)
-        XCTAssertEqual(s3.end, 13)
+        XCTAssertEqual(s3.end, 7)
 
         let up = try makeMouseEvent(type: .leftMouseUp, locationInWindow: p0, window: window, clickCount: 2)
         view.mouseUp(with: up)
@@ -90,4 +91,3 @@ private func makeMouseEvent(
     }
     return e
 }
-
