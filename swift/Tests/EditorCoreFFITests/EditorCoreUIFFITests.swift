@@ -406,6 +406,41 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(pixel(rgba, widthPx: 200, x: 15, y: 10), [1, 200, 2, 255])
     }
 
+    func testLspInlayHintsAffectHitTestingAndCaretPoint() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "ab\n", viewportWidthCells: 80)
+
+        try ui.setTheme(
+            EcuTheme(
+                background: EcuRgba8(r: 10, g: 20, b: 30, a: 255),
+                foreground: EcuRgba8(r: 250, g: 250, b: 250, a: 255),
+                selectionBackground: EcuRgba8(r: 200, g: 0, b: 0, a: 255),
+                caret: EcuRgba8(r: 0, g: 0, b: 200, a: 255)
+            )
+        )
+        try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 200, heightPx: 40, scale: 1)
+
+        let result = """
+        [
+          {
+            "position": { "line": 0, "character": 1 },
+            "label": " "
+          }
+        ]
+        """
+        try ui.lspApplyInlayHintsJSON(result)
+
+        // With the inlay hint inserted between 'a' and 'b', the 'b' cell shifts right by 1.
+        // So x=25 should hit 'b' (offset=1) instead of end-of-line (offset=2).
+        XCTAssertEqual(try ui.viewPointToCharOffset(xPx: 25, yPx: 10), 1)
+
+        let pt = try ui.charOffsetToViewPoint(offset: 2)
+        XCTAssertEqual(pt.xPx, 30)
+        XCTAssertEqual(pt.yPx, 0)
+        XCTAssertEqual(pt.lineHeightPx, 20)
+    }
+
     func testMultiSelectionsSetGetAndInsertTextAppliesToAllCarets() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "abc\ndef\n", viewportWidthCells: 80)

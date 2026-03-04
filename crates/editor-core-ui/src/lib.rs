@@ -450,6 +450,21 @@ impl EditorUi {
     /// - `x_px` is left-to-right (in pixels)
     /// - `y_px` is top-to-bottom (in pixels), aligned to the top of the visual row
     pub fn char_offset_to_view_point_px(&self, char_offset: usize) -> Option<(f32, f32)> {
+        if self.has_virtual_text_decorations() {
+            let (_start_composed, _row_count, grid) = self.composed_viewport_grid();
+            let local_row = composed_line_index_for_offset(&grid, char_offset)?;
+            let x_cells = caret_x_cells_in_composed_line(&grid.lines[local_row], char_offset);
+
+            let gutter_px =
+                self.render_config.gutter_width_cells as f32 * self.render_config.cell_width_px;
+            let x_px = self.render_config.padding_x_px
+                + gutter_px
+                + x_cells as f32 * self.render_config.cell_width_px;
+            let y_px = self.render_config.padding_y_px
+                + local_row as f32 * self.render_config.line_height_px;
+            return Some((x_px, y_px));
+        }
+
         let (row, x_cells) = self.char_offset_to_visual(char_offset)?;
         let viewport = self.state.get_viewport_state();
         let local_row = row.saturating_sub(viewport.scroll_top);
@@ -467,6 +482,18 @@ impl EditorUi {
     /// Hit-test a point in the view coordinate space (pixels, top-left origin) and return the
     /// corresponding character offset (Unicode scalar index).
     pub fn view_point_to_char_offset(&self, x_px: f32, y_px: f32) -> Option<usize> {
+        if self.has_virtual_text_decorations() {
+            let (_start_composed, _row_count, grid) = self.composed_viewport_grid();
+            if grid.lines.is_empty() {
+                return Some(0);
+            }
+
+            let (local_row, x_cells) = self.pixel_to_local_row_col(x_px, y_px);
+            let local_row = local_row.min(grid.lines.len().saturating_sub(1));
+            let line = &grid.lines[local_row];
+            return Some(hit_test_composed_line_char_offset(line, x_cells));
+        }
+
         let (row, x_cells) = self.pixel_to_visual(x_px, y_px);
         self.visual_to_char_offset(row, x_cells)
     }
@@ -1065,55 +1092,92 @@ impl EditorUi {
                 self.render_config.gutter_width_cells as f32 * self.render_config.cell_width_px;
             let gutter_end_x = self.render_config.padding_x_px + gutter_px;
             if x_px < gutter_end_x {
-                let (row, _x_cells) = self.pixel_to_visual(x_px, y_px);
-                if let Some(pos) = self.state.visual_position_to_logical(row, 0) {
-                    if let Some(region) = self
-                        .state
-                        .get_folding_state()
-                        .regions
-                        .iter()
-                        .filter(|r| r.start_line == pos.line)
-                        .min_by_key(|r| r.end_line)
-                        .cloned()
-                    {
-                        if region.is_collapsed {
-                            self.state.execute(Command::Style(StyleCommand::Unfold {
-                                start_line: region.start_line,
-                            }))?;
-                        } else {
-                            self.state.execute(Command::Style(StyleCommand::Fold {
-                                start_line: region.start_line,
-                                end_line: region.end_line,
-                            }))?;
+                if self.has_virtual_text_decorations() {
+                    let (_start_composed, _row_count, grid) = self.composed_viewport_grid();
+                    let (local_row, _x_cells) = self.pixel_to_local_row_col(x_px, y_px);
+                    if let Some(line) = grid.lines.get(local_row) {
+                        if let editor_core::ComposedLineKind::Document { logical_line, .. } =
+                            line.kind
+                        {
+                            if let Some(region) = self
+                                .state
+                                .get_folding_state()
+                                .regions
+                                .iter()
+                                .filter(|r| r.start_line == logical_line)
+                                .min_by_key(|r| r.end_line)
+                                .cloned()
+                            {
+                                if region.is_collapsed {
+                                    self.state.execute(Command::Style(StyleCommand::Unfold {
+                                        start_line: region.start_line,
+                                    }))?;
+                                } else {
+                                    self.state.execute(Command::Style(StyleCommand::Fold {
+                                        start_line: region.start_line,
+                                        end_line: region.end_line,
+                                    }))?;
+                                }
+                                self.mouse_anchor = None;
+                                return Ok(());
+                            }
                         }
-                        self.mouse_anchor = None;
-                        return Ok(());
+                    }
+                } else {
+                    let (row, _x_cells) = self.pixel_to_visual(x_px, y_px);
+                    if let Some(pos) = self.state.visual_position_to_logical(row, 0) {
+                        if let Some(region) = self
+                            .state
+                            .get_folding_state()
+                            .regions
+                            .iter()
+                            .filter(|r| r.start_line == pos.line)
+                            .min_by_key(|r| r.end_line)
+                            .cloned()
+                        {
+                            if region.is_collapsed {
+                                self.state.execute(Command::Style(StyleCommand::Unfold {
+                                    start_line: region.start_line,
+                                }))?;
+                            } else {
+                                self.state.execute(Command::Style(StyleCommand::Fold {
+                                    start_line: region.start_line,
+                                    end_line: region.end_line,
+                                }))?;
+                            }
+                            self.mouse_anchor = None;
+                            return Ok(());
+                        }
                     }
                 }
             }
         }
 
-        let (row, x_cells) = self.pixel_to_visual(x_px, y_px);
-        if let Some(pos) = self.state.visual_position_to_logical(row, x_cells) {
-            self.state.execute(Command::Cursor(CursorCommand::MoveTo {
-                line: pos.line,
-                column: pos.column,
-            }))?;
-            self.state
-                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
-            self.mouse_anchor = Some(pos);
-        }
+        let Some(off) = self.view_point_to_char_offset(x_px, y_px) else {
+            return Ok(());
+        };
+        let (line, column) = self.state.editor().line_index.char_offset_to_position(off);
+        let pos = Position::new(line, column);
+
+        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: pos.line,
+            column: pos.column,
+        }))?;
+        self.state
+            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.mouse_anchor = Some(pos);
         Ok(())
     }
 
     pub fn mouse_dragged(&mut self, x_px: f32, y_px: f32) -> Result<(), UiError> {
-        let (row, x_cells) = self.pixel_to_visual(x_px, y_px);
         let Some(anchor) = self.mouse_anchor else {
             return Ok(());
         };
-        let Some(to) = self.state.visual_position_to_logical(row, x_cells) else {
+        let Some(off) = self.view_point_to_char_offset(x_px, y_px) else {
             return Ok(());
         };
+        let (to_line, to_col) = self.state.editor().line_index.char_offset_to_position(off);
+        let to = Position::new(to_line, to_col);
         self.state
             .execute(Command::Cursor(CursorCommand::SetSelection {
                 start: anchor,
@@ -1165,7 +1229,10 @@ impl EditorUi {
         }
         let required = SkiaRenderer::required_rgba_len(self.render_config)?;
         if self.has_virtual_text_decorations() {
-            let grid = self.state.get_viewport_content_composed(start_row, row_count);
+            let start_composed = self.composed_start_row_for_doc_row(start_row);
+            let grid = self
+                .state
+                .get_viewport_content_composed(start_composed, row_count);
             self.renderer.render_composed_rgba_into(
                 &grid,
                 caret_offsets.as_slice(),
@@ -1308,6 +1375,184 @@ impl EditorUi {
         let global_row = self.state.get_viewport_state().scroll_top + local_row;
         (global_row, col)
     }
+
+    fn pixel_to_local_row_col(&self, x_px: f32, y_px: f32) -> (usize, usize) {
+        let gutter_px =
+            self.render_config.gutter_width_cells as f32 * self.render_config.cell_width_px;
+        let x = (x_px - self.render_config.padding_x_px - gutter_px).max(0.0);
+        let y = (y_px - self.render_config.padding_y_px).max(0.0);
+
+        let col = (x / self.render_config.cell_width_px.max(1.0))
+            .floor()
+            .max(0.0) as usize;
+        let local_row = (y / self.render_config.line_height_px.max(1.0))
+            .floor()
+            .max(0.0) as usize;
+        (local_row, col)
+    }
+
+    fn composed_viewport_grid(&self) -> (usize, usize, editor_core::ComposedGrid) {
+        let viewport = self.state.get_viewport_state();
+        let start_doc_row = viewport.scroll_top;
+        let row_count = viewport
+            .height
+            .unwrap_or(viewport.total_visual_lines.saturating_sub(start_doc_row));
+        let start_composed = self.composed_start_row_for_doc_row(start_doc_row);
+        let grid = self
+            .state
+            .get_viewport_content_composed(start_composed, row_count);
+        (start_composed, row_count, grid)
+    }
+
+    fn composed_start_row_for_doc_row(&self, doc_row: usize) -> usize {
+        // Fast path: no above-line virtual text => composed rows are identical to doc visual rows.
+        let mut has_above_line = false;
+        for layer in self.state.editor().decorations.values() {
+            for d in layer {
+                if d.placement == editor_core::DecorationPlacement::AboveLine
+                    && d.text.as_ref().is_some_and(|t| !t.is_empty())
+                {
+                    has_above_line = true;
+                    break;
+                }
+            }
+            if has_above_line {
+                break;
+            }
+        }
+        if !has_above_line {
+            return doc_row;
+        }
+
+        let (top_logical_line, _visual_in_logical) =
+            self.state.editor().visual_to_logical_line(doc_row);
+
+        // Count above-line decorations per logical line.
+        let line_index = &self.state.editor().line_index;
+        let mut above_count: HashMap<usize, usize> = HashMap::new();
+        for layer in self.state.editor().decorations.values() {
+            for d in layer {
+                if d.placement != editor_core::DecorationPlacement::AboveLine {
+                    continue;
+                }
+                let Some(text) = d.text.as_ref() else {
+                    continue;
+                };
+                if text.is_empty() {
+                    continue;
+                }
+                let line = line_index.char_offset_to_position(d.range.start).0;
+                *above_count.entry(line).or_insert(0) += 1;
+            }
+        }
+
+        let regions = &self.state.get_folding_state().regions;
+        let mut prefix = 0usize;
+        for line in 0..top_logical_line {
+            if is_logical_line_hidden(regions.as_slice(), line) {
+                continue;
+            }
+            prefix = prefix.saturating_add(above_count.get(&line).copied().unwrap_or(0));
+        }
+        doc_row.saturating_add(prefix)
+    }
+}
+
+fn is_logical_line_hidden(regions: &[editor_core::FoldRegion], logical_line: usize) -> bool {
+    regions.iter().any(|region| {
+        region.is_collapsed
+            && logical_line > region.start_line
+            && logical_line <= region.end_line
+    })
+}
+
+fn composed_line_index_for_offset(grid: &editor_core::ComposedGrid, char_offset: usize) -> Option<usize> {
+    for (idx, line) in grid.lines.iter().enumerate() {
+        if !matches!(line.kind, editor_core::ComposedLineKind::Document { .. }) {
+            continue;
+        }
+
+        let start = line.char_offset_start;
+        let end = line.char_offset_end;
+
+        if char_offset < start {
+            break;
+        }
+        if char_offset > end {
+            continue;
+        }
+        if char_offset < end {
+            return Some(idx);
+        }
+
+        if let Some(next) = grid.lines.get(idx + 1) {
+            if matches!(next.kind, editor_core::ComposedLineKind::Document { .. })
+                && next.char_offset_start == char_offset
+            {
+                continue;
+            }
+        }
+        return Some(idx);
+    }
+    None
+}
+
+fn indent_prefix_cell_count(line: &editor_core::ComposedLine) -> usize {
+    let mut count = 0usize;
+    for cell in &line.cells {
+        match cell.source {
+            editor_core::ComposedCellSource::Virtual { .. } => {
+                if !cell.styles.is_empty() || !cell.ch.is_whitespace() {
+                    break;
+                }
+                count = count.saturating_add(1);
+            }
+            editor_core::ComposedCellSource::Document { .. } => break,
+        }
+    }
+    count
+}
+
+fn caret_x_cells_in_composed_line(line: &editor_core::ComposedLine, char_offset: usize) -> u32 {
+    let indent_prefix = indent_prefix_cell_count(line);
+    let mut x_cells: u32 = 0;
+    for (idx, cell) in line.cells.iter().enumerate() {
+        let anchor = match cell.source {
+            editor_core::ComposedCellSource::Document { offset } => offset,
+            editor_core::ComposedCellSource::Virtual { anchor_offset } => anchor_offset,
+        };
+
+        if anchor < char_offset {
+            x_cells = x_cells.saturating_add(cell.width as u32);
+            continue;
+        }
+        if anchor > char_offset {
+            break;
+        }
+
+        let is_indent_prefix = idx < indent_prefix;
+        if is_indent_prefix {
+            x_cells = x_cells.saturating_add(cell.width as u32);
+            continue;
+        }
+        break;
+    }
+    x_cells
+}
+
+fn hit_test_composed_line_char_offset(line: &editor_core::ComposedLine, x_cells: usize) -> usize {
+    let mut x = 0usize;
+    for cell in &line.cells {
+        let w = cell.width.max(1);
+        if x_cells < x.saturating_add(w) {
+            return match cell.source {
+                editor_core::ComposedCellSource::Document { offset } => offset,
+                editor_core::ComposedCellSource::Virtual { anchor_offset } => anchor_offset,
+            };
+        }
+        x = x.saturating_add(w);
+    }
+    line.char_offset_end
 }
 
 #[cfg(test)]
@@ -1603,6 +1848,37 @@ mod tests {
 
         // Hit-testing inside gutter should clamp to column 0.
         assert_eq!(ui.view_point_to_char_offset(5.0, 10.0).unwrap(), 0);
+    }
+
+    #[test]
+    fn ui_inlay_hints_affect_hit_testing_and_view_point_mapping() {
+        let mut ui = EditorUi::new("ab\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 40,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(200, 40, 1.0).unwrap();
+
+        // Insert an inlay hint at position (line=0, character=1), with a single space label so
+        // renderer tests can sample background deterministically.
+        ui.lsp_apply_inlay_hints_json(
+            r#"[
+              { "position": { "line": 0, "character": 1 }, "label": " " }
+            ]"#,
+        )
+        .unwrap();
+
+        // With the inlay hint inserted between 'a' and 'b', the 'b' glyph shifts right by 1 cell.
+        // So x=25 (col=2) should still map to char offset 1 (before 'b'), not to end-of-line.
+        assert_eq!(ui.view_point_to_char_offset(25.0, 10.0).unwrap(), 1);
+
+        // Caret at end-of-line should include the inlay hint width: x = 3 cells * 10px.
+        assert_eq!(ui.char_offset_to_view_point_px(2).unwrap(), (30.0, 0.0));
     }
 
     #[test]
