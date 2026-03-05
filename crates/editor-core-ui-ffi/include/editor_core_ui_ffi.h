@@ -40,6 +40,28 @@ typedef struct EcuSelectionRange {
   uint32_t end;
 } EcuSelectionRange;
 
+// Viewport state snapshot.
+//
+// Notes:
+// - `height_rows` is optional in the Rust core. In the UI wrapper it should always be set
+//   (because the host provides a pixel viewport), but the ABI keeps this optional so
+//   non-UI hosts can still query it.
+// - All values are expressed in logical row units (visual lines after wrapping/folding),
+//   except `sub_row_offset` which is a normalized 0..=65535 fraction within a row.
+typedef struct EcuViewportState {
+  uint32_t width_cells;
+  uint32_t height_rows;
+  uint32_t has_height;
+  uint32_t scroll_top;
+  uint32_t sub_row_offset;
+  uint32_t overscan_rows;
+  uint32_t visible_start;
+  uint32_t visible_end;
+  uint32_t prefetch_start;
+  uint32_t prefetch_end;
+  uint32_t total_visual_lines;
+} EcuViewportState;
+
 // Return codes (int32).
 // 0 = OK
 // 1 = invalid argument
@@ -127,6 +149,11 @@ int32_t editor_core_ui_ffi_editor_ui_set_viewport_px(EditorUi* ui,
                                                      float scale);
 void editor_core_ui_ffi_editor_ui_scroll_by_rows(EditorUi* ui, int32_t delta_rows);
 void editor_core_ui_ffi_editor_ui_scroll_by_pixels(EditorUi* ui, float delta_y_px);
+int32_t editor_core_ui_ffi_editor_ui_get_viewport_state(EditorUi* ui,
+                                                        EcuViewportState* out_state);
+void editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(EditorUi* ui,
+                                                          uint32_t top_visual_row,
+                                                          uint32_t sub_row_offset);
 
 int32_t editor_core_ui_ffi_editor_ui_insert_text(EditorUi* ui, const char* text_utf8);
 int32_t editor_core_ui_ffi_editor_ui_backspace(EditorUi* ui);

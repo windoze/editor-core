@@ -133,6 +133,22 @@ pub struct EcuSelectionRange {
     pub end: u32,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct EcuViewportState {
+    pub width_cells: u32,
+    pub height_rows: u32,
+    pub has_height: u32,
+    pub scroll_top: u32,
+    pub sub_row_offset: u32,
+    pub overscan_rows: u32,
+    pub visible_start: u32,
+    pub visible_end: u32,
+    pub prefetch_start: u32,
+    pub prefetch_end: u32,
+    pub total_visual_lines: u32,
+}
+
 const ECU_STYLE_FLAG_FOREGROUND: u32 = 1 << 0;
 const ECU_STYLE_FLAG_BACKGROUND: u32 = 1 << 1;
 
@@ -860,6 +876,55 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_pixels(
     }
     let ui = unsafe { &mut *ui };
     ui.scroll_by_pixels(delta_y_px);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_get_viewport_state(
+    ui: *mut EditorUi,
+    out_state: *mut EcuViewportState,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let out = require_mut(out_state, "out_state")?;
+
+        let vp = ui.viewport_state();
+        out.width_cells = vp.width as u32;
+        out.height_rows = vp.height.unwrap_or_default() as u32;
+        out.has_height = if vp.height.is_some() { 1 } else { 0 };
+        out.scroll_top = vp.scroll_top as u32;
+        out.sub_row_offset = vp.sub_row_offset as u32;
+        out.overscan_rows = vp.overscan_rows as u32;
+        out.visible_start = vp.visible_lines.start as u32;
+        out.visible_end = vp.visible_lines.end as u32;
+        out.prefetch_start = vp.prefetch_lines.start as u32;
+        out.prefetch_end = vp.prefetch_lines.end as u32;
+        out.total_visual_lines = vp.total_visual_lines as u32;
+
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(
+    ui: *mut EditorUi,
+    top_visual_row: u32,
+    sub_row_offset: u32,
+) {
+    if ui.is_null() {
+        set_last_error("ui is null".to_string());
+        return;
+    }
+    let ui = unsafe { &mut *ui };
+    ui.set_smooth_scroll_state(
+        top_visual_row as usize,
+        (sub_row_offset.min(u16::MAX as u32)) as u16,
+    );
 }
 
 #[unsafe(no_mangle)]
@@ -4568,6 +4633,58 @@ contexts:
             ECU_OK
         );
         assert_eq!(off, 2);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_get_viewport_state_and_set_smooth_scroll_state_roundtrip() {
+        let initial = CString::new("0\n1\n2\n3\n4\n5\n6\n7").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 10.0, 10.0, 10.0, 0.0, 0.0);
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 80, 20, 1.0);
+
+        let mut vp = EcuViewportState {
+            width_cells: 0,
+            height_rows: 0,
+            has_height: 0,
+            scroll_top: 0,
+            sub_row_offset: 0,
+            overscan_rows: 0,
+            visible_start: 0,
+            visible_end: 0,
+            prefetch_start: 0,
+            prefetch_end: 0,
+            total_visual_lines: 0,
+        };
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_viewport_state(ui, &mut vp),
+            ECU_OK
+        );
+        assert_eq!(vp.total_visual_lines, 8);
+        assert_eq!(vp.has_height, 1);
+        assert_eq!(vp.height_rows, 2);
+        assert_eq!(vp.scroll_top, 0);
+        assert_eq!(vp.sub_row_offset, 0);
+
+        editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(ui, 3, 32768);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_viewport_state(ui, &mut vp),
+            ECU_OK
+        );
+        assert_eq!(vp.scroll_top, 3);
+        assert_eq!(vp.sub_row_offset, 32768);
+
+        // Clamp to maximum scroll position (total - height = 6).
+        editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(ui, 999, 65535);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_viewport_state(ui, &mut vp),
+            ECU_OK
+        );
+        assert_eq!(vp.scroll_top, 6);
+        assert_eq!(vp.sub_row_offset, 0);
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

@@ -215,6 +215,36 @@ public final class EditorUI {
         library.editorUiScrollByPixelsFn(handle, deltaYPx)
     }
 
+    public func viewportState() throws -> EcuViewportState {
+        var ffi = _EcuViewportStateFFI(
+            width_cells: 0,
+            height_rows: 0,
+            has_height: 0,
+            scroll_top: 0,
+            sub_row_offset: 0,
+            overscan_rows: 0,
+            visible_start: 0,
+            visible_end: 0,
+            prefetch_start: 0,
+            prefetch_end: 0,
+            total_visual_lines: 0
+        )
+        let status = withUnsafeMutablePointer(to: &ffi) { ptr in
+            library.editorUiGetViewportStateFn(handle, UnsafeMutableRawPointer(ptr))
+        }
+        try library.ensureStatus(status, context: "editor_ui_get_viewport_state")
+        return EcuViewportState(ffi: ffi)
+    }
+
+    /// Set the smooth-scroll position directly.
+    ///
+    /// - Parameters:
+    ///   - topVisualRow: Top visual row anchor (after wrapping/folding).
+    ///   - subRowOffset: Normalized 0..=65535 fraction within the row.
+    public func setSmoothScrollState(topVisualRow: UInt32, subRowOffset: UInt32) {
+        library.editorUiSetSmoothScrollStateFn(handle, topVisualRow, subRowOffset)
+    }
+
     public func insertText(_ text: String) throws {
         let status = text.withCString { cstr in
             library.editorUiInsertTextFn(handle, cstr)

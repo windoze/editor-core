@@ -38,6 +38,8 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiSetViewportPx = @convention(c) (OpaquePointer?, UInt32, UInt32, Float) -> Int32
     typealias FnEditorUiScrollByRows = @convention(c) (OpaquePointer?, Int32) -> Void
     typealias FnEditorUiScrollByPixels = @convention(c) (OpaquePointer?, Float) -> Void
+    typealias FnEditorUiGetViewportState = @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?) -> Int32
+    typealias FnEditorUiSetSmoothScrollState = @convention(c) (OpaquePointer?, UInt32, UInt32) -> Void
 
     typealias FnEditorUiInsertText = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
     typealias FnEditorUiBackspace = @convention(c) (OpaquePointer?) -> Int32
@@ -187,6 +189,8 @@ public final class EditorCoreUIFFILibrary {
     let editorUiSetViewportPxFn: FnEditorUiSetViewportPx
     let editorUiScrollByRowsFn: FnEditorUiScrollByRows
     let editorUiScrollByPixelsFn: FnEditorUiScrollByPixels
+    let editorUiGetViewportStateFn: FnEditorUiGetViewportState
+    let editorUiSetSmoothScrollStateFn: FnEditorUiSetSmoothScrollState
     let editorUiInsertTextFn: FnEditorUiInsertText
     let editorUiBackspaceFn: FnEditorUiBackspace
     let editorUiDeleteForwardFn: FnEditorUiDeleteForward
@@ -317,6 +321,8 @@ public final class EditorCoreUIFFILibrary {
         editorUiSetViewportPxFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_viewport_px", as: FnEditorUiSetViewportPx.self)
         editorUiScrollByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_scroll_by_rows", as: FnEditorUiScrollByRows.self)
         editorUiScrollByPixelsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_scroll_by_pixels", as: FnEditorUiScrollByPixels.self)
+        editorUiGetViewportStateFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_get_viewport_state", as: FnEditorUiGetViewportState.self)
+        editorUiSetSmoothScrollStateFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_smooth_scroll_state", as: FnEditorUiSetSmoothScrollState.self)
         editorUiInsertTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_insert_text", as: FnEditorUiInsertText.self)
         editorUiBackspaceFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_backspace", as: FnEditorUiBackspace.self)
         editorUiDeleteForwardFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_delete_forward", as: FnEditorUiDeleteForward.self)

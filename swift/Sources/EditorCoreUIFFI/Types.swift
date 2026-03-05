@@ -101,6 +101,29 @@ public struct EcuSelectionRange: Equatable, Sendable {
     }
 }
 
+@frozen
+public struct EcuViewportState: Equatable, Sendable {
+    public var widthCells: UInt32
+    public var heightRows: UInt32?
+    public var scrollTop: UInt32
+    public var subRowOffset: UInt32
+    public var overscanRows: UInt32
+    public var visibleLines: Range<UInt32>
+    public var prefetchLines: Range<UInt32>
+    public var totalVisualLines: UInt32
+
+    init(ffi: _EcuViewportStateFFI) {
+        widthCells = ffi.width_cells
+        heightRows = ffi.has_height != 0 ? ffi.height_rows : nil
+        scrollTop = ffi.scroll_top
+        subRowOffset = ffi.sub_row_offset
+        overscanRows = ffi.overscan_rows
+        visibleLines = ffi.visible_start..<ffi.visible_end
+        prefetchLines = ffi.prefetch_start..<ffi.prefetch_end
+        totalVisualLines = ffi.total_visual_lines
+    }
+}
+
 public enum EcuExpandSelectionUnit: UInt32, Sendable {
     case character = 0
     case word = 1
@@ -156,4 +179,18 @@ struct _EcuStyleColorsFFI {
 struct _EcuSelectionRangeFFI {
     var start: UInt32
     var end: UInt32
+}
+
+struct _EcuViewportStateFFI {
+    var width_cells: UInt32
+    var height_rows: UInt32
+    var has_height: UInt32
+    var scroll_top: UInt32
+    var sub_row_offset: UInt32
+    var overscan_rows: UInt32
+    var visible_start: UInt32
+    var visible_end: UInt32
+    var prefetch_start: UInt32
+    var prefetch_end: UInt32
+    var total_visual_lines: UInt32
 }

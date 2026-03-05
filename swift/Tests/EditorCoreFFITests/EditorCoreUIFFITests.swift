@@ -202,6 +202,30 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(try ui.viewPointToCharOffset(xPx: 0, yPx: 9), 2)
     }
 
+    func testViewportStateAndSetSmoothScrollState() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "0\n1\n2\n3\n4\n5\n6\n7", viewportWidthCells: 80)
+        try ui.setRenderMetrics(fontSize: 10, lineHeightPx: 10, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 80, heightPx: 20, scale: 1)
+
+        let vp0 = try ui.viewportState()
+        XCTAssertEqual(vp0.totalVisualLines, 8)
+        XCTAssertEqual(vp0.heightRows, 2)
+        XCTAssertEqual(vp0.scrollTop, 0)
+        XCTAssertEqual(vp0.subRowOffset, 0)
+
+        ui.setSmoothScrollState(topVisualRow: 3, subRowOffset: 32768)
+        let vp1 = try ui.viewportState()
+        XCTAssertEqual(vp1.scrollTop, 3)
+        XCTAssertEqual(vp1.subRowOffset, 32768)
+
+        // Clamp to max scroll (total - height = 6).
+        ui.setSmoothScrollState(topVisualRow: 999, subRowOffset: 65535)
+        let vp2 = try ui.viewportState()
+        XCTAssertEqual(vp2.scrollTop, 6)
+        XCTAssertEqual(vp2.subRowOffset, 0)
+    }
+
     func testStyleColorsOverrideAffectsRendering() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         // Use a space in the styled cell so glyph rasterization does not affect the pixel sample.
