@@ -457,11 +457,7 @@ public final class EditorCoreSkiaView: NSView {
     }
 
     public override func scrollWheel(with event: NSEvent) {
-        handleScroll(
-            deltaYPoints: event.scrollingDeltaY,
-            hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas,
-            isDirectionInvertedFromDevice: event.isDirectionInvertedFromDevice
-        )
+        handleScroll(deltaYPoints: event.scrollingDeltaY, hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas)
     }
 
     // MARK: - Smooth scroll helper (testable)
@@ -472,11 +468,9 @@ public final class EditorCoreSkiaView: NSView {
     ///   - deltaYPoints: For precise scrolling events, this is the point delta. For coarse scrolling
     ///     (mouse wheel), AppKit's delta is closer to “line units”.
     ///   - hasPreciseScrollingDeltas: Mirrors `NSEvent.hasPreciseScrollingDeltas`.
-    ///   - isDirectionInvertedFromDevice: Mirrors `NSEvent.isDirectionInvertedFromDevice`.
     func handleScroll(
         deltaYPoints: CGFloat,
-        hasPreciseScrollingDeltas: Bool,
-        isDirectionInvertedFromDevice: Bool = false
+        hasPreciseScrollingDeltas: Bool
     ) {
         // 平滑滚动：
         // - trackpad（hasPreciseScrollingDeltas == true）给出的是 point 级连续 delta
@@ -502,12 +496,9 @@ public final class EditorCoreSkiaView: NSView {
         let deltaPx = deltaPt * scale
         if deltaPx != 0 {
             // 约定：Rust `scrollByPixels` 的正值表示“向下滚动”（内容向上，显示更靠后的行）。
-            //
-            // AppKit 的 `scrollingDeltaY` 会受“自然滚动”设置影响：
-            // - `isDirectionInvertedFromDevice == false`: 传统滚轮方向，通常需要取反才能得到“向下滚动为正”
-            // - `isDirectionInvertedFromDevice == true`: 自然滚动方向，通常不需要取反
-            let docDeltaPx = isDirectionInvertedFromDevice ? deltaPx : -deltaPx
-            editor.scrollByPixels(Float(docDeltaPx))
+            // AppKit: scrollingDeltaY > 0 通常表示“向上滚动”（内容向下）。
+            // 我们约定 Rust `scrollByPixels` 的正值表示“向下滚动”（内容向上），因此取负号。
+            editor.scrollByPixels(Float(-deltaPx))
             needsDisplay = true
             invalidateIMECharacterCoordinates()
             onViewportStateDidChange?()
