@@ -43,6 +43,7 @@ public final class EditorCoreSkiaView: MTKView {
     private var didLogScaleDebugOnce: Bool = false
     private var lastInputDebugLogUptime: TimeInterval = 0
     private var drawScheduled: Bool = false
+    private var didPresentFirstFrame: Bool = false
 
     private var lineHeightPx: Float = 18
     private var gutterWidthCells: UInt32 = 4
@@ -79,10 +80,14 @@ public final class EditorCoreSkiaView: MTKView {
         self.metalCommandQueue = queue
         super.init(frame: .zero, device: device)
 
-        // MTKView 默认会不断 redraw；这里切换为“事件驱动”的 setNeedsDisplay 模式，
-        // 避免 idle 状态也持续占用 CPU/GPU。
-        enableSetNeedsDisplay = true
-        isPaused = true
+        // 说明：
+        // - 理想情况下我们希望使用“事件驱动”的 on-demand draw（`enableSetNeedsDisplay = true` + `isPaused = true`）。
+        // - 但在 macOS 26.3 的部分组合下，首次显示阶段 on-demand draw 可能不会拿到 drawable，
+        //   导致用户看到“编辑区空白”直到发生额外事件。
+        //
+        // 解决策略：启动时先连续渲染，保证首帧一定 present；首帧成功后自动切回 on-demand。
+        enableSetNeedsDisplay = false
+        isPaused = false
         framebufferOnly = false
         colorPixelFormat = .bgra8Unorm
         delegate = self
@@ -1043,6 +1048,13 @@ extension EditorCoreSkiaView: MTKViewDelegate {
         guard let commandBuffer = metalCommandQueue.makeCommandBuffer() else { return }
         commandBuffer.present(drawable)
         commandBuffer.commit()
+
+        // 首帧成功 present 后切回 on-demand 模式，避免 idle 状态持续占用 CPU/GPU。
+        if didPresentFirstFrame == false {
+            didPresentFirstFrame = true
+            enableSetNeedsDisplay = true
+            isPaused = true
+        }
     }
 }
 
