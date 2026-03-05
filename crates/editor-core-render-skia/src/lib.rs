@@ -16,7 +16,11 @@ use skia_safe::shaper::run_handler::{Buffer, RunInfo};
 use skia_safe::shaper::{Feature, RunHandler};
 use skia_safe::Shaper;
 use std::collections::{BTreeMap, HashMap};
+use std::ffi::c_void;
 use thiserror::Error;
+
+#[cfg(target_os = "macos")]
+use skia_safe::gpu;
 
 /// RGBA (premultiplied) 8-bit color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,6 +180,23 @@ pub enum RenderError {
     BufferTooSmall { required: usize, provided: usize },
     #[error("failed to create Skia surface")]
     SurfaceCreateFailed,
+    #[error("metal is not supported on this platform")]
+    MetalUnsupported,
+    #[error("metal device or command queue is null")]
+    MetalInvalidHandle,
+    #[error("failed to create Skia Metal GPU context")]
+    MetalContextCreateFailed,
+    #[error("metal renderer is not enabled")]
+    MetalNotEnabled,
+    #[error("metal texture handle is null")]
+    MetalTextureNull,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug)]
+struct SkiaMetalState {
+    _backend_context: gpu::mtl::BackendContext,
+    context: gpu::DirectContext,
 }
 
 /// A renderer instance (Skia backend in later steps).
@@ -189,6 +210,8 @@ pub struct SkiaRenderer {
     font_size: f32,
     glyph_font_cache: HashMap<char, usize>,
     shaper: Shaper,
+    #[cfg(target_os = "macos")]
+    metal: Option<SkiaMetalState>,
 }
 
 impl SkiaRenderer {
@@ -205,6 +228,8 @@ impl SkiaRenderer {
             font_size,
             glyph_font_cache: HashMap::new(),
             shaper: Shaper::new(None),
+            #[cfg(target_os = "macos")]
+            metal: None,
         }
     }
 
@@ -237,6 +262,69 @@ impl SkiaRenderer {
         self.font_families = normalized;
         self.fonts = fonts;
         self.glyph_font_cache.clear();
+    }
+
+    /// Enable Skia GPU rendering via Metal (macOS only).
+    ///
+    /// The host is responsible for providing valid, long-lived Metal objects:
+    /// - `device`: `id<MTLDevice>`
+    /// - `command_queue`: `id<MTLCommandQueue>`
+    ///
+    /// Safety note:
+    /// - We only store the raw handles inside Skia's Metal backend context.
+    /// - The caller must ensure the Objective-C objects outlive this `SkiaRenderer`
+    ///   (or call `disable_metal()` before releasing them).
+    pub fn enable_metal(
+        &mut self,
+        device: *mut c_void,
+        command_queue: *mut c_void,
+    ) -> Result<(), RenderError> {
+        #[cfg(target_os = "macos")]
+        {
+            if device.is_null() || command_queue.is_null() {
+                return Err(RenderError::MetalInvalidHandle);
+            }
+
+            // SAFETY:
+            // - The caller guarantees `device` and `command_queue` are valid Metal objects and
+            //   outlive the created backend context.
+            let backend = unsafe {
+                gpu::mtl::BackendContext::new(device as gpu::mtl::Handle, command_queue as gpu::mtl::Handle)
+            };
+
+            let context = gpu::direct_contexts::make_metal(&backend, None)
+                .ok_or(RenderError::MetalContextCreateFailed)?;
+
+            self.metal = Some(SkiaMetalState {
+                _backend_context: backend,
+                context,
+            });
+            Ok(())
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (device, command_queue);
+            Err(RenderError::MetalUnsupported)
+        }
+    }
+
+    /// Disable the Metal backend (if enabled), reverting to CPU raster output.
+    pub fn disable_metal(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            self.metal = None;
+        }
+    }
+
+    pub fn is_metal_enabled(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            self.metal.is_some()
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
     }
 
     fn ensure_font_size(&mut self, size: f32) {
@@ -467,6 +555,19 @@ impl SkiaRenderer {
             .ok_or(RenderError::SurfaceCreateFailed)?;
 
         let canvas = surface.canvas();
+        self.draw_headless_grid_to_canvas(canvas, grid, carets, selections, fold_markers, config, theme)
+    }
+
+    fn draw_headless_grid_to_canvas(
+        &mut self,
+        canvas: &skia_safe::Canvas,
+        grid: &HeadlessGrid,
+        carets: &[VisualCaret],
+        selections: &[VisualSelection],
+        fold_markers: &[FoldMarker],
+        config: RenderConfig,
+        theme: &RenderTheme,
+    ) -> Result<(), RenderError> {
         canvas.clear(rgba_to_skia_color4f(theme.background));
 
         let gutter_x = config.padding_x_px;
@@ -474,14 +575,16 @@ impl SkiaRenderer {
         let text_origin_x = gutter_x + gutter_w_px;
 
         if config.gutter_width_cells > 0 && gutter_w_px > 0.0 {
-            let gutter_bg = resolve_style_background(GUTTER_BACKGROUND_STYLE_ID, theme, theme.background);
+            let gutter_bg =
+                resolve_style_background(GUTTER_BACKGROUND_STYLE_ID, theme, theme.background);
             let rect = Rect::from_xywh(gutter_x, 0.0, gutter_w_px, config.height_px as f32);
             let mut paint = Paint::default();
             paint.set_anti_alias(false);
             paint.set_color(rgba_to_skia_color(gutter_bg));
             canvas.draw_rect(rect, &paint);
 
-            let sep = resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
+            let sep =
+                resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
             let sep_rect = Rect::from_xywh(text_origin_x, 0.0, 1.0, config.height_px as f32);
             let mut sep_paint = Paint::default();
             sep_paint.set_anti_alias(false);
@@ -553,8 +656,12 @@ impl SkiaRenderer {
                     };
                     let marker_color =
                         resolve_style_background(style_id, theme, theme.foreground);
-                    let rect =
-                        Rect::from_xywh(gutter_x, y_top, config.cell_width_px, config.line_height_px);
+                    let rect = Rect::from_xywh(
+                        gutter_x,
+                        y_top,
+                        config.cell_width_px,
+                        config.line_height_px,
+                    );
                     let mut paint = Paint::default();
                     paint.set_anti_alias(false);
                     paint.set_color(rgba_to_skia_color(marker_color));
@@ -599,7 +706,8 @@ impl SkiaRenderer {
                 paint.set_anti_alias(true);
                 paint.set_color(rgba_to_skia_color(run.fg));
 
-                let font = &renderer.fonts[run.font_index.min(renderer.fonts.len().saturating_sub(1))];
+                let font = &renderer.fonts
+                    [run.font_index.min(renderer.fonts.len().saturating_sub(1))];
                 renderer.draw_shaped_run(
                     canvas,
                     run.text.as_str(),
@@ -654,11 +762,14 @@ impl SkiaRenderer {
                     underlines.push((x_px, underline_y, w_px, u_color));
                 }
 
-                let eligible_for_ligatures = config.enable_ligatures && cell.width == 1 && cell.ch.is_ascii();
+                let eligible_for_ligatures =
+                    config.enable_ligatures && cell.width == 1 && cell.ch.is_ascii();
                 if eligible_for_ligatures {
                     let font_index = self.font_index_for_char(cell.ch);
 
-                    let can_extend = pending.as_ref().is_some_and(|r| r.font_index == font_index && r.fg == fg);
+                    let can_extend = pending.as_ref().is_some_and(|r| {
+                        r.font_index == font_index && r.fg == fg
+                    });
                     if !can_extend {
                         flush(self, &mut pending);
                         pending = Some(PendingRun {
@@ -693,7 +804,12 @@ impl SkiaRenderer {
 
             // Underlines last.
             for (x_px, underline_y, w_px, fg) in underlines {
-                let rect = Rect::from_xywh(x_px, underline_y, w_px, config.scale.clamp(1.0, 2.0));
+                let rect = Rect::from_xywh(
+                    x_px,
+                    underline_y,
+                    w_px,
+                    config.scale.clamp(1.0, 2.0),
+                );
                 let mut u_paint = Paint::default();
                 u_paint.set_anti_alias(false);
                 u_paint.set_color(rgba_to_skia_color(fg));
@@ -707,6 +823,488 @@ impl SkiaRenderer {
         }
 
         Ok(())
+    }
+
+    /// Render a viewport `grid` into a Metal texture (macOS only).
+    ///
+    /// This is intended for native host UI toolkits that already own the presentation layer
+    /// (e.g. `CAMetalLayer` / `MTKView`). The host provides:
+    /// - a valid `MTLTexture*` (`metal_texture`)
+    /// - dimensions that match `config.width_px/height_px`
+    ///
+    /// The renderer will:
+    /// - wrap the texture as a Skia GPU render target
+    /// - draw into it
+    /// - `flush_and_submit()` the Skia `DirectContext`
+    pub fn render_rgba_into_metal_texture(
+        &mut self,
+        grid: &HeadlessGrid,
+        carets: &[VisualCaret],
+        selections: &[VisualSelection],
+        fold_markers: &[FoldMarker],
+        config: RenderConfig,
+        theme: &RenderTheme,
+        metal_texture: *mut c_void,
+    ) -> Result<(), RenderError> {
+        #[cfg(target_os = "macos")]
+        {
+            if metal_texture.is_null() {
+                return Err(RenderError::MetalTextureNull);
+            }
+            self.ensure_font_size(config.font_size);
+
+            let mut surface = {
+                let metal = self.metal.as_mut().ok_or(RenderError::MetalNotEnabled)?;
+
+                // SAFETY: caller guarantees `metal_texture` is a valid `id<MTLTexture>`.
+                let texture_info =
+                    unsafe { gpu::mtl::TextureInfo::new(metal_texture as gpu::mtl::Handle) };
+                let backend_rt = gpu::backend_render_targets::make_mtl(
+                    (config.width_px as i32, config.height_px as i32),
+                    &texture_info,
+                );
+
+                gpu::surfaces::wrap_backend_render_target(
+                    &mut metal.context,
+                    &backend_rt,
+                    gpu::SurfaceOrigin::TopLeft,
+                    // MTKView/CAMetalLayer defaults to BGRA8.
+                    ColorType::BGRA8888,
+                    None,
+                    None,
+                )
+                .ok_or(RenderError::SurfaceCreateFailed)?
+            };
+
+            let canvas = surface.canvas();
+            self.draw_headless_grid_to_canvas(
+                canvas,
+                grid,
+                carets,
+                selections,
+                fold_markers,
+                config,
+                theme,
+            )?;
+
+            // Submit GPU work after drawing.
+            if let Some(metal) = self.metal.as_mut() {
+                metal.context.flush_and_submit();
+            }
+            drop(surface);
+            Ok(())
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (
+                grid,
+                carets,
+                selections,
+                fold_markers,
+                config,
+                theme,
+                metal_texture,
+            );
+            Err(RenderError::MetalUnsupported)
+        }
+    }
+
+    fn draw_composed_grid_to_canvas(
+        &mut self,
+        canvas: &skia_safe::Canvas,
+        grid: &ComposedGrid,
+        caret_offsets: &[usize],
+        selection_ranges: &[(usize, usize)],
+        fold_markers: &[FoldMarker],
+        config: RenderConfig,
+        theme: &RenderTheme,
+    ) -> Result<(), RenderError> {
+        canvas.clear(rgba_to_skia_color4f(theme.background));
+
+        let gutter_x = config.padding_x_px;
+        let gutter_w_px = config.gutter_width_cells as f32 * config.cell_width_px;
+        let text_origin_x = gutter_x + gutter_w_px;
+
+        if config.gutter_width_cells > 0 && gutter_w_px > 0.0 {
+            let gutter_bg =
+                resolve_style_background(GUTTER_BACKGROUND_STYLE_ID, theme, theme.background);
+            let rect = Rect::from_xywh(gutter_x, 0.0, gutter_w_px, config.height_px as f32);
+            let mut paint = Paint::default();
+            paint.set_anti_alias(false);
+            paint.set_color(rgba_to_skia_color(gutter_bg));
+            canvas.draw_rect(rect, &paint);
+
+            let sep =
+                resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
+            let sep_rect = Rect::from_xywh(text_origin_x, 0.0, 1.0, config.height_px as f32);
+            let mut sep_paint = Paint::default();
+            sep_paint.set_anti_alias(false);
+            sep_paint.set_color(rgba_to_skia_color(sep));
+            canvas.draw_rect(sep_rect, &sep_paint);
+        }
+
+        // Resolve caret positions in the composed grid (visible subset only).
+        #[derive(Debug, Clone, Copy)]
+        struct PendingCaret {
+            local_row: usize,
+            x_cells: u32,
+        }
+        let mut pending_carets: Vec<PendingCaret> = Vec::new();
+        for &caret_offset in caret_offsets {
+            let Some(local_row) = composed_line_index_for_offset(grid, caret_offset) else {
+                continue;
+            };
+            let line = &grid.lines[local_row];
+            let x_cells = caret_x_cells_in_composed_line(line, caret_offset);
+            pending_carets.push(PendingCaret { local_row, x_cells });
+        }
+
+        debug_assert!(
+            !self.fonts.is_empty(),
+            "SkiaRenderer must always have at least one font"
+        );
+        let (_spacing, metrics) = { self.fonts[0].metrics() };
+        let mut baseline_offset = -metrics.ascent;
+        if !baseline_offset.is_finite() {
+            baseline_offset = config.line_height_px * 0.8;
+        }
+        baseline_offset = baseline_offset.clamp(0.0, config.line_height_px.max(1.0));
+
+        // 1) Draw per-cell backgrounds (including styled backgrounds).
+        for (row_idx, line) in grid.lines.iter().enumerate() {
+            let y_top =
+                config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
+            let mut x_cells: u32 = 0;
+            for cell in &line.cells {
+                let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
+                let (_fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
+                if bg != theme.background {
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
+                    let mut bg_paint = Paint::default();
+                    bg_paint.set_anti_alias(false);
+                    bg_paint.set_color(rgba_to_skia_color(bg));
+                    canvas.draw_rect(rect, &bg_paint);
+                }
+                x_cells = x_cells.saturating_add(cell.width as u32);
+            }
+        }
+
+        // 2) Selection overlay (under text, over backgrounds).
+        //
+        // Note: selection highlight is applied only to document cells. Virtual text is not
+        // considered part of the selection.
+        let mut sel_ranges: Vec<(usize, usize)> = Vec::new();
+        for (a, b) in selection_ranges {
+            if *a == *b {
+                continue;
+            }
+            if *a <= *b {
+                sel_ranges.push((*a, *b));
+            } else {
+                sel_ranges.push((*b, *a));
+            }
+        }
+
+        if !sel_ranges.is_empty() {
+            for (row_idx, line) in grid.lines.iter().enumerate() {
+                if !matches!(line.kind, ComposedLineKind::Document { .. }) {
+                    continue;
+                }
+                let y_top =
+                    config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
+                let mut x_cells: u32 = 0;
+                for cell in &line.cells {
+                    let selected = match cell.source {
+                        ComposedCellSource::Document { offset } => sel_ranges
+                            .iter()
+                            .any(|(s, e)| offset >= *s && offset < *e),
+                        _ => false,
+                    };
+                    if selected {
+                        let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
+                        let w_px = cell.width as f32 * config.cell_width_px;
+                        let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
+                        let mut sel_paint = Paint::default();
+                        sel_paint.set_anti_alias(false);
+                        sel_paint.set_color(rgba_to_skia_color(theme.selection_background));
+                        canvas.draw_rect(rect, &sel_paint);
+                    }
+                    x_cells = x_cells.saturating_add(cell.width as u32);
+                }
+            }
+        }
+
+        // 3) Text + underlines.
+        for (row_idx, line) in grid.lines.iter().enumerate() {
+            let y_top =
+                config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
+            let baseline_y = y_top + baseline_offset;
+
+            // Gutter: fold markers + line numbers for document lines (first visual segment only).
+            if config.gutter_width_cells > 0 {
+                if let ComposedLineKind::Document {
+                    logical_line,
+                    visual_in_logical,
+                } = line.kind
+                {
+                    if visual_in_logical == 0 {
+                        let marker_state =
+                            fold_marker_state_for_line(logical_line as u32, fold_markers);
+                        if let Some(is_collapsed) = marker_state {
+                            let style_id = if is_collapsed {
+                                FOLD_MARKER_COLLAPSED_STYLE_ID
+                            } else {
+                                FOLD_MARKER_EXPANDED_STYLE_ID
+                            };
+                            let marker_color =
+                                resolve_style_background(style_id, theme, theme.foreground);
+                            let rect = Rect::from_xywh(
+                                gutter_x,
+                                y_top,
+                                config.cell_width_px,
+                                config.line_height_px,
+                            );
+                            let mut paint = Paint::default();
+                            paint.set_anti_alias(false);
+                            paint.set_color(rgba_to_skia_color(marker_color));
+                            canvas.draw_rect(rect, &paint);
+                        }
+
+                        // Line number text (best-effort; tests should not depend on glyph rasterization).
+                        let gutter_fg = resolve_style_foreground(
+                            GUTTER_FOREGROUND_STYLE_ID,
+                            theme,
+                            theme.foreground,
+                        );
+                        let mut paint = Paint::default();
+                        paint.set_anti_alias(false);
+                        paint.set_color(rgba_to_skia_color(gutter_fg));
+
+                        let line_no = (logical_line + 1).to_string();
+                        let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
+                        canvas.draw_str(line_no, Point::new(x_px, baseline_y), &self.fonts[0], &paint);
+                    }
+                }
+            }
+
+            #[derive(Debug)]
+            struct PendingRun {
+                start_x_cells: u32,
+                font_index: usize,
+                fg: Rgba8,
+                text: String,
+            }
+
+            let mut pending: Option<PendingRun> = None;
+            let mut underlines: Vec<(f32, f32, f32, Rgba8)> = Vec::new();
+
+            let mut x_cells: u32 = 0;
+
+            let flush = |renderer: &mut SkiaRenderer, pending: &mut Option<PendingRun>| {
+                let Some(run) = pending.take() else {
+                    return;
+                };
+                if run.text.is_empty() {
+                    return;
+                }
+                let x_px = text_origin_x + run.start_x_cells as f32 * config.cell_width_px;
+
+                let mut paint = Paint::default();
+                paint.set_anti_alias(true);
+                paint.set_color(rgba_to_skia_color(run.fg));
+
+                let font =
+                    &renderer.fonts[run.font_index.min(renderer.fonts.len().saturating_sub(1))];
+                renderer.draw_shaped_run(
+                    canvas,
+                    run.text.as_str(),
+                    font,
+                    x_px,
+                    baseline_y,
+                    config.cell_width_px,
+                    &paint,
+                    config.enable_ligatures,
+                );
+            };
+
+            for cell in &line.cells {
+                let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
+                let (fg, _bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
+
+                let diag_id = cell
+                    .styles
+                    .iter()
+                    .copied()
+                    .find(|&id| is_lsp_diagnostics_style_id(id));
+
+                // Record IME marked text underline to draw *after* text, so it stays visible.
+                if cell.styles.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID) {
+                    let underline_h = config.scale.clamp(1.0, 2.0);
+                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    underlines.push((x_px, underline_y, w_px, fg));
+                }
+
+                // Record LSP diagnostics underline (style-layer based).
+                if let Some(diag_id) = diag_id {
+                    let underline_h = config.scale.clamp(1.0, 2.0);
+                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    let u_color = resolve_underline_color(diag_id, theme, fg);
+                    underlines.push((x_px, underline_y, w_px, u_color));
+                }
+
+                // Record LSP document links underline (style-layer based).
+                if diag_id.is_none() && cell.styles.iter().any(|&id| id == DOCUMENT_LINK_STYLE_ID) {
+                    let underline_h = config.scale.clamp(1.0, 2.0);
+                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
+                    let w_px = cell.width as f32 * config.cell_width_px;
+                    let u_color = resolve_underline_color(DOCUMENT_LINK_STYLE_ID, theme, fg);
+                    underlines.push((x_px, underline_y, w_px, u_color));
+                }
+
+                let eligible_for_ligatures =
+                    config.enable_ligatures && cell.width == 1 && cell.ch.is_ascii();
+                if eligible_for_ligatures {
+                    let font_index = self.font_index_for_char(cell.ch);
+
+                    let can_extend = pending
+                        .as_ref()
+                        .is_some_and(|r| r.font_index == font_index && r.fg == fg);
+                    if !can_extend {
+                        flush(self, &mut pending);
+                        pending = Some(PendingRun {
+                            start_x_cells: x_cells,
+                            font_index,
+                            fg,
+                            text: String::new(),
+                        });
+                    }
+
+                    if let Some(r) = pending.as_mut() {
+                        r.text.push(cell.ch);
+                    }
+                } else {
+                    flush(self, &mut pending);
+
+                    let mut paint = Paint::default();
+                    paint.set_anti_alias(true);
+                    paint.set_color(rgba_to_skia_color(fg));
+                    canvas.draw_str(
+                        cell.ch.to_string(),
+                        Point::new(x_px, baseline_y),
+                        self.font_for_char(cell.ch),
+                        &paint,
+                    );
+                }
+
+                x_cells = x_cells.saturating_add(cell.width as u32);
+            }
+
+            flush(self, &mut pending);
+
+            // Underlines last.
+            for (x_px, underline_y, w_px, fg) in underlines {
+                let rect =
+                    Rect::from_xywh(x_px, underline_y, w_px, config.scale.clamp(1.0, 2.0));
+                let mut u_paint = Paint::default();
+                u_paint.set_anti_alias(false);
+                u_paint.set_color(rgba_to_skia_color(fg));
+                canvas.draw_rect(rect, &u_paint);
+            }
+        }
+
+        // Carets on top.
+        for caret in pending_carets {
+            let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
+            let y_top = config.padding_y_px + caret.local_row as f32 * config.line_height_px
+                - config.scroll_y_px;
+
+            let caret_width = (config.scale.max(1.0)).min(2.0);
+            let rect = Rect::from_xywh(x_px, y_top, caret_width, config.line_height_px);
+
+            let mut paint = Paint::default();
+            paint.set_anti_alias(false);
+            paint.set_color(rgba_to_skia_color(theme.caret));
+            canvas.draw_rect(rect, &paint);
+        }
+
+        Ok(())
+    }
+
+    /// Render a composed viewport into a Metal texture (macOS only).
+    ///
+    /// See [`Self::render_rgba_into_metal_texture`] for the host-side expectations.
+    pub fn render_composed_into_metal_texture(
+        &mut self,
+        grid: &ComposedGrid,
+        caret_offsets: &[usize],
+        selection_ranges: &[(usize, usize)],
+        fold_markers: &[FoldMarker],
+        config: RenderConfig,
+        theme: &RenderTheme,
+        metal_texture: *mut c_void,
+    ) -> Result<(), RenderError> {
+        #[cfg(target_os = "macos")]
+        {
+            if metal_texture.is_null() {
+                return Err(RenderError::MetalTextureNull);
+            }
+            self.ensure_font_size(config.font_size);
+
+            let mut surface = {
+                let metal = self.metal.as_mut().ok_or(RenderError::MetalNotEnabled)?;
+
+                // SAFETY: caller guarantees `metal_texture` is a valid `id<MTLTexture>`.
+                let texture_info =
+                    unsafe { gpu::mtl::TextureInfo::new(metal_texture as gpu::mtl::Handle) };
+                let backend_rt = gpu::backend_render_targets::make_mtl(
+                    (config.width_px as i32, config.height_px as i32),
+                    &texture_info,
+                );
+
+                gpu::surfaces::wrap_backend_render_target(
+                    &mut metal.context,
+                    &backend_rt,
+                    gpu::SurfaceOrigin::TopLeft,
+                    ColorType::BGRA8888,
+                    None,
+                    None,
+                )
+                .ok_or(RenderError::SurfaceCreateFailed)?
+            };
+
+            let canvas = surface.canvas();
+            self.draw_composed_grid_to_canvas(
+                canvas,
+                grid,
+                caret_offsets,
+                selection_ranges,
+                fold_markers,
+                config,
+                theme,
+            )?;
+
+            if let Some(metal) = self.metal.as_mut() {
+                metal.context.flush_and_submit();
+            }
+            drop(surface);
+            Ok(())
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (
+                grid,
+                caret_offsets,
+                selection_ranges,
+                fold_markers,
+                config,
+                theme,
+                metal_texture,
+            );
+            Err(RenderError::MetalUnsupported)
+        }
     }
 
     /// Render a decoration-aware composed viewport `grid` into a caller-provided RGBA8 buffer.
@@ -1542,6 +2140,18 @@ mod tests {
             rgba.chunks_exact(4).any(|p| p != bg_px),
             "expected at least one non-background pixel from glyph rendering"
         );
+    }
+
+    #[test]
+    fn metal_enable_rejects_null_handles() {
+        let mut renderer = SkiaRenderer::new();
+        let result = renderer.enable_metal(std::ptr::null_mut(), std::ptr::null_mut());
+
+        if cfg!(target_os = "macos") {
+            assert!(matches!(result, Err(RenderError::MetalInvalidHandle)));
+        } else {
+            assert!(matches!(result, Err(RenderError::MetalUnsupported)));
+        }
     }
 
     #[test]
