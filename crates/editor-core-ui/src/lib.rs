@@ -1898,6 +1898,15 @@ impl EditorUi {
                 start: anchor,
                 end: to,
             }))?;
+        // Keep the editor's internal `cursor_position` in sync with the active end of the selection.
+        //
+        // `CursorCommand::SetSelection` intentionally does not update `cursor_position`, but UI
+        // frontends expect keyboard navigation to continue from the caret shown at the active end.
+        self.state
+            .execute(Command::Cursor(CursorCommand::MoveTo {
+                line: to.line,
+                column: to.column,
+            }))?;
         Ok(())
     }
 
@@ -2706,6 +2715,33 @@ mod tests {
         let cursor = ui.cursor_state();
         assert!(cursor.selection.is_some());
         ui.mouse_up();
+    }
+
+    #[test]
+    fn ui_mouse_drag_selection_keeps_cursor_at_active_end_for_keyboard_moves() {
+        let mut ui = EditorUi::new("aaaa\nbbbb\ncccc", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 200,
+            height_px: 60,
+            cell_width_px: 10.0,
+            line_height_px: 20.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(200, 60, 1.0).unwrap();
+
+        // Drag-select within the first line: anchor at col 0, active end at col 3.
+        ui.mouse_down(5.0, 10.0).unwrap();
+        ui.mouse_dragged(35.0, 10.0).unwrap();
+
+        let s0 = ui.primary_selection_offsets();
+        assert_eq!(s0, (0, 3));
+
+        // Now a vertical move should collapse selection to the active end (col 3), not the anchor.
+        ui.move_visual_by_rows(1).unwrap();
+        let s1 = ui.primary_selection_offsets();
+        assert_eq!(s1, (8, 8));
     }
 
     #[test]
