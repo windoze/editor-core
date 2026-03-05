@@ -24,6 +24,11 @@ public final class EditorCoreSkiaView: NSView {
         NSWorkspace.shared.open(url)
     }
 
+    /// Called when the editor's viewport state (scroll position / total lines / viewport size) may have changed.
+    ///
+    /// Hosts can use this to keep native scrollbars in sync.
+    public var onViewportStateDidChange: (() -> Void)?
+
     private var pixelBuffer: [UInt8] = []
     private var viewportWidthPx: UInt32 = 0
     private var viewportHeightPx: UInt32 = 0
@@ -201,6 +206,7 @@ public final class EditorCoreSkiaView: NSView {
 
         needsDisplay = true
         invalidateIMECharacterCoordinates()
+        onViewportStateDidChange?()
     }
 
     public override func draw(_ dirtyRect: NSRect) {
@@ -504,6 +510,7 @@ public final class EditorCoreSkiaView: NSView {
             editor.scrollByPixels(Float(docDeltaPx))
             needsDisplay = true
             invalidateIMECharacterCoordinates()
+            onViewportStateDidChange?()
         }
     }
 
@@ -531,6 +538,7 @@ public final class EditorCoreSkiaView: NSView {
         }
         needsDisplay = true
         invalidateIMECharacterCoordinates()
+        onViewportStateDidChange?()
     }
 
     public func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -575,12 +583,14 @@ public final class EditorCoreSkiaView: NSView {
         }
         needsDisplay = true
         invalidateIMECharacterCoordinates()
+        onViewportStateDidChange?()
     }
 
     public func unmarkText() {
         editor.unmarkText()
         needsDisplay = true
         invalidateIMECharacterCoordinates()
+        onViewportStateDidChange?()
     }
 
     public override func doCommand(by selector: Selector) {
@@ -689,6 +699,7 @@ public final class EditorCoreSkiaView: NSView {
         }
         needsDisplay = true
         invalidateIMECharacterCoordinates()
+        onViewportStateDidChange?()
     }
 
     // MARK: - Clipboard
@@ -715,6 +726,7 @@ public final class EditorCoreSkiaView: NSView {
             try editor.deleteSelectionsOnly()
             needsDisplay = true
             invalidateIMECharacterCoordinates()
+            onViewportStateDidChange?()
         } catch {
             NSSound.beep()
         }
@@ -730,6 +742,7 @@ public final class EditorCoreSkiaView: NSView {
         }
         needsDisplay = true
         invalidateIMECharacterCoordinates()
+        onViewportStateDidChange?()
     }
 
     // MARK: - NSTextInputClient state queries
