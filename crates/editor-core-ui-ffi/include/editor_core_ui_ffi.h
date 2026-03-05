@@ -252,6 +252,19 @@ int32_t editor_core_ui_ffi_editor_ui_render_rgba(EditorUi* ui,
                                                  uint32_t out_cap,
                                                  uint32_t* out_len);
 
+// Metal / GPU rendering (macOS only).
+//
+// Notes:
+// - The pointers are Objective-C objects passed through as opaque `void*`:
+//   - metal_device: `id<MTLDevice>`
+//   - metal_command_queue: `id<MTLCommandQueue>`
+//   - metal_texture: `id<MTLTexture>` (usually from `CAMetalDrawable.texture`)
+// - The host is responsible for presenting the drawable / texture.
+int32_t editor_core_ui_ffi_editor_ui_enable_metal(EditorUi* ui,
+                                                  void* metal_device,
+                                                  void* metal_command_queue);
+int32_t editor_core_ui_ffi_editor_ui_render_metal(EditorUi* ui, void* metal_texture);
+
 char* editor_core_ui_ffi_editor_ui_get_text(EditorUi* ui);
 
 // Selected text (primary + secondary selections), joined with '\n'.

@@ -14,7 +14,7 @@
 use editor_core_render_skia::{RenderTheme, Rgba8, StyleColors};
 use editor_core::{ExpandSelectionDirection, ExpandSelectionUnit};
 use editor_core_ui::{EditorUi, UiError};
-use libc::{c_char, c_float, c_int};
+use libc::{c_char, c_float, c_int, c_void};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
@@ -2084,6 +2084,63 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_render_rgba(
     }
 }
 
+/// Enable Skia Metal backend for this editor instance (macOS only).
+///
+/// - `metal_device`: `id<MTLDevice>`
+/// - `metal_command_queue`: `id<MTLCommandQueue>`
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_enable_metal(
+    ui: *mut EditorUi,
+    metal_device: *mut c_void,
+    metal_command_queue: *mut c_void,
+) -> c_int {
+    if metal_device.is_null() {
+        return status_from_invalid_argument("metal_device is null".to_string());
+    }
+    if metal_command_queue.is_null() {
+        return status_from_invalid_argument("metal_command_queue is null".to_string());
+    }
+
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.enable_metal(metal_device as *mut c_void, metal_command_queue as *mut c_void)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Render the current visible viewport into a Metal texture (macOS only).
+///
+/// - `metal_texture`: `id<MTLTexture>`
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_render_metal(
+    ui: *mut EditorUi,
+    metal_texture: *mut c_void,
+) -> c_int {
+    if metal_texture.is_null() {
+        return status_from_invalid_argument("metal_texture is null".to_string());
+    }
+
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.render_metal_visible_into_texture(metal_texture as *mut c_void)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Get the full document text as UTF-8.
 ///
 /// Returns an allocated C string. Caller must free with [`editor_core_ui_ffi_string_free`].
@@ -2453,6 +2510,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_po
 mod tests {
     use super::*;
     use std::ffi::CString;
+    use std::ptr;
 
     #[test]
     fn ffi_smoke_create_insert_render_get_text() {
@@ -4727,6 +4785,34 @@ contexts:
             ECU_OK
         );
         assert_eq!(off, 2);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_metal_enable_rejects_null_handles() {
+        let initial = CString::new("abc").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_enable_metal(ui, ptr::null_mut(), ptr::null_mut()),
+            ECU_ERR_INVALID_ARGUMENT
+        );
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_metal_render_rejects_null_texture() {
+        let initial = CString::new("abc").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_metal(ui, ptr::null_mut()),
+            ECU_ERR_INVALID_ARGUMENT
+        );
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

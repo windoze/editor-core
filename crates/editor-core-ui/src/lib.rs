@@ -24,6 +24,7 @@ use editor_core_render_skia::{
 use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
 use editor_core_treesitter::{TreeSitterProcessor, TreeSitterProcessorConfig};
 use std::collections::{BTreeMap, HashMap};
+use std::ffi::c_void;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -1986,6 +1987,77 @@ impl EditorUi {
             )?;
         }
         Ok(required)
+    }
+
+    /// Enable the Skia Metal backend (macOS only).
+    ///
+    /// This is a rendering backend switch only; it does not affect editor state.
+    pub fn enable_metal(&mut self, metal_device: *mut c_void, metal_command_queue: *mut c_void) -> Result<(), UiError> {
+        self.renderer.enable_metal(metal_device, metal_command_queue)?;
+        Ok(())
+    }
+
+    /// Disable the Metal backend and revert to CPU raster output.
+    pub fn disable_metal(&mut self) {
+        self.renderer.disable_metal();
+    }
+
+    /// Render the current visible viewport into a Metal texture (macOS only).
+    ///
+    /// The host is responsible for presenting the texture (e.g. `CAMetalDrawable`).
+    pub fn render_metal_visible_into_texture(&mut self, metal_texture: *mut c_void) -> Result<(), UiError> {
+        let viewport = self.state.get_viewport_state();
+        let start_row = viewport.scroll_top;
+        let row_count = self.viewport_row_count_for_render(&viewport);
+        let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
+
+        let (selection_ranges, _primary_idx) = self.selections_offsets();
+        let caret_offsets = self.all_caret_offsets();
+
+        let mut render_config = self.render_config;
+        render_config.scroll_y_px = scroll_y_px;
+
+        let mut fold_markers = Vec::<FoldMarker>::new();
+        for region in &self.state.get_folding_state().regions {
+            if region.end_line <= region.start_line {
+                continue;
+            }
+            fold_markers.push(FoldMarker {
+                logical_line: region.start_line as u32,
+                is_collapsed: region.is_collapsed,
+            });
+        }
+
+        if self.has_virtual_text_decorations() {
+            let start_composed = self.composed_start_row_for_doc_row(start_row);
+            let grid = self
+                .state
+                .get_viewport_content_composed(start_composed, row_count);
+            self.renderer.render_composed_into_metal_texture(
+                &grid,
+                caret_offsets.as_slice(),
+                selection_ranges.as_slice(),
+                fold_markers.as_slice(),
+                render_config,
+                &self.theme,
+                metal_texture,
+            )?;
+        } else {
+            let grid = self.state.get_viewport_content_styled(start_row, row_count);
+            let selections = self.all_selections_visual();
+            let carets = self.all_carets_visual();
+            self.renderer.render_rgba_into_metal_texture(
+                &grid,
+                carets.as_slice(),
+                selections.as_slice(),
+                fold_markers.as_slice(),
+                render_config,
+                &self.theme,
+                metal_texture,
+            )?;
+        }
+
+        Ok(())
     }
 
     fn has_virtual_text_decorations(&self) -> bool {
