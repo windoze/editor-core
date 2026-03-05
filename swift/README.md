@@ -22,18 +22,41 @@
 
 ## 构建 Rust staticlib
 
-在仓库根目录：
+### 自动构建（推荐）
+
+`swift build` / `swift test` / `swift run` 会通过 SwiftPM build plugin 自动触发：
+
+- `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
+- 产物输出到 SwiftPM 的 plugin 输出目录（位于 `swift/.build/plugins/outputs/` 下）
+
+注意：SwiftPM 的 build tool plugin 默认运行在 sandbox 中（禁网）。而 `editor-core-ui-ffi` 依赖 `skia-bindings`，
+首次构建时可能需要下载 Skia 相关依赖。
+
+在本仓库的日常开发里，通常你已经在仓库根目录构建过 Rust（会生成 `target/debug/libeditor_core_ui_ffi.a`），
+plugin 会优先复用该产物来避免在 sandbox 中联网下载。
+
+如果你是全新 clone / `target/` 不存在，建议二选一：
+
+- 先在仓库根目录执行一次：`cargo build -p editor-core-ui-ffi`（生成静态库供 plugin 复用）
+- 或在首次构建时直接使用（允许 plugin 联网下载 Skia 依赖）：
 
 ```bash
-MACOSX_DEPLOYMENT_TARGET=13.0 cargo build -p editor-core-ffi -p editor-core-ui-ffi
+swift build --disable-sandbox
 ```
 
-生成路径（macOS debug 默认）：
+或：
 
-```text
-target/debug/libeditor_core_ffi.a
-target/debug/libeditor_core_ui_ffi.a
+```bash
+swift test --disable-sandbox
 ```
+
+### 排错（必要时）
+
+- 如果提示 `cargo: command not found`，请确认：
+  - `cargo` 可用（例如 `which cargo` 能找到）
+  - 以及 `~/.cargo/bin` 在 PATH 中
+- 如果需要确认静态库是否生成，可在 `swift/` 下运行：
+  - `find .build/plugins/outputs -name 'libeditor_core_*.a'`
 
 ## 运行 demo
 

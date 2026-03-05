@@ -1,9 +1,14 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-let rustLibDir = "../target/debug"
-let editorCoreFFIStaticLib = "\(rustLibDir)/libeditor_core_ffi.a"
-let editorCoreUIFFIStaticLib = "\(rustLibDir)/libeditor_core_ui_ffi.a"
+// Rust staticlib 由 SwiftPM build plugin 触发 `cargo build` 自动生成，并落在 plugin output 目录里：
+// `.build/plugins/outputs/swift/<Target>/destination/EditorCoreRustBuildPlugin/cargo-target/release/`
+//
+// 注：这里引用了 SwiftPM 的 plugin 输出路径约定（当前 SwiftPM 为此类 prebuildCommand 生成的稳定路径）。
+let pluginOutputsBase = ".build/plugins/outputs/swift"
+let cargoTargetSuffix = "destination/EditorCoreRustBuildPlugin/cargo-target/release"
+let editorCoreFFIStaticLib = "\(pluginOutputsBase)/CEditorCoreFFI/\(cargoTargetSuffix)/libeditor_core_ffi.a"
+let editorCoreUIFFIStaticLib = "\(pluginOutputsBase)/CEditorCoreUIFFI/\(cargoTargetSuffix)/libeditor_core_ui_ffi.a"
 
 let package = Package(
     name: "EditorCoreFFI",
@@ -18,6 +23,10 @@ let package = Package(
         .executable(name: "EditorCoreSkiaAppKitDemo", targets: ["EditorCoreSkiaAppKitDemo"])
     ],
     targets: [
+        .plugin(
+            name: "EditorCoreRustBuildPlugin",
+            capability: .buildTool()
+        ),
         // Rust static libraries (built by Cargo) exposed to Swift via C headers.
         //
         // 说明：
@@ -37,7 +46,8 @@ let package = Package(
             linkerSettings: [
                 // 强制静态链接（避免 `-lfoo` 优先选择 `.dylib`）
                 .unsafeFlags([editorCoreFFIStaticLib]),
-            ]
+            ],
+            plugins: ["EditorCoreRustBuildPlugin"]
         ),
         .target(
             name: "CEditorCoreUIFFI",
@@ -52,7 +62,8 @@ let package = Package(
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("CoreText"),
                 .linkedFramework("CoreFoundation"),
-            ]
+            ],
+            plugins: ["EditorCoreRustBuildPlugin"]
         ),
         .target(
             name: "EditorCoreFFI",
