@@ -1062,11 +1062,76 @@ impl EditorUi {
         Ok(())
     }
 
+    fn max_scroll_top(&self, viewport: &editor_core::ViewportState) -> usize {
+        let height_rows = viewport.height.unwrap_or(viewport.total_visual_lines).max(1);
+        viewport
+            .total_visual_lines
+            .saturating_sub(height_rows)
+            .min(viewport.total_visual_lines)
+    }
+
+    fn ensure_primary_caret_visible_after_navigation(&mut self) {
+        let viewport = self.state.get_viewport_state();
+        let Some(height_rows) = viewport.height else {
+            return;
+        };
+        if height_rows == 0 {
+            return;
+        }
+
+        let cursor = self.state.get_cursor_state();
+        let active = cursor
+            .selections
+            .get(cursor.primary_selection_index)
+            .map(|s| s.end)
+            .unwrap_or(cursor.position);
+
+        let Some((caret_row, _caret_x)) =
+            self.state.logical_position_to_visual(active.line, active.column)
+        else {
+            return;
+        };
+
+        let mut new_top = viewport.scroll_top;
+        if caret_row < viewport.scroll_top {
+            new_top = caret_row;
+        } else if caret_row >= viewport.scroll_top.saturating_add(height_rows) {
+            new_top = caret_row.saturating_sub(height_rows.saturating_sub(1));
+        }
+        new_top = new_top.min(self.max_scroll_top(&viewport));
+
+        let smooth = self.state.get_smooth_scroll_state();
+        let next = SmoothScrollState {
+            top_visual_row: new_top,
+            // Keyboard navigation should snap to full rows for a stable caret position.
+            sub_row_offset: 0,
+            overscan_rows: smooth.overscan_rows,
+        };
+        if next != smooth {
+            self.state.set_smooth_scroll_state(next);
+        }
+    }
+
     pub fn scroll_by_rows(&mut self, delta_rows: isize) {
-        let total = self.state.total_visual_lines() as isize;
-        let old = self.state.get_viewport_state().scroll_top as isize;
-        let new_top = (old + delta_rows).clamp(0, total.max(0)) as usize;
-        self.state.set_scroll_top(new_top);
+        let viewport = self.state.get_viewport_state();
+        let height_rows = viewport.height.unwrap_or(viewport.total_visual_lines).max(1);
+        let max_top = viewport
+            .total_visual_lines
+            .saturating_sub(height_rows)
+            .min(viewport.total_visual_lines) as isize;
+
+        let old = viewport.scroll_top as isize;
+        let new_top = (old + delta_rows).clamp(0, max_top.max(0)) as usize;
+
+        let smooth = self.state.get_smooth_scroll_state();
+        let next = SmoothScrollState {
+            top_visual_row: new_top,
+            sub_row_offset: 0,
+            overscan_rows: smooth.overscan_rows,
+        };
+        if next != smooth {
+            self.state.set_smooth_scroll_state(next);
+        }
     }
 
     /// Smooth-scroll the viewport by a pixel delta (positive = scroll down, reveal later lines).
@@ -1085,32 +1150,23 @@ impl EditorUi {
         }
 
         let line_h = self.render_config.line_height_px.max(1.0);
-        let total = self.state.total_visual_lines() as isize;
+        let viewport = self.state.get_viewport_state();
+        let height_rows = viewport.height.unwrap_or(viewport.total_visual_lines).max(1);
+        let max_pos_rows =
+            viewport.total_visual_lines.saturating_sub(height_rows) as f32;
 
         let smooth = self.state.get_smooth_scroll_state();
-        let mut top = smooth.top_visual_row as isize;
-        let mut off_px = (smooth.sub_row_offset as f32 / 65536.0) * line_h;
-        off_px += delta_y_px;
+        let pos_rows =
+            smooth.top_visual_row as f32 + (smooth.sub_row_offset as f32 / 65536.0);
+        let delta_rows = delta_y_px / line_h;
+        let new_pos = (pos_rows + delta_rows).clamp(0.0, max_pos_rows.max(0.0));
 
-        if off_px >= line_h {
-            let whole = (off_px / line_h).floor() as isize;
-            top = top.saturating_add(whole);
-            off_px -= whole as f32 * line_h;
-        } else if off_px < 0.0 {
-            let whole = ((-off_px) / line_h).ceil() as isize;
-            top = top.saturating_sub(whole);
-            off_px += whole as f32 * line_h;
-        }
-
-        let clamped_top = top.clamp(0, total.max(0)) as usize;
-
-        // Convert back to normalized u16. We keep the invariant `sub_row_offset < 65536`,
-        // so the maximum representable value corresponds to ~0.999984 rows.
-        let frac = (off_px / line_h).clamp(0.0, 0.999_999);
+        let new_top = new_pos.floor().max(0.0) as usize;
+        let frac = (new_pos - new_top as f32).clamp(0.0, 0.999_999);
         let sub = ((frac * 65536.0).floor() as u32).min(u16::MAX as u32) as u16;
 
         let next = SmoothScrollState {
-            top_visual_row: clamped_top,
+            top_visual_row: new_top,
             sub_row_offset: sub,
             overscan_rows: smooth.overscan_rows,
         };
@@ -1208,6 +1264,7 @@ impl EditorUi {
         }
         self.state
             .execute(Command::Cursor(CursorCommand::MoveVisualBy { delta_rows }))?;
+        self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
@@ -1242,6 +1299,7 @@ impl EditorUi {
         }
         self.state
             .execute(Command::Cursor(CursorCommand::MoveToVisualLineStart))?;
+        self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
@@ -1252,6 +1310,7 @@ impl EditorUi {
         }
         self.state
             .execute(Command::Cursor(CursorCommand::MoveToVisualLineEnd))?;
+        self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
@@ -1264,6 +1323,7 @@ impl EditorUi {
             line: 0,
             column: 0,
         }))?;
+        self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
@@ -1290,6 +1350,7 @@ impl EditorUi {
             line: last_line,
             column: col,
         }))?;
+        self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
@@ -1407,6 +1468,7 @@ impl EditorUi {
             start: anchor,
             end: new_active,
         }))?;
+        self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
@@ -1429,6 +1491,7 @@ impl EditorUi {
             start: anchor,
             end: new_active,
         }))?;
+        self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
@@ -1453,6 +1516,7 @@ impl EditorUi {
             start: anchor,
             end: new_active,
         }))?;
+        self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
@@ -1491,6 +1555,7 @@ impl EditorUi {
             start: anchor,
             end: new_active,
         }))?;
+        self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
@@ -1525,6 +1590,7 @@ impl EditorUi {
             start: anchor,
             end: new_active,
         }))?;
+        self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
@@ -2248,6 +2314,47 @@ mod tests {
     }
 
     #[test]
+    fn ui_keyboard_navigation_scrolls_to_keep_caret_visible() {
+        let mut ui = EditorUi::new("0\n1\n2\n3\n4\n5\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 80,
+            height_px: 20, // 2 rows at 10px line height
+            cell_width_px: 10.0,
+            line_height_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(80, 20, 1.0).unwrap();
+
+        let vp0 = ui.state.get_viewport_state();
+        assert_eq!(vp0.height, Some(2));
+        assert_eq!(vp0.scroll_top, 0);
+
+        // Move down within the viewport: no scroll.
+        ui.move_visual_by_rows(1).unwrap();
+        let vp1 = ui.state.get_viewport_state();
+        assert_eq!(vp1.scroll_top, 0);
+
+        // Move down out of the viewport: scroll should advance.
+        ui.move_visual_by_rows(1).unwrap();
+        let vp2 = ui.state.get_viewport_state();
+        assert_eq!(vp2.scroll_top, 1);
+        assert_eq!(vp2.sub_row_offset, 0);
+
+        // Jump to end: viewport should scroll so caret stays visible.
+        ui.move_to_document_end().unwrap();
+        let vp3 = ui.state.get_viewport_state();
+        let caret_off = ui.cursor_state().offset;
+        let (caret_row, _caret_x) = ui.char_offset_to_visual(caret_off).unwrap();
+        let h = vp3.height.unwrap_or(1);
+        assert!(
+            caret_row >= vp3.scroll_top && caret_row < vp3.scroll_top.saturating_add(h),
+            "expected caret row to be within visible lines after navigation"
+        );
+    }
+
+    #[test]
     fn ui_backspace_and_delete_forward_are_grapheme_aware() {
         // "á" = 'a' + COMBINING ACUTE ACCENT (2 Unicode scalar values, 1 grapheme cluster).
         let s = "a\u{0301}";
@@ -2619,6 +2726,12 @@ mod tests {
         assert_eq!(vp0.scroll_top, 0);
         assert_eq!(vp0.sub_row_offset, 0);
         assert_eq!(ui.viewport_row_count_for_render(&vp0), 2);
+
+        // Scrolling up at the top should clamp to 0 (no wrap-around / shake).
+        ui.scroll_by_pixels(-5.0);
+        let vp0b = ui.state.get_viewport_state();
+        assert_eq!(vp0b.scroll_top, 0);
+        assert_eq!(vp0b.sub_row_offset, 0);
 
         // Scroll down by half a row.
         ui.scroll_by_pixels(5.0);
