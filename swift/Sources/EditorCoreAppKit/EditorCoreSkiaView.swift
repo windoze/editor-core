@@ -42,6 +42,7 @@ public final class EditorCoreSkiaView: MTKView {
     private var scaleFactor: CGFloat = 1
     private var didLogScaleDebugOnce: Bool = false
     private var lastInputDebugLogUptime: TimeInterval = 0
+    private var drawScheduled: Bool = false
 
     private var lineHeightPx: Float = 18
     private var gutterWidthCells: UInt32 = 4
@@ -142,12 +143,20 @@ public final class EditorCoreSkiaView: MTKView {
         super.viewDidChangeBackingProperties()
         updateLayerContentsScaleIfNeeded()
         updateViewportIfNeeded()
-        needsDisplay = true
+        requestRedraw()
     }
 
     public override func layout() {
         super.layout()
         updateViewportIfNeeded()
+    }
+
+    public override func setNeedsDisplay(_ invalidRect: NSRect) {
+        super.setNeedsDisplay(invalidRect)
+        // 对 `MTKView`（on-demand 模式）来说，仅标记 needsDisplay 在某些系统版本上不会触发 GPU draw。
+        // 我们在这里统一把它转成一次 `draw()`，这样外部（demo/scroll container/test）只要
+        // 继续用 `needsDisplay = true` 就能可靠刷新画面。
+        scheduleDrawIfPossible()
     }
 
     private func updateLayerContentsScaleIfNeeded() {
@@ -252,7 +261,7 @@ public final class EditorCoreSkiaView: MTKView {
             }
         }
 
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
         onViewportStateDidChange?()
     }
@@ -356,7 +365,7 @@ public final class EditorCoreSkiaView: MTKView {
         } catch {
             NSSound.beep()
         }
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
     }
 
@@ -414,7 +423,7 @@ public final class EditorCoreSkiaView: MTKView {
         } catch {
             NSSound.beep()
         }
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
     }
 
@@ -424,7 +433,7 @@ public final class EditorCoreSkiaView: MTKView {
         wordSelectionAnchorOffset = nil
         wordSelectionOrigin = nil
         editor.mouseUp()
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
     }
 
@@ -500,7 +509,7 @@ public final class EditorCoreSkiaView: MTKView {
             // AppKit: scrollingDeltaY > 0 通常表示“向上滚动”（内容向下）。
             // 我们约定 Rust `scrollByPixels` 的正值表示“向下滚动”（内容向上），因此取负号。
             editor.scrollByPixels(Float(-deltaPx))
-            needsDisplay = true
+            requestRedraw()
             invalidateIMECharacterCoordinates()
             onViewportStateDidChange?()
         }
@@ -580,7 +589,7 @@ public final class EditorCoreSkiaView: MTKView {
         } catch {
             NSSound.beep()
         }
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
         onViewportStateDidChange?()
     }
@@ -625,14 +634,14 @@ public final class EditorCoreSkiaView: MTKView {
         } catch {
             NSSound.beep()
         }
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
         onViewportStateDidChange?()
     }
 
     public func unmarkText() {
         editor.unmarkText()
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
         onViewportStateDidChange?()
     }
@@ -741,7 +750,7 @@ public final class EditorCoreSkiaView: MTKView {
         } catch {
             NSSound.beep()
         }
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
         onViewportStateDidChange?()
     }
@@ -757,7 +766,7 @@ public final class EditorCoreSkiaView: MTKView {
         } catch {
             NSSound.beep()
         }
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
         onViewportStateDidChange?()
     }
@@ -769,7 +778,7 @@ public final class EditorCoreSkiaView: MTKView {
         } catch {
             NSSound.beep()
         }
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
         onViewportStateDidChange?()
     }
@@ -781,7 +790,7 @@ public final class EditorCoreSkiaView: MTKView {
         } catch {
             NSSound.beep()
         }
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
         onViewportStateDidChange?()
     }
@@ -806,7 +815,7 @@ public final class EditorCoreSkiaView: MTKView {
             pasteboard.clearContents()
             pasteboard.setString(text, forType: .string)
             try editor.deleteSelectionsOnly()
-            needsDisplay = true
+            requestRedraw()
             invalidateIMECharacterCoordinates()
             onViewportStateDidChange?()
         } catch {
@@ -822,7 +831,7 @@ public final class EditorCoreSkiaView: MTKView {
         } catch {
             NSSound.beep()
         }
-        needsDisplay = true
+        requestRedraw()
         invalidateIMECharacterCoordinates()
         onViewportStateDidChange?()
     }
@@ -984,6 +993,33 @@ public final class EditorCoreSkiaView: MTKView {
             scalars += 1
         }
         return utf16Cursor
+    }
+
+    // MARK: - Draw scheduling
+
+    /// Request a redraw for an on-demand `MTKView` (`isPaused = true`, `enableSetNeedsDisplay = true`).
+    ///
+    /// Why we do this:
+    /// - 在某些 macOS/MTKView 组合下，仅设置 `needsDisplay = true` 有时不会触发 `MTKViewDelegate.draw(in:)`，
+    ///   导致首次显示为空白。
+    /// - `draw()` 可以强制触发一次 Metal draw pass；这里用 main queue coalesce，避免高频事件导致连环 draw。
+    private func requestRedraw() {
+        // 标记脏区：必须调用 super，避免走我们自己的 `setNeedsDisplay` override 形成递归。
+        super.setNeedsDisplay(bounds)
+        scheduleDrawIfPossible()
+    }
+
+    private func scheduleDrawIfPossible() {
+        // 视图未挂到 window 时，强制 draw() 没意义；等 viewDidMoveToWindow / 下一次事件再 draw。
+        guard window != nil else { return }
+
+        guard drawScheduled == false else { return }
+        drawScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.drawScheduled = false
+            self.draw()
+        }
     }
 }
 
