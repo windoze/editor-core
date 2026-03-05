@@ -2198,8 +2198,16 @@ impl CommandExecutor {
             self.editor.invalidate_visual_row_index_cache();
         }
 
-        // Undo grouping: any non-edit command ends the current coalescing group.
-        if !matches!(command, Command::Edit(_)) {
+        // Undo grouping:
+        //
+        // Coalescing groups are meant to represent a "continuous editing" session (typing / IME
+        // composition updates). UI frameworks may issue non-edit commands during editing (e.g.
+        // viewport width updates every frame for soft-wrapping), and those should *not* break
+        // the current coalescing group.
+        //
+        // We only end the group on cursor/selection/navigation commands, because those indicate
+        // the user changed the insertion point and subsequent typing should start a new group.
+        if matches!(command, Command::Cursor(_)) {
             self.undo_redo.end_group();
         }
 
