@@ -60,24 +60,51 @@ private func cargoBuildCommand(targetName: String, rustTargetDir: String) -> Str
     case "CEditorCoreFFI":
         packages = ["editor-core-ffi"]
     case "CEditorCoreUIFFI":
-        // 优先复用仓库根目录已有的产物（通常 Rust 开发时已经构建过），避免在 SwiftPM plugin sandbox 内触发 Skia 下载。
+        // UI FFI 依赖 Skia（体积大、且 build.rs 可能尝试联网下载 skia-binaries / skia 源码）。
+        // SwiftPM plugin sandbox 通常禁止网络访问，因此这里优先复用仓库根目录已构建好的 `.a`，
+        // 只做“复制到 plugin output 目录”以满足静态链接。
         //
-        // 产物会被拷贝到 plugin output 目录（`rustTargetDir/release/`），以便 `Package.swift` 静态链接。
+        // 同时做一个简单的“新鲜度”检查：如果仓库根目录的 `.a` 比相关源码更旧，则直接报错，
+        // 避免静默链接到旧 ABI（例如新增了 Metal 渲染 API 却没有符号）。
         let destDir = "\(rustTargetDir)/release"
         let destLib = "\(destDir)/libeditor_core_ui_ffi.a"
         return """
         mkdir -p "\(destDir)"
 
-        if [ -f "target/debug/libeditor_core_ui_ffi.a" ]; then
-          cp -f "target/debug/libeditor_core_ui_ffi.a" "\(destLib)"
-          exit 0
-        fi
-        if [ -f "target/release/libeditor_core_ui_ffi.a" ]; then
-          cp -f "target/release/libeditor_core_ui_ffi.a" "\(destLib)"
-          exit 0
-        fi
+        src_mtime=0
+        src_files=(
+          "Cargo.lock"
+          "crates/editor-core-ui-ffi/src/lib.rs"
+          "crates/editor-core-ui/src/lib.rs"
+          "crates/editor-core-render-skia/src/lib.rs"
+          "crates/editor-core-ui-ffi/include/editor_core_ui_ffi.h"
+        )
+        for f in "${src_files[@]}"; do
+          if [ -f "$f" ]; then
+            t=$(stat -f %m "$f" || echo 0)
+            if [ "$t" -gt "$src_mtime" ]; then
+              src_mtime="$t"
+            fi
+          fi
+        done
 
-        cargo build -p editor-core-ui-ffi --release --target-dir "\(rustTargetDir)"
+        try_copy() {
+          local src="$1"
+          if [ -f "$src" ]; then
+            lib_mtime=$(stat -f %m "$src" || echo 0)
+            if [ "$lib_mtime" -ge "$src_mtime" ]; then
+              cp -f "$src" "\(destLib)"
+              exit 0
+            fi
+          fi
+        }
+
+        try_copy "target/debug/libeditor_core_ui_ffi.a"
+        try_copy "target/release/libeditor_core_ui_ffi.a"
+
+        echo "error: Rust staticlib libeditor_core_ui_ffi.a 不存在或已过期（SwiftPM plugin sandbox 无法联网构建 Skia）。" 1>&2
+        echo "请先在仓库根目录执行：cargo build -p editor-core-ui-ffi --release（或 debug），再运行 swift build/test。" 1>&2
+        exit 1
         """
     default:
         packages = ["editor-core-ffi", "editor-core-ui-ffi"]

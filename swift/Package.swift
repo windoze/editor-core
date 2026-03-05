@@ -62,6 +62,9 @@ let package = Package(
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("CoreText"),
                 .linkedFramework("CoreFoundation"),
+                // Skia Metal backend（GPU）依赖
+                .linkedFramework("Metal"),
+                .linkedFramework("QuartzCore"),
             ],
             plugins: ["EditorCoreRustBuildPlugin"]
         ),
