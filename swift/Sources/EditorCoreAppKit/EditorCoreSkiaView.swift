@@ -44,6 +44,7 @@ public final class EditorCoreSkiaView: MTKView {
     private var lastInputDebugLogUptime: TimeInterval = 0
     private var drawScheduled: Bool = false
     private var didPresentFirstFrame: Bool = false
+    private var didLogDrawSetupOnce: Bool = false
 
     private var lineHeightPx: Float = 18
     private var gutterWidthCells: UInt32 = 4
@@ -142,6 +143,25 @@ public final class EditorCoreSkiaView: MTKView {
         super.viewDidMoveToWindow()
         updateLayerContentsScaleIfNeeded()
         updateViewportIfNeeded()
+
+        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1", didLogDrawSetupOnce == false {
+            didLogDrawSetupOnce = true
+            let layerDesc = layer.map { String(describing: type(of: $0)) } ?? "nil"
+            let delegateDesc = delegate.map { String(describing: type(of: $0)) } ?? "nil"
+            NSLog(
+                "EditorCoreSkiaView setup: window=%@ wantsLayer=%d layer=%@ device=%@ delegate=%@ paused=%d setNeeds=%d fps=%d bounds(points)=%@ drawableSize(px)=%@",
+                String(describing: window),
+                wantsLayer ? 1 : 0,
+                layerDesc,
+                device.map { String(describing: $0) } ?? "nil",
+                delegateDesc,
+                isPaused ? 1 : 0,
+                enableSetNeedsDisplay ? 1 : 0,
+                preferredFramesPerSecond,
+                NSStringFromSize(bounds.size),
+                NSStringFromSize(drawableSize)
+            )
+        }
     }
 
     public override func viewDidChangeBackingProperties() {
@@ -272,8 +292,18 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public override func draw(_ dirtyRect: NSRect) {
-        // 由 MTKView 内部驱动渲染；实际绘制在 `MTKViewDelegate.draw(in:)` 里完成。
-        super.draw(dirtyRect)
+        // 在 macOS 26.3 上观察到：`MTKViewDelegate.draw(in:)` 有时不会被调用（导致“编辑区空白”），
+        // 但 AppKit 的 view-based draw pipeline 仍然会触发 `draw(_:)`。
+        //
+        // 因此这里把 Metal 渲染放到 `draw(_:)` 里作为兜底（并保持 `MTKViewDelegate` 的实现）。
+        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
+            NSLog("EditorCoreSkiaView drawRect: dirty=%@ bounds(points)=%@ drawableSize(px)=%@",
+                  NSStringFromRect(dirtyRect),
+                  NSStringFromSize(bounds.size),
+                  NSStringFromSize(drawableSize))
+        }
+        updateViewportIfNeeded()
+        renderToCurrentDrawable(debugSource: "drawRect")
     }
 
     // MARK: - Mouse
@@ -1020,10 +1050,65 @@ public final class EditorCoreSkiaView: MTKView {
 
         guard drawScheduled == false else { return }
         drawScheduled = true
+        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
+            let delegateDesc = delegate.map { String(describing: type(of: $0)) } ?? "nil"
+            NSLog(
+                "EditorCoreSkiaView scheduleDraw: delegate=%@ paused=%d setNeeds=%d bounds(points)=%@ drawableSize(px)=%@",
+                delegateDesc,
+                isPaused ? 1 : 0,
+                enableSetNeedsDisplay ? 1 : 0,
+                NSStringFromSize(bounds.size),
+                NSStringFromSize(drawableSize)
+            )
+        }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.drawScheduled = false
-            self.draw()
+            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
+                NSLog("EditorCoreSkiaView scheduleDraw: calling draw()")
+            }
+            // `MTKView.draw()` 在部分系统组合下不会触发 delegate（未知原因）。
+            // 这里用 AppKit `displayIfNeeded()` 强制走 `draw(_:)`，而我们的 `draw(_:)` 会做 Metal render。
+            self.displayIfNeeded()
+        }
+    }
+
+    private func renderToCurrentDrawable(debugSource: String) {
+        guard let drawable = currentDrawable else {
+            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
+                NSLog("EditorCoreSkiaView render(%@): drawable=nil", debugSource)
+            }
+            return
+        }
+
+        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
+            let t = drawable.texture
+            NSLog(
+                "EditorCoreSkiaView render(%@): drawable=ok tex=%dx%d pf=%d usage=0x%X storage=%d",
+                debugSource,
+                t.width,
+                t.height,
+                t.pixelFormat.rawValue,
+                t.usage.rawValue,
+                t.storageMode.rawValue
+            )
+        }
+
+        do {
+            try editor.renderMetal(into: drawable.texture)
+        } catch {
+            NSLog("EditorCoreSkiaView Metal render failed(%@): %@", debugSource, String(describing: error))
+            return
+        }
+
+        guard let commandBuffer = metalCommandQueue.makeCommandBuffer() else { return }
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+
+        if didPresentFirstFrame == false {
+            didPresentFirstFrame = true
+            enableSetNeedsDisplay = true
+            isPaused = true
         }
     }
 }
@@ -1036,50 +1121,7 @@ extension EditorCoreSkiaView: MTKViewDelegate {
 
     public func draw(in view: MTKView) {
         updateViewportIfNeeded()
-        guard let drawable = currentDrawable else {
-            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
-                NSLog(
-                    "EditorCoreSkiaView draw: drawable=nil bounds(points)=%@ drawableSize(px)=%@ paused=%d setNeeds=%d",
-                    NSStringFromSize(bounds.size),
-                    NSStringFromSize(drawableSize),
-                    isPaused ? 1 : 0,
-                    enableSetNeedsDisplay ? 1 : 0
-                )
-            }
-            return
-        }
-
-        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
-            let t = drawable.texture
-            NSLog(
-                "EditorCoreSkiaView draw: drawable=ok tex=%dx%d pf=%d usage=0x%X storage=%d bounds(points)=%@ drawableSize(px)=%@",
-                t.width,
-                t.height,
-                t.pixelFormat.rawValue,
-                t.usage.rawValue,
-                t.storageMode.rawValue,
-                NSStringFromSize(bounds.size),
-                NSStringFromSize(drawableSize)
-            )
-        }
-
-        do {
-            try editor.renderMetal(into: drawable.texture)
-        } catch {
-            NSLog("EditorCoreSkiaView Metal render failed: %@", String(describing: error))
-            return
-        }
-
-        guard let commandBuffer = metalCommandQueue.makeCommandBuffer() else { return }
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
-
-        // 首帧成功 present 后切回 on-demand 模式，避免 idle 状态持续占用 CPU/GPU。
-        if didPresentFirstFrame == false {
-            didPresentFirstFrame = true
-            enableSetNeedsDisplay = true
-            isPaused = true
-        }
+        renderToCurrentDrawable(debugSource: "delegate")
     }
 }
 
