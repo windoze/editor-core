@@ -60,3 +60,23 @@ fn ime_group_ends_on_commit_so_followup_typing_undo_is_separate() {
     assert_eq!(ui.text(), "");
 }
 
+#[test]
+fn ime_undo_grouping_survives_interleaved_viewport_updates() {
+    let mut ui = EditorUi::new("", 80);
+
+    // Simulate what real UI hosts do: they may call `set_viewport_px` on every draw/layout pass,
+    // including during IME composition updates.
+    ui.set_viewport_px(320, 200, 2.0).unwrap();
+    ui.set_marked_text("h").unwrap();
+    ui.set_viewport_px(320, 200, 2.0).unwrap();
+    ui.set_marked_text("ha").unwrap();
+    ui.set_viewport_px(320, 200, 2.0).unwrap();
+    ui.set_marked_text("han zi").unwrap();
+
+    ui.set_viewport_px(320, 200, 2.0).unwrap();
+    ui.commit_text("汉字").unwrap();
+    assert_eq!(ui.text(), "汉字");
+
+    ui.undo().unwrap();
+    assert_eq!(ui.text(), "");
+}
