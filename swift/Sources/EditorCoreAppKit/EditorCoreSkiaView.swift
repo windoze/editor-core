@@ -906,12 +906,18 @@ public final class EditorCoreSkiaView: NSView {
 
         guard let pt = try? editor.charOffsetToViewPoint(offset: UInt32(scalarOffset)) else { return .zero }
 
-        let viewPoint = convertFromBacking(NSPoint(x: CGFloat(pt.xPx), y: CGFloat(pt.yPx)))
-        let viewLineHeight = convertFromBacking(NSSize(width: 0, height: CGFloat(pt.lineHeightPx))).height
+        // 不使用 `convertFromBacking(point)`：
+        // - 我们之前已经遇到过在“缩放显示 / Retina”等组合下，point<->backing 的点转换不稳定（X/Y 比例不一致）。
+        // - 这里改用 `convertToBacking(bounds.size)` 推导像素/点比例，并手动做除法，
+        //   保证和 viewport 计算、事件 hit-test 一致（参见 `EditorCoreCoordinateMapping`）。
+        let boundsSize = bounds.size
+        let backingSize = convertToBacking(boundsSize)
+        let sx = boundsSize.width > 0 ? (backingSize.width / boundsSize.width) : 1
+        let sy = boundsSize.height > 0 ? (backingSize.height / boundsSize.height) : 1
 
-        let xPt = viewPoint.x
-        let yPt = viewPoint.y
-        let hPt = viewLineHeight
+        let xPt = CGFloat(pt.xPx) / max(1e-6, sx)
+        let yPt = CGFloat(pt.yPx) / max(1e-6, sy)
+        let hPt = CGFloat(pt.lineHeightPx) / max(1e-6, sy)
 
         let rectInView = NSRect(x: xPt, y: yPt, width: 1, height: hPt)
         let rectInWindow = convert(rectInView, to: nil)
