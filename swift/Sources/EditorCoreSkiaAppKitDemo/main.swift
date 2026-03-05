@@ -239,7 +239,7 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             try DemoBuildSupport.ensureEditorCoreUIFFIBuiltIfUsingRepoCheckout()
             let library = try EditorCoreUIFFILibrary()
 
-            let initialText = """
+            var initialText = """
             // EditorCoreSkiaAppKitDemo
             //
             // 这是一个自绘版 demo：
@@ -270,6 +270,20 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
               }
             }
             """
+            // 让 demo 文档足够长，方便测试滚动条 / 平滑滚动 / “光标移出 viewport 自动滚动”等功能。
+            let longLines = (0..<600).map { i -> String in
+                // 同时混入 CJK + Emoji，方便验证多字体 fallback 与 grapheme 逻辑。
+                if i % 40 == 0 {
+                    return "line \(String(format: "%04d", i)): 段落开始（下面有空行）🙂"
+                }
+                if i % 40 == 1 {
+                    return ""
+                }
+                return "line \(String(format: "%04d", i)): The quick brown fox jumps over the lazy dog. 你好，世界 😀"
+            }
+            initialText += "\n\n// --- Scroll Stress Test ---\n"
+            initialText += longLines.joined(separator: "\n")
+            initialText += "\n"
 
             let fontFamiliesCSV = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_FONT_FAMILIES"]
             let editorView = try EditorCoreSkiaView(
