@@ -4,8 +4,7 @@ import XCTest
 final class EditorCoreUIFFITests: XCTestCase {
     func testLoadsLibraryAndVersion() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
-        XCTAssertFalse(lib.resolvedLibraryPath.isEmpty)
-        XCTAssertFalse(lib.versionString().isEmpty)
+        XCTAssertFalse((try lib.versionString()).isEmpty)
     }
 
     func testParagraphSelectionAPIs() throws {

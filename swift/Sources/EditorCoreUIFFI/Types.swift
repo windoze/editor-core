@@ -1,3 +1,4 @@
+import CEditorCoreUIFFI
 import Foundation
 
 public enum EcuStatus: Int32, CustomStringConvertible, Sendable {
@@ -45,13 +46,12 @@ public struct EcuTheme: Equatable {
         self.caret = caret
     }
 
-    // Memory layout must match `EcuTheme` in `editor_core_ui_ffi.h`.
-    var ffi: _EcuThemeFFI {
-        _EcuThemeFFI(
-            background: _EcuRgba8FFI(r: background.r, g: background.g, b: background.b, a: background.a),
-            foreground: _EcuRgba8FFI(r: foreground.r, g: foreground.g, b: foreground.b, a: foreground.a),
-            selection_background: _EcuRgba8FFI(r: selectionBackground.r, g: selectionBackground.g, b: selectionBackground.b, a: selectionBackground.a),
-            caret: _EcuRgba8FFI(r: caret.r, g: caret.g, b: caret.b, a: caret.a)
+    var ffi: CEditorCoreUIFFI.EcuTheme {
+        CEditorCoreUIFFI.EcuTheme(
+            background: CEditorCoreUIFFI.EcuRgba8(r: background.r, g: background.g, b: background.b, a: background.a),
+            foreground: CEditorCoreUIFFI.EcuRgba8(r: foreground.r, g: foreground.g, b: foreground.b, a: foreground.a),
+            selection_background: CEditorCoreUIFFI.EcuRgba8(r: selectionBackground.r, g: selectionBackground.g, b: selectionBackground.b, a: selectionBackground.a),
+            caret: CEditorCoreUIFFI.EcuRgba8(r: caret.r, g: caret.g, b: caret.b, a: caret.a)
         )
     }
 }
@@ -68,19 +68,18 @@ public struct EcuStyleColors: Equatable {
         self.background = background
     }
 
-    // Memory layout must match `EcuStyleColors` in `editor_core_ui_ffi.h`.
-    var ffi: _EcuStyleColorsFFI {
+    var ffi: CEditorCoreUIFFI.EcuStyleColors {
         var flags: UInt32 = 0
-        if foreground != nil { flags |= _EcuStyleColorsFFI.flagForeground }
-        if background != nil { flags |= _EcuStyleColorsFFI.flagBackground }
+        if foreground != nil { flags |= 1 << 0 }
+        if background != nil { flags |= 1 << 1 }
 
         let fg = foreground ?? EcuRgba8(r: 0, g: 0, b: 0, a: 0)
         let bg = background ?? EcuRgba8(r: 0, g: 0, b: 0, a: 0)
-        return _EcuStyleColorsFFI(
+        return CEditorCoreUIFFI.EcuStyleColors(
             style_id: styleId,
             flags: flags,
-            foreground: _EcuRgba8FFI(r: fg.r, g: fg.g, b: fg.b, a: fg.a),
-            background: _EcuRgba8FFI(r: bg.r, g: bg.g, b: bg.b, a: bg.a)
+            foreground: CEditorCoreUIFFI.EcuRgba8(r: fg.r, g: fg.g, b: fg.b, a: fg.a),
+            background: CEditorCoreUIFFI.EcuRgba8(r: bg.r, g: bg.g, b: bg.b, a: bg.a)
         )
     }
 }
@@ -95,9 +94,8 @@ public struct EcuSelectionRange: Equatable, Sendable {
         self.end = end
     }
 
-    // Memory layout must match `EcuSelectionRange` in `editor_core_ui_ffi.h`.
-    var ffi: _EcuSelectionRangeFFI {
-        _EcuSelectionRangeFFI(start: start, end: end)
+    var ffi: CEditorCoreUIFFI.EcuSelectionRange {
+        CEditorCoreUIFFI.EcuSelectionRange(start: start, end: end)
     }
 }
 
@@ -112,7 +110,7 @@ public struct EcuViewportState: Equatable, Sendable {
     public var prefetchLines: Range<UInt32>
     public var totalVisualLines: UInt32
 
-    init(ffi: _EcuViewportStateFFI) {
+    init(ffi: CEditorCoreUIFFI.EcuViewportState) {
         widthCells = ffi.width_cells
         heightRows = ffi.has_height != 0 ? ffi.height_rows : nil
         scrollTop = ffi.scroll_top
@@ -152,45 +150,6 @@ public struct EcuSearchOptions: Equatable, Sendable {
     var ffiRegex: UInt8 { regex ? 1 : 0 }
 }
 
-struct _EcuRgba8FFI {
-    var r: UInt8
-    var g: UInt8
-    var b: UInt8
-    var a: UInt8
-}
-
-struct _EcuThemeFFI {
-    var background: _EcuRgba8FFI
-    var foreground: _EcuRgba8FFI
-    var selection_background: _EcuRgba8FFI
-    var caret: _EcuRgba8FFI
-}
-
-struct _EcuStyleColorsFFI {
-    static let flagForeground: UInt32 = 1 << 0
-    static let flagBackground: UInt32 = 1 << 1
-
-    var style_id: UInt32
-    var flags: UInt32
-    var foreground: _EcuRgba8FFI
-    var background: _EcuRgba8FFI
-}
-
-struct _EcuSelectionRangeFFI {
-    var start: UInt32
-    var end: UInt32
-}
-
-struct _EcuViewportStateFFI {
-    var width_cells: UInt32
-    var height_rows: UInt32
-    var has_height: UInt32
-    var scroll_top: UInt32
-    var sub_row_offset: UInt32
-    var overscan_rows: UInt32
-    var visible_start: UInt32
-    var visible_end: UInt32
-    var prefetch_start: UInt32
-    var prefetch_end: UInt32
-    var total_visual_lines: UInt32
-}
+// 注意：
+// - C 侧的 `EcuRgba8/EcuTheme/EcuStyleColors/EcuSelectionRange/EcuViewportState` 由 `CEditorCoreUIFFI`
+//   模块提供；Swift 侧仅做更易用的 wrapper（camelCase + Optional）。

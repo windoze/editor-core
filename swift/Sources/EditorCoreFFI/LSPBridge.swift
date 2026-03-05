@@ -1,3 +1,4 @@
+import CEditorCoreFFI
 import Foundation
 
 private struct LspUriResponse: Decodable {
@@ -49,7 +50,7 @@ public final class LSPBridge {
 
     public func pathToFileURI(_ path: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = path.withCString { pathPtr in
-            ffi.lspPathToFileURIFn(pathPtr)
+            editor_core_ffi_lsp_path_to_file_uri(pathPtr)
         }
         let json = try ffi.takeOwnedCString(ptr, context: "lsp_path_to_file_uri")
         return try JSON.decode(LspUriResponse.self, from: json, context: "path_to_file_uri").uri
@@ -57,7 +58,7 @@ public final class LSPBridge {
 
     public func fileURIToPath(_ uri: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = uri.withCString { uriPtr in
-            ffi.lspFileURIToPathFn(uriPtr)
+            editor_core_ffi_lsp_file_uri_to_path(uriPtr)
         }
         let json = try ffi.takeOwnedCString(ptr, context: "lsp_file_uri_to_path")
         return try JSON.decode(LspPathResponse.self, from: json, context: "file_uri_to_path").path
@@ -65,7 +66,7 @@ public final class LSPBridge {
 
     public func percentEncodePath(_ path: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = path.withCString { pathPtr in
-            ffi.lspPercentEncodePathFn(pathPtr)
+            editor_core_ffi_lsp_percent_encode_path(pathPtr)
         }
         let json = try ffi.takeOwnedCString(ptr, context: "lsp_percent_encode_path")
         return try JSON.decode(LspEncodedResponse.self, from: json, context: "percent_encode_path").encoded
@@ -73,7 +74,7 @@ public final class LSPBridge {
 
     public func percentDecodePath(_ path: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = path.withCString { pathPtr in
-            ffi.lspPercentDecodePathFn(pathPtr)
+            editor_core_ffi_lsp_percent_decode_path(pathPtr)
         }
         let json = try ffi.takeOwnedCString(ptr, context: "lsp_percent_decode_path")
         return try JSON.decode(LspDecodedResponse.self, from: json, context: "percent_decode_path").decoded
@@ -82,7 +83,7 @@ public final class LSPBridge {
     public func charOffsetToUTF16(lineText: String, charOffset: Int) -> Int {
         let offset = max(0, charOffset)
         let value = lineText.withCString { textPtr in
-            ffi.lspCharOffsetToUTF16Fn(textPtr, UInt(offset))
+            editor_core_ffi_lsp_char_offset_to_utf16(textPtr, offset)
         }
         return Int(value)
     }
@@ -90,14 +91,14 @@ public final class LSPBridge {
     public func utf16OffsetToCharOffset(lineText: String, utf16Offset: Int) -> Int {
         let offset = max(0, utf16Offset)
         let value = lineText.withCString { textPtr in
-            ffi.lspUTF16ToCharOffsetFn(textPtr, UInt(offset))
+            editor_core_ffi_lsp_utf16_to_char_offset(textPtr, offset)
         }
         return Int(value)
     }
 
     public func applyTextEditsJSON(state: EditorState, editsJSON: String) throws -> [LspChangedRange] {
         let ptr: UnsafeMutablePointer<CChar>? = editsJSON.withCString { jsonPtr in
-            ffi.lspApplyTextEditsJSONFn(state.handle, jsonPtr)
+            editor_core_ffi_lsp_apply_text_edits_json(state.handle, jsonPtr)
         }
         let json = try ffi.takeOwnedCString(ptr, context: "lsp_apply_text_edits_json")
         return try JSON.decode(LspChangedRangesResponse.self, from: json, context: "apply_text_edits").changedRanges
@@ -105,74 +106,74 @@ public final class LSPBridge {
 
     public func semanticTokensToIntervalsJSON(state: EditorState, dataJSON: String) throws -> [LspInterval] {
         let ptr: UnsafeMutablePointer<CChar>? = dataJSON.withCString { jsonPtr in
-            ffi.lspSemanticTokensToIntervalsJSONFn(state.handle, jsonPtr)
+            editor_core_ffi_lsp_semantic_tokens_to_intervals_json(state.handle, jsonPtr)
         }
         let json = try ffi.takeOwnedCString(ptr, context: "lsp_semantic_tokens_to_intervals_json")
         return try JSON.decode(LspIntervalsResponse.self, from: json, context: "semantic_tokens_to_intervals").intervals
     }
 
     public func decodeSemanticStyleId(_ styleId: UInt32) throws -> LspSemanticStyleIdDecoded {
-        let ptr = ffi.lspDecodeSemanticStyleIDFn(styleId)
+        let ptr = editor_core_ffi_lsp_decode_semantic_style_id(styleId)
         let json = try ffi.takeOwnedCString(ptr, context: "lsp_decode_semantic_style_id")
         return try JSON.decode(LspSemanticStyleIdDecoded.self, from: json, context: "decode_semantic_style_id")
     }
 
     public func encodeSemanticStyleId(tokenType: UInt32, tokenModifiers: UInt32) -> UInt32 {
-        ffi.lspEncodeSemanticStyleIDFn(tokenType, tokenModifiers)
+        editor_core_ffi_lsp_encode_semantic_style_id(tokenType, tokenModifiers)
     }
 
     public func documentHighlightsToProcessingEditJSON(state: EditorState, resultJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = resultJSON.withCString { jsonPtr in
-            ffi.lspDocumentHighlightsToProcessingEditJSONFn(state.handle, jsonPtr)
+            editor_core_ffi_lsp_document_highlights_to_processing_edit_json(state.handle, jsonPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "lsp_document_highlights_to_processing_edit_json")
     }
 
     public func inlayHintsToProcessingEditJSON(state: EditorState, resultJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = resultJSON.withCString { jsonPtr in
-            ffi.lspInlayHintsToProcessingEditJSONFn(state.handle, jsonPtr)
+            editor_core_ffi_lsp_inlay_hints_to_processing_edit_json(state.handle, jsonPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "lsp_inlay_hints_to_processing_edit_json")
     }
 
     public func documentLinksToProcessingEditJSON(state: EditorState, resultJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = resultJSON.withCString { jsonPtr in
-            ffi.lspDocumentLinksToProcessingEditJSONFn(state.handle, jsonPtr)
+            editor_core_ffi_lsp_document_links_to_processing_edit_json(state.handle, jsonPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "lsp_document_links_to_processing_edit_json")
     }
 
     public func codeLensToProcessingEditJSON(state: EditorState, resultJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = resultJSON.withCString { jsonPtr in
-            ffi.lspCodeLensToProcessingEditJSONFn(state.handle, jsonPtr)
+            editor_core_ffi_lsp_code_lens_to_processing_edit_json(state.handle, jsonPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "lsp_code_lens_to_processing_edit_json")
     }
 
     public func documentSymbolsToProcessingEditJSON(state: EditorState, resultJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = resultJSON.withCString { jsonPtr in
-            ffi.lspDocumentSymbolsToProcessingEditJSONFn(state.handle, jsonPtr)
+            editor_core_ffi_lsp_document_symbols_to_processing_edit_json(state.handle, jsonPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "lsp_document_symbols_to_processing_edit_json")
     }
 
     public func diagnosticsToProcessingEditsJSON(state: EditorState, publishDiagnosticsParamsJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = publishDiagnosticsParamsJSON.withCString { jsonPtr in
-            ffi.lspDiagnosticsToProcessingEditsJSONFn(state.handle, jsonPtr)
+            editor_core_ffi_lsp_diagnostics_to_processing_edits_json(state.handle, jsonPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "lsp_diagnostics_to_processing_edits_json")
     }
 
     public func workspaceSymbolsJSON(resultJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = resultJSON.withCString { jsonPtr in
-            ffi.lspWorkspaceSymbolsJSONFn(jsonPtr)
+            editor_core_ffi_lsp_workspace_symbols_json(jsonPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "lsp_workspace_symbols_json")
     }
 
     public func locationsJSON(resultJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = resultJSON.withCString { jsonPtr in
-            ffi.lspLocationsJSONFn(jsonPtr)
+            editor_core_ffi_lsp_locations_json(jsonPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "lsp_locations_json")
     }
@@ -189,12 +190,12 @@ public final class LSPBridge {
 
         let ptr: UnsafeMutablePointer<CChar>? = completionItemJSON.withCString { itemPtr in
             mode.withCString { modePtr in
-                ffi.lspCompletionItemToTextEditsJSONFn(
+                editor_core_ffi_lsp_completion_item_to_text_edits_json(
                     state.handle,
                     itemPtr,
                     modePtr,
-                    start,
-                    end,
+                    Int(clamping: start),
+                    Int(clamping: end),
                     hasFallback
                 )
             }
@@ -205,7 +206,7 @@ public final class LSPBridge {
     public func applyCompletionItemJSON(state: EditorState, completionItemJSON: String, mode: String) throws {
         let ok = completionItemJSON.withCString { itemPtr in
             mode.withCString { modePtr in
-                ffi.lspApplyCompletionItemJSONFn(state.handle, itemPtr, modePtr)
+                editor_core_ffi_lsp_apply_completion_item_json(state.handle, itemPtr, modePtr)
             }
         }
         guard ok else {
@@ -214,4 +215,3 @@ public final class LSPBridge {
         }
     }
 }
-

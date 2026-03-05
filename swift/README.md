@@ -2,29 +2,37 @@
 
 这是一个从零重写的 Swift 包装层，目标是用 **SwiftPM** 以最小表面积、可靠的方式调用本仓库的 Rust C ABI：`crates/editor-core-ffi`。
 
-当前策略是 **运行时动态加载** `libeditor_core_ffi`（`dlopen` + `dlsym`），从而：
+当前策略是 **静态链接** Rust `staticlib` 到 Swift 可执行文件/测试里（不再 `dlopen/dlsym`）。
 
-- Swift 包本身不需要在构建期链接 Rust 产物（避免 SwiftPM/Rust 混合构建的复杂性）。
-- 你可以在 host app（AppKit、SwiftUI、CLI、服务进程）里自行决定 Rust dylib 的放置方式。
+这带来的变化：
+
+- 运行时不再依赖 `libeditor_core_ffi.dylib` / `libeditor_core_ui_ffi.dylib` 的查找路径；
+- 需要在构建 SwiftPM 包之前，先用 Cargo 生成对应的 `.a` 产物（或在 CI 里缓存它们）。
 
 ## 目录结构
 
-- `Sources/EditorCoreFFI/`：核心封装（加载 dylib + `EditorState`/`Workspace` 包装 + viewport blob 解析）。
+- `Sources/CEditorCoreFFI/`：C header module（转发到 `crates/editor-core-ffi/include/editor_core_ffi.h`）
+- `Sources/CEditorCoreUIFFI/`：C header module（转发到 `crates/editor-core-ui-ffi/include/editor_core_ui_ffi.h`）
+- `Sources/EditorCoreFFI/`：Swift 封装（`EditorState`/`Workspace` 包装 + viewport blob 解析）。
 - `Sources/EditorCoreFFIDemo/`：最小 CLI demo（验证加载与基础编辑）。
-- `Tests/EditorCoreFFITests/`：集成测试（会在仓库根目录执行 `cargo build -p editor-core-ffi`，然后加载生成的 dylib 进行验证）。
+- `Sources/EditorCoreAppKit/`：AppKit 组件（自绘 + IME + 事件映射）。
+- `Sources/EditorCoreSkiaAppKitDemo/`：自绘 demo（Skia renderer）。
+- `Tests/EditorCoreFFITests/`：Swift 侧集成测试。
+- `Tests/EditorCoreAppKitTests/`：AppKit 组件测试。
 
-## 构建 Rust dylib
+## 构建 Rust staticlib
 
 在仓库根目录：
 
 ```bash
-cargo build -p editor-core-ffi
+MACOSX_DEPLOYMENT_TARGET=13.0 cargo build -p editor-core-ffi -p editor-core-ui-ffi
 ```
 
 生成路径（macOS debug 默认）：
 
 ```text
-target/debug/libeditor_core_ffi.dylib
+target/debug/libeditor_core_ffi.a
+target/debug/libeditor_core_ui_ffi.a
 ```
 
 ## 运行 demo
@@ -34,11 +42,11 @@ cd swift
 swift run EditorCoreFFIDemo
 ```
 
-可选：通过环境变量指定 dylib：
+自绘 AppKit demo（Skia）：
 
 ```bash
-EDITOR_CORE_FFI_DYLIB_PATH=../target/debug/libeditor_core_ffi.dylib \
-swift run EditorCoreFFIDemo
+cd swift
+swift run EditorCoreSkiaAppKitDemo
 ```
 
 ## 运行测试
@@ -46,23 +54,4 @@ swift run EditorCoreFFIDemo
 ```bash
 cd swift
 swift test
-```
-
-如果你的环境没有 `cargo`，测试会自动 `skip`（只验证 Swift 侧可编译）。
-
-## AppKit 组件（最小版）
-
-新增了一个最小可用的 AppKit 组件：`EditorCoreTextView`（内部用 `NSTextView`）。
-
-- 组件：`Sources/EditorCoreAppKit/`
-- Demo：`Sources/EditorCoreAppKitDemo/`
-
-运行方式：
-
-```bash
-# 先确保 Rust dylib 已生成
-cargo build -p editor-core-ffi
-
-cd swift
-swift run EditorCoreAppKitDemo
 ```

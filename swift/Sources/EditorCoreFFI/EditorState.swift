@@ -1,3 +1,4 @@
+import CEditorCoreFFI
 import Foundation
 
 private struct EditorStateTextResponse: Decodable {
@@ -16,7 +17,8 @@ public final class EditorState {
         self.ffi = library
 
         let handle: OpaquePointer? = initialText.withCString { textPtr in
-            library.editorStateNewFn(textPtr, max(1, viewportWidth))
+            let width = Int(clamping: max(1, viewportWidth))
+            return editor_core_ffi_editor_state_new(textPtr, width)
         }
         guard let handle else {
             let message = library.lastErrorMessage()
@@ -26,44 +28,44 @@ public final class EditorState {
     }
 
     deinit {
-        ffi.editorStateFreeFn(handle)
+        editor_core_ffi_editor_state_free(handle)
     }
 
     public func text() throws -> String {
-        let json = try ffi.takeOwnedCString(ffi.editorStateTextFn(handle), context: "editor_state_text")
+        let json = try ffi.takeOwnedCString(editor_core_ffi_editor_state_text(handle), context: "editor_state_text")
         return try JSON.decode(EditorStateTextResponse.self, from: json, context: "editor_state_text").text
     }
 
     public func executeJSON(_ commandJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = commandJSON.withCString { jsonPtr in
-            ffi.editorStateExecuteJSONFn(handle, jsonPtr)
+            editor_core_ffi_editor_state_execute_json(handle, jsonPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "editor_state_execute_json")
     }
 
     public func fullStateJSON() throws -> String {
-        try ffi.takeOwnedCString(ffi.editorStateFullStateJSONFn(handle), context: "editor_state_full_state_json")
+        try ffi.takeOwnedCString(editor_core_ffi_editor_state_full_state_json(handle), context: "editor_state_full_state_json")
     }
 
     public func textForSavingJSON() throws -> String {
-        try ffi.takeOwnedCString(ffi.editorStateTextForSavingFn(handle), context: "editor_state_text_for_saving")
+        try ffi.takeOwnedCString(editor_core_ffi_editor_state_text_for_saving(handle), context: "editor_state_text_for_saving")
     }
 
     public func documentSymbolsJSON() throws -> String {
-        try ffi.takeOwnedCString(ffi.editorStateDocumentSymbolsJSONFn(handle), context: "editor_state_document_symbols_json")
+        try ffi.takeOwnedCString(editor_core_ffi_editor_state_document_symbols_json(handle), context: "editor_state_document_symbols_json")
     }
 
     public func diagnosticsJSON() throws -> String {
-        try ffi.takeOwnedCString(ffi.editorStateDiagnosticsJSONFn(handle), context: "editor_state_diagnostics_json")
+        try ffi.takeOwnedCString(editor_core_ffi_editor_state_diagnostics_json(handle), context: "editor_state_diagnostics_json")
     }
 
     public func decorationsJSON() throws -> String {
-        try ffi.takeOwnedCString(ffi.editorStateDecorationsJSONFn(handle), context: "editor_state_decorations_json")
+        try ffi.takeOwnedCString(editor_core_ffi_editor_state_decorations_json(handle), context: "editor_state_decorations_json")
     }
 
     public func setLineEnding(_ lineEnding: String) throws {
         let ok = lineEnding.withCString { ptr in
-            ffi.editorStateSetLineEndingFn(handle, ptr)
+            editor_core_ffi_editor_state_set_line_ending(handle, ptr)
         }
         guard ok else {
             let message = ffi.lastErrorMessage()
@@ -72,47 +74,47 @@ public final class EditorState {
     }
 
     public func lineEndingJSON() throws -> String {
-        try ffi.takeOwnedCString(ffi.editorStateGetLineEndingFn(handle), context: "editor_state_get_line_ending")
+        try ffi.takeOwnedCString(editor_core_ffi_editor_state_get_line_ending(handle), context: "editor_state_get_line_ending")
     }
 
     public func viewportStyledJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
         try ffi.takeOwnedCString(
-            ffi.editorStateViewportStyledJSONFn(handle, startVisualRow, rowCount),
+            editor_core_ffi_editor_state_viewport_styled_json(handle, Int(clamping: startVisualRow), Int(clamping: rowCount)),
             context: "editor_state_viewport_styled_json"
         )
     }
 
     public func minimapJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
         try ffi.takeOwnedCString(
-            ffi.editorStateMinimapJSONFn(handle, startVisualRow, rowCount),
+            editor_core_ffi_editor_state_minimap_json(handle, Int(clamping: startVisualRow), Int(clamping: rowCount)),
             context: "editor_state_minimap_json"
         )
     }
 
     public func viewportComposedJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
         try ffi.takeOwnedCString(
-            ffi.editorStateViewportComposedJSONFn(handle, startVisualRow, rowCount),
+            editor_core_ffi_editor_state_viewport_composed_json(handle, Int(clamping: startVisualRow), Int(clamping: rowCount)),
             context: "editor_state_viewport_composed_json"
         )
     }
 
     public func takeLastTextDeltaJSON() throws -> String {
         try ffi.takeOwnedCString(
-            ffi.editorStateTakeLastTextDeltaJSONFn(handle),
+            editor_core_ffi_editor_state_take_last_text_delta_json(handle),
             context: "editor_state_take_last_text_delta_json"
         )
     }
 
     public func lastTextDeltaJSON() throws -> String {
         try ffi.takeOwnedCString(
-            ffi.editorStateLastTextDeltaJSONFn(handle),
+            editor_core_ffi_editor_state_last_text_delta_json(handle),
             context: "editor_state_last_text_delta_json"
         )
     }
 
     public func applyProcessingEditsJSON(_ editsJSON: String) throws {
         let ok = editsJSON.withCString { jsonPtr in
-            ffi.editorStateApplyProcessingEditsJSONFn(handle, jsonPtr)
+            editor_core_ffi_editor_state_apply_processing_edits_json(handle, jsonPtr)
         }
         guard ok else {
             let message = ffi.lastErrorMessage()
@@ -121,10 +123,8 @@ public final class EditorState {
     }
 
     public func documentStats() throws -> DocumentStats {
-        var raw = EcfDocumentStatsRaw()
-        let status = withUnsafeMutableBytes(of: &raw) { rawBytes in
-            ffi.editorGetDocumentStatsFn(handle, rawBytes.baseAddress)
-        }
+        var raw = EcfDocumentStats()
+        let status = editor_core_ffi_editor_get_document_stats(handle, &raw)
         try ffi.ensureStatus(status, context: "editor_get_document_stats")
         return DocumentStats(raw: raw)
     }
@@ -138,18 +138,18 @@ public final class EditorState {
             throw EditorCoreFFIError.ffiStatus(code: .invalidArgument, context: "insert_text_utf8", message: "text too large")
         }
         let status = bytes.withUnsafeBufferPointer { buf in
-            ffi.editorInsertTextUTF8Fn(handle, buf.baseAddress, UInt32(buf.count))
+            editor_core_ffi_editor_insert_text_utf8(handle, buf.baseAddress, UInt32(buf.count))
         }
         try ffi.ensureStatus(status, context: "insert_text_utf8")
     }
 
     public func moveTo(line: UInt32, column: UInt32) throws {
-        let status = ffi.editorMoveToFn(handle, line, column)
+        let status = editor_core_ffi_editor_move_to(handle, line, column)
         try ffi.ensureStatus(status, context: "move_to")
     }
 
     public func moveBy(deltaLine: Int32, deltaColumn: Int32) throws {
-        let status = ffi.editorMoveByFn(handle, deltaLine, deltaColumn)
+        let status = editor_core_ffi_editor_move_by(handle, deltaLine, deltaColumn)
         try ffi.ensureStatus(status, context: "move_by")
     }
 
@@ -160,38 +160,38 @@ public final class EditorState {
         endColumn: UInt32,
         direction: UInt8
     ) throws {
-        let status = ffi.editorSetSelectionFn(handle, startLine, startColumn, endLine, endColumn, direction)
+        let status = editor_core_ffi_editor_set_selection(handle, startLine, startColumn, endLine, endColumn, direction)
         try ffi.ensureStatus(status, context: "set_selection")
     }
 
     public func clearSelection() throws {
-        let status = ffi.editorClearSelectionFn(handle)
+        let status = editor_core_ffi_editor_clear_selection(handle)
         try ffi.ensureStatus(status, context: "clear_selection")
     }
 
     public func backspace() throws {
-        let status = ffi.editorBackspaceFn(handle)
+        let status = editor_core_ffi_editor_backspace(handle)
         try ffi.ensureStatus(status, context: "backspace")
     }
 
     public func deleteForward() throws {
-        let status = ffi.editorDeleteForwardFn(handle)
+        let status = editor_core_ffi_editor_delete_forward(handle)
         try ffi.ensureStatus(status, context: "delete_forward")
     }
 
     public func undo() throws {
-        let status = ffi.editorUndoFn(handle)
+        let status = editor_core_ffi_editor_undo(handle)
         try ffi.ensureStatus(status, context: "undo")
     }
 
     public func redo() throws {
-        let status = ffi.editorRedoFn(handle)
+        let status = editor_core_ffi_editor_redo(handle)
         try ffi.ensureStatus(status, context: "redo")
     }
 
     public func viewportBlob(startVisualRow: UInt32, rowCount: UInt32) throws -> ViewportBlob {
         var requiredLen: UInt32 = 0
-        let st1 = ffi.editorGetViewportBlobFn(handle, startVisualRow, rowCount, nil, 0, &requiredLen)
+        let st1 = editor_core_ffi_editor_get_viewport_blob(handle, startVisualRow, rowCount, nil, 0, &requiredLen)
         if let code = EcfStatus(rawValue: st1), code == .ok {
             // Unexpected but not impossible; continue with requiredLen.
         } else if let code = EcfStatus(rawValue: st1), code == .bufferTooSmall {
@@ -207,7 +207,7 @@ public final class EditorState {
         var data = Data(count: Int(requiredLen))
         let st2: Int32 = data.withUnsafeMutableBytes { rawBuf in
             let outPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
-            return ffi.editorGetViewportBlobFn(handle, startVisualRow, rowCount, outPtr, requiredLen, &requiredLen)
+            return editor_core_ffi_editor_get_viewport_blob(handle, startVisualRow, rowCount, outPtr, requiredLen, &requiredLen)
         }
         try ffi.ensureStatus(st2, context: "editor_get_viewport_blob(copy)")
 

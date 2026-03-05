@@ -1,3 +1,4 @@
+import CEditorCoreFFI
 import Foundation
 
 private struct TreeSitterUpdateModeResponse: Decodable {
@@ -10,7 +11,7 @@ public final class TreeSitterProcessor {
 
     public init(
         library: EditorCoreFFILibrary,
-        languageFn: EditorCoreFFILibrary.FnTreeSitterLanguageFn,
+        languageFn: EcfTreeSitterLanguageFn,
         highlightsQuery: String,
         foldsQuery: String? = nil,
         captureStylesJSON: String? = nil,
@@ -22,7 +23,7 @@ public final class TreeSitterProcessor {
         let handle: OpaquePointer? = highlightsQuery.withCString { highlightsPtr in
             let foldsPtrThunk: (UnsafePointer<CChar>?) -> OpaquePointer? = { foldsPtr in
                 let capturePtrThunk: (UnsafePointer<CChar>?) -> OpaquePointer? = { capturePtr in
-                    library.treeSitterProcessorNewFn(
+                    editor_core_ffi_treesitter_processor_new(
                         languageFn,
                         highlightsPtr,
                         foldsPtr,
@@ -56,18 +57,18 @@ public final class TreeSitterProcessor {
     }
 
     deinit {
-        ffi.treeSitterProcessorFreeFn(handle)
+        editor_core_ffi_treesitter_processor_free(handle)
     }
 
     public func processJSON(state: EditorState) throws -> String {
         try ffi.takeOwnedCString(
-            ffi.treeSitterProcessorProcessJSONFn(handle, state.handle),
+            editor_core_ffi_treesitter_processor_process_json(handle, state.handle),
             context: "treesitter_processor_process_json"
         )
     }
 
     public func apply(state: EditorState) throws {
-        let ok = ffi.treeSitterProcessorApplyFn(handle, state.handle)
+        let ok = editor_core_ffi_treesitter_processor_apply(handle, state.handle)
         guard ok else {
             let message = ffi.lastErrorMessage()
             throw EditorCoreFFIError.ffiStatus(code: .internal, context: "treesitter_processor_apply", message: message.isEmpty ? "no last_error_message" : message)
@@ -76,10 +77,9 @@ public final class TreeSitterProcessor {
 
     public func lastUpdateMode() throws -> String {
         let json = try ffi.takeOwnedCString(
-            ffi.treeSitterProcessorLastUpdateModeJSONFn(handle),
+            editor_core_ffi_treesitter_processor_last_update_mode_json(handle),
             context: "treesitter_processor_last_update_mode_json"
         )
         return try JSON.decode(TreeSitterUpdateModeResponse.self, from: json, context: "treesitter_last_update_mode").mode
     }
 }
-

@@ -14,14 +14,10 @@ private func eprint(_ message: String) {
 @main
 struct EditorCoreFFIDemoMain {
     static func main() {
-        let args = Array(CommandLine.arguments.dropFirst())
-        let explicitPath = args.first
-
         do {
-            let library = try EditorCoreFFILibrary(path: explicitPath)
+            let library = try EditorCoreFFILibrary()
             let version = try library.versionString()
             print("editor-core-ffi loaded")
-            print("  path: \(library.resolvedLibraryPath)")
             print("  abi:  \(library.abiVersion)")
             print("  ver:  \(version)")
 
@@ -45,4 +41,3 @@ struct EditorCoreFFIDemoMain {
         }
     }
 }
-
