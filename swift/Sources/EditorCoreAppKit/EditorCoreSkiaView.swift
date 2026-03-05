@@ -1102,6 +1102,22 @@ public final class EditorCoreSkiaView: MTKView {
         }
 
         guard let commandBuffer = metalCommandQueue.makeCommandBuffer() else { return }
+
+        // 关键：在某些系统/驱动组合下，如果用“完全空的 command buffer”去 present，
+        // 会出现“present 成功但屏幕仍是空白”的现象（即使 Skia 已经在更早的 command buffer 里写入了 drawable 的 texture）。
+        //
+        // 这里做一个极轻量的 no-op render pass：
+        // - loadAction = .load：不清屏，保留 Skia 画进去的内容
+        // - storeAction = .store：保证结果可用于后续 present
+        //
+        // 这样可以确保 present 所在的 command buffer 明确“使用了”这个 drawable 的 texture。
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = drawable.texture
+        pass.colorAttachments[0].loadAction = .load
+        pass.colorAttachments[0].storeAction = .store
+        if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
+            encoder.endEncoding()
+        }
         commandBuffer.present(drawable)
         commandBuffer.commit()
 
