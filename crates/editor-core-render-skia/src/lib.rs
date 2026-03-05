@@ -681,11 +681,20 @@ impl SkiaRenderer {
             }
 
             #[derive(Debug)]
+            enum PendingRunKind {
+                LigatureText { text: String },
+                Glyphs {
+                    glyphs: Vec<GlyphId>,
+                    positions: Vec<Point>,
+                },
+            }
+
+            #[derive(Debug)]
             struct PendingRun {
                 start_x_cells: u32,
                 font_index: usize,
                 fg: Rgba8,
-                text: String,
+                kind: PendingRunKind,
             }
 
             let mut pending: Option<PendingRun> = None;
@@ -697,9 +706,6 @@ impl SkiaRenderer {
                 let Some(run) = pending.take() else {
                     return;
                 };
-                if run.text.is_empty() {
-                    return;
-                }
                 let x_px = text_origin_x + run.start_x_cells as f32 * config.cell_width_px;
 
                 let mut paint = Paint::default();
@@ -708,16 +714,35 @@ impl SkiaRenderer {
 
                 let font = &renderer.fonts
                     [run.font_index.min(renderer.fonts.len().saturating_sub(1))];
-                renderer.draw_shaped_run(
-                    canvas,
-                    run.text.as_str(),
-                    font,
-                    x_px,
-                    baseline_y,
-                    config.cell_width_px,
-                    &paint,
-                    config.enable_ligatures,
-                );
+                match run.kind {
+                    PendingRunKind::LigatureText { text } => {
+                        if text.is_empty() {
+                            return;
+                        }
+                        renderer.draw_shaped_run(
+                            canvas,
+                            text.as_str(),
+                            font,
+                            x_px,
+                            baseline_y,
+                            config.cell_width_px,
+                            &paint,
+                            config.enable_ligatures,
+                        );
+                    }
+                    PendingRunKind::Glyphs { glyphs, positions } => {
+                        if glyphs.is_empty() || glyphs.len() != positions.len() {
+                            return;
+                        }
+                        canvas.draw_glyphs_at(
+                            glyphs.as_slice(),
+                            positions.as_slice(),
+                            Point::new(x_px, baseline_y),
+                            font,
+                            &paint,
+                        );
+                    }
+                }
             };
 
             for cell in &line.cells {
@@ -768,7 +793,9 @@ impl SkiaRenderer {
                     let font_index = self.font_index_for_char(cell.ch);
 
                     let can_extend = pending.as_ref().is_some_and(|r| {
-                        r.font_index == font_index && r.fg == fg
+                        r.font_index == font_index
+                            && r.fg == fg
+                            && matches!(r.kind, PendingRunKind::LigatureText { .. })
                     });
                     if !can_extend {
                         flush(self, &mut pending);
@@ -776,25 +803,46 @@ impl SkiaRenderer {
                             start_x_cells: x_cells,
                             font_index,
                             fg,
-                            text: String::new(),
+                            kind: PendingRunKind::LigatureText { text: String::new() },
                         });
                     }
 
                     if let Some(r) = pending.as_mut() {
-                        r.text.push(cell.ch);
+                        if let PendingRunKind::LigatureText { text } = &mut r.kind {
+                            text.push(cell.ch);
+                        }
                     }
                 } else {
-                    flush(self, &mut pending);
+                    let font_index = self.font_index_for_char(cell.ch);
+                    let can_extend = pending.as_ref().is_some_and(|r| {
+                        r.font_index == font_index
+                            && r.fg == fg
+                            && matches!(r.kind, PendingRunKind::Glyphs { .. })
+                    });
+                    if !can_extend {
+                        flush(self, &mut pending);
+                        pending = Some(PendingRun {
+                            start_x_cells: x_cells,
+                            font_index,
+                            fg,
+                            kind: PendingRunKind::Glyphs {
+                                glyphs: Vec::new(),
+                                positions: Vec::new(),
+                            },
+                        });
+                    }
 
-                    let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_color(rgba_to_skia_color(fg));
-                    canvas.draw_str(
-                        cell.ch.to_string(),
-                        Point::new(x_px, baseline_y),
-                        self.font_for_char(cell.ch),
-                        &paint,
-                    );
+                    if let Some(r) = pending.as_mut() {
+                        if let PendingRunKind::Glyphs { glyphs, positions } = &mut r.kind {
+                            let font = &self.fonts
+                                [font_index.min(self.fonts.len().saturating_sub(1))];
+                            let glyph = font.unichar_to_glyph(cell.ch as u32 as i32);
+                            let rel_x_px =
+                                (x_cells.saturating_sub(r.start_x_cells) as f32) * config.cell_width_px;
+                            glyphs.push(glyph);
+                            positions.push(Point::new(rel_x_px, 0.0));
+                        }
+                    }
                 }
 
                 x_cells = x_cells.saturating_add(cell.width as u32);
@@ -1100,11 +1148,20 @@ impl SkiaRenderer {
             }
 
             #[derive(Debug)]
+            enum PendingRunKind {
+                LigatureText { text: String },
+                Glyphs {
+                    glyphs: Vec<GlyphId>,
+                    positions: Vec<Point>,
+                },
+            }
+
+            #[derive(Debug)]
             struct PendingRun {
                 start_x_cells: u32,
                 font_index: usize,
                 fg: Rgba8,
-                text: String,
+                kind: PendingRunKind,
             }
 
             let mut pending: Option<PendingRun> = None;
@@ -1116,9 +1173,6 @@ impl SkiaRenderer {
                 let Some(run) = pending.take() else {
                     return;
                 };
-                if run.text.is_empty() {
-                    return;
-                }
                 let x_px = text_origin_x + run.start_x_cells as f32 * config.cell_width_px;
 
                 let mut paint = Paint::default();
@@ -1127,16 +1181,35 @@ impl SkiaRenderer {
 
                 let font =
                     &renderer.fonts[run.font_index.min(renderer.fonts.len().saturating_sub(1))];
-                renderer.draw_shaped_run(
-                    canvas,
-                    run.text.as_str(),
-                    font,
-                    x_px,
-                    baseline_y,
-                    config.cell_width_px,
-                    &paint,
-                    config.enable_ligatures,
-                );
+                match run.kind {
+                    PendingRunKind::LigatureText { text } => {
+                        if text.is_empty() {
+                            return;
+                        }
+                        renderer.draw_shaped_run(
+                            canvas,
+                            text.as_str(),
+                            font,
+                            x_px,
+                            baseline_y,
+                            config.cell_width_px,
+                            &paint,
+                            config.enable_ligatures,
+                        );
+                    }
+                    PendingRunKind::Glyphs { glyphs, positions } => {
+                        if glyphs.is_empty() || glyphs.len() != positions.len() {
+                            return;
+                        }
+                        canvas.draw_glyphs_at(
+                            glyphs.as_slice(),
+                            positions.as_slice(),
+                            Point::new(x_px, baseline_y),
+                            font,
+                            &paint,
+                        );
+                    }
+                }
             };
 
             for cell in &line.cells {
@@ -1180,34 +1253,57 @@ impl SkiaRenderer {
                 if eligible_for_ligatures {
                     let font_index = self.font_index_for_char(cell.ch);
 
-                    let can_extend = pending
-                        .as_ref()
-                        .is_some_and(|r| r.font_index == font_index && r.fg == fg);
+                    let can_extend = pending.as_ref().is_some_and(|r| {
+                        r.font_index == font_index
+                            && r.fg == fg
+                            && matches!(r.kind, PendingRunKind::LigatureText { .. })
+                    });
                     if !can_extend {
                         flush(self, &mut pending);
                         pending = Some(PendingRun {
                             start_x_cells: x_cells,
                             font_index,
                             fg,
-                            text: String::new(),
+                            kind: PendingRunKind::LigatureText { text: String::new() },
                         });
                     }
 
                     if let Some(r) = pending.as_mut() {
-                        r.text.push(cell.ch);
+                        if let PendingRunKind::LigatureText { text } = &mut r.kind {
+                            text.push(cell.ch);
+                        }
                     }
                 } else {
-                    flush(self, &mut pending);
+                    let font_index = self.font_index_for_char(cell.ch);
+                    let can_extend = pending.as_ref().is_some_and(|r| {
+                        r.font_index == font_index
+                            && r.fg == fg
+                            && matches!(r.kind, PendingRunKind::Glyphs { .. })
+                    });
+                    if !can_extend {
+                        flush(self, &mut pending);
+                        pending = Some(PendingRun {
+                            start_x_cells: x_cells,
+                            font_index,
+                            fg,
+                            kind: PendingRunKind::Glyphs {
+                                glyphs: Vec::new(),
+                                positions: Vec::new(),
+                            },
+                        });
+                    }
 
-                    let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_color(rgba_to_skia_color(fg));
-                    canvas.draw_str(
-                        cell.ch.to_string(),
-                        Point::new(x_px, baseline_y),
-                        self.font_for_char(cell.ch),
-                        &paint,
-                    );
+                    if let Some(r) = pending.as_mut() {
+                        if let PendingRunKind::Glyphs { glyphs, positions } = &mut r.kind {
+                            let font = &self.fonts
+                                [font_index.min(self.fonts.len().saturating_sub(1))];
+                            let glyph = font.unichar_to_glyph(cell.ch as u32 as i32);
+                            let rel_x_px =
+                                (x_cells.saturating_sub(r.start_x_cells) as f32) * config.cell_width_px;
+                            glyphs.push(glyph);
+                            positions.push(Point::new(rel_x_px, 0.0));
+                        }
+                    }
                 }
 
                 x_cells = x_cells.saturating_add(cell.width as u32);
