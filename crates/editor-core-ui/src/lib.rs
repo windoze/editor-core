@@ -8,7 +8,7 @@ use editor_core::{
     EditorStateManager,
     ExpandSelectionDirection, ExpandSelectionUnit, Position, IME_MARKED_TEXT_STYLE_ID,
     MATCH_HIGHLIGHT_STYLE_ID, ProcessingEdit, SearchOptions, Selection, SelectionDirection,
-    StyleCommand, StyleLayerId, ViewCommand,
+    SmoothScrollState, StyleCommand, StyleLayerId, ViewCommand,
 };
 use editor_core::intervals::Interval;
 use editor_core_lsp::{
@@ -543,6 +543,8 @@ impl EditorUi {
     /// - `x_px` is left-to-right (in pixels)
     /// - `y_px` is top-to-bottom (in pixels), aligned to the top of the visual row
     pub fn char_offset_to_view_point_px(&self, char_offset: usize) -> Option<(f32, f32)> {
+        let viewport = self.state.get_viewport_state();
+        let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
         if self.has_virtual_text_decorations() {
             let (_start_composed, _row_count, grid) = self.composed_viewport_grid();
             let local_row = composed_line_index_for_offset(&grid, char_offset)?;
@@ -554,12 +556,12 @@ impl EditorUi {
                 + gutter_px
                 + x_cells as f32 * self.render_config.cell_width_px;
             let y_px = self.render_config.padding_y_px
-                + local_row as f32 * self.render_config.line_height_px;
+                + local_row as f32 * self.render_config.line_height_px
+                - scroll_y_px;
             return Some((x_px, y_px));
         }
 
         let (row, x_cells) = self.char_offset_to_visual(char_offset)?;
-        let viewport = self.state.get_viewport_state();
         let local_row = row.saturating_sub(viewport.scroll_top);
 
         let gutter_px =
@@ -567,8 +569,9 @@ impl EditorUi {
         let x_px = self.render_config.padding_x_px
             + gutter_px
             + x_cells as f32 * self.render_config.cell_width_px;
-        let y_px =
-            self.render_config.padding_y_px + local_row as f32 * self.render_config.line_height_px;
+        let y_px = self.render_config.padding_y_px
+            + local_row as f32 * self.render_config.line_height_px
+            - scroll_y_px;
         Some((x_px, y_px))
     }
 
@@ -1064,6 +1067,56 @@ impl EditorUi {
         let old = self.state.get_viewport_state().scroll_top as isize;
         let new_top = (old + delta_rows).clamp(0, total.max(0)) as usize;
         self.state.set_scroll_top(new_top);
+    }
+
+    /// Smooth-scroll the viewport by a pixel delta (positive = scroll down, reveal later lines).
+    ///
+    /// This updates editor-core's `(scroll_top, sub_row_offset)` smooth-scroll state:
+    /// - `scroll_top` is the top visual row anchor.
+    /// - `sub_row_offset` is a normalized 0..=65535 fraction within a row.
+    ///
+    /// Notes:
+    /// - The UI layer interprets `sub_row_offset` as a pixel offset in the range
+    ///   `0..line_height_px` (using a 65536 denominator).
+    /// - The renderer and hit-testing paths must both use the same mapping.
+    pub fn scroll_by_pixels(&mut self, delta_y_px: f32) {
+        if !delta_y_px.is_finite() || delta_y_px.abs() <= f32::EPSILON {
+            return;
+        }
+
+        let line_h = self.render_config.line_height_px.max(1.0);
+        let total = self.state.total_visual_lines() as isize;
+
+        let smooth = self.state.get_smooth_scroll_state();
+        let mut top = smooth.top_visual_row as isize;
+        let mut off_px = (smooth.sub_row_offset as f32 / 65536.0) * line_h;
+        off_px += delta_y_px;
+
+        if off_px >= line_h {
+            let whole = (off_px / line_h).floor() as isize;
+            top = top.saturating_add(whole);
+            off_px -= whole as f32 * line_h;
+        } else if off_px < 0.0 {
+            let whole = ((-off_px) / line_h).ceil() as isize;
+            top = top.saturating_sub(whole);
+            off_px += whole as f32 * line_h;
+        }
+
+        let clamped_top = top.clamp(0, total.max(0)) as usize;
+
+        // Convert back to normalized u16. We keep the invariant `sub_row_offset < 65536`,
+        // so the maximum representable value corresponds to ~0.999984 rows.
+        let frac = (off_px / line_h).clamp(0.0, 0.999_999);
+        let sub = ((frac * 65536.0).floor() as u32).min(u16::MAX as u32) as u16;
+
+        let next = SmoothScrollState {
+            top_visual_row: clamped_top,
+            sub_row_offset: sub,
+            overscan_rows: smooth.overscan_rows,
+        };
+        if next != smooth {
+            self.state.set_smooth_scroll_state(next);
+        }
     }
 
     pub fn insert_text(&mut self, text: &str) -> Result<(), UiError> {
@@ -1779,12 +1832,14 @@ impl EditorUi {
     pub fn render_rgba_visible_into(&mut self, out_rgba: &mut [u8]) -> Result<usize, UiError> {
         let viewport = self.state.get_viewport_state();
         let start_row = viewport.scroll_top;
-        let row_count = viewport
-            .height
-            .unwrap_or(viewport.total_visual_lines.saturating_sub(start_row));
+        let row_count = self.viewport_row_count_for_render(&viewport);
+        let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
 
         let (selection_ranges, _primary_idx) = self.selections_offsets();
         let caret_offsets = self.all_caret_offsets();
+
+        let mut render_config = self.render_config;
+        render_config.scroll_y_px = scroll_y_px;
 
         let mut fold_markers = Vec::<FoldMarker>::new();
         for region in &self.state.get_folding_state().regions {
@@ -1807,7 +1862,7 @@ impl EditorUi {
                 caret_offsets.as_slice(),
                 selection_ranges.as_slice(),
                 fold_markers.as_slice(),
-                self.render_config,
+                render_config,
                 &self.theme,
                 out_rgba,
             )?;
@@ -1820,7 +1875,7 @@ impl EditorUi {
                 carets.as_slice(),
                 selections.as_slice(),
                 fold_markers.as_slice(),
-                self.render_config,
+                render_config,
                 &self.theme,
                 out_rgba,
             )?;
@@ -1930,10 +1985,12 @@ impl EditorUi {
     }
 
     fn pixel_to_visual(&self, x_px: f32, y_px: f32) -> (usize, usize) {
+        let viewport = self.state.get_viewport_state();
+        let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
         let gutter_px =
             self.render_config.gutter_width_cells as f32 * self.render_config.cell_width_px;
         let x = (x_px - self.render_config.padding_x_px - gutter_px).max(0.0);
-        let y = (y_px - self.render_config.padding_y_px).max(0.0);
+        let y = (y_px - self.render_config.padding_y_px + scroll_y_px).max(0.0);
 
         let col = (x / self.render_config.cell_width_px.max(1.0))
             .floor()
@@ -1941,15 +1998,17 @@ impl EditorUi {
         let local_row = (y / self.render_config.line_height_px.max(1.0))
             .floor()
             .max(0.0) as usize;
-        let global_row = self.state.get_viewport_state().scroll_top + local_row;
+        let global_row = viewport.scroll_top + local_row;
         (global_row, col)
     }
 
     fn pixel_to_local_row_col(&self, x_px: f32, y_px: f32) -> (usize, usize) {
+        let viewport = self.state.get_viewport_state();
+        let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
         let gutter_px =
             self.render_config.gutter_width_cells as f32 * self.render_config.cell_width_px;
         let x = (x_px - self.render_config.padding_x_px - gutter_px).max(0.0);
-        let y = (y_px - self.render_config.padding_y_px).max(0.0);
+        let y = (y_px - self.render_config.padding_y_px + scroll_y_px).max(0.0);
 
         let col = (x / self.render_config.cell_width_px.max(1.0))
             .floor()
@@ -1963,14 +2022,34 @@ impl EditorUi {
     fn composed_viewport_grid(&self) -> (usize, usize, editor_core::ComposedGrid) {
         let viewport = self.state.get_viewport_state();
         let start_doc_row = viewport.scroll_top;
-        let row_count = viewport
-            .height
-            .unwrap_or(viewport.total_visual_lines.saturating_sub(start_doc_row));
+        let row_count = self.viewport_row_count_for_render(&viewport);
         let start_composed = self.composed_start_row_for_doc_row(start_doc_row);
         let grid = self
             .state
             .get_viewport_content_composed(start_composed, row_count);
         (start_composed, row_count, grid)
+    }
+
+    fn viewport_row_count_for_render(&self, viewport: &editor_core::ViewportState) -> usize {
+        let start_row = viewport.scroll_top;
+        let base = viewport
+            .height
+            .unwrap_or(viewport.total_visual_lines.saturating_sub(start_row));
+
+        // When a sub-row offset is present, the bottom of the viewport can reveal part of the
+        // next visual row, so we render one extra row to avoid a blank strip.
+        if viewport.sub_row_offset == 0 {
+            base
+        } else {
+            base.saturating_add(1)
+        }
+    }
+
+    fn sub_row_offset_to_scroll_y_px(&self, sub_row_offset: u16) -> f32 {
+        // Interpret `sub_row_offset` as a fraction of a row using a 65536 denominator.
+        // This keeps the invariant that 65535 corresponds to "almost a full row", not exactly one.
+        let line_h = self.render_config.line_height_px.max(1.0);
+        (sub_row_offset as f32 / 65536.0) * line_h
     }
 
     fn composed_start_row_for_doc_row(&self, doc_row: usize) -> usize {
@@ -2520,6 +2599,52 @@ mod tests {
 
         // View hit-test.
         assert_eq!(ui.view_point_to_char_offset(25.0, 10.0).unwrap(), 2);
+    }
+
+    #[test]
+    fn ui_smooth_scroll_by_pixels_updates_sub_row_offset_and_hit_testing() {
+        let mut ui = EditorUi::new("a\nb\nc\n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 80,
+            height_px: 20,
+            cell_width_px: 10.0,
+            line_height_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(80, 20, 1.0).unwrap();
+
+        let vp0 = ui.state.get_viewport_state();
+        assert_eq!(vp0.scroll_top, 0);
+        assert_eq!(vp0.sub_row_offset, 0);
+        assert_eq!(ui.viewport_row_count_for_render(&vp0), 2);
+
+        // Scroll down by half a row.
+        ui.scroll_by_pixels(5.0);
+
+        let vp = ui.state.get_viewport_state();
+        assert_eq!(vp.scroll_top, 0);
+        assert_eq!(vp.sub_row_offset, 32768); // 0.5 * 65536
+        assert_eq!(ui.viewport_row_count_for_render(&vp), 3);
+
+        // The start of the 2nd line should now map to y=5 (10 - 5).
+        let b_off = 2usize; // "b" in "a\nb\nc\n"
+        let (_x, y) = ui.char_offset_to_view_point_px(b_off).unwrap();
+        assert_eq!(y, 5.0);
+
+        // Hit-test should take the scroll offset into account:
+        // - top 5px still belong to line 0
+        // - y>=5 moves into line 1
+        assert_eq!(ui.view_point_to_char_offset(0.0, 4.0).unwrap(), 0);
+        assert_eq!(ui.view_point_to_char_offset(0.0, 5.0).unwrap(), 2);
+        assert_eq!(ui.view_point_to_char_offset(0.0, 9.0).unwrap(), 2);
+
+        // Scrolling back up by the same amount resets the sub-row offset.
+        ui.scroll_by_pixels(-5.0);
+        let vp2 = ui.state.get_viewport_state();
+        assert_eq!(vp2.scroll_top, 0);
+        assert_eq!(vp2.sub_row_offset, 0);
     }
 
     #[test]
