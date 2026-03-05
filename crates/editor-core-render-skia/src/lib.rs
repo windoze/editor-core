@@ -835,7 +835,7 @@ impl SkiaRenderer {
     /// The renderer will:
     /// - wrap the texture as a Skia GPU render target
     /// - draw into it
-    /// - `flush_and_submit()` the Skia `DirectContext`
+    /// - flush and submit the work for the created surface
     pub fn render_rgba_into_metal_texture(
         &mut self,
         grid: &HeadlessGrid,
@@ -888,8 +888,19 @@ impl SkiaRenderer {
             )?;
 
             // Submit GPU work after drawing.
+            //
+            // Important:
+            // - We flush this specific surface (not just the whole context) and mark it as
+            //   "Present" access. This matches Skia's recommended pattern for swapchain-like
+            //   targets (e.g. CAMetalDrawable textures).
             if let Some(metal) = self.metal.as_mut() {
-                metal.context.flush_and_submit();
+                let info = gpu::FlushInfo::default();
+                metal.context.flush_surface_with_access(
+                    &mut surface,
+                    surfaces::BackendSurfaceAccess::Present,
+                    &info,
+                );
+                metal.context.submit(gpu::SyncCpu::No);
             }
             drop(surface);
             Ok(())
@@ -1287,7 +1298,13 @@ impl SkiaRenderer {
             )?;
 
             if let Some(metal) = self.metal.as_mut() {
-                metal.context.flush_and_submit();
+                let info = gpu::FlushInfo::default();
+                metal.context.flush_surface_with_access(
+                    &mut surface,
+                    surfaces::BackendSurfaceAccess::Present,
+                    &info,
+                );
+                metal.context.submit(gpu::SyncCpu::No);
             }
             drop(surface);
             Ok(())
