@@ -865,12 +865,44 @@ public final class EditorCoreSkiaView: NSView {
     }
 
     public func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
-        // 这个 rect 用于 IME 候选窗定位；我们用 range.location 对应的字符 offset（UTF-16→scalar）计算 caret 的 top-left。
-        actualRange?.pointee = range
-        guard let window else { return .zero }
-        guard let text = try? editor.text() else { return .zero }
+        // 这个 rect 用于 IME 候选窗定位。
+        //
+        // 关键点：
+        // - AppKit 在组合输入期间可能会用不同的 range 来查询（markedRange / selectedRange 等），
+        //   如果我们直接使用传入的 `range.location`，候选窗会在“组合串起点”和“光标位置”之间跳动，
+        //   甚至看起来像是“随机”。
+        // - 正确行为：候选窗应跟随“当前 insertion point”（也就是 selection 的 active 端/光标），
+        //   尤其是在 marked text（preedit）存在时。
+        updateViewportIfNeeded()
+        guard let window else {
+            actualRange?.pointee = range
+            return .zero
+        }
+        guard let text = try? editor.text() else {
+            actualRange?.pointee = range
+            return .zero
+        }
 
-        let scalarOffset = Self.scalarOffset(fromUTF16Offset: range.location, in: text)
+        // Prefer the current caret position during IME composition.
+        let effectiveRange: NSRange
+        if hasMarkedText() {
+            effectiveRange = selectedRange()
+        } else {
+            effectiveRange = range
+        }
+        actualRange?.pointee = effectiveRange
+
+        // Use the end of the range as the insertion point.
+        // Handle NSNotFound defensively.
+        let utf16Index: Int
+        if effectiveRange.location == NSNotFound {
+            let sel = selectedRange()
+            utf16Index = max(0, sel.location + sel.length)
+        } else {
+            utf16Index = max(0, effectiveRange.location + effectiveRange.length)
+        }
+
+        let scalarOffset = Self.scalarOffset(fromUTF16Offset: utf16Index, in: text)
 
         guard let pt = try? editor.charOffsetToViewPoint(offset: UInt32(scalarOffset)) else { return .zero }
 
@@ -883,7 +915,24 @@ public final class EditorCoreSkiaView: NSView {
 
         let rectInView = NSRect(x: xPt, y: yPt, width: 1, height: hPt)
         let rectInWindow = convert(rectInView, to: nil)
-        return window.convertToScreen(rectInWindow)
+        let rectInScreen = window.convertToScreen(rectInWindow)
+
+        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_IME_RECT"] == "1" {
+            NSLog(
+                "EditorCoreSkiaView IME rect debug: hasMarked=%d query=%@ effective=%@ utf16Index=%d scalarOffset=%d viewPt=(%.1f,%.1f) lineH=%.1f screenRect=%@",
+                hasMarkedText() ? 1 : 0,
+                NSStringFromRange(range),
+                NSStringFromRange(effectiveRange),
+                utf16Index,
+                scalarOffset,
+                Double(xPt),
+                Double(yPt),
+                Double(hPt),
+                NSStringFromRect(rectInScreen)
+            )
+        }
+
+        return rectInScreen
     }
 
     public func characterIndex(for point: NSPoint) -> Int {

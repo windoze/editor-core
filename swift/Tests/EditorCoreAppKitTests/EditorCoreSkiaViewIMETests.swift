@@ -67,6 +67,48 @@ final class EditorCoreSkiaViewIMETests: XCTestCase {
         XCTAssertEqual(sel.start, 3)
         XCTAssertEqual(sel.end, 6)
     }
+
+    func testFirstRectUsesCaretDuringMarkedTextSoCandidateWindowDoesNotJump() throws {
+        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+
+        // Put the view into a window so `firstRect(forCharacterRange:)` can return screen coords.
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 200),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+
+        let view = try EditorCoreSkiaView(library: lib, initialText: "", viewportWidthCells: 80)
+        view.frame = NSRect(x: 0, y: 0, width: 400, height: 200)
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+
+        // Start a marked text session and place the caret at the end of the marked string.
+        view.setMarkedText(
+            "hanzi",
+            selectedRange: NSRange(location: 5, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        let marked = view.markedRange()
+        XCTAssertNotEqual(marked.location, NSNotFound)
+
+        let rectEnd = view.firstRect(forCharacterRange: marked, actualRange: nil)
+        XCTAssertNotEqual(rectEnd, .zero)
+
+        // Update the same marked string but move the caret to the start.
+        view.setMarkedText(
+            "hanzi",
+            selectedRange: NSRange(location: 0, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+
+        let rectStart = view.firstRect(forCharacterRange: marked, actualRange: nil)
+        XCTAssertNotEqual(rectStart, .zero)
+
+        // If `firstRect` follows the caret (selectedRange), the X position should change.
+        XCTAssertGreaterThan(rectEnd.minX, rectStart.minX + 0.5)
+    }
 }
 
 final class EditorCoreAppKitTestSupport: @unchecked Sendable {
