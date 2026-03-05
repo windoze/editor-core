@@ -7,7 +7,9 @@ import XCTest
 final class EditorCoreSkiaViewSmoothScrollTests: XCTestCase {
     func testScrollWheelUsesSmoothPixelScrolling() throws {
         let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
-        let view = try EditorCoreSkiaView(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)
+        // Ensure the document is taller than the viewport so scrolling is not clamped to 0.
+        let longText = "a\nb\nc\n" + String(repeating: "x\n", count: 200)
+        let view = try EditorCoreSkiaView(library: lib, initialText: longText, viewportWidthCells: 80)
 
         // Put the view in a real window so backing conversions and lifecycle match the demo.
         let window = NSWindow(

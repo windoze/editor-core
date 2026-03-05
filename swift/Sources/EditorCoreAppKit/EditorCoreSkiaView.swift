@@ -451,7 +451,11 @@ public final class EditorCoreSkiaView: NSView {
     }
 
     public override func scrollWheel(with event: NSEvent) {
-        handleScroll(deltaYPoints: event.scrollingDeltaY, hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas)
+        handleScroll(
+            deltaYPoints: event.scrollingDeltaY,
+            hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas,
+            isDirectionInvertedFromDevice: event.isDirectionInvertedFromDevice
+        )
     }
 
     // MARK: - Smooth scroll helper (testable)
@@ -462,28 +466,42 @@ public final class EditorCoreSkiaView: NSView {
     ///   - deltaYPoints: For precise scrolling events, this is the point delta. For coarse scrolling
     ///     (mouse wheel), AppKit's delta is closer to “line units”.
     ///   - hasPreciseScrollingDeltas: Mirrors `NSEvent.hasPreciseScrollingDeltas`.
-    func handleScroll(deltaYPoints: CGFloat, hasPreciseScrollingDeltas: Bool) {
+    ///   - isDirectionInvertedFromDevice: Mirrors `NSEvent.isDirectionInvertedFromDevice`.
+    func handleScroll(
+        deltaYPoints: CGFloat,
+        hasPreciseScrollingDeltas: Bool,
+        isDirectionInvertedFromDevice: Bool = false
+    ) {
         // 平滑滚动：
         // - trackpad（hasPreciseScrollingDeltas == true）给出的是 point 级连续 delta
         // - 传统鼠标滚轮（hasPreciseScrollingDeltas == false）更接近“行数”delta
         //
         // UI 侧统一换算成“backing pixels”的 delta，再交给 Rust UI 层维护
         // `(scroll_top, sub_row_offset)`，并在渲染/hit-test 中使用子行偏移。
+        var scale = window?.backingScaleFactor ?? (NSScreen.main?.backingScaleFactor ?? 1)
+        scale = max(1, scale)
+
         var deltaPt = deltaYPoints
         if hasPreciseScrollingDeltas == false {
-            let lineHeightPt = convertFromBacking(
-                NSSize(width: 0, height: CGFloat(max(1, lineHeightPx)))
-            ).height
+            // 注意：这里不能直接用 `convertToBacking/convertFromBacking` 来换算 delta，
+            // 因为 `NSSize` 在语义上是“尺寸”，某些情况下系统可能会丢掉符号位（导致滚动方向错）。
+            //
+            // 我们使用明确的 `backingScaleFactor` 做乘除，确保 delta 的正负号稳定。
+            let lineHeightPt = CGFloat(max(1, lineHeightPx)) / scale
             if lineHeightPt > 0 {
                 deltaPt *= lineHeightPt
             }
         }
 
-        let deltaPx = convertToBacking(NSSize(width: 0, height: deltaPt)).height
+        let deltaPx = deltaPt * scale
         if deltaPx != 0 {
-            // AppKit: deltaY > 0 通常表示“向上滚动”（内容向下）。
-            // 我们约定 Rust `scrollByPixels` 的正值表示“向下滚动”（内容向上），因此取负号。
-            editor.scrollByPixels(Float(-deltaPx))
+            // 约定：Rust `scrollByPixels` 的正值表示“向下滚动”（内容向上，显示更靠后的行）。
+            //
+            // AppKit 的 `scrollingDeltaY` 会受“自然滚动”设置影响：
+            // - `isDirectionInvertedFromDevice == false`: 传统滚轮方向，通常需要取反才能得到“向下滚动为正”
+            // - `isDirectionInvertedFromDevice == true`: 自然滚动方向，通常不需要取反
+            let docDeltaPx = isDirectionInvertedFromDevice ? deltaPx : -deltaPx
+            editor.scrollByPixels(Float(docDeltaPx))
             needsDisplay = true
             invalidateIMECharacterCoordinates()
         }
