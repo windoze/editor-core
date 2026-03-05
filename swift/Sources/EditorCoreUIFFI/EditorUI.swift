@@ -1,5 +1,6 @@
 import CEditorCoreUIFFI
 import Foundation
+import Metal
 
 public final class EditorUI {
     public let library: EditorCoreUIFFILibrary
@@ -563,6 +564,21 @@ public final class EditorUI {
         }
         try library.ensureStatus(status, context: "editor_ui_render_rgba")
         return requiredCount
+    }
+
+    // MARK: - Metal / GPU rendering (macOS)
+
+    public func enableMetal(device: MTLDevice, commandQueue: MTLCommandQueue) throws {
+        let devicePtr = Unmanaged.passUnretained(device).toOpaque()
+        let queuePtr = Unmanaged.passUnretained(commandQueue).toOpaque()
+        let status = editor_core_ui_ffi_editor_ui_enable_metal(handle, devicePtr, queuePtr)
+        try library.ensureStatus(status, context: "editor_ui_enable_metal")
+    }
+
+    public func renderMetal(into texture: MTLTexture) throws {
+        let texPtr = Unmanaged.passUnretained(texture).toOpaque()
+        let status = editor_core_ui_ffi_editor_ui_render_metal(handle, texPtr)
+        try library.ensureStatus(status, context: "editor_ui_render_metal")
     }
 
     public func text() throws -> String {
