@@ -451,15 +451,41 @@ public final class EditorCoreSkiaView: NSView {
     }
 
     public override func scrollWheel(with event: NSEvent) {
-        // scrollingDeltaY：正值通常代表向上滚动（内容向下），这里换算成“行数”增量
-        let lineHeightPt = convertFromBacking(NSSize(width: 0, height: CGFloat(max(1, lineHeightPx)))).height
-        if lineHeightPt > 0 {
-            let rows = Int32((event.scrollingDeltaY / lineHeightPt).rounded())
-            if rows != 0 {
-                editor.scrollByRows(-rows)
-                needsDisplay = true
-                invalidateIMECharacterCoordinates()
+        handleScroll(deltaYPoints: event.scrollingDeltaY, hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas)
+    }
+
+    // MARK: - Smooth scroll helper (testable)
+
+    /// Smooth-scroll handler shared by `scrollWheel(with:)` and unit tests.
+    ///
+    /// - Parameters:
+    ///   - deltaYPoints: For precise scrolling events, this is the point delta. For coarse scrolling
+    ///     (mouse wheel), AppKit's delta is closer to “line units”.
+    ///   - hasPreciseScrollingDeltas: Mirrors `NSEvent.hasPreciseScrollingDeltas`.
+    func handleScroll(deltaYPoints: CGFloat, hasPreciseScrollingDeltas: Bool) {
+        // 平滑滚动：
+        // - trackpad（hasPreciseScrollingDeltas == true）给出的是 point 级连续 delta
+        // - 传统鼠标滚轮（hasPreciseScrollingDeltas == false）更接近“行数”delta
+        //
+        // UI 侧统一换算成“backing pixels”的 delta，再交给 Rust UI 层维护
+        // `(scroll_top, sub_row_offset)`，并在渲染/hit-test 中使用子行偏移。
+        var deltaPt = deltaYPoints
+        if hasPreciseScrollingDeltas == false {
+            let lineHeightPt = convertFromBacking(
+                NSSize(width: 0, height: CGFloat(max(1, lineHeightPx)))
+            ).height
+            if lineHeightPt > 0 {
+                deltaPt *= lineHeightPt
             }
+        }
+
+        let deltaPx = convertToBacking(NSSize(width: 0, height: deltaPt)).height
+        if deltaPx != 0 {
+            // AppKit: deltaY > 0 通常表示“向上滚动”（内容向下）。
+            // 我们约定 Rust `scrollByPixels` 的正值表示“向下滚动”（内容向上），因此取负号。
+            editor.scrollByPixels(Float(-deltaPx))
+            needsDisplay = true
+            invalidateIMECharacterCoordinates()
         }
     }
 
