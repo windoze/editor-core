@@ -508,8 +508,60 @@ public final class EditorCoreSkiaView: NSView {
     // MARK: - Keyboard / Text input
 
     public override func keyDown(with event: NSEvent) {
+        // 说明：
+        // - `interpretKeyEvents` 主要处理“文本系统 key binding”（比如方向键、delete、Option+Left 等），
+        //   最终回调到 `insertText` / `setMarkedText` / `doCommand(by:)`。
+        // - 但像 Cmd+C / Cmd+V / Cmd+X 这类“菜单快捷键”在没有 NSMenu 的 demo 环境里不会被触发，
+        //   导致看起来“剪贴板命令不存在”。
+        //
+        // 为了让组件在“无菜单”场景也能工作，我们在这里直接拦截常用 Cmd 快捷键。
+        if handleCommandShortcutsIfNeeded(event: event) {
+            return
+        }
+
         // 让系统把按键解释成 insertText / setMarkedText / doCommand(by:)
         interpretKeyEvents([event])
+    }
+
+    /// Handle common “menu-like” Cmd shortcuts for menu-less hosts (e.g. our SwiftPM demo).
+    ///
+    /// Returns `true` when the event is handled.
+    private func handleCommandShortcutsIfNeeded(event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags.contains(.command) else { return false }
+
+        // We only handle simple single-character shortcuts here.
+        guard let chars = event.charactersIgnoringModifiers, chars.count == 1 else { return false }
+        let key = chars.lowercased()
+
+        switch key {
+        case "c":
+            copy(nil)
+            return true
+        case "x":
+            cut(nil)
+            return true
+        case "v":
+            paste(nil)
+            return true
+        case "a":
+            selectAll(nil)
+            return true
+        case "z":
+            // macOS convention: Cmd+Z undo, Shift+Cmd+Z redo.
+            if flags.contains(.shift) {
+                redo(nil)
+            } else {
+                undo(nil)
+            }
+            return true
+        case "y":
+            // Some editors support Cmd+Y for redo.
+            redo(nil)
+            return true
+        default:
+            return false
+        }
     }
 
     public func insertText(_ string: Any, replacementRange: NSRange) {
@@ -678,10 +730,10 @@ public final class EditorCoreSkiaView: NSView {
                 if marked.hasMarked {
                     try editor.setMarkedText("", selectedStart: 0, selectedLen: 0)
                 }
-            case Selector(("undo:")):
-                try editor.undo()
-            case Selector(("redo:")):
-                try editor.redo()
+            case #selector(undo(_:)):
+                undo(nil)
+            case #selector(redo(_:)):
+                redo(nil)
             default:
                 break
             }
@@ -694,6 +746,44 @@ public final class EditorCoreSkiaView: NSView {
     }
 
     // MARK: - Clipboard
+
+    public override func selectAll(_ sender: Any?) {
+        do {
+            // EditorCoreUI 使用 Unicode scalar offset（与 Rust `char` 索引一致），这里用 unicodeScalars 计数。
+            let text = try editor.text()
+            let end = UInt32(text.unicodeScalars.count)
+            try editor.setSelections([EcuSelectionRange(start: 0, end: end)], primaryIndex: 0)
+        } catch {
+            NSSound.beep()
+        }
+        needsDisplay = true
+        invalidateIMECharacterCoordinates()
+        onViewportStateDidChange?()
+    }
+
+    @objc(undo:)
+    public func undo(_ sender: Any?) {
+        do {
+            try editor.undo()
+        } catch {
+            NSSound.beep()
+        }
+        needsDisplay = true
+        invalidateIMECharacterCoordinates()
+        onViewportStateDidChange?()
+    }
+
+    @objc(redo:)
+    public func redo(_ sender: Any?) {
+        do {
+            try editor.redo()
+        } catch {
+            NSSound.beep()
+        }
+        needsDisplay = true
+        invalidateIMECharacterCoordinates()
+        onViewportStateDidChange?()
+    }
 
     @objc(copy:)
     public func copy(_ sender: Any?) {
