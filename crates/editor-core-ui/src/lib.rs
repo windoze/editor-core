@@ -1062,6 +1062,33 @@ impl EditorUi {
         Ok(())
     }
 
+    pub fn viewport_state(&self) -> editor_core::ViewportState {
+        self.state.get_viewport_state()
+    }
+
+    pub fn set_smooth_scroll_state(&mut self, top_visual_row: usize, sub_row_offset: u16) {
+        let viewport = self.state.get_viewport_state();
+        let height_rows = viewport.height.unwrap_or(viewport.total_visual_lines).max(1);
+        let max_pos_rows = viewport.total_visual_lines.saturating_sub(height_rows) as f32;
+
+        let smooth = self.state.get_smooth_scroll_state();
+        let pos_rows = top_visual_row as f32 + (sub_row_offset as f32 / 65536.0);
+        let new_pos = pos_rows.clamp(0.0, max_pos_rows.max(0.0));
+
+        let new_top = new_pos.floor().max(0.0) as usize;
+        let frac = (new_pos - new_top as f32).clamp(0.0, 0.999_999);
+        let sub = ((frac * 65536.0).floor() as u32).min(u16::MAX as u32) as u16;
+
+        let next = SmoothScrollState {
+            top_visual_row: new_top,
+            sub_row_offset: sub,
+            overscan_rows: smooth.overscan_rows,
+        };
+        if next != smooth {
+            self.state.set_smooth_scroll_state(next);
+        }
+    }
+
     fn max_scroll_top(&self, viewport: &editor_core::ViewportState) -> usize {
         let height_rows = viewport.height.unwrap_or(viewport.total_visual_lines).max(1);
         viewport
@@ -2352,6 +2379,37 @@ mod tests {
             caret_row >= vp3.scroll_top && caret_row < vp3.scroll_top.saturating_add(h),
             "expected caret row to be within visible lines after navigation"
         );
+    }
+
+    #[test]
+    fn ui_set_smooth_scroll_state_clamps_and_updates_viewport_state() {
+        let mut ui = EditorUi::new("0\n1\n2\n3\n4\n5\n6\n7", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 80,
+            height_px: 20, // 2 rows at 10px line height
+            cell_width_px: 10.0,
+            line_height_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(80, 20, 1.0).unwrap();
+
+        let vp0 = ui.viewport_state();
+        assert_eq!(vp0.height, Some(2));
+        assert_eq!(vp0.total_visual_lines, 8);
+
+        // Set a fractional scroll position (3 + 0.5 rows).
+        ui.set_smooth_scroll_state(3, 32768);
+        let vp1 = ui.viewport_state();
+        assert_eq!(vp1.scroll_top, 3);
+        assert_eq!(vp1.sub_row_offset, 32768);
+
+        // Clamp to the maximum scroll position (total - height = 6).
+        ui.set_smooth_scroll_state(999, 65535);
+        let vp2 = ui.viewport_state();
+        assert_eq!(vp2.scroll_top, 6);
+        assert_eq!(vp2.sub_row_offset, 0);
     }
 
     #[test]
