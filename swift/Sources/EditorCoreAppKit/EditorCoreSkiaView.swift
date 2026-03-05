@@ -1036,7 +1036,32 @@ extension EditorCoreSkiaView: MTKViewDelegate {
 
     public func draw(in view: MTKView) {
         updateViewportIfNeeded()
-        guard let drawable = currentDrawable else { return }
+        guard let drawable = currentDrawable else {
+            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
+                NSLog(
+                    "EditorCoreSkiaView draw: drawable=nil bounds(points)=%@ drawableSize(px)=%@ paused=%d setNeeds=%d",
+                    NSStringFromSize(bounds.size),
+                    NSStringFromSize(drawableSize),
+                    isPaused ? 1 : 0,
+                    enableSetNeedsDisplay ? 1 : 0
+                )
+            }
+            return
+        }
+
+        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
+            let t = drawable.texture
+            NSLog(
+                "EditorCoreSkiaView draw: drawable=ok tex=%dx%d pf=%d usage=0x%X storage=%d bounds(points)=%@ drawableSize(px)=%@",
+                t.width,
+                t.height,
+                t.pixelFormat.rawValue,
+                t.usage.rawValue,
+                t.storageMode.rawValue,
+                NSStringFromSize(bounds.size),
+                NSStringFromSize(drawableSize)
+            )
+        }
 
         do {
             try editor.renderMetal(into: drawable.texture)
