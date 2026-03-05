@@ -149,8 +149,8 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             // EditorCoreSkiaAppKitDemo
             //
             // 这是一个自绘版 demo：
-            // - Rust: editor-core + editor-core-ui + Skia（输出 RGBA buffer）
-            // - Swift/AppKit: NSView + NSTextInputClient（IME）+ 把 RGBA 贴到屏幕
+            // - Rust: editor-core + editor-core-ui + Skia（Metal/GPU 绘制到 MTLTexture）
+            // - Swift/AppKit: MTKView + NSTextInputClient（IME）+ present CAMetalDrawable
             //
             // 支持：
             // - 输入/删除/选区（鼠标拖拽）
@@ -167,7 +167,7 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             //
             // TODO：
             // - 更完整的主题系统（StyleId -> Theme 映射）
-            // - GPU 后端（Metal）与增量重绘
+            // - 增量重绘 / dirty rect（进一步降低每次输入的渲染成本）
             //
             // 下面是一段 Rust 代码（用于 Tree-sitter folds 演示，需 host 启用 Tree-sitter）：
             fn main() {

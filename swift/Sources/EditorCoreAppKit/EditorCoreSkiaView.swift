@@ -1,17 +1,24 @@
 import AppKit
 import EditorCoreUIFFI
 import Foundation
+import Metal
+import MetalKit
+
+enum EditorCoreSkiaViewError: Error {
+    case metalUnavailable
+    case metalCommandQueueUnavailable
+}
 
 /// 自绘版 AppKit 组件（Option 2）：
-/// - Rust: editor-core + editor-core-ui + Skia（CPU raster 输出 RGBA buffer）
-/// - Swift/AppKit: NSView 负责承接事件与把 RGBA buffer 贴到屏幕
+/// - Rust: editor-core + editor-core-ui + Skia（Metal/GPU 直接绘制到 `MTLTexture`）
+/// - Swift/AppKit: `MTKView` 负责承接事件并把 `CAMetalDrawable` 呈现到屏幕
 ///
 /// 这是一个“先把正确性与 IME 桥打通”的 MVP：
 /// - caret / selection / mouse drag selection
 /// - insertText / markedText（IME 组合输入）
 /// - undo/redo
 @MainActor
-public final class EditorCoreSkiaView: NSView {
+public final class EditorCoreSkiaView: MTKView {
     public let editor: EditorUI
 
     /// Pasteboard used for copy/cut/paste. Defaults to `NSPasteboard.general`.
@@ -29,7 +36,7 @@ public final class EditorCoreSkiaView: NSView {
     /// Hosts can use this to keep native scrollbars in sync.
     public var onViewportStateDidChange: (() -> Void)?
 
-    private var pixelBuffer: [UInt8] = []
+    private let metalCommandQueue: MTLCommandQueue
     private var viewportWidthPx: UInt32 = 0
     private var viewportHeightPx: UInt32 = 0
     private var scaleFactor: CGFloat = 1
@@ -62,9 +69,25 @@ public final class EditorCoreSkiaView: NSView {
         fontFamiliesCSV: String? = nil
     ) throws {
         self.editor = try EditorUI(library: library, initialText: initialText, viewportWidthCells: viewportWidthCells)
-        super.init(frame: .zero)
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw EditorCoreSkiaViewError.metalUnavailable
+        }
+        guard let queue = device.makeCommandQueue() else {
+            throw EditorCoreSkiaViewError.metalCommandQueueUnavailable
+        }
+        self.metalCommandQueue = queue
+        super.init(frame: .zero, device: device)
 
-        wantsLayer = true
+        // MTKView 默认会不断 redraw；这里切换为“事件驱动”的 setNeedsDisplay 模式，
+        // 避免 idle 状态也持续占用 CPU/GPU。
+        enableSetNeedsDisplay = true
+        isPaused = true
+        framebufferOnly = false
+        colorPixelFormat = .bgra8Unorm
+        delegate = self
+
+        // 让 Rust/Skia 走 Metal 后端渲染到 `CAMetalDrawable.texture`。
+        try editor.enableMetal(device: device, commandQueue: queue)
 
         // 默认主题（可后续开放给 host 自定义）
         try editor.setTheme(
@@ -100,12 +123,12 @@ public final class EditorCoreSkiaView: NSView {
     }
 
     @available(*, unavailable, message: "请使用 init(library:initialText:viewportWidthCells:) 构造。")
-    public override init(frame frameRect: NSRect) {
+    public override init(frame frameRect: NSRect, device: MTLDevice?) {
         fatalError("unavailable")
     }
 
     @available(*, unavailable, message: "请使用 init(library:initialText:viewportWidthCells:) 构造。")
-    public required init?(coder: NSCoder) {
+    public required init(coder: NSCoder) {
         fatalError("unavailable")
     }
 
@@ -138,23 +161,47 @@ public final class EditorCoreSkiaView: NSView {
 
     private func updateViewportIfNeeded() {
         let pointsSize = bounds.size
+        let fallbackScale = window?.backingScaleFactor ?? (NSScreen.main?.backingScaleFactor ?? 1)
+        let safeScale = max(1, fallbackScale)
+
         let backingSize: NSSize
-        if window != nil {
-            backingSize = convertToBacking(pointsSize)
+        if window != nil,
+           pointsSize.width.isFinite,
+           pointsSize.height.isFinite,
+           pointsSize.width > 0,
+           pointsSize.height > 0
+        {
+            let converted = convertToBacking(pointsSize)
+            if converted.width.isFinite, converted.height.isFinite {
+                backingSize = converted
+            } else {
+                // 在某些布局阶段（比如 view 还未有有效 bounds 时），MTKView 的内部缩放因子可能导致
+                // convertToBacking 返回 NaN/Inf。这里回退到 window 的 backingScaleFactor。
+                backingSize = NSSize(width: pointsSize.width * safeScale, height: pointsSize.height * safeScale)
+            }
         } else {
-            let fallbackScale = NSScreen.main?.backingScaleFactor ?? 1
-            backingSize = NSSize(width: pointsSize.width * fallbackScale, height: pointsSize.height * fallbackScale)
+            // 当 bounds 为 0 或未就绪时，不要调用 convertToBacking（可能产生 NaN/Inf 并触发 Swift runtime trap）。
+            let w = pointsSize.width.isFinite ? pointsSize.width : 0
+            let h = pointsSize.height.isFinite ? pointsSize.height : 0
+            backingSize = NSSize(width: w * safeScale, height: h * safeScale)
         }
 
-        let widthPx = UInt32(max(1, Int(backingSize.width.rounded())))
-        let heightPx = UInt32(max(1, Int(backingSize.height.rounded())))
+        let backingWidth = backingSize.width.isFinite ? backingSize.width : 0
+        let backingHeight = backingSize.height.isFinite ? backingSize.height : 0
+        let widthPx = UInt32(max(1, Int(max(0, backingWidth).rounded())))
+        let heightPx = UInt32(max(1, Int(max(0, backingHeight).rounded())))
+
         let newScale: CGFloat
-        if pointsSize.width > 0, pointsSize.height > 0 {
-            let sx = backingSize.width / pointsSize.width
-            let sy = backingSize.height / pointsSize.height
-            newScale = (sx + sy) * 0.5
+        if pointsSize.width > 0, pointsSize.height > 0, backingWidth > 0, backingHeight > 0 {
+            let sx = backingWidth / pointsSize.width
+            let sy = backingHeight / pointsSize.height
+            if sx.isFinite, sy.isFinite, sx > 0, sy > 0 {
+                newScale = (sx + sy) * 0.5
+            } else {
+                newScale = safeScale
+            }
         } else {
-            newScale = NSScreen.main?.backingScaleFactor ?? 1
+            newScale = safeScale
         }
 
         guard widthPx != viewportWidthPx || heightPx != viewportHeightPx || newScale != scaleFactor else {
@@ -164,6 +211,12 @@ public final class EditorCoreSkiaView: NSView {
         viewportWidthPx = widthPx
         viewportHeightPx = heightPx
         scaleFactor = newScale
+
+        // MTKView 的 drawableSize 以“像素”为单位；这里保持与 Rust viewport 一致。
+        let newDrawableSize = CGSize(width: CGFloat(widthPx), height: CGFloat(heightPx))
+        if drawableSize != newDrawableSize {
+            drawableSize = newDrawableSize
+        }
 
         // 先用固定等宽网格参数（后续可做更精确 font metrics）
         let fontSizePx: Float = Float(13.0 * newScale)
@@ -183,11 +236,6 @@ public final class EditorCoreSkiaView: NSView {
             try editor.setViewportPx(widthPx: widthPx, heightPx: heightPx, scale: Float(newScale))
         } catch {
             NSLog("EditorCoreSkiaView updateViewport failed: %@", String(describing: error))
-        }
-
-        let required = Int(widthPx) * Int(heightPx) * 4
-        if pixelBuffer.count != required {
-            pixelBuffer = Array(repeating: 0, count: required)
         }
 
         if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_SCALE"] == "1" {
@@ -210,55 +258,8 @@ public final class EditorCoreSkiaView: NSView {
     }
 
     public override func draw(_ dirtyRect: NSRect) {
+        // 由 MTKView 内部驱动渲染；实际绘制在 `MTKViewDelegate.draw(in:)` 里完成。
         super.draw(dirtyRect)
-        updateViewportIfNeeded()
-
-        guard viewportWidthPx > 0, viewportHeightPx > 0 else { return }
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-
-        do {
-            _ = try editor.renderRGBA(into: &pixelBuffer)
-        } catch {
-            // 如果渲染失败，至少给出一个可见背景，避免“看起来什么都没有”
-            NSColor.textBackgroundColor.setFill()
-            dirtyRect.fill()
-            NSLog("EditorCoreSkiaView render failed: %@", String(describing: error))
-            return
-        }
-
-        ctx.saveGState()
-        ctx.interpolationQuality = .none
-        ctx.setShouldAntialias(false)
-
-        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_SCALE"] == "1" {
-            NSLog(
-                "EditorCoreSkiaView draw debug: ctm=%@ viewport=%ux%u scaleFactor=%.3f",
-                String(describing: ctx.ctm),
-                viewportWidthPx,
-                viewportHeightPx,
-                Double(scaleFactor)
-            )
-        }
-
-        pixelBuffer.withUnsafeBytes { raw in
-            guard let base = raw.baseAddress else { return }
-            guard let img = SkiaRasterCGImage.makeCGImageRGBA8888Premul(
-                widthPx: Int(viewportWidthPx),
-                heightPx: Int(viewportHeightPx),
-                rgbaBytes: base,
-                byteCount: raw.count
-            ) else { return }
-
-            // 这里不要把 `bounds` 乘以 `scaleFactor`：
-            // - 在 AppKit/Retina 下，`CGContext` 的 user space 往往仍然是 “points”，即使 `ctm` 看起来是 identity；
-            //   实际的像素密度由系统（backing store / layer.contentsScale）负责映射。
-            // - 如果我们把 dstRect 放大（例如 bounds * scaleFactor），就会把 2x 的 backing buffer 再放大一遍，
-            //   结果表现为：光标/选区移动速度不对、鼠标 hit-test 看起来“跑偏”。
-            let dstRect = bounds
-            SkiaRasterCGImage.drawCGImage(img, in: ctx, dstRect: dstRect, viewIsFlipped: isFlipped)
-        }
-
-        ctx.restoreGState()
     }
 
     // MARK: - Mouse
@@ -983,6 +984,29 @@ public final class EditorCoreSkiaView: NSView {
             scalars += 1
         }
         return utf16Cursor
+    }
+}
+
+extension EditorCoreSkiaView: MTKViewDelegate {
+    public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        // MTKView 在窗口缩放 / backing scale 变化时会回调这里；同步 Rust viewport。
+        updateViewportIfNeeded()
+    }
+
+    public func draw(in view: MTKView) {
+        updateViewportIfNeeded()
+        guard let drawable = currentDrawable else { return }
+
+        do {
+            try editor.renderMetal(into: drawable.texture)
+        } catch {
+            NSLog("EditorCoreSkiaView Metal render failed: %@", String(describing: error))
+            return
+        }
+
+        guard let commandBuffer = metalCommandQueue.makeCommandBuffer() else { return }
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
     }
 }
 
