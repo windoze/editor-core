@@ -37,6 +37,7 @@ public final class EditorCoreUIFFILibrary {
     typealias FnEditorUiSetGutterWidthCells = @convention(c) (OpaquePointer?, UInt32) -> Int32
     typealias FnEditorUiSetViewportPx = @convention(c) (OpaquePointer?, UInt32, UInt32, Float) -> Int32
     typealias FnEditorUiScrollByRows = @convention(c) (OpaquePointer?, Int32) -> Void
+    typealias FnEditorUiScrollByPixels = @convention(c) (OpaquePointer?, Float) -> Void
 
     typealias FnEditorUiInsertText = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Int32
     typealias FnEditorUiBackspace = @convention(c) (OpaquePointer?) -> Int32
@@ -185,6 +186,7 @@ public final class EditorCoreUIFFILibrary {
     let editorUiSetGutterWidthCellsFn: FnEditorUiSetGutterWidthCells
     let editorUiSetViewportPxFn: FnEditorUiSetViewportPx
     let editorUiScrollByRowsFn: FnEditorUiScrollByRows
+    let editorUiScrollByPixelsFn: FnEditorUiScrollByPixels
     let editorUiInsertTextFn: FnEditorUiInsertText
     let editorUiBackspaceFn: FnEditorUiBackspace
     let editorUiDeleteForwardFn: FnEditorUiDeleteForward
@@ -314,6 +316,7 @@ public final class EditorCoreUIFFILibrary {
         editorUiSetGutterWidthCellsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_gutter_width_cells", as: FnEditorUiSetGutterWidthCells.self)
         editorUiSetViewportPxFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_set_viewport_px", as: FnEditorUiSetViewportPx.self)
         editorUiScrollByRowsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_scroll_by_rows", as: FnEditorUiScrollByRows.self)
+        editorUiScrollByPixelsFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_scroll_by_pixels", as: FnEditorUiScrollByPixels.self)
         editorUiInsertTextFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_insert_text", as: FnEditorUiInsertText.self)
         editorUiBackspaceFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_backspace", as: FnEditorUiBackspace.self)
         editorUiDeleteForwardFn = try dylib.loadSymbol("editor_core_ui_ffi_editor_ui_delete_forward", as: FnEditorUiDeleteForward.self)

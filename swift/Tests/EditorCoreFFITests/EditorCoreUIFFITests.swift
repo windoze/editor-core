@@ -173,6 +173,35 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(hit, 2)
     }
 
+    func testSmoothScrollByPixelsAffectsHitTestingAndViewPointMapping() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)
+
+        try ui.setTheme(
+            EcuTheme(
+                background: EcuRgba8(r: 10, g: 20, b: 30, a: 255),
+                foreground: EcuRgba8(r: 250, g: 250, b: 250, a: 255),
+                selectionBackground: EcuRgba8(r: 200, g: 0, b: 0, a: 255),
+                caret: EcuRgba8(r: 0, g: 0, b: 200, a: 255)
+            )
+        )
+        try ui.setRenderMetrics(fontSize: 10, lineHeightPx: 10, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 80, heightPx: 20, scale: 1)
+
+        // Scroll down by half a row: content should move up by 5px.
+        ui.scrollByPixels(5)
+
+        // "b" starts at char offset 2 ("a\nb..."), its y should be (1*10 - 5) = 5.
+        let pB = try ui.charOffsetToViewPoint(offset: 2)
+        XCTAssertEqual(pB.yPx, 5)
+
+        // Hit test must account for smooth scroll:
+        // y < 5 => line 0 ("a"), y >= 5 => line 1 ("b")
+        XCTAssertEqual(try ui.viewPointToCharOffset(xPx: 0, yPx: 4), 0)
+        XCTAssertEqual(try ui.viewPointToCharOffset(xPx: 0, yPx: 5), 2)
+        XCTAssertEqual(try ui.viewPointToCharOffset(xPx: 0, yPx: 9), 2)
+    }
+
     func testStyleColorsOverrideAffectsRendering() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         // Use a space in the styled cell so glyph rasterization does not affect the pixel sample.

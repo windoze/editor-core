@@ -126,6 +126,7 @@ int32_t editor_core_ui_ffi_editor_ui_set_viewport_px(EditorUi* ui,
                                                      uint32_t height_px,
                                                      float scale);
 void editor_core_ui_ffi_editor_ui_scroll_by_rows(EditorUi* ui, int32_t delta_rows);
+void editor_core_ui_ffi_editor_ui_scroll_by_pixels(EditorUi* ui, float delta_y_px);
 
 int32_t editor_core_ui_ffi_editor_ui_insert_text(EditorUi* ui, const char* text_utf8);
 int32_t editor_core_ui_ffi_editor_ui_backspace(EditorUi* ui);

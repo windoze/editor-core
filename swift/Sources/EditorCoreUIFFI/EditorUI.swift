@@ -210,6 +210,11 @@ public final class EditorUI {
         library.editorUiScrollByRowsFn(handle, deltaRows)
     }
 
+    /// Smooth-scroll by a pixel delta (positive = scroll down, reveal later lines).
+    public func scrollByPixels(_ deltaYPx: Float) {
+        library.editorUiScrollByPixelsFn(handle, deltaYPx)
+    }
+
     public func insertText(_ text: String) throws {
         let status = text.withCString { cstr in
             library.editorUiInsertTextFn(handle, cstr)

@@ -850,6 +850,19 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_rows(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_pixels(
+    ui: *mut EditorUi,
+    delta_y_px: c_float,
+) {
+    if ui.is_null() {
+        set_last_error("ui is null".to_string());
+        return;
+    }
+    let ui = unsafe { &mut *ui };
+    ui.scroll_by_pixels(delta_y_px);
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_insert_text(
     ui: *mut EditorUi,
     text_utf8: *const c_char,
@@ -4552,6 +4565,48 @@ contexts:
         let mut off: u32 = 0;
         assert_eq!(
             editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 25.0, 10.0, &mut off),
+            ECU_OK
+        );
+        assert_eq!(off, 2);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_smooth_scroll_by_pixels_affects_hit_test_and_view_point_mapping() {
+        let initial = CString::new("a\nb\nc\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 10.0, 10.0, 10.0, 0.0, 0.0);
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 80, 20, 1.0);
+
+        // Scroll down by half a row: content should move up by 5px.
+        editor_core_ui_ffi_editor_ui_scroll_by_pixels(ui, 5.0);
+
+        // "b" starts at char offset 2 ("a\nb..."), its y should be (1*10 - 5) = 5.
+        let mut x: c_float = 0.0;
+        let mut y: c_float = 0.0;
+        let mut line_h: c_float = 0.0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_char_offset_to_view_point(ui, 2, &mut x, &mut y, &mut line_h),
+            ECU_OK
+        );
+        assert_eq!(y, 5.0);
+
+        let mut off: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 0.0, 4.0, &mut off),
+            ECU_OK
+        );
+        assert_eq!(off, 0);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 0.0, 5.0, &mut off),
+            ECU_OK
+        );
+        assert_eq!(off, 2);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 0.0, 9.0, &mut off),
             ECU_OK
         );
         assert_eq!(off, 2);
