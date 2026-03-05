@@ -102,6 +102,13 @@ pub struct RenderConfig {
     pub padding_x_px: f32,
     /// Top padding in pixels.
     pub padding_y_px: f32,
+    /// Smooth-scroll sub-row offset in pixels.
+    ///
+    /// Positive values scroll the content **up** (revealing later lines), i.e. the same direction
+    /// as increasing `scroll_top` in visual rows.
+    ///
+    /// The UI layer is expected to keep this in the range `0..line_height_px`.
+    pub scroll_y_px: f32,
     /// Gutter width in "cells" (monospace columns).
     ///
     /// When non-zero, the renderer draws a gutter (line numbers + fold markers) and shifts the
@@ -127,6 +134,7 @@ impl Default for RenderConfig {
             cell_width_px: 8.0,
             padding_x_px: 8.0,
             padding_y_px: 8.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         }
@@ -486,7 +494,8 @@ impl SkiaRenderer {
         // Selection is an overlay and must win over style backgrounds, so we draw it in a
         // separate pass *after* this.
         for (row_idx, line) in grid.lines.iter().enumerate() {
-            let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
+            let y_top =
+                config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
             let mut x_cells = line.segment_x_start_cells as u32;
             for cell in &line.cells {
                 let (_fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
@@ -529,7 +538,8 @@ impl SkiaRenderer {
 
         // Text + underlines.
         for (row_idx, line) in grid.lines.iter().enumerate() {
-            let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
+            let y_top =
+                config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
             let baseline_y = y_top + baseline_offset;
 
             if config.gutter_width_cells > 0 && line.visual_in_logical == 0 {
@@ -797,7 +807,8 @@ impl SkiaRenderer {
 
         // 1) Draw per-cell backgrounds (including styled backgrounds).
         for (row_idx, line) in grid.lines.iter().enumerate() {
-            let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
+            let y_top =
+                config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
             let mut x_cells: u32 = 0;
             for cell in &line.cells {
                 let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
@@ -835,7 +846,8 @@ impl SkiaRenderer {
                 if !matches!(line.kind, ComposedLineKind::Document { .. }) {
                     continue;
                 }
-                let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
+                let y_top =
+                    config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
                 let mut x_cells: u32 = 0;
                 for cell in &line.cells {
                     let selected = match cell.source {
@@ -860,7 +872,8 @@ impl SkiaRenderer {
 
         // 3) Text + underlines.
         for (row_idx, line) in grid.lines.iter().enumerate() {
-            let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px;
+            let y_top =
+                config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
             let baseline_y = y_top + baseline_offset;
 
             // Gutter: fold markers + line numbers for document lines (first visual segment only).
@@ -1040,7 +1053,8 @@ impl SkiaRenderer {
         // Carets on top.
         for caret in pending_carets {
             let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
-            let y_top = config.padding_y_px + caret.local_row as f32 * config.line_height_px;
+            let y_top = config.padding_y_px + caret.local_row as f32 * config.line_height_px
+                - config.scroll_y_px;
 
             let caret_width = (config.scale.max(1.0)).min(2.0);
             let rect = Rect::from_xywh(x_px, y_top, caret_width, config.line_height_px);
@@ -1292,7 +1306,8 @@ fn draw_caret(
     }
 
     let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
-    let y_top = config.padding_y_px + local_row as f32 * config.line_height_px;
+    let y_top =
+        config.padding_y_px + local_row as f32 * config.line_height_px - config.scroll_y_px;
 
     let caret_width = (config.scale.max(1.0)).min(2.0);
     let rect = Rect::from_xywh(x_px, y_top, caret_width, config.line_height_px);
@@ -1351,7 +1366,8 @@ fn draw_selection(
 
         let x_px = text_origin_x + start_x as f32 * config.cell_width_px;
         let w_px = (end_x - start_x) as f32 * config.cell_width_px;
-        let y_top = config.padding_y_px + local_row as f32 * config.line_height_px;
+        let y_top =
+            config.padding_y_px + local_row as f32 * config.line_height_px - config.scroll_y_px;
         let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
         canvas.draw_rect(rect, &paint);
     }
@@ -1455,6 +1471,7 @@ mod tests {
             cell_width_px: 20.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -1513,6 +1530,7 @@ mod tests {
             cell_width_px: 20.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -1556,6 +1574,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -1601,6 +1620,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -1645,6 +1665,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -1710,6 +1731,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -1774,6 +1796,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -1818,6 +1841,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -1896,6 +1920,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -1956,6 +1981,7 @@ mod tests {
             cell_width_px: 20.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -2033,6 +2059,7 @@ mod tests {
             cell_width_px: 20.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -2088,6 +2115,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -2168,6 +2196,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 2,
             enable_ligatures: false,
         };
@@ -2218,6 +2247,7 @@ mod tests {
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
         };
@@ -2323,6 +2353,7 @@ mod tests {
             cell_width_px: 20.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
+            scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: true,
         };
