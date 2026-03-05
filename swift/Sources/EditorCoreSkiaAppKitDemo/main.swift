@@ -378,20 +378,21 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             toolbar.spacing = 6
             toolbar.translatesAutoresizingMaskIntoConstraints = false
 
+            let scrollContainer = EditorCoreSkiaScrollContainer(editorView: editorView)
+
             let container = NSView(frame: .zero)
             container.translatesAutoresizingMaskIntoConstraints = false
-            editorView.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(toolbar)
-            container.addSubview(editorView)
+            container.addSubview(scrollContainer)
             NSLayoutConstraint.activate([
                 toolbar.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
                 toolbar.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -8),
                 toolbar.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
 
-                editorView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                editorView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                editorView.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 8),
-                editorView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+                scrollContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                scrollContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                scrollContainer.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 8),
+                scrollContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             ])
 
             let searchController = DemoSearchPanelController(
