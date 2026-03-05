@@ -1055,7 +1055,12 @@ impl EditorUi {
                 width: width_cells,
             }))?;
 
-        let usable_h = (height_px as f32 - self.render_config.padding_y_px * 2.0).max(1.0);
+        // `padding_y_px` is a top inset (like a "content inset"), not a symmetric top+bottom padding.
+        //
+        // If we subtract it twice, the bottom of the viewport can end up with a large blank area
+        // (especially when the viewport height is not an exact multiple of `line_height_px`),
+        // and partially visible lines would "pop in" only after crossing an arbitrary threshold.
+        let usable_h = (height_px as f32 - self.render_config.padding_y_px).max(1.0);
         let line_h = self.render_config.line_height_px.max(1.0);
         let height_rows = (usable_h / line_h).floor().max(1.0) as usize;
         self.state.set_viewport_height(height_rows);
@@ -2150,7 +2155,8 @@ impl EditorUi {
         }
 
         let line_h = self.render_config.line_height_px.max(1.0);
-        let usable_h = (self.render_config.height_px as f32 - self.render_config.padding_y_px * 2.0).max(1.0);
+        // See `set_viewport_px`: vertical padding is a top inset, not top+bottom.
+        let usable_h = (self.render_config.height_px as f32 - self.render_config.padding_y_px).max(1.0);
         let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
         let desired_rows = ((usable_h + scroll_y_px) / line_h).ceil().max(1.0) as usize;
         let max_rows = viewport.total_visual_lines.saturating_sub(start_row);
@@ -2818,6 +2824,52 @@ mod tests {
         let rgba = ui.render_rgba_visible().unwrap();
         // The bottom pixel is inside the partially visible 3rd row (y=20..25).
         assert_eq!(pixel(&rgba, 40, 1, 24), [200, 0, 0, 255]);
+    }
+
+    #[test]
+    fn ui_render_includes_partially_visible_bottom_row_with_top_padding() {
+        // Same as the previous test, but with a top inset (padding_y_px) to match the AppKit demo.
+        //
+        // Regression guard: if we treat `padding_y_px` as top+bottom padding, the bottom row can
+        // disappear until it crosses a threshold (the "bottom padding" area).
+        let mut ui = EditorUi::new("0\n1\n \n", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 40,
+            height_px: 35,
+            cell_width_px: 10.0,
+            line_height_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 8.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(40, 35, 1.0).unwrap();
+
+        ui.set_theme(RenderTheme {
+            background: editor_core_render_skia::Rgba8::new(10, 20, 30, 255),
+            foreground: editor_core_render_skia::Rgba8::new(250, 250, 250, 255),
+            selection_background: editor_core_render_skia::Rgba8::new(200, 0, 0, 255),
+            caret: editor_core_render_skia::Rgba8::new(0, 0, 200, 255),
+            styles: std::collections::BTreeMap::new(),
+        });
+
+        let style_id = 0xBEEF_CAFEu32;
+        let mut styles = std::collections::BTreeMap::new();
+        styles.insert(
+            style_id,
+            editor_core_render_skia::StyleColors::new(
+                None,
+                Some(editor_core_render_skia::Rgba8::new(200, 0, 0, 255)),
+            ),
+        );
+        ui.set_style_colors(styles);
+
+        // Style the space in the 3rd line (" \n") so glyph rasterization does not affect the sample.
+        // "0\n1\n \n" => the space is at char offset 4.
+        ui.add_style(4, 5, style_id).unwrap();
+
+        let rgba = ui.render_rgba_visible().unwrap();
+        // The bottom pixel is inside the partially visible 3rd row (y=28..35).
+        assert_eq!(pixel(&rgba, 40, 1, 34), [200, 0, 0, 255]);
     }
 
     #[test]
