@@ -176,6 +176,45 @@ pub enum EditCommand {
         /// Replacement text.
         text: String,
     },
+    /// Replace text in specified range, but coalesce undo with the currently open undo group.
+    ///
+    /// This is primarily useful for UI layers that need to apply a rapid sequence of small
+    /// replacements that should undo as a single step (for example IME composition updates).
+    ///
+    /// Notes:
+    /// - The caller is expected to explicitly delimit boundaries via [`EditCommand::EndUndoGroup`]
+    ///   so IME edits do not merge with normal typing groups.
+    ReplaceCoalescingUndo {
+        /// Character offset of the replacement start.
+        start: usize,
+        /// Length of the replaced range in characters.
+        length: usize,
+        /// Replacement text.
+        text: String,
+    },
+    /// Like [`EditCommand::ReplaceCoalescingUndo`], but also sets the primary selection/caret.
+    ///
+    /// This is primarily useful for IME composition updates where the host provides a
+    /// selection range inside the marked (preedit) string, and we want to keep the entire
+    /// composition (updates + final commit) undoable as a single step.
+    ///
+    /// Notes:
+    /// - `selection_start/selection_end` are **post-edit** character offsets (Unicode scalar indices)
+    ///   in the resulting document.
+    /// - If `selection_start == selection_end`, the selection is cleared and the caret is moved
+    ///   to `selection_end`.
+    ReplaceCoalescingUndoWithSelection {
+        /// Character offset of the replacement start.
+        start: usize,
+        /// Length of the replaced range in characters.
+        length: usize,
+        /// Replacement text.
+        text: String,
+        /// Selection start (post-edit) in character offsets.
+        selection_start: usize,
+        /// Selection end (post-edit) in character offsets.
+        selection_end: usize,
+    },
     /// VSCode-like typing/paste: apply to all carets/selections (primary + secondary)
     InsertText {
         /// Text to insert/replace at each selection/caret.
@@ -2333,7 +2372,25 @@ impl CommandExecutor {
                 start,
                 length,
                 text,
-            } => self.execute_replace_command(start, length, text),
+            } => self.execute_replace_command(start, length, text, false, None),
+            EditCommand::ReplaceCoalescingUndo {
+                start,
+                length,
+                text,
+            } => self.execute_replace_command(start, length, text, true, None),
+            EditCommand::ReplaceCoalescingUndoWithSelection {
+                start,
+                length,
+                text,
+                selection_start,
+                selection_end,
+            } => self.execute_replace_command(
+                start,
+                length,
+                text,
+                true,
+                Some((selection_start, selection_end)),
+            ),
         }
     }
 
@@ -5872,6 +5929,8 @@ impl CommandExecutor {
         start: usize,
         length: usize,
         text: String,
+        coalesce_undo: bool,
+        selection_after: Option<(usize, usize)>,
     ) -> Result<CommandResult, CommandError> {
         let before_char_count = self.editor.piece_table.char_count();
         let max_offset = self.editor.piece_table.char_count();
@@ -5946,6 +6005,40 @@ impl CommandExecutor {
         // Ensure cursor/selection still valid.
         self.normalize_cursor_and_selection();
 
+        // Optional: set selection/caret as part of this edit command (so hosts can update IME
+        // preedit selection without breaking the undo group via a separate cursor command).
+        if let Some((mut sel_start_off, mut sel_end_off)) = selection_after {
+            let doc_char_count = self.editor.piece_table.char_count();
+            sel_start_off = sel_start_off.min(doc_char_count);
+            sel_end_off = sel_end_off.min(doc_char_count);
+
+            let (a_line, a_col) = self
+                .editor
+                .line_index
+                .char_offset_to_position(sel_start_off);
+            let (b_line, b_col) = self.editor.line_index.char_offset_to_position(sel_end_off);
+
+            let start_pos = Position::new(a_line, a_col);
+            let end_pos = Position::new(b_line, b_col);
+
+            self.editor.cursor_position = end_pos;
+            self.editor.secondary_selections.clear();
+            if sel_start_off == sel_end_off {
+                self.editor.selection = None;
+            } else {
+                self.editor.selection = Some(Selection {
+                    start: start_pos,
+                    end: end_pos,
+                    direction: crate::selection_set::selection_direction(start_pos, end_pos),
+                });
+            }
+
+            self.preferred_x_cells = self
+                .editor
+                .logical_position_to_visual(end_pos.line, end_pos.column)
+                .map(|(_, x)| x);
+        }
+
         let after_selection = self.snapshot_selection_set();
 
         let step = UndoStep {
@@ -5959,7 +6052,7 @@ impl CommandExecutor {
             before_selection,
             after_selection,
         };
-        let group_id = self.undo_redo.push_step(step, false);
+        let group_id = self.undo_redo.push_step(step, coalesce_undo);
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
