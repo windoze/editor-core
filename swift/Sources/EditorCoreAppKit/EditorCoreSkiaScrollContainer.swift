@@ -16,6 +16,7 @@ public final class EditorCoreSkiaScrollContainer: NSView {
 
     private let verticalScroller: NSScroller
     private var scrollerUpdatePending: Bool = false
+    private var viewportObserverToken: EditorCoreSkiaView.ViewportStateObserverToken?
 
     public init(editorView: EditorCoreSkiaView) {
         self.editorView = editorView
@@ -54,7 +55,8 @@ public final class EditorCoreSkiaScrollContainer: NSView {
             verticalScroller.widthAnchor.constraint(equalToConstant: scrollerWidth),
         ])
 
-        editorView.onViewportStateDidChange = { [weak self] in
+        // 通过“多订阅”机制监听 viewport 变化，避免覆盖宿主设置的 `onViewportStateDidChange`。
+        viewportObserverToken = editorView.addViewportStateObserver { [weak self] in
             self?.scheduleScrollerUpdate()
         }
 
@@ -139,7 +141,7 @@ public final class EditorCoreSkiaScrollContainer: NSView {
 
             editor.setSmoothScrollState(topVisualRow: UInt32(top), subRowOffset: sub)
             editorView.needsDisplay = true
-            editorView.onViewportStateDidChange?()
+            editorView.notifyViewportStateDidChange()
         } catch {
             NSSound.beep()
         }

@@ -120,6 +120,54 @@ public final class EditorCoreSkiaView: MTKView {
     /// This is primarily useful for tests and for hosts that want explicit "derived state updated" signals.
     public var onDidApplyAsyncProcessing: (() -> Void)?
 
+    // MARK: - Viewport observers (multi-subscriber)
+
+    @MainActor
+    public final class ViewportStateObserverToken {
+        fileprivate weak var view: EditorCoreSkiaView?
+        fileprivate let id: UUID
+
+        fileprivate init(view: EditorCoreSkiaView, id: UUID) {
+            self.view = view
+            self.id = id
+        }
+
+        deinit {
+            // 注意：即使 `ViewportStateObserverToken` 标注了 `@MainActor`，`deinit` 依然是非隔离上下文，
+            // 不能直接调用 MainActor-isolated 的实例方法。
+            //
+            // 我们使用 `DispatchQueue.main.async` 进行 best-effort 移除，避免跨线程访问 view 内部字典。
+            let id = id
+            let view = view
+            DispatchQueue.main.async { [weak view] in
+                view?.removeViewportStateObserver(id)
+            }
+        }
+    }
+
+    private var viewportObservers: [UUID: () -> Void] = [:]
+
+    /// Add an additional viewport-state observer without overwriting `onViewportStateDidChange`.
+    ///
+    /// The returned token must be retained; when it is released, the observer is removed.
+    @discardableResult
+    public func addViewportStateObserver(_ handler: @escaping () -> Void) -> ViewportStateObserverToken {
+        let id = UUID()
+        viewportObservers[id] = handler
+        return ViewportStateObserverToken(view: self, id: id)
+    }
+
+    private func removeViewportStateObserver(_ id: UUID) {
+        viewportObservers[id] = nil
+    }
+
+    func notifyViewportStateDidChange() {
+        onViewportStateDidChange?()
+        for f in viewportObservers.values {
+            f()
+        }
+    }
+
     private let metalCommandQueue: MTLCommandQueue
     private var viewportWidthPx: UInt32 = 0
     private var viewportHeightPx: UInt32 = 0
@@ -298,7 +346,7 @@ public final class EditorCoreSkiaView: MTKView {
             if r.applied {
                 requestRedraw()
                 invalidateIMECharacterCoordinates()
-                onViewportStateDidChange?()
+                notifyViewportStateDidChange()
                 onDidApplyAsyncProcessing?()
             }
             if r.pending == false {
@@ -565,7 +613,7 @@ public final class EditorCoreSkiaView: MTKView {
 
         requestRedraw()
         invalidateIMECharacterCoordinates()
-        onViewportStateDidChange?()
+        notifyViewportStateDidChange()
     }
 
     deinit {
@@ -956,7 +1004,7 @@ public final class EditorCoreSkiaView: MTKView {
             editor.scrollByPixels(Float(-deltaPx))
             requestRedraw()
             invalidateIMECharacterCoordinates()
-            onViewportStateDidChange?()
+            notifyViewportStateDidChange()
         }
     }
 
@@ -1051,7 +1099,7 @@ public final class EditorCoreSkiaView: MTKView {
         }
         requestRedraw()
         invalidateIMECharacterCoordinates()
-        onViewportStateDidChange?()
+        notifyViewportStateDidChange()
     }
 
     public func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -1116,14 +1164,14 @@ public final class EditorCoreSkiaView: MTKView {
         }
         requestRedraw()
         invalidateIMECharacterCoordinates()
-        onViewportStateDidChange?()
+        notifyViewportStateDidChange()
     }
 
     public func unmarkText() {
         editor.unmarkText()
         requestRedraw()
         invalidateIMECharacterCoordinates()
-        onViewportStateDidChange?()
+        notifyViewportStateDidChange()
     }
 
     public override func doCommand(by selector: Selector) {
@@ -1280,7 +1328,7 @@ public final class EditorCoreSkiaView: MTKView {
         }
         requestRedraw()
         invalidateIMECharacterCoordinates()
-        onViewportStateDidChange?()
+        notifyViewportStateDidChange()
     }
 
     // MARK: - Clipboard
@@ -1301,7 +1349,7 @@ public final class EditorCoreSkiaView: MTKView {
         }
         requestRedraw()
         invalidateIMECharacterCoordinates()
-        onViewportStateDidChange?()
+        notifyViewportStateDidChange()
     }
 
     @objc(undo:)
@@ -1314,7 +1362,7 @@ public final class EditorCoreSkiaView: MTKView {
         }
         requestRedraw()
         invalidateIMECharacterCoordinates()
-        onViewportStateDidChange?()
+        notifyViewportStateDidChange()
     }
 
     @objc(redo:)
@@ -1327,7 +1375,7 @@ public final class EditorCoreSkiaView: MTKView {
         }
         requestRedraw()
         invalidateIMECharacterCoordinates()
-        onViewportStateDidChange?()
+        notifyViewportStateDidChange()
     }
 
     @objc(copy:)
@@ -1353,7 +1401,7 @@ public final class EditorCoreSkiaView: MTKView {
             didMutateDocumentText()
             requestRedraw()
             invalidateIMECharacterCoordinates()
-            onViewportStateDidChange?()
+            notifyViewportStateDidChange()
         } catch {
             NSSound.beep()
         }
@@ -1371,7 +1419,7 @@ public final class EditorCoreSkiaView: MTKView {
         }
         requestRedraw()
         invalidateIMECharacterCoordinates()
-        onViewportStateDidChange?()
+        notifyViewportStateDidChange()
     }
 
     // MARK: - NSTextInputClient state queries
