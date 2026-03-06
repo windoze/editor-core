@@ -45,6 +45,7 @@ public final class EditorCoreSkiaView: MTKView {
     private var drawScheduled: Bool = false
     private var didPresentFirstFrame: Bool = false
     private var didLogDrawSetupOnce: Bool = false
+    private let textCacheDebugEnabled: Bool = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_TEXT_CACHE"] == "1"
 
     // MARK: - Text cache (performance)
 
@@ -85,14 +86,14 @@ public final class EditorCoreSkiaView: MTKView {
             docTextCache = text
             docTextCacheEpoch = docContentEpoch
 
-            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_TEXT_CACHE"] == "1" {
+            if textCacheDebugEnabled {
                 let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
                 NSLog("EditorCoreSkiaView text cache miss: fetched %d chars in %.2fms", text.count, dtMs)
             }
 
             return text
         } catch {
-            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_TEXT_CACHE"] == "1" {
+            if textCacheDebugEnabled {
                 NSLog("EditorCoreSkiaView text cache miss: fetch failed: %@", String(describing: error))
             }
             return nil
@@ -123,6 +124,10 @@ public final class EditorCoreSkiaView: MTKView {
         }
         self.metalCommandQueue = queue
         super.init(frame: .zero, device: device)
+
+        if textCacheDebugEnabled {
+            NSLog("EditorCoreSkiaView text cache debug enabled (EDITOR_CORE_APPKIT_DEBUG_TEXT_CACHE=1)")
+        }
 
         // 说明：
         // - 理想情况下我们希望使用“事件驱动”的 on-demand draw（`enableSetNeedsDisplay = true` + `isPaused = true`）。
