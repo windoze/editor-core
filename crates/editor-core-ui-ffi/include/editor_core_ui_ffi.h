@@ -326,6 +326,11 @@ int32_t editor_core_ui_ffi_editor_ui_get_marked_range(EditorUi* ui,
                                                       uint32_t* out_start,
                                                       uint32_t* out_len);
 
+int32_t editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(EditorUi* ui,
+                                                                     uint32_t char_offset,
+                                                                     uint32_t* out_line,
+                                                                     uint32_t* out_column);
+
 int32_t editor_core_ui_ffi_editor_ui_char_offset_to_view_point(EditorUi* ui,
                                                                uint32_t char_offset,
                                                                float* out_x,

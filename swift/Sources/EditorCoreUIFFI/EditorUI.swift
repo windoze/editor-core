@@ -750,6 +750,14 @@ public final class EditorUI {
         return (has != 0, start, len)
     }
 
+    public func charOffsetToLogicalPosition(offset: UInt32) throws -> (line: UInt32, column: UInt32) {
+        var line: UInt32 = 0
+        var col: UInt32 = 0
+        let status = editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(handle, offset, &line, &col)
+        try library.ensureStatus(status, context: "editor_ui_char_offset_to_logical_position")
+        return (line, col)
+    }
+
     public func charOffsetToViewPoint(offset: UInt32) throws -> (xPx: Float, yPx: Float, lineHeightPx: Float) {
         var x: Float = 0
         var y: Float = 0

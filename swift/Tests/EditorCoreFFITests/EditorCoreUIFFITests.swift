@@ -187,6 +187,15 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(hit, 2)
     }
 
+    func testCharOffsetToLogicalPosition() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "ab\ncde\nf", viewportWidthCells: 80)
+
+        let p = try ui.charOffsetToLogicalPosition(offset: 4) // 'd'
+        XCTAssertEqual(p.line, 1)
+        XCTAssertEqual(p.column, 1)
+    }
+
     func testSmoothScrollByPixelsAffectsHitTestingAndViewPointMapping() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)

@@ -2458,6 +2458,41 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_marked_range(
     }
 }
 
+/// Map a character offset to logical `(line, column)` (both char-indexed).
+///
+/// - `char_offset` is a Unicode scalar index.
+/// - `out_line/out_column` receive 0-based indices.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(
+    ui: *mut EditorUi,
+    char_offset: u32,
+    out_line: *mut u32,
+    out_column: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_line.is_null() {
+            return Err("out_line is null".to_string());
+        }
+        if out_column.is_null() {
+            return Err("out_column is null".to_string());
+        }
+
+        let (line, col) = ui.char_offset_to_logical_position(char_offset as usize);
+        unsafe {
+            *out_line = (line.min(u32::MAX as usize)) as u32;
+            *out_column = (col.min(u32::MAX as usize)) as u32;
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Map a character offset to a view point (in pixels, top-left origin).
 ///
 /// Writes `out_x/out_y` and `out_line_height_px`.
@@ -4786,6 +4821,24 @@ contexts:
             ECU_OK
         );
         assert_eq!(off, 2);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_char_offset_to_logical_position_roundtrip() {
+        let initial = CString::new("ab\ncde\nf").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let mut line: u32 = 0;
+        let mut col: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(ui, 4, &mut line, &mut col),
+            ECU_OK
+        );
+        assert_eq!(line, 1);
+        assert_eq!(col, 1);
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

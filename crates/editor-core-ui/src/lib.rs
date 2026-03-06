@@ -901,6 +901,17 @@ impl EditorUi {
         self.marked.as_ref().map(|m| (m.start, m.len))
     }
 
+    /// Map a character offset (Unicode scalar index) to logical `(line, column)`.
+    ///
+    /// Notes:
+    /// - `line` and `column` are also counted in Unicode scalar values (Rust `char`s).
+    /// - `char_offset` is clamped to the document length.
+    pub fn char_offset_to_logical_position(&self, char_offset: usize) -> (usize, usize) {
+        let doc_len = self.state.editor().piece_table.char_count();
+        let off = char_offset.min(doc_len);
+        self.state.editor().line_index.char_offset_to_position(off)
+    }
+
     /// Map a character offset (Unicode scalar index) to visual `(row, x_cells)`.
     pub fn char_offset_to_visual(&self, char_offset: usize) -> Option<(usize, usize)> {
         let (line, column) = self
@@ -3651,6 +3662,21 @@ mod tests {
 
         // View hit-test.
         assert_eq!(ui.view_point_to_char_offset(25.0, 10.0).unwrap(), 2);
+    }
+
+    #[test]
+    fn ui_char_offset_to_logical_position_maps_offsets() {
+        let ui = EditorUi::new("ab\ncde\nf", 80);
+        // "ab\ncde\nf"
+        // 0:a 1:b 2:\n 3:c 4:d 5:e 6:\n 7:f
+        assert_eq!(ui.char_offset_to_logical_position(0), (0, 0));
+        assert_eq!(ui.char_offset_to_logical_position(1), (0, 1));
+        assert_eq!(ui.char_offset_to_logical_position(3), (1, 0)); // 'c'
+        assert_eq!(ui.char_offset_to_logical_position(4), (1, 1)); // 'd'
+        assert_eq!(ui.char_offset_to_logical_position(7), (2, 0)); // 'f'
+
+        // Clamp: beyond end maps to the last valid position.
+        assert_eq!(ui.char_offset_to_logical_position(999), (2, 1));
     }
 
     #[test]
