@@ -96,19 +96,55 @@ pub struct ProcessingPollResult {
     pub pending: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TreeSitterProcessingConfig {
+    /// Debounce window for running Tree-sitter queries (highlighting/folding).
+    pub debounce_ms: u32,
+    /// Soft budget for a single query pass; when exceeded, the worker enters a cooldown window
+    /// and prefers visible-range queries.
+    pub query_budget_ms: u32,
+    /// Cooldown window after an over-budget query pass.
+    pub cooldown_ms: u32,
+    /// When the document exceeds this many Unicode scalar values, prefer visible-range queries.
+    pub large_doc_char_threshold: u32,
+    /// If true, large documents use visible/prefetch-range queries by default.
+    pub prefer_visible_range_on_large_docs: bool,
+}
+
+impl Default for TreeSitterProcessingConfig {
+    fn default() -> Self {
+        Self {
+            // One-frame debounce: coalesce bursts without making highlighting feel "late".
+            debounce_ms: 16,
+            // Anything above ~1 frame is already noticeable for CPU/battery; degrade when exceeded.
+            query_budget_ms: 30,
+            cooldown_ms: 200,
+            large_doc_char_threshold: 200_000,
+            prefer_visible_range_on_large_docs: true,
+        }
+    }
+}
+
 enum TreeSitterWorkerMsg {
     Init {
         config: TreeSitterProcessorConfig,
+        runtime: TreeSitterProcessingConfig,
         version: u64,
         text: String,
+        prefetch_char_range: Option<(usize, usize)>,
     },
     ApplyDelta {
         version: u64,
         delta: editor_core::delta::TextDelta,
+        prefetch_char_range: Option<(usize, usize)>,
     },
     FullSync {
         version: u64,
         text: String,
+        prefetch_char_range: Option<(usize, usize)>,
+    },
+    UpdateRuntimeConfig {
+        runtime: TreeSitterProcessingConfig,
     },
     Shutdown,
 }
@@ -121,6 +157,14 @@ enum TreeSitterWorkerEvent {
     },
     NeedFullSync,
     Error(String),
+}
+
+fn set_current_thread_qos_for_treesitter_worker() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        // Best effort: lower priority than UI thread to avoid input jank / CPU spikes.
+        let _ = libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0);
+    }
 }
 
 struct TreeSitterAsyncWorker {
@@ -140,50 +184,131 @@ impl TreeSitterAsyncWorker {
         let join = thread::Builder::new()
             .name("editor-core-treesitter-worker".to_string())
             .spawn(move || {
-                let mut processor: Option<TreeSitterProcessor> = None;
+                set_current_thread_qos_for_treesitter_worker();
 
-                while let Ok(msg) = rx_worker.recv() {
+                let mut processor: Option<TreeSitterProcessor> = None;
+                let mut runtime = TreeSitterProcessingConfig::default();
+
+                let mut latest_prefetch_char_range: Option<(usize, usize)> = None;
+                let mut latest_doc_char_count: usize = 0;
+                let mut latest_version: u64 = 0;
+                let mut dirty_for_query: bool = false;
+                let mut awaiting_full_sync: bool = false;
+                let mut sent_need_full_sync: bool = false;
+
+                let mut debounce_deadline: Option<std::time::Instant> = None;
+                let mut cooldown_until: Option<std::time::Instant> = None;
+                let mut degraded: bool = false;
+                let mut degraded_fast_streak: u32 = 0;
+
+                loop {
+                    let now = std::time::Instant::now();
+                    let debounce_at = debounce_deadline.unwrap_or(now);
+                    let next_action_at = if dirty_for_query {
+                        match cooldown_until {
+                            Some(cooldown) if cooldown > debounce_at => cooldown,
+                            _ => debounce_at,
+                        }
+                    } else {
+                        // No pending query work; block until the next message.
+                        std::time::Instant::now()
+                    };
+
+                    let msg = if dirty_for_query {
+                        let timeout = next_action_at.saturating_duration_since(now);
+                        rx_worker.recv_timeout(timeout)
+                    } else {
+                        rx_worker.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected)
+                    };
+
                     match msg {
-                        TreeSitterWorkerMsg::Init { config, version, text } => {
+                        Ok(TreeSitterWorkerMsg::Shutdown) => break,
+                        Ok(TreeSitterWorkerMsg::UpdateRuntimeConfig { runtime: next }) => {
+                            runtime = next;
+                        }
+                        Ok(TreeSitterWorkerMsg::Init {
+                            config,
+                            runtime: next_runtime,
+                            version,
+                            text,
+                            prefetch_char_range,
+                        }) => {
+                            runtime = next_runtime;
+                            latest_prefetch_char_range = prefetch_char_range;
+                            latest_doc_char_count = text.chars().count();
+                            dirty_for_query = false;
+                            awaiting_full_sync = false;
+                            sent_need_full_sync = false;
+
                             match TreeSitterProcessor::new(config) {
-                                Ok(mut p) => match p.process_text(version, None, Some(&text)) {
-                                    Ok(edits) => {
-                                        let _ = tx_events.send(TreeSitterWorkerEvent::Processed {
-                                            version,
-                                            edits,
-                                            update_mode: p.last_update_mode(),
-                                        });
-                                        processor = Some(p);
+                                Ok(mut p) => {
+                                    match p.sync_to(version, None, Some(&text)) {
+                                        Ok(_) => {
+                                            processor = Some(p);
+                                            latest_version = version;
+                                            dirty_for_query = true;
+                                            debounce_deadline = Some(
+                                                std::time::Instant::now()
+                                                    + std::time::Duration::from_millis(
+                                                        runtime.debounce_ms as u64,
+                                                    ),
+                                            );
+                                        }
+                                        Err(e) => {
+                                            let _ = tx_events
+                                                .send(TreeSitterWorkerEvent::Error(e.to_string()));
+                                            processor = Some(p);
+                                        }
                                     }
-                                    Err(e) => {
-                                        let _ = tx_events.send(TreeSitterWorkerEvent::Error(
-                                            e.to_string(),
-                                        ));
-                                        processor = Some(p);
-                                    }
-                                },
+                                }
                                 Err(e) => {
-                                    let _ = tx_events.send(TreeSitterWorkerEvent::Error(
-                                        e.to_string(),
-                                    ));
+                                    let _ =
+                                        tx_events.send(TreeSitterWorkerEvent::Error(e.to_string()));
                                 }
                             }
                         }
-                        TreeSitterWorkerMsg::ApplyDelta { version, delta } => {
+                        Ok(TreeSitterWorkerMsg::ApplyDelta {
+                            version,
+                            delta,
+                            prefetch_char_range,
+                        }) => {
+                            latest_prefetch_char_range = prefetch_char_range;
+                            latest_doc_char_count = delta.after_char_count;
+
+                            if awaiting_full_sync {
+                                if !sent_need_full_sync {
+                                    let _ = tx_events.send(TreeSitterWorkerEvent::NeedFullSync);
+                                    sent_need_full_sync = true;
+                                }
+                                continue;
+                            }
+
                             let Some(p) = processor.as_mut() else {
-                                let _ = tx_events.send(TreeSitterWorkerEvent::NeedFullSync);
+                                awaiting_full_sync = true;
+                                if !sent_need_full_sync {
+                                    let _ = tx_events.send(TreeSitterWorkerEvent::NeedFullSync);
+                                    sent_need_full_sync = true;
+                                }
                                 continue;
                             };
-                            match p.process_text(version, Some(&delta), None) {
-                                Ok(edits) => {
-                                    let _ = tx_events.send(TreeSitterWorkerEvent::Processed {
-                                        version,
-                                        edits,
-                                        update_mode: p.last_update_mode(),
-                                    });
+
+                            match p.sync_to(version, Some(&delta), None) {
+                                Ok(_) => {
+                                    latest_version = version;
+                                    dirty_for_query = true;
+                                    debounce_deadline = Some(
+                                        std::time::Instant::now()
+                                            + std::time::Duration::from_millis(
+                                                runtime.debounce_ms as u64,
+                                            ),
+                                    );
                                 }
                                 Err(editor_core_treesitter::TreeSitterError::DeltaMismatch) => {
-                                    let _ = tx_events.send(TreeSitterWorkerEvent::NeedFullSync);
+                                    awaiting_full_sync = true;
+                                    if !sent_need_full_sync {
+                                        let _ = tx_events.send(TreeSitterWorkerEvent::NeedFullSync);
+                                        sent_need_full_sync = true;
+                                    }
                                 }
                                 Err(e) => {
                                     let _ = tx_events
@@ -191,18 +316,102 @@ impl TreeSitterAsyncWorker {
                                 }
                             }
                         }
-                        TreeSitterWorkerMsg::FullSync { version, text } => {
+                        Ok(TreeSitterWorkerMsg::FullSync {
+                            version,
+                            text,
+                            prefetch_char_range,
+                        }) => {
+                            latest_prefetch_char_range = prefetch_char_range;
+                            latest_doc_char_count = text.chars().count();
+
                             let Some(p) = processor.as_mut() else {
-                                let _ = tx_events.send(TreeSitterWorkerEvent::NeedFullSync);
+                                awaiting_full_sync = true;
+                                if !sent_need_full_sync {
+                                    let _ = tx_events.send(TreeSitterWorkerEvent::NeedFullSync);
+                                    sent_need_full_sync = true;
+                                }
                                 continue;
                             };
-                            match p.process_text(version, None, Some(&text)) {
+
+                            match p.sync_to(version, None, Some(&text)) {
+                                Ok(_) => {
+                                    latest_version = version;
+                                    awaiting_full_sync = false;
+                                    sent_need_full_sync = false;
+                                    dirty_for_query = true;
+                                    debounce_deadline = Some(
+                                        std::time::Instant::now()
+                                            + std::time::Duration::from_millis(
+                                                runtime.debounce_ms as u64,
+                                            ),
+                                    );
+                                }
+                                Err(e) => {
+                                    let _ = tx_events
+                                        .send(TreeSitterWorkerEvent::Error(e.to_string()));
+                                }
+                            }
+                        }
+                        Err(mpsc::RecvTimeoutError::Timeout) => {
+                            // We reached the debounce/cooldown boundary; run queries if needed.
+                            if dirty_for_query == false {
+                                continue;
+                            }
+                            if awaiting_full_sync {
+                                continue;
+                            }
+                            if let Some(cooldown) = cooldown_until {
+                                if std::time::Instant::now() < cooldown {
+                                    continue;
+                                }
+                            }
+
+                            let Some(p) = processor.as_mut() else {
+                                continue;
+                            };
+
+                            let large_doc = runtime.prefer_visible_range_on_large_docs
+                                && latest_doc_char_count
+                                    >= runtime.large_doc_char_threshold as usize;
+                            let use_range =
+                                if degraded || large_doc { latest_prefetch_char_range } else { None };
+
+                            let t0 = std::time::Instant::now();
+                            match p.compute_processing_edits(use_range) {
                                 Ok(edits) => {
+                                    let dt = t0.elapsed();
+                                    let dt_ms = dt.as_secs_f64() * 1000.0;
+
+                                    if dt_ms > runtime.query_budget_ms as f64 {
+                                        degraded = true;
+                                        degraded_fast_streak = 0;
+                                        cooldown_until = Some(
+                                            std::time::Instant::now()
+                                                + std::time::Duration::from_millis(
+                                                    runtime.cooldown_ms as u64,
+                                                ),
+                                        );
+                                    } else if degraded {
+                                        degraded_fast_streak = degraded_fast_streak.saturating_add(1);
+                                        if degraded_fast_streak >= 5 {
+                                            degraded = false;
+                                            degraded_fast_streak = 0;
+                                        }
+                                    }
+
                                     let _ = tx_events.send(TreeSitterWorkerEvent::Processed {
-                                        version,
+                                        version: latest_version,
                                         edits,
                                         update_mode: p.last_update_mode(),
                                     });
+                                    dirty_for_query = false;
+                                }
+                                Err(editor_core_treesitter::TreeSitterError::DeltaMismatch) => {
+                                    awaiting_full_sync = true;
+                                    if !sent_need_full_sync {
+                                        let _ = tx_events.send(TreeSitterWorkerEvent::NeedFullSync);
+                                        sent_need_full_sync = true;
+                                    }
                                 }
                                 Err(e) => {
                                     let _ = tx_events
@@ -210,7 +419,7 @@ impl TreeSitterAsyncWorker {
                                 }
                             }
                         }
-                        TreeSitterWorkerMsg::Shutdown => break,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     }
                 }
             })
@@ -255,6 +464,7 @@ pub struct EditorUi {
     sublime: Option<SublimeProcessor>,
     treesitter: Option<TreeSitterAsyncWorker>,
     treesitter_capture_mapper: TreeSitterCaptureMapper,
+    treesitter_processing_config: TreeSitterProcessingConfig,
     marked: Option<MarkedRange>,
     search_query: Option<SearchQueryState>,
     mouse_anchor: Option<Position>,
@@ -270,6 +480,7 @@ impl EditorUi {
             sublime: None,
             treesitter: None,
             treesitter_capture_mapper: TreeSitterCaptureMapper::default(),
+            treesitter_processing_config: TreeSitterProcessingConfig::default(),
             marked: None,
             search_query: None,
             mouse_anchor: None,
@@ -282,6 +493,22 @@ impl EditorUi {
 
     pub fn cursor_state(&self) -> editor_core::CursorState {
         self.state.get_cursor_state()
+    }
+
+    pub fn set_treesitter_processing_config(
+        &mut self,
+        runtime: TreeSitterProcessingConfig,
+    ) -> Result<(), UiError> {
+        self.treesitter_processing_config = runtime;
+        if let Some(worker) = self.treesitter.as_mut() {
+            worker
+                .tx
+                .send(TreeSitterWorkerMsg::UpdateRuntimeConfig { runtime })
+                .map_err(|_| {
+                    UiError::Processor("failed to update tree-sitter runtime config".to_string())
+                })?;
+        }
+        Ok(())
     }
 
     /// Return the primary selection range as `(start_offset, end_offset)` in character offsets.
@@ -1028,12 +1255,16 @@ impl EditorUi {
         let mut worker = TreeSitterAsyncWorker::spawn();
         let text = self.state.editor().get_text();
         let version = self.state.version();
+        let prefetch_char_range = self.treesitter_prefetch_char_range();
+        let runtime = self.treesitter_processing_config;
         worker.requested_version = Some(version);
         worker.tx
             .send(TreeSitterWorkerMsg::Init {
                 config,
+                runtime,
                 version,
                 text,
+                prefetch_char_range,
             })
             .map_err(|_| UiError::Processor("failed to start tree-sitter worker".to_string()))?;
         self.treesitter = Some(worker);
@@ -1045,6 +1276,7 @@ impl EditorUi {
     }
 
     pub fn poll_processing(&mut self) -> Result<ProcessingPollResult, UiError> {
+        let prefetch_char_range = self.treesitter_prefetch_char_range();
         let Some(worker) = self.treesitter.as_mut() else {
             return Ok(ProcessingPollResult {
                 applied: false,
@@ -1087,7 +1319,11 @@ impl EditorUi {
             worker.requested_version = Some(version);
             worker
                 .tx
-                .send(TreeSitterWorkerMsg::FullSync { version, text })
+                .send(TreeSitterWorkerMsg::FullSync {
+                    version,
+                    text,
+                    prefetch_char_range,
+                })
                 .map_err(|_| UiError::Processor("failed to full-sync tree-sitter worker".to_string()))?;
         }
 
@@ -2320,12 +2556,37 @@ impl EditorUi {
             .any(|layer| layer.iter().any(|d| d.text.as_ref().is_some_and(|t| !t.is_empty())))
     }
 
+    fn treesitter_prefetch_char_range(&self) -> Option<(usize, usize)> {
+        let viewport = self.state.get_viewport_state();
+        let lines = viewport.prefetch_lines;
+        if lines.is_empty() {
+            return None;
+        }
+
+        let start_visual = lines.start;
+        let end_visual = lines.end.saturating_sub(1);
+
+        let (start_line, _) = self.state.visual_to_logical_line(start_visual);
+        let (end_line, _) = self.state.visual_to_logical_line(end_visual);
+        let end_line_excl = end_line.saturating_add(1);
+
+        let line_index = &self.state.editor().line_index;
+        let start = line_index.position_to_char_offset(start_line, 0);
+        let end = line_index.position_to_char_offset(end_line_excl, 0);
+        if end > start {
+            Some((start, end))
+        } else {
+            None
+        }
+    }
+
     fn refresh_processing(&mut self) -> Result<(), UiError> {
         if let Some(proc) = self.sublime.as_mut() {
             self.state
                 .apply_processor(proc)
                 .map_err(|e| UiError::Processor(e.to_string()))?;
         }
+        let prefetch_char_range = self.treesitter_prefetch_char_range();
         if let Some(worker) = self.treesitter.as_mut() {
             let version = self.state.version();
             worker.requested_version = Some(version);
@@ -2333,7 +2594,11 @@ impl EditorUi {
             if let Some(delta) = self.state.last_text_delta().cloned() {
                 worker
                     .tx
-                    .send(TreeSitterWorkerMsg::ApplyDelta { version, delta })
+                    .send(TreeSitterWorkerMsg::ApplyDelta {
+                        version,
+                        delta,
+                        prefetch_char_range,
+                    })
                     .map_err(|_| {
                         UiError::Processor("failed to send delta to tree-sitter worker".to_string())
                     })?;
@@ -2341,7 +2606,11 @@ impl EditorUi {
                 let text = self.state.editor().get_text();
                 worker
                     .tx
-                    .send(TreeSitterWorkerMsg::FullSync { version, text })
+                    .send(TreeSitterWorkerMsg::FullSync {
+                        version,
+                        text,
+                        prefetch_char_range,
+                    })
                     .map_err(|_| {
                         UiError::Processor("failed to full-sync tree-sitter worker".to_string())
                     })?;
@@ -3733,6 +4002,39 @@ fn main() {
         assert_eq!(
             ui.treesitter_last_update_mode(),
             Some(TreeSitterUpdateMode::Incremental)
+        );
+    }
+
+    #[test]
+    fn ui_treesitter_runtime_config_can_be_updated_while_running() {
+        let highlights = r#"(line_comment) @comment"#;
+        let mut ui = EditorUi::new("// a\n", 80);
+
+        // Use a zero-debounce config to keep the test fast and deterministic.
+        ui.set_treesitter_processing_config(TreeSitterProcessingConfig {
+            debounce_ms: 0,
+            ..TreeSitterProcessingConfig::default()
+        })
+        .unwrap();
+
+        ui.set_treesitter_rust_with_queries(highlights, None).unwrap();
+        wait_for_async_processing(&mut ui);
+
+        // Updating the config should send a message to the worker and not break processing.
+        ui.set_treesitter_processing_config(TreeSitterProcessingConfig {
+            debounce_ms: 0,
+            query_budget_ms: 1,
+            cooldown_ms: 1,
+            large_doc_char_threshold: 1,
+            prefer_visible_range_on_large_docs: true,
+        })
+        .unwrap();
+
+        ui.insert_text("// b\n").unwrap();
+        wait_for_async_processing(&mut ui);
+        assert!(
+            ui.treesitter_last_update_mode().is_some(),
+            "expected Tree-sitter processing to remain functional after runtime config update"
         );
     }
 

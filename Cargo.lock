@@ -447,6 +447,7 @@ dependencies = [
  "editor-core-render-skia",
  "editor-core-sublime",
  "editor-core-treesitter",
+ "libc",
  "pretty_assertions",
  "serde_json",
  "thiserror",
