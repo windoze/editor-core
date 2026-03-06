@@ -202,7 +202,13 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
                 try editorView.editor.setFontLigaturesEnabled(true)
             }
             // Demo: enable Tree-sitter (Rust) for highlighting + folding regions.
-            try editorView.editor.treeSitterRustEnableDefault()
+            //
+            // 性能排查时可通过 `EDITOR_CORE_APPKIT_DISABLE_TREESITTER=1` 关闭，帮助定位“输入变更很慢”是否来自 processor。
+            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DISABLE_TREESITTER"] != "1" {
+                try editorView.editor.treeSitterRustEnableDefault()
+            } else {
+                NSLog("EditorCoreSkiaAppKitDemo: Tree-sitter disabled by EDITOR_CORE_APPKIT_DISABLE_TREESITTER=1")
+            }
 
             // Demo: style colors for reserved overlay IDs.
             // - LSP document links underline: 0x0800_0003
