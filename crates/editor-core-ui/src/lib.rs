@@ -22,9 +22,11 @@ use editor_core_render_skia::{
     VisualSelection,
 };
 use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
-use editor_core_treesitter::{TreeSitterProcessor, TreeSitterProcessorConfig};
+use editor_core_treesitter::{TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterUpdateMode};
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
+use std::sync::mpsc;
+use std::thread;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -88,6 +90,160 @@ impl TreeSitterCaptureMapper {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcessingPollResult {
+    pub applied: bool,
+    pub pending: bool,
+}
+
+enum TreeSitterWorkerMsg {
+    Init {
+        config: TreeSitterProcessorConfig,
+        version: u64,
+        text: String,
+    },
+    ApplyDelta {
+        version: u64,
+        delta: editor_core::delta::TextDelta,
+    },
+    FullSync {
+        version: u64,
+        text: String,
+    },
+    Shutdown,
+}
+
+enum TreeSitterWorkerEvent {
+    Processed {
+        version: u64,
+        edits: Vec<ProcessingEdit>,
+        update_mode: TreeSitterUpdateMode,
+    },
+    NeedFullSync,
+    Error(String),
+}
+
+struct TreeSitterAsyncWorker {
+    tx: mpsc::Sender<TreeSitterWorkerMsg>,
+    rx: mpsc::Receiver<TreeSitterWorkerEvent>,
+    join: Option<thread::JoinHandle<()>>,
+    requested_version: Option<u64>,
+    applied_version: Option<u64>,
+    last_update_mode: Option<TreeSitterUpdateMode>,
+}
+
+impl TreeSitterAsyncWorker {
+    fn spawn() -> Self {
+        let (tx, rx_worker) = mpsc::channel::<TreeSitterWorkerMsg>();
+        let (tx_events, rx) = mpsc::channel::<TreeSitterWorkerEvent>();
+
+        let join = thread::Builder::new()
+            .name("editor-core-treesitter-worker".to_string())
+            .spawn(move || {
+                let mut processor: Option<TreeSitterProcessor> = None;
+
+                while let Ok(msg) = rx_worker.recv() {
+                    match msg {
+                        TreeSitterWorkerMsg::Init { config, version, text } => {
+                            match TreeSitterProcessor::new(config) {
+                                Ok(mut p) => match p.process_text(version, None, Some(&text)) {
+                                    Ok(edits) => {
+                                        let _ = tx_events.send(TreeSitterWorkerEvent::Processed {
+                                            version,
+                                            edits,
+                                            update_mode: p.last_update_mode(),
+                                        });
+                                        processor = Some(p);
+                                    }
+                                    Err(e) => {
+                                        let _ = tx_events.send(TreeSitterWorkerEvent::Error(
+                                            e.to_string(),
+                                        ));
+                                        processor = Some(p);
+                                    }
+                                },
+                                Err(e) => {
+                                    let _ = tx_events.send(TreeSitterWorkerEvent::Error(
+                                        e.to_string(),
+                                    ));
+                                }
+                            }
+                        }
+                        TreeSitterWorkerMsg::ApplyDelta { version, delta } => {
+                            let Some(p) = processor.as_mut() else {
+                                let _ = tx_events.send(TreeSitterWorkerEvent::NeedFullSync);
+                                continue;
+                            };
+                            match p.process_text(version, Some(&delta), None) {
+                                Ok(edits) => {
+                                    let _ = tx_events.send(TreeSitterWorkerEvent::Processed {
+                                        version,
+                                        edits,
+                                        update_mode: p.last_update_mode(),
+                                    });
+                                }
+                                Err(editor_core_treesitter::TreeSitterError::DeltaMismatch) => {
+                                    let _ = tx_events.send(TreeSitterWorkerEvent::NeedFullSync);
+                                }
+                                Err(e) => {
+                                    let _ = tx_events
+                                        .send(TreeSitterWorkerEvent::Error(e.to_string()));
+                                }
+                            }
+                        }
+                        TreeSitterWorkerMsg::FullSync { version, text } => {
+                            let Some(p) = processor.as_mut() else {
+                                let _ = tx_events.send(TreeSitterWorkerEvent::NeedFullSync);
+                                continue;
+                            };
+                            match p.process_text(version, None, Some(&text)) {
+                                Ok(edits) => {
+                                    let _ = tx_events.send(TreeSitterWorkerEvent::Processed {
+                                        version,
+                                        edits,
+                                        update_mode: p.last_update_mode(),
+                                    });
+                                }
+                                Err(e) => {
+                                    let _ = tx_events
+                                        .send(TreeSitterWorkerEvent::Error(e.to_string()));
+                                }
+                            }
+                        }
+                        TreeSitterWorkerMsg::Shutdown => break,
+                    }
+                }
+            })
+            .ok();
+
+        Self {
+            tx,
+            rx,
+            join,
+            requested_version: None,
+            applied_version: None,
+            last_update_mode: None,
+        }
+    }
+
+    fn is_pending(&self) -> bool {
+        match (self.requested_version, self.applied_version) {
+            (Some(req), Some(applied)) => applied < req,
+            (Some(_), None) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Drop for TreeSitterAsyncWorker {
+    fn drop(&mut self) {
+        let _ = self.tx.send(TreeSitterWorkerMsg::Shutdown);
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+    }
+}
+
 /// A minimal "single buffer, single view" UI wrapper.
 ///
 /// Later we can add a `Workspace`-backed version for tabs/splits.
@@ -97,7 +253,7 @@ pub struct EditorUi {
     theme: RenderTheme,
     render_config: RenderConfig,
     sublime: Option<SublimeProcessor>,
-    treesitter: Option<TreeSitterProcessor>,
+    treesitter: Option<TreeSitterAsyncWorker>,
     treesitter_capture_mapper: TreeSitterCaptureMapper,
     marked: Option<MarkedRange>,
     search_query: Option<SearchQueryState>,
@@ -861,13 +1017,103 @@ impl EditorUi {
         }
         config.capture_styles = capture_styles;
 
-        self.treesitter =
-            Some(TreeSitterProcessor::new(config).map_err(|e| UiError::Processor(e.to_string()))?);
-        self.refresh_processing()
+        self.treesitter = None;
+        self.state.apply_processing_edits([
+            ProcessingEdit::ClearStyleLayer {
+                layer: StyleLayerId::TREE_SITTER,
+            },
+            ProcessingEdit::ClearFoldingRegions,
+        ]);
+
+        let mut worker = TreeSitterAsyncWorker::spawn();
+        let text = self.state.editor().get_text();
+        let version = self.state.version();
+        worker.requested_version = Some(version);
+        worker.tx
+            .send(TreeSitterWorkerMsg::Init {
+                config,
+                version,
+                text,
+            })
+            .map_err(|_| UiError::Processor("failed to start tree-sitter worker".to_string()))?;
+        self.treesitter = Some(worker);
+        Ok(())
     }
 
     pub fn disable_treesitter(&mut self) {
         self.treesitter = None;
+    }
+
+    pub fn poll_processing(&mut self) -> Result<ProcessingPollResult, UiError> {
+        let Some(worker) = self.treesitter.as_mut() else {
+            return Ok(ProcessingPollResult {
+                applied: false,
+                pending: false,
+            });
+        };
+
+        let mut latest: Option<(u64, Vec<ProcessingEdit>, TreeSitterUpdateMode)> = None;
+        let mut need_full_sync = false;
+
+        loop {
+            match worker.rx.try_recv() {
+                Ok(TreeSitterWorkerEvent::Processed {
+                    version,
+                    edits,
+                    update_mode,
+                }) => {
+                    latest = Some((version, edits, update_mode));
+                }
+                Ok(TreeSitterWorkerEvent::NeedFullSync) => {
+                    need_full_sync = true;
+                }
+                Ok(TreeSitterWorkerEvent::Error(msg)) => {
+                    return Err(UiError::Processor(format!(
+                        "tree-sitter worker error: {msg}"
+                    )));
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    return Err(UiError::Processor(
+                        "tree-sitter worker disconnected".to_string(),
+                    ));
+                }
+            }
+        }
+
+        if need_full_sync {
+            let text = self.state.editor().get_text();
+            let version = self.state.version();
+            worker.requested_version = Some(version);
+            worker
+                .tx
+                .send(TreeSitterWorkerMsg::FullSync { version, text })
+                .map_err(|_| UiError::Processor("failed to full-sync tree-sitter worker".to_string()))?;
+        }
+
+        let mut applied = false;
+        if let Some((version, edits, update_mode)) = latest {
+            if worker
+                .requested_version
+                .is_some_and(|requested| version < requested)
+            {
+                // Stale result: the UI already requested a newer document version.
+            } else {
+                self.state.apply_processing_edits(edits);
+                worker.applied_version = Some(version);
+                worker.last_update_mode = Some(update_mode);
+                applied = true;
+            }
+        }
+
+        Ok(ProcessingPollResult {
+            applied,
+            pending: worker.is_pending(),
+        })
+    }
+
+    pub fn treesitter_last_update_mode(&self) -> Option<TreeSitterUpdateMode> {
+        self.treesitter.as_ref().and_then(|w| w.last_update_mode)
     }
 
     pub fn treesitter_capture_for_style_id(&self, style_id: u32) -> Option<&str> {
@@ -1936,6 +2182,9 @@ impl EditorUi {
     }
 
     pub fn render_rgba_visible_into(&mut self, out_rgba: &mut [u8]) -> Result<usize, UiError> {
+        // Non-blocking: apply any completed async processing (Tree-sitter highlighting/folding).
+        let _ = self.poll_processing()?;
+
         let viewport = self.state.get_viewport_state();
         let start_row = viewport.scroll_top;
         let row_count = self.viewport_row_count_for_render(&viewport);
@@ -2006,6 +2255,9 @@ impl EditorUi {
     ///
     /// The host is responsible for presenting the texture (e.g. `CAMetalDrawable`).
     pub fn render_metal_visible_into_texture(&mut self, metal_texture: *mut c_void) -> Result<(), UiError> {
+        // Non-blocking: apply any completed async processing (Tree-sitter highlighting/folding).
+        let _ = self.poll_processing()?;
+
         let viewport = self.state.get_viewport_state();
         let start_row = viewport.scroll_top;
         let row_count = self.viewport_row_count_for_render(&viewport);
@@ -2074,10 +2326,26 @@ impl EditorUi {
                 .apply_processor(proc)
                 .map_err(|e| UiError::Processor(e.to_string()))?;
         }
-        if let Some(proc) = self.treesitter.as_mut() {
-            self.state
-                .apply_processor(proc)
-                .map_err(|e| UiError::Processor(e.to_string()))?;
+        if let Some(worker) = self.treesitter.as_mut() {
+            let version = self.state.version();
+            worker.requested_version = Some(version);
+
+            if let Some(delta) = self.state.last_text_delta().cloned() {
+                worker
+                    .tx
+                    .send(TreeSitterWorkerMsg::ApplyDelta { version, delta })
+                    .map_err(|_| {
+                        UiError::Processor("failed to send delta to tree-sitter worker".to_string())
+                    })?;
+            } else {
+                let text = self.state.editor().get_text();
+                worker
+                    .tx
+                    .send(TreeSitterWorkerMsg::FullSync { version, text })
+                    .map_err(|_| {
+                        UiError::Processor("failed to full-sync tree-sitter worker".to_string())
+                    })?;
+            }
         }
         Ok(())
     }
@@ -2394,6 +2662,20 @@ fn hit_test_composed_line_char_offset(line: &editor_core::ComposedLine, x_cells:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn wait_for_async_processing(ui: &mut EditorUi) {
+        let start = std::time::Instant::now();
+        loop {
+            let polled = ui.poll_processing().unwrap();
+            if !polled.pending {
+                break;
+            }
+            if start.elapsed() > std::time::Duration::from_secs(2) {
+                panic!("timeout waiting for async processing");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
     use editor_core::CursorCommand;
     use editor_core_treesitter::TreeSitterUpdateMode;
 
@@ -3088,6 +3370,7 @@ mod tests {
         let text = "fn main() {\n  let x = 1;\n}\n";
         let mut ui = EditorUi::new(text, 80);
         ui.set_treesitter_rust_default().unwrap();
+        wait_for_async_processing(&mut ui);
         ui.set_render_config(RenderConfig {
             width_px: 200,
             height_px: 80,
@@ -3137,6 +3420,7 @@ mod tests {
         let text = "fn main() {\n  if true {\n    if true {\n      println!(\"hi\");\n    }\n  }\n}\n";
         let mut ui = EditorUi::new(text, 80);
         ui.set_treesitter_rust_default().unwrap();
+        wait_for_async_processing(&mut ui);
         ui.set_render_config(RenderConfig {
             width_px: 260,
             height_px: 200,
@@ -3396,6 +3680,7 @@ fn main() {
         let mut ui = EditorUi::new(text, 80);
         ui.set_treesitter_rust_with_queries(highlights, Some(folds))
             .unwrap();
+        wait_for_async_processing(&mut ui);
 
         let comment_style = ui.treesitter_style_id_for_capture("comment");
         let string_style = ui.treesitter_style_id_for_capture("string");
@@ -3437,15 +3722,17 @@ fn main() {
         let mut ui = EditorUi::new("// a\n", 80);
         ui.set_treesitter_rust_with_queries(highlights, None)
             .unwrap();
+        wait_for_async_processing(&mut ui);
         assert_eq!(
-            ui.treesitter.as_ref().unwrap().last_update_mode(),
-            TreeSitterUpdateMode::Initial
+            ui.treesitter_last_update_mode(),
+            Some(TreeSitterUpdateMode::Initial)
         );
 
         ui.insert_text("// b\n").unwrap();
+        wait_for_async_processing(&mut ui);
         assert_eq!(
-            ui.treesitter.as_ref().unwrap().last_update_mode(),
-            TreeSitterUpdateMode::Incremental
+            ui.treesitter_last_update_mode(),
+            Some(TreeSitterUpdateMode::Incremental)
         );
     }
 
