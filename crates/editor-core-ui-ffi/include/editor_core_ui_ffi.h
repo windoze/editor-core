@@ -275,6 +275,11 @@ char* editor_core_ui_ffi_editor_ui_get_text(EditorUi* ui);
 // Selected text (primary + secondary selections), joined with '\n'.
 char* editor_core_ui_ffi_editor_ui_get_selected_text(EditorUi* ui);
 
+// Minimap snapshot as JSON.
+char* editor_core_ui_ffi_editor_ui_minimap_json(EditorUi* ui,
+                                                uint32_t start_visual_row,
+                                                uint32_t count);
+
 int32_t editor_core_ui_ffi_editor_ui_get_selection_offsets(EditorUi* ui,
                                                            uint32_t* out_start,
                                                            uint32_t* out_end);

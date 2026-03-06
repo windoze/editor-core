@@ -196,6 +196,17 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(p.column, 1)
     }
 
+    func testMinimapJSON() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "a\nb\nc", viewportWidthCells: 80)
+
+        let minimap = try JSONTestHelpers.object(try ui.minimapJSON(startVisualRow: 0, rowCount: 20))
+        XCTAssertNotNil(minimap["lines"])
+        XCTAssertEqual(minimap["start_visual_row"] as? Int, 0)
+        XCTAssertEqual(minimap["count"] as? Int, 20)
+        XCTAssertEqual(minimap["actual_line_count"] as? Int, 3)
+    }
+
     func testSmoothScrollByPixelsAffectsHitTestingAndViewPointMapping() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)

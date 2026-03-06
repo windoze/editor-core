@@ -627,6 +627,14 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    public func minimapJSON(startVisualRow: UInt32, rowCount: UInt32) throws -> String {
+        guard let ptr = editor_core_ui_ffi_editor_ui_minimap_json(handle, startVisualRow, rowCount) else {
+            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_minimap_json", message: library.lastErrorMessageString())
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
     public func selectionOffsets() throws -> (start: UInt32, end: UInt32) {
         var start: UInt32 = 0
         var end: UInt32 = 0

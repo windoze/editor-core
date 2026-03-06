@@ -573,6 +573,32 @@ impl EditorUi {
         }
     }
 
+    /// Get lightweight minimap snapshot as JSON.
+    ///
+    /// This mirrors the JSON shape from `editor-core-ffi` (`value_minimap_grid`) so hosts can reuse
+    /// the same decoding logic.
+    pub fn minimap_json(&self, start_visual_row: usize, count: usize) -> String {
+        let grid = self.state.get_minimap_content(start_visual_row, count);
+        let value = serde_json::json!({
+            "start_visual_row": grid.start_visual_row,
+            "count": grid.count,
+            "actual_line_count": grid.actual_line_count(),
+            "lines": grid.lines.iter().map(|line| {
+                serde_json::json!({
+                    "logical_line_index": line.logical_line_index,
+                    "visual_in_logical": line.visual_in_logical,
+                    "char_offset_start": line.char_offset_start,
+                    "char_offset_end": line.char_offset_end,
+                    "total_cells": line.total_cells,
+                    "non_whitespace_cells": line.non_whitespace_cells,
+                    "dominant_style": line.dominant_style,
+                    "is_fold_placeholder_appended": line.is_fold_placeholder_appended,
+                })
+            }).collect::<Vec<_>>(),
+        });
+        serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string())
+    }
+
     /// Return all selections (including primary) as character-offset ranges, plus the primary index.
     ///
     /// Each range is inclusive-exclusive in Unicode scalar indices.
@@ -3677,6 +3703,21 @@ mod tests {
 
         // Clamp: beyond end maps to the last valid position.
         assert_eq!(ui.char_offset_to_logical_position(999), (2, 1));
+    }
+
+    #[test]
+    fn ui_minimap_json_roundtrip_has_lines() {
+        let ui = EditorUi::new("a\nb\nc", 80);
+        let json = ui.minimap_json(0, 20);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(v.get("lines").is_some());
+        assert_eq!(v.get("start_visual_row").and_then(|n| n.as_u64()), Some(0));
+        assert_eq!(v.get("count").and_then(|n| n.as_u64()), Some(20));
+        assert!(v
+            .get("actual_line_count")
+            .and_then(|n| n.as_u64())
+            .unwrap_or(0)
+            > 0);
     }
 
     #[test]

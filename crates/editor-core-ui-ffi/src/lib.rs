@@ -2257,6 +2257,33 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_selected_text(ui: *mut Editor
     }
 }
 
+/// Get minimap snapshot as JSON.
+///
+/// Returns an allocated C string. Caller must free with [`editor_core_ui_ffi_string_free`].
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_minimap_json(
+    ui: *mut EditorUi,
+    start_visual_row: u32,
+    count: u32,
+) -> *mut c_char {
+    let default = ptr::null_mut();
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        Ok(make_c_string_ptr(
+            ui.minimap_json(start_visual_row as usize, count as usize),
+        ))
+    }) {
+        Ok(ptr) => {
+            clear_last_error();
+            ptr
+        }
+        Err(err) => {
+            set_last_error(err);
+            default
+        }
+    }
+}
+
 /// Get primary selection offsets (character offsets).
 ///
 /// Writes `start` and `end` (inclusive-exclusive) offsets.
@@ -2722,6 +2749,23 @@ mod tests {
         );
         assert_eq!(out_len as usize, buf.len());
         assert_eq!(pixel(&buf, 80, 70, 30), [10, 20, 30, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_minimap_json_smoke() {
+        let initial = CString::new("a\nb\nc").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let ptr = editor_core_ui_ffi_editor_ui_minimap_json(ui, 0, 20);
+        assert!(!ptr.is_null());
+        let json = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
+        editor_core_ui_ffi_string_free(ptr);
+
+        assert!(json.contains("\"lines\""));
+        assert!(json.contains("\"actual_line_count\""));
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }
