@@ -120,6 +120,44 @@ public final class EditorCoreSkiaView: MTKView {
     /// This is primarily useful for tests and for hosts that want explicit "derived state updated" signals.
     public var onDidApplyAsyncProcessing: (() -> Void)?
 
+    // MARK: - Caret appearance (width + blinking)
+
+    /// Caret width in points (logical units).
+    ///
+    /// The value is multiplied by the view's backing scale factor before being sent to Rust.
+    public var caretWidthPoints: CGFloat = 2.0 {
+        didSet { applyCaretAppearanceIfNeeded(force: true) }
+    }
+
+    /// Enable/disable caret blinking.
+    ///
+    /// When disabled, the caret stays visible (subject to `caretVisibleOverride`).
+    public var caretBlinkEnabled: Bool = true {
+        didSet { updateCaretBlinkTimer() }
+    }
+
+    /// Caret blink toggle interval in seconds (how often it flips visible/hidden).
+    ///
+    /// Set to a non-positive value to effectively disable blinking.
+    public var caretBlinkIntervalSeconds: TimeInterval = 0.55 {
+        didSet { updateCaretBlinkTimer() }
+    }
+
+    /// Optional visibility override. When non-nil, blinking is ignored and this value is used.
+    ///
+    /// This is mainly intended for tests and for hosts that want custom focus rules.
+    public var caretVisibleOverride: Bool? {
+        didSet { applyCaretAppearanceIfNeeded(force: true) }
+    }
+
+    private var caretBlinkPhaseVisible: Bool = true
+    // 注意：`Timer` 不是 `Sendable`，而 `deinit` 是非隔离上下文；
+    // 这里用 `nonisolated(unsafe)` 允许在 `deinit` 中把 timer 转交给主线程做 invalidate。
+    nonisolated(unsafe) private var caretBlinkTimer: Timer?
+    private let caretBlinkTimerDisabledForTests: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    private var lastAppliedCaretWidthPx: Float?
+    private var lastAppliedCaretVisible: Bool?
+
     // MARK: - Viewport observers (multi-subscriber)
 
     @MainActor
@@ -191,6 +229,69 @@ public final class EditorCoreSkiaView: MTKView {
     private var perfDoCommandTotalMs: Double = 0
     private var perfRenderMetalCount: Int = 0
     private var perfRenderMetalTotalMs: Double = 0
+
+    // MARK: - Caret appearance helpers
+
+    private func desiredCaretVisibleForRender() -> Bool {
+        if let caretVisibleOverride {
+            return caretVisibleOverride
+        }
+        guard caretBlinkEnabled, caretBlinkIntervalSeconds > 0 else {
+            return true
+        }
+        // Only blink when focused; otherwise keep it visible (non-blinking).
+        if window?.firstResponder === self {
+            return caretBlinkPhaseVisible
+        }
+        return true
+    }
+
+    private func applyCaretAppearanceIfNeeded(force: Bool) {
+        // Keep caret width stable across DPI changes (points -> px).
+        let widthPx = Float(max(1.0, caretWidthPoints * scaleFactor))
+        let visible = desiredCaretVisibleForRender()
+
+        do {
+            if force || lastAppliedCaretWidthPx == nil || abs((lastAppliedCaretWidthPx ?? 0) - widthPx) > 0.01 {
+                try editor.setCaretWidthPx(widthPx)
+                lastAppliedCaretWidthPx = widthPx
+            }
+            if force || lastAppliedCaretVisible == nil || lastAppliedCaretVisible != visible {
+                try editor.setCaretVisible(visible)
+                lastAppliedCaretVisible = visible
+            }
+        } catch {
+            NSLog("EditorCoreSkiaView applyCaretAppearance failed: %@", String(describing: error))
+        }
+    }
+
+    private func updateCaretBlinkTimer() {
+        caretBlinkTimer?.invalidate()
+        caretBlinkTimer = nil
+
+        caretBlinkPhaseVisible = true
+        applyCaretAppearanceIfNeeded(force: true)
+
+        guard caretBlinkEnabled, caretBlinkIntervalSeconds > 0 else { return }
+        guard window?.firstResponder === self else { return }
+        guard caretBlinkTimerDisabledForTests == false else { return }
+
+        caretBlinkTimer = Timer.scheduledTimer(
+            timeInterval: caretBlinkIntervalSeconds,
+            target: self,
+            selector: #selector(caretBlinkTimerFired(_:)),
+            userInfo: nil,
+            repeats: true
+        )
+        caretBlinkTimer?.tolerance = 0.02
+    }
+
+    @objc private func caretBlinkTimerFired(_ timer: Timer) {
+        _ = timer
+        caretBlinkPhaseVisible.toggle()
+        applyCaretAppearanceIfNeeded(force: true)
+        requestRedraw()
+    }
 
     private func perfReportIfNeeded(force: Bool = false) {
         guard perfDebugEnabled else { return }
@@ -362,6 +463,22 @@ public final class EditorCoreSkiaView: MTKView {
     public override var isFlipped: Bool { true }
     public override var inputContext: NSTextInputContext? { textInputContext }
 
+    public override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok {
+            updateCaretBlinkTimer()
+        }
+        return ok
+    }
+
+    public override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        if ok {
+            updateCaretBlinkTimer()
+        }
+        return ok
+    }
+
     public init(
         library: EditorCoreUIFFILibrary,
         initialText: String = "",
@@ -450,6 +567,7 @@ public final class EditorCoreSkiaView: MTKView {
         window?.acceptsMouseMovedEvents = true
         updateLayerContentsScaleIfNeeded()
         updateViewportIfNeeded()
+        updateCaretBlinkTimer()
 
         if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1", didLogDrawSetupOnce == false {
             didLogDrawSetupOnce = true
@@ -611,6 +729,7 @@ public final class EditorCoreSkiaView: MTKView {
             }
         }
 
+        applyCaretAppearanceIfNeeded(force: false)
         requestRedraw()
         invalidateIMECharacterCoordinates()
         notifyViewportStateDidChange()
@@ -619,6 +738,11 @@ public final class EditorCoreSkiaView: MTKView {
     deinit {
         processingPollTimer?.cancel()
         processingPollTimer = nil
+        let timer = caretBlinkTimer
+        caretBlinkTimer = nil
+        DispatchQueue.main.async {
+            timer?.invalidate()
+        }
     }
 
     public override func draw(_ dirtyRect: NSRect) {
@@ -1708,6 +1832,19 @@ public final class EditorCoreSkiaView: MTKView {
             enableSetNeedsDisplay = true
             isPaused = true
         }
+    }
+}
+
+// MARK: - Testing hooks
+
+@MainActor
+extension EditorCoreSkiaView {
+    var _lastAppliedCaretWidthPxForTesting: Float? { lastAppliedCaretWidthPx }
+    var _lastAppliedCaretVisibleForTesting: Bool? { lastAppliedCaretVisible }
+
+    func _caretBlinkTickForTesting() {
+        caretBlinkPhaseVisible.toggle()
+        applyCaretAppearanceIfNeeded(force: true)
     }
 }
 
