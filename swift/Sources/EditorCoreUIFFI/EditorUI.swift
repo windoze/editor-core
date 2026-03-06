@@ -92,6 +92,21 @@ public final class EditorUI {
         editor_core_ui_ffi_editor_ui_treesitter_disable(handle)
     }
 
+    /// Poll and apply any completed async processing (Tree-sitter highlighting/folding).
+    ///
+    /// This call is non-blocking: it never waits for background work.
+    ///
+    /// - Returns:
+    ///   - `applied`: whether new processing edits were applied.
+    ///   - `pending`: whether there is still work pending in the background.
+    public func pollProcessing() throws -> (applied: Bool, pending: Bool) {
+        var applied: UInt8 = 0
+        var pending: UInt8 = 0
+        let status = editor_core_ui_ffi_editor_ui_poll_processing(handle, &applied, &pending)
+        try library.ensureStatus(status, context: "editor_ui_poll_processing")
+        return (applied != 0, pending != 0)
+    }
+
     public func treeSitterStyleId(forCapture captureName: String) throws -> UInt32 {
         var out: UInt32 = 0
         let status = captureName.withCString { cstr in

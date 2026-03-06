@@ -36,6 +36,11 @@ public final class EditorCoreSkiaView: MTKView {
     /// Hosts can use this to keep native scrollbars in sync.
     public var onViewportStateDidChange: (() -> Void)?
 
+    /// Called when async derived-state processing (e.g. Tree-sitter) applied new edits.
+    ///
+    /// This is primarily useful for tests and for hosts that want explicit "derived state updated" signals.
+    public var onDidApplyAsyncProcessing: (() -> Void)?
+
     private let metalCommandQueue: MTLCommandQueue
     private var viewportWidthPx: UInt32 = 0
     private var viewportHeightPx: UInt32 = 0
@@ -115,12 +120,16 @@ public final class EditorCoreSkiaView: MTKView {
 
     private lazy var textInputContext = NSTextInputContext(client: self)
 
+    private var processingPollTimer: DispatchSourceTimer?
+    private var processingPollDeadlineUptime: TimeInterval = 0
+
     private func didMutateDocumentText() {
         docContentEpoch &+= 1
         docTextCacheEpoch = 0
         docTextCache = nil
         cachedSelectedRange = nil
         cachedMarkedRange = nil
+        startProcessingPoll()
     }
 
     private func documentTextForInputQueries() -> String? {
@@ -151,6 +160,52 @@ public final class EditorCoreSkiaView: MTKView {
     private func invalidateIMECharacterCoordinates() {
         // 用于 IME 候选窗定位：当 caret/marked range 或 viewport 变化时，需要通知系统重新查询 firstRect。
         textInputContext.invalidateCharacterCoordinates()
+    }
+
+    private func startProcessingPoll() {
+        // Extend the deadline on each edit burst.
+        processingPollDeadlineUptime = ProcessInfo.processInfo.systemUptime + 2.0
+
+        if processingPollTimer != nil {
+            return
+        }
+
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(16), leeway: .milliseconds(2))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.pollProcessingTick()
+        }
+        processingPollTimer = timer
+        timer.resume()
+    }
+
+    private func stopProcessingPoll() {
+        processingPollTimer?.cancel()
+        processingPollTimer = nil
+    }
+
+    private func pollProcessingTick() {
+        if ProcessInfo.processInfo.systemUptime > processingPollDeadlineUptime {
+            stopProcessingPoll()
+            return
+        }
+
+        do {
+            let r = try editor.pollProcessing()
+            if r.applied {
+                requestRedraw()
+                invalidateIMECharacterCoordinates()
+                onViewportStateDidChange?()
+                onDidApplyAsyncProcessing?()
+            }
+            if r.pending == false {
+                stopProcessingPoll()
+            }
+        } catch {
+            stopProcessingPoll()
+            NSLog("EditorCoreSkiaView pollProcessing failed: %@", String(describing: error))
+        }
     }
 
     public override var acceptsFirstResponder: Bool { true }
@@ -388,6 +443,11 @@ public final class EditorCoreSkiaView: MTKView {
         requestRedraw()
         invalidateIMECharacterCoordinates()
         onViewportStateDidChange?()
+    }
+
+    deinit {
+        processingPollTimer?.cancel()
+        processingPollTimer = nil
     }
 
     public override func draw(_ dirtyRect: NSRect) {

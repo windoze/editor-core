@@ -2,6 +2,21 @@ import EditorCoreUIFFI
 import XCTest
 
 final class EditorCoreUIFFITests: XCTestCase {
+    private func waitForAsyncProcessing(_ ui: EditorUI, timeoutSeconds: TimeInterval = 2.0) throws {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while true {
+            let r = try ui.pollProcessing()
+            if r.pending == false {
+                return
+            }
+            if Date() > deadline {
+                XCTFail("timeout waiting for async processing")
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.001)
+        }
+    }
+
     func testLoadsLibraryAndVersion() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         XCTAssertFalse((try lib.versionString()).isEmpty)
@@ -339,6 +354,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         try ui.setViewportPx(widthPx: 200, heightPx: 40, scale: 1)
 
         try ui.treeSitterRustEnable(highlightsQuery: "(line_comment) @comment")
+        try waitForAsyncProcessing(ui)
         let styleId = try ui.treeSitterStyleId(forCapture: "comment")
         XCTAssertEqual(try ui.treeSitterCapture(forStyleId: styleId), "comment")
 
@@ -809,6 +825,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
         try ui.setViewportPx(widthPx: 200, heightPx: 60, scale: 1)
         try ui.treeSitterRustEnableDefault()
+        try waitForAsyncProcessing(ui)
         try ui.setGutterWidthCells(2)
 
         // Reserved overlay style ids (see `editor-core-render-skia`).
