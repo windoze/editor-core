@@ -248,13 +248,7 @@ public final class EditorCoreSkiaScrollContainer: NSView {
         pagingTimer = nil
     }
 
-    private func pagingTick(mouseButtonsMask: UInt) {
-        // Stop when the mouse button is released; this matches native scrollbar semantics.
-        if (mouseButtonsMask & 1) == 0 {
-            stopPagingScroll()
-            return
-        }
-
+    private func pagingTick(mouseButtonsMask _: UInt) {
         guard let target = pagingTargetPosRows else {
             stopPagingScroll()
             return
@@ -317,6 +311,10 @@ public final class EditorCoreSkiaScrollContainer: NSView {
 
     func _pagingTickForTesting(mouseButtonsMask: UInt) {
         pagingTick(mouseButtonsMask: mouseButtonsMask)
+    }
+
+    func _stopPagingScrollForTesting() {
+        stopPagingScroll()
     }
 }
 

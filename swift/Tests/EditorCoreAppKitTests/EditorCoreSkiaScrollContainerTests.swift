@@ -83,6 +83,6 @@ final class EditorCoreSkiaScrollContainerTests: XCTestCase {
         XCTAssertTrue(sawFractional, "expected smooth paging to use sub-row offsets (fractional scroll)")
 
         // Stop the paging loop.
-        container._pagingTickForTesting(mouseButtonsMask: 0)
+        container._stopPagingScrollForTesting()
     }
 }
