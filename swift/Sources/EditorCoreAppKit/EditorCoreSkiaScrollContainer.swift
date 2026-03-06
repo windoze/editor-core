@@ -15,6 +15,9 @@ public final class EditorCoreSkiaScrollContainer: NSView {
     public var editor: EditorUI { editorView.editor }
 
     private let verticalScroller: NSScroller
+    private let editorTrailingToScrollerConstraint: NSLayoutConstraint
+    private var trailingAccessoryConstraints: [NSLayoutConstraint] = []
+    private weak var installedTrailingAccessoryView: NSView?
     private var scrollerUpdatePending: Bool = false
     private var viewportObserverToken: EditorCoreSkiaView.ViewportStateObserverToken?
 
@@ -29,6 +32,7 @@ public final class EditorCoreSkiaScrollContainer: NSView {
     public init(editorView: EditorCoreSkiaView) {
         self.editorView = editorView
         self.verticalScroller = NSScroller(frame: .zero)
+        self.editorTrailingToScrollerConstraint = editorView.trailingAnchor.constraint(equalTo: verticalScroller.leadingAnchor)
         super.init(frame: .zero)
 
         wantsLayer = true
@@ -58,7 +62,7 @@ public final class EditorCoreSkiaScrollContainer: NSView {
             editorView.leadingAnchor.constraint(equalTo: leadingAnchor),
             editorView.topAnchor.constraint(equalTo: topAnchor),
             editorView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            editorView.trailingAnchor.constraint(equalTo: verticalScroller.leadingAnchor),
+            editorTrailingToScrollerConstraint,
 
             verticalScroller.trailingAnchor.constraint(equalTo: trailingAnchor),
             verticalScroller.topAnchor.constraint(equalTo: topAnchor),
@@ -72,6 +76,13 @@ public final class EditorCoreSkiaScrollContainer: NSView {
         }
 
         scheduleScrollerUpdate()
+    }
+
+    /// Optional view inserted **between** the editor content and the scrollbar.
+    ///
+    /// This is used by the minimap container to support placing the minimap on the left side of the scrollbar.
+    public var trailingAccessoryView: NSView? {
+        didSet { updateTrailingAccessoryLayout() }
     }
 
     @available(*, unavailable, message: "请使用 init(editorView:) 构造。")
@@ -93,6 +104,39 @@ public final class EditorCoreSkiaScrollContainer: NSView {
         super.layout()
         // Layout changes can change the viewport height (rows), so update knob proportion.
         scheduleScrollerUpdate()
+    }
+
+    private func updateTrailingAccessoryLayout() {
+        NSLayoutConstraint.deactivate(trailingAccessoryConstraints)
+        trailingAccessoryConstraints.removeAll()
+
+        if let old = installedTrailingAccessoryView, old !== trailingAccessoryView {
+            old.removeFromSuperview()
+        }
+        installedTrailingAccessoryView = nil
+
+        guard let accessory = trailingAccessoryView else {
+            editorTrailingToScrollerConstraint.isActive = true
+            needsLayout = true
+            return
+        }
+
+        if accessory.superview !== self {
+            accessory.removeFromSuperview()
+            addSubview(accessory)
+        }
+        accessory.translatesAutoresizingMaskIntoConstraints = false
+
+        editorTrailingToScrollerConstraint.isActive = false
+        trailingAccessoryConstraints = [
+            editorView.trailingAnchor.constraint(equalTo: accessory.leadingAnchor),
+            accessory.trailingAnchor.constraint(equalTo: verticalScroller.leadingAnchor),
+            accessory.topAnchor.constraint(equalTo: topAnchor),
+            accessory.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ]
+        NSLayoutConstraint.activate(trailingAccessoryConstraints)
+        installedTrailingAccessoryView = accessory
+        needsLayout = true
     }
 
     private func scheduleScrollerUpdate() {

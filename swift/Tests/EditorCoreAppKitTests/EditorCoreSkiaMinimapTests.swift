@@ -30,6 +30,40 @@ final class EditorCoreSkiaMinimapTests: XCTestCase {
         XCTAssertEqual(container._minimapWidthConstraintForTesting.constant, 0)
     }
 
+    func testMinimapPlacementLeftOrRightMovesMinimapRelativeToScrollbar() throws {
+        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let editorView = try EditorCoreSkiaView(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)
+        let container = EditorCoreSkiaMinimapContainer(
+            editorView: editorView,
+            showsMinimap: true,
+            minimapWidth: 120,
+            minimapPlacement: .rightOfScrollbar
+        )
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 400),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = container
+        window.makeKeyAndOrderFront(nil)
+        container.layoutSubtreeIfNeeded()
+
+        // Right-of-scrollbar: minimap is hosted by the minimap container.
+        XCTAssertTrue(container.minimapView.superview === container)
+
+        container.minimapPlacement = .leftOfScrollbar
+        container.layoutSubtreeIfNeeded()
+
+        // Left-of-scrollbar: minimap becomes an accessory inside the scroll container.
+        XCTAssertTrue(container.minimapView.superview === container.scrollContainer)
+
+        let scrollerFrame = container.scrollContainer._verticalScrollerForTesting.frame
+        let minimapFrame = container.minimapView.frame
+        XCTAssertLessThanOrEqual(minimapFrame.maxX, scrollerFrame.minX + 0.5, "expected minimap to sit left of the scrollbar when configured")
+    }
+
     func testMinimapViewRefreshLoadsGrid() throws {
         let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
         let editorView = try EditorCoreSkiaView(library: lib, initialText: "a\nb\nc", viewportWidthCells: 80)
