@@ -50,5 +50,60 @@ final class EditorCoreSkiaMinimapTests: XCTestCase {
         let grid = try XCTUnwrap(container.minimapView._cachedGridForTesting)
         XCTAssertEqual(grid.actualLineCount, 3)
     }
-}
 
+    func testMinimapDragMovesViewport() throws {
+        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let longText = (0..<400).map(String.init).joined(separator: "\n")
+        let editorView = try EditorCoreSkiaView(library: lib, initialText: longText, viewportWidthCells: 80)
+        let container = EditorCoreSkiaMinimapContainer(editorView: editorView, showsMinimap: true, minimapWidth: 120)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 400),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = container
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(editorView)
+        container.layoutSubtreeIfNeeded()
+
+        let vp0 = try editorView.editor.viewportState()
+        XCTAssertEqual(vp0.scrollTop, 0)
+        XCTAssertGreaterThan(vp0.totalVisualLines, 0)
+
+        let minimap = container.minimapView
+        minimap.layoutSubtreeIfNeeded()
+        XCTAssertGreaterThan(minimap.bounds.height, 10)
+
+        func makeMouseEvent(type: NSEvent.EventType, viewPoint: NSPoint) throws -> NSEvent {
+            let windowPoint = minimap.convert(viewPoint, to: nil)
+            let event = NSEvent.mouseEvent(
+                with: type,
+                location: windowPoint,
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: 0
+            )
+            return try XCTUnwrap(event)
+        }
+
+        // Drag the viewport indicator down.
+        let down = try makeMouseEvent(type: .leftMouseDown, viewPoint: NSPoint(x: 10, y: 6))
+        minimap.mouseDown(with: down)
+
+        let drag = try makeMouseEvent(
+            type: .leftMouseDragged,
+            viewPoint: NSPoint(x: 10, y: max(6, minimap.bounds.height - 6))
+        )
+        minimap.mouseDragged(with: drag)
+        minimap.mouseUp(with: drag)
+
+        let vp1 = try editorView.editor.viewportState()
+        XCTAssertGreaterThan(vp1.scrollTop, vp0.scrollTop, "expected minimap dragging to scroll the editor viewport")
+    }
+}
