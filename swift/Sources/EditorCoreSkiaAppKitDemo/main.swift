@@ -159,6 +159,7 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             // - 双击拖拽：按 word 扩展选区
             // - 三击拖拽：按 line 扩展选区
             // - Shift+方向键扩选
+            // - 右键菜单：Cut/Copy/Paste/Select All（可由 host 自定义）
             // - gutter（行号 + 折叠标记），点击 gutter 折叠/展开
             // - 中文输入（marked text / commit text）
             // - Cmd-Z / Cmd-Shift-Z（undo/redo）

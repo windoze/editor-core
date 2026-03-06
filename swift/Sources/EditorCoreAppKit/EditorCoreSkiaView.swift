@@ -45,6 +45,35 @@ public struct EditorCoreSkiaHoverInfo {
     }
 }
 
+/// Context information for building a context menu at a given mouse event.
+public struct EditorCoreSkiaContextMenuContext {
+    public let charOffset: UInt32
+    public let logicalLine: UInt32
+    public let logicalColumn: UInt32
+    public let windowPoint: CGPoint
+    public let viewPoint: CGPoint
+    public let viewBackingXPx: Float
+    public let viewBackingYPx: Float
+
+    public init(
+        charOffset: UInt32,
+        logicalLine: UInt32,
+        logicalColumn: UInt32,
+        windowPoint: CGPoint,
+        viewPoint: CGPoint,
+        viewBackingXPx: Float,
+        viewBackingYPx: Float
+    ) {
+        self.charOffset = charOffset
+        self.logicalLine = logicalLine
+        self.logicalColumn = logicalColumn
+        self.windowPoint = windowPoint
+        self.viewPoint = viewPoint
+        self.viewBackingXPx = viewBackingXPx
+        self.viewBackingYPx = viewBackingYPx
+    }
+}
+
 /// 自绘版 AppKit 组件（Option 2）：
 /// - Rust: editor-core + editor-core-ui + Skia（Metal/GPU 直接绘制到 `MTLTexture`）
 /// - Swift/AppKit: `MTKView` 负责承接事件并把 `CAMetalDrawable` 呈现到屏幕
@@ -79,6 +108,12 @@ public final class EditorCoreSkiaView: MTKView {
 
     /// Called when the mouse leaves the view, allowing hosts to dismiss hover UI.
     public var onHoverExit: (() -> Void)?
+
+    /// Context menu hook.
+    ///
+    /// - If the closure returns a menu, it will be shown.
+    /// - If it returns `nil`, the view falls back to a simple default menu (cut/copy/paste/select all).
+    public var contextMenuProvider: ((EditorCoreSkiaContextMenuContext) -> NSMenu?)?
 
     /// Called when async derived-state processing (e.g. Tree-sitter) applied new edits.
     ///
@@ -639,6 +674,90 @@ public final class EditorCoreSkiaView: MTKView {
             onHoverExit?()
         }
         super.mouseExited(with: event)
+    }
+
+    public override func menu(for event: NSEvent) -> NSMenu? {
+        let context = buildContextMenuContext(for: event)
+        if let menu = contextMenuProvider?(context) {
+            return menu
+        }
+        return defaultContextMenu(for: context)
+    }
+
+    public override func rightMouseDown(with event: NSEvent) {
+        // Ensure we become first responder so standard actions (copy/cut/paste) go through our overrides.
+        window?.makeFirstResponder(self)
+
+        if let menu = menu(for: event) {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+            return
+        }
+        super.rightMouseDown(with: event)
+    }
+
+    private func buildContextMenuContext(for event: NSEvent) -> EditorCoreSkiaContextMenuContext {
+        updateViewportIfNeeded()
+
+        let windowPoint = event.locationInWindow
+        let viewPoint = convert(windowPoint, from: nil)
+        let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
+            windowPoint: windowPoint,
+            view: self
+        )
+
+        let offset = (try? editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)) ?? 0
+        let pos = (try? editor.charOffsetToLogicalPosition(offset: offset)) ?? (line: 0, column: 0)
+
+        return EditorCoreSkiaContextMenuContext(
+            charOffset: offset,
+            logicalLine: pos.line,
+            logicalColumn: pos.column,
+            windowPoint: windowPoint,
+            viewPoint: viewPoint,
+            viewBackingXPx: xPx,
+            viewBackingYPx: yPx
+        )
+    }
+
+    private func defaultContextMenu(for context: EditorCoreSkiaContextMenuContext) -> NSMenu {
+        let menu = NSMenu(title: "Editor")
+        menu.autoenablesItems = false
+
+        let hasSelection: Bool
+        do {
+            let s = try editor.selectionOffsets()
+            hasSelection = s.start != s.end
+        } catch {
+            hasSelection = false
+        }
+
+        let canPaste = pasteboard.string(forType: .string) != nil
+
+        let cut = NSMenuItem(title: "Cut", action: #selector(cut(_:)), keyEquivalent: "")
+        cut.target = self
+        cut.isEnabled = hasSelection
+
+        let copy = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+        copy.target = self
+        copy.isEnabled = hasSelection
+
+        let paste = NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+        paste.target = self
+        paste.isEnabled = canPaste
+
+        let selectAll = NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
+        selectAll.target = self
+        selectAll.isEnabled = true
+
+        menu.addItem(cut)
+        menu.addItem(copy)
+        menu.addItem(paste)
+        menu.addItem(.separator())
+        menu.addItem(selectAll)
+
+        // Keep `context` referenced (future-proof: allow providers to attach representedObject via userInfo).
+        _ = context
+        return menu
     }
 
     public override func mouseDown(with event: NSEvent) {
