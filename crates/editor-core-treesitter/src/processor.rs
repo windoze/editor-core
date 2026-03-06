@@ -173,8 +173,9 @@ impl TreeSitterProcessor {
         self.last_update_mode
     }
 
-    fn sync_from_state_full(&mut self, state: &EditorStateManager) {
-        self.text = state.editor().get_text();
+    fn sync_from_text_full(&mut self, text: &str) {
+        self.text.clear();
+        self.text.push_str(text);
         self.line_index = LineIndex::from_text(&self.text);
     }
 
@@ -325,24 +326,81 @@ impl DocumentProcessor for TreeSitterProcessor {
             return Ok(Vec::new());
         }
 
+        if self.tree.is_none() {
+            // Initial parse always needs a full sync from the editor.
+            let full = state.editor().get_text();
+            return self.process_text(version, None, Some(&full));
+        }
+
+        if let Some(delta) = state.last_text_delta() {
+            match self.process_text(version, Some(delta), None) {
+                Ok(edits) => Ok(edits),
+                Err(TreeSitterError::DeltaMismatch) => {
+                    // Fall back to a full resync from the current editor text.
+                    let full = state.editor().get_text();
+                    self.process_text(version, Some(delta), Some(&full))
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            // No structured delta available; re-sync from the full current text.
+            let full = state.editor().get_text();
+            self.process_text(version, None, Some(&full))
+        }
+    }
+}
+
+impl TreeSitterProcessor {
+    /// Process a document snapshot represented as:
+    /// - a monotonically increasing `version`,
+    /// - an optional `TextDelta` describing the change from the previous version,
+    /// - an optional `full_text` for (re-)synchronization.
+    ///
+    /// This method is useful for running Tree-sitter processing on a background thread where
+    /// a full `EditorStateManager` is not available. Callers can pass `full_text` only when
+    /// performing an initial parse or when a delta mismatch requires a full re-sync.
+    ///
+    /// Notes:
+    /// - If `full_text` is `None` and a full sync is required, this returns
+    ///   [`TreeSitterError::DeltaMismatch`].
+    pub fn process_text(
+        &mut self,
+        version: u64,
+        delta: Option<&TextDelta>,
+        full_text: Option<&str>,
+    ) -> Result<Vec<ProcessingEdit>, TreeSitterError> {
+        if self.last_processed_version == Some(version) {
+            self.last_update_mode = TreeSitterUpdateMode::Skipped;
+            return Ok(Vec::new());
+        }
+
         let update_mode = if self.tree.is_none() {
-            self.sync_from_state_full(state);
+            let Some(text) = full_text else {
+                return Err(TreeSitterError::DeltaMismatch);
+            };
+            self.sync_from_text_full(text);
             self.tree = self.parse();
             TreeSitterUpdateMode::Initial
-        } else if let Some(delta) = state.last_text_delta() {
+        } else if let Some(delta) = delta {
             match self.apply_text_delta_incremental(delta) {
                 Ok(()) => {
                     self.tree = self.parse();
                     TreeSitterUpdateMode::Incremental
                 }
                 Err(_) => {
-                    self.sync_from_state_full(state);
+                    let Some(text) = full_text else {
+                        return Err(TreeSitterError::DeltaMismatch);
+                    };
+                    self.sync_from_text_full(text);
                     self.tree = self.parser.parse(&self.text, None);
                     TreeSitterUpdateMode::FullReparse
                 }
             }
         } else {
-            self.sync_from_state_full(state);
+            let Some(text) = full_text else {
+                return Err(TreeSitterError::DeltaMismatch);
+            };
+            self.sync_from_text_full(text);
             self.tree = self.parser.parse(&self.text, None);
             TreeSitterUpdateMode::FullReparse
         };

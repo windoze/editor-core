@@ -90,3 +90,55 @@ fn test_processor_uses_text_delta_incrementally() {
     );
     assert!(!edits.is_empty());
 }
+
+#[test]
+fn test_process_text_api_supports_incremental_and_full_resync() {
+    let initial = "fn main() {\n  let x = 1;\n}\n";
+
+    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
+        .with_folds_query(rust_test_folds_query())
+        .with_simple_capture_styles([("comment", 1), ("string", 2), ("type", 3), ("function", 4)]);
+
+    let mut processor = TreeSitterProcessor::new(config).unwrap();
+
+    let edits1 = processor.process_text(1, None, Some(initial)).unwrap();
+    assert_eq!(processor.last_update_mode(), TreeSitterUpdateMode::Initial);
+    assert!(!edits1.is_empty());
+
+    let insert = "// header\n";
+    let delta = editor_core::delta::TextDelta {
+        before_char_count: initial.chars().count(),
+        after_char_count: initial.chars().count() + insert.chars().count(),
+        edits: vec![editor_core::delta::TextDeltaEdit {
+            start: 0,
+            deleted_text: String::new(),
+            inserted_text: insert.to_string(),
+        }],
+        undo_group_id: None,
+    };
+
+    let edits2 = processor.process_text(2, Some(&delta), None).unwrap();
+    assert_eq!(processor.last_update_mode(), TreeSitterUpdateMode::Incremental);
+    assert!(!edits2.is_empty());
+
+    // Corrupt delta should surface as a mismatch unless the caller provides a full resync text.
+    let bad_delta = editor_core::delta::TextDelta {
+        before_char_count: delta.after_char_count,
+        after_char_count: delta.after_char_count,
+        edits: vec![editor_core::delta::TextDeltaEdit {
+            start: 0,
+            deleted_text: "not-a-match".to_string(),
+            inserted_text: String::new(),
+        }],
+        undo_group_id: None,
+    };
+    assert!(matches!(
+        processor.process_text(3, Some(&bad_delta), None),
+        Err(editor_core_treesitter::TreeSitterError::DeltaMismatch)
+    ));
+
+    let full = format!("{insert}{initial}");
+    let edits3 = processor.process_text(3, Some(&bad_delta), Some(&full)).unwrap();
+    assert_eq!(processor.last_update_mode(), TreeSitterUpdateMode::FullReparse);
+    assert!(!edits3.is_empty());
+}
