@@ -85,4 +85,80 @@ final class EditorCoreSkiaScrollContainerTests: XCTestCase {
         // Stop the paging loop.
         container._stopPagingScrollForTesting()
     }
+
+    func testScrollContainerTrackClickHoldRepeatsWhilePressed() throws {
+        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let longText = "a\nb\nc\n" + String(repeating: "x\n", count: 2_000)
+        let editorView = try EditorCoreSkiaView(library: lib, initialText: longText, viewportWidthCells: 80)
+        let container = EditorCoreSkiaScrollContainer(editorView: editorView)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 240),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = container
+        window.makeKeyAndOrderFront(nil)
+        container.layoutSubtreeIfNeeded()
+
+        let vp0 = try editorView.editor.viewportState()
+        let visible = Double(max(1, vp0.heightRows ?? vp0.totalVisualLines))
+        XCTAssertGreaterThan(vp0.totalVisualLines, UInt32(visible) + 50, "test requires a scrollable document")
+
+        // Simulate: click track far below and keep mouse pressed (hold).
+        container._beginTrackClickHoldForTesting(targetProportion: 0.99, direction: 1)
+        container._requestPageScrollForTesting(direction: 1)
+
+        var exceededOnePage = false
+        for _ in 0..<600 {
+            container._pagingTickForTesting(mouseButtonsMask: 1)
+            let vp = try editorView.editor.viewportState()
+            let pos = Double(vp.scrollTop) + Double(vp.subRowOffset) / 65536.0
+            if pos > visible + max(1.0, visible * 0.25) {
+                exceededOnePage = true
+                break
+            }
+        }
+        XCTAssertTrue(exceededOnePage, "expected holding track click to keep paging beyond a single page while mouse is pressed")
+        container._stopPagingScrollForTesting()
+    }
+
+    func testScrollContainerTrackClickHoldStopsExtendingAfterRelease() throws {
+        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let longText = "a\nb\nc\n" + String(repeating: "x\n", count: 2_000)
+        let editorView = try EditorCoreSkiaView(library: lib, initialText: longText, viewportWidthCells: 80)
+        let container = EditorCoreSkiaScrollContainer(editorView: editorView)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 240),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = container
+        window.makeKeyAndOrderFront(nil)
+        container.layoutSubtreeIfNeeded()
+
+        let vp0 = try editorView.editor.viewportState()
+        let visible = Double(max(1, vp0.heightRows ?? vp0.totalVisualLines))
+        XCTAssertGreaterThan(vp0.totalVisualLines, UInt32(visible) + 50, "test requires a scrollable document")
+
+        // Start a held track click, but release quickly before the first page finishes.
+        container._beginTrackClickHoldForTesting(targetProportion: 0.99, direction: 1)
+        container._requestPageScrollForTesting(direction: 1)
+        container._pagingTickForTesting(mouseButtonsMask: 1)
+
+        // Release: should stop *extending* to further pages, but still complete the current smooth page.
+        container._pagingTickForTesting(mouseButtonsMask: 0)
+
+        for _ in 0..<600 {
+            if container._isPagingActiveForTesting == false { break }
+            container._pagingTickForTesting(mouseButtonsMask: 0)
+        }
+
+        let vp1 = try editorView.editor.viewportState()
+        let pos1 = Double(vp1.scrollTop) + Double(vp1.subRowOffset) / 65536.0
+        XCTAssertEqual(pos1, visible, accuracy: 0.75, "expected a single page scroll after releasing the mouse")
+    }
 }
