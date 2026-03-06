@@ -264,6 +264,11 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             let matchCountLabel = NSTextField(labelWithString: "0 matches")
             matchCountLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
 
+            let hoverLabel = NSTextField(labelWithString: "Hover: -")
+            hoverLabel.font = NSFont.monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+            hoverLabel.lineBreakMode = .byTruncatingMiddle
+            hoverLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
             let findPrev = NSButton(title: "Prev", target: nil, action: nil)
             findPrev.bezelStyle = .rounded
             let findNext = NSButton(title: "Next", target: nil, action: nil)
@@ -286,6 +291,7 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
                 findPrev,
                 findNext,
                 clear,
+                hoverLabel,
             ])
             searchRow.orientation = .horizontal
             searchRow.alignment = .centerY
@@ -355,6 +361,17 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             searchField.stringValue = "println"
             searchController.optionChanged(self)
             self.searchPanelController = searchController
+
+            // Demo: hover info (line/column + optional document link marker).
+            editorView.onHover = { [weak hoverLabel] info in
+                let line = Int(info.logicalLine) + 1
+                let col = Int(info.logicalColumn) + 1
+                let linkMark = info.documentLinkJSON != nil ? " [link]" : ""
+                hoverLabel?.stringValue = "Hover: \(line):\(col) off=\(info.charOffset)\(linkMark)"
+            }
+            editorView.onHoverExit = { [weak hoverLabel] in
+                hoverLabel?.stringValue = "Hover: -"
+            }
 
             window.contentView = container
             window.center()

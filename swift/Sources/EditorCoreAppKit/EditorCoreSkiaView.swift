@@ -9,6 +9,42 @@ enum EditorCoreSkiaViewError: Error {
     case metalCommandQueueUnavailable
 }
 
+/// Hover information produced by `EditorCoreSkiaView` hit-testing.
+///
+/// Notes:
+/// - `charOffset` is in Unicode scalar indices (Rust `char` offsets).
+/// - `logicalLine/logicalColumn` are 0-based and also counted in Unicode scalars.
+public struct EditorCoreSkiaHoverInfo {
+    public let charOffset: UInt32
+    public let logicalLine: UInt32
+    public let logicalColumn: UInt32
+    public let windowPoint: CGPoint
+    public let viewPoint: CGPoint
+    public let viewBackingXPx: Float
+    public let viewBackingYPx: Float
+    public let documentLinkJSON: String?
+
+    public init(
+        charOffset: UInt32,
+        logicalLine: UInt32,
+        logicalColumn: UInt32,
+        windowPoint: CGPoint,
+        viewPoint: CGPoint,
+        viewBackingXPx: Float,
+        viewBackingYPx: Float,
+        documentLinkJSON: String?
+    ) {
+        self.charOffset = charOffset
+        self.logicalLine = logicalLine
+        self.logicalColumn = logicalColumn
+        self.windowPoint = windowPoint
+        self.viewPoint = viewPoint
+        self.viewBackingXPx = viewBackingXPx
+        self.viewBackingYPx = viewBackingYPx
+        self.documentLinkJSON = documentLinkJSON
+    }
+}
+
 /// 自绘版 AppKit 组件（Option 2）：
 /// - Rust: editor-core + editor-core-ui + Skia（Metal/GPU 直接绘制到 `MTLTexture`）
 /// - Swift/AppKit: `MTKView` 负责承接事件并把 `CAMetalDrawable` 呈现到屏幕
@@ -35,6 +71,14 @@ public final class EditorCoreSkiaView: MTKView {
     ///
     /// Hosts can use this to keep native scrollbars in sync.
     public var onViewportStateDidChange: (() -> Void)?
+
+    /// Called when the mouse hovers over a new character offset in the document.
+    ///
+    /// Hosts can use this to present hover UI (tooltip/popover/inspector).
+    public var onHover: ((EditorCoreSkiaHoverInfo) -> Void)?
+
+    /// Called when the mouse leaves the view, allowing hosts to dismiss hover UI.
+    public var onHoverExit: (() -> Void)?
 
     /// Called when async derived-state processing (e.g. Tree-sitter) applied new edits.
     ///
@@ -117,6 +161,9 @@ public final class EditorCoreSkiaView: MTKView {
     private var lineSelectionAnchorOffset: UInt32?
     private var wordSelectionAnchorOffset: UInt32?
     private var wordSelectionOrigin: (start: UInt32, end: UInt32)?
+
+    private var hoverTrackingArea: NSTrackingArea?
+    private var lastHoverCharOffset: UInt32?
 
     private lazy var textInputContext = NSTextInputContext(client: self)
 
@@ -316,6 +363,8 @@ public final class EditorCoreSkiaView: MTKView {
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        // Hover requires mouse moved events.
+        window?.acceptsMouseMovedEvents = true
         updateLayerContentsScaleIfNeeded()
         updateViewportIfNeeded()
 
@@ -337,6 +386,24 @@ public final class EditorCoreSkiaView: MTKView {
                 NSStringFromSize(drawableSize)
             )
         }
+    }
+
+    public override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let options: NSTrackingArea.Options = [
+            .activeInKeyWindow,
+            .inVisibleRect,
+            .mouseMoved,
+            .mouseEnteredAndExited,
+        ]
+        let area = NSTrackingArea(rect: .zero, options: options, owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTrackingArea = area
     }
 
     public override func viewDidChangeBackingProperties() {
@@ -528,6 +595,50 @@ public final class EditorCoreSkiaView: MTKView {
             viewportHeightPx,
             extra
         )
+    }
+
+    public override func mouseMoved(with event: NSEvent) {
+        guard onHover != nil else { return }
+        updateViewportIfNeeded()
+
+        let windowPoint = event.locationInWindow
+        let viewPoint = convert(windowPoint, from: nil)
+        let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
+            windowPoint: windowPoint,
+            view: self
+        )
+
+        do {
+            let offset = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
+            if offset == lastHoverCharOffset { return }
+            lastHoverCharOffset = offset
+
+            let pos = try editor.charOffsetToLogicalPosition(offset: offset)
+            let linkJSON = try? editor.documentLinkJSONAtViewPoint(xPx: xPx, yPx: yPx)
+
+            onHover?(
+                EditorCoreSkiaHoverInfo(
+                    charOffset: offset,
+                    logicalLine: pos.line,
+                    logicalColumn: pos.column,
+                    windowPoint: windowPoint,
+                    viewPoint: viewPoint,
+                    viewBackingXPx: xPx,
+                    viewBackingYPx: yPx,
+                    documentLinkJSON: linkJSON ?? nil
+                )
+            )
+        } catch {
+            // Hover is best-effort: never beep or disrupt input.
+        }
+    }
+
+    public override func mouseExited(with event: NSEvent) {
+        if lastHoverCharOffset != nil {
+            lastHoverCharOffset = nil
+            onHoverExit?()
+        }
+        super.mouseExited(with: event)
     }
 
     public override func mouseDown(with event: NSEvent) {
