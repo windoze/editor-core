@@ -46,6 +46,54 @@ public final class EditorCoreSkiaView: MTKView {
     private var didPresentFirstFrame: Bool = false
     private var didLogDrawSetupOnce: Bool = false
     private let textCacheDebugEnabled: Bool = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_TEXT_CACHE"] == "1"
+    private let perfDebugEnabled: Bool = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_PERF"] == "1"
+
+    // MARK: - Perf counters (debug only)
+
+    private var perfLastReportUptime: TimeInterval = 0
+    private var perfInsertTextCount: Int = 0
+    private var perfInsertTextTotalMs: Double = 0
+    private var perfSetMarkedCount: Int = 0
+    private var perfSetMarkedTotalMs: Double = 0
+    private var perfDoCommandCount: Int = 0
+    private var perfDoCommandTotalMs: Double = 0
+    private var perfRenderMetalCount: Int = 0
+    private var perfRenderMetalTotalMs: Double = 0
+
+    private func perfReportIfNeeded(force: Bool = false) {
+        guard perfDebugEnabled else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        if force == false, perfLastReportUptime > 0, now - perfLastReportUptime < 1.0 {
+            return
+        }
+        perfLastReportUptime = now
+
+        let insertAvg = perfInsertTextCount > 0 ? (perfInsertTextTotalMs / Double(perfInsertTextCount)) : 0
+        let markedAvg = perfSetMarkedCount > 0 ? (perfSetMarkedTotalMs / Double(perfSetMarkedCount)) : 0
+        let cmdAvg = perfDoCommandCount > 0 ? (perfDoCommandTotalMs / Double(perfDoCommandCount)) : 0
+        let renderAvg = perfRenderMetalCount > 0 ? (perfRenderMetalTotalMs / Double(perfRenderMetalCount)) : 0
+
+        NSLog(
+            "EditorCoreSkiaView perf(1s): insertText=%d avg=%.2fms setMarked=%d avg=%.2fms doCommand=%d avg=%.2fms renderMetal=%d avg=%.2fms",
+            perfInsertTextCount,
+            insertAvg,
+            perfSetMarkedCount,
+            markedAvg,
+            perfDoCommandCount,
+            cmdAvg,
+            perfRenderMetalCount,
+            renderAvg
+        )
+
+        perfInsertTextCount = 0
+        perfInsertTextTotalMs = 0
+        perfSetMarkedCount = 0
+        perfSetMarkedTotalMs = 0
+        perfDoCommandCount = 0
+        perfDoCommandTotalMs = 0
+        perfRenderMetalCount = 0
+        perfRenderMetalTotalMs = 0
+    }
 
     // MARK: - Text cache (performance)
 
@@ -127,6 +175,9 @@ public final class EditorCoreSkiaView: MTKView {
 
         if textCacheDebugEnabled {
             NSLog("EditorCoreSkiaView text cache debug enabled (EDITOR_CORE_APPKIT_DEBUG_TEXT_CACHE=1)")
+        }
+        if perfDebugEnabled {
+            NSLog("EditorCoreSkiaView perf debug enabled (EDITOR_CORE_APPKIT_DEBUG_PERF=1)")
         }
 
         // 说明：
@@ -667,10 +718,23 @@ public final class EditorCoreSkiaView: MTKView {
             text = String(describing: string)
         }
 
+        let t0 = perfDebugEnabled ? CFAbsoluteTimeGetCurrent() : 0
         do {
             try editor.commitText(text)
             didMutateDocumentText()
+            if perfDebugEnabled {
+                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
+                perfInsertTextCount += 1
+                perfInsertTextTotalMs += dtMs
+                perfReportIfNeeded()
+            }
         } catch {
+            if perfDebugEnabled {
+                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
+                perfInsertTextCount += 1
+                perfInsertTextTotalMs += dtMs
+                perfReportIfNeeded()
+            }
             NSSound.beep()
         }
         requestRedraw()
@@ -688,6 +752,7 @@ public final class EditorCoreSkiaView: MTKView {
             text = String(describing: string)
         }
 
+        let t0 = perfDebugEnabled ? CFAbsoluteTimeGetCurrent() : 0
         do {
             // `selectedRange` 是 marked string 内部的 UTF-16 range（caret/selection in preedit）。
             // 我们转换成 Unicode scalar offsets 并交给 Rust，以支持 inline/preedit 模式下
@@ -721,7 +786,19 @@ public final class EditorCoreSkiaView: MTKView {
                 replaceLen: replaceLen
             )
             didMutateDocumentText()
+            if perfDebugEnabled {
+                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
+                perfSetMarkedCount += 1
+                perfSetMarkedTotalMs += dtMs
+                perfReportIfNeeded()
+            }
         } catch {
+            if perfDebugEnabled {
+                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
+                perfSetMarkedCount += 1
+                perfSetMarkedTotalMs += dtMs
+                perfReportIfNeeded()
+            }
             NSSound.beep()
         }
         requestRedraw()
@@ -737,6 +814,7 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public override func doCommand(by selector: Selector) {
+        let t0 = perfDebugEnabled ? CFAbsoluteTimeGetCurrent() : 0
         var didEditText = false
         do {
             switch selector {
@@ -852,6 +930,12 @@ public final class EditorCoreSkiaView: MTKView {
         }
         if didEditText {
             didMutateDocumentText()
+        }
+        if perfDebugEnabled {
+            let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
+            perfDoCommandCount += 1
+            perfDoCommandTotalMs += dtMs
+            perfReportIfNeeded()
         }
         requestRedraw()
         invalidateIMECharacterCoordinates()
@@ -1189,9 +1273,22 @@ public final class EditorCoreSkiaView: MTKView {
             )
         }
 
+        let t0 = perfDebugEnabled ? CFAbsoluteTimeGetCurrent() : 0
         do {
             try editor.renderMetal(into: drawable.texture)
+            if perfDebugEnabled {
+                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
+                perfRenderMetalCount += 1
+                perfRenderMetalTotalMs += dtMs
+                perfReportIfNeeded()
+            }
         } catch {
+            if perfDebugEnabled {
+                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
+                perfRenderMetalCount += 1
+                perfRenderMetalTotalMs += dtMs
+                perfReportIfNeeded()
+            }
             NSLog("EditorCoreSkiaView Metal render failed(%@): %@", debugSource, String(describing: error))
             return
         }
