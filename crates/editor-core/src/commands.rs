@@ -2497,8 +2497,27 @@ impl CommandExecutor {
     }
 
     fn execute_insert_text_command(&mut self, text: String) -> Result<CommandResult, CommandError> {
+        // `InsertText` 的语义是“对每个 caret/selection 执行一次 replace(selection, text)”。
+        //
+        // 以前我们把空字符串当成完全 no-op（直接返回），但这会让“用空字符串替换选区”
+        // 这种合法操作无法表达，也导致 UI 层（cut）不得不走自定义的 ApplyTextEdits 路径，
+        // 并且很难保证 undo/redo 的 selection 快照一致。
+        //
+        // 这里保留优化：如果 text 为空，且所有 selection 都为空（仅 caret），才视为 no-op。
         if text.is_empty() {
-            return Ok(CommandResult::Success);
+            let primary_non_empty = self
+                .editor
+                .selection
+                .as_ref()
+                .is_some_and(|s| s.start != s.end);
+            let secondary_non_empty = self
+                .editor
+                .secondary_selections
+                .iter()
+                .any(|s| s.start != s.end);
+            if !primary_non_empty && !secondary_non_empty {
+                return Ok(CommandResult::Success);
+            }
         }
 
         let text = crate::text::normalize_crlf_to_lf_string(text);

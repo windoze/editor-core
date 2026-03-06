@@ -35,6 +35,10 @@ final class EditorCoreSkiaViewClipboardTests: XCTestCase {
         view.cut(nil)
         XCTAssertEqual(pb.string(forType: .string), "two")
         XCTAssertEqual(try view.editor.text(), "one  three")
+        let selAfterCut = try view.editor.selectionOffsets()
+        XCTAssertEqual(selAfterCut.start, 4)
+        XCTAssertEqual(selAfterCut.end, 4)
+        XCTAssertEqual(try view.editor.selectedText(), "")
 
         // Paste inserts at caret.
         pb.clearContents()

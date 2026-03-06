@@ -645,7 +645,6 @@ impl Workspace {
 
     fn command_change_type(command: &Command) -> Option<StateChangeType> {
         match command {
-            Command::Edit(EditCommand::InsertText { text }) if text.is_empty() => None,
             Command::Edit(EditCommand::Delete { length: 0, .. }) => None,
             Command::Edit(EditCommand::Replace {
                 length: 0, text, ..

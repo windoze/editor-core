@@ -2815,6 +2815,16 @@ mod tests {
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, " two ");
 
+        // Cut should clear selections (leave carets only), so selected text becomes empty.
+        let sel2_ptr = editor_core_ui_ffi_editor_ui_get_selected_text(ui);
+        assert!(!sel2_ptr.is_null());
+        let sel2 = unsafe { CStr::from_ptr(sel2_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        editor_core_ui_ffi_string_free(sel2_ptr);
+        assert_eq!(sel2, "");
+
         editor_core_ui_ffi_editor_ui_free(ui);
     }
 

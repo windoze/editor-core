@@ -623,35 +623,12 @@ impl EditorUi {
     ///
     /// This is intended for clipboard "cut" behavior.
     pub fn delete_selections_only(&mut self) -> Result<(), UiError> {
-        let cursor = self.state.get_cursor_state();
-        let line_index = &self.state.editor().line_index;
-
-        let mut edits: Vec<editor_core::TextEditSpec> = Vec::new();
-        for sel in &cursor.selections {
-            if sel.start == sel.end {
-                continue;
-            }
-
-            let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
-            let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
-            let (start, end) = if a <= b { (a, b) } else { (b, a) };
-            if start == end {
-                continue;
-            }
-            edits.push(editor_core::TextEditSpec {
-                start,
-                end,
-                text: String::new(),
-            });
-        }
-
-        if edits.is_empty() {
-            return Ok(());
-        }
-
+        // 复用 core 的 `InsertText` 逻辑：用空字符串替换各个 selection，
+        // 对空 caret 则是 no-op，从而实现“只删选区不动 caret”的 cut 语义。
         self.state
-            .execute(Command::Edit(EditCommand::ApplyTextEdits { edits }))?;
+            .execute(Command::Edit(EditCommand::InsertText { text: String::new() }))?;
         self.refresh_processing()?;
+        self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
@@ -3294,6 +3271,8 @@ mod tests {
         // Cut should delete only the non-empty selections.
         ui.delete_selections_only().unwrap();
         assert_eq!(ui.text(), " two ");
+        assert_eq!(ui.selected_text(), "");
+        assert_eq!(ui.primary_selection_offsets(), (0, 0));
 
         // With no selection, delete_selections_only is a no-op.
         ui.set_selections_offsets(&[(1, 1)], 0).unwrap();
