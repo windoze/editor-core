@@ -142,3 +142,67 @@ fn test_process_text_api_supports_incremental_and_full_resync() {
     assert_eq!(processor.last_update_mode(), TreeSitterUpdateMode::FullReparse);
     assert!(!edits3.is_empty());
 }
+
+#[test]
+fn test_sync_to_and_compute_edits_supports_debounced_query_and_char_range() {
+    let text = "// a\nfn main() {\n  let x = 1;\n}\n// b\n";
+
+    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
+        .with_folds_query(rust_test_folds_query())
+        .with_simple_capture_styles([("comment", 10), ("string", 11), ("type", 12), ("function", 13)]);
+
+    let mut processor = TreeSitterProcessor::new(config).unwrap();
+
+    let mode0 = processor.sync_to(1, None, Some(text)).unwrap();
+    assert_eq!(mode0, TreeSitterUpdateMode::Initial);
+    assert_eq!(processor.last_update_mode(), TreeSitterUpdateMode::Initial);
+
+    // Debounced model: sync first, query later. Use a range-limited query (first line only).
+    let end_first_line = text.find('\n').unwrap_or(0) + 1;
+    let edits = processor
+        .compute_processing_edits(Some((0, end_first_line)))
+        .unwrap();
+    let style_edits = edits
+        .iter()
+        .filter_map(|e| match e {
+            ProcessingEdit::ReplaceStyleLayer { intervals, .. } => Some(intervals.as_slice()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(style_edits.len(), 1);
+    for interval in style_edits[0] {
+        assert!(interval.end <= end_first_line);
+    }
+
+    // Already processed version 1, so compute again should yield empty edits.
+    assert!(processor.compute_processing_edits(None).unwrap().is_empty());
+
+    // Make a tiny edit to bump to version 2 and re-run query within a range.
+    let delta = editor_core::delta::TextDelta {
+        before_char_count: text.chars().count(),
+        after_char_count: text.chars().count() + 1,
+        edits: vec![editor_core::delta::TextDeltaEdit {
+            start: 0,
+            deleted_text: String::new(),
+            inserted_text: " ".to_string(),
+        }],
+        undo_group_id: None,
+    };
+    let mode1 = processor.sync_to(2, Some(&delta), None).unwrap();
+    assert_eq!(mode1, TreeSitterUpdateMode::Incremental);
+
+    let edits2 = processor
+        .compute_processing_edits(Some((0, end_first_line + 1)))
+        .unwrap();
+    let style_edits2 = edits2
+        .iter()
+        .filter_map(|e| match e {
+            ProcessingEdit::ReplaceStyleLayer { intervals, .. } => Some(intervals.as_slice()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(style_edits2.len(), 1);
+    for interval in style_edits2[0] {
+        assert!(interval.end <= end_first_line + 1);
+    }
+}
