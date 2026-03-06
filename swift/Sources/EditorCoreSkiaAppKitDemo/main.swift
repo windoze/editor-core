@@ -142,9 +142,23 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var searchPanelController: DemoSearchPanelController?
     private var minimapContainer: EditorCoreSkiaMinimapContainer?
+    private weak var editorView: EditorCoreSkiaView?
 
     @objc private func minimapToggled(_ sender: NSButton) {
         minimapContainer?.showsMinimap = sender.state == .on
+    }
+
+    @objc private func minimapPlacementChanged(_ sender: NSSegmentedControl) {
+        let placement: EditorCoreSkiaMinimapPlacement = sender.selectedSegment == 0 ? .leftOfScrollbar : .rightOfScrollbar
+        minimapContainer?.minimapPlacement = placement
+    }
+
+    @objc private func caretBlinkToggled(_ sender: NSButton) {
+        editorView?.caretBlinkEnabled = sender.state == .on
+    }
+
+    @objc private func caretBlinkSpeedChanged(_ sender: NSSlider) {
+        editorView?.caretBlinkIntervalSeconds = sender.doubleValue
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -171,7 +185,8 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             // - Cmd-Z / Cmd-Shift-Z（undo/redo）
             // - 搜索/替换：窗口顶部（match highlights overlay）
             // - Cmd+Click 打开 DocumentLink（演示链接：https://example.com）
-            // - Minimap（右侧，可开关）
+            // - Minimap（可开关，且可放在滚动条左/右）
+            // - Caret 闪烁（可禁用/调速）
             //
             // TODO：
             // - 更完整的主题系统（StyleId -> Theme 映射）
@@ -210,6 +225,7 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
                 viewportWidthCells: 120,
                 fontFamiliesCSV: fontFamiliesCSV
             )
+            self.editorView = editorView
             if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_ENABLE_LIGATURES"] == "1" {
                 try editorView.editor.setFontLigaturesEnabled(true)
             }
@@ -281,6 +297,21 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             minimapToggle.state = .on
             minimapToggle.setButtonType(.switch)
 
+            let minimapPlacement = NSSegmentedControl(labels: ["Mini L", "Mini R"], trackingMode: .selectOne, target: nil, action: nil)
+            minimapPlacement.selectedSegment = 1
+
+            let caretBlinkToggle = NSButton(checkboxWithTitle: "Caret Blink", target: nil, action: nil)
+            caretBlinkToggle.state = .on
+            caretBlinkToggle.setButtonType(.switch)
+
+            let caretBlinkSpeed = NSSlider(value: 0.55, minValue: 0.15, maxValue: 1.2, target: nil, action: nil)
+            caretBlinkSpeed.controlSize = .small
+            caretBlinkSpeed.isContinuous = true
+            NSLayoutConstraint.activate([caretBlinkSpeed.widthAnchor.constraint(equalToConstant: 120)])
+
+            let caretBlinkSpeedLabel = NSTextField(labelWithString: "Speed")
+            caretBlinkSpeedLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+
             let findPrev = NSButton(title: "Prev", target: nil, action: nil)
             findPrev.bezelStyle = .rounded
             let findNext = NSButton(title: "Next", target: nil, action: nil)
@@ -305,6 +336,7 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
                 clear,
                 hoverLabel,
                 minimapToggle,
+                minimapPlacement,
             ])
             searchRow.orientation = .horizontal
             searchRow.alignment = .centerY
@@ -321,16 +353,31 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             replaceRow.alignment = .centerY
             replaceRow.spacing = 8
 
-            let toolbar = NSStackView(views: [searchRow, replaceRow])
+            let appearanceRow = NSStackView(views: [
+                caretBlinkToggle,
+                caretBlinkSpeedLabel,
+                caretBlinkSpeed,
+            ])
+            appearanceRow.orientation = .horizontal
+            appearanceRow.alignment = .centerY
+            appearanceRow.spacing = 8
+
+            let toolbar = NSStackView(views: [searchRow, replaceRow, appearanceRow])
             toolbar.orientation = .vertical
             toolbar.alignment = .leading
             toolbar.spacing = 6
             toolbar.translatesAutoresizingMaskIntoConstraints = false
 
-            let editorContainer = EditorCoreSkiaMinimapContainer(editorView: editorView, showsMinimap: true)
+            let editorContainer = EditorCoreSkiaMinimapContainer(editorView: editorView, showsMinimap: true, minimapPlacement: .rightOfScrollbar)
             self.minimapContainer = editorContainer
             minimapToggle.target = self
             minimapToggle.action = #selector(minimapToggled(_:))
+            minimapPlacement.target = self
+            minimapPlacement.action = #selector(minimapPlacementChanged(_:))
+            caretBlinkToggle.target = self
+            caretBlinkToggle.action = #selector(caretBlinkToggled(_:))
+            caretBlinkSpeed.target = self
+            caretBlinkSpeed.action = #selector(caretBlinkSpeedChanged(_:))
 
             let container = NSView(frame: .zero)
             container.translatesAutoresizingMaskIntoConstraints = false
