@@ -124,6 +124,7 @@ pub struct TreeSitterProcessor {
     highlight_capture_styles: Vec<Option<StyleId>>,
     fold_query: Option<Query>,
     tree: Option<Tree>,
+    needs_parse: bool,
     text: String,
     line_index: LineIndex,
     last_synced_version: Option<u64>,
@@ -162,6 +163,7 @@ impl TreeSitterProcessor {
             highlight_capture_styles,
             fold_query,
             tree: None,
+            needs_parse: false,
             text: String::new(),
             line_index: LineIndex::new(),
             last_synced_version: None,
@@ -401,11 +403,14 @@ impl TreeSitterProcessor {
             };
             self.sync_from_text_full(text);
             self.tree = self.parse();
+            self.needs_parse = false;
             TreeSitterUpdateMode::Initial
         } else if let Some(delta) = delta {
             match self.apply_text_delta_incremental(delta) {
                 Ok(()) => {
-                    self.tree = self.parse();
+                    // Defer parsing until we actually need to run queries. This allows callers
+                    // to coalesce bursts of edits (debounce) without re-parsing on every keystroke.
+                    self.needs_parse = true;
                     TreeSitterUpdateMode::Incremental
                 }
                 Err(_) => {
@@ -414,6 +419,7 @@ impl TreeSitterProcessor {
                     };
                     self.sync_from_text_full(text);
                     self.tree = self.parser.parse(&self.text, None);
+                    self.needs_parse = false;
                     TreeSitterUpdateMode::FullReparse
                 }
             }
@@ -423,6 +429,7 @@ impl TreeSitterProcessor {
             };
             self.sync_from_text_full(text);
             self.tree = self.parser.parse(&self.text, None);
+            self.needs_parse = false;
             TreeSitterUpdateMode::FullReparse
         };
 
@@ -449,6 +456,11 @@ impl TreeSitterProcessor {
         };
         if self.last_processed_version == Some(version) {
             return Ok(Vec::new());
+        }
+
+        if self.needs_parse {
+            self.tree = self.parse();
+            self.needs_parse = false;
         }
 
         let Some(tree) = self.tree.as_ref() else {
