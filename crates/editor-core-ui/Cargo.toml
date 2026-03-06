@@ -24,4 +24,9 @@ tree-sitter-rust = "0.24"
 thiserror = "2"
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
 pretty_assertions = "1"
+
+[[bench]]
+name = "ui_pipeline"
+harness = false
