@@ -193,6 +193,23 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_font_ligatures_enabled")
     }
 
+    /// Set caret width in pixels (minimum 1px when visible).
+    ///
+    /// Notes:
+    /// - This is an absolute pixel width; if you want a "point" width, multiply by the view's backing scale.
+    public func setCaretWidthPx(_ widthPx: Float) throws {
+        let status = editor_core_ui_ffi_editor_ui_set_caret_width_px(handle, widthPx)
+        try library.ensureStatus(status, context: "editor_ui_set_caret_width_px")
+    }
+
+    /// Show/hide carets during rendering.
+    ///
+    /// Useful for UI-side caret blinking and focus handling.
+    public func setCaretVisible(_ visible: Bool) throws {
+        let status = editor_core_ui_ffi_editor_ui_set_caret_visible(handle, visible ? 1 : 0)
+        try library.ensureStatus(status, context: "editor_ui_set_caret_visible")
+    }
+
     /// Configure the ASCII word-boundary character set for editor-friendly "word" operations.
     ///
     /// This is similar in spirit to VSCode's `wordSeparators`.

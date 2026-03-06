@@ -125,6 +125,18 @@ pub struct RenderConfig {
     /// - The editor still uses a monospace "cell grid" model; ligature shaping is purely visual.
     /// - Cursor/selection hit-testing remains cell-based.
     pub enable_ligatures: bool,
+
+    /// Caret width in pixels.
+    ///
+    /// Notes:
+    /// - This is an absolute pixel width (already includes `scale` if the UI operates in points).
+    /// - The renderer will clamp it to a minimum of 1px when the caret is visible.
+    pub caret_width_px: f32,
+
+    /// Whether to draw carets at all.
+    ///
+    /// This is intended for UI-side caret blinking and focus handling.
+    pub show_caret: bool,
 }
 
 impl Default for RenderConfig {
@@ -141,6 +153,8 @@ impl Default for RenderConfig {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         }
     }
 }
@@ -866,8 +880,10 @@ impl SkiaRenderer {
         }
 
         // Carets on top.
-        for caret in carets {
-            draw_caret(canvas, grid, *caret, text_origin_x, config, theme.caret);
+        if config.show_caret {
+            for caret in carets {
+                draw_caret(canvas, grid, *caret, text_origin_x, config, theme.caret);
+            }
         }
 
         Ok(())
@@ -1323,18 +1339,20 @@ impl SkiaRenderer {
         }
 
         // Carets on top.
-        for caret in pending_carets {
-            let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
-            let y_top = config.padding_y_px + caret.local_row as f32 * config.line_height_px
-                - config.scroll_y_px;
+        if config.show_caret {
+            let caret_width = config.caret_width_px.max(1.0);
+            for caret in pending_carets {
+                let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
+                let y_top = config.padding_y_px + caret.local_row as f32 * config.line_height_px
+                    - config.scroll_y_px;
 
-            let caret_width = (config.scale.max(1.0)).min(2.0);
-            let rect = Rect::from_xywh(x_px, y_top, caret_width, config.line_height_px);
+                let rect = Rect::from_xywh(x_px, y_top, caret_width, config.line_height_px);
 
-            let mut paint = Paint::default();
-            paint.set_anti_alias(false);
-            paint.set_color(rgba_to_skia_color(theme.caret));
-            canvas.draw_rect(rect, &paint);
+                let mut paint = Paint::default();
+                paint.set_anti_alias(false);
+                paint.set_color(rgba_to_skia_color(theme.caret));
+                canvas.draw_rect(rect, &paint);
+            }
         }
 
         Ok(())
@@ -1762,18 +1780,20 @@ impl SkiaRenderer {
         }
 
         // Carets on top.
-        for caret in pending_carets {
-            let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
-            let y_top = config.padding_y_px + caret.local_row as f32 * config.line_height_px
-                - config.scroll_y_px;
+        if config.show_caret {
+            let caret_width = config.caret_width_px.max(1.0);
+            for caret in pending_carets {
+                let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
+                let y_top = config.padding_y_px + caret.local_row as f32 * config.line_height_px
+                    - config.scroll_y_px;
 
-            let caret_width = (config.scale.max(1.0)).min(2.0);
-            let rect = Rect::from_xywh(x_px, y_top, caret_width, config.line_height_px);
+                let rect = Rect::from_xywh(x_px, y_top, caret_width, config.line_height_px);
 
-            let mut paint = Paint::default();
-            paint.set_anti_alias(false);
-            paint.set_color(rgba_to_skia_color(theme.caret));
-            canvas.draw_rect(rect, &paint);
+                let mut paint = Paint::default();
+                paint.set_anti_alias(false);
+                paint.set_color(rgba_to_skia_color(theme.caret));
+                canvas.draw_rect(rect, &paint);
+            }
         }
 
         Ok(())
@@ -2020,7 +2040,7 @@ fn draw_caret(
     let y_top =
         config.padding_y_px + local_row as f32 * config.line_height_px - config.scroll_y_px;
 
-    let caret_width = (config.scale.max(1.0)).min(2.0);
+    let caret_width = config.caret_width_px.max(1.0);
     let rect = Rect::from_xywh(x_px, y_top, caret_width, config.line_height_px);
 
     let mut paint = Paint::default();
@@ -2185,6 +2205,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let _ = renderer
@@ -2244,6 +2266,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
@@ -2300,6 +2324,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
@@ -2346,6 +2372,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
@@ -2391,6 +2419,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
@@ -2457,6 +2487,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let rgba = renderer
@@ -2522,6 +2554,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let rgba = renderer
@@ -2567,6 +2601,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let rgba = renderer
@@ -2646,6 +2682,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let mut out = vec![0u8; (cfg.width_px * cfg.height_px * 4) as usize];
@@ -2707,6 +2745,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let mut out = vec![0u8; (cfg.width_px * cfg.height_px * 4) as usize];
@@ -2785,6 +2825,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let mut out = vec![0u8; (cfg.width_px * cfg.height_px * 4) as usize];
@@ -2841,6 +2883,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let carets = [
@@ -2922,6 +2966,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 2,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let carets = [VisualCaret { row: 0, x_cells: 2 }];
@@ -2973,6 +3019,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let required = SkiaRenderer::required_rgba_len(cfg).unwrap();
@@ -3079,6 +3127,8 @@ mod tests {
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
             enable_ligatures: true,
+            caret_width_px: 2.0,
+            show_caret: true,
         };
 
         let _ = renderer

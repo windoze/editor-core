@@ -1498,6 +1498,18 @@ impl EditorUi {
         self.render_config.enable_ligatures = enabled;
     }
 
+    /// Set caret width in pixels (minimum 1px when visible).
+    pub fn set_caret_width_px(&mut self, width_px: f32) {
+        if width_px.is_finite() {
+            self.render_config.caret_width_px = width_px.max(0.0);
+        }
+    }
+
+    /// Show/hide carets during rendering (useful for UI-side blinking or focus handling).
+    pub fn set_caret_visible(&mut self, visible: bool) {
+        self.render_config.show_caret = visible;
+    }
+
     /// Override the ASCII word-boundary character set used by editor-friendly "word" operations.
     ///
     /// This is similar in spirit to VSCode's `wordSeparators`.
@@ -3586,6 +3598,46 @@ mod tests {
         let rgba = ui.render_rgba_visible().unwrap();
         assert_eq!(pixel(&rgba, 80, 30, 10), [0, 0, 200, 255]);
         assert_eq!(pixel(&rgba, 80, 70, 30), [10, 20, 30, 255]);
+    }
+
+    #[test]
+    fn ui_caret_width_and_visibility_affect_render_rgba() {
+        let mut ui = EditorUi::new("", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 20,
+            height_px: 10,
+            cell_width_px: 10.0,
+            line_height_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_theme(RenderTheme {
+            background: editor_core_render_skia::Rgba8::new(0xFF, 0xFF, 0xFF, 0xFF),
+            foreground: editor_core_render_skia::Rgba8::new(0x00, 0x00, 0x00, 0xFF),
+            selection_background: editor_core_render_skia::Rgba8::new(0xC7, 0xDD, 0xFF, 0xFF),
+            caret: editor_core_render_skia::Rgba8::new(0x00, 0x00, 0x00, 0xFF),
+            styles: std::collections::BTreeMap::new(),
+        });
+        ui.set_viewport_px(20, 10, 1.0).unwrap();
+
+        ui.set_caret_width_px(4.0);
+        ui.set_caret_visible(true);
+        let rgba0 = ui.render_rgba_visible().unwrap();
+        let caret_px = [0x00, 0x00, 0x00, 0xFF];
+        let caret_count0 = rgba0
+            .chunks_exact(4)
+            .filter(|p| *p == caret_px)
+            .count();
+        assert_eq!(caret_count0, 4 * 10, "expected caret to fill a 4x10 rectangle");
+
+        ui.set_caret_visible(false);
+        let rgba1 = ui.render_rgba_visible().unwrap();
+        let caret_count1 = rgba1
+            .chunks_exact(4)
+            .filter(|p| *p == caret_px)
+            .count();
+        assert_eq!(caret_count1, 0, "expected caret pixels to disappear when hidden");
     }
 
     #[test]

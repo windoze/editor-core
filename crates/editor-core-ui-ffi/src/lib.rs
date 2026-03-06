@@ -810,6 +810,42 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_font_ligatures_enabled(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_caret_width_px(
+    ui: *mut EditorUi,
+    width_px: c_float,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.set_caret_width_px(width_px);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_caret_visible(
+    ui: *mut EditorUi,
+    visible: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.set_caret_visible(visible != 0);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(
     ui: *mut EditorUi,
     boundary_chars_utf8: *const c_char,
@@ -4747,6 +4783,69 @@ contexts:
             editor_core_ui_ffi_editor_ui_set_font_ligatures_enabled(ui, 0),
             ECU_OK
         );
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_set_caret_width_and_visibility_affect_render_rgba() {
+        let initial = CString::new("").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 10.0, 10.0, 10.0, 0.0, 0.0);
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 20, 10, 1.0);
+
+        let theme = EcuTheme {
+            background: EcuRgba8 {
+                r: 0xFF,
+                g: 0xFF,
+                b: 0xFF,
+                a: 0xFF,
+            },
+            foreground: EcuRgba8 {
+                r: 0x11,
+                g: 0x11,
+                b: 0x11,
+                a: 0xFF,
+            },
+            selection_background: EcuRgba8 {
+                r: 0xC7,
+                g: 0xDD,
+                b: 0xFF,
+                a: 0xFF,
+            },
+            caret: EcuRgba8 {
+                r: 0x00,
+                g: 0x00,
+                b: 0x00,
+                a: 0xFF,
+            },
+        };
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_caret_width_px(ui, 4.0), ECU_OK);
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_caret_visible(ui, 1), ECU_OK);
+
+        let mut out_len: u32 = 0;
+        let mut buf = vec![0u8; 20 * 10 * 4];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(ui, buf.as_mut_ptr(), buf.len() as u32, &mut out_len),
+            ECU_OK
+        );
+        assert_eq!(out_len as usize, buf.len());
+
+        let caret_px = [0u8, 0u8, 0u8, 255u8];
+        let caret_count0 = buf.chunks_exact(4).filter(|p| *p == caret_px).count();
+        assert_eq!(caret_count0, 4 * 10, "expected caret to fill a 4x10 rectangle");
+
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_caret_visible(ui, 0), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(ui, buf.as_mut_ptr(), buf.len() as u32, &mut out_len),
+            ECU_OK
+        );
+        let caret_count1 = buf.chunks_exact(4).filter(|p| *p == caret_px).count();
+        assert_eq!(caret_count1, 0, "expected caret pixels to disappear when hidden");
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }
