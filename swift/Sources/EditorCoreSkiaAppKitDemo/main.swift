@@ -179,13 +179,17 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             // 让 demo 文档足够长，方便测试滚动条 / 平滑滚动 / “光标移出 viewport 自动滚动”等功能。
             let longLines = (0..<600).map { i -> String in
                 // 同时混入 CJK + Emoji，方便验证多字体 fallback 与 grapheme 逻辑。
+                //
+                // 注意：demo 默认启用 Rust Tree-sitter，如果把大量非 Rust 文本直接塞进文档（不在注释里），
+                // parser 需要做大量错误恢复，可能导致“每次输入都很慢”的错觉。
+                // 这里把滚动压力测试内容放进 Rust 行注释，既保持可读性，又避免 Tree-sitter 进入 worst-case。
                 if i % 40 == 0 {
-                    return "line \(String(format: "%04d", i)): 段落开始（下面有空行）🙂"
+                    return "// line \(String(format: "%04d", i)): 段落开始（下面有空行）🙂"
                 }
                 if i % 40 == 1 {
                     return ""
                 }
-                return "line \(String(format: "%04d", i)): The quick brown fox jumps over the lazy dog. 你好，世界 😀"
+                return "// line \(String(format: "%04d", i)): The quick brown fox jumps over the lazy dog. 你好，世界 😀"
             }
             initialText += "\n\n// --- Scroll Stress Test ---\n"
             initialText += longLines.joined(separator: "\n")
