@@ -1639,6 +1639,59 @@ impl EditorUi {
         }
     }
 
+    /// Like [`Self::ensure_primary_caret_visible_after_navigation`], but used for text edits
+    /// (typing/paste/undo) where we should not snap fractional smooth-scroll offsets unless the
+    /// caret actually leaves the visible viewport.
+    fn ensure_primary_caret_visible_after_edit(&mut self) {
+        let viewport = self.state.get_viewport_state();
+        let Some(height_rows) = viewport.height else {
+            return;
+        };
+        if height_rows == 0 {
+            return;
+        }
+
+        let cursor = self.state.get_cursor_state();
+        let active = cursor
+            .selections
+            .get(cursor.primary_selection_index)
+            .map(|s| s.end)
+            .unwrap_or(cursor.position);
+
+        let Some((caret_row, _caret_x)) =
+            self.state.logical_position_to_visual(active.line, active.column)
+        else {
+            return;
+        };
+
+        let mut new_top = viewport.scroll_top;
+        let mut did_scroll = false;
+        if caret_row < viewport.scroll_top {
+            new_top = caret_row;
+            did_scroll = true;
+        } else if caret_row >= viewport.scroll_top.saturating_add(height_rows) {
+            new_top = caret_row.saturating_sub(height_rows.saturating_sub(1));
+            did_scroll = true;
+        }
+
+        if !did_scroll {
+            return;
+        }
+
+        new_top = new_top.min(self.max_scroll_top(&viewport));
+
+        let smooth = self.state.get_smooth_scroll_state();
+        let next = SmoothScrollState {
+            top_visual_row: new_top,
+            // When an edit forces us to scroll, snap to a full row so the caret lands predictably.
+            sub_row_offset: 0,
+            overscan_rows: smooth.overscan_rows,
+        };
+        if next != smooth {
+            self.state.set_smooth_scroll_state(next);
+        }
+    }
+
     pub fn scroll_by_rows(&mut self, delta_rows: isize) {
         let viewport = self.state.get_viewport_state();
         let height_rows = viewport.height.unwrap_or(viewport.total_visual_lines).max(1);
@@ -1707,6 +1760,7 @@ impl EditorUi {
             text: text.to_string(),
         }))?;
         self.refresh_processing()?;
+        self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
@@ -1718,6 +1772,7 @@ impl EditorUi {
         self.state
             .execute(Command::Edit(EditCommand::DeleteGraphemeBack))?;
         self.refresh_processing()?;
+        self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
@@ -1725,12 +1780,14 @@ impl EditorUi {
         self.state
             .execute(Command::Edit(EditCommand::DeleteGraphemeForward))?;
         self.refresh_processing()?;
+        self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
     pub fn delete_word_back(&mut self) -> Result<(), UiError> {
         self.state.execute(Command::Edit(EditCommand::DeleteWordBack))?;
         self.refresh_processing()?;
+        self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
@@ -1738,6 +1795,7 @@ impl EditorUi {
         self.state
             .execute(Command::Edit(EditCommand::DeleteWordForward))?;
         self.refresh_processing()?;
+        self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
@@ -2292,6 +2350,7 @@ impl EditorUi {
                 }]);
             // Commit ends the composition undo group.
             self.state.execute(Command::Edit(EditCommand::EndUndoGroup))?;
+            self.ensure_primary_caret_visible_after_edit();
             Ok(())
         } else {
             self.insert_text(text)
@@ -3037,6 +3096,59 @@ mod tests {
             caret_row >= vp3.scroll_top && caret_row < vp3.scroll_top.saturating_add(h),
             "expected caret row to be within visible lines after navigation"
         );
+    }
+
+    #[test]
+    fn ui_insert_text_scrolls_to_keep_caret_visible() {
+        let mut ui = EditorUi::new("", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 80,
+            height_px: 20, // 2 rows at 10px line height
+            cell_width_px: 10.0,
+            line_height_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(80, 20, 1.0).unwrap();
+
+        // Pasting multi-line text should scroll so the caret stays visible.
+        let mut s = String::new();
+        for _ in 0..200 {
+            s.push_str("x\n");
+        }
+        ui.insert_text(&s).unwrap();
+
+        let vp = ui.state.get_viewport_state();
+        let caret_off = ui.cursor_state().offset;
+        let (caret_row, _caret_x) = ui.char_offset_to_visual(caret_off).unwrap();
+        let h = vp.height.unwrap_or(1);
+        assert!(
+            caret_row >= vp.scroll_top && caret_row < vp.scroll_top.saturating_add(h),
+            "expected caret row to be within visible lines after paste/insert"
+        );
+        assert!(vp.scroll_top > 0, "expected viewport to scroll for multi-line insert");
+    }
+
+    #[test]
+    fn ui_insert_text_does_not_snap_smooth_scroll_when_caret_visible() {
+        let mut ui = EditorUi::new("", 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 80,
+            height_px: 20,
+            cell_width_px: 10.0,
+            line_height_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(80, 20, 1.0).unwrap();
+
+        ui.set_smooth_scroll_state(0, 12345);
+        ui.insert_text("a").unwrap();
+
+        let vp = ui.viewport_state();
+        assert_eq!(vp.scroll_top, 0);
     }
 
     #[test]

@@ -59,5 +59,34 @@ final class EditorCoreSkiaViewClipboardTests: XCTestCase {
         XCTAssertEqual(pb.string(forType: .string), "old")
         XCTAssertEqual(try view.editor.text(), "abc")
     }
-}
 
+    func testPasteScrollsToKeepCaretVisible() throws {
+        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let view = try EditorCoreSkiaView(library: lib, initialText: "", viewportWidthCells: 80)
+
+        let pb = NSPasteboard(name: NSPasteboard.Name("EditorCoreSkiaViewClipboardTests-\(UUID().uuidString)"))
+        pb.clearContents()
+        view.pasteboard = pb
+
+        // Use a small window so the caret must leave the viewport after pasting many lines.
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 90),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = view
+        window.makeKeyAndOrderFront(nil)
+        view.layoutSubtreeIfNeeded()
+
+        let vp0 = try view.editor.viewportState()
+        XCTAssertEqual(vp0.scrollTop, 0)
+
+        let bigText = (0..<200).map(String.init).joined(separator: "\n")
+        pb.setString(bigText, forType: .string)
+        view.paste(nil)
+
+        let vp1 = try view.editor.viewportState()
+        XCTAssertGreaterThan(vp1.scrollTop, 0, "expected paste to scroll the viewport to keep caret visible")
+    }
+}

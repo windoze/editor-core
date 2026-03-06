@@ -790,6 +790,7 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public func insertText(_ string: Any, replacementRange: NSRange) {
+        updateViewportIfNeeded()
         let text: String
         if let s = string as? String {
             text = s
@@ -824,6 +825,7 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        updateViewportIfNeeded()
         let text: String
         if let s = string as? String {
             text = s
@@ -895,6 +897,7 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public override func doCommand(by selector: Selector) {
+        updateViewportIfNeeded()
         let t0 = perfDebugEnabled ? CFAbsoluteTimeGetCurrent() : 0
         var didEditText = false
         do {
@@ -1101,6 +1104,7 @@ public final class EditorCoreSkiaView: MTKView {
 
     @objc(paste:)
     public func paste(_ sender: Any?) {
+        updateViewportIfNeeded()
         guard let text = pasteboard.string(forType: .string), text.isEmpty == false else { return }
         do {
             try editor.commitText(text)
