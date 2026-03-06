@@ -175,11 +175,35 @@ public final class EditorCoreSkiaScrollContainer: NSView {
     }
 
     @objc private func scrollerAction(_ sender: NSScroller) {
+        // Start of a new interaction: clear any stale "hold-to-page" state so the next track click
+        // can establish a fresh fixed target. This avoids getting stuck when mouseUp isn't delivered
+        // to the scroller (e.g. release outside).
+        if NSApp.currentEvent?.type == .leftMouseDown {
+            pagingHoldTargetProportion = nil
+            pagingHoldDirection = 0
+        }
+
         // 注意：`NSScroller` 会在 mouseUp 也触发 action；我们只在 mouseDown/drag 时发起滚动，
         // mouseUp 只用于结束“按住持续翻页”的状态。
         if NSApp.currentEvent?.type == .leftMouseUp {
             pagingHoldTargetProportion = nil
             pagingHoldDirection = 0
+            return
+        }
+
+        // Track click hold：在一次按住会话中，目标位置应固定且只由 timer 驱动。
+        // `NSScroller` 自身可能在按住期间重复触发 action（且 hitPart 可能在 knob 经过鼠标后反向），
+        // 这里统一忽略这些额外 action，直到松开为止（但仍允许拖拽 knob）。
+        let leftPressed = (NSEvent.pressedMouseButtons & 0x1) != 0
+        if leftPressed == false {
+            pagingHoldTargetProportion = nil
+            pagingHoldDirection = 0
+        }
+        if leftPressed,
+           pagingHoldTargetProportion != nil,
+           pagingHoldDirection != 0,
+           sender.hitPart != .knob
+        {
             return
         }
         if NSApp.currentEvent?.type == .leftMouseDragged {
@@ -222,14 +246,21 @@ public final class EditorCoreSkiaScrollContainer: NSView {
         let p = scroller.convert(event.locationInWindow, from: nil)
         let slot = scroller.rect(for: .knobSlot)
         guard slot.height.isFinite, slot.height > 0 else { return nil }
-        let t = ((p.y - slot.minY) / slot.height).clamped(to: 0.0...1.0) // 0=bottom, 1=top
-        return (1.0 - t).clamped(to: 0.0...1.0) // 0=top, 1=bottom
+        let u = ((p.y - slot.minY) / slot.height).clamped(to: 0.0...1.0)
+
+        // We want 0=top, 1=bottom.
+        // In a flipped view, `minY` is the top edge. In a non-flipped view, `minY` is bottom.
+        if scroller.isFlipped {
+            return u
+        }
+        return (1.0 - u).clamped(to: 0.0...1.0)
     }
 
     private func requestTrackClickPageScroll(sender: NSScroller, direction: Int) {
         // Track click: if this is a mouseDown, start a "hold-to-page" session with a fixed target
         // (mouse move while holding should not change the target).
         if NSApp.currentEvent?.type == .leftMouseDown,
+           pagingHoldTargetProportion == nil,
            let prop = trackClickProportionForCurrentEvent(scroller: sender)
         {
             pagingHoldTargetProportion = prop
@@ -255,7 +286,7 @@ public final class EditorCoreSkiaScrollContainer: NSView {
             let desired = prop.clamped(to: 0.0...1.0)
             let direction = desired < currentProp ? -1 : 1
 
-            if NSApp.currentEvent?.type == .leftMouseDown {
+            if NSApp.currentEvent?.type == .leftMouseDown, pagingHoldTargetProportion == nil {
                 pagingHoldTargetProportion = desired
                 pagingHoldDirection = direction
             }
@@ -351,14 +382,19 @@ public final class EditorCoreSkiaScrollContainer: NSView {
         if pagingTimerDisabledForTests {
             return
         }
-        pagingTimer = Timer.scheduledTimer(
+        // 注意：滚动条 track click/drag 会让主线程进入 `NSEventTrackingRunLoopMode`；
+        // 如果 timer 只注册在 default mode，按住鼠标时不会触发，结果就是“松开才开始滚动”。
+        // 把 timer 加到 `.common` 里，确保在 event tracking 期间也能持续 tick。
+        let timer = Timer(
             timeInterval: 1.0 / 60.0,
             target: self,
             selector: #selector(pagingTimerFired(_:)),
             userInfo: nil,
             repeats: true
         )
-        pagingTimer?.tolerance = 0.004
+        timer.tolerance = 0.004
+        RunLoop.main.add(timer, forMode: .common)
+        pagingTimer = timer
     }
 
     private func stopPagingScroll() {
@@ -375,7 +411,23 @@ public final class EditorCoreSkiaScrollContainer: NSView {
     }
 
     private func pagingTick(mouseButtonsMask: UInt) {
+        let leftPressed = (mouseButtonsMask & 0x1) != 0
+
+        // If the mouse is released, stop extending held paging immediately.
+        // We still complete the current smooth page if an animation target exists.
+        if leftPressed == false {
+            pagingHoldTargetProportion = nil
+            pagingHoldDirection = 0
+        }
+
+        // No active animation target:
+        // - If we are still holding the mouse after reaching the hold target, keep the timer running
+        //   so we can reliably observe the eventual release and reset hold state.
+        // - Otherwise, stop the paging loop entirely.
         guard var target = pagingTargetPosRows else {
+            if leftPressed, pagingHoldTargetProportion != nil, pagingHoldDirection != 0 {
+                return
+            }
             stopPagingScroll()
             return
         }
@@ -394,23 +446,29 @@ public final class EditorCoreSkiaScrollContainer: NSView {
 
             // Track-click hold behavior:
             // - While the mouse is held down, keep paging until the thumb reaches the original click position.
+            // - When the thumb first hits or passes the click position, stop immediately and NEVER scroll back.
             // - Releasing the mouse stops further extension, but we still complete the current smooth page.
-            if let holdTarget = pagingHoldTargetProportion, pagingHoldDirection != 0 {
-                let leftPressed = (mouseButtonsMask & 0x1) != 0
-                if leftPressed == false {
-                    pagingHoldTargetProportion = nil
-                    pagingHoldDirection = 0
+            if leftPressed, let holdTarget = pagingHoldTargetProportion, pagingHoldDirection != 0 {
+                let currentProp = (current / maxScroll).clamped(to: 0.0...1.0)
+                let knobProportion = (visible / total).clamped(to: 0.0...1.0)
+                let knobTop = currentProp * (1.0 - knobProportion)
+                let knobBottom = (knobTop + knobProportion).clamped(to: 0.0...1.0)
+                let hold = holdTarget.clamped(to: 0.0...1.0)
+
+                // - page down: knobBottom hits click first
+                // - page up: knobTop hits click first
+                let reached: Bool
+                if pagingHoldDirection > 0 {
+                    reached = knobBottom >= hold
                 } else {
-                    let currentProp = (current / maxScroll).clamped(to: 0.0...1.0)
-                    let knobProportion = (visible / total).clamped(to: 0.0...1.0)
-                    let knobTop = currentProp * (1.0 - knobProportion)
-                    let knobBottom = (knobTop + knobProportion).clamped(to: 0.0...1.0)
-                    let hold = holdTarget.clamped(to: 0.0...1.0)
-                    if hold >= knobTop && hold <= knobBottom {
-                        // Thumb reached the click location: stop immediately (do not finish the remaining animation).
-                        stopPagingScroll()
-                        return
-                    }
+                    reached = knobTop <= hold
+                }
+                if reached {
+                    // Stop motion immediately, but keep the hold session active until mouseUp so
+                    // we continue ignoring NSScroller's internal repeated actions and can reset
+                    // state reliably even if it doesn't deliver a mouseUp action.
+                    pagingTargetPosRows = nil
+                    return
                 }
             }
 
