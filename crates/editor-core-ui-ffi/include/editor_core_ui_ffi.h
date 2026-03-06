@@ -98,6 +98,9 @@ int32_t editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queries(
     const char* folds_query_utf8 // nullable
 );
 void editor_core_ui_ffi_editor_ui_treesitter_disable(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_poll_processing(EditorUi* ui,
+                                                     uint8_t* out_applied,
+                                                     uint8_t* out_pending);
 int32_t editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(EditorUi* ui,
                                                                      const char* capture_utf8,
                                                                      uint32_t* out_style_id);

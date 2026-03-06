@@ -502,6 +502,42 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_disable(ui: *mut Edito
     clear_last_error();
 }
 
+/// Poll and apply any completed async processing (Tree-sitter highlighting/folding).
+///
+/// This is non-blocking: it never waits for the worker thread.
+///
+/// - `out_applied`: set to 1 if new edits were applied.
+/// - `out_pending`: set to 1 if there is still pending work.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_poll_processing(
+    ui: *mut EditorUi,
+    out_applied: *mut u8,
+    out_pending: *mut u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_applied.is_null() {
+            return Err("out_applied is null".to_string());
+        }
+        if out_pending.is_null() {
+            return Err("out_pending is null".to_string());
+        }
+
+        let result = ui.poll_processing().map_err(map_ui_error)?;
+        unsafe {
+            *out_applied = if result.applied { 1 } else { 0 };
+            *out_pending = if result.pending { 1 } else { 0 };
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(
     ui: *mut EditorUi,
@@ -2512,6 +2548,25 @@ mod tests {
     use std::ffi::CString;
     use std::ptr;
 
+    fn wait_for_processing(ui: *mut EditorUi) {
+        let start = std::time::Instant::now();
+        loop {
+            let mut applied: u8 = 0;
+            let mut pending: u8 = 0;
+            assert_eq!(
+                editor_core_ui_ffi_editor_ui_poll_processing(ui, &mut applied, &mut pending),
+                ECU_OK
+            );
+            if pending == 0 {
+                break;
+            }
+            if start.elapsed() > std::time::Duration::from_secs(2) {
+                panic!("timeout waiting for async processing");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
     #[test]
     fn ffi_smoke_create_insert_render_get_text() {
         let initial = CString::new("abc").unwrap();
@@ -2900,6 +2955,7 @@ contexts:
             ),
             ECU_OK
         );
+        wait_for_processing(ui);
 
         let capture = CString::new("comment").unwrap();
         let mut style_id: u32 = 0;
@@ -3385,6 +3441,7 @@ contexts:
             editor_core_ui_ffi_editor_ui_treesitter_rust_enable_default(ui),
             ECU_OK
         );
+        wait_for_processing(ui);
 
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_gutter_width_cells(ui, 2),
