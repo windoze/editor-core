@@ -1859,11 +1859,15 @@ impl EditorUi {
 
     pub fn undo(&mut self) -> Result<(), UiError> {
         self.state.execute(Command::Edit(EditCommand::Undo))?;
+        self.refresh_processing()?;
+        self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
     pub fn redo(&mut self) -> Result<(), UiError> {
         self.state.execute(Command::Edit(EditCommand::Redo))?;
+        self.refresh_processing()?;
+        self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
@@ -3186,6 +3190,47 @@ mod tests {
 
         let vp = ui.viewport_state();
         assert_eq!(vp.scroll_top, 0);
+    }
+
+    #[test]
+    fn ui_undo_redo_scrolls_to_keep_caret_visible() {
+        // Long document so `scroll_top` can remain > 0 after undo/redo (i.e. not clamped away).
+        let doc = (0..200).map(|i| i.to_string()).collect::<Vec<_>>().join("\n");
+        let mut ui = EditorUi::new(&doc, 80);
+        ui.set_render_config(RenderConfig {
+            width_px: 80,
+            height_px: 20, // 2 rows at 10px line height
+            cell_width_px: 10.0,
+            line_height_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            ..RenderConfig::default()
+        });
+        ui.set_viewport_px(80, 20, 1.0).unwrap();
+
+        // Make a small edit near the top so undo/redo moves the caret to row 0.
+        ui.insert_text("!").unwrap();
+
+        // Manually scroll away from the caret (simulates the user having scrolled elsewhere).
+        let vp = ui.viewport_state();
+        let total = vp.total_visual_lines.max(1);
+        let visible = vp.height.unwrap_or(total).max(1);
+        let bottom = total.saturating_sub(visible);
+        ui.set_smooth_scroll_state(bottom, 0);
+        assert!(
+            ui.viewport_state().scroll_top > 0,
+            "expected manual scroll to move viewport away from caret"
+        );
+
+        // Undo should scroll back to keep caret visible.
+        ui.undo().unwrap();
+        assert_eq!(ui.viewport_state().scroll_top, 0);
+
+        // Redo should also scroll back if we're scrolled away again.
+        ui.set_smooth_scroll_state(bottom, 0);
+        assert!(ui.viewport_state().scroll_top > 0);
+        ui.redo().unwrap();
+        assert_eq!(ui.viewport_state().scroll_top, 0);
     }
 
     #[test]
