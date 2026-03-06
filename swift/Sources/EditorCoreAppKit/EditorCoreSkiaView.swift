@@ -46,6 +46,16 @@ public final class EditorCoreSkiaView: MTKView {
     private var didPresentFirstFrame: Bool = false
     private var didLogDrawSetupOnce: Bool = false
 
+    // MARK: - Text cache (performance)
+
+    /// AppKit/NSTextInputClient 在输入过程中会频繁查询 `selectedRange/markedRange/firstRect/...`。
+    /// 如果每次都跨 FFI 拉整份文档字符串，会造成明显卡顿（尤其是长文档 + 频繁回调）。
+    private var docContentEpoch: UInt64 = 1
+    private var docTextCacheEpoch: UInt64 = 0
+    private var docTextCache: String?
+    private var cachedSelectedRange: (epoch: UInt64, start: UInt32, end: UInt32, value: NSRange)?
+    private var cachedMarkedRange: (epoch: UInt64, start: UInt32, len: UInt32, value: NSRange)?
+
     private var lineHeightPx: Float = 18
     private var gutterWidthCells: UInt32 = 4
 
@@ -55,6 +65,39 @@ public final class EditorCoreSkiaView: MTKView {
     private var wordSelectionOrigin: (start: UInt32, end: UInt32)?
 
     private lazy var textInputContext = NSTextInputContext(client: self)
+
+    private func didMutateDocumentText() {
+        docContentEpoch &+= 1
+        docTextCacheEpoch = 0
+        docTextCache = nil
+        cachedSelectedRange = nil
+        cachedMarkedRange = nil
+    }
+
+    private func documentTextForInputQueries() -> String? {
+        if docTextCacheEpoch == docContentEpoch, let cached = docTextCache {
+            return cached
+        }
+
+        let t0 = CFAbsoluteTimeGetCurrent()
+        do {
+            let text = try editor.text()
+            docTextCache = text
+            docTextCacheEpoch = docContentEpoch
+
+            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_TEXT_CACHE"] == "1" {
+                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
+                NSLog("EditorCoreSkiaView text cache miss: fetched %d chars in %.2fms", text.count, dtMs)
+            }
+
+            return text
+        } catch {
+            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_TEXT_CACHE"] == "1" {
+                NSLog("EditorCoreSkiaView text cache miss: fetch failed: %@", String(describing: error))
+            }
+            return nil
+        }
+    }
 
     private func invalidateIMECharacterCoordinates() {
         // 用于 IME 候选窗定位：当 caret/marked range 或 viewport 变化时，需要通知系统重新查询 firstRect。
@@ -621,6 +664,7 @@ public final class EditorCoreSkiaView: MTKView {
 
         do {
             try editor.commitText(text)
+            didMutateDocumentText()
         } catch {
             NSSound.beep()
         }
@@ -652,7 +696,12 @@ public final class EditorCoreSkiaView: MTKView {
             var replaceStart: UInt32 = UInt32.max
             var replaceLen: UInt32 = 0
             if replacementRange.location != NSNotFound {
-                let doc = try editor.text()
+                let doc: String
+                if let cached = documentTextForInputQueries() {
+                    doc = cached
+                } else {
+                    doc = try editor.text()
+                }
                 let a = Self.scalarOffset(fromUTF16Offset: replacementRange.location, in: doc)
                 let b = Self.scalarOffset(fromUTF16Offset: replacementRange.location + replacementRange.length, in: doc)
                 replaceStart = UInt32(max(0, a))
@@ -666,6 +715,7 @@ public final class EditorCoreSkiaView: MTKView {
                 replaceStart: replaceStart,
                 replaceLen: replaceLen
             )
+            didMutateDocumentText()
         } catch {
             NSSound.beep()
         }
@@ -682,6 +732,7 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public override func doCommand(by selector: Selector) {
+        var didEditText = false
         do {
             switch selector {
             case #selector(copy(_:)):
@@ -759,31 +810,43 @@ public final class EditorCoreSkiaView: MTKView {
                 try editor.moveVisualByRowsAndModifySelection(1)
             case #selector(deleteBackward(_:)):
                 try editor.backspace()
+                didEditText = true
             case #selector(deleteForward(_:)):
                 try editor.deleteForward()
+                didEditText = true
             case #selector(deleteWordBackward(_:)):
                 try editor.deleteWordBack()
+                didEditText = true
             case #selector(deleteWordForward(_:)):
                 try editor.deleteWordForward()
+                didEditText = true
             case #selector(insertNewline(_:)):
                 try editor.commitText("\n")
+                didEditText = true
             case #selector(insertTab(_:)):
                 try editor.commitText("\t")
+                didEditText = true
             case #selector(cancelOperation(_:)):
                 // Escape: cancel marked text / composition (restore original replaced range).
                 let marked = try editor.markedRange()
                 if marked.hasMarked {
                     try editor.setMarkedText("", selectedStart: 0, selectedLen: 0)
+                    didEditText = true
                 }
             case #selector(undo(_:)):
-                undo(nil)
+                try editor.undo()
+                didEditText = true
             case #selector(redo(_:)):
-                redo(nil)
+                try editor.redo()
+                didEditText = true
             default:
                 break
             }
         } catch {
             NSSound.beep()
+        }
+        if didEditText {
+            didMutateDocumentText()
         }
         requestRedraw()
         invalidateIMECharacterCoordinates()
@@ -795,7 +858,12 @@ public final class EditorCoreSkiaView: MTKView {
     public override func selectAll(_ sender: Any?) {
         do {
             // EditorCoreUI 使用 Unicode scalar offset（与 Rust `char` 索引一致），这里用 unicodeScalars 计数。
-            let text = try editor.text()
+            let text: String
+            if let cached = documentTextForInputQueries() {
+                text = cached
+            } else {
+                text = try editor.text()
+            }
             let end = UInt32(text.unicodeScalars.count)
             try editor.setSelections([EcuSelectionRange(start: 0, end: end)], primaryIndex: 0)
         } catch {
@@ -810,6 +878,7 @@ public final class EditorCoreSkiaView: MTKView {
     public func undo(_ sender: Any?) {
         do {
             try editor.undo()
+            didMutateDocumentText()
         } catch {
             NSSound.beep()
         }
@@ -822,6 +891,7 @@ public final class EditorCoreSkiaView: MTKView {
     public func redo(_ sender: Any?) {
         do {
             try editor.redo()
+            didMutateDocumentText()
         } catch {
             NSSound.beep()
         }
@@ -850,6 +920,7 @@ public final class EditorCoreSkiaView: MTKView {
             pasteboard.clearContents()
             pasteboard.setString(text, forType: .string)
             try editor.deleteSelectionsOnly()
+            didMutateDocumentText()
             requestRedraw()
             invalidateIMECharacterCoordinates()
             onViewportStateDidChange?()
@@ -863,6 +934,7 @@ public final class EditorCoreSkiaView: MTKView {
         guard let text = pasteboard.string(forType: .string), text.isEmpty == false else { return }
         do {
             try editor.commitText(text)
+            didMutateDocumentText()
         } catch {
             NSSound.beep()
         }
@@ -874,19 +946,37 @@ public final class EditorCoreSkiaView: MTKView {
     // MARK: - NSTextInputClient state queries
 
     public func selectedRange() -> NSRange {
-        guard let text = try? editor.text() else { return NSRange(location: 0, length: 0) }
         guard let sel = try? editor.selectionOffsets() else { return NSRange(location: 0, length: 0) }
+        if let cached = cachedSelectedRange,
+           cached.epoch == docContentEpoch,
+           cached.start == sel.start,
+           cached.end == sel.end
+        {
+            return cached.value
+        }
+        guard let text = documentTextForInputQueries() else { return NSRange(location: 0, length: 0) }
         let startUtf16 = Self.utf16Offset(fromScalarOffset: Int(sel.start), in: text)
         let endUtf16 = Self.utf16Offset(fromScalarOffset: Int(sel.end), in: text)
-        return NSRange(location: startUtf16, length: max(0, endUtf16 - startUtf16))
+        let range = NSRange(location: startUtf16, length: max(0, endUtf16 - startUtf16))
+        cachedSelectedRange = (epoch: docContentEpoch, start: sel.start, end: sel.end, value: range)
+        return range
     }
 
     public func markedRange() -> NSRange {
-        guard let text = try? editor.text() else { return NSRange(location: NSNotFound, length: 0) }
         guard let marked = try? editor.markedRange(), marked.hasMarked else { return NSRange(location: NSNotFound, length: 0) }
+        if let cached = cachedMarkedRange,
+           cached.epoch == docContentEpoch,
+           cached.start == marked.start,
+           cached.len == marked.len
+        {
+            return cached.value
+        }
+        guard let text = documentTextForInputQueries() else { return NSRange(location: NSNotFound, length: 0) }
         let startUtf16 = Self.utf16Offset(fromScalarOffset: Int(marked.start), in: text)
         let endUtf16 = Self.utf16Offset(fromScalarOffset: Int(marked.start + marked.len), in: text)
-        return NSRange(location: startUtf16, length: max(0, endUtf16 - startUtf16))
+        let range = NSRange(location: startUtf16, length: max(0, endUtf16 - startUtf16))
+        cachedMarkedRange = (epoch: docContentEpoch, start: marked.start, len: marked.len, value: range)
+        return range
     }
 
     public func hasMarkedText() -> Bool {
@@ -895,7 +985,7 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
-        guard let text = try? editor.text() else { return nil }
+        guard let text = documentTextForInputQueries() else { return nil }
         let ns = text as NSString
         let clamped = NSRange(
             location: min(max(0, range.location), ns.length),
@@ -923,7 +1013,7 @@ public final class EditorCoreSkiaView: MTKView {
             actualRange?.pointee = range
             return .zero
         }
-        guard let text = try? editor.text() else {
+        guard let text = documentTextForInputQueries() else {
             actualRange?.pointee = range
             return .zero
         }
@@ -988,7 +1078,7 @@ public final class EditorCoreSkiaView: MTKView {
 
     public func characterIndex(for point: NSPoint) -> Int {
         // point 是 view 坐标（points），我们做 hit-test 并返回 UTF-16 index
-        guard let text = try? editor.text() else { return 0 }
+        guard let text = documentTextForInputQueries() else { return 0 }
         let (xPx, yPx) = EditorCoreCoordinateMapping.viewPointToViewBackingPx(
             viewPoint: point,
             view: self
