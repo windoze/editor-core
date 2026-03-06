@@ -137,9 +137,15 @@ private final class DemoSearchPanelController: NSObject, NSTextFieldDelegate, NS
     }
 }
 
+@MainActor
 private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var searchPanelController: DemoSearchPanelController?
+    private var minimapContainer: EditorCoreSkiaMinimapContainer?
+
+    @objc private func minimapToggled(_ sender: NSButton) {
+        minimapContainer?.showsMinimap = sender.state == .on
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -165,6 +171,7 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             // - Cmd-Z / Cmd-Shift-Z（undo/redo）
             // - 搜索/替换：窗口顶部（match highlights overlay）
             // - Cmd+Click 打开 DocumentLink（演示链接：https://example.com）
+            // - Minimap（右侧，可开关）
             //
             // TODO：
             // - 更完整的主题系统（StyleId -> Theme 映射）
@@ -270,6 +277,10 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             hoverLabel.lineBreakMode = .byTruncatingMiddle
             hoverLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
+            let minimapToggle = NSButton(checkboxWithTitle: "Minimap", target: nil, action: nil)
+            minimapToggle.state = .on
+            minimapToggle.setButtonType(.switch)
+
             let findPrev = NSButton(title: "Prev", target: nil, action: nil)
             findPrev.bezelStyle = .rounded
             let findNext = NSButton(title: "Next", target: nil, action: nil)
@@ -293,6 +304,7 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
                 findNext,
                 clear,
                 hoverLabel,
+                minimapToggle,
             ])
             searchRow.orientation = .horizontal
             searchRow.alignment = .centerY
@@ -315,21 +327,24 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             toolbar.spacing = 6
             toolbar.translatesAutoresizingMaskIntoConstraints = false
 
-            let scrollContainer = EditorCoreSkiaScrollContainer(editorView: editorView)
+            let editorContainer = EditorCoreSkiaMinimapContainer(editorView: editorView, showsMinimap: true)
+            self.minimapContainer = editorContainer
+            minimapToggle.target = self
+            minimapToggle.action = #selector(minimapToggled(_:))
 
             let container = NSView(frame: .zero)
             container.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(toolbar)
-            container.addSubview(scrollContainer)
+            container.addSubview(editorContainer)
             NSLayoutConstraint.activate([
                 toolbar.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
                 toolbar.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -8),
                 toolbar.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
 
-                scrollContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                scrollContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                scrollContainer.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 8),
-                scrollContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+                editorContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                editorContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                editorContainer.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 8),
+                editorContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             ])
 
             let searchController = DemoSearchPanelController(
