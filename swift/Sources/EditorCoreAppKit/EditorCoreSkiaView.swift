@@ -939,13 +939,28 @@ public final class EditorCoreSkiaView: MTKView {
                 try editor.moveToVisualLineStart()
             case #selector(moveToEndOfLine(_:)):
                 try editor.moveToVisualLineEnd()
+            case #selector(moveToLeftEndOfLine(_:)):
+                // Some keybindings (Home / Cmd+Left in certain layouts) map to the bidi-aware variants.
+                try editor.moveToVisualLineStart()
+            case #selector(moveToRightEndOfLine(_:)):
+                try editor.moveToVisualLineEnd()
             case #selector(moveToBeginningOfDocument(_:)):
                 try editor.moveToDocumentStart()
             case #selector(moveToEndOfDocument(_:)):
                 try editor.moveToDocumentEnd()
+            case #selector(scrollToBeginningOfDocument(_:)):
+                // Home key in some contexts is dispatched as a "scroll" action.
+                // We treat it as a caret move for editor behavior consistency.
+                try editor.moveToDocumentStart()
+            case #selector(scrollToEndOfDocument(_:)):
+                try editor.moveToDocumentEnd()
             case #selector(pageUp(_:)):
                 try editor.moveVisualByPages(-1)
             case #selector(pageDown(_:)):
+                try editor.moveVisualByPages(1)
+            case #selector(scrollPageUp(_:)):
+                try editor.moveVisualByPages(-1)
+            case #selector(scrollPageDown(_:)):
                 try editor.moveVisualByPages(1)
             case #selector(moveUp(_:)):
                 try editor.moveVisualByRows(-1)
@@ -962,6 +977,10 @@ public final class EditorCoreSkiaView: MTKView {
             case #selector(moveToBeginningOfLineAndModifySelection(_:)):
                 try editor.moveToVisualLineStartAndModifySelection()
             case #selector(moveToEndOfLineAndModifySelection(_:)):
+                try editor.moveToVisualLineEndAndModifySelection()
+            case #selector(moveToLeftEndOfLineAndModifySelection(_:)):
+                try editor.moveToVisualLineStartAndModifySelection()
+            case #selector(moveToRightEndOfLineAndModifySelection(_:)):
                 try editor.moveToVisualLineEndAndModifySelection()
             case #selector(moveToBeginningOfDocumentAndModifySelection(_:)):
                 try editor.moveToDocumentStartAndModifySelection()
