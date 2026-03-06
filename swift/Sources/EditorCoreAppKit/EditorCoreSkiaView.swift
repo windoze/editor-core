@@ -986,9 +986,17 @@ public final class EditorCoreSkiaView: MTKView {
                 try editor.moveToDocumentStartAndModifySelection()
             case #selector(moveToEndOfDocumentAndModifySelection(_:)):
                 try editor.moveToDocumentEndAndModifySelection()
+            case Selector(("scrollToBeginningOfDocumentAndModifySelection:")):
+                try editor.moveToDocumentStartAndModifySelection()
+            case Selector(("scrollToEndOfDocumentAndModifySelection:")):
+                try editor.moveToDocumentEndAndModifySelection()
             case #selector(pageUpAndModifySelection(_:)):
                 try editor.moveVisualByPagesAndModifySelection(-1)
             case #selector(pageDownAndModifySelection(_:)):
+                try editor.moveVisualByPagesAndModifySelection(1)
+            case Selector(("scrollPageUpAndModifySelection:")):
+                try editor.moveVisualByPagesAndModifySelection(-1)
+            case Selector(("scrollPageDownAndModifySelection:")):
                 try editor.moveVisualByPagesAndModifySelection(1)
             case #selector(moveUpAndModifySelection(_:)):
                 try editor.moveVisualByRowsAndModifySelection(-1)
