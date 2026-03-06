@@ -87,6 +87,27 @@ impl StyleColors {
     }
 }
 
+/// Vertical alignment of glyphs within a single line box (`line_height_px`).
+///
+/// This controls how the font's baseline is positioned between the line's top and bottom edges.
+/// It does **not** change hit-testing or selection/caret rectangles, which remain based on
+/// the monospace cell grid + `line_height_px`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextVerticalAlign {
+    /// Keep glyphs flush to the top of the line box (baseline at `-ascent`).
+    Top,
+    /// Center glyphs within the line box (distribute extra leading equally).
+    Center,
+    /// Keep glyphs flush to the bottom of the line box (baseline at `line_height_px - descent`).
+    Bottom,
+}
+
+impl Default for TextVerticalAlign {
+    fn default() -> Self {
+        Self::Center
+    }
+}
+
 /// Pixel-size configuration for rendering a viewport.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderConfig {
@@ -100,6 +121,8 @@ pub struct RenderConfig {
     pub font_size: f32,
     /// Line height in pixels.
     pub line_height_px: f32,
+    /// How to vertically align text within `line_height_px`.
+    pub text_vertical_align: TextVerticalAlign,
     /// Cell width in pixels (monospace column width).
     pub cell_width_px: f32,
     /// Left padding in pixels.
@@ -147,6 +170,7 @@ impl Default for RenderConfig {
             scale: 1.0,
             font_size: 13.0,
             line_height_px: 18.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 8.0,
             padding_x_px: 8.0,
             padding_y_px: 8.0,
@@ -245,6 +269,28 @@ impl SkiaRenderer {
             #[cfg(target_os = "macos")]
             metal: None,
         }
+    }
+
+    fn baseline_offset_px(&self, config: RenderConfig) -> f32 {
+        debug_assert!(
+            !self.fonts.is_empty(),
+            "SkiaRenderer must always have at least one font"
+        );
+
+        let (_spacing, metrics) = { self.fonts[0].metrics() };
+        let ascent = metrics.ascent;
+        let descent = metrics.descent;
+
+        let line_h = config.line_height_px.max(1.0);
+        let mut baseline_offset = match config.text_vertical_align {
+            TextVerticalAlign::Top => -ascent,
+            TextVerticalAlign::Center => (line_h - (descent - ascent)) * 0.5 - ascent,
+            TextVerticalAlign::Bottom => line_h - descent,
+        };
+        if !baseline_offset.is_finite() {
+            baseline_offset = line_h * 0.8;
+        }
+        baseline_offset.clamp(0.0, line_h)
     }
 
     /// Configure the font fallback chain (first match wins).
@@ -646,12 +692,7 @@ impl SkiaRenderer {
             !self.fonts.is_empty(),
             "SkiaRenderer must always have at least one font"
         );
-        let (_spacing, metrics) = { self.fonts[0].metrics() };
-        let mut baseline_offset = -metrics.ascent;
-        if !baseline_offset.is_finite() {
-            baseline_offset = config.line_height_px * 0.8;
-        }
-        baseline_offset = baseline_offset.clamp(0.0, config.line_height_px.max(1.0));
+        let baseline_offset = self.baseline_offset_px(config);
 
         // Text + underlines.
         for (row_idx, line) in grid.lines.iter().enumerate() {
@@ -1038,12 +1079,7 @@ impl SkiaRenderer {
             !self.fonts.is_empty(),
             "SkiaRenderer must always have at least one font"
         );
-        let (_spacing, metrics) = { self.fonts[0].metrics() };
-        let mut baseline_offset = -metrics.ascent;
-        if !baseline_offset.is_finite() {
-            baseline_offset = config.line_height_px * 0.8;
-        }
-        baseline_offset = baseline_offset.clamp(0.0, config.line_height_px.max(1.0));
+        let baseline_offset = self.baseline_offset_px(config);
 
         // 1) Draw per-cell backgrounds (including styled backgrounds).
         for (row_idx, line) in grid.lines.iter().enumerate() {
@@ -1527,12 +1563,7 @@ impl SkiaRenderer {
             !self.fonts.is_empty(),
             "SkiaRenderer must always have at least one font"
         );
-        let (_spacing, metrics) = { self.fonts[0].metrics() };
-        let mut baseline_offset = -metrics.ascent;
-        if !baseline_offset.is_finite() {
-            baseline_offset = config.line_height_px * 0.8;
-        }
-        baseline_offset = baseline_offset.clamp(0.0, config.line_height_px.max(1.0));
+        let baseline_offset = self.baseline_offset_px(config);
 
         // 1) Draw per-cell backgrounds (including styled backgrounds).
         for (row_idx, line) in grid.lines.iter().enumerate() {
@@ -2199,6 +2230,7 @@ mod tests {
             scale: 1.0,
             font_size: 20.0,
             line_height_px: 40.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 20.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2260,6 +2292,7 @@ mod tests {
             scale: 1.0,
             font_size: 20.0,
             line_height_px: 40.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 20.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2318,6 +2351,7 @@ mod tests {
             scale: 1.0,
             font_size: 10.0,
             line_height_px: 10.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2366,6 +2400,7 @@ mod tests {
             scale: 1.0,
             font_size: 10.0,
             line_height_px: 10.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2413,6 +2448,7 @@ mod tests {
             scale: 1.0,
             font_size: 10.0,
             line_height_px: 10.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2481,6 +2517,7 @@ mod tests {
             scale: 1.0,
             font_size: 12.0,
             line_height_px: 20.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2548,6 +2585,7 @@ mod tests {
             scale: 1.0,
             font_size: 12.0,
             line_height_px: 20.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2595,6 +2633,7 @@ mod tests {
             scale: 1.0,
             font_size: 12.0,
             line_height_px: 20.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2676,6 +2715,7 @@ mod tests {
             scale: 1.0,
             font_size: 12.0,
             line_height_px: 20.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2739,6 +2779,7 @@ mod tests {
             scale: 1.0,
             font_size: 12.0,
             line_height_px: 20.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 20.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2819,6 +2860,7 @@ mod tests {
             scale: 1.0,
             font_size: 12.0,
             line_height_px: 20.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 20.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2877,6 +2919,7 @@ mod tests {
             scale: 1.0,
             font_size: 12.0,
             line_height_px: 20.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -2960,6 +3003,7 @@ mod tests {
             scale: 1.0,
             font_size: 12.0,
             line_height_px: 20.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -3013,6 +3057,7 @@ mod tests {
             scale: 1.0,
             font_size: 12.0,
             line_height_px: 20.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 10.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,
@@ -3121,6 +3166,7 @@ mod tests {
             scale: 1.0,
             font_size: 20.0,
             line_height_px: 40.0,
+            text_vertical_align: TextVerticalAlign::Center,
             cell_width_px: 20.0,
             padding_x_px: 0.0,
             padding_y_px: 0.0,

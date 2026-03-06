@@ -771,6 +771,32 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_render_metrics(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_text_vertical_align(
+    ui: *mut EditorUi,
+    align: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        use editor_core_render_skia::TextVerticalAlign;
+
+        let ui = require_mut(ui, "ui")?;
+        let align = match align {
+            0 => TextVerticalAlign::Top,
+            1 => TextVerticalAlign::Center,
+            2 => TextVerticalAlign::Bottom,
+            _ => return Err(format!("invalid text vertical align: {align}")),
+        };
+        ui.set_text_vertical_align(align);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_font_families_csv(
     ui: *mut EditorUi,
     families_utf8: *const c_char,

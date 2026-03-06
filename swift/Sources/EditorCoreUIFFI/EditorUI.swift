@@ -6,6 +6,12 @@ public final class EditorUI {
     public let library: EditorCoreUIFFILibrary
     private let handle: OpaquePointer
 
+    public enum TextVerticalAlign: UInt8 {
+        case top = 0
+        case center = 1
+        case bottom = 2
+    }
+
     public init(library: EditorCoreUIFFILibrary, initialText: String = "", viewportWidthCells: UInt32 = 120) throws {
         self.library = library
         guard let ptr = initialText.withCString({ cstr in
@@ -169,6 +175,11 @@ public final class EditorUI {
     public func setRenderMetrics(fontSize: Float, lineHeightPx: Float, cellWidthPx: Float, paddingXPx: Float, paddingYPx: Float) throws {
         let status = editor_core_ui_ffi_editor_ui_set_render_metrics(handle, fontSize, lineHeightPx, cellWidthPx, paddingXPx, paddingYPx)
         try library.ensureStatus(status, context: "editor_ui_set_render_metrics")
+    }
+
+    public func setTextVerticalAlign(_ align: TextVerticalAlign) throws {
+        let status = editor_core_ui_ffi_editor_ui_set_text_vertical_align(handle, align.rawValue)
+        try library.ensureStatus(status, context: "editor_ui_set_text_vertical_align")
     }
 
     /// Configure a font fallback list for rendering (comma-separated family names).

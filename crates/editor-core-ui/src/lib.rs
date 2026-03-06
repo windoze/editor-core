@@ -19,7 +19,7 @@ use editor_core_lsp::{
 };
 use editor_core_render_skia::{
     FoldMarker, RenderConfig, RenderError, RenderTheme, SkiaRenderer, StyleColors, VisualCaret,
-    VisualSelection,
+    TextVerticalAlign, VisualSelection,
 };
 use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
 use editor_core_treesitter::{TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterUpdateMode};
@@ -1476,6 +1476,10 @@ impl EditorUi {
         self.render_config.cell_width_px = cell_width_px;
         self.render_config.padding_x_px = padding_x_px;
         self.render_config.padding_y_px = padding_y_px;
+    }
+
+    pub fn set_text_vertical_align(&mut self, align: TextVerticalAlign) {
+        self.render_config.text_vertical_align = align;
     }
 
     /// Configure font fallback list for rendering (comma-separated family names).

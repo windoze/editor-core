@@ -23,6 +23,13 @@ typedef struct EcuTheme {
   EcuRgba8 caret;
 } EcuTheme;
 
+typedef enum EcuTextVerticalAlign {
+  // 0=top, 1=center, 2=bottom (kept stable for ABI)
+  ECU_TEXT_VERTICAL_ALIGN_TOP = 0,
+  ECU_TEXT_VERTICAL_ALIGN_CENTER = 1,
+  ECU_TEXT_VERTICAL_ALIGN_BOTTOM = 2,
+} EcuTextVerticalAlign;
+
 // A single StyleId override entry.
 //
 // flags bitmask:
@@ -137,6 +144,8 @@ int32_t editor_core_ui_ffi_editor_ui_set_render_metrics(EditorUi* ui,
                                                        float cell_width_px,
                                                        float padding_x_px,
                                                        float padding_y_px);
+int32_t editor_core_ui_ffi_editor_ui_set_text_vertical_align(EditorUi* ui,
+                                                            uint8_t align /* EcuTextVerticalAlign */);
 int32_t editor_core_ui_ffi_editor_ui_set_font_families_csv(EditorUi* ui,
                                                            const char* families_utf8);
 int32_t editor_core_ui_ffi_editor_ui_set_font_ligatures_enabled(EditorUi* ui, uint8_t enabled);

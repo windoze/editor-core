@@ -13,6 +13,19 @@ public final class EditorCoreSkiaMinimapView: NSView {
     /// content bars to avoid expensive JSON + decoding work.
     public var maxDetailedVisualLines: UInt32 = 5_000
 
+    /// Maximum visual height (in view units) allotted to a single visual row in the minimap.
+    ///
+    /// When the document has only a few lines, scaling `totalRows -> bounds.height` makes the
+    /// minimap look vertically stretched. This cap limits the per-row height and leaves the
+    /// remaining space as background.
+    ///
+    /// Set to `<= 0` to disable capping (legacy behavior).
+    public var maxLineHeightPx: CGFloat = 2
+
+    /// Background color for the minimap area (including unused space when the content is shorter
+    /// than the minimap height).
+    public var backgroundColor: NSColor = .windowBackgroundColor
+
     private var viewportObserverToken: EditorCoreSkiaView.ViewportStateObserverToken?
     private var refreshPending: Bool = false
     private var minimapDirty: Bool = true
@@ -58,7 +71,7 @@ public final class EditorCoreSkiaMinimapView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
 
         // Background.
-        NSColor.windowBackgroundColor.setFill()
+        backgroundColor.setFill()
         ctx.fill(bounds)
 
         // Ensure we have a recent viewport state; drawing can happen before the async refresh tick.
@@ -71,6 +84,7 @@ public final class EditorCoreSkiaMinimapView: NSView {
         let totalRows = CGFloat(max(1, vp.totalVisualLines))
         let heightPx = max(1, bounds.height)
         let widthPx = max(1, bounds.width)
+        let (lineHeightPx, contentHeightPx) = minimapContentMetrics(totalRows: totalRows, heightPx: heightPx)
 
         if let grid = cachedGrid, vp.totalVisualLines <= maxDetailedVisualLines {
             // Render per-line density bars. We deliberately draw in pixel rows (1px height)
@@ -78,8 +92,8 @@ public final class EditorCoreSkiaMinimapView: NSView {
             ctx.setFillColor(NSColor.labelColor.withAlphaComponent(0.25).cgColor)
             for (idx, line) in grid.lines.enumerated() {
                 let visualRow = CGFloat(grid.startVisualRow) + CGFloat(idx)
-                let y = floor((visualRow / totalRows) * heightPx)
-                if y < 0 || y >= heightPx { continue }
+                let y = floor(visualRow * lineHeightPx)
+                if y < 0 || y >= contentHeightPx { continue }
 
                 let totalCells = max(1, CGFloat(line.totalCells))
                 let density = min(1, CGFloat(line.nonWhitespaceCells) / totalCells)
@@ -93,7 +107,13 @@ public final class EditorCoreSkiaMinimapView: NSView {
         }
 
         // Viewport indicator (including smooth-scroll sub-row offset).
-        let rect = viewportIndicatorRect(vp: vp, totalRows: totalRows, heightPx: heightPx)
+        let rect = viewportIndicatorRect(
+            vp: vp,
+            totalRows: totalRows,
+            heightPx: heightPx,
+            lineHeightPx: lineHeightPx,
+            contentHeightPx: contentHeightPx
+        )
 
         ctx.setFillColor(NSColor.systemBlue.withAlphaComponent(0.18).cgColor)
         ctx.fill(rect)
@@ -201,17 +221,46 @@ public final class EditorCoreSkiaMinimapView: NSView {
     }
 
     private func viewportIndicatorRect(vp: EcuViewportState, totalRows: CGFloat, heightPx: CGFloat) -> CGRect {
+        let (lineHeightPx, contentHeightPx) = minimapContentMetrics(totalRows: totalRows, heightPx: heightPx)
+        return viewportIndicatorRect(
+            vp: vp,
+            totalRows: totalRows,
+            heightPx: heightPx,
+            lineHeightPx: lineHeightPx,
+            contentHeightPx: contentHeightPx
+        )
+    }
+
+    private func viewportIndicatorRect(
+        vp: EcuViewportState,
+        totalRows: CGFloat,
+        heightPx: CGFloat,
+        lineHeightPx: CGFloat,
+        contentHeightPx: CGFloat
+    ) -> CGRect {
+        _ = (totalRows, heightPx)
+
+        guard contentHeightPx.isFinite, contentHeightPx > 0 else {
+            return .zero
+        }
+        guard lineHeightPx.isFinite, lineHeightPx > 0 else {
+            return CGRect(x: 0, y: 0, width: bounds.width, height: max(2, contentHeightPx))
+        }
+
         let visibleRows = CGFloat(max(1, vp.heightRows ?? vp.totalVisualLines))
         let posRows = CGFloat(vp.scrollTop) + CGFloat(vp.subRowOffset) / 65536.0
 
-        let yTop = (posRows / totalRows) * heightPx
-        let yBottom = ((posRows + visibleRows) / totalRows) * heightPx
-        return CGRect(
-            x: 0,
-            y: yTop.clamped(to: 0...heightPx),
-            width: bounds.width,
-            height: max(CGFloat(2), (yBottom - yTop).clamped(to: CGFloat(2)...heightPx))
-        )
+        let rawTop = posRows * lineHeightPx
+        let rawBottom = (posRows + visibleRows) * lineHeightPx
+        let yTop = rawTop.clamped(to: 0...contentHeightPx)
+        let yBottom = rawBottom.clamped(to: 0...contentHeightPx)
+
+        let minH: CGFloat = 2
+        let rawH = max(0, yBottom - yTop)
+        let h = max(minH, min(rawH, contentHeightPx))
+        let y = min(max(0, yTop), max(0, contentHeightPx - h))
+
+        return CGRect(x: 0, y: y, width: bounds.width, height: h)
     }
 
     private func applyViewportDrag(at point: NSPoint, vp: EcuViewportState) {
@@ -225,10 +274,19 @@ public final class EditorCoreSkiaMinimapView: NSView {
 
         let totalRows = CGFloat(max(1, vp.totalVisualLines))
         let heightPx = max(1, bounds.height)
-        let indicator = viewportIndicatorRect(vp: vp, totalRows: totalRows, heightPx: heightPx)
+        let (lineHeightPx, contentHeightPx) = minimapContentMetrics(totalRows: totalRows, heightPx: heightPx)
+        let indicator = viewportIndicatorRect(
+            vp: vp,
+            totalRows: totalRows,
+            heightPx: heightPx,
+            lineHeightPx: lineHeightPx,
+            contentHeightPx: contentHeightPx
+        )
 
-        let yTop = (point.y - drag.grabOffsetY).clamped(to: 0...(heightPx - indicator.height))
-        let posRows = (Double(yTop) / Double(heightPx)) * total
+        guard lineHeightPx.isFinite, lineHeightPx > 0 else { return }
+        let maxYTop = max(0, contentHeightPx - indicator.height)
+        let yTop = (point.y - drag.grabOffsetY).clamped(to: 0...maxYTop)
+        let posRows = Double(yTop / lineHeightPx)
         setSmoothScrollPosRows(posRows.clamped(to: 0.0...maxScroll))
     }
 
@@ -243,6 +301,17 @@ public final class EditorCoreSkiaMinimapView: NSView {
 
         editorView.needsDisplay = true
         editorView.notifyViewportStateDidChange()
+    }
+
+    private func minimapContentMetrics(totalRows: CGFloat, heightPx: CGFloat) -> (lineHeightPx: CGFloat, contentHeightPx: CGFloat) {
+        let total = max(1, totalRows)
+        let h = max(1, heightPx)
+
+        let ideal = h / total
+        let capped = (maxLineHeightPx > 0) ? min(ideal, maxLineHeightPx) : ideal
+        let lineHeightPx = max(1e-6, capped)
+        let contentHeightPx = min(h, total * lineHeightPx)
+        return (lineHeightPx, contentHeightPx)
     }
 }
 

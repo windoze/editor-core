@@ -150,6 +150,19 @@ public final class EditorCoreSkiaView: MTKView {
         didSet { applyCaretAppearanceIfNeeded(force: true) }
     }
 
+    /// Vertical alignment of glyphs within each line box (`lineHeightPx`).
+    ///
+    /// Notes:
+    /// - This affects rendering only; hit-testing and selection/caret rectangles remain based on the
+    ///   monospace grid + line height.
+    /// - Default is `.center` to match common editor behavior when line height > font size.
+    public var textVerticalAlign: EditorUI.TextVerticalAlign = .center {
+        didSet {
+            applyTextVerticalAlignIfNeeded(force: true)
+            requestRedraw()
+        }
+    }
+
     private var caretBlinkPhaseVisible: Bool = true
     // 注意：`Timer` 不是 `Sendable`，而 `deinit` 是非隔离上下文；
     // 这里用 `nonisolated(unsafe)` 允许在 `deinit` 中把 timer 转交给主线程做 invalidate。
@@ -157,6 +170,7 @@ public final class EditorCoreSkiaView: MTKView {
     private let caretBlinkTimerDisabledForTests: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     private var lastAppliedCaretWidthPx: Float?
     private var lastAppliedCaretVisible: Bool?
+    private var lastAppliedTextVerticalAlign: EditorUI.TextVerticalAlign?
 
     // MARK: - Viewport observers (multi-subscriber)
 
@@ -262,6 +276,19 @@ public final class EditorCoreSkiaView: MTKView {
             }
         } catch {
             NSLog("EditorCoreSkiaView applyCaretAppearance failed: %@", String(describing: error))
+        }
+    }
+
+    private func applyTextVerticalAlignIfNeeded(force: Bool) {
+        let align = textVerticalAlign
+        if force == false, lastAppliedTextVerticalAlign == align {
+            return
+        }
+        do {
+            try editor.setTextVerticalAlign(align)
+            lastAppliedTextVerticalAlign = align
+        } catch {
+            NSLog("EditorCoreSkiaView setTextVerticalAlign failed: %@", String(describing: error))
         }
     }
 
@@ -710,6 +737,7 @@ public final class EditorCoreSkiaView: MTKView {
                 paddingXPx: paddingPx,
                 paddingYPx: paddingPx
             )
+            applyTextVerticalAlignIfNeeded(force: false)
             try editor.setViewportPx(widthPx: widthPx, heightPx: heightPx, scale: Float(newScale))
         } catch {
             NSLog("EditorCoreSkiaView updateViewport failed: %@", String(describing: error))
