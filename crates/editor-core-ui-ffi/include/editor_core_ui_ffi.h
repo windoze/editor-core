@@ -146,6 +146,8 @@ int32_t editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(
 );
 int32_t editor_core_ui_ffi_editor_ui_reset_word_boundary_defaults(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_set_gutter_width_cells(EditorUi* ui, uint32_t width_cells);
+int32_t editor_core_ui_ffi_editor_ui_get_logical_line_count(EditorUi* ui, uint32_t* out_count);
+int32_t editor_core_ui_ffi_editor_ui_get_gutter_width_cells(EditorUi* ui, uint32_t* out_width_cells);
 int32_t editor_core_ui_ffi_editor_ui_set_viewport_px(EditorUi* ui,
                                                      uint32_t width_px,
                                                      uint32_t height_px,

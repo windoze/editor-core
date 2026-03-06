@@ -868,6 +868,44 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_gutter_width_cells(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_get_logical_line_count(
+    ui: *mut EditorUi,
+    out_count: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let out = require_mut(out_count, "out_count")?;
+        *out = ui.logical_line_count();
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_get_gutter_width_cells(
+    ui: *mut EditorUi,
+    out_width_cells: *mut u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let out = require_mut(out_width_cells, "out_width_cells")?;
+        *out = ui.gutter_width_cells();
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_viewport_px(
     ui: *mut EditorUi,
     width_px: u32,
@@ -4870,6 +4908,33 @@ contexts:
             editor_core_ui_ffi_editor_ui_render_metal(ui, ptr::null_mut()),
             ECU_ERR_INVALID_ARGUMENT
         );
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
+    fn ffi_get_logical_line_count_and_gutter_width_roundtrip() {
+        let initial = CString::new("a\nb\nc").unwrap(); // 3 logical lines
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let mut lines: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_logical_line_count(ui, &mut lines),
+            ECU_OK
+        );
+        assert_eq!(lines, 3);
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_gutter_width_cells(ui, 7),
+            ECU_OK
+        );
+        let mut gutter: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_gutter_width_cells(ui, &mut gutter),
+            ECU_OK
+        );
+        assert_eq!(gutter, 7);
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }

@@ -218,6 +218,20 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_gutter_width_cells")
     }
 
+    public func logicalLineCount() throws -> UInt32 {
+        var out: UInt32 = 0
+        let status = editor_core_ui_ffi_editor_ui_get_logical_line_count(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_get_logical_line_count")
+        return out
+    }
+
+    public func gutterWidthCells() throws -> UInt32 {
+        var out: UInt32 = 0
+        let status = editor_core_ui_ffi_editor_ui_get_gutter_width_cells(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_get_gutter_width_cells")
+        return out
+    }
+
     public func setViewportPx(widthPx: UInt32, heightPx: UInt32, scale: Float) throws {
         let status = editor_core_ui_ffi_editor_ui_set_viewport_px(handle, widthPx, heightPx, scale)
         try library.ensureStatus(status, context: "editor_ui_set_viewport_px")

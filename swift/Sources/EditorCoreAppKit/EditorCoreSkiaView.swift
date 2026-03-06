@@ -129,7 +129,27 @@ public final class EditorCoreSkiaView: MTKView {
         docTextCache = nil
         cachedSelectedRange = nil
         cachedMarkedRange = nil
+        updateGutterWidthIfNeeded()
         startProcessingPoll()
+    }
+
+    @discardableResult
+    private func updateGutterWidthIfNeeded() -> Bool {
+        do {
+            let lineCount = try editor.logicalLineCount()
+            let maxLineNo = max(1, lineCount)
+            let digits = UInt32(String(maxLineNo).count)
+            // Renderer reserves the first gutter cell for fold markers.
+            let required = max(4, 1 + digits)
+            if required == gutterWidthCells { return false }
+
+            gutterWidthCells = required
+            try editor.setGutterWidthCells(required)
+            return true
+        } catch {
+            // Gutter resizing is best-effort; never break input/rendering because of it.
+            return false
+        }
     }
 
     private func documentTextForInputQueries() -> String? {
@@ -262,6 +282,7 @@ public final class EditorCoreSkiaView: MTKView {
 
         // 让 gutter 可见（行号 + 折叠标记）。
         try editor.setGutterWidthCells(gutterWidthCells)
+        _ = updateGutterWidthIfNeeded()
 
         // Reserved overlay StyleId（见 `crates/editor-core-render-skia/src/lib.rs`）。
         // 这里先用一套默认配色，后续可由 host 主题系统统一下发。

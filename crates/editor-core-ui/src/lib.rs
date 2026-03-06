@@ -1554,6 +1554,18 @@ impl EditorUi {
         self.state.get_viewport_state()
     }
 
+    /// Total logical line count (0-based lines, as seen by the editor model / line numbers).
+    ///
+    /// Note: this is independent of soft-wrapping/folding (which affect visual rows).
+    pub fn logical_line_count(&self) -> u32 {
+        let n = self.state.editor().line_index.line_count();
+        (n.min(u32::MAX as usize)) as u32
+    }
+
+    pub fn gutter_width_cells(&self) -> u32 {
+        self.render_config.gutter_width_cells
+    }
+
     pub fn set_smooth_scroll_state(&mut self, top_visual_row: usize, sub_row_offset: u16) {
         let viewport = self.state.get_viewport_state();
         let height_rows = viewport.height.unwrap_or(viewport.total_visual_lines).max(1);
