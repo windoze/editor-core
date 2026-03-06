@@ -441,6 +441,7 @@ dependencies = [
 name = "editor-core-ui"
 version = "0.3.0"
 dependencies = [
+ "criterion",
  "editor-core",
  "editor-core-lsp",
  "editor-core-render-skia",
