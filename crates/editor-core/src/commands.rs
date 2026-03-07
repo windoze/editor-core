@@ -2160,7 +2160,7 @@ impl CommandExecutor {
             editor: EditorCore::new(text, viewport_width),
             command_history: Vec::new(),
             undo_redo: UndoRedoManager::new(1000),
-            tab_key_behavior: TabKeyBehavior::Tab,
+            tab_key_behavior: TabKeyBehavior::Spaces,
             line_ending: LineEnding::detect_in_text(text),
             preferred_x_cells: None,
             last_text_delta: None,

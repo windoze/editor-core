@@ -3,6 +3,11 @@ use editor_core::{Command, CommandExecutor, CursorCommand, EditCommand, Position
 #[test]
 fn test_indent_and_outdent_single_line_tab_mode() {
     let mut executor = CommandExecutor::new("line1\nline2\n", 80);
+    executor
+        .execute(Command::View(ViewCommand::SetTabKeyBehavior {
+            behavior: editor_core::TabKeyBehavior::Tab,
+        }))
+        .unwrap();
 
     // Indent line 2.
     executor
@@ -182,7 +187,7 @@ fn test_indent_outdent_multi_line_selection() {
         .execute(Command::Edit(EditCommand::Indent))
         .unwrap();
 
-    assert_eq!(executor.editor().get_text(), "\ta\n\tb\nc\n");
+    assert_eq!(executor.editor().get_text(), "    a\n    b\nc\n");
 
     executor
         .execute(Command::Edit(EditCommand::Outdent))

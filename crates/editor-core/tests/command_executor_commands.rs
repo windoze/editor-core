@@ -212,6 +212,12 @@ fn test_set_tab_width_affects_visual_position() {
 }
 
 #[test]
+fn test_default_tab_key_behavior_is_spaces() {
+    let executor = CommandExecutor::empty(80);
+    assert_eq!(executor.tab_key_behavior(), TabKeyBehavior::Spaces);
+}
+
+#[test]
 fn test_insert_tab_spaces_mode_inserts_to_next_stop() {
     let mut executor = CommandExecutor::new("abc", 80);
     executor
