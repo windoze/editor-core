@@ -2764,6 +2764,38 @@ impl CommandExecutor {
 
         let (selections, primary_index) = crate::selection_set::normalize_selections(selections, 0);
 
+        // If the selection spans multiple lines (including "Select Line" style selections) or
+        // covers a whole logical line, Tab should indent the selected lines.
+        //
+        // This mirrors common code editor behavior (VS Code, etc) and avoids the surprising
+        // "replace selection with whitespace" behavior for multi-line selections.
+        let should_indent_lines = selections.iter().any(|selection| {
+            if selection.start == selection.end {
+                return false;
+            }
+
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(selection);
+            if min_pos.line != max_pos.line {
+                return true;
+            }
+
+            if min_pos.column != 0 {
+                return false;
+            }
+
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(min_pos.line)
+                .unwrap_or_default();
+            let line_len = line_text.chars().count();
+            max_pos.column >= line_len
+        });
+
+        if should_indent_lines {
+            return self.execute_indent_command(false);
+        }
+
         let tab_width = self.editor.layout_engine.tab_width();
 
         struct Op {
@@ -3230,7 +3262,17 @@ impl CommandExecutor {
         let mut lines: Vec<usize> = Vec::new();
         for sel in &selections {
             let (min_pos, max_pos) = crate::selection_set::selection_min_max(sel);
-            for line in min_pos.line..=max_pos.line {
+            // Selections are treated as half-open ranges at the text-edit boundary (`end` is
+            // exclusive). For line-based operations like indent/outdent, do not include the
+            // trailing line when the selection ends at column 0 of the next line (common for
+            // "Select Line" style selections).
+            let end_line = if min_pos.line < max_pos.line && max_pos.column == 0 {
+                max_pos.line.saturating_sub(1)
+            } else {
+                max_pos.line
+            };
+
+            for line in min_pos.line..=end_line {
                 lines.push(line);
             }
         }
