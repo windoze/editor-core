@@ -12,6 +12,7 @@ final class AttoTabBarView: NSView {
 
     var onSelectTab: ((UUID) -> Void)?
     var onCloseTab: ((UUID) -> Void)?
+    var onDoubleClickTab: ((UUID) -> Void)?
 
     private let scrollView = NSScrollView()
     private let documentContainerView = NSView()
@@ -112,6 +113,7 @@ final class AttoTabBarView: NSView {
                 isPreview: tab.isPreview,
                 selected: tab.id == selectedID,
                 onSelect: { [weak self] in self?.onSelectTab?(tab.id) },
+                onDoubleClick: { [weak self] in self?.onDoubleClickTab?(tab.id) },
                 onClose: { [weak self] in self?.onCloseTab?(tab.id) }
             )
             chip.translatesAutoresizingMaskIntoConstraints = false
@@ -127,6 +129,7 @@ final class AttoTabBarView: NSView {
 private final class AttoTabChipView: NSView {
     private let id: UUID
     private let onSelect: () -> Void
+    private let onDoubleClick: () -> Void
     private let onClose: () -> Void
 
     private let titleLabel = NSTextField(labelWithString: "")
@@ -145,10 +148,12 @@ private final class AttoTabChipView: NSView {
         isPreview: Bool,
         selected: Bool,
         onSelect: @escaping () -> Void,
+        onDoubleClick: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
         self.id = id
         self.onSelect = onSelect
+        self.onDoubleClick = onDoubleClick
         self.onClose = onClose
         self.selected = selected
 
@@ -251,6 +256,9 @@ private final class AttoTabChipView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         onSelect()
+        if event.clickCount == 2 {
+            onDoubleClick()
+        }
     }
 
     @objc private func closeClicked(_ sender: Any?) {

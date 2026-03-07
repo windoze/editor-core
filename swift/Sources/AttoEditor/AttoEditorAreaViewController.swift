@@ -50,6 +50,9 @@ final class AttoEditorAreaViewController: NSViewController {
         tabBarView.onCloseTab = { [weak self] id in
             self?.closeTab(id: id)
         }
+        tabBarView.onDoubleClickTab = { [weak self] id in
+            self?.pinTabIfPreview(id: id)
+        }
         tabBarView.translatesAutoresizingMaskIntoConstraints = false
 
         contentHostView.translatesAutoresizingMaskIntoConstraints = false
@@ -204,6 +207,13 @@ final class AttoEditorAreaViewController: NSViewController {
             tabs: tabs.map { .init(id: $0.id, title: $0.displayTitle, toolTip: $0.fileURL.path, isPreview: $0.isPreview) },
             selectedID: selectedTabID
         )
+    }
+
+    private func pinTabIfPreview(id: UUID) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        guard tab.isPreview else { return }
+        tab.isPreview = false
+        refreshTabBar()
     }
 
     // MARK: - Minimap
