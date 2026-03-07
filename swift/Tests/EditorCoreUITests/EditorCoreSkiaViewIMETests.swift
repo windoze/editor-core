@@ -1,5 +1,5 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import Foundation
 import XCTest
@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class EditorCoreSkiaViewIMETests: XCTestCase {
     func testSetMarkedTextConvertsUTF16SelectionToScalarOffsetsWithEmoji() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "abc", viewportWidthCells: 80)
 
         // Put caret at end of "abc" (char offsets use Unicode scalar count).
@@ -29,7 +29,7 @@ final class EditorCoreSkiaViewIMETests: XCTestCase {
     }
 
     func testSetMarkedTextHonorsReplacementRangeUTF16WhenDocumentContainsEmoji() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "a😀b", viewportWidthCells: 80)
 
         // Replace the emoji (UTF-16: location 1, length 2) with marked text "你".
@@ -46,7 +46,7 @@ final class EditorCoreSkiaViewIMETests: XCTestCase {
     }
 
     func testCancelOperationRestoresOriginalReplacedSelection() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "abcXYZdef", viewportWidthCells: 80)
 
         // Select "XYZ" (char offsets).
@@ -69,7 +69,7 @@ final class EditorCoreSkiaViewIMETests: XCTestCase {
     }
 
     func testFirstRectUsesCaretDuringMarkedTextSoCandidateWindowDoesNotJump() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
 
         // Put the view into a window so `firstRect(forCharacterRange:)` can return screen coords.
         let window = NSWindow(
@@ -111,8 +111,8 @@ final class EditorCoreSkiaViewIMETests: XCTestCase {
     }
 }
 
-final class EditorCoreAppKitTestSupport: @unchecked Sendable {
-    static let shared = EditorCoreAppKitTestSupport()
+final class EditorCoreUITestSupport: @unchecked Sendable {
+    static let shared = EditorCoreUITestSupport()
 
     func loadLibrary() throws -> EditorCoreUIFFILibrary {
         // SwiftPM 通过 Rust `staticlib` 静态链接进来；这里不需要额外加载 dylib。

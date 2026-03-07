@@ -1,12 +1,12 @@
 import AppKit
-@testable import EditorCoreAppKit
+@testable import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaScrollContainerTests: XCTestCase {
     func testScrollContainerUpdatesScrollerAndAppliesScrollState() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let longText = "a\nb\nc\n" + String(repeating: "x\n", count: 300)
         let editorView = try EditorCoreSkiaView(library: lib, initialText: longText, viewportWidthCells: 80)
         let container = EditorCoreSkiaScrollContainer(editorView: editorView)
@@ -38,7 +38,7 @@ final class EditorCoreSkiaScrollContainerTests: XCTestCase {
     }
 
     func testScrollContainerTrackClickPagesSmoothly() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let longText = "a\nb\nc\n" + String(repeating: "x\n", count: 400)
         let editorView = try EditorCoreSkiaView(library: lib, initialText: longText, viewportWidthCells: 80)
         let container = EditorCoreSkiaScrollContainer(editorView: editorView)
@@ -87,7 +87,7 @@ final class EditorCoreSkiaScrollContainerTests: XCTestCase {
     }
 
     func testScrollContainerTrackClickHoldRepeatsWhilePressed() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let longText = "a\nb\nc\n" + String(repeating: "x\n", count: 2_000)
         let editorView = try EditorCoreSkiaView(library: lib, initialText: longText, viewportWidthCells: 80)
         let container = EditorCoreSkiaScrollContainer(editorView: editorView)
@@ -125,7 +125,7 @@ final class EditorCoreSkiaScrollContainerTests: XCTestCase {
     }
 
     func testScrollContainerTrackClickHoldStopsExtendingAfterRelease() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let longText = "a\nb\nc\n" + String(repeating: "x\n", count: 2_000)
         let editorView = try EditorCoreSkiaView(library: lib, initialText: longText, viewportWidthCells: 80)
         let container = EditorCoreSkiaScrollContainer(editorView: editorView)

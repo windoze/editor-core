@@ -1,5 +1,5 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
@@ -34,7 +34,7 @@ final class EditorCoreSkiaViewKeyboardShortcutClipboardTests: XCTestCase {
     }
 
     func testCmdC_CmdX_CmdVWorkWithoutMenu() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "one two three", viewportWidthCells: 80)
 
         // Use a private pasteboard to avoid touching the user's real clipboard.

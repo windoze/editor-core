@@ -1,4 +1,4 @@
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import Foundation
 import XCTest
@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class EditorCoreSkiaViewAsyncProcessingTests: XCTestCase {
     func testAsyncProcessingPollTimerAppliesEdits() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(
             library: lib,
             initialText: "fn main() {\n  let x = 1;\n}\n",

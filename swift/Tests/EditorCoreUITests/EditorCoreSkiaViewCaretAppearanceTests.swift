@@ -1,12 +1,12 @@
 import AppKit
-@testable import EditorCoreAppKit
+@testable import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewCaretAppearanceTests: XCTestCase {
     func testCaretWidthPointsAppliesScaledPxToRust() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let editorView = try EditorCoreSkiaView(library: lib, initialText: "", viewportWidthCells: 80)
 
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))
@@ -41,7 +41,7 @@ final class EditorCoreSkiaViewCaretAppearanceTests: XCTestCase {
     }
 
     func testCaretBlinkTickTogglesVisibilityWhenEnabled() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let editorView = try EditorCoreSkiaView(library: lib, initialText: "abc", viewportWidthCells: 80)
 
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))

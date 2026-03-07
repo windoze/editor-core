@@ -1,5 +1,5 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
@@ -41,7 +41,7 @@ final class EditorCoreSkiaViewHoverTests: XCTestCase {
     }
 
     func testHoverCallbackFiresWithLogicalPosition() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "ab\ncde\nf", viewportWidthCells: 80)
 
         let window = NSWindow(
@@ -71,7 +71,7 @@ final class EditorCoreSkiaViewHoverTests: XCTestCase {
     }
 
     func testHoverExitCallbackFires() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "ab\ncde\nf", viewportWidthCells: 80)
 
         let window = NSWindow(

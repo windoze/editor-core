@@ -15,10 +15,10 @@
 - `Sources/CEditorCoreUIFFI/`：C header module（转发到 `crates/editor-core-ui-ffi/include/editor_core_ui_ffi.h`）
 - `Sources/EditorCoreFFI/`：Swift 封装（`EditorState`/`Workspace` 包装 + viewport blob 解析）。
 - `Sources/EditorCoreFFIDemo/`：最小 CLI demo（验证加载与基础编辑）。
-- `Sources/EditorCoreAppKit/`：AppKit 组件（自绘 + IME + 事件映射）。
-- `Sources/EditorCoreSkiaAppKitDemo/`：自绘 demo（Skia renderer）。
+- `Sources/EditorCoreUI/`：AppKit 组件（自绘 + IME + 事件映射）。
+- `Sources/EditCoreUIDemo/`：AppKit demo（使用 `EditCoreUI` 组合 editor + minimap + scrollbar）。
 - `Tests/EditorCoreFFITests/`：Swift 侧集成测试。
-- `Tests/EditorCoreAppKitTests/`：AppKit 组件测试。
+- `Tests/EditorCoreUITests/`：AppKit 组件测试。
 
 ## 构建 Rust staticlib
 
@@ -69,7 +69,7 @@ swift run EditorCoreFFIDemo
 
 ```bash
 cd swift
-swift run EditorCoreSkiaAppKitDemo
+swift run EditCoreUIDemo
 ```
 
 ## 运行测试

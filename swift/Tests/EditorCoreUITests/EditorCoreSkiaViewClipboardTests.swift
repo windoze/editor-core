@@ -1,12 +1,12 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewClipboardTests: XCTestCase {
     func testCopyCutPasteUseInjectedPasteboard() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "one two three", viewportWidthCells: 80)
 
         // Use a private pasteboard to avoid touching the user's real clipboard.
@@ -49,7 +49,7 @@ final class EditorCoreSkiaViewClipboardTests: XCTestCase {
     }
 
     func testCutWithEmptySelectionIsNoOp() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "abc", viewportWidthCells: 80)
 
         let pb = NSPasteboard(name: NSPasteboard.Name("EditorCoreSkiaViewClipboardTests-\(UUID().uuidString)"))
@@ -65,7 +65,7 @@ final class EditorCoreSkiaViewClipboardTests: XCTestCase {
     }
 
     func testPasteScrollsToKeepCaretVisible() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "", viewportWidthCells: 80)
 
         let pb = NSPasteboard(name: NSPasteboard.Name("EditorCoreSkiaViewClipboardTests-\(UUID().uuidString)"))

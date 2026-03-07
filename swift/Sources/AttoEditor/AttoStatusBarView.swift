@@ -9,23 +9,26 @@ final class AttoStatusBarView: NSView {
     private let fileSizeLabel = NSTextField(labelWithString: "")
 
     private let rightStack = NSStackView()
+    private let topBorderLayer = CALayer()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
         wantsLayer = true
-        // VSCode-ish status bar blue.
-        layer?.backgroundColor = NSColor(attoHex: 0x007ACC).cgColor
+        // Sublime-ish: neutral dark status bar (avoid VSCode blue).
+        layer?.backgroundColor = NSColor(attoHex: 0x2B2B2B).cgColor
+        topBorderLayer.backgroundColor = NSColor(attoHex: 0x1E1E1E).cgColor
+        layer?.addSublayer(topBorderLayer)
 
-        leftLabel.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        leftLabel.textColor = .white
+        leftLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        leftLabel.textColor = NSColor(attoHex: 0xB5B5B5)
         leftLabel.lineBreakMode = .byTruncatingMiddle
         leftLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         leftLabel.translatesAutoresizingMaskIntoConstraints = false
 
         for l in [positionLabel, selectionLabel, fileSizeLabel] {
-            l.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-            l.textColor = .white
+            l.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+            l.textColor = NSColor(attoHex: 0xB5B5B5)
             l.translatesAutoresizingMaskIntoConstraints = false
         }
 
@@ -56,6 +59,12 @@ final class AttoStatusBarView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func layout() {
+        super.layout()
+        // 1px top divider line.
+        topBorderLayer.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
+    }
+
     func update(leftText: String?, positionText: String, selectionText: String?, fileSizeText: String?) {
         leftLabel.stringValue = leftText ?? ""
         positionLabel.stringValue = positionText
@@ -72,4 +81,3 @@ private extension NSColor {
         self.init(red: r, green: g, blue: b, alpha: alpha)
     }
 }
-

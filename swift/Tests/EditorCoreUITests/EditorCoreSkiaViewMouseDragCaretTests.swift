@@ -1,12 +1,12 @@
 import AppKit
-@testable import EditorCoreAppKit
+@testable import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewMouseDragCaretTests: XCTestCase {
     func testMouseDragSelectionThenArrowMovesFromActiveEnd() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "aaaa\nbbbb\ncccc", viewportWidthCells: 80)
 
         let window = NSWindow(

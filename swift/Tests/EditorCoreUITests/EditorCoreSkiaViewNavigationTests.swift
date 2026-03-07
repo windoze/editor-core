@@ -1,12 +1,12 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewNavigationTests: XCTestCase {
     func testLineAndDocumentNavigationCommands() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "abc\ndef", viewportWidthCells: 80)
 
         let window = NSWindow(

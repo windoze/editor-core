@@ -346,7 +346,7 @@ fn map_ui_error(err: UiError) -> String {
 
 /// Free a C string returned by this library.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_string_free(ptr: *mut c_char) {
+pub unsafe extern "C" fn editor_core_ui_ffi_string_free(ptr: *mut c_char) {
     if ptr.is_null() {
         return;
     }
@@ -403,7 +403,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_new(
 
 /// Free an Editor UI handle.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_free(ui: *mut EditorUi) {
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_free(ui: *mut EditorUi) {
     if ui.is_null() {
         return;
     }
@@ -413,7 +413,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_free(ui: *mut EditorUi) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_set_theme(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_theme(
     ui: *mut EditorUi,
     theme: *const EcuTheme,
 ) -> c_int {
@@ -436,7 +436,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_theme(
 
 /// Replace the current UI chrome theme (gutter, fold marker colors, ...).
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_set_chrome_theme(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_chrome_theme(
     ui: *mut EditorUi,
     theme: *const EcuChromeTheme,
 ) -> c_int {
@@ -459,7 +459,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_chrome_theme(
 
 /// Replace the current theme's `StyleId -> colors` override map.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_set_style_colors(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_style_colors(
     ui: *mut EditorUi,
     styles: *const EcuStyleColors,
     style_count: u32,
@@ -493,7 +493,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_style_colors(
 
 /// Replace the current theme's `StyleId -> font style` override map.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_set_style_fonts(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_style_fonts(
     ui: *mut EditorUi,
     fonts: *const EcuStyleFont,
     font_count: u32,
@@ -527,7 +527,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_style_fonts(
 
 /// Replace the current theme's `StyleId -> text decorations` override map.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_set_style_text_decorations(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_style_text_decorations(
     ui: *mut EditorUi,
     decorations: *const EcuStyleTextDecorations,
     decoration_count: u32,
@@ -604,7 +604,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_set_syntax_path(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_disable(ui: *mut EditorUi) {
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_sublime_disable(ui: *mut EditorUi) {
     if ui.is_null() {
         set_last_error("ui is null".to_string());
         return;
@@ -614,7 +614,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_disable(ui: *mut EditorUi
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope(
     ui: *mut EditorUi,
     scope_utf8: *const c_char,
     out_style_id: *mut u32,
@@ -721,7 +721,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queri
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_disable(ui: *mut EditorUi) {
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_disable(ui: *mut EditorUi) {
     if ui.is_null() {
         set_last_error("ui is null".to_string());
         return;
@@ -781,7 +781,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_enable(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_disable(ui: *mut EditorUi) {
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_disable(ui: *mut EditorUi) {
     if ui.is_null() {
         set_last_error("ui is null".to_string());
         return;
@@ -791,7 +791,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_disable(ui: *mut EditorUi) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_is_enabled(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_is_enabled(
     ui: *mut EditorUi,
     out_enabled: *mut u8,
 ) -> c_int {
@@ -820,7 +820,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_is_enabled(
 /// - `out_applied`: set to 1 if new edits were applied.
 /// - `out_pending`: set to 1 if there is still pending work.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_poll_processing(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_poll_processing(
     ui: *mut EditorUi,
     out_applied: *mut u8,
     out_pending: *mut u8,
@@ -850,7 +850,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_poll_processing(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(
     ui: *mut EditorUi,
     capture_utf8: *const c_char,
     out_style_id: *mut u32,
@@ -1024,7 +1024,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_jso
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(
     ui: *mut EditorUi,
     data: *const u32,
     data_len: u32,
@@ -1369,7 +1369,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_viewport_px(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_rows(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_rows(
     ui: *mut EditorUi,
     delta_rows: c_int,
 ) {
@@ -1382,7 +1382,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_rows(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_pixels(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_pixels(
     ui: *mut EditorUi,
     delta_y_px: c_float,
 ) {
@@ -1427,7 +1427,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_viewport_state(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(
     ui: *mut EditorUi,
     top_visual_row: u32,
     sub_row_offset: u32,
@@ -1568,7 +1568,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_remove_style(
 /// - `ranges` are character-offset ranges (inclusive-exclusive).
 /// - Passing `range_count = 0` clears the layer (and allows `ranges` to be null).
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_set_match_highlights(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_match_highlights(
     ui: *mut EditorUi,
     ranges: *const EcuSelectionRange,
     range_count: u32,
@@ -1602,7 +1602,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_match_highlights(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_search_set_query(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_search_set_query(
     ui: *mut EditorUi,
     query_utf8: *const c_char,
     case_sensitive: u8,
@@ -1650,7 +1650,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_search_clear(ui: *mut EditorUi) -
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_find_next(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_find_next(
     ui: *mut EditorUi,
     query_utf8: *const c_char,
     case_sensitive: u8,
@@ -1683,7 +1683,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_find_next(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_find_prev(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_find_prev(
     ui: *mut EditorUi,
     query_utf8: *const c_char,
     case_sensitive: u8,
@@ -1716,7 +1716,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_find_prev(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_replace_current(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_replace_current(
     ui: *mut EditorUi,
     query_utf8: *const c_char,
     replacement_utf8: *const c_char,
@@ -1753,7 +1753,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_replace_current(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_replace_all(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_replace_all(
     ui: *mut EditorUi,
     query_utf8: *const c_char,
     replacement_utf8: *const c_char,
@@ -2472,7 +2472,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_marked_text_ex(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_unmark_text(ui: *mut EditorUi) {
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_unmark_text(ui: *mut EditorUi) {
     if ui.is_null() {
         set_last_error("ui is null".to_string());
         return;
@@ -2541,7 +2541,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_mouse_dragged(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_mouse_up(ui: *mut EditorUi) {
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_mouse_up(ui: *mut EditorUi) {
     if ui.is_null() {
         set_last_error("ui is null".to_string());
         return;
@@ -2554,7 +2554,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_mouse_up(ui: *mut EditorUi) {
 /// - The caller provides an output buffer and capacity.
 /// - If capacity is insufficient, returns `ECU_ERR_BUFFER_TOO_SMALL` and writes the required size to `out_len`.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_render_rgba(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_render_rgba(
     ui: *mut EditorUi,
     out_buf: *mut u8,
     out_cap: u32,
@@ -2611,12 +2611,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_enable_metal(
 
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.enable_metal(
-            metal_device as *mut c_void,
-            metal_command_queue as *mut c_void,
-        )
-        .map(|_| ECU_OK)
-        .map_err(map_ui_error)
+        ui.enable_metal(metal_device, metal_command_queue)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -2640,7 +2637,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_render_metal(
 
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.render_metal_visible_into_texture(metal_texture as *mut c_void)
+        ui.render_metal_visible_into_texture(metal_texture)
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
     }) {
@@ -2725,7 +2722,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_minimap_json(
 ///
 /// Writes `start` and `end` (inclusive-exclusive) offsets.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_get_selection_offsets(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_selection_offsets(
     ui: *mut EditorUi,
     out_start: *mut u32,
     out_end: *mut u32,
@@ -2778,7 +2775,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_delete_selections_only(ui: *mut E
 /// - `out_primary_index` receives the primary selection index.
 /// - If `out_ranges` is null or `out_cap` is insufficient, returns `ECU_ERR_BUFFER_TOO_SMALL`.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_get_selections(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_selections(
     ui: *mut EditorUi,
     out_ranges: *mut EcuSelectionRange,
     out_cap: u32,
@@ -2828,7 +2825,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_selections(
 
 /// Set the full selection set (including primary) from character-offset ranges.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_set_selections(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_selections(
     ui: *mut EditorUi,
     ranges: *const EcuSelectionRange,
     range_count: u32,
@@ -2887,7 +2884,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_rect_selection(
 ///
 /// If there is no marked text, writes `has_marked = 0` and `out_start/out_len = 0`.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_get_marked_range(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_marked_range(
     ui: *mut EditorUi,
     out_has_marked: *mut u8,
     out_start: *mut u32,
@@ -2929,7 +2926,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_marked_range(
 /// - `char_offset` is a Unicode scalar index.
 /// - `out_line/out_column` receive 0-based indices.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(
     ui: *mut EditorUi,
     char_offset: u32,
     out_line: *mut u32,
@@ -2963,7 +2960,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(
 ///
 /// Writes `out_x/out_y` and `out_line_height_px`.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
     ui: *mut EditorUi,
     char_offset: u32,
     out_x: *mut c_float,
@@ -3003,7 +3000,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
 
 /// Hit-test a view point (pixels, top-left origin) and return the corresponding character offset.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_view_point_to_char_offset(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_view_point_to_char_offset(
     ui: *mut EditorUi,
     x_px: c_float,
     y_px: c_float,
@@ -3034,7 +3031,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_view_point_to_char_offset(
 /// - `out_json_utf8` receives a newly allocated string that must be freed with
 ///   `editor_core_ui_ffi_string_free` (or is set to NULL when no link is present).
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(
     ui: *mut EditorUi,
     x_px: c_float,
     y_px: c_float,
@@ -3093,7 +3090,9 @@ mod tests {
             let mut applied: u8 = 0;
             let mut pending: u8 = 0;
             assert_eq!(
-                editor_core_ui_ffi_editor_ui_poll_processing(ui, &mut applied, &mut pending),
+                unsafe {
+                    editor_core_ui_ffi_editor_ui_poll_processing(ui, &mut applied, &mut pending)
+                },
                 ECU_OK
             );
             if pending == 0 {
@@ -3139,7 +3138,10 @@ mod tests {
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -3161,7 +3163,7 @@ mod tests {
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(text_ptr);
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
         assert_eq!(text, "!abc");
 
         // undo/redo smoke
@@ -3171,25 +3173,27 @@ mod tests {
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(t2_ptr);
+        unsafe { editor_core_ui_ffi_string_free(t2_ptr) };
         assert_eq!(t2, "abc");
         assert_eq!(editor_core_ui_ffi_editor_ui_redo(ui), ECU_OK);
 
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 80 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
         assert_eq!(pixel(&buf, 80, 70, 30), [10, 20, 30, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3201,12 +3205,12 @@ mod tests {
         let ptr = editor_core_ui_ffi_editor_ui_minimap_json(ui, 0, 20);
         assert!(!ptr.is_null());
         let json = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
-        editor_core_ui_ffi_string_free(ptr);
+        unsafe { editor_core_ui_ffi_string_free(ptr) };
 
         assert!(json.contains("\"lines\""));
         assert!(json.contains("\"actual_line_count\""));
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3222,12 +3226,14 @@ mod tests {
             EcuSelectionRange { start: 8, end: 13 },
         ];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(
-                ui,
-                ranges.as_ptr(),
-                ranges.len() as u32,
-                0
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_selections(
+                    ui,
+                    ranges.as_ptr(),
+                    ranges.len() as u32,
+                    0,
+                )
+            },
             ECU_OK
         );
 
@@ -3237,7 +3243,7 @@ mod tests {
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(sel_ptr);
+        unsafe { editor_core_ui_ffi_string_free(sel_ptr) };
         assert_eq!(sel, "one\nthree");
 
         assert_eq!(
@@ -3251,7 +3257,7 @@ mod tests {
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(text_ptr);
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
         assert_eq!(text, " two ");
 
         // Cut should clear selections (leave carets only), so selected text becomes empty.
@@ -3261,10 +3267,10 @@ mod tests {
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(sel2_ptr);
+        unsafe { editor_core_ui_ffi_string_free(sel2_ptr) };
         assert_eq!(sel2, "");
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3300,7 +3306,10 @@ mod tests {
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -3330,19 +3339,27 @@ mod tests {
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 80 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -3350,7 +3367,7 @@ mod tests {
         // Styled cell is at x in [10..20], pick a center pixel at y=10.
         assert_eq!(pixel(&buf, 80, 15, 10), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3372,7 +3389,10 @@ mod tests {
             selection_background: bg,
             caret: bg,
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 10.0, 10.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -3404,23 +3424,27 @@ mod tests {
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_text_decorations(
-                ui,
-                decorations.as_ptr(),
-                decorations.len() as u32
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_text_decorations(
+                    ui,
+                    decorations.as_ptr(),
+                    decorations.len() as u32,
+                )
+            },
             ECU_OK
         );
 
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 80 * 20 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -3428,7 +3452,7 @@ mod tests {
         // Styled cell is at x in [10..20]. The squiggle starts at y=9 (line height 10).
         assert_eq!(pixel(&buf, 80, 11, 9), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3464,7 +3488,10 @@ mod tests {
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -3494,11 +3521,13 @@ contexts:
         let scope = CString::new("comment.line.demo").unwrap();
         let mut style_id: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope(
-                ui,
-                scope.as_ptr(),
-                &mut style_id
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope(
+                    ui,
+                    scope.as_ptr(),
+                    &mut style_id,
+                )
+            },
             ECU_OK
         );
 
@@ -3506,7 +3535,7 @@ contexts:
         assert!(!scope_ptr.is_null());
         let roundtrip = unsafe { CStr::from_ptr(scope_ptr) }.to_str().unwrap();
         assert_eq!(roundtrip, "comment.line.demo");
-        editor_core_ui_ffi_string_free(scope_ptr);
+        unsafe { editor_core_ui_ffi_string_free(scope_ptr) };
 
         let styles = [EcuStyleColors {
             style_id,
@@ -3525,19 +3554,27 @@ contexts:
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -3545,7 +3582,7 @@ contexts:
         // "a # " => space at col=3 is highlighted => x in [30..40]
         assert_eq!(pixel(&buf, 200, 35, 10), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3580,7 +3617,10 @@ contexts:
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -3604,11 +3644,13 @@ contexts:
         let capture = CString::new("comment").unwrap();
         let mut style_id: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(
-                ui,
-                capture.as_ptr(),
-                &mut style_id
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(
+                    ui,
+                    capture.as_ptr(),
+                    &mut style_id,
+                )
+            },
             ECU_OK
         );
 
@@ -3616,7 +3658,7 @@ contexts:
         assert!(!name_ptr.is_null());
         let roundtrip = unsafe { CStr::from_ptr(name_ptr) }.to_str().unwrap();
         assert_eq!(roundtrip, "comment");
-        editor_core_ui_ffi_string_free(name_ptr);
+        unsafe { editor_core_ui_ffi_string_free(name_ptr) };
 
         let styles = [EcuStyleColors {
             style_id,
@@ -3635,19 +3677,27 @@ contexts:
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -3655,7 +3705,7 @@ contexts:
         // Comment contains a space at col=2 => x in [20..30]
         assert_eq!(pixel(&buf, 200, 25, 10), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3669,37 +3719,43 @@ contexts:
             EcuSelectionRange { start: 4, end: 4 },
         ];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(
-                ui,
-                ranges.as_ptr(),
-                ranges.len() as u32,
-                0
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_selections(
+                    ui,
+                    ranges.as_ptr(),
+                    ranges.len() as u32,
+                    0,
+                )
+            },
             ECU_OK
         );
 
         let mut required: u32 = 0;
         let mut primary: u32 = 0;
-        let code = editor_core_ui_ffi_editor_ui_get_selections(
-            ui,
-            ptr::null_mut(),
-            0,
-            &mut required,
-            &mut primary,
-        );
+        let code = unsafe {
+            editor_core_ui_ffi_editor_ui_get_selections(
+                ui,
+                ptr::null_mut(),
+                0,
+                &mut required,
+                &mut primary,
+            )
+        };
         assert_eq!(code, ECU_ERR_BUFFER_TOO_SMALL);
         assert_eq!(required, 2);
         assert_eq!(primary, 0);
 
         let mut out = vec![EcuSelectionRange { start: 0, end: 0 }; required as usize];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selections(
-                ui,
-                out.as_mut_ptr(),
-                out.len() as u32,
-                &mut required,
-                &mut primary
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_selections(
+                    ui,
+                    out.as_mut_ptr(),
+                    out.len() as u32,
+                    &mut required,
+                    &mut primary,
+                )
+            },
             ECU_OK
         );
         assert_eq!(required as usize, out.len());
@@ -3719,10 +3775,10 @@ contexts:
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(text_ptr);
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
         assert_eq!(text, "Xabc\nXdef\n");
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3748,10 +3804,10 @@ contexts:
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(text_ptr);
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
         assert_eq!(text, "aXc\ndXf\ngXi\n");
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3763,12 +3819,14 @@ contexts:
         // One caret at line 1 col 1 => offset 4.
         let ranges = [EcuSelectionRange { start: 4, end: 4 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(
-                ui,
-                ranges.as_ptr(),
-                ranges.len() as u32,
-                0
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_selections(
+                    ui,
+                    ranges.as_ptr(),
+                    ranges.len() as u32,
+                    0,
+                )
+            },
             ECU_OK
         );
 
@@ -3785,7 +3843,7 @@ contexts:
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(text_ptr);
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
         assert_eq!(text, "aXa\naXa\naa\n");
 
         assert_eq!(
@@ -3795,17 +3853,19 @@ contexts:
 
         let mut required: u32 = 0;
         let mut primary: u32 = 0;
-        let code = editor_core_ui_ffi_editor_ui_get_selections(
-            ui,
-            ptr::null_mut(),
-            0,
-            &mut required,
-            &mut primary,
-        );
+        let code = unsafe {
+            editor_core_ui_ffi_editor_ui_get_selections(
+                ui,
+                ptr::null_mut(),
+                0,
+                &mut required,
+                &mut primary,
+            )
+        };
         assert_eq!(code, ECU_ERR_BUFFER_TOO_SMALL);
         assert_eq!(required, 1);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3817,12 +3877,14 @@ contexts:
         // Place caret at start.
         let ranges = [EcuSelectionRange { start: 0, end: 0 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(
-                ui,
-                ranges.as_ptr(),
-                ranges.len() as u32,
-                0
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_selections(
+                    ui,
+                    ranges.as_ptr(),
+                    ranges.len() as u32,
+                    0,
+                )
+            },
             ECU_OK
         );
 
@@ -3840,10 +3902,10 @@ contexts:
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(text_ptr);
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
         assert_eq!(text, "X X X\n");
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3855,12 +3917,14 @@ contexts:
         // caret at start of "two" (offset 4)
         let ranges = [EcuSelectionRange { start: 4, end: 4 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(
-                ui,
-                ranges.as_ptr(),
-                ranges.len() as u32,
-                0
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_selections(
+                    ui,
+                    ranges.as_ptr(),
+                    ranges.len() as u32,
+                    0,
+                )
+            },
             ECU_OK
         );
 
@@ -3873,7 +3937,7 @@ contexts:
         let mut start: u32 = 0;
         let mut end: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (4, 13));
@@ -3884,12 +3948,12 @@ contexts:
             ECU_OK
         );
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (0, 13));
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3901,12 +3965,14 @@ contexts:
         // caret inside "foo"
         let ranges = [EcuSelectionRange { start: 1, end: 1 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(
-                ui,
-                ranges.as_ptr(),
-                ranges.len() as u32,
-                0
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_selections(
+                    ui,
+                    ranges.as_ptr(),
+                    ranges.len() as u32,
+                    0,
+                )
+            },
             ECU_OK
         );
         assert_eq!(editor_core_ui_ffi_editor_ui_select_word(ui), ECU_OK);
@@ -3914,7 +3980,7 @@ contexts:
         let mut start: u32 = 0;
         let mut end: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (0, 3)); // "foo"
@@ -3932,17 +3998,19 @@ contexts:
         // Clear selection and select word again to observe config change.
         let ranges = [EcuSelectionRange { start: 1, end: 1 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(
-                ui,
-                ranges.as_ptr(),
-                ranges.len() as u32,
-                0
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_selections(
+                    ui,
+                    ranges.as_ptr(),
+                    ranges.len() as u32,
+                    0,
+                )
+            },
             ECU_OK
         );
         assert_eq!(editor_core_ui_ffi_editor_ui_select_word(ui), ECU_OK);
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (0, 7)); // "foo-bar"
@@ -3954,22 +4022,24 @@ contexts:
         );
         let ranges = [EcuSelectionRange { start: 1, end: 1 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(
-                ui,
-                ranges.as_ptr(),
-                ranges.len() as u32,
-                0
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_selections(
+                    ui,
+                    ranges.as_ptr(),
+                    ranges.len() as u32,
+                    0,
+                )
+            },
             ECU_OK
         );
         assert_eq!(editor_core_ui_ffi_editor_ui_select_word(ui), ECU_OK);
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (0, 3)); // "foo"
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -3983,7 +4053,7 @@ contexts:
         let mut start: u32 = 0;
         let mut end: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (3, 3));
@@ -3994,7 +4064,7 @@ contexts:
             ECU_OK
         );
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (3, 4));
@@ -4002,7 +4072,7 @@ contexts:
         // Delete word back from end.
         let ranges = [EcuSelectionRange { start: 7, end: 7 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), 1, 0),
+            unsafe { editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), 1, 0) },
             ECU_OK
         );
         assert_eq!(editor_core_ui_ffi_editor_ui_delete_word_back(ui), ECU_OK);
@@ -4012,10 +4082,10 @@ contexts:
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(text_ptr);
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
         assert_eq!(text, "one ");
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -4028,7 +4098,7 @@ contexts:
         // Caret at offset 2 ("ab|c").
         let ranges = [EcuSelectionRange { start: 2, end: 2 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), 1, 0),
+            unsafe { editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), 1, 0) },
             ECU_OK
         );
         assert_eq!(
@@ -4038,7 +4108,7 @@ contexts:
         let mut start: u32 = 0;
         let mut end: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (0, 0));
@@ -4048,12 +4118,12 @@ contexts:
             ECU_OK
         );
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (7, 7));
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
 
         // Page navigation depends on viewport height rows.
         let initial = CString::new("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n").unwrap();
@@ -4071,7 +4141,7 @@ contexts:
 
         let ranges = [EcuSelectionRange { start: 0, end: 0 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), 1, 0),
+            unsafe { editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), 1, 0) },
             ECU_OK
         );
         assert_eq!(
@@ -4079,12 +4149,12 @@ contexts:
             ECU_OK
         );
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (6, 6));
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -4119,7 +4189,10 @@ contexts:
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -4207,19 +4280,27 @@ contexts:
             },
         ];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 60 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -4235,12 +4316,14 @@ contexts:
             ECU_OK
         );
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(pixel(&buf, 200, 5, 10), [8, 8, 8, 255]);
@@ -4251,17 +4334,19 @@ contexts:
             ECU_OK
         );
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(pixel(&buf, 200, 5, 10), [9, 9, 9, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -4272,12 +4357,14 @@ contexts:
 
         let ranges = [EcuSelectionRange { start: 2, end: 2 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(
-                ui,
-                ranges.as_ptr(),
-                ranges.len() as u32,
-                0
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_selections(
+                    ui,
+                    ranges.as_ptr(),
+                    ranges.len() as u32,
+                    0,
+                )
+            },
             ECU_OK
         );
 
@@ -4288,7 +4375,7 @@ contexts:
         let mut s: u32 = 0;
         let mut e: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut s, &mut e),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut s, &mut e) },
             ECU_OK
         );
         assert_eq!((s, e), (1, 2));
@@ -4298,7 +4385,7 @@ contexts:
             ECU_OK
         );
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut s, &mut e),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut s, &mut e) },
             ECU_OK
         );
         assert_eq!((s, e), (0, 2));
@@ -4308,12 +4395,12 @@ contexts:
             ECU_OK
         );
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut s, &mut e),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut s, &mut e) },
             ECU_OK
         );
         assert_eq!((s, e), (1, 2));
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -4349,7 +4436,10 @@ contexts:
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -4377,7 +4467,13 @@ contexts:
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
@@ -4406,19 +4502,21 @@ contexts:
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
 
         assert_eq!(pixel(&buf, 200, 15, 10), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -4454,7 +4552,10 @@ contexts:
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -4482,7 +4583,13 @@ contexts:
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
@@ -4503,12 +4610,14 @@ contexts:
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -4516,7 +4625,7 @@ contexts:
         // Inlay hint at offset=1 => inserted between 'a' and 'b' => col=1 => x in [10..20]
         assert_eq!(pixel(&buf, 200, 15, 10), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -4552,7 +4661,10 @@ contexts:
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -4580,7 +4692,13 @@ contexts:
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
@@ -4601,12 +4719,14 @@ contexts:
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -4614,7 +4734,7 @@ contexts:
         // Code lens is an above-line virtual text line inserted at the top => row=0, col=0.
         assert_eq!(pixel(&buf, 200, 5, 10), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -4650,7 +4770,10 @@ contexts:
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 10.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -4678,7 +4801,13 @@ contexts:
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
@@ -4699,12 +4828,14 @@ contexts:
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 20 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -4712,7 +4843,7 @@ contexts:
         // Underline is at y = line_height_px - 1 (scale=1), i.e. y=9. Link range is at col=1 => x in [10..20].
         assert_eq!(pixel(&buf, 200, 15, 9), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -4748,7 +4879,11 @@ contexts:
         let mut y: c_float = 0.0;
         let mut lh: c_float = 0.0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_char_offset_to_view_point(ui, 1, &mut x, &mut y, &mut lh),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
+                    ui, 1, &mut x, &mut y, &mut lh,
+                )
+            },
             ECU_OK
         );
         assert!(lh > 0.0);
@@ -4756,13 +4891,15 @@ contexts:
         let mut has: u8 = 0;
         let mut json_ptr: *mut c_char = ptr::null_mut();
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(
-                ui,
-                x + 1.0,
-                y + 1.0,
-                &mut has,
-                &mut json_ptr
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(
+                    ui,
+                    x + 1.0,
+                    y + 1.0,
+                    &mut has,
+                    &mut json_ptr,
+                )
+            },
             ECU_OK
         );
         assert_eq!(has, 1);
@@ -4772,26 +4909,28 @@ contexts:
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(json_ptr);
+        unsafe { editor_core_ui_ffi_string_free(json_ptr) };
         assert!(json.contains("https://example.com"));
 
         // No link at col=0.
         let mut has2: u8 = 0;
         let mut json_ptr2: *mut c_char = ptr::null_mut();
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(
-                ui,
-                1.0,
-                1.0,
-                &mut has2,
-                &mut json_ptr2
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(
+                    ui,
+                    1.0,
+                    1.0,
+                    &mut has2,
+                    &mut json_ptr2,
+                )
+            },
             ECU_OK
         );
         assert_eq!(has2, 0);
         assert!(json_ptr2.is_null());
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -4827,7 +4966,10 @@ contexts:
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -4855,7 +4997,13 @@ contexts:
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
@@ -4876,12 +5024,14 @@ contexts:
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -4889,7 +5039,7 @@ contexts:
         // Highlighted cell at col=1 => x in [10..20]
         assert_eq!(pixel(&buf, 200, 15, 10), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -4925,7 +5075,10 @@ contexts:
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -4953,25 +5106,33 @@ contexts:
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
         let ranges = [EcuSelectionRange { start: 1, end: 2 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_match_highlights(ui, ranges.as_ptr(), 1),
+            unsafe { editor_core_ui_ffi_editor_ui_set_match_highlights(ui, ranges.as_ptr(), 1) },
             ECU_OK
         );
 
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -4979,7 +5140,7 @@ contexts:
         // Highlighted cell at col=1 => x in [10..20]
         assert_eq!(pixel(&buf, 200, 15, 10), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5015,7 +5176,10 @@ contexts:
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -5043,14 +5207,29 @@ contexts:
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
         let query = CString::new(" ").unwrap();
         let mut count: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_search_set_query(ui, query.as_ptr(), 1, 0, 0, &mut count),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_search_set_query(
+                    ui,
+                    query.as_ptr(),
+                    1,
+                    0,
+                    0,
+                    &mut count,
+                )
+            },
             ECU_OK
         );
         assert_eq!(count, 2);
@@ -5058,12 +5237,14 @@ contexts:
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -5073,7 +5254,7 @@ contexts:
         // Second space at col=3 => x in [30..40]
         assert_eq!(pixel(&buf, 200, 35, 10), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5085,7 +5266,9 @@ contexts:
         let query = CString::new("foo").unwrap();
         let mut found: u8 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_find_next(ui, query.as_ptr(), 1, 0, 0, &mut found),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_find_next(ui, query.as_ptr(), 1, 0, 0, &mut found)
+            },
             ECU_OK
         );
         assert_eq!(found, 1);
@@ -5093,18 +5276,24 @@ contexts:
         let mut sel_start: u32 = 0;
         let mut sel_end: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut sel_start, &mut sel_end),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut sel_start, &mut sel_end)
+            },
             ECU_OK
         );
         assert_eq!((sel_start, sel_end), (0, 3));
 
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_find_next(ui, query.as_ptr(), 1, 0, 0, &mut found),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_find_next(ui, query.as_ptr(), 1, 0, 0, &mut found)
+            },
             ECU_OK
         );
         assert_eq!(found, 1);
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut sel_start, &mut sel_end),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut sel_start, &mut sel_end)
+            },
             ECU_OK
         );
         assert_eq!((sel_start, sel_end), (4, 7));
@@ -5112,15 +5301,17 @@ contexts:
         let replacement = CString::new("bar").unwrap();
         let mut replaced: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_replace_current(
-                ui,
-                query.as_ptr(),
-                replacement.as_ptr(),
-                1,
-                0,
-                0,
-                &mut replaced
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_replace_current(
+                    ui,
+                    query.as_ptr(),
+                    replacement.as_ptr(),
+                    1,
+                    0,
+                    0,
+                    &mut replaced,
+                )
+            },
             ECU_OK
         );
         assert_eq!(replaced, 1);
@@ -5130,20 +5321,22 @@ contexts:
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(text_ptr);
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
         assert_eq!(text, "foo bar foo\n");
 
         let replacement_all = CString::new("baz").unwrap();
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_replace_all(
-                ui,
-                query.as_ptr(),
-                replacement_all.as_ptr(),
-                1,
-                0,
-                0,
-                &mut replaced
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_replace_all(
+                    ui,
+                    query.as_ptr(),
+                    replacement_all.as_ptr(),
+                    1,
+                    0,
+                    0,
+                    &mut replaced,
+                )
+            },
             ECU_OK
         );
         assert_eq!(replaced, 2);
@@ -5153,10 +5346,10 @@ contexts:
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(text_ptr);
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
         assert_eq!(text, "baz bar baz\n");
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5192,7 +5385,10 @@ contexts:
                 a: 255,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
             ECU_OK
@@ -5220,36 +5416,46 @@ contexts:
             },
         }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_style_colors(ui, styles.as_ptr(), styles.len() as u32),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_set_style_colors(
+                    ui,
+                    styles.as_ptr(),
+                    styles.len() as u32,
+                )
+            },
             ECU_OK
         );
 
         let data = [0u32, 1, 1, 7, 0];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(
-                ui,
-                data.as_ptr(),
-                data.len() as u32
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(
+                    ui,
+                    data.as_ptr(),
+                    data.len() as u32,
+                )
+            },
             ECU_OK
         );
 
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
 
         assert_eq!(pixel(&buf, 200, 15, 10), [1, 200, 2, 255]);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5284,10 +5490,10 @@ contexts:
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(msg_ptr);
+        unsafe { editor_core_ui_ffi_string_free(msg_ptr) };
         assert!(msg.to_lowercase().contains("utf-8") || !msg.is_empty());
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5307,12 +5513,14 @@ contexts:
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 200 * 40 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -5323,7 +5531,7 @@ contexts:
             ECU_OK
         );
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5361,7 +5569,10 @@ contexts:
                 a: 0xFF,
             },
         };
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_theme(ui, &theme) },
+            ECU_OK
+        );
 
         assert_eq!(
             editor_core_ui_ffi_editor_ui_set_caret_width_px(ui, 4.0),
@@ -5375,12 +5586,14 @@ contexts:
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 20 * 10 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
@@ -5398,12 +5611,14 @@ contexts:
             ECU_OK
         );
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(
-                ui,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut out_len
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_render_rgba(
+                    ui,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut out_len,
+                )
+            },
             ECU_OK
         );
         let caret_count1 = buf.chunks_exact(4).filter(|p| *p == caret_px).count();
@@ -5412,7 +5627,7 @@ contexts:
             "expected caret pixels to disappear when hidden"
         );
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5426,16 +5641,18 @@ contexts:
 
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 10];
-        let code = editor_core_ui_ffi_editor_ui_render_rgba(
-            ui,
-            buf.as_mut_ptr(),
-            buf.len() as u32,
-            &mut out_len,
-        );
+        let code = unsafe {
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len,
+            )
+        };
         assert_eq!(code, ECU_ERR_BUFFER_TOO_SMALL);
         assert_eq!(out_len, 80 * 40 * 4);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5448,11 +5665,13 @@ contexts:
         editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 80, 40, 1.0);
 
         let mut out_len: u32 = 0;
-        let code = editor_core_ui_ffi_editor_ui_render_rgba(ui, ptr::null_mut(), 0, &mut out_len);
+        let code = unsafe {
+            editor_core_ui_ffi_editor_ui_render_rgba(ui, ptr::null_mut(), 0, &mut out_len)
+        };
         assert_eq!(code, ECU_ERR_BUFFER_TOO_SMALL);
         assert_eq!(out_len, 80 * 40 * 4);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5464,7 +5683,7 @@ contexts:
             .to_str()
             .unwrap()
             .to_string();
-        editor_core_ui_ffi_string_free(msg_ptr);
+        unsafe { editor_core_ui_ffi_string_free(msg_ptr) };
         assert!(msg.contains("ui is null") || msg.contains("text_utf8 is null"));
     }
 
@@ -5482,7 +5701,7 @@ contexts:
         let mut start: u32 = 0;
         let mut end: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (0, 0));
@@ -5495,7 +5714,9 @@ contexts:
         let mut ms: u32 = 0;
         let mut ml: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_marked_range(ui, &mut has, &mut ms, &mut ml),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_marked_range(ui, &mut has, &mut ms, &mut ml)
+            },
             ECU_OK
         );
         assert_eq!(has, 1);
@@ -5515,12 +5736,12 @@ contexts:
             ECU_OK
         );
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end) },
             ECU_OK
         );
         assert_eq!((start, end), (1, 1));
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5535,12 +5756,14 @@ contexts:
         // Point at row 0, col ~2.
         let mut off: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 25.0, 10.0, &mut off),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 25.0, 10.0, &mut off)
+            },
             ECU_OK
         );
         assert_eq!(off, 2);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5552,15 +5775,17 @@ contexts:
         let mut line: u32 = 0;
         let mut col: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(
-                ui, 4, &mut line, &mut col
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(
+                    ui, 4, &mut line, &mut col,
+                )
+            },
             ECU_OK
         );
         assert_eq!(line, 1);
         assert_eq!(col, 1);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5595,7 +5820,7 @@ contexts:
         assert_eq!(vp.scroll_top, 0);
         assert_eq!(vp.sub_row_offset, 0);
 
-        editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(ui, 3, 32768);
+        unsafe { editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(ui, 3, 32768) };
         assert_eq!(
             editor_core_ui_ffi_editor_ui_get_viewport_state(ui, &mut vp),
             ECU_OK
@@ -5604,7 +5829,7 @@ contexts:
         assert_eq!(vp.sub_row_offset, 32768);
 
         // Clamp to maximum scroll position (total - height = 6).
-        editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(ui, 999, 65535);
+        unsafe { editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(ui, 999, 65535) };
         assert_eq!(
             editor_core_ui_ffi_editor_ui_get_viewport_state(ui, &mut vp),
             ECU_OK
@@ -5612,7 +5837,7 @@ contexts:
         assert_eq!(vp.scroll_top, 6);
         assert_eq!(vp.sub_row_offset, 0);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5625,42 +5850,50 @@ contexts:
         editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 80, 20, 1.0);
 
         // Scroll down by half a row: content should move up by 5px.
-        editor_core_ui_ffi_editor_ui_scroll_by_pixels(ui, 5.0);
+        unsafe { editor_core_ui_ffi_editor_ui_scroll_by_pixels(ui, 5.0) };
 
         // "b" starts at char offset 2 ("a\nb..."), its y should be (1*10 - 5) = 5.
         let mut x: c_float = 0.0;
         let mut y: c_float = 0.0;
         let mut line_h: c_float = 0.0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
-                ui,
-                2,
-                &mut x,
-                &mut y,
-                &mut line_h
-            ),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
+                    ui,
+                    2,
+                    &mut x,
+                    &mut y,
+                    &mut line_h,
+                )
+            },
             ECU_OK
         );
         assert_eq!(y, 5.0);
 
         let mut off: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 0.0, 4.0, &mut off),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 0.0, 4.0, &mut off)
+            },
             ECU_OK
         );
         assert_eq!(off, 0);
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 0.0, 5.0, &mut off),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 0.0, 5.0, &mut off)
+            },
             ECU_OK
         );
         assert_eq!(off, 2);
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 0.0, 9.0, &mut off),
+            unsafe {
+                editor_core_ui_ffi_editor_ui_view_point_to_char_offset(ui, 0.0, 9.0, &mut off)
+            },
             ECU_OK
         );
         assert_eq!(off, 2);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5674,7 +5907,7 @@ contexts:
             ECU_ERR_INVALID_ARGUMENT
         );
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5688,7 +5921,7 @@ contexts:
             ECU_ERR_INVALID_ARGUMENT
         );
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     #[test]
@@ -5715,7 +5948,7 @@ contexts:
         );
         assert_eq!(gutter, 7);
 
-        editor_core_ui_ffi_editor_ui_free(ui);
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }
 
     fn pixel(buf: &[u8], width_px: u32, x: u32, y: u32) -> [u8; 4] {

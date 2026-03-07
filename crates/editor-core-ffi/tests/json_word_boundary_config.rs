@@ -11,7 +11,7 @@ fn take_string(ptr: *mut std::ffi::c_char) -> String {
     let text = unsafe { CStr::from_ptr(ptr) }
         .to_string_lossy()
         .into_owned();
-    editor_core_ffi_string_free(ptr);
+    unsafe { editor_core_ffi_string_free(ptr) };
     text
 }
 
@@ -19,7 +19,7 @@ fn exec_json(state: *mut editor_core_ffi::EcfEditorState, cmd: &str) -> serde_js
     let cmd = CString::new(cmd).expect("cstring");
     let out_ptr = editor_core_ffi_editor_state_execute_json(state, cmd.as_ptr());
     if out_ptr.is_null() {
-        let msg = take_string(editor_core_ffi_last_error_message());
+        let msg = take_string(unsafe { editor_core_ffi_last_error_message() });
         panic!("execute_json returned null; last_error={msg}");
     }
     let text = take_string(out_ptr);
@@ -30,7 +30,9 @@ fn selection_cols(state: *mut editor_core_ffi::EcfEditorState) -> (u64, u64) {
     let full_ptr = editor_core_ffi_editor_state_full_state_json(state);
     let full_text = take_string(full_ptr);
     let full: serde_json::Value = serde_json::from_str(&full_text).expect("full state json");
-    let sel = full["cursor"]["selection"].as_object().expect("selection object");
+    let sel = full["cursor"]["selection"]
+        .as_object()
+        .expect("selection object");
     let start = sel["start"]["column"].as_u64().unwrap();
     let end = sel["end"]["column"].as_u64().unwrap();
     (start, end)
@@ -42,7 +44,10 @@ fn json_word_boundary_config_affects_select_word() {
     let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
     assert!(!state.is_null());
 
-    exec_json(state, r#"{ "kind": "cursor", "op": "move_to", "line": 0, "column": 1 }"#);
+    exec_json(
+        state,
+        r#"{ "kind": "cursor", "op": "move_to", "line": 0, "column": 1 }"#,
+    );
     exec_json(state, r#"{ "kind": "cursor", "op": "select_word" }"#);
     assert_eq!(selection_cols(state), (0, 3));
 
@@ -54,7 +59,10 @@ fn json_word_boundary_config_affects_select_word() {
 
     // Clear selection so SelectWord will recompute using the new config.
     exec_json(state, r#"{ "kind": "cursor", "op": "clear_selection" }"#);
-    exec_json(state, r#"{ "kind": "cursor", "op": "move_to", "line": 0, "column": 1 }"#);
+    exec_json(
+        state,
+        r#"{ "kind": "cursor", "op": "move_to", "line": 0, "column": 1 }"#,
+    );
     exec_json(state, r#"{ "kind": "cursor", "op": "select_word" }"#);
     assert_eq!(selection_cols(state), (0, 7));
 
@@ -64,10 +72,12 @@ fn json_word_boundary_config_affects_select_word() {
         r#"{ "kind": "view", "op": "reset_word_boundary_defaults" }"#,
     );
     exec_json(state, r#"{ "kind": "cursor", "op": "clear_selection" }"#);
-    exec_json(state, r#"{ "kind": "cursor", "op": "move_to", "line": 0, "column": 1 }"#);
+    exec_json(
+        state,
+        r#"{ "kind": "cursor", "op": "move_to", "line": 0, "column": 1 }"#,
+    );
     exec_json(state, r#"{ "kind": "cursor", "op": "select_word" }"#);
     assert_eq!(selection_cols(state), (0, 3));
 
-    editor_core_ffi_editor_state_free(state);
+    unsafe { editor_core_ffi_editor_state_free(state) };
 }
-

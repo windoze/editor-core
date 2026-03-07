@@ -1,12 +1,12 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewExtraKeyBindingsTests: XCTestCase {
     func testLeftRightEndOfLineSelectorsAreHandled() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "abc\ndef", viewportWidthCells: 80)
 
         let window = NSWindow(
@@ -42,7 +42,7 @@ final class EditorCoreSkiaViewExtraKeyBindingsTests: XCTestCase {
     }
 
     func testScrollPageUpDownSelectorsAreHandled() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let text = (0..<80).map(String.init).joined(separator: "\n")
         let view = try EditorCoreSkiaView(library: lib, initialText: text, viewportWidthCells: 80)
 
@@ -69,7 +69,7 @@ final class EditorCoreSkiaViewExtraKeyBindingsTests: XCTestCase {
     }
 
     func testScrollPageDownModifySelectionSelectorIsHandled() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let text = (0..<80).map(String.init).joined(separator: "\n")
         let view = try EditorCoreSkiaView(library: lib, initialText: text, viewportWidthCells: 80)
 
@@ -91,7 +91,7 @@ final class EditorCoreSkiaViewExtraKeyBindingsTests: XCTestCase {
     }
 
     func testScrollToBeginEndOfDocumentSelectorsAreHandled() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "abc\ndef", viewportWidthCells: 80)
 
         let window = NSWindow(
@@ -118,7 +118,7 @@ final class EditorCoreSkiaViewExtraKeyBindingsTests: XCTestCase {
     }
 
     func testScrollToDocumentModifySelectionSelectorsAreHandled() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "abc\ndef", viewportWidthCells: 80)
 
         let window = NSWindow(

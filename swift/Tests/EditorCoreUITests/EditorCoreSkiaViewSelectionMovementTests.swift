@@ -1,12 +1,12 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewSelectionMovementTests: XCTestCase {
     func testMoveUpDownWithSelectionCollapsesToCaretAndMoves() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "aaa\nbbb\nccc", viewportWidthCells: 80)
 
         // Put the view in a real window so the view lifecycle matches the demo.

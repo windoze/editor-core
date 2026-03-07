@@ -1,7 +1,7 @@
 import CoreGraphics
 import XCTest
 
-@testable import EditorCoreAppKit
+@testable import EditorCoreUI
 
 final class SkiaRasterCGImageTests: XCTestCase {
     func test_make_cgimage_and_draw_upright_in_flipped_context_preserves_rgba_and_orientation() throws {

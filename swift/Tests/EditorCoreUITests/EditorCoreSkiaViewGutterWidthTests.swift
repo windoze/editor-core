@@ -1,12 +1,12 @@
 import AppKit
-@testable import EditorCoreAppKit
+@testable import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewGutterWidthTests: XCTestCase {
     func testGutterWidthExpandsForFourDigitLineNumbers() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let text = (0..<1000).map(String.init).joined(separator: "\n") // 1000 logical lines
         let view = try EditorCoreSkiaView(library: lib, initialText: text, viewportWidthCells: 80)
 
@@ -25,7 +25,7 @@ final class EditorCoreSkiaViewGutterWidthTests: XCTestCase {
     }
 
     func testGutterWidthUpdatesWhenLineCountCrossesThreshold() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let text = (0..<999).map(String.init).joined(separator: "\n") // 999 logical lines
         let view = try EditorCoreSkiaView(library: lib, initialText: text, viewportWidthCells: 80)
 

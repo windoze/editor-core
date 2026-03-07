@@ -1,11 +1,11 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewWordDragSelectionTests: XCTestCase {
     func testDoubleClickThenDragExpandsByWord() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "one two three", viewportWidthCells: 80)
 
         // Put the view in a real window so coordinate conversions behave like the demo.

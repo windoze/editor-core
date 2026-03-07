@@ -523,7 +523,7 @@ public final class EditorCoreSkiaScrollContainer: NSView {
 
     // MARK: - Testing hooks
 
-    // Expose scroller for unit tests (`@testable import EditorCoreAppKit`).
+    // Expose scroller for unit tests (`@testable import EditorCoreUI`).
     var _verticalScrollerForTesting: NSScroller { verticalScroller }
 
     func _updateScrollerForTesting() {

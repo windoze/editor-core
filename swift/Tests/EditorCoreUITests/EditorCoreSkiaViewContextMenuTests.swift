@@ -1,5 +1,5 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
@@ -41,7 +41,7 @@ final class EditorCoreSkiaViewContextMenuTests: XCTestCase {
     }
 
     func testDefaultContextMenuEnablesItemsBasedOnSelectionAndPasteboard() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "one two", viewportWidthCells: 80)
 
         let pb = NSPasteboard(name: NSPasteboard.Name("EditorCoreSkiaViewContextMenuTests-\(UUID().uuidString)"))
@@ -81,7 +81,7 @@ final class EditorCoreSkiaViewContextMenuTests: XCTestCase {
     }
 
     func testContextMenuProviderOverridesDefault() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "ab\ncde\nf", viewportWidthCells: 80)
 
         let window = NSWindow(

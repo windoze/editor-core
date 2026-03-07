@@ -123,6 +123,10 @@ private enum AttoEditorMain {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
 
+        // AttoEditor has its own in-app tab UI. Disable macOS window tabbing to avoid
+        // the system tab bar ("Show Tab Bar") showing up under the title bar.
+        NSWindow.allowsAutomaticWindowTabbing = false
+
         // VSCode-ish dark appearance by default.
         app.appearance = NSAppearance(named: .darkAqua)
 

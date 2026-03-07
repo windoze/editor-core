@@ -1,5 +1,5 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import Foundation
 
@@ -60,6 +60,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         win.title = "AttoEditor"
+        // AttoEditor uses an in-app tab strip; disallow macOS window tabbing UI.
+        win.tabbingMode = .disallowed
         win.center()
         win.contentViewController = splitVC
         win.makeKeyAndOrderFront(nil)
@@ -93,6 +95,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             editorArea.openFile(url: initial)
             fileExplorer.revealFile(initial)
         }
+
+        // Remove system window-tabbing menu items (e.g. "Show Tab Bar") from standard menus.
+        removeSystemWindowTabbingMenuItems()
     }
 
     // MARK: - Menu actions
@@ -257,6 +262,50 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
     private func toggleSidebar() {
         guard let sidebarSplitItem else { return }
         sidebarSplitItem.isCollapsed.toggle()
+    }
+
+    // MARK: - macOS window tabbing (disable + hide menu items)
+
+    private func removeSystemWindowTabbingMenuItems() {
+        guard let mainMenu = NSApplication.shared.mainMenu else { return }
+
+        let actionNamesToRemove: Set<String> = [
+            "toggleTabBar:",
+            "showTabBar:",
+            "showAllTabs:",
+            "selectNextTab:",
+            "selectPreviousTab:",
+            "moveTabToNewWindow:",
+            "mergeAllWindows:",
+        ]
+
+        let titlesToRemove: Set<String> = [
+            "Show Tab Bar",
+            "Hide Tab Bar",
+            "Show All Tabs",
+        ]
+
+        func strip(menu: NSMenu) {
+            // Iterate backwards so removal doesn't invalidate indices.
+            for item in menu.items.reversed() {
+                if titlesToRemove.contains(item.title) {
+                    menu.removeItem(item)
+                    continue
+                }
+                if let action = item.action {
+                    let name = NSStringFromSelector(action)
+                    if actionNamesToRemove.contains(name) {
+                        menu.removeItem(item)
+                        continue
+                    }
+                }
+                if let sub = item.submenu {
+                    strip(menu: sub)
+                }
+            }
+        }
+
+        strip(menu: mainMenu)
     }
 
     // MARK: - Helpers

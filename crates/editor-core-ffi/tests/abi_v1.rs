@@ -21,7 +21,7 @@ fn take_string(ptr: *mut std::ffi::c_char) -> String {
     let text = unsafe { CStr::from_ptr(ptr) }
         .to_string_lossy()
         .into_owned();
-    editor_core_ffi_string_free(ptr);
+    unsafe { editor_core_ffi_string_free(ptr) };
     text
 }
 
@@ -51,7 +51,7 @@ fn typed_editor_commands_and_stats_work() {
         version: 0,
     };
 
-    let st = editor_core_ffi_editor_get_document_stats(state, &mut stats);
+    let st = unsafe { editor_core_ffi_editor_get_document_stats(state, &mut stats) };
     assert_eq!(st, status(EcfStatus::Ok));
     assert_eq!(stats.abi_version, ECF_ABI_VERSION);
     assert_eq!(stats.line_count, 2);
@@ -66,12 +66,12 @@ fn typed_editor_commands_and_stats_work() {
     let st = ecf_editor_backspace(state);
     assert_eq!(st, status(EcfStatus::Ok));
 
-    let st = editor_core_ffi_editor_get_document_stats(state, &mut stats);
+    let st = unsafe { editor_core_ffi_editor_get_document_stats(state, &mut stats) };
     assert_eq!(st, status(EcfStatus::Ok));
     assert!(stats.char_count >= 6);
     assert_eq!(stats.is_modified, 1);
 
-    editor_core_ffi_editor_state_free(state);
+    unsafe { editor_core_ffi_editor_state_free(state) };
 }
 
 #[test]
@@ -84,10 +84,10 @@ fn invalid_utf8_returns_status_and_error_message() {
     let st = editor_core_ffi_editor_insert_text_utf8(state, invalid.as_ptr(), 2);
     assert_eq!(st, status(EcfStatus::InvalidUtf8));
 
-    let msg = take_string(editor_core_ffi_last_error_message());
+    let msg = take_string(unsafe { editor_core_ffi_last_error_message() });
     assert!(msg.contains("utf") || msg.contains("UTF"));
 
-    editor_core_ffi_editor_state_free(state);
+    unsafe { editor_core_ffi_editor_state_free(state) };
 }
 
 #[test]
@@ -150,7 +150,7 @@ fn viewport_blob_two_call_pattern_works() {
     assert!(cells_offset >= lines_offset);
     assert!(styles_offset >= cells_offset);
 
-    editor_core_ffi_editor_state_free(state);
+    unsafe { editor_core_ffi_editor_state_free(state) };
 }
 
 #[test]
@@ -205,5 +205,5 @@ fn workspace_typed_commands_and_blob_work() {
     );
     assert_eq!(st, status(EcfStatus::Ok));
 
-    editor_core_ffi_workspace_free(workspace);
+    unsafe { editor_core_ffi_workspace_free(workspace) };
 }

@@ -11,7 +11,7 @@ fn take_string(ptr: *mut std::ffi::c_char) -> String {
     let text = unsafe { CStr::from_ptr(ptr) }
         .to_string_lossy()
         .into_owned();
-    editor_core_ffi_string_free(ptr);
+    unsafe { editor_core_ffi_string_free(ptr) };
     text
 }
 
@@ -19,7 +19,7 @@ fn exec_json(state: *mut editor_core_ffi::EcfEditorState, cmd: &str) -> serde_js
     let cmd = CString::new(cmd).expect("cstring");
     let out_ptr = editor_core_ffi_editor_state_execute_json(state, cmd.as_ptr());
     if out_ptr.is_null() {
-        let msg = take_string(editor_core_ffi_last_error_message());
+        let msg = take_string(unsafe { editor_core_ffi_last_error_message() });
         panic!("execute_json returned null; last_error={msg}");
     }
     let text = take_string(out_ptr);
@@ -32,7 +32,10 @@ fn json_expand_selection_by_word_expands_only() {
     let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
     assert!(!state.is_null());
 
-    let r = exec_json(state, r#"{ "kind": "cursor", "op": "move_to", "line": 0, "column": 4 }"#);
+    let r = exec_json(
+        state,
+        r#"{ "kind": "cursor", "op": "move_to", "line": 0, "column": 4 }"#,
+    );
     assert_eq!(r["kind"], "success");
 
     let r = exec_json(
@@ -58,13 +61,15 @@ fn json_expand_selection_by_word_expands_only() {
     let full_text = take_string(full_ptr);
     let full: serde_json::Value = serde_json::from_str(&full_text).expect("full state json");
 
-    let sel = full["cursor"]["selection"].as_object().expect("selection object");
+    let sel = full["cursor"]["selection"]
+        .as_object()
+        .expect("selection object");
     assert_eq!(sel["start"]["line"], 0);
     assert_eq!(sel["start"]["column"], 0);
     assert_eq!(sel["end"]["line"], 0);
     assert_eq!(sel["end"]["column"], 13);
 
-    editor_core_ffi_editor_state_free(state);
+    unsafe { editor_core_ffi_editor_state_free(state) };
 }
 
 #[test]
@@ -77,8 +82,8 @@ fn json_unknown_op_returns_error() {
         .expect("cstring");
     let out_ptr = editor_core_ffi_editor_state_execute_json(state, cmd.as_ptr());
     assert!(out_ptr.is_null());
-    let msg = take_string(editor_core_ffi_last_error_message());
+    let msg = take_string(unsafe { editor_core_ffi_last_error_message() });
     assert!(!msg.is_empty());
 
-    editor_core_ffi_editor_state_free(state);
+    unsafe { editor_core_ffi_editor_state_free(state) };
 }

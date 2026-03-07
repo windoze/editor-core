@@ -1,5 +1,5 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import Foundation
 import XCTest
@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class EditorCoreSkiaViewTextInputRangeTests: XCTestCase {
     func testSelectedRangeUTF16CountsEmojiCorrectly() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "a😀b", viewportWidthCells: 80)
 
         // Scalar offsets: "a"(1) + "😀"(1) + "b"(1)
@@ -26,7 +26,7 @@ final class EditorCoreSkiaViewTextInputRangeTests: XCTestCase {
     }
 
     func testMarkedRangeUTF16CountsEmojiCorrectly() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "", viewportWidthCells: 80)
 
         // Marked text includes an emoji (surrogate pair in UTF-16).

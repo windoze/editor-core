@@ -1,12 +1,12 @@
 import AppKit
-@testable import EditorCoreAppKit
+@testable import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaMinimapTests: XCTestCase {
     func testMinimapContainerShowHideTogglesWidth() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let editorView = try EditorCoreSkiaView(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)
         let container = EditorCoreSkiaMinimapContainer(editorView: editorView, showsMinimap: true, minimapWidth: 100)
 
@@ -31,7 +31,7 @@ final class EditorCoreSkiaMinimapTests: XCTestCase {
     }
 
     func testMinimapPlacementLeftOrRightMovesMinimapRelativeToScrollbar() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let editorView = try EditorCoreSkiaView(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)
         let container = EditorCoreSkiaMinimapContainer(
             editorView: editorView,
@@ -65,7 +65,7 @@ final class EditorCoreSkiaMinimapTests: XCTestCase {
     }
 
     func testMinimapViewRefreshLoadsGrid() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let editorView = try EditorCoreSkiaView(library: lib, initialText: "a\nb\nc", viewportWidthCells: 80)
         let container = EditorCoreSkiaMinimapContainer(editorView: editorView, showsMinimap: true, minimapWidth: 120)
 
@@ -86,7 +86,7 @@ final class EditorCoreSkiaMinimapTests: XCTestCase {
     }
 
     func testMinimapDragMovesViewport() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let longText = (0..<400).map(String.init).joined(separator: "\n")
         let editorView = try EditorCoreSkiaView(library: lib, initialText: longText, viewportWidthCells: 80)
         let container = EditorCoreSkiaMinimapContainer(editorView: editorView, showsMinimap: true, minimapWidth: 120)

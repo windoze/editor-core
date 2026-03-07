@@ -2082,7 +2082,7 @@ fn parse_processing_edits(json_text: &str) -> Result<Vec<ProcessingEdit>, String
 
 /// Free a C string allocated by this crate.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_string_free(ptr: *mut c_char) {
+pub unsafe extern "C" fn editor_core_ffi_string_free(ptr: *mut c_char) {
     if ptr.is_null() {
         return;
     }
@@ -2096,7 +2096,7 @@ pub extern "C" fn editor_core_ffi_string_free(ptr: *mut c_char) {
 ///
 /// Returns an allocated C string. Caller must free with [`editor_core_ffi_string_free`].
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_last_error_message() -> *mut c_char {
+pub unsafe extern "C" fn editor_core_ffi_last_error_message() -> *mut c_char {
     let message = LAST_ERROR.with(|slot| {
         slot.borrow()
             .clone()
@@ -2130,7 +2130,7 @@ pub extern "C" fn editor_core_ffi_editor_state_new(
 
 /// Destroy an editor state handle.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_editor_state_free(state: *mut EcfEditorState) {
+pub unsafe extern "C" fn editor_core_ffi_editor_state_free(state: *mut EcfEditorState) {
     if state.is_null() {
         return;
     }
@@ -2382,7 +2382,7 @@ pub extern "C" fn editor_core_ffi_workspace_new() -> *mut EcfWorkspace {
 
 /// Destroy a workspace handle.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_workspace_free(workspace: *mut EcfWorkspace) {
+pub unsafe extern "C" fn editor_core_ffi_workspace_free(workspace: *mut EcfWorkspace) {
     if workspace.is_null() {
         return;
     }
@@ -3130,7 +3130,7 @@ pub extern "C" fn editor_core_ffi_sublime_processor_new_from_path(
 
 /// Destroy a Sublime processor.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_sublime_processor_free(processor: *mut EcfSublimeProcessor) {
+pub unsafe extern "C" fn editor_core_ffi_sublime_processor_free(processor: *mut EcfSublimeProcessor) {
     if processor.is_null() {
         return;
     }
@@ -3156,7 +3156,7 @@ pub extern "C" fn editor_core_ffi_sublime_processor_add_search_path(
 
 /// Load syntax YAML into processor's syntax set.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_sublime_processor_load_syntax_from_yaml(
+pub unsafe extern "C" fn editor_core_ffi_sublime_processor_load_syntax_from_yaml(
     processor: *mut EcfSublimeProcessor,
     yaml: *const c_char,
 ) -> bool {
@@ -3342,7 +3342,7 @@ pub extern "C" fn editor_core_ffi_treesitter_processor_new(
 
 /// Destroy a Tree-sitter processor.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_treesitter_processor_free(
+pub unsafe extern "C" fn editor_core_ffi_treesitter_processor_free(
     processor: *mut EcfTreeSitterProcessor,
 ) {
     if processor.is_null() {
@@ -3433,7 +3433,7 @@ pub extern "C" fn editor_core_ffi_abi_version() -> u32 {
 
 /// Fill basic document stats.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_editor_get_document_stats(
+pub unsafe extern "C" fn editor_core_ffi_editor_get_document_stats(
     state: *const EcfEditorState,
     out_stats: *mut EcfDocumentStats,
 ) -> i32 {
@@ -3504,7 +3504,7 @@ pub extern "C" fn editor_core_ffi_editor_backspace(state: *mut EcfEditorState) -
 
 /// Delete forward at current selection/cursor(s).
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_editor_delete_forward(state: *mut EcfEditorState) -> i32 {
+pub unsafe extern "C" fn editor_core_ffi_editor_delete_forward(state: *mut EcfEditorState) -> i32 {
     status_result(|| {
         let state =
             require_mut(state, "state").map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;

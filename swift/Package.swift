@@ -18,9 +18,9 @@ let package = Package(
     products: [
         .library(name: "EditorCoreFFI", targets: ["EditorCoreFFI"]),
         .library(name: "EditorCoreUIFFI", targets: ["EditorCoreUIFFI"]),
-        .library(name: "EditorCoreAppKit", targets: ["EditorCoreAppKit"]),
+        .library(name: "EditorCoreUI", targets: ["EditorCoreUI"]),
         .executable(name: "EditorCoreFFIDemo", targets: ["EditorCoreFFIDemo"]),
-        .executable(name: "EditorCoreSkiaAppKitDemo", targets: ["EditorCoreSkiaAppKitDemo"]),
+        .executable(name: "EditCoreUIDemo", targets: ["EditCoreUIDemo"]),
         .executable(name: "AttoEditor", targets: ["AttoEditor"])
     ],
     targets: [
@@ -80,9 +80,9 @@ let package = Package(
             path: "Sources/EditorCoreUIFFI"
         ),
         .target(
-            name: "EditorCoreAppKit",
+            name: "EditorCoreUI",
             dependencies: ["EditorCoreFFI", "EditorCoreUIFFI"],
-            path: "Sources/EditorCoreAppKit"
+            path: "Sources/EditorCoreUI"
         ),
         .executableTarget(
             name: "EditorCoreFFIDemo",
@@ -90,13 +90,13 @@ let package = Package(
             path: "Sources/EditorCoreFFIDemo"
         ),
         .executableTarget(
-            name: "EditorCoreSkiaAppKitDemo",
-            dependencies: ["EditorCoreAppKit", "EditorCoreUIFFI"],
-            path: "Sources/EditorCoreSkiaAppKitDemo"
+            name: "EditCoreUIDemo",
+            dependencies: ["EditorCoreUI", "EditorCoreUIFFI"],
+            path: "Sources/EditCoreUIDemo"
         ),
         .executableTarget(
             name: "AttoEditor",
-            dependencies: ["EditorCoreAppKit", "EditorCoreUIFFI"],
+            dependencies: ["EditorCoreUI", "EditorCoreUIFFI"],
             path: "Sources/AttoEditor"
         ),
         .testTarget(
@@ -105,9 +105,9 @@ let package = Package(
             path: "Tests/EditorCoreFFITests"
         ),
         .testTarget(
-            name: "EditorCoreAppKitTests",
-            dependencies: ["EditorCoreAppKit"],
-            path: "Tests/EditorCoreAppKitTests"
+            name: "EditorCoreUITests",
+            dependencies: ["EditorCoreUI"],
+            path: "Tests/EditorCoreUITests"
         ),
     ]
 )

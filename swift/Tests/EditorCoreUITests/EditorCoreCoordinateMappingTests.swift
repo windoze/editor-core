@@ -1,7 +1,7 @@
 import AppKit
 import XCTest
 
-@testable import EditorCoreAppKit
+@testable import EditorCoreUI
 
 @MainActor
 final class EditorCoreCoordinateMappingTests: XCTestCase {

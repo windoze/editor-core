@@ -1,12 +1,12 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewWordMovementTests: XCTestCase {
     func testWordMovementAndWordDeletionCommands() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "one two", viewportWidthCells: 80)
 
         let window = NSWindow(

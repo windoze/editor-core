@@ -1,12 +1,12 @@
 import AppKit
-import EditorCoreAppKit
+import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewGraphemeDeletionTests: XCTestCase {
     func testBackspaceAndDeleteForwardDeleteWholeGraphemeCluster() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
 
         // "á" = 'a' + COMBINING ACUTE ACCENT (2 Unicode scalars, 1 grapheme cluster).
         let s = "a\u{0301}"

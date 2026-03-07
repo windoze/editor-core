@@ -1,12 +1,12 @@
 import AppKit
-@testable import EditorCoreAppKit
+@testable import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewKeyboardScrollTests: XCTestCase {
     func testMoveDownScrollsToKeepCaretVisible() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let lines = (0..<80).map(String.init).joined(separator: "\n")
         let view = try EditorCoreSkiaView(library: lib, initialText: lines, viewportWidthCells: 80)
 

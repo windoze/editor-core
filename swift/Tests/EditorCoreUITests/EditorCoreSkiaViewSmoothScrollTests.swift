@@ -1,12 +1,12 @@
 import AppKit
-@testable import EditorCoreAppKit
+@testable import EditorCoreUI
 import EditorCoreUIFFI
 import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewSmoothScrollTests: XCTestCase {
     func testScrollWheelUsesSmoothPixelScrolling() throws {
-        let lib = try EditorCoreAppKitTestSupport.shared.loadLibrary()
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         // Ensure the document is taller than the viewport so scrolling is not clamped to 0.
         let longText = "a\nb\nc\n" + String(repeating: "x\n", count: 200)
         let view = try EditorCoreSkiaView(library: lib, initialText: longText, viewportWidthCells: 80)
