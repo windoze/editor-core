@@ -310,14 +310,21 @@ final class AttoEditorAreaViewController: NSViewController {
                     return acc + len
                 }
                 let cursors = sel.ranges.count
-                if totalSelected == 0 && cursors <= 1 {
-                    return nil
+                if cursors <= 1, let primary = sel.ranges.first {
+                    let a = primary.start
+                    let b = primary.end
+                    let start = min(a, b)
+                    let end = max(a, b)
+                    let len = UInt64(end - start)
+                    if len == 0 {
+                        return nil
+                    }
+                    let startPos = try editor.charOffsetToLogicalPosition(offset: start)
+                    let endPos = try editor.charOffsetToLogicalPosition(offset: end)
+                    return "Sel \(len) (\(startPos.line + 1):\(startPos.column + 1)-\(endPos.line + 1):\(endPos.column + 1))"
                 }
                 if totalSelected == 0 {
                     return "\(cursors) cursors"
-                }
-                if cursors <= 1 {
-                    return "Sel \(totalSelected)"
                 }
                 return "Sel \(totalSelected) (\(cursors) cursors)"
             } catch {
