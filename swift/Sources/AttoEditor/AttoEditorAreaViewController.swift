@@ -29,11 +29,20 @@ final class AttoEditorAreaViewController: NSViewController {
         let info: EditorCoreSkiaHoverInfo
     }
 
+    private struct DefinitionRequestContext {
+        let tabID: UUID
+        let logicalLine: UInt32
+        let logicalColumn: UInt32
+    }
+
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
     private var hoverPopover: NSPopover?
     private var hoverPopoverLabel: NSTextField?
+
+    private var definitionContext: DefinitionRequestContext?
+    private var definitionPollTimer: DispatchSourceTimer?
 
     init(library: EditorCoreUIFFILibrary, theme: EditorCoreSkiaTheme, workspaceRootURL: URL) {
         self.library = library
@@ -205,6 +214,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         updateAlwaysPollProcessingForSelectedTab()
         cancelHoverUI()
+        cancelDefinitionUI()
 
         showTabContent(tab)
         refreshTabBar()
@@ -462,7 +472,112 @@ final class AttoEditorAreaViewController: NSViewController {
         editCore.onHoverExit = { [weak self] in
             self?.handleHoverExit(tabID: tabId)
         }
+        editCore.editorView.onCommandClick = { [weak self] ctx in
+            self?.handleCommandClick(ctx: ctx, tabID: tabId) ?? false
+        }
         return tab
+    }
+
+    // MARK: - LSP go to definition (Cmd-click)
+
+    private func handleCommandClick(ctx: EditorCoreSkiaContextMenuContext, tabID: UUID) -> Bool {
+        guard activeTab?.id == tabID else { return false }
+        guard let tab = activeTab else { return false }
+
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            return false
+        }
+
+        cancelHoverUI()
+
+        definitionContext = DefinitionRequestContext(tabID: tabID, logicalLine: ctx.logicalLine, logicalColumn: ctx.logicalColumn)
+        definitionPollTimer?.cancel()
+
+        do {
+            _ = try tab.editCore.editor.lspRequestDefinition(
+                logicalLine: ctx.logicalLine,
+                logicalColumn: ctx.logicalColumn
+            )
+        } catch {
+            cancelDefinitionUI()
+            return false
+        }
+
+        startDefinitionPollTimer(tabID: tabID)
+        return true
+    }
+
+    private func startDefinitionPollTimer(tabID: UUID) {
+        definitionPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.definitionContext, ctx.tabID == tabID else {
+                self.cancelDefinitionUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelDefinitionUI()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelDefinitionUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastDefinitionResultJSON()
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            self.cancelDefinitionUI()
+            self.navigateToDefinitionResultJSON(json)
+            timer.cancel()
+        }
+
+        definitionPollTimer = timer
+        timer.resume()
+    }
+
+    private func navigateToDefinitionResultJSON(_ json: String) {
+        guard let target = AttoLspDefinitionParser.firstTarget(fromDefinitionResultJSON: json) else {
+            NSSound.beep()
+            return
+        }
+        guard let url = URL(string: target.uri), url.isFileURL else {
+            NSSound.beep()
+            return
+        }
+
+        openFile(url: url, mode: .preview)
+
+        guard let tab = activeTab, tab.fileURL.standardizedFileURL == url.standardizedFileURL else {
+            return
+        }
+
+        do {
+            let text = try tab.editCore.editor.text()
+            let offset = AttoLspDefinitionParser.charOffsetForLspPosition(
+                inText: text,
+                line: target.line,
+                utf16Character: target.utf16Character
+            )
+            try tab.editCore.editor.setSelections([EcuSelectionRange(start: offset, end: offset)], primaryIndex: 0)
+            try tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.needsDisplay = true
+            updateStatusBar()
+        } catch {
+            NSSound.beep()
+        }
     }
 
     // MARK: - LSP hover tooltip (AttoEditor UX)
@@ -630,6 +745,12 @@ final class AttoEditorAreaViewController: NSViewController {
         hoverContext = nil
 
         hoverPopover?.performClose(nil)
+    }
+
+    private func cancelDefinitionUI() {
+        definitionPollTimer?.cancel()
+        definitionPollTimer = nil
+        definitionContext = nil
     }
 }
 
