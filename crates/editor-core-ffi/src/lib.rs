@@ -2081,6 +2081,11 @@ fn parse_processing_edits(json_text: &str) -> Result<Vec<ProcessingEdit>, String
 }
 
 /// Free a C string allocated by this crate.
+///
+/// # Safety
+///
+/// `ptr` must be a valid pointer returned by a function in this crate that allocates C strings,
+/// or null. The pointer must not be used after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ffi_string_free(ptr: *mut c_char) {
     if ptr.is_null() {
@@ -2095,6 +2100,11 @@ pub unsafe extern "C" fn editor_core_ffi_string_free(ptr: *mut c_char) {
 /// Retrieve the latest thread-local error message.
 ///
 /// Returns an allocated C string. Caller must free with [`editor_core_ffi_string_free`].
+///
+/// # Safety
+///
+/// This function is safe to call. The returned pointer must be freed with
+/// [`editor_core_ffi_string_free`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ffi_last_error_message() -> *mut c_char {
     let message = LAST_ERROR.with(|slot| {
@@ -2129,6 +2139,11 @@ pub extern "C" fn editor_core_ffi_editor_state_new(
 }
 
 /// Destroy an editor state handle.
+///
+/// # Safety
+///
+/// `state` must be a valid pointer returned by `editor_core_ffi_editor_state_new`, or null.
+/// The pointer must not be used after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ffi_editor_state_free(state: *mut EcfEditorState) {
     if state.is_null() {
@@ -2381,6 +2396,11 @@ pub extern "C" fn editor_core_ffi_workspace_new() -> *mut EcfWorkspace {
 }
 
 /// Destroy a workspace handle.
+///
+/// # Safety
+///
+/// `workspace` must be a valid pointer returned by `editor_core_ffi_workspace_new`, or null.
+/// The pointer must not be used after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ffi_workspace_free(workspace: *mut EcfWorkspace) {
     if workspace.is_null() {
@@ -3129,6 +3149,11 @@ pub extern "C" fn editor_core_ffi_sublime_processor_new_from_path(
 }
 
 /// Destroy a Sublime processor.
+///
+/// # Safety
+///
+/// `processor` must be a valid pointer returned by a constructor in this crate, or null.
+/// The pointer must not be used after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ffi_sublime_processor_free(processor: *mut EcfSublimeProcessor) {
     if processor.is_null() {
@@ -3155,6 +3180,11 @@ pub extern "C" fn editor_core_ffi_sublime_processor_add_search_path(
 }
 
 /// Load syntax YAML into processor's syntax set.
+///
+/// # Safety
+///
+/// `processor` must be a valid pointer returned by a constructor in this crate.
+/// `yaml` must be a valid null-terminated UTF-8 C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ffi_sublime_processor_load_syntax_from_yaml(
     processor: *mut EcfSublimeProcessor,
@@ -3287,6 +3317,11 @@ pub type EcfTreeSitterLanguageFn = unsafe extern "C" fn() -> *const ();
 ///
 /// This is provided so FFI consumers (including Swift tests/wrappers) can use Tree-sitter
 /// without separately linking a language grammar.
+///
+/// # Safety
+///
+/// This function returns a raw pointer to the Tree-sitter language function.
+/// The returned pointer is valid for the lifetime of the program.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ffi_treesitter_language_rust() -> *const () {
     let language_fn = tree_sitter_rust::LANGUAGE.into_raw();
@@ -3341,6 +3376,11 @@ pub extern "C" fn editor_core_ffi_treesitter_processor_new(
 }
 
 /// Destroy a Tree-sitter processor.
+///
+/// # Safety
+///
+/// `processor` must be a valid pointer returned by a constructor in this crate, or null.
+/// The pointer must not be used after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ffi_treesitter_processor_free(
     processor: *mut EcfTreeSitterProcessor,
@@ -3432,6 +3472,11 @@ pub extern "C" fn editor_core_ffi_abi_version() -> u32 {
 }
 
 /// Fill basic document stats.
+///
+/// # Safety
+///
+/// `state` must be a valid pointer to an `EcfEditorState`.
+/// `out_stats` must be a valid pointer to an `EcfDocumentStats` struct.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ffi_editor_get_document_stats(
     state: *const EcfEditorState,
@@ -3503,6 +3548,10 @@ pub extern "C" fn editor_core_ffi_editor_backspace(state: *mut EcfEditorState) -
 }
 
 /// Delete forward at current selection/cursor(s).
+///
+/// # Safety
+///
+/// `state` must be a valid pointer to an `EcfEditorState`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ffi_editor_delete_forward(state: *mut EcfEditorState) -> i32 {
     status_result(|| {

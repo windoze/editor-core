@@ -345,6 +345,11 @@ fn map_ui_error(err: UiError) -> String {
 }
 
 /// Free a C string returned by this library.
+///
+/// # Safety
+///
+/// `ptr` must be a valid pointer returned by a function in this library that allocates C strings,
+/// or null. The pointer must not be used after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_string_free(ptr: *mut c_char) {
     if ptr.is_null() {
@@ -402,6 +407,11 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_new(
 }
 
 /// Free an Editor UI handle.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer returned by `editor_core_ui_ffi_editor_ui_new`, or null.
+/// The pointer must not be used after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_free(ui: *mut EditorUi) {
     if ui.is_null() {
@@ -412,6 +422,10 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_free(ui: *mut EditorUi) {
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `theme` must be a valid pointer to an `EcuTheme`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_theme(
     ui: *mut EditorUi,
@@ -435,6 +449,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_theme(
 }
 
 /// Replace the current UI chrome theme (gutter, fold marker colors, ...).
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `theme` must be a valid pointer to an `EcuChromeTheme`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_chrome_theme(
     ui: *mut EditorUi,
@@ -458,6 +477,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_chrome_theme(
 }
 
 /// Replace the current theme's `StyleId -> colors` override map.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `styles` must be a valid pointer to an array of `EcuStyleColors` with at least `style_count` elements.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_style_colors(
     ui: *mut EditorUi,
@@ -492,6 +516,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_style_colors(
 }
 
 /// Replace the current theme's `StyleId -> font style` override map.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `fonts` must be a valid pointer to an array of `EcuStyleFont` with at least `font_count` elements.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_style_fonts(
     ui: *mut EditorUi,
@@ -526,6 +555,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_style_fonts(
 }
 
 /// Replace the current theme's `StyleId -> text decorations` override map.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `decorations` must be a valid pointer to an array of `EcuStyleTextDecorations` with at least `decoration_count` elements.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_style_text_decorations(
     ui: *mut EditorUi,
@@ -603,6 +637,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_set_syntax_path(
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_sublime_disable(ui: *mut EditorUi) {
     if ui.is_null() {
@@ -613,6 +650,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_sublime_disable(ui: *mut E
     clear_last_error();
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `scope_utf8` must be a valid null-terminated UTF-8 C string pointer.
+/// `out_style_id` must be a valid pointer to a `u32`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope(
     ui: *mut EditorUi,
@@ -720,6 +762,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queri
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_disable(ui: *mut EditorUi) {
     if ui.is_null() {
@@ -735,6 +780,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_disable(ui: *mu
 /// Notes:
 /// - `args_utf8` may be null or an empty string; when present it is split by whitespace.
 /// - `root_uri_utf8` / `doc_uri_utf8` should be `file:///...` URIs for best server behavior.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// All C string parameters must be valid null-terminated UTF-8 pointers or null where allowed.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_enable(
     ui: *mut EditorUi,
@@ -780,6 +830,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_enable(
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_disable(ui: *mut EditorUi) {
     if ui.is_null() {
@@ -790,6 +843,10 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_disable(ui: *mut Edito
     clear_last_error();
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_enabled` must be a valid pointer to a `u8`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_is_enabled(
     ui: *mut EditorUi,
@@ -819,6 +876,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_is_enabled(
 ///
 /// - `out_applied`: set to 1 if new edits were applied.
 /// - `out_pending`: set to 1 if there is still pending work.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_applied` and `out_pending` must be valid pointers to `u8`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_poll_processing(
     ui: *mut EditorUi,
@@ -849,6 +911,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_poll_processing(
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `capture_utf8` must be a valid null-terminated UTF-8 C string pointer.
+/// `out_style_id` must be a valid pointer to a `u32`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(
     ui: *mut EditorUi,
@@ -1023,6 +1090,11 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_jso
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `data` must be a valid pointer to an array of `u32` with at least `data_len` elements,
+/// or null if `data_len` is 0.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(
     ui: *mut EditorUi,
@@ -1368,6 +1440,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_viewport_px(
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_rows(
     ui: *mut EditorUi,
@@ -1381,6 +1456,9 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_rows(
     ui.scroll_by_rows(delta_rows as isize);
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_pixels(
     ui: *mut EditorUi,
@@ -1426,6 +1504,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_viewport_state(
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(
     ui: *mut EditorUi,
@@ -1567,6 +1648,12 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_remove_style(
 ///
 /// - `ranges` are character-offset ranges (inclusive-exclusive).
 /// - Passing `range_count = 0` clears the layer (and allows `ranges` to be null).
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `ranges` must be a valid pointer to an array of `EcuSelectionRange` with at least `range_count` elements,
+/// or null if `range_count` is 0.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_match_highlights(
     ui: *mut EditorUi,
@@ -1601,6 +1688,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_match_highlights(
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `query_utf8` must be a valid null-terminated UTF-8 C string pointer.
+/// `out_match_count` must be a valid pointer to a `u32`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_search_set_query(
     ui: *mut EditorUi,
@@ -1649,6 +1741,11 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_search_clear(ui: *mut EditorUi) -
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `query_utf8` must be a valid null-terminated UTF-8 C string pointer.
+/// `out_found` must be a valid pointer to a `u8`, or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_find_next(
     ui: *mut EditorUi,
@@ -1682,6 +1779,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_find_next(
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `query_utf8` must be a valid null-terminated UTF-8 C string pointer.
+/// `out_found` must be a valid pointer to a `u8`, or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_find_prev(
     ui: *mut EditorUi,
@@ -1715,6 +1817,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_find_prev(
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `query_utf8` and `replacement_utf8` must be valid null-terminated UTF-8 C string pointers.
+/// `out_replaced` must be a valid pointer to a `u32`, or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_replace_current(
     ui: *mut EditorUi,
@@ -1752,6 +1859,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_replace_current(
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `query_utf8` and `replacement_utf8` must be valid null-terminated UTF-8 C string pointers.
+/// `out_replaced` must be a valid pointer to a `u32`, or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_replace_all(
     ui: *mut EditorUi,
@@ -2471,6 +2583,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_marked_text_ex(
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_unmark_text(ui: *mut EditorUi) {
     if ui.is_null() {
@@ -2540,6 +2655,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_mouse_dragged(
     }
 }
 
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_mouse_up(ui: *mut EditorUi) {
     if ui.is_null() {
@@ -2553,6 +2671,12 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_mouse_up(ui: *mut EditorUi
 ///
 /// - The caller provides an output buffer and capacity.
 /// - If capacity is insufficient, returns `ECU_ERR_BUFFER_TOO_SMALL` and writes the required size to `out_len`.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_len` must be a valid pointer to a `u32`.
+/// `out_buf` must be a valid pointer to a buffer with at least `out_cap` bytes, or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_render_rgba(
     ui: *mut EditorUi,
@@ -2721,6 +2845,11 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_minimap_json(
 /// Get primary selection offsets (character offsets).
 ///
 /// Writes `start` and `end` (inclusive-exclusive) offsets.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_start` and `out_end` must be valid pointers to `u32`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_selection_offsets(
     ui: *mut EditorUi,
@@ -2774,6 +2903,12 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_delete_selections_only(ui: *mut E
 /// - `out_len` receives the required number of ranges.
 /// - `out_primary_index` receives the primary selection index.
 /// - If `out_ranges` is null or `out_cap` is insufficient, returns `ECU_ERR_BUFFER_TOO_SMALL`.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_len` and `out_primary_index` must be valid pointers to `u32`.
+/// `out_ranges` must be a valid pointer to a buffer with at least `out_cap` elements, or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_selections(
     ui: *mut EditorUi,
@@ -2824,6 +2959,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_selections(
 }
 
 /// Set the full selection set (including primary) from character-offset ranges.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `ranges` must be a valid pointer to an array of `EcuSelectionRange` with at least `range_count` elements.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_selections(
     ui: *mut EditorUi,
@@ -2883,6 +3023,12 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_rect_selection(
 /// Get IME marked text range.
 ///
 /// If there is no marked text, writes `has_marked = 0` and `out_start/out_len = 0`.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_has_marked` must be a valid pointer to a `u8`.
+/// `out_start` and `out_len` must be valid pointers to `u32`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_marked_range(
     ui: *mut EditorUi,
@@ -2925,6 +3071,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_marked_range(
 ///
 /// - `char_offset` is a Unicode scalar index.
 /// - `out_line/out_column` receive 0-based indices.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_line` and `out_column` must be valid pointers to `u32`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(
     ui: *mut EditorUi,
@@ -2959,6 +3110,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_logical_pos
 /// Map a character offset to a view point (in pixels, top-left origin).
 ///
 /// Writes `out_x/out_y` and `out_line_height_px`.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_x`, `out_y`, and `out_line_height_px` must be valid pointers to `c_float`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
     ui: *mut EditorUi,
@@ -2999,6 +3155,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
 }
 
 /// Hit-test a view point (pixels, top-left origin) and return the corresponding character offset.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_char_offset` must be a valid pointer to a `u32`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_view_point_to_char_offset(
     ui: *mut EditorUi,
@@ -3030,6 +3191,12 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_view_point_to_char_offset(
 /// - `out_has_link` is set to 1 when a link is present.
 /// - `out_json_utf8` receives a newly allocated string that must be freed with
 ///   `editor_core_ui_ffi_string_free` (or is set to NULL when no link is present).
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_has_link` must be a valid pointer to a `u8`.
+/// `out_json_utf8` must be a valid pointer to a `*mut c_char`, or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(
     ui: *mut EditorUi,
@@ -5398,7 +5565,7 @@ contexts:
             ECU_OK
         );
 
-        let style_id = (7u32 << 16) | 0u32;
+        let style_id = 7u32 << 16;
         let styles = [EcuStyleColors {
             style_id,
             flags: ECU_STYLE_FLAG_BACKGROUND,
