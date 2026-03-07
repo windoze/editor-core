@@ -85,6 +85,119 @@ public struct EcuStyleColors: Equatable {
 }
 
 @frozen
+public struct EcuChromeTheme: Equatable {
+    public var gutterBackground: EcuRgba8
+    public var gutterForeground: EcuRgba8
+    public var gutterSeparator: EcuRgba8
+    public var foldMarkerCollapsed: EcuRgba8
+    public var foldMarkerExpanded: EcuRgba8
+
+    public init(
+        gutterBackground: EcuRgba8,
+        gutterForeground: EcuRgba8,
+        gutterSeparator: EcuRgba8,
+        foldMarkerCollapsed: EcuRgba8,
+        foldMarkerExpanded: EcuRgba8
+    ) {
+        self.gutterBackground = gutterBackground
+        self.gutterForeground = gutterForeground
+        self.gutterSeparator = gutterSeparator
+        self.foldMarkerCollapsed = foldMarkerCollapsed
+        self.foldMarkerExpanded = foldMarkerExpanded
+    }
+
+    var ffi: CEditorCoreUIFFI.EcuChromeTheme {
+        CEditorCoreUIFFI.EcuChromeTheme(
+            gutter_background: CEditorCoreUIFFI.EcuRgba8(r: gutterBackground.r, g: gutterBackground.g, b: gutterBackground.b, a: gutterBackground.a),
+            gutter_foreground: CEditorCoreUIFFI.EcuRgba8(r: gutterForeground.r, g: gutterForeground.g, b: gutterForeground.b, a: gutterForeground.a),
+            gutter_separator: CEditorCoreUIFFI.EcuRgba8(r: gutterSeparator.r, g: gutterSeparator.g, b: gutterSeparator.b, a: gutterSeparator.a),
+            fold_marker_collapsed: CEditorCoreUIFFI.EcuRgba8(r: foldMarkerCollapsed.r, g: foldMarkerCollapsed.g, b: foldMarkerCollapsed.b, a: foldMarkerCollapsed.a),
+            fold_marker_expanded: CEditorCoreUIFFI.EcuRgba8(r: foldMarkerExpanded.r, g: foldMarkerExpanded.g, b: foldMarkerExpanded.b, a: foldMarkerExpanded.a)
+        )
+    }
+}
+
+public enum EcuUnderlineStyle: UInt32, Sendable {
+    case single = 1
+    case double = 2
+    case squiggly = 3
+}
+
+@frozen
+public struct EcuStyleTextDecorations: Equatable {
+    public var styleId: UInt32
+    public var underline: EcuUnderlineStyle?
+    public var underlineColor: EcuRgba8?
+    public var strikethrough: Bool?
+    public var strikethroughColor: EcuRgba8?
+
+    public init(
+        styleId: UInt32,
+        underline: EcuUnderlineStyle? = nil,
+        underlineColor: EcuRgba8? = nil,
+        strikethrough: Bool? = nil,
+        strikethroughColor: EcuRgba8? = nil
+    ) {
+        self.styleId = styleId
+        self.underline = underline
+        self.underlineColor = underlineColor
+        self.strikethrough = strikethrough
+        self.strikethroughColor = strikethroughColor
+    }
+
+    var ffi: CEditorCoreUIFFI.EcuStyleTextDecorations {
+        var flags: UInt32 = 0
+        if underline != nil { flags |= 1 << 0 }
+        if underlineColor != nil { flags |= 1 << 1 }
+        if strikethrough != nil { flags |= 1 << 2 }
+        if strikethroughColor != nil { flags |= 1 << 3 }
+
+        let uStyle = underline?.rawValue ?? 0
+        let uColor = underlineColor ?? EcuRgba8(r: 0, g: 0, b: 0, a: 0)
+        let sValue: UInt32 = (strikethrough == true) ? 1 : 0
+        let sColor = strikethroughColor ?? EcuRgba8(r: 0, g: 0, b: 0, a: 0)
+
+        return CEditorCoreUIFFI.EcuStyleTextDecorations(
+            style_id: styleId,
+            flags: flags,
+            underline_style: uStyle,
+            underline_color: CEditorCoreUIFFI.EcuRgba8(r: uColor.r, g: uColor.g, b: uColor.b, a: uColor.a),
+            strikethrough: sValue,
+            strikethrough_color: CEditorCoreUIFFI.EcuRgba8(r: sColor.r, g: sColor.g, b: sColor.b, a: sColor.a)
+        )
+    }
+}
+
+@frozen
+public struct EcuStyleFont: Equatable {
+    public var styleId: UInt32
+    public var bold: Bool?
+    public var italic: Bool?
+
+    public init(styleId: UInt32, bold: Bool? = nil, italic: Bool? = nil) {
+        self.styleId = styleId
+        self.bold = bold
+        self.italic = italic
+    }
+
+    var ffi: CEditorCoreUIFFI.EcuStyleFont {
+        var flags: UInt32 = 0
+        if bold != nil { flags |= 1 << 0 }
+        if italic != nil { flags |= 1 << 1 }
+
+        let boldValue: UInt32 = (bold == true) ? 1 : 0
+        let italicValue: UInt32 = (italic == true) ? 1 : 0
+
+        return CEditorCoreUIFFI.EcuStyleFont(
+            style_id: styleId,
+            flags: flags,
+            bold: boldValue,
+            italic: italicValue
+        )
+    }
+}
+
+@frozen
 public struct EcuSelectionRange: Equatable, Sendable {
     public var start: UInt32
     public var end: UInt32

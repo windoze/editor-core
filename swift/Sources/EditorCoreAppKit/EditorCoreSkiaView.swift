@@ -101,6 +101,14 @@ public final class EditorCoreSkiaView: MTKView {
     /// Hosts can use this to keep native scrollbars in sync.
     public var onViewportStateDidChange: (() -> Void)?
 
+    /// Called when the document text mutates (typing, delete, undo/redo, IME commit, etc).
+    ///
+    /// Hosts can use this to:
+    /// - track "dirty" state
+    /// - auto-pin preview tabs (VSCode behavior)
+    /// - trigger external indexing, etc.
+    public var onDidMutateDocumentText: (() -> Void)?
+
     /// Called when the mouse hovers over a new character offset in the document.
     ///
     /// Hosts can use this to present hover UI (tooltip/popover/inspector).
@@ -380,6 +388,17 @@ public final class EditorCoreSkiaView: MTKView {
 
     private var processingPollTimer: DispatchSourceTimer?
     private var processingPollDeadlineUptime: TimeInterval = 0
+    /// If `true`, keep polling `editor.pollProcessing()` continuously.
+    ///
+    /// This is useful for live LSP demos where server-driven updates (diagnostics, semantic tokens,
+    /// inlay hints) can arrive after an edit burst.
+    public var alwaysPollProcessing: Bool = false {
+        didSet {
+            if alwaysPollProcessing {
+                startProcessingPoll()
+            }
+        }
+    }
 
     private func didMutateDocumentText() {
         docContentEpoch &+= 1
@@ -389,6 +408,7 @@ public final class EditorCoreSkiaView: MTKView {
         cachedMarkedRange = nil
         updateGutterWidthIfNeeded()
         startProcessingPoll()
+        onDidMutateDocumentText?()
     }
 
     @discardableResult
@@ -464,7 +484,7 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     private func pollProcessingTick() {
-        if ProcessInfo.processInfo.systemUptime > processingPollDeadlineUptime {
+        if alwaysPollProcessing == false, ProcessInfo.processInfo.systemUptime > processingPollDeadlineUptime {
             stopProcessingPoll()
             return
         }
@@ -477,7 +497,7 @@ public final class EditorCoreSkiaView: MTKView {
                 notifyViewportStateDidChange()
                 onDidApplyAsyncProcessing?()
             }
-            if r.pending == false {
+            if r.pending == false, alwaysPollProcessing == false {
                 stopProcessingPoll()
             }
         } catch {
@@ -489,6 +509,12 @@ public final class EditorCoreSkiaView: MTKView {
     public override var acceptsFirstResponder: Bool { true }
     public override var isFlipped: Bool { true }
     public override var inputContext: NSTextInputContext? { textInputContext }
+
+    public override func resetCursorRects() {
+        super.resetCursorRects()
+        // VSCode-like: show text cursor when hovering over the editor content.
+        addCursorRect(bounds, cursor: .iBeam)
+    }
 
     public override func becomeFirstResponder() -> Bool {
         let ok = super.becomeFirstResponder()
@@ -544,34 +570,13 @@ public final class EditorCoreSkiaView: MTKView {
         // 让 Rust/Skia 走 Metal 后端渲染到 `CAMetalDrawable.texture`。
         try editor.enableMetal(device: device, commandQueue: queue)
 
-        // 默认主题（可后续开放给 host 自定义）
-        try editor.setTheme(
-            EcuTheme(
-                background: EcuRgba8(r: 0xFF, g: 0xFF, b: 0xFF, a: 0xFF),
-                foreground: EcuRgba8(r: 0x11, g: 0x11, b: 0x11, a: 0xFF),
-                selectionBackground: EcuRgba8(r: 0xC7, g: 0xDD, b: 0xFF, a: 0xFF),
-                caret: EcuRgba8(r: 0x11, g: 0x11, b: 0x11, a: 0xFF)
-            )
-        )
+        // 默认主题（可由 host 覆盖）。同时把 gutter 的 reserved StyleId 配色也放进默认主题里，
+        // 避免后续 `setStyleColors` 被多次调用时出现“互相覆盖”的坑。
+        try EditorCoreSkiaTheme.defaultLight().apply(to: editor)
 
         // 让 gutter 可见（行号 + 折叠标记）。
         try editor.setGutterWidthCells(gutterWidthCells)
         _ = updateGutterWidthIfNeeded()
-
-        // Reserved overlay StyleId（见 `crates/editor-core-render-skia/src/lib.rs`）。
-        // 这里先用一套默认配色，后续可由 host 主题系统统一下发。
-        let gutterBg: UInt32 = 0x0600_0001
-        let gutterFg: UInt32 = 0x0600_0002
-        let gutterSep: UInt32 = 0x0600_0003
-        let foldCollapsed: UInt32 = 0x0600_0004
-        let foldExpanded: UInt32 = 0x0600_0005
-        try editor.setStyleColors([
-            EcuStyleColors(styleId: gutterBg, background: EcuRgba8(r: 0xF5, g: 0xF5, b: 0xF5, a: 0xFF)),
-            EcuStyleColors(styleId: gutterFg, foreground: EcuRgba8(r: 0x88, g: 0x88, b: 0x88, a: 0xFF)),
-            EcuStyleColors(styleId: gutterSep, foreground: EcuRgba8(r: 0xDD, g: 0xDD, b: 0xDD, a: 0xFF)),
-            EcuStyleColors(styleId: foldExpanded, background: EcuRgba8(r: 0xAA, g: 0xAA, b: 0xAA, a: 0xFF)),
-            EcuStyleColors(styleId: foldCollapsed, background: EcuRgba8(r: 0x77, g: 0x77, b: 0x77, a: 0xFF)),
-        ])
 
         if let fontFamiliesCSV, fontFamiliesCSV.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             try editor.setFontFamiliesCSV(fontFamiliesCSV)

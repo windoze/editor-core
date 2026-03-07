@@ -11,9 +11,11 @@
 //! - event collection (IME/keyboard/mouse/scroll)
 //! - presenting the rendered pixels (RGBA buffer) to screen
 
-use editor_core_render_skia::{RenderTheme, Rgba8, StyleColors};
 use editor_core::{ExpandSelectionDirection, ExpandSelectionUnit};
-use editor_core_ui::{EditorUi, UiError};
+use editor_core_render_skia::{
+    RenderTheme, Rgba8, StyleColors, StyleFont, TextDecorations, UnderlineStyle,
+};
+use editor_core_ui::{ChromeTheme, EditorUi, UiError};
 use libc::{c_char, c_float, c_int, c_void};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -112,6 +114,16 @@ pub struct EcuTheme {
     pub caret: EcuRgba8,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct EcuChromeTheme {
+    pub gutter_background: EcuRgba8,
+    pub gutter_foreground: EcuRgba8,
+    pub gutter_separator: EcuRgba8,
+    pub fold_marker_collapsed: EcuRgba8,
+    pub fold_marker_expanded: EcuRgba8,
+}
+
 /// A single `StyleId` override entry.
 ///
 /// `flags` is a bitmask:
@@ -124,6 +136,51 @@ pub struct EcuStyleColors {
     pub flags: u32,
     pub foreground: EcuRgba8,
     pub background: EcuRgba8,
+}
+
+/// A single `StyleId` text-decoration override entry (underline/strikethrough).
+///
+/// `flags` is a bitmask:
+/// - bit 0: underline style is present
+/// - bit 1: underline color is present
+/// - bit 2: strikethrough is present
+/// - bit 3: strikethrough color is present
+///
+/// `underline_style` values:
+/// - 1: single underline
+/// - 2: double underline
+/// - 3: squiggly underline
+///
+/// `strikethrough` values:
+/// - 0: disabled
+/// - 1: enabled
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct EcuStyleTextDecorations {
+    pub style_id: u32,
+    pub flags: u32,
+    pub underline_style: u32,
+    pub underline_color: EcuRgba8,
+    pub strikethrough: u32,
+    pub strikethrough_color: EcuRgba8,
+}
+
+/// A single StyleId font-style override entry.
+///
+/// flags bitmask:
+/// - bit 0: bold present
+/// - bit 1: italic present
+///
+/// Values:
+/// - bold: 0=disabled, 1=enabled
+/// - italic: 0=disabled, 1=enabled
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct EcuStyleFont {
+    pub style_id: u32,
+    pub flags: u32,
+    pub bold: u32,
+    pub italic: u32,
 }
 
 #[repr(C)]
@@ -152,6 +209,14 @@ pub struct EcuViewportState {
 const ECU_STYLE_FLAG_FOREGROUND: u32 = 1 << 0;
 const ECU_STYLE_FLAG_BACKGROUND: u32 = 1 << 1;
 
+const ECU_TEXT_DECORATION_FLAG_UNDERLINE: u32 = 1 << 0;
+const ECU_TEXT_DECORATION_FLAG_UNDERLINE_COLOR: u32 = 1 << 1;
+const ECU_TEXT_DECORATION_FLAG_STRIKETHROUGH: u32 = 1 << 2;
+const ECU_TEXT_DECORATION_FLAG_STRIKETHROUGH_COLOR: u32 = 1 << 3;
+
+const ECU_STYLE_FONT_FLAG_BOLD: u32 = 1 << 0;
+const ECU_STYLE_FONT_FLAG_ITALIC: u32 = 1 << 1;
+
 fn theme_from_ffi(theme: &EcuTheme) -> RenderTheme {
     RenderTheme {
         background: Rgba8::new(
@@ -174,6 +239,22 @@ fn theme_from_ffi(theme: &EcuTheme) -> RenderTheme {
         ),
         caret: Rgba8::new(theme.caret.r, theme.caret.g, theme.caret.b, theme.caret.a),
         styles: BTreeMap::new(),
+        style_fonts: BTreeMap::new(),
+        text_decorations: BTreeMap::new(),
+    }
+}
+
+fn rgba8_from_ffi(c: EcuRgba8) -> Rgba8 {
+    Rgba8::new(c.r, c.g, c.b, c.a)
+}
+
+fn chrome_theme_from_ffi(theme: &EcuChromeTheme) -> ChromeTheme {
+    ChromeTheme {
+        gutter_background: rgba8_from_ffi(theme.gutter_background),
+        gutter_foreground: rgba8_from_ffi(theme.gutter_foreground),
+        gutter_separator: rgba8_from_ffi(theme.gutter_separator),
+        fold_marker_collapsed: rgba8_from_ffi(theme.fold_marker_collapsed),
+        fold_marker_expanded: rgba8_from_ffi(theme.fold_marker_expanded),
     }
 }
 
@@ -201,6 +282,62 @@ fn style_colors_from_ffi(entry: &EcuStyleColors) -> (u32, StyleColors) {
     };
 
     (entry.style_id, StyleColors::new(fg, bg))
+}
+
+fn text_decorations_from_ffi(
+    entry: &EcuStyleTextDecorations,
+) -> Result<(u32, TextDecorations), String> {
+    let mut out = TextDecorations::default();
+
+    if entry.flags & ECU_TEXT_DECORATION_FLAG_UNDERLINE != 0 {
+        let underline = match entry.underline_style {
+            1 => UnderlineStyle::Single,
+            2 => UnderlineStyle::Double,
+            3 => UnderlineStyle::Squiggly,
+            other => {
+                return Err(format!(
+                    "invalid underline_style {} for style_id=0x{:08X}",
+                    other, entry.style_id
+                ));
+            }
+        };
+        out.underline = Some(underline);
+    }
+
+    if entry.flags & ECU_TEXT_DECORATION_FLAG_UNDERLINE_COLOR != 0 {
+        out.underline_color = Some(Rgba8::new(
+            entry.underline_color.r,
+            entry.underline_color.g,
+            entry.underline_color.b,
+            entry.underline_color.a,
+        ));
+    }
+
+    if entry.flags & ECU_TEXT_DECORATION_FLAG_STRIKETHROUGH != 0 {
+        out.strikethrough = Some(entry.strikethrough != 0);
+    }
+
+    if entry.flags & ECU_TEXT_DECORATION_FLAG_STRIKETHROUGH_COLOR != 0 {
+        out.strikethrough_color = Some(Rgba8::new(
+            entry.strikethrough_color.r,
+            entry.strikethrough_color.g,
+            entry.strikethrough_color.b,
+            entry.strikethrough_color.a,
+        ));
+    }
+
+    Ok((entry.style_id, out))
+}
+
+fn style_font_from_ffi(entry: &EcuStyleFont) -> (u32, StyleFont) {
+    let mut out = StyleFont::default();
+    if entry.flags & ECU_STYLE_FONT_FLAG_BOLD != 0 {
+        out.bold = Some(entry.bold != 0);
+    }
+    if entry.flags & ECU_STYLE_FONT_FLAG_ITALIC != 0 {
+        out.italic = Some(entry.italic != 0);
+    }
+    (entry.style_id, out)
 }
 
 fn map_ui_error(err: UiError) -> String {
@@ -297,6 +434,29 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_theme(
     }
 }
 
+/// Replace the current UI chrome theme (gutter, fold marker colors, ...).
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_chrome_theme(
+    ui: *mut EditorUi,
+    theme: *const EcuChromeTheme,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if theme.is_null() {
+            return Err("theme is null".to_string());
+        }
+        let theme = unsafe { &*theme };
+        ui.set_chrome_theme(chrome_theme_from_ffi(theme));
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Replace the current theme's `StyleId -> colors` override map.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_style_colors(
@@ -321,6 +481,74 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_style_colors(
         }
 
         ui.set_style_colors(map);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Replace the current theme's `StyleId -> font style` override map.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_style_fonts(
+    ui: *mut EditorUi,
+    fonts: *const EcuStyleFont,
+    font_count: u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if fonts.is_null() && font_count != 0 {
+            return Err("fonts is null".to_string());
+        }
+
+        let mut map = BTreeMap::<u32, StyleFont>::new();
+        if font_count != 0 {
+            // SAFETY: caller provided `font_count` entries.
+            let slice = unsafe { slice::from_raw_parts(fonts, font_count as usize) };
+            for entry in slice {
+                let (style_id, font) = style_font_from_ffi(entry);
+                map.insert(style_id, font);
+            }
+        }
+
+        ui.set_style_fonts(map);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Replace the current theme's `StyleId -> text decorations` override map.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_style_text_decorations(
+    ui: *mut EditorUi,
+    decorations: *const EcuStyleTextDecorations,
+    decoration_count: u32,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if decorations.is_null() && decoration_count != 0 {
+            return Err("decorations is null".to_string());
+        }
+
+        let mut map = BTreeMap::<u32, TextDecorations>::new();
+        if decoration_count != 0 {
+            // SAFETY: caller provided `decoration_count` entries.
+            let slice = unsafe { slice::from_raw_parts(decorations, decoration_count as usize) };
+            for entry in slice {
+                let (style_id, decos) = text_decorations_from_ffi(entry)?;
+                map.insert(style_id, decos);
+            }
+        }
+
+        ui.set_style_text_decorations(map);
         Ok(ECU_OK)
     }) {
         Ok(code) => {
@@ -502,6 +730,89 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_disable(ui: *mut Edito
     clear_last_error();
 }
 
+/// Enable an stdio LSP session for the current document.
+///
+/// Notes:
+/// - `args_utf8` may be null or an empty string; when present it is split by whitespace.
+/// - `root_uri_utf8` / `doc_uri_utf8` should be `file:///...` URIs for best server behavior.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_enable(
+    ui: *mut EditorUi,
+    cmd_utf8: *const c_char,
+    args_utf8: *const c_char,
+    root_uri_utf8: *const c_char,
+    doc_uri_utf8: *const c_char,
+    language_id_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let cmd = require_cstr(cmd_utf8, "cmd_utf8")?
+            .to_str()
+            .map_err(|_| "cmd_utf8 is not valid UTF-8".to_string())?;
+        let root_uri = require_cstr(root_uri_utf8, "root_uri_utf8")?
+            .to_str()
+            .map_err(|_| "root_uri_utf8 is not valid UTF-8".to_string())?;
+        let doc_uri = require_cstr(doc_uri_utf8, "doc_uri_utf8")?
+            .to_str()
+            .map_err(|_| "doc_uri_utf8 is not valid UTF-8".to_string())?;
+        let language_id = require_cstr(language_id_utf8, "language_id_utf8")?
+            .to_str()
+            .map_err(|_| "language_id_utf8 is not valid UTF-8".to_string())?;
+
+        let args = if args_utf8.is_null() {
+            Vec::<String>::new()
+        } else {
+            let s = require_cstr(args_utf8, "args_utf8")?
+                .to_str()
+                .map_err(|_| "args_utf8 is not valid UTF-8".to_string())?;
+            s.split_whitespace().map(|p| p.to_string()).collect()
+        };
+
+        ui.lsp_enable_stdio(cmd, &args, root_uri, doc_uri, language_id)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_disable(ui: *mut EditorUi) {
+    if ui.is_null() {
+        set_last_error("ui is null".to_string());
+        return;
+    }
+    unsafe { &mut *ui }.lsp_disable();
+    clear_last_error();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_is_enabled(
+    ui: *mut EditorUi,
+    out_enabled: *mut u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_enabled.is_null() {
+            return Err("out_enabled is null".to_string());
+        }
+        unsafe {
+            *out_enabled = if ui.lsp_is_enabled() { 1 } else { 0 };
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Poll and apply any completed async processing (Tree-sitter highlighting/folding).
 ///
 /// This is non-blocking: it never waits for the worker thread.
@@ -625,10 +936,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_json(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        let json =
-            require_cstr(inlay_hints_result_json_utf8, "inlay_hints_result_json_utf8")?
-                .to_str()
-                .map_err(|_| "inlay_hints_result_json_utf8 is not valid UTF-8".to_string())?;
+        let json = require_cstr(inlay_hints_result_json_utf8, "inlay_hints_result_json_utf8")?
+            .to_str()
+            .map_err(|_| "inlay_hints_result_json_utf8 is not valid UTF-8".to_string())?;
         ui.lsp_apply_inlay_hints_json(json)
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
@@ -861,6 +1171,76 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_caret_visible(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         ui.set_caret_visible(visible != 0);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_indent_guides_enabled(
+    ui: *mut EditorUi,
+    enabled: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.set_indent_guides_enabled(enabled != 0);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_whitespace_render_mode(
+    ui: *mut EditorUi,
+    mode: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        use editor_core_render_skia::WhitespaceRenderMode;
+
+        let ui = require_mut(ui, "ui")?;
+        let mode = match mode {
+            0 => WhitespaceRenderMode::None,
+            1 => WhitespaceRenderMode::Selection,
+            2 => WhitespaceRenderMode::All,
+            _ => return Err(format!("invalid whitespace render mode: {mode}")),
+        };
+        ui.set_whitespace_render_mode(mode);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_fold_marker_style(
+    ui: *mut EditorUi,
+    style: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        use editor_core_render_skia::FoldMarkerStyle;
+
+        let ui = require_mut(ui, "ui")?;
+        let style = match style {
+            0 => FoldMarkerStyle::Hidden,
+            1 => FoldMarkerStyle::Block,
+            2 => FoldMarkerStyle::Triangle,
+            _ => return Err(format!("invalid fold marker style: {style}")),
+        };
+        ui.set_fold_marker_style(style);
         Ok(ECU_OK)
     }) {
         Ok(code) => {
@@ -1115,9 +1495,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_delete_forward(ui: *mut EditorUi)
 pub extern "C" fn editor_core_ui_ffi_editor_ui_delete_word_back(ui: *mut EditorUi) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.delete_word_back()
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.delete_word_back().map(|_| ECU_OK).map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -1508,9 +1886,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_move_word_left(ui: *mut EditorUi)
 pub extern "C" fn editor_core_ui_ffi_editor_ui_move_word_right(ui: *mut EditorUi) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.move_word_right()
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.move_word_right().map(|_| ECU_OK).map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -1521,7 +1897,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_move_word_right(ui: *mut EditorUi
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_visual_line_start(ui: *mut EditorUi) -> c_int {
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_visual_line_start(
+    ui: *mut EditorUi,
+) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         ui.move_to_visual_line_start()
@@ -1807,9 +2185,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_clear_secondary_selections(
 pub extern "C" fn editor_core_ui_ffi_editor_ui_add_cursor_above(ui: *mut EditorUi) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.add_cursor_above()
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.add_cursor_above().map(|_| ECU_OK).map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -1823,9 +2199,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_add_cursor_above(ui: *mut EditorU
 pub extern "C" fn editor_core_ui_ffi_editor_ui_add_cursor_below(ui: *mut EditorUi) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.add_cursor_below()
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.add_cursor_below().map(|_| ECU_OK).map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -1958,9 +2332,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_paragraph_selection_offsets(
 pub extern "C" fn editor_core_ui_ffi_editor_ui_expand_selection(ui: *mut EditorUi) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.expand_selection()
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.expand_selection().map(|_| ECU_OK).map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -2239,9 +2611,12 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_enable_metal(
 
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.enable_metal(metal_device as *mut c_void, metal_command_queue as *mut c_void)
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.enable_metal(
+            metal_device as *mut c_void,
+            metal_command_queue as *mut c_void,
+        )
+        .map(|_| ECU_OK)
+        .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -2385,7 +2760,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_selection_offsets(
 pub extern "C" fn editor_core_ui_ffi_editor_ui_delete_selections_only(ui: *mut EditorUi) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.delete_selections_only().map(|_| ECU_OK).map_err(map_ui_error)
+        ui.delete_selections_only()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -2977,6 +3354,84 @@ mod tests {
     }
 
     #[test]
+    fn ffi_set_style_text_decorations_affects_rendering() {
+        // Use a space in the styled cell so glyph rasterization does not affect the pixel sample.
+        let initial = CString::new("a c").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let bg = EcuRgba8 {
+            r: 10,
+            g: 20,
+            b: 30,
+            a: 255,
+        };
+        let theme = EcuTheme {
+            background: bg,
+            foreground: bg,
+            selection_background: bg,
+            caret: bg,
+        };
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 10.0, 10.0, 10.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 80, 20, 1.0),
+            ECU_OK
+        );
+
+        // Apply style id 42 to the middle cell (a space).
+        assert_eq!(editor_core_ui_ffi_editor_ui_add_style(ui, 1, 2, 42), ECU_OK);
+
+        let decorations = [EcuStyleTextDecorations {
+            style_id: 42,
+            flags: ECU_TEXT_DECORATION_FLAG_UNDERLINE | ECU_TEXT_DECORATION_FLAG_UNDERLINE_COLOR,
+            underline_style: 3, // squiggly
+            underline_color: EcuRgba8 {
+                r: 1,
+                g: 200,
+                b: 2,
+                a: 255,
+            },
+            strikethrough: 0,
+            strikethrough_color: EcuRgba8 {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+        }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_style_text_decorations(
+                ui,
+                decorations.as_ptr(),
+                decorations.len() as u32
+            ),
+            ECU_OK
+        );
+
+        let mut out_len: u32 = 0;
+        let mut buf = vec![0u8; 80 * 20 * 4];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
+            ECU_OK
+        );
+        assert_eq!(out_len as usize, buf.len());
+
+        // Styled cell is at x in [10..20]. The squiggle starts at y=9 (line height 10).
+        assert_eq!(pixel(&buf, 80, 11, 9), [1, 200, 2, 255]);
+
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
+
+    #[test]
     fn ffi_sublime_highlight_scope_mapping_and_rendering() {
         // Put a space after '#' so we can sample a highlighted cell without glyph pixels.
         let initial = CString::new("a # \n").unwrap();
@@ -3214,7 +3669,12 @@ contexts:
             EcuSelectionRange { start: 4, end: 4 },
         ];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            editor_core_ui_ffi_editor_ui_set_selections(
+                ui,
+                ranges.as_ptr(),
+                ranges.len() as u32,
+                0
+            ),
             ECU_OK
         );
 
@@ -3231,10 +3691,7 @@ contexts:
         assert_eq!(required, 2);
         assert_eq!(primary, 0);
 
-        let mut out = vec![
-            EcuSelectionRange { start: 0, end: 0 };
-            required as usize
-        ];
+        let mut out = vec![EcuSelectionRange { start: 0, end: 0 }; required as usize];
         assert_eq!(
             editor_core_ui_ffi_editor_ui_get_selections(
                 ui,
@@ -3258,7 +3715,10 @@ contexts:
         );
 
         let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
-        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, "Xabc\nXdef\n");
 
@@ -3284,7 +3744,10 @@ contexts:
         );
 
         let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
-        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, "aXc\ndXf\ngXi\n");
 
@@ -3300,7 +3763,12 @@ contexts:
         // One caret at line 1 col 1 => offset 4.
         let ranges = [EcuSelectionRange { start: 4, end: 4 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            editor_core_ui_ffi_editor_ui_set_selections(
+                ui,
+                ranges.as_ptr(),
+                ranges.len() as u32,
+                0
+            ),
             ECU_OK
         );
 
@@ -3313,7 +3781,10 @@ contexts:
         );
 
         let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
-        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, "aXa\naXa\naa\n");
 
@@ -3338,15 +3809,20 @@ contexts:
     }
 
     #[test]
-	    fn ffi_select_word_and_add_all_occurrences() {
-	        let initial = CString::new("foo foo foo\n").unwrap();
-	        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
-	        assert!(!ui.is_null());
+    fn ffi_select_word_and_add_all_occurrences() {
+        let initial = CString::new("foo foo foo\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
 
         // Place caret at start.
         let ranges = [EcuSelectionRange { start: 0, end: 0 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            editor_core_ui_ffi_editor_ui_set_selections(
+                ui,
+                ranges.as_ptr(),
+                ranges.len() as u32,
+                0
+            ),
             ECU_OK
         );
 
@@ -3360,53 +3836,61 @@ contexts:
         );
 
         let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
-        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, "X X X\n");
 
-	        editor_core_ui_ffi_editor_ui_free(ui);
-	    }
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
 
-	    #[test]
-	    fn ffi_expand_selection_by_word_is_expand_only() {
-	        let initial = CString::new("one two three").unwrap();
-	        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
-	        assert!(!ui.is_null());
+    #[test]
+    fn ffi_expand_selection_by_word_is_expand_only() {
+        let initial = CString::new("one two three").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
 
-	        // caret at start of "two" (offset 4)
-	        let ranges = [EcuSelectionRange { start: 4, end: 4 }];
-	        assert_eq!(
-	            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
-	            ECU_OK
-	        );
+        // caret at start of "two" (offset 4)
+        let ranges = [EcuSelectionRange { start: 4, end: 4 }];
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_selections(
+                ui,
+                ranges.as_ptr(),
+                ranges.len() as u32,
+                0
+            ),
+            ECU_OK
+        );
 
-	        // 1 = word, 1 = forward
-	        assert_eq!(
-	            editor_core_ui_ffi_editor_ui_expand_selection_by(ui, 1, 2, 1),
-	            ECU_OK
-	        );
+        // 1 = word, 1 = forward
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_expand_selection_by(ui, 1, 2, 1),
+            ECU_OK
+        );
 
-	        let mut start: u32 = 0;
-	        let mut end: u32 = 0;
-	        assert_eq!(
-	            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
-	            ECU_OK
-	        );
-	        assert_eq!((start, end), (4, 13));
+        let mut start: u32 = 0;
+        let mut end: u32 = 0;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (4, 13));
 
-	        // Change direction: 0 = backward. Expand-only means we keep the end and extend start.
-	        assert_eq!(
-	            editor_core_ui_ffi_editor_ui_expand_selection_by(ui, 1, 1, 0),
-	            ECU_OK
-	        );
-	        assert_eq!(
-	            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
-	            ECU_OK
-	        );
-	        assert_eq!((start, end), (0, 13));
+        // Change direction: 0 = backward. Expand-only means we keep the end and extend start.
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_expand_selection_by(ui, 1, 1, 0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_selection_offsets(ui, &mut start, &mut end),
+            ECU_OK
+        );
+        assert_eq!((start, end), (0, 13));
 
-	        editor_core_ui_ffi_editor_ui_free(ui);
-	    }
+        editor_core_ui_ffi_editor_ui_free(ui);
+    }
 
     #[test]
     fn ffi_word_boundary_config_affects_select_word() {
@@ -3417,7 +3901,12 @@ contexts:
         // caret inside "foo"
         let ranges = [EcuSelectionRange { start: 1, end: 1 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            editor_core_ui_ffi_editor_ui_set_selections(
+                ui,
+                ranges.as_ptr(),
+                ranges.len() as u32,
+                0
+            ),
             ECU_OK
         );
         assert_eq!(editor_core_ui_ffi_editor_ui_select_word(ui), ECU_OK);
@@ -3433,14 +3922,22 @@ contexts:
         // Make '-' a word char (do not include it in boundary chars).
         let boundary = CString::new(".").unwrap();
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(ui, boundary.as_ptr()),
+            editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(
+                ui,
+                boundary.as_ptr()
+            ),
             ECU_OK
         );
 
         // Clear selection and select word again to observe config change.
         let ranges = [EcuSelectionRange { start: 1, end: 1 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            editor_core_ui_ffi_editor_ui_set_selections(
+                ui,
+                ranges.as_ptr(),
+                ranges.len() as u32,
+                0
+            ),
             ECU_OK
         );
         assert_eq!(editor_core_ui_ffi_editor_ui_select_word(ui), ECU_OK);
@@ -3457,7 +3954,12 @@ contexts:
         );
         let ranges = [EcuSelectionRange { start: 1, end: 1 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            editor_core_ui_ffi_editor_ui_set_selections(
+                ui,
+                ranges.as_ptr(),
+                ranges.len() as u32,
+                0
+            ),
             ECU_OK
         );
         assert_eq!(editor_core_ui_ffi_editor_ui_select_word(ui), ECU_OK);
@@ -3585,10 +4087,10 @@ contexts:
         editor_core_ui_ffi_editor_ui_free(ui);
     }
 
-	    #[test]
-	    fn ffi_gutter_renders_fold_marker_and_click_toggles_fold() {
-	        let initial = CString::new("fn main() {\n  let x = 1;\n}\n").unwrap();
-	        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    #[test]
+    fn ffi_gutter_renders_fold_marker_and_click_toggles_fold() {
+        let initial = CString::new("fn main() {\n  let x = 1;\n}\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
         assert!(!ui.is_null());
 
         let theme = EcuTheme {
@@ -3770,7 +4272,12 @@ contexts:
 
         let ranges = [EcuSelectionRange { start: 2, end: 2 }];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), ranges.len() as u32, 0),
+            editor_core_ui_ffi_editor_ui_set_selections(
+                ui,
+                ranges.as_ptr(),
+                ranges.len() as u32,
+                0
+            ),
             ECU_OK
         );
 
@@ -4619,7 +5126,10 @@ contexts:
         assert_eq!(replaced, 1);
 
         let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
-        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, "foo bar foo\n");
 
@@ -4639,7 +5149,10 @@ contexts:
         assert_eq!(replaced, 2);
 
         let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
-        let text = unsafe { CStr::from_ptr(text_ptr) }.to_str().unwrap().to_string();
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
         editor_core_ui_ffi_string_free(text_ptr);
         assert_eq!(text, "baz bar baz\n");
 
@@ -4850,28 +5363,54 @@ contexts:
         };
         assert_eq!(editor_core_ui_ffi_editor_ui_set_theme(ui, &theme), ECU_OK);
 
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_caret_width_px(ui, 4.0), ECU_OK);
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_caret_visible(ui, 1), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_caret_width_px(ui, 4.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_caret_visible(ui, 1),
+            ECU_OK
+        );
 
         let mut out_len: u32 = 0;
         let mut buf = vec![0u8; 20 * 10 * 4];
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(ui, buf.as_mut_ptr(), buf.len() as u32, &mut out_len),
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
             ECU_OK
         );
         assert_eq!(out_len as usize, buf.len());
 
         let caret_px = [0u8, 0u8, 0u8, 255u8];
         let caret_count0 = buf.chunks_exact(4).filter(|p| *p == caret_px).count();
-        assert_eq!(caret_count0, 4 * 10, "expected caret to fill a 4x10 rectangle");
-
-        assert_eq!(editor_core_ui_ffi_editor_ui_set_caret_visible(ui, 0), ECU_OK);
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_render_rgba(ui, buf.as_mut_ptr(), buf.len() as u32, &mut out_len),
+            caret_count0,
+            4 * 10,
+            "expected caret to fill a 4x10 rectangle"
+        );
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_caret_visible(ui, 0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_render_rgba(
+                ui,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                &mut out_len
+            ),
             ECU_OK
         );
         let caret_count1 = buf.chunks_exact(4).filter(|p| *p == caret_px).count();
-        assert_eq!(caret_count1, 0, "expected caret pixels to disappear when hidden");
+        assert_eq!(
+            caret_count1, 0,
+            "expected caret pixels to disappear when hidden"
+        );
 
         editor_core_ui_ffi_editor_ui_free(ui);
     }
@@ -4968,10 +5507,10 @@ contexts:
             editor_core_ui_ffi_editor_ui_set_marked_text_ex(
                 ui,
                 marked2.as_ptr(),
-                1,                 // selected_start inside "你好"
-                0,                 // selected_len
-                u32::MAX,          // replace_start: use existing marked range
-                0                  // replace_len (ignored)
+                1,        // selected_start inside "你好"
+                0,        // selected_len
+                u32::MAX, // replace_start: use existing marked range
+                0         // replace_len (ignored)
             ),
             ECU_OK
         );
@@ -5013,7 +5552,9 @@ contexts:
         let mut line: u32 = 0;
         let mut col: u32 = 0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(ui, 4, &mut line, &mut col),
+            editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(
+                ui, 4, &mut line, &mut col
+            ),
             ECU_OK
         );
         assert_eq!(line, 1);
@@ -5091,7 +5632,13 @@ contexts:
         let mut y: c_float = 0.0;
         let mut line_h: c_float = 0.0;
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_char_offset_to_view_point(ui, 2, &mut x, &mut y, &mut line_h),
+            editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
+                ui,
+                2,
+                &mut x,
+                &mut y,
+                &mut line_h
+            ),
             ECU_OK
         );
         assert_eq!(y, 5.0);

@@ -14,7 +14,7 @@ public final class EditorCoreSkiaScrollContainer: NSView {
     /// Convenience access to the underlying Rust UI wrapper.
     public var editor: EditorUI { editorView.editor }
 
-    private let verticalScroller: NSScroller
+    private let verticalScroller: EditorCoreSkiaThemedScroller
     private let editorTrailingToScrollerConstraint: NSLayoutConstraint
     private var trailingAccessoryConstraints: [NSLayoutConstraint] = []
     private weak var installedTrailingAccessoryView: NSView?
@@ -31,7 +31,7 @@ public final class EditorCoreSkiaScrollContainer: NSView {
 
     public init(editorView: EditorCoreSkiaView) {
         self.editorView = editorView
-        self.verticalScroller = NSScroller(frame: .zero)
+        self.verticalScroller = EditorCoreSkiaThemedScroller(frame: .zero)
         self.editorTrailingToScrollerConstraint = editorView.trailingAnchor.constraint(equalTo: verticalScroller.leadingAnchor)
         super.init(frame: .zero)
 
@@ -76,6 +76,15 @@ public final class EditorCoreSkiaScrollContainer: NSView {
         }
 
         scheduleScrollerUpdate()
+    }
+
+    /// 设置滚动条配色（track 背景 + thumb 前景）。
+    ///
+    /// 说明：这是 demo/自绘 editor 的“最小主题化”能力；AppKit 系统滚动条并不鼓励任意配色，
+    /// 所以我们在 `.legacy` scroller style 下用覆写绘制实现。
+    public func setScrollbarColors(background: NSColor?, foreground: NSColor?) {
+        verticalScroller.slotFillColor = background
+        verticalScroller.knobFillColor = foreground
     }
 
     /// Optional view inserted **between** the editor content and the scrollbar.

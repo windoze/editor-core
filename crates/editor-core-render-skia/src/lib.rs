@@ -5,16 +5,16 @@
 //! composition layer (editor state + input mapping + rendering).
 
 use editor_core::{
-    snapshot::{ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind, HeadlessGrid},
     DOCUMENT_LINK_STYLE_ID, IME_MARKED_TEXT_STYLE_ID,
+    snapshot::{ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind, HeadlessGrid},
 };
-use skia_safe::{
-    AlphaType, Color, Color4f, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle,
-    FourByteTag, GlyphId, ImageInfo, Paint, Point, Rect, surfaces,
-};
+use skia_safe::Shaper;
 use skia_safe::shaper::run_handler::{Buffer, RunInfo};
 use skia_safe::shaper::{Feature, RunHandler};
-use skia_safe::Shaper;
+use skia_safe::{
+    AlphaType, Color, Color4f, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle,
+    FourByteTag, GlyphId, ImageInfo, Paint, Path, PathBuilder, Point, Rect, surfaces,
+};
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use thiserror::Error;
@@ -46,6 +46,19 @@ pub struct RenderTheme {
     pub caret: Rgba8,
     /// Optional per-style overrides (`StyleId -> colors`).
     pub styles: BTreeMap<u32, StyleColors>,
+    /// Optional per-style font styling overrides (`StyleId -> font style`).
+    ///
+    /// Notes:
+    /// - This controls purely visual glyph styling (bold / italic). It does not affect layout
+    ///   (cell widths, wrapping, hit-testing).
+    /// - Font fallback is still best-effort; if a bold/italic variant cannot be loaded for a given
+    ///   family, Skia will fall back to the closest available style.
+    pub style_fonts: BTreeMap<u32, StyleFont>,
+    /// Optional per-style text decorations (`StyleId -> decorations`).
+    ///
+    /// This is distinct from `editor-core` "decorations" (virtual text). These are purely visual
+    /// line effects applied while rendering a cell (underline, strikethrough, etc.).
+    pub text_decorations: BTreeMap<u32, TextDecorations>,
 }
 
 /// Reserved StyleIds for UI chrome rendered outside the document text grid (gutter, fold markers, ...).
@@ -58,6 +71,37 @@ pub const GUTTER_FOREGROUND_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 2;
 pub const GUTTER_SEPARATOR_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 3;
 pub const FOLD_MARKER_COLLAPSED_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 4;
 pub const FOLD_MARKER_EXPANDED_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 5;
+pub const INDENT_GUIDE_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 6;
+pub const WHITESPACE_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 7;
+
+/// How to render fold markers in the gutter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FoldMarkerStyle {
+    /// Do not draw fold markers (folding can still exist, but the gutter indicator is hidden).
+    Hidden,
+    /// Fill the whole fold-marker cell with the configured color (legacy behavior).
+    Block,
+    /// Draw a VSCode-like triangle indicator.
+    Triangle,
+}
+
+impl Default for FoldMarkerStyle {
+    fn default() -> Self {
+        Self::Block
+    }
+}
+
+/// How to render whitespace characters (spaces + tabs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WhitespaceRenderMode {
+    /// Do not render whitespace markers.
+    #[default]
+    None,
+    /// Render whitespace markers only inside the current selection range(s).
+    Selection,
+    /// Render whitespace markers everywhere (global "show whitespace" mode).
+    All,
+}
 
 impl Default for RenderTheme {
     fn default() -> Self {
@@ -67,6 +111,8 @@ impl Default for RenderTheme {
             selection_background: Rgba8::new(0xC7, 0xDD, 0xFF, 0xFF),
             caret: Rgba8::new(0x00, 0x00, 0x00, 0xFF),
             styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         }
     }
 }
@@ -85,6 +131,53 @@ impl StyleColors {
             background,
         }
     }
+}
+
+/// Per-style font styling overrides (bold / italic).
+///
+/// Notes:
+/// - Fields are optional so `StyleId`s can be layered; "last wins" per field.
+/// - This is intentionally small and renderer-focused; if the UI needs richer typography later
+///   (weights, slants, custom typefaces), we can extend the ABI with a v1 struct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StyleFont {
+    /// Whether to render bold text.
+    pub bold: Option<bool>,
+    /// Whether to render italic text.
+    pub italic: Option<bool>,
+}
+
+/// Underline style.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnderlineStyle {
+    /// A single straight underline.
+    Single,
+    /// Two straight underlines.
+    Double,
+    /// A "squiggly" underline (typically used for diagnostics).
+    Squiggly,
+}
+
+/// Per-style text decorations.
+///
+/// Notes:
+/// - This is intentionally separate from color styling (`StyleColors`) so hosts can choose
+///   underline/strikethrough without changing text fg/bg.
+/// - All fields are optional so multiple `StyleId`s can be layered; "last wins" per field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TextDecorations {
+    /// Underline style (if any).
+    pub underline: Option<UnderlineStyle>,
+    /// Underline color override (defaults to the resolved cell foreground).
+    pub underline_color: Option<Rgba8>,
+    /// Whether to render strikethrough.
+    ///
+    /// - `None`: do not override
+    /// - `Some(true)`: enable
+    /// - `Some(false)`: disable
+    pub strikethrough: Option<bool>,
+    /// Strikethrough color override (defaults to the resolved cell foreground).
+    pub strikethrough_color: Option<Rgba8>,
 }
 
 /// Vertical alignment of glyphs within a single line box (`line_height_px`).
@@ -142,6 +235,22 @@ pub struct RenderConfig {
     /// document text by `gutter_width_cells * cell_width_px`.
     pub gutter_width_cells: u32,
 
+    /// Tab width (in cells) used for rendering tab-related UI (indent guides, etc).
+    ///
+    /// Notes:
+    /// - This does not affect layout. Tab expansion for the actual text grid is performed by
+    ///   `editor-core` when building the viewport snapshot (cell widths).
+    pub tab_width_cells: u32,
+
+    /// Whether to draw indentation guides (VSCode-like).
+    pub show_indent_guides: bool,
+
+    /// How to render fold markers in the gutter.
+    pub fold_marker_style: FoldMarkerStyle,
+
+    /// How to render whitespace markers (spaces + tabs).
+    pub whitespace_render_mode: WhitespaceRenderMode,
+
     /// Enable font ligatures (e.g. Fira Code) for ASCII runs.
     ///
     /// Notes:
@@ -176,6 +285,10 @@ impl Default for RenderConfig {
             padding_y_px: 8.0,
             scroll_y_px: 0.0,
             gutter_width_cells: 0,
+            tab_width_cells: 4,
+            show_indent_guides: false,
+            fold_marker_style: FoldMarkerStyle::default(),
+            whitespace_render_mode: WhitespaceRenderMode::default(),
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
@@ -237,16 +350,85 @@ struct SkiaMetalState {
     context: gpu::DirectContext,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FontVariant {
+    Normal,
+    Bold,
+    Italic,
+    BoldItalic,
+}
+
+impl FontVariant {
+    fn from_flags(bold: bool, italic: bool) -> Self {
+        match (bold, italic) {
+            (false, false) => Self::Normal,
+            (true, false) => Self::Bold,
+            (false, true) => Self::Italic,
+            (true, true) => Self::BoldItalic,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct FontSet {
+    fonts: Vec<Font>,
+    glyph_font_cache: HashMap<char, usize>,
+}
+
+impl FontSet {
+    fn new(fonts: Vec<Font>) -> Self {
+        Self {
+            fonts,
+            glyph_font_cache: HashMap::new(),
+        }
+    }
+
+    fn ensure_size(&mut self, size: f32) {
+        for f in &mut self.fonts {
+            f.set_size(size);
+        }
+    }
+
+    fn font_index_for_char(&mut self, ch: char) -> usize {
+        if self.fonts.len() <= 1 {
+            return 0;
+        }
+        if let Some(&idx) = self.glyph_font_cache.get(&ch) {
+            return idx;
+        }
+
+        let mut idx = 0usize;
+        for (i, f) in self.fonts.iter().enumerate() {
+            let tf = f.typeface();
+            // Skia returns glyph id 0 for missing glyphs / .notdef.
+            if tf.unichar_to_glyph(ch as i32) != 0 {
+                idx = i;
+                break;
+            }
+        }
+
+        self.glyph_font_cache.insert(ch, idx);
+        idx
+    }
+
+    fn font_for_index(&self, idx: usize) -> &Font {
+        // Safety: index always comes from `fonts` indices or defaults to 0.
+        &self.fonts[idx.min(self.fonts.len().saturating_sub(1))]
+    }
+}
+
 /// A renderer instance (Skia backend in later steps).
 ///
 /// For MVP0 we keep this as a placeholder; implementation will be added
 /// incrementally with deterministic tests.
 #[derive(Debug)]
 pub struct SkiaRenderer {
-    fonts: Vec<Font>,
+    fonts_normal: FontSet,
+    fonts_bold: FontSet,
+    fonts_italic: FontSet,
+    fonts_bold_italic: FontSet,
     font_families: Vec<String>,
     font_size: f32,
-    glyph_font_cache: HashMap<char, usize>,
     shaper: Shaper,
     #[cfg(target_os = "macos")]
     metal: Option<SkiaMetalState>,
@@ -259,12 +441,33 @@ impl SkiaRenderer {
             .into_iter()
             .map(|s| s.to_string())
             .collect();
-        let fonts = load_fonts_from_families(families.as_slice(), font_size);
+        let fonts_normal = FontSet::new(load_fonts_from_families_with_style(
+            families.as_slice(),
+            font_size,
+            FontStyle::normal(),
+        ));
+        let fonts_bold = FontSet::new(load_fonts_from_families_with_style(
+            families.as_slice(),
+            font_size,
+            FontStyle::bold(),
+        ));
+        let fonts_italic = FontSet::new(load_fonts_from_families_with_style(
+            families.as_slice(),
+            font_size,
+            FontStyle::italic(),
+        ));
+        let fonts_bold_italic = FontSet::new(load_fonts_from_families_with_style(
+            families.as_slice(),
+            font_size,
+            FontStyle::bold_italic(),
+        ));
         Self {
-            fonts,
+            fonts_normal,
+            fonts_bold,
+            fonts_italic,
+            fonts_bold_italic,
             font_families: families,
             font_size,
-            glyph_font_cache: HashMap::new(),
             shaper: Shaper::new(None),
             #[cfg(target_os = "macos")]
             metal: None,
@@ -273,11 +476,11 @@ impl SkiaRenderer {
 
     fn baseline_offset_px(&self, config: RenderConfig) -> f32 {
         debug_assert!(
-            !self.fonts.is_empty(),
+            !self.fonts_normal.fonts.is_empty(),
             "SkiaRenderer must always have at least one font"
         );
 
-        let (_spacing, metrics) = { self.fonts[0].metrics() };
+        let (_spacing, metrics) = { self.fonts_normal.fonts[0].metrics() };
         let ascent = metrics.ascent;
         let descent = metrics.descent;
 
@@ -306,22 +509,66 @@ impl SkiaRenderer {
             .filter(|s| !s.is_empty())
             .collect();
 
-        let fonts = if normalized.is_empty() {
-            load_fonts_from_families(
-                default_font_families()
-                    .into_iter()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-                self.font_size,
-            )
+        let families_to_load: Vec<String> = if normalized.is_empty() {
+            default_font_families()
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect()
         } else {
-            load_fonts_from_families(normalized.as_slice(), self.font_size)
+            normalized.clone()
         };
 
         self.font_families = normalized;
-        self.fonts = fonts;
-        self.glyph_font_cache.clear();
+        self.fonts_normal = FontSet::new(load_fonts_from_families_with_style(
+            families_to_load.as_slice(),
+            self.font_size,
+            FontStyle::normal(),
+        ));
+        self.fonts_bold = FontSet::new(load_fonts_from_families_with_style(
+            families_to_load.as_slice(),
+            self.font_size,
+            FontStyle::bold(),
+        ));
+        self.fonts_italic = FontSet::new(load_fonts_from_families_with_style(
+            families_to_load.as_slice(),
+            self.font_size,
+            FontStyle::italic(),
+        ));
+        self.fonts_bold_italic = FontSet::new(load_fonts_from_families_with_style(
+            families_to_load.as_slice(),
+            self.font_size,
+            FontStyle::bold_italic(),
+        ));
+    }
+
+    fn font_set(&self, variant: FontVariant) -> &FontSet {
+        match variant {
+            FontVariant::Normal => &self.fonts_normal,
+            FontVariant::Bold => &self.fonts_bold,
+            FontVariant::Italic => &self.fonts_italic,
+            FontVariant::BoldItalic => &self.fonts_bold_italic,
+        }
+    }
+
+    fn font_set_mut(&mut self, variant: FontVariant) -> &mut FontSet {
+        match variant {
+            FontVariant::Normal => &mut self.fonts_normal,
+            FontVariant::Bold => &mut self.fonts_bold,
+            FontVariant::Italic => &mut self.fonts_italic,
+            FontVariant::BoldItalic => &mut self.fonts_bold_italic,
+        }
+    }
+
+    fn font_index_for_char(&mut self, ch: char, variant: FontVariant) -> usize {
+        self.font_set_mut(variant).font_index_for_char(ch)
+    }
+
+    fn font_for_variant_index(&self, variant: FontVariant, idx: usize) -> &Font {
+        self.font_set(variant).font_for_index(idx)
+    }
+
+    fn normal_primary_font(&self) -> &Font {
+        self.fonts_normal.font_for_index(0)
     }
 
     /// Enable Skia GPU rendering via Metal (macOS only).
@@ -349,7 +596,10 @@ impl SkiaRenderer {
             // - The caller guarantees `device` and `command_queue` are valid Metal objects and
             //   outlive the created backend context.
             let backend = unsafe {
-                gpu::mtl::BackendContext::new(device as gpu::mtl::Handle, command_queue as gpu::mtl::Handle)
+                gpu::mtl::BackendContext::new(
+                    device as gpu::mtl::Handle,
+                    command_queue as gpu::mtl::Handle,
+                )
             };
 
             let context = gpu::direct_contexts::make_metal(&backend, None)
@@ -392,37 +642,10 @@ impl SkiaRenderer {
             return;
         }
         self.font_size = size;
-        for f in &mut self.fonts {
-            f.set_size(size);
-        }
-    }
-
-    fn font_index_for_char(&mut self, ch: char) -> usize {
-        if self.fonts.len() <= 1 {
-            return 0;
-        }
-        if let Some(&idx) = self.glyph_font_cache.get(&ch) {
-            return idx;
-        }
-
-        let mut idx = 0usize;
-        for (i, f) in self.fonts.iter().enumerate() {
-            let tf = f.typeface();
-            // Skia returns glyph id 0 for missing glyphs / .notdef.
-            if tf.unichar_to_glyph(ch as i32) != 0 {
-                idx = i;
-                break;
-            }
-        }
-
-        self.glyph_font_cache.insert(ch, idx);
-        idx
-    }
-
-    fn font_for_char(&mut self, ch: char) -> &Font {
-        let idx = self.font_index_for_char(ch);
-        // Safety: `idx` always comes from `fonts` indices or defaults to 0.
-        &self.fonts[idx.min(self.fonts.len().saturating_sub(1))]
+        self.fonts_normal.ensure_size(size);
+        self.fonts_bold.ensure_size(size);
+        self.fonts_italic.ensure_size(size);
+        self.fonts_bold_italic.ensure_size(size);
     }
 
     fn ligature_features(enabled: bool) -> [Feature; 3] {
@@ -488,8 +711,7 @@ impl SkiaRenderer {
 
         let mut font_it = Shaper::new_trivial_font_run_iterator(font, utf8_len);
         let mut bidi_it = skia_safe::shapers::primitive::trivial_bidi_run_iterator(0, utf8_len);
-        let mut script_it =
-            skia_safe::shapers::primitive::trivial_script_run_iterator(0, utf8_len);
+        let mut script_it = skia_safe::shapers::primitive::trivial_script_run_iterator(0, utf8_len);
         let mut lang_it = Shaper::new_trivial_language_run_iterator("en", utf8_len);
 
         let mut handler = CollectGlyphsRunHandler::default();
@@ -615,7 +837,15 @@ impl SkiaRenderer {
             .ok_or(RenderError::SurfaceCreateFailed)?;
 
         let canvas = surface.canvas();
-        self.draw_headless_grid_to_canvas(canvas, grid, carets, selections, fold_markers, config, theme)
+        self.draw_headless_grid_to_canvas(
+            canvas,
+            grid,
+            carets,
+            selections,
+            fold_markers,
+            config,
+            theme,
+        )
     }
 
     fn draw_headless_grid_to_canvas(
@@ -643,8 +873,7 @@ impl SkiaRenderer {
             paint.set_color(rgba_to_skia_color(gutter_bg));
             canvas.draw_rect(rect, &paint);
 
-            let sep =
-                resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
+            let sep = resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
             let sep_rect = Rect::from_xywh(text_origin_x, 0.0, 1.0, config.height_px as f32);
             let mut sep_paint = Paint::default();
             sep_paint.set_anti_alias(false);
@@ -689,7 +918,7 @@ impl SkiaRenderer {
 
         // Text.
         debug_assert!(
-            !self.fonts.is_empty(),
+            !self.fonts_normal.fonts.is_empty(),
             "SkiaRenderer must always have at least one font"
         );
         let baseline_offset = self.baseline_offset_px(config);
@@ -709,18 +938,20 @@ impl SkiaRenderer {
                     } else {
                         FOLD_MARKER_EXPANDED_STYLE_ID
                     };
-                    let marker_color =
-                        resolve_style_background(style_id, theme, theme.foreground);
                     let rect = Rect::from_xywh(
                         gutter_x,
                         y_top,
                         config.cell_width_px,
                         config.line_height_px,
                     );
-                    let mut paint = Paint::default();
-                    paint.set_anti_alias(false);
-                    paint.set_color(rgba_to_skia_color(marker_color));
-                    canvas.draw_rect(rect, &paint);
+                    draw_fold_marker(
+                        canvas,
+                        rect,
+                        is_collapsed,
+                        config.fold_marker_style,
+                        theme,
+                        style_id,
+                    );
                 }
 
                 // Line number text (best-effort; tests should not depend on glyph rasterization).
@@ -732,12 +963,155 @@ impl SkiaRenderer {
 
                 let line_no = (line.logical_line_index + 1).to_string();
                 let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
-                canvas.draw_str(line_no, Point::new(x_px, baseline_y), &self.fonts[0], &paint);
+                canvas.draw_str(
+                    line_no,
+                    Point::new(x_px, baseline_y),
+                    self.normal_primary_font(),
+                    &paint,
+                );
+            }
+
+            // Indent guides + whitespace markers are drawn after selection but before text.
+            if config.show_indent_guides || config.whitespace_render_mode != WhitespaceRenderMode::None {
+                let row_abs = grid.start_visual_row as i64 + row_idx as i64;
+                let line_total_cells: i64 = line.cells.iter().map(|c| c.width as i64).sum::<i64>()
+                    + line.segment_x_start_cells as i64;
+
+                if config.show_indent_guides {
+                    let mut indent_cells: u32 = line.segment_x_start_cells as u32;
+                    for cell in &line.cells {
+                        if cell.ch == ' ' || cell.ch == '\t' {
+                            indent_cells = indent_cells.saturating_add(cell.width as u32);
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let tab_w = config.tab_width_cells.max(1);
+                    let levels = indent_cells / tab_w;
+                    if levels > 0 {
+                        let guide_color = resolve_style_foreground_or_background(
+                            INDENT_GUIDE_STYLE_ID,
+                            theme,
+                            default_indent_guide_color(theme),
+                        );
+                        let mut paint = Paint::default();
+                        paint.set_anti_alias(false);
+                        paint.set_color(rgba_to_skia_color(guide_color));
+
+                        for level in 1..=levels {
+                            // Place the guide on the boundary *between* indentation levels,
+                            // i.e. right after a tabstop width.
+                            let boundary_cells = level.saturating_mul(tab_w);
+                            let x_px = (text_origin_x + boundary_cells as f32 * config.cell_width_px)
+                                .round();
+                            let rect = Rect::from_xywh(
+                                x_px,
+                                y_top,
+                                1.0,
+                                config.line_height_px,
+                            );
+                            canvas.draw_rect(rect, &paint);
+                        }
+                    }
+                }
+
+                let whitespace_mode = config.whitespace_render_mode;
+                let draw_whitespace = match whitespace_mode {
+                    WhitespaceRenderMode::None => false,
+                    WhitespaceRenderMode::Selection => selections.is_empty() == false,
+                    WhitespaceRenderMode::All => true,
+                };
+                if draw_whitespace {
+                    let marker_color = resolve_style_foreground_or_background(
+                        WHITESPACE_STYLE_ID,
+                        theme,
+                        default_whitespace_marker_color(theme),
+                    );
+
+                    let mut dot_paint = Paint::default();
+                    dot_paint.set_anti_alias(true);
+                    dot_paint.set_color(rgba_to_skia_color(marker_color));
+
+                    let mut stroke_paint = Paint::default();
+                    stroke_paint.set_anti_alias(true);
+                    stroke_paint.set_color(rgba_to_skia_color(marker_color));
+                    stroke_paint.set_style(skia_safe::paint::Style::Stroke);
+                    stroke_paint.set_stroke_width(1.0);
+
+                    let mut x_cells = line.segment_x_start_cells as u32;
+                    for cell in &line.cells {
+                        let w_cells = cell.width as u32;
+                        let cell_start = x_cells as i64;
+                        let cell_end = x_cells.saturating_add(w_cells) as i64;
+
+                        let is_whitespace = cell.ch == ' ' || cell.ch == '\t';
+                        let selected = match whitespace_mode {
+                            WhitespaceRenderMode::None => false,
+                            WhitespaceRenderMode::Selection => {
+                                is_whitespace
+                                    && cell_overlaps_selection_for_row(
+                                        row_abs,
+                                        cell_start,
+                                        cell_end,
+                                        line_total_cells,
+                                        selections,
+                                    )
+                            }
+                            WhitespaceRenderMode::All => is_whitespace,
+                        };
+
+                        if selected {
+                            let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
+                            let w_px = w_cells as f32 * config.cell_width_px;
+                            let cy = y_top + config.line_height_px * 0.5;
+
+                            if cell.ch == ' ' {
+                                let cx = x_px + w_px * 0.5;
+                                let r = (config.cell_width_px.min(config.line_height_px) * 0.10)
+                                    .max(1.0);
+                                canvas.draw_circle(Point::new(cx, cy), r, &dot_paint);
+                            } else if cell.ch == '\t' {
+                                let pad = (config.cell_width_px * 0.15).min(w_px * 0.25);
+                                let x0 = x_px + pad;
+                                let x1 = (x_px + w_px - pad).max(x0 + 1.0);
+                                let head = (config.cell_width_px.min(config.line_height_px) * 0.20)
+                                    .max(2.0);
+                                let shaft_end = (x1 - head).max(x0);
+
+                                canvas.draw_line(
+                                    Point::new(x0, cy),
+                                    Point::new(shaft_end, cy),
+                                    &stroke_paint,
+                                );
+                                canvas.draw_line(
+                                    Point::new(shaft_end, cy),
+                                    Point::new(x1, cy),
+                                    &stroke_paint,
+                                );
+                                canvas.draw_line(
+                                    Point::new(x1, cy),
+                                    Point::new(x1 - head, cy - head * 0.6),
+                                    &stroke_paint,
+                                );
+                                canvas.draw_line(
+                                    Point::new(x1, cy),
+                                    Point::new(x1 - head, cy + head * 0.6),
+                                    &stroke_paint,
+                                );
+                            }
+                        }
+
+                        x_cells = x_cells.saturating_add(w_cells);
+                    }
+                }
             }
 
             #[derive(Debug)]
             enum PendingRunKind {
-                LigatureText { text: String },
+                LigatureText {
+                    text: String,
+                },
                 Glyphs {
                     glyphs: Vec<GlyphId>,
                     positions: Vec<Point>,
@@ -747,13 +1121,16 @@ impl SkiaRenderer {
             #[derive(Debug)]
             struct PendingRun {
                 start_x_cells: u32,
+                font_variant: FontVariant,
                 font_index: usize,
                 fg: Rgba8,
                 kind: PendingRunKind,
             }
 
             let mut pending: Option<PendingRun> = None;
-            let mut underlines: Vec<(f32, f32, f32, Rgba8)> = Vec::new();
+            let mut decoration_runs: Vec<LineDecorationRun> = Vec::new();
+            let mut underline_run: Option<LineDecorationRun> = None;
+            let mut strike_run: Option<LineDecorationRun> = None;
 
             let mut x_cells = line.segment_x_start_cells as u32;
 
@@ -767,8 +1144,7 @@ impl SkiaRenderer {
                 paint.set_anti_alias(true);
                 paint.set_color(rgba_to_skia_color(run.fg));
 
-                let font = &renderer.fonts
-                    [run.font_index.min(renderer.fonts.len().saturating_sub(1))];
+                let font = renderer.font_for_variant_index(run.font_variant, run.font_index);
                 match run.kind {
                     PendingRunKind::LigatureText { text } => {
                         if text.is_empty() {
@@ -801,54 +1177,44 @@ impl SkiaRenderer {
             };
 
             for cell in &line.cells {
-                let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
                 let (fg, _bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
+                let font_variant = resolve_cell_font_variant(cell.styles.as_slice(), theme);
+                let decos = resolve_cell_line_decorations(cell.styles.as_slice(), theme, fg);
 
-                let diag_id = cell
-                    .styles
-                    .iter()
-                    .copied()
-                    .find(|&id| is_lsp_diagnostics_style_id(id));
-
-                // Record IME marked text underline to draw *after* text, so it stays visible.
-                if cell.styles.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID) {
-                    let underline_h = config.scale.clamp(1.0, 2.0);
-                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    underlines.push((x_px, underline_y, w_px, fg));
+                if let Some((kind, color)) = decos.underline {
+                    extend_decoration_run(
+                        &mut decoration_runs,
+                        &mut underline_run,
+                        kind,
+                        x_cells,
+                        cell.width as u32,
+                        color,
+                    );
+                } else {
+                    flush_decoration_run(&mut decoration_runs, &mut underline_run);
                 }
 
-                // Record LSP diagnostics underline (style-layer based).
-                //
-                // This is rendered *after* text (like IME underlines) so it stays visible even on
-                // whitespace / styled backgrounds.
-                if let Some(diag_id) = diag_id {
-                    let underline_h = config.scale.clamp(1.0, 2.0);
-                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    let u_color = resolve_underline_color(diag_id, theme, fg);
-                    underlines.push((x_px, underline_y, w_px, u_color));
-                }
-
-                // Record LSP document links underline (style-layer based).
-                //
-                // If diagnostics underline is present, prefer diagnostics to avoid stacking
-                // multiple 1px underlines at the same y.
-                if diag_id.is_none() && cell.styles.iter().any(|&id| id == DOCUMENT_LINK_STYLE_ID) {
-                    let underline_h = config.scale.clamp(1.0, 2.0);
-                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    let u_color = resolve_underline_color(DOCUMENT_LINK_STYLE_ID, theme, fg);
-                    underlines.push((x_px, underline_y, w_px, u_color));
+                if let Some(color) = decos.strikethrough {
+                    extend_decoration_run(
+                        &mut decoration_runs,
+                        &mut strike_run,
+                        LineDecorationKind::Strikethrough,
+                        x_cells,
+                        cell.width as u32,
+                        color,
+                    );
+                } else {
+                    flush_decoration_run(&mut decoration_runs, &mut strike_run);
                 }
 
                 let eligible_for_ligatures =
                     config.enable_ligatures && cell.width == 1 && cell.ch.is_ascii();
                 if eligible_for_ligatures {
-                    let font_index = self.font_index_for_char(cell.ch);
+                    let font_index = self.font_index_for_char(cell.ch, font_variant);
 
                     let can_extend = pending.as_ref().is_some_and(|r| {
-                        r.font_index == font_index
+                        r.font_variant == font_variant
+                            && r.font_index == font_index
                             && r.fg == fg
                             && matches!(r.kind, PendingRunKind::LigatureText { .. })
                     });
@@ -856,9 +1222,12 @@ impl SkiaRenderer {
                         flush(self, &mut pending);
                         pending = Some(PendingRun {
                             start_x_cells: x_cells,
+                            font_variant,
                             font_index,
                             fg,
-                            kind: PendingRunKind::LigatureText { text: String::new() },
+                            kind: PendingRunKind::LigatureText {
+                                text: String::new(),
+                            },
                         });
                     }
 
@@ -868,9 +1237,10 @@ impl SkiaRenderer {
                         }
                     }
                 } else {
-                    let font_index = self.font_index_for_char(cell.ch);
+                    let font_index = self.font_index_for_char(cell.ch, font_variant);
                     let can_extend = pending.as_ref().is_some_and(|r| {
-                        r.font_index == font_index
+                        r.font_variant == font_variant
+                            && r.font_index == font_index
                             && r.fg == fg
                             && matches!(r.kind, PendingRunKind::Glyphs { .. })
                     });
@@ -878,6 +1248,7 @@ impl SkiaRenderer {
                         flush(self, &mut pending);
                         pending = Some(PendingRun {
                             start_x_cells: x_cells,
+                            font_variant,
                             font_index,
                             fg,
                             kind: PendingRunKind::Glyphs {
@@ -889,11 +1260,10 @@ impl SkiaRenderer {
 
                     if let Some(r) = pending.as_mut() {
                         if let PendingRunKind::Glyphs { glyphs, positions } = &mut r.kind {
-                            let font = &self.fonts
-                                [font_index.min(self.fonts.len().saturating_sub(1))];
+                            let font = self.font_for_variant_index(font_variant, font_index);
                             let glyph = font.unichar_to_glyph(cell.ch as u32 as i32);
-                            let rel_x_px =
-                                (x_cells.saturating_sub(r.start_x_cells) as f32) * config.cell_width_px;
+                            let rel_x_px = (x_cells.saturating_sub(r.start_x_cells) as f32)
+                                * config.cell_width_px;
                             glyphs.push(glyph);
                             positions.push(Point::new(rel_x_px, 0.0));
                         }
@@ -905,18 +1275,21 @@ impl SkiaRenderer {
 
             flush(self, &mut pending);
 
-            // Underlines last.
-            for (x_px, underline_y, w_px, fg) in underlines {
-                let rect = Rect::from_xywh(
-                    x_px,
-                    underline_y,
-                    w_px,
-                    config.scale.clamp(1.0, 2.0),
+            flush_decoration_run(&mut decoration_runs, &mut underline_run);
+            flush_decoration_run(&mut decoration_runs, &mut strike_run);
+
+            // Text decorations last (underline/strikethrough), so they stay visible over glyphs.
+            let (_spacing, metrics) = { self.normal_primary_font().metrics() };
+            for run in decoration_runs {
+                draw_decoration_run(
+                    canvas,
+                    run,
+                    text_origin_x,
+                    y_top,
+                    baseline_y,
+                    metrics,
+                    config,
                 );
-                let mut u_paint = Paint::default();
-                u_paint.set_anti_alias(false);
-                u_paint.set_color(rgba_to_skia_color(fg));
-                canvas.draw_rect(rect, &u_paint);
             }
         }
 
@@ -1050,8 +1423,7 @@ impl SkiaRenderer {
             paint.set_color(rgba_to_skia_color(gutter_bg));
             canvas.draw_rect(rect, &paint);
 
-            let sep =
-                resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
+            let sep = resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
             let sep_rect = Rect::from_xywh(text_origin_x, 0.0, 1.0, config.height_px as f32);
             let mut sep_paint = Paint::default();
             sep_paint.set_anti_alias(false);
@@ -1076,7 +1448,7 @@ impl SkiaRenderer {
         }
 
         debug_assert!(
-            !self.fonts.is_empty(),
+            !self.fonts_normal.fonts.is_empty(),
             "SkiaRenderer must always have at least one font"
         );
         let baseline_offset = self.baseline_offset_px(config);
@@ -1122,14 +1494,14 @@ impl SkiaRenderer {
                 if !matches!(line.kind, ComposedLineKind::Document { .. }) {
                     continue;
                 }
-                let y_top =
-                    config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
+                let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px
+                    - config.scroll_y_px;
                 let mut x_cells: u32 = 0;
                 for cell in &line.cells {
                     let selected = match cell.source {
-                        ComposedCellSource::Document { offset } => sel_ranges
-                            .iter()
-                            .any(|(s, e)| offset >= *s && offset < *e),
+                        ComposedCellSource::Document { offset } => {
+                            sel_ranges.iter().any(|(s, e)| offset >= *s && offset < *e)
+                        }
                         _ => false,
                     };
                     if selected {
@@ -1168,18 +1540,20 @@ impl SkiaRenderer {
                             } else {
                                 FOLD_MARKER_EXPANDED_STYLE_ID
                             };
-                            let marker_color =
-                                resolve_style_background(style_id, theme, theme.foreground);
                             let rect = Rect::from_xywh(
                                 gutter_x,
                                 y_top,
                                 config.cell_width_px,
                                 config.line_height_px,
                             );
-                            let mut paint = Paint::default();
-                            paint.set_anti_alias(false);
-                            paint.set_color(rgba_to_skia_color(marker_color));
-                            canvas.draw_rect(rect, &paint);
+                            draw_fold_marker(
+                                canvas,
+                                rect,
+                                is_collapsed,
+                                config.fold_marker_style,
+                                theme,
+                                style_id,
+                            );
                         }
 
                         // Line number text (best-effort; tests should not depend on glyph rasterization).
@@ -1194,14 +1568,151 @@ impl SkiaRenderer {
 
                         let line_no = (logical_line + 1).to_string();
                         let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
-                        canvas.draw_str(line_no, Point::new(x_px, baseline_y), &self.fonts[0], &paint);
+                        canvas.draw_str(
+                            line_no,
+                            Point::new(x_px, baseline_y),
+                            self.normal_primary_font(),
+                            &paint,
+                        );
+                    }
+                }
+            }
+
+            // Indent guides + whitespace markers are drawn after selection but before text.
+            if config.show_indent_guides || config.whitespace_render_mode != WhitespaceRenderMode::None {
+                if config.show_indent_guides {
+                    let mut indent_cells: u32 = 0;
+                    for cell in &line.cells {
+                        if cell.ch == ' ' || cell.ch == '\t' {
+                            indent_cells = indent_cells.saturating_add(cell.width as u32);
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let tab_w = config.tab_width_cells.max(1);
+                    let levels = indent_cells / tab_w;
+                    if levels > 0 {
+                        let guide_color = resolve_style_foreground_or_background(
+                            INDENT_GUIDE_STYLE_ID,
+                            theme,
+                            default_indent_guide_color(theme),
+                        );
+                        let mut paint = Paint::default();
+                        paint.set_anti_alias(false);
+                        paint.set_color(rgba_to_skia_color(guide_color));
+
+                        for level in 1..=levels {
+                            // Place the guide on the boundary *between* indentation levels,
+                            // i.e. right after a tabstop width.
+                            let boundary_cells = level.saturating_mul(tab_w);
+                            let x_px = (text_origin_x + boundary_cells as f32 * config.cell_width_px)
+                                .round();
+                            let rect = Rect::from_xywh(
+                                x_px,
+                                y_top,
+                                1.0,
+                                config.line_height_px,
+                            );
+                            canvas.draw_rect(rect, &paint);
+                        }
+                    }
+                }
+
+                let whitespace_mode = config.whitespace_render_mode;
+                let draw_whitespace = match whitespace_mode {
+                    WhitespaceRenderMode::None => false,
+                    WhitespaceRenderMode::Selection => sel_ranges.is_empty() == false,
+                    WhitespaceRenderMode::All => true,
+                };
+                if draw_whitespace {
+                    let marker_color = resolve_style_foreground_or_background(
+                        WHITESPACE_STYLE_ID,
+                        theme,
+                        default_whitespace_marker_color(theme),
+                    );
+
+                    let mut dot_paint = Paint::default();
+                    dot_paint.set_anti_alias(true);
+                    dot_paint.set_color(rgba_to_skia_color(marker_color));
+
+                    let mut stroke_paint = Paint::default();
+                    stroke_paint.set_anti_alias(true);
+                    stroke_paint.set_color(rgba_to_skia_color(marker_color));
+                    stroke_paint.set_style(skia_safe::paint::Style::Stroke);
+                    stroke_paint.set_stroke_width(1.0);
+
+                    let mut marker_x_cells: u32 = 0;
+                    for cell in &line.cells {
+                        let w_cells = cell.width as u32;
+                        let selected = match cell.source {
+                            ComposedCellSource::Document { offset } => {
+                                let is_whitespace = cell.ch == ' ' || cell.ch == '\t';
+                                match whitespace_mode {
+                                    WhitespaceRenderMode::None => false,
+                                    WhitespaceRenderMode::Selection => {
+                                        is_whitespace
+                                            && sel_ranges
+                                                .iter()
+                                                .any(|(s, e)| offset >= *s && offset < *e)
+                                    }
+                                    WhitespaceRenderMode::All => is_whitespace,
+                                }
+                            }
+                            _ => false,
+                        };
+
+                        if selected {
+                            let x_px = text_origin_x + marker_x_cells as f32 * config.cell_width_px;
+                            let w_px = w_cells as f32 * config.cell_width_px;
+                            let cy = y_top + config.line_height_px * 0.5;
+
+                            if cell.ch == ' ' {
+                                let cx = x_px + w_px * 0.5;
+                                let r = (config.cell_width_px.min(config.line_height_px) * 0.10)
+                                    .max(1.0);
+                                canvas.draw_circle(Point::new(cx, cy), r, &dot_paint);
+                            } else if cell.ch == '\t' {
+                                let pad = (config.cell_width_px * 0.15).min(w_px * 0.25);
+                                let x0 = x_px + pad;
+                                let x1 = (x_px + w_px - pad).max(x0 + 1.0);
+                                let head = (config.cell_width_px.min(config.line_height_px) * 0.20)
+                                    .max(2.0);
+                                let shaft_end = (x1 - head).max(x0);
+
+                                canvas.draw_line(
+                                    Point::new(x0, cy),
+                                    Point::new(shaft_end, cy),
+                                    &stroke_paint,
+                                );
+                                canvas.draw_line(
+                                    Point::new(shaft_end, cy),
+                                    Point::new(x1, cy),
+                                    &stroke_paint,
+                                );
+                                canvas.draw_line(
+                                    Point::new(x1, cy),
+                                    Point::new(x1 - head, cy - head * 0.6),
+                                    &stroke_paint,
+                                );
+                                canvas.draw_line(
+                                    Point::new(x1, cy),
+                                    Point::new(x1 - head, cy + head * 0.6),
+                                    &stroke_paint,
+                                );
+                            }
+                        }
+
+                        marker_x_cells = marker_x_cells.saturating_add(w_cells);
                     }
                 }
             }
 
             #[derive(Debug)]
             enum PendingRunKind {
-                LigatureText { text: String },
+                LigatureText {
+                    text: String,
+                },
                 Glyphs {
                     glyphs: Vec<GlyphId>,
                     positions: Vec<Point>,
@@ -1211,13 +1722,16 @@ impl SkiaRenderer {
             #[derive(Debug)]
             struct PendingRun {
                 start_x_cells: u32,
+                font_variant: FontVariant,
                 font_index: usize,
                 fg: Rgba8,
                 kind: PendingRunKind,
             }
 
             let mut pending: Option<PendingRun> = None;
-            let mut underlines: Vec<(f32, f32, f32, Rgba8)> = Vec::new();
+            let mut decoration_runs: Vec<LineDecorationRun> = Vec::new();
+            let mut underline_run: Option<LineDecorationRun> = None;
+            let mut strike_run: Option<LineDecorationRun> = None;
 
             let mut x_cells: u32 = 0;
 
@@ -1231,8 +1745,7 @@ impl SkiaRenderer {
                 paint.set_anti_alias(true);
                 paint.set_color(rgba_to_skia_color(run.fg));
 
-                let font =
-                    &renderer.fonts[run.font_index.min(renderer.fonts.len().saturating_sub(1))];
+                let font = renderer.font_for_variant_index(run.font_variant, run.font_index);
                 match run.kind {
                     PendingRunKind::LigatureText { text } => {
                         if text.is_empty() {
@@ -1265,48 +1778,44 @@ impl SkiaRenderer {
             };
 
             for cell in &line.cells {
-                let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
                 let (fg, _bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
+                let font_variant = resolve_cell_font_variant(cell.styles.as_slice(), theme);
+                let decos = resolve_cell_line_decorations(cell.styles.as_slice(), theme, fg);
 
-                let diag_id = cell
-                    .styles
-                    .iter()
-                    .copied()
-                    .find(|&id| is_lsp_diagnostics_style_id(id));
-
-                // Record IME marked text underline to draw *after* text, so it stays visible.
-                if cell.styles.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID) {
-                    let underline_h = config.scale.clamp(1.0, 2.0);
-                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    underlines.push((x_px, underline_y, w_px, fg));
+                if let Some((kind, color)) = decos.underline {
+                    extend_decoration_run(
+                        &mut decoration_runs,
+                        &mut underline_run,
+                        kind,
+                        x_cells,
+                        cell.width as u32,
+                        color,
+                    );
+                } else {
+                    flush_decoration_run(&mut decoration_runs, &mut underline_run);
                 }
 
-                // Record LSP diagnostics underline (style-layer based).
-                if let Some(diag_id) = diag_id {
-                    let underline_h = config.scale.clamp(1.0, 2.0);
-                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    let u_color = resolve_underline_color(diag_id, theme, fg);
-                    underlines.push((x_px, underline_y, w_px, u_color));
-                }
-
-                // Record LSP document links underline (style-layer based).
-                if diag_id.is_none() && cell.styles.iter().any(|&id| id == DOCUMENT_LINK_STYLE_ID) {
-                    let underline_h = config.scale.clamp(1.0, 2.0);
-                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    let u_color = resolve_underline_color(DOCUMENT_LINK_STYLE_ID, theme, fg);
-                    underlines.push((x_px, underline_y, w_px, u_color));
+                if let Some(color) = decos.strikethrough {
+                    extend_decoration_run(
+                        &mut decoration_runs,
+                        &mut strike_run,
+                        LineDecorationKind::Strikethrough,
+                        x_cells,
+                        cell.width as u32,
+                        color,
+                    );
+                } else {
+                    flush_decoration_run(&mut decoration_runs, &mut strike_run);
                 }
 
                 let eligible_for_ligatures =
                     config.enable_ligatures && cell.width == 1 && cell.ch.is_ascii();
                 if eligible_for_ligatures {
-                    let font_index = self.font_index_for_char(cell.ch);
+                    let font_index = self.font_index_for_char(cell.ch, font_variant);
 
                     let can_extend = pending.as_ref().is_some_and(|r| {
-                        r.font_index == font_index
+                        r.font_variant == font_variant
+                            && r.font_index == font_index
                             && r.fg == fg
                             && matches!(r.kind, PendingRunKind::LigatureText { .. })
                     });
@@ -1314,9 +1823,12 @@ impl SkiaRenderer {
                         flush(self, &mut pending);
                         pending = Some(PendingRun {
                             start_x_cells: x_cells,
+                            font_variant,
                             font_index,
                             fg,
-                            kind: PendingRunKind::LigatureText { text: String::new() },
+                            kind: PendingRunKind::LigatureText {
+                                text: String::new(),
+                            },
                         });
                     }
 
@@ -1326,9 +1838,10 @@ impl SkiaRenderer {
                         }
                     }
                 } else {
-                    let font_index = self.font_index_for_char(cell.ch);
+                    let font_index = self.font_index_for_char(cell.ch, font_variant);
                     let can_extend = pending.as_ref().is_some_and(|r| {
-                        r.font_index == font_index
+                        r.font_variant == font_variant
+                            && r.font_index == font_index
                             && r.fg == fg
                             && matches!(r.kind, PendingRunKind::Glyphs { .. })
                     });
@@ -1336,6 +1849,7 @@ impl SkiaRenderer {
                         flush(self, &mut pending);
                         pending = Some(PendingRun {
                             start_x_cells: x_cells,
+                            font_variant,
                             font_index,
                             fg,
                             kind: PendingRunKind::Glyphs {
@@ -1347,11 +1861,10 @@ impl SkiaRenderer {
 
                     if let Some(r) = pending.as_mut() {
                         if let PendingRunKind::Glyphs { glyphs, positions } = &mut r.kind {
-                            let font = &self.fonts
-                                [font_index.min(self.fonts.len().saturating_sub(1))];
+                            let font = self.font_for_variant_index(font_variant, font_index);
                             let glyph = font.unichar_to_glyph(cell.ch as u32 as i32);
-                            let rel_x_px =
-                                (x_cells.saturating_sub(r.start_x_cells) as f32) * config.cell_width_px;
+                            let rel_x_px = (x_cells.saturating_sub(r.start_x_cells) as f32)
+                                * config.cell_width_px;
                             glyphs.push(glyph);
                             positions.push(Point::new(rel_x_px, 0.0));
                         }
@@ -1363,14 +1876,21 @@ impl SkiaRenderer {
 
             flush(self, &mut pending);
 
-            // Underlines last.
-            for (x_px, underline_y, w_px, fg) in underlines {
-                let rect =
-                    Rect::from_xywh(x_px, underline_y, w_px, config.scale.clamp(1.0, 2.0));
-                let mut u_paint = Paint::default();
-                u_paint.set_anti_alias(false);
-                u_paint.set_color(rgba_to_skia_color(fg));
-                canvas.draw_rect(rect, &u_paint);
+            flush_decoration_run(&mut decoration_runs, &mut underline_run);
+            flush_decoration_run(&mut decoration_runs, &mut strike_run);
+
+            // Text decorations last (underline/strikethrough), so they stay visible over glyphs.
+            let (_spacing, metrics) = { self.normal_primary_font().metrics() };
+            for run in decoration_runs {
+                draw_decoration_run(
+                    canvas,
+                    run,
+                    text_origin_x,
+                    y_top,
+                    baseline_y,
+                    metrics,
+                    config,
+                );
             }
         }
 
@@ -1534,8 +2054,7 @@ impl SkiaRenderer {
             paint.set_color(rgba_to_skia_color(gutter_bg));
             canvas.draw_rect(rect, &paint);
 
-            let sep =
-                resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
+            let sep = resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
             let sep_rect = Rect::from_xywh(text_origin_x, 0.0, 1.0, config.height_px as f32);
             let mut sep_paint = Paint::default();
             sep_paint.set_anti_alias(false);
@@ -1560,7 +2079,7 @@ impl SkiaRenderer {
         }
 
         debug_assert!(
-            !self.fonts.is_empty(),
+            !self.fonts_normal.fonts.is_empty(),
             "SkiaRenderer must always have at least one font"
         );
         let baseline_offset = self.baseline_offset_px(config);
@@ -1606,14 +2125,14 @@ impl SkiaRenderer {
                 if !matches!(line.kind, ComposedLineKind::Document { .. }) {
                     continue;
                 }
-                let y_top =
-                    config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
+                let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px
+                    - config.scroll_y_px;
                 let mut x_cells: u32 = 0;
                 for cell in &line.cells {
                     let selected = match cell.source {
-                        ComposedCellSource::Document { offset } => sel_ranges
-                            .iter()
-                            .any(|(s, e)| offset >= *s && offset < *e),
+                        ComposedCellSource::Document { offset } => {
+                            sel_ranges.iter().any(|(s, e)| offset >= *s && offset < *e)
+                        }
                         _ => false,
                     };
                     if selected {
@@ -1678,7 +2197,12 @@ impl SkiaRenderer {
 
                         let line_no = (logical_line + 1).to_string();
                         let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
-                        canvas.draw_str(line_no, Point::new(x_px, baseline_y), &self.fonts[0], &paint);
+                        canvas.draw_str(
+                            line_no,
+                            Point::new(x_px, baseline_y),
+                            self.normal_primary_font(),
+                            &paint,
+                        );
                     }
                 }
             }
@@ -1686,13 +2210,16 @@ impl SkiaRenderer {
             #[derive(Debug)]
             struct PendingRun {
                 start_x_cells: u32,
+                font_variant: FontVariant,
                 font_index: usize,
                 fg: Rgba8,
                 text: String,
             }
 
             let mut pending: Option<PendingRun> = None;
-            let mut underlines: Vec<(f32, f32, f32, Rgba8)> = Vec::new();
+            let mut decoration_runs: Vec<LineDecorationRun> = Vec::new();
+            let mut underline_run: Option<LineDecorationRun> = None;
+            let mut strike_run: Option<LineDecorationRun> = None;
 
             let mut x_cells: u32 = 0;
 
@@ -1709,8 +2236,7 @@ impl SkiaRenderer {
                 paint.set_anti_alias(true);
                 paint.set_color(rgba_to_skia_color(run.fg));
 
-                let font =
-                    &renderer.fonts[run.font_index.min(renderer.fonts.len().saturating_sub(1))];
+                let font = renderer.font_for_variant_index(run.font_variant, run.font_index);
                 renderer.draw_shaped_run(
                     canvas,
                     run.text.as_str(),
@@ -1726,51 +2252,48 @@ impl SkiaRenderer {
             for cell in &line.cells {
                 let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
                 let (fg, _bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
+                let font_variant = resolve_cell_font_variant(cell.styles.as_slice(), theme);
+                let decos = resolve_cell_line_decorations(cell.styles.as_slice(), theme, fg);
 
-                let diag_id = cell
-                    .styles
-                    .iter()
-                    .copied()
-                    .find(|&id| is_lsp_diagnostics_style_id(id));
-
-                // Record IME marked text underline to draw *after* text, so it stays visible.
-                if cell.styles.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID) {
-                    let underline_h = config.scale.clamp(1.0, 2.0);
-                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    underlines.push((x_px, underline_y, w_px, fg));
+                if let Some((kind, color)) = decos.underline {
+                    extend_decoration_run(
+                        &mut decoration_runs,
+                        &mut underline_run,
+                        kind,
+                        x_cells,
+                        cell.width as u32,
+                        color,
+                    );
+                } else {
+                    flush_decoration_run(&mut decoration_runs, &mut underline_run);
                 }
 
-                // Record LSP diagnostics underline (style-layer based).
-                if let Some(diag_id) = diag_id {
-                    let underline_h = config.scale.clamp(1.0, 2.0);
-                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    let u_color = resolve_underline_color(diag_id, theme, fg);
-                    underlines.push((x_px, underline_y, w_px, u_color));
-                }
-
-                // Record LSP document links underline (style-layer based).
-                if diag_id.is_none() && cell.styles.iter().any(|&id| id == DOCUMENT_LINK_STYLE_ID) {
-                    let underline_h = config.scale.clamp(1.0, 2.0);
-                    let underline_y = (y_top + config.line_height_px - underline_h).max(y_top);
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    let u_color = resolve_underline_color(DOCUMENT_LINK_STYLE_ID, theme, fg);
-                    underlines.push((x_px, underline_y, w_px, u_color));
+                if let Some(color) = decos.strikethrough {
+                    extend_decoration_run(
+                        &mut decoration_runs,
+                        &mut strike_run,
+                        LineDecorationKind::Strikethrough,
+                        x_cells,
+                        cell.width as u32,
+                        color,
+                    );
+                } else {
+                    flush_decoration_run(&mut decoration_runs, &mut strike_run);
                 }
 
                 let eligible_for_ligatures =
                     config.enable_ligatures && cell.width == 1 && cell.ch.is_ascii();
                 if eligible_for_ligatures {
-                    let font_index = self.font_index_for_char(cell.ch);
+                    let font_index = self.font_index_for_char(cell.ch, font_variant);
 
                     let can_extend = pending
                         .as_ref()
-                        .is_some_and(|r| r.font_index == font_index && r.fg == fg);
+                        .is_some_and(|r| r.font_variant == font_variant && r.font_index == font_index && r.fg == fg);
                     if !can_extend {
                         flush(self, &mut pending);
                         pending = Some(PendingRun {
                             start_x_cells: x_cells,
+                            font_variant,
                             font_index,
                             fg,
                             text: String::new(),
@@ -1786,10 +2309,12 @@ impl SkiaRenderer {
                     let mut paint = Paint::default();
                     paint.set_anti_alias(true);
                     paint.set_color(rgba_to_skia_color(fg));
+                    let font_index = self.font_index_for_char(cell.ch, font_variant);
+                    let font = self.font_for_variant_index(font_variant, font_index);
                     canvas.draw_str(
                         cell.ch.to_string(),
                         Point::new(x_px, baseline_y),
-                        self.font_for_char(cell.ch),
+                        font,
                         &paint,
                     );
                 }
@@ -1799,14 +2324,21 @@ impl SkiaRenderer {
 
             flush(self, &mut pending);
 
-            // Underlines last.
-            for (x_px, underline_y, w_px, fg) in underlines {
-                let rect =
-                    Rect::from_xywh(x_px, underline_y, w_px, config.scale.clamp(1.0, 2.0));
-                let mut u_paint = Paint::default();
-                u_paint.set_anti_alias(false);
-                u_paint.set_color(rgba_to_skia_color(fg));
-                canvas.draw_rect(rect, &u_paint);
+            flush_decoration_run(&mut decoration_runs, &mut underline_run);
+            flush_decoration_run(&mut decoration_runs, &mut strike_run);
+
+            // Text decorations last (underline/strikethrough), so they stay visible over glyphs.
+            let (_spacing, metrics) = { self.normal_primary_font().metrics() };
+            for run in decoration_runs {
+                draw_decoration_run(
+                    canvas,
+                    run,
+                    text_origin_x,
+                    y_top,
+                    baseline_y,
+                    metrics,
+                    config,
+                );
             }
         }
 
@@ -1982,9 +2514,8 @@ fn make_configured_font(typeface: Option<skia_safe::Typeface>, size: f32) -> Fon
     font
 }
 
-fn load_fonts_from_families(families: &[String], size: f32) -> Vec<Font> {
+fn load_fonts_from_families_with_style(families: &[String], size: f32, style: FontStyle) -> Vec<Font> {
     let mgr = FontMgr::new();
-    let style = FontStyle::normal();
     let mut out = Vec::<Font>::new();
 
     for raw in families {
@@ -1998,15 +2529,17 @@ fn load_fonts_from_families(families: &[String], size: f32) -> Vec<Font> {
     }
 
     if out.is_empty() {
-        out.push(make_configured_font(pick_reasonable_monospace_typeface(), size));
+        out.push(make_configured_font(
+            pick_reasonable_monospace_typeface_with_style(style),
+            size,
+        ));
     }
 
     out
 }
 
-fn pick_reasonable_monospace_typeface() -> Option<skia_safe::Typeface> {
+fn pick_reasonable_monospace_typeface_with_style(style: FontStyle) -> Option<skia_safe::Typeface> {
     let mgr = FontMgr::new();
-    let style = FontStyle::normal();
 
     // Keep the list small; we just need *something* that exists on the platform.
     // If none match, fall back to the system default.
@@ -2015,7 +2548,12 @@ fn pick_reasonable_monospace_typeface() -> Option<skia_safe::Typeface> {
     } else if cfg!(target_os = "windows") {
         &["Consolas", "Cascadia Mono", "Courier New"]
     } else {
-        &["DejaVu Sans Mono", "Noto Sans Mono", "Liberation Mono", "Monospace"]
+        &[
+            "DejaVu Sans Mono",
+            "Noto Sans Mono",
+            "Liberation Mono",
+            "Monospace",
+        ]
     };
 
     for name in candidates {
@@ -2068,8 +2606,7 @@ fn draw_caret(
     }
 
     let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
-    let y_top =
-        config.padding_y_px + local_row as f32 * config.line_height_px - config.scroll_y_px;
+    let y_top = config.padding_y_px + local_row as f32 * config.line_height_px - config.scroll_y_px;
 
     let caret_width = config.caret_width_px.max(1.0);
     let rect = Rect::from_xywh(x_px, y_top, caret_width, config.line_height_px);
@@ -2142,6 +2679,113 @@ fn fold_marker_state_for_line(logical_line: u32, fold_markers: &[FoldMarker]) ->
         .map(|m| m.is_collapsed)
 }
 
+fn with_alpha(c: Rgba8, a: u8) -> Rgba8 {
+    Rgba8::new(c.r, c.g, c.b, a)
+}
+
+fn resolve_style_foreground_or_background(style_id: u32, theme: &RenderTheme, fallback: Rgba8) -> Rgba8 {
+    theme
+        .styles
+        .get(&style_id)
+        .and_then(|c| c.foreground.or(c.background))
+        .unwrap_or(fallback)
+}
+
+fn default_indent_guide_color(theme: &RenderTheme) -> Rgba8 {
+    // VSCode-like subtle guide color (theme-controlled via `INDENT_GUIDE_STYLE_ID`).
+    with_alpha(theme.foreground, 0x33)
+}
+
+fn default_whitespace_marker_color(theme: &RenderTheme) -> Rgba8 {
+    // Visible enough over selection, but still subtle.
+    with_alpha(theme.foreground, 0x88)
+}
+
+fn draw_fold_marker(
+    canvas: &skia_safe::Canvas,
+    rect: Rect,
+    is_collapsed: bool,
+    style: FoldMarkerStyle,
+    theme: &RenderTheme,
+    style_id: u32,
+) {
+    if matches!(style, FoldMarkerStyle::Hidden) {
+        return;
+    }
+
+    let color = resolve_style_foreground_or_background(style_id, theme, theme.foreground);
+
+    match style {
+        FoldMarkerStyle::Hidden => {}
+        FoldMarkerStyle::Block => {
+            let mut paint = Paint::default();
+            paint.set_anti_alias(false);
+            paint.set_color(rgba_to_skia_color(color));
+            canvas.draw_rect(rect, &paint);
+        }
+        FoldMarkerStyle::Triangle => {
+            let cx = rect.left + rect.width() * 0.5;
+            let cy = rect.top + rect.height() * 0.5;
+            let size = rect.width().min(rect.height()) * 0.60;
+            let half = size * 0.5;
+
+            let mut pb = PathBuilder::new();
+            if is_collapsed {
+                // ▶
+                pb.move_to(Point::new(cx - half * 0.75, cy - half));
+                pb.line_to(Point::new(cx - half * 0.75, cy + half));
+                pb.line_to(Point::new(cx + half * 0.85, cy));
+            } else {
+                // ▼
+                pb.move_to(Point::new(cx - half, cy - half * 0.70));
+                pb.line_to(Point::new(cx + half, cy - half * 0.70));
+                pb.line_to(Point::new(cx, cy + half * 0.85));
+            }
+            pb.close();
+            let path: Path = pb.into();
+
+            let mut paint = Paint::default();
+            paint.set_anti_alias(true);
+            paint.set_color(rgba_to_skia_color(color));
+            canvas.draw_path(&path, &paint);
+        }
+    }
+}
+
+fn cell_overlaps_selection_for_row(
+    row: i64,
+    cell_start_x: i64,
+    cell_end_x: i64,
+    line_total_cells: i64,
+    selections: &[VisualSelection],
+) -> bool {
+    for sel in selections {
+        let (mut a_row, mut a_x) = (sel.start_row as i64, sel.start_x_cells as i64);
+        let (mut b_row, mut b_x) = (sel.end_row as i64, sel.end_x_cells as i64);
+        if (b_row, b_x) < (a_row, a_x) {
+            std::mem::swap(&mut a_row, &mut b_row);
+            std::mem::swap(&mut a_x, &mut b_x);
+        }
+
+        if row < a_row || row > b_row {
+            continue;
+        }
+
+        let start_x = if row == a_row { a_x } else { 0 };
+        let end_x = if row == b_row { b_x } else { line_total_cells };
+        if end_x <= start_x {
+            continue;
+        }
+
+        // Overlap between [cell_start_x, cell_end_x) and [start_x, end_x)
+        if cell_start_x < end_x && cell_end_x > start_x {
+            return true;
+        }
+    }
+
+    false
+}
+
 fn resolve_style_foreground(style_id: u32, theme: &RenderTheme, fallback: Rgba8) -> Rgba8 {
     theme
         .styles
@@ -2174,6 +2818,23 @@ fn resolve_cell_colors(style_ids: &[u32], theme: &RenderTheme) -> (Rgba8, Rgba8)
     (fg, bg)
 }
 
+fn resolve_cell_font_variant(style_ids: &[u32], theme: &RenderTheme) -> FontVariant {
+    let mut bold: bool = false;
+    let mut italic: bool = false;
+    for id in style_ids {
+        let Some(spec) = theme.style_fonts.get(id) else {
+            continue;
+        };
+        if let Some(v) = spec.bold {
+            bold = v;
+        }
+        if let Some(v) = spec.italic {
+            italic = v;
+        }
+    }
+    FontVariant::from_flags(bold, italic)
+}
+
 fn is_lsp_diagnostics_style_id(style_id: u32) -> bool {
     // Matches `editor-core-lsp` encoding: 0x0400_0100 | severity(1..=4).
     const BASE: u32 = 0x0400_0100;
@@ -2197,6 +2858,341 @@ fn resolve_underline_color(style_id: u32, theme: &RenderTheme, fallback: Rgba8) 
     fallback
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineDecorationKind {
+    UnderlineSingle,
+    UnderlineDouble,
+    UnderlineSquiggly,
+    Strikethrough,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LineDecorationRun {
+    kind: LineDecorationKind,
+    start_x_cells: u32,
+    width_cells: u32,
+    color: Rgba8,
+}
+
+fn flush_decoration_run(out: &mut Vec<LineDecorationRun>, run: &mut Option<LineDecorationRun>) {
+    if let Some(r) = run.take() {
+        if r.width_cells > 0 {
+            out.push(r);
+        }
+    }
+}
+
+fn extend_decoration_run(
+    out: &mut Vec<LineDecorationRun>,
+    run: &mut Option<LineDecorationRun>,
+    kind: LineDecorationKind,
+    x_cells: u32,
+    width_cells: u32,
+    color: Rgba8,
+) {
+    if width_cells == 0 {
+        return;
+    }
+
+    if let Some(r) = run.as_mut() {
+        let is_contiguous = r.start_x_cells.saturating_add(r.width_cells) == x_cells;
+        if is_contiguous && r.kind == kind && r.color == color {
+            r.width_cells = r.width_cells.saturating_add(width_cells);
+            return;
+        }
+        flush_decoration_run(out, run);
+    }
+
+    *run = Some(LineDecorationRun {
+        kind,
+        start_x_cells: x_cells,
+        width_cells,
+        color,
+    });
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ResolvedCellLineDecorations {
+    /// Underline-like decoration (single/double/squiggly) and its resolved color.
+    underline: Option<(LineDecorationKind, Rgba8)>,
+    /// Strikethrough color (if enabled).
+    strikethrough: Option<Rgba8>,
+}
+
+fn resolve_cell_line_decorations(
+    style_ids: &[u32],
+    theme: &RenderTheme,
+    resolved_cell_fg: Rgba8,
+) -> ResolvedCellLineDecorations {
+    let diag_id = style_ids
+        .iter()
+        .copied()
+        .find(|&id| is_lsp_diagnostics_style_id(id));
+
+    // Underline candidate resolution:
+    // - diagnostics > IME > document links > theme-defined underline on arbitrary style ids
+    // - within the same priority bucket, later style ids win (to match color layering semantics)
+    let mut best_underline: Option<(i32, usize, LineDecorationKind, Rgba8)> = None;
+
+    let consider = |best: &mut Option<(i32, usize, LineDecorationKind, Rgba8)>,
+                    priority: i32,
+                    tie: usize,
+                    kind: LineDecorationKind,
+                    color: Rgba8| {
+        let replace = match best {
+            None => true,
+            Some((p, t, _, _)) => priority > *p || (priority == *p && tie >= *t),
+        };
+        if replace {
+            *best = Some((priority, tie, kind, color));
+        }
+    };
+
+    if let Some(diag_id) = diag_id {
+        let spec = theme
+            .text_decorations
+            .get(&diag_id)
+            .copied()
+            .unwrap_or_default();
+        let underline_style = spec.underline.unwrap_or(UnderlineStyle::Single);
+        let kind = match underline_style {
+            UnderlineStyle::Single => LineDecorationKind::UnderlineSingle,
+            UnderlineStyle::Double => LineDecorationKind::UnderlineDouble,
+            UnderlineStyle::Squiggly => LineDecorationKind::UnderlineSquiggly,
+        };
+        let color = spec
+            .underline_color
+            .unwrap_or_else(|| resolve_underline_color(diag_id, theme, resolved_cell_fg));
+        consider(&mut best_underline, 400, usize::MAX, kind, color);
+    }
+
+    if style_ids.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID) {
+        let spec = theme
+            .text_decorations
+            .get(&IME_MARKED_TEXT_STYLE_ID)
+            .copied()
+            .unwrap_or_default();
+        let underline_style = spec.underline.unwrap_or(UnderlineStyle::Single);
+        let kind = match underline_style {
+            UnderlineStyle::Single => LineDecorationKind::UnderlineSingle,
+            UnderlineStyle::Double => LineDecorationKind::UnderlineDouble,
+            UnderlineStyle::Squiggly => LineDecorationKind::UnderlineSquiggly,
+        };
+        let color = spec.underline_color.unwrap_or(resolved_cell_fg);
+        consider(&mut best_underline, 300, usize::MAX, kind, color);
+    }
+
+    if style_ids.iter().any(|&id| id == DOCUMENT_LINK_STYLE_ID) {
+        let spec = theme
+            .text_decorations
+            .get(&DOCUMENT_LINK_STYLE_ID)
+            .copied()
+            .unwrap_or_default();
+        let underline_style = spec.underline.unwrap_or(UnderlineStyle::Single);
+        let kind = match underline_style {
+            UnderlineStyle::Single => LineDecorationKind::UnderlineSingle,
+            UnderlineStyle::Double => LineDecorationKind::UnderlineDouble,
+            UnderlineStyle::Squiggly => LineDecorationKind::UnderlineSquiggly,
+        };
+        let color = spec.underline_color.unwrap_or_else(|| {
+            resolve_underline_color(DOCUMENT_LINK_STYLE_ID, theme, resolved_cell_fg)
+        });
+        consider(&mut best_underline, 200, usize::MAX, kind, color);
+    }
+
+    for (idx, &id) in style_ids.iter().enumerate() {
+        if id == IME_MARKED_TEXT_STYLE_ID || id == DOCUMENT_LINK_STYLE_ID || diag_id == Some(id) {
+            continue;
+        }
+        let Some(spec) = theme.text_decorations.get(&id).copied() else {
+            continue;
+        };
+        let Some(underline_style) = spec.underline else {
+            continue;
+        };
+        let kind = match underline_style {
+            UnderlineStyle::Single => LineDecorationKind::UnderlineSingle,
+            UnderlineStyle::Double => LineDecorationKind::UnderlineDouble,
+            UnderlineStyle::Squiggly => LineDecorationKind::UnderlineSquiggly,
+        };
+        let color = spec.underline_color.unwrap_or(resolved_cell_fg);
+        consider(&mut best_underline, 100, idx, kind, color);
+    }
+
+    let underline = best_underline.map(|(_p, _t, kind, color)| (kind, color));
+
+    // Strikethrough: "last wins" by style-id order (independent of underline priority).
+    let mut strike_enabled: bool = false;
+    let mut strike_color: Option<Rgba8> = None;
+    for &id in style_ids {
+        let Some(spec) = theme.text_decorations.get(&id).copied() else {
+            continue;
+        };
+        if let Some(v) = spec.strikethrough {
+            strike_enabled = v;
+        }
+        if let Some(c) = spec.strikethrough_color {
+            strike_color = Some(c);
+        }
+    }
+
+    ResolvedCellLineDecorations {
+        underline,
+        strikethrough: strike_enabled.then(|| strike_color.unwrap_or(resolved_cell_fg)),
+    }
+}
+
+fn decoration_thickness_px(config: RenderConfig) -> f32 {
+    config.scale.clamp(1.0, 2.0)
+}
+
+fn draw_decoration_run(
+    canvas: &skia_safe::Canvas,
+    run: LineDecorationRun,
+    text_origin_x: f32,
+    y_top: f32,
+    baseline_y: f32,
+    metrics: skia_safe::FontMetrics,
+    config: RenderConfig,
+) {
+    let x_px = text_origin_x + run.start_x_cells as f32 * config.cell_width_px;
+    let w_px = run.width_cells as f32 * config.cell_width_px;
+    if w_px <= 0.0 {
+        return;
+    }
+
+    match run.kind {
+        LineDecorationKind::UnderlineSingle => {
+            draw_single_underline(canvas, x_px, y_top, w_px, config, run.color);
+        }
+        LineDecorationKind::UnderlineDouble => {
+            draw_double_underline(canvas, x_px, y_top, w_px, config, run.color);
+        }
+        LineDecorationKind::UnderlineSquiggly => {
+            draw_squiggly_underline(canvas, x_px, y_top, w_px, config, run.color);
+        }
+        LineDecorationKind::Strikethrough => {
+            draw_strikethrough(
+                canvas, x_px, y_top, w_px, baseline_y, metrics, config, run.color,
+            );
+        }
+    }
+}
+
+fn draw_single_underline(
+    canvas: &skia_safe::Canvas,
+    x_px: f32,
+    y_top: f32,
+    w_px: f32,
+    config: RenderConfig,
+    color: Rgba8,
+) {
+    let h = decoration_thickness_px(config);
+    let y = (y_top + config.line_height_px - h).max(y_top);
+    let rect = Rect::from_xywh(x_px, y, w_px, h);
+    let mut paint = Paint::default();
+    paint.set_anti_alias(false);
+    paint.set_color(rgba_to_skia_color(color));
+    canvas.draw_rect(rect, &paint);
+}
+
+fn draw_double_underline(
+    canvas: &skia_safe::Canvas,
+    x_px: f32,
+    y_top: f32,
+    w_px: f32,
+    config: RenderConfig,
+    color: Rgba8,
+) {
+    let h = decoration_thickness_px(config);
+    let y1 = (y_top + config.line_height_px - h).max(y_top);
+    let y2 = (y1 - h * 2.0).max(y_top);
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(false);
+    paint.set_color(rgba_to_skia_color(color));
+
+    let rect1 = Rect::from_xywh(x_px, y1, w_px, h);
+    canvas.draw_rect(rect1, &paint);
+
+    let rect2 = Rect::from_xywh(x_px, y2, w_px, h);
+    canvas.draw_rect(rect2, &paint);
+}
+
+fn draw_squiggly_underline(
+    canvas: &skia_safe::Canvas,
+    x_px: f32,
+    y_top: f32,
+    w_px: f32,
+    config: RenderConfig,
+    color: Rgba8,
+) {
+    // Deterministic, non-antialiased "zig-zag" made of small rectangles.
+    //
+    // This avoids diagonal AA differences across backends while still looking squiggly at typical
+    // editor sizes.
+    let h = decoration_thickness_px(config);
+    let y_bottom = (y_top + config.line_height_px - h).max(y_top);
+    let y_upper = (y_bottom - h).max(y_top);
+    let seg_w = (h * 2.0).max(2.0);
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(false);
+    paint.set_color(rgba_to_skia_color(color));
+
+    let mut x = x_px;
+    let x_end = x_px + w_px;
+    let mut upper = false;
+    while x < x_end {
+        let w = (x_end - x).min(seg_w);
+        let y = if upper { y_upper } else { y_bottom };
+        let rect = Rect::from_xywh(x, y, w, h);
+        canvas.draw_rect(rect, &paint);
+        upper = !upper;
+        x += seg_w;
+    }
+}
+
+fn draw_strikethrough(
+    canvas: &skia_safe::Canvas,
+    x_px: f32,
+    y_top: f32,
+    w_px: f32,
+    baseline_y: f32,
+    metrics: skia_safe::FontMetrics,
+    config: RenderConfig,
+    color: Rgba8,
+) {
+    // Keep strikethrough thickness consistent with underline thickness for crisp, deterministic
+    // rendering across fonts/backends.
+    let h = decoration_thickness_px(config);
+
+    let strike_pos = metrics.strikeout_position().unwrap_or_else(|| {
+        // `x_height` is a positive distance from baseline up; convert to y-down.
+        if metrics.x_height.is_finite() && metrics.x_height > 0.0 {
+            -metrics.x_height * 0.5
+        } else if metrics.ascent.is_finite() {
+            metrics.ascent * 0.3
+        } else {
+            -config.line_height_px * 0.3
+        }
+    });
+
+    let center_y = baseline_y + strike_pos;
+    let mut y = center_y - h * 0.5;
+    let max_y = (y_top + config.line_height_px - h).max(y_top);
+    if !y.is_finite() {
+        y = y_top + config.line_height_px * 0.5;
+    }
+    y = y.clamp(y_top, max_y).round().clamp(y_top, max_y);
+
+    let rect = Rect::from_xywh(x_px, y, w_px, h);
+    let mut paint = Paint::default();
+    paint.set_anti_alias(false);
+    paint.set_color(rgba_to_skia_color(color));
+    canvas.draw_rect(rect, &paint);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2204,8 +3200,8 @@ mod tests {
         Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
         HeadlessGrid, HeadlessLine,
     };
-    use skia_safe::shaper::TextBlobBuilderRunHandler;
     use skia_safe::TextBlobIter;
+    use skia_safe::shaper::TextBlobBuilderRunHandler;
 
     #[test]
     fn normalize_font_family_name_strips_quotes() {
@@ -2239,6 +3235,7 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
         let _ = renderer
@@ -2261,10 +3258,10 @@ mod tests {
 
         let mut renderer = SkiaRenderer::new();
         renderer.set_font_families(vec!["Menlo".to_string(), "PingFang SC".to_string()]);
-        assert!(renderer.fonts.len() >= 2);
+        assert!(renderer.fonts_normal.fonts.len() >= 2);
 
         // Menlo should not have glyph for '你', so the renderer must fall back to PingFang.
-        assert_eq!(renderer.font_index_for_char('你'), 1);
+        assert_eq!(renderer.font_index_for_char('你', FontVariant::Normal), 1);
     }
 
     #[test]
@@ -2284,6 +3281,8 @@ mod tests {
             selection_background: bg,
             caret: bg,
             styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
 
         let cfg = RenderConfig {
@@ -2301,9 +3300,12 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
-        let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
+        let rgba = renderer
+            .render_rgba(&grid, &[], &[], &[], cfg, &theme)
+            .unwrap();
 
         let bg_px = [bg.r, bg.g, bg.b, bg.a];
         assert!(
@@ -2343,6 +3345,8 @@ mod tests {
             selection_background: bg,
             caret: bg,
             styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
 
         let cfg = RenderConfig {
@@ -2360,9 +3364,12 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
-        let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
+        let rgba = renderer
+            .render_rgba(&grid, &[], &[], &[], cfg, &theme)
+            .unwrap();
         let bytes_per_row = cfg.width_px as usize * 4;
         let idx = 9 * bytes_per_row + 5 * 4; // y=9 (underline), x=5
         assert_eq!(&rgba[idx..idx + 4], &[fg.r, fg.g, fg.b, fg.a]);
@@ -2392,6 +3399,8 @@ mod tests {
                 m.insert(0x0400_0100 | 1, StyleColors::new(Some(diag), None));
                 m
             },
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
 
         let cfg = RenderConfig {
@@ -2409,9 +3418,12 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
-        let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
+        let rgba = renderer
+            .render_rgba(&grid, &[], &[], &[], cfg, &theme)
+            .unwrap();
         let bytes_per_row = cfg.width_px as usize * 4;
         let idx = 9 * bytes_per_row + 5 * 4; // y=9 (underline), x=5
         assert_eq!(&rgba[idx..idx + 4], &[diag.r, diag.g, diag.b, diag.a]);
@@ -2440,6 +3452,8 @@ mod tests {
                 m.insert(DOCUMENT_LINK_STYLE_ID, StyleColors::new(Some(link), None));
                 m
             },
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
 
         let cfg = RenderConfig {
@@ -2457,12 +3471,224 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
-        let rgba = renderer.render_rgba(&grid, &[], &[], &[], cfg, &theme).unwrap();
+        let rgba = renderer
+            .render_rgba(&grid, &[], &[], &[], cfg, &theme)
+            .unwrap();
         let bytes_per_row = cfg.width_px as usize * 4;
         let idx = 9 * bytes_per_row + 5 * 4; // y=9 (underline), x=5
         assert_eq!(&rgba[idx..idx + 4], &[link.r, link.g, link.b, link.a]);
+    }
+
+    #[test]
+    fn render_draws_double_underline_from_theme_text_decorations() {
+        let mut renderer = SkiaRenderer::new();
+
+        let style_id = 42u32;
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        let mut cell = Cell::new(' ', 1);
+        cell.styles.push(style_id);
+        line.add_cell(cell);
+        grid.add_line(line);
+
+        let bg = Rgba8::new(10, 20, 30, 255);
+        let deco = Rgba8::new(1, 200, 2, 255);
+        let theme = RenderTheme {
+            background: bg,
+            foreground: bg, // keep glyphs invisible (space anyway)
+            selection_background: bg,
+            caret: bg,
+            styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: {
+                let mut m = BTreeMap::new();
+                m.insert(
+                    style_id,
+                    TextDecorations {
+                        underline: Some(UnderlineStyle::Double),
+                        underline_color: Some(deco),
+                        ..TextDecorations::default()
+                    },
+                );
+                m
+            },
+        };
+
+        let cfg = RenderConfig {
+            width_px: 20,
+            height_px: 10,
+            scale: 1.0,
+            font_size: 10.0,
+            line_height_px: 10.0,
+            text_vertical_align: TextVerticalAlign::Center,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            scroll_y_px: 0.0,
+            gutter_width_cells: 0,
+            enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
+            ..RenderConfig::default()
+        };
+
+        let rgba = renderer
+            .render_rgba(&grid, &[], &[], &[], cfg, &theme)
+            .unwrap();
+        let bytes_per_row = cfg.width_px as usize * 4;
+
+        let idx_bottom = 9 * bytes_per_row + 5 * 4; // y=9 (bottom underline), x=5
+        assert_eq!(
+            &rgba[idx_bottom..idx_bottom + 4],
+            &[deco.r, deco.g, deco.b, deco.a]
+        );
+
+        let idx_top = 7 * bytes_per_row + 5 * 4; // y=7 (second underline), x=5
+        assert_eq!(
+            &rgba[idx_top..idx_top + 4],
+            &[deco.r, deco.g, deco.b, deco.a]
+        );
+    }
+
+    #[test]
+    fn render_draws_squiggly_underline_from_theme_text_decorations() {
+        let mut renderer = SkiaRenderer::new();
+
+        let style_id = 42u32;
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        let mut cell = Cell::new(' ', 1);
+        cell.styles.push(style_id);
+        line.add_cell(cell);
+        grid.add_line(line);
+
+        let bg = Rgba8::new(10, 20, 30, 255);
+        let deco = Rgba8::new(1, 200, 2, 255);
+        let theme = RenderTheme {
+            background: bg,
+            foreground: bg,
+            selection_background: bg,
+            caret: bg,
+            styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: {
+                let mut m = BTreeMap::new();
+                m.insert(
+                    style_id,
+                    TextDecorations {
+                        underline: Some(UnderlineStyle::Squiggly),
+                        underline_color: Some(deco),
+                        ..TextDecorations::default()
+                    },
+                );
+                m
+            },
+        };
+
+        let cfg = RenderConfig {
+            width_px: 20,
+            height_px: 10,
+            scale: 1.0,
+            font_size: 10.0,
+            line_height_px: 10.0,
+            text_vertical_align: TextVerticalAlign::Center,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            scroll_y_px: 0.0,
+            gutter_width_cells: 0,
+            enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
+            ..RenderConfig::default()
+        };
+
+        let rgba = renderer
+            .render_rgba(&grid, &[], &[], &[], cfg, &theme)
+            .unwrap();
+        let bytes_per_row = cfg.width_px as usize * 4;
+
+        // Squiggle alternates between y=9 and y=8 with a 2px segment width (scale=1).
+        let idx_bottom = 9 * bytes_per_row + 1 * 4; // x=1 inside first bottom segment
+        assert_eq!(
+            &rgba[idx_bottom..idx_bottom + 4],
+            &[deco.r, deco.g, deco.b, deco.a]
+        );
+
+        let idx_upper = 8 * bytes_per_row + 3 * 4; // x=3 inside the second (upper) segment
+        assert_eq!(
+            &rgba[idx_upper..idx_upper + 4],
+            &[deco.r, deco.g, deco.b, deco.a]
+        );
+    }
+
+    #[test]
+    fn render_draws_strikethrough_from_theme_text_decorations() {
+        let mut renderer = SkiaRenderer::new();
+
+        let style_id = 42u32;
+
+        let mut grid = HeadlessGrid::new(0, 1);
+        let mut line = HeadlessLine::new(0, false);
+        let mut cell = Cell::new(' ', 1);
+        cell.styles.push(style_id);
+        line.add_cell(cell);
+        grid.add_line(line);
+
+        let bg = Rgba8::new(10, 20, 30, 255);
+        let deco = Rgba8::new(1, 200, 2, 255);
+        let theme = RenderTheme {
+            background: bg,
+            foreground: bg,
+            selection_background: bg,
+            caret: bg,
+            styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: {
+                let mut m = BTreeMap::new();
+                m.insert(
+                    style_id,
+                    TextDecorations {
+                        strikethrough: Some(true),
+                        strikethrough_color: Some(deco),
+                        ..TextDecorations::default()
+                    },
+                );
+                m
+            },
+        };
+
+        let cfg = RenderConfig {
+            width_px: 20,
+            height_px: 10,
+            scale: 1.0,
+            font_size: 10.0,
+            line_height_px: 10.0,
+            text_vertical_align: TextVerticalAlign::Center,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            scroll_y_px: 0.0,
+            gutter_width_cells: 0,
+            enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
+            ..RenderConfig::default()
+        };
+
+        let rgba = renderer
+            .render_rgba(&grid, &[], &[], &[], cfg, &theme)
+            .unwrap();
+        let deco_px = [deco.r, deco.g, deco.b, deco.a];
+        assert!(
+            rgba.chunks_exact(4).any(|p| p == deco_px),
+            "expected at least one strikethrough pixel"
+        );
     }
 
     #[test]
@@ -2509,6 +3735,8 @@ mod tests {
             selection_background: Rgba8::new(200, 0, 0, 255),
             caret: Rgba8::new(0, 0, 200, 255),
             styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
 
         let cfg = RenderConfig {
@@ -2526,6 +3754,7 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
         let rgba = renderer
@@ -2574,6 +3803,8 @@ mod tests {
             selection_background: Rgba8::new(200, 0, 0, 255),
             caret: Rgba8::new(0, 0, 200, 255),
             styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
         theme
             .styles
@@ -2594,6 +3825,7 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
         let rgba = renderer
@@ -2622,6 +3854,8 @@ mod tests {
             selection_background: Rgba8::new(200, 0, 0, 255),
             caret: Rgba8::new(10, 20, 30, 255), // invisible
             styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
         theme
             .styles
@@ -2642,6 +3876,7 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
         let rgba = renderer
@@ -2704,6 +3939,8 @@ mod tests {
             selection_background: Rgba8::new(200, 0, 0, 255),
             caret: Rgba8::new(10, 20, 30, 255), // invisible
             styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
         theme
             .styles
@@ -2724,6 +3961,7 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
         let mut out = vec![0u8; (cfg.width_px * cfg.height_px * 4) as usize];
@@ -2771,6 +4009,8 @@ mod tests {
             selection_background: Rgba8::new(200, 0, 0, 255),
             caret: Rgba8::new(10, 20, 30, 255), // invisible
             styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
 
         let cfg = RenderConfig {
@@ -2788,6 +4028,7 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
         let mut out = vec![0u8; (cfg.width_px * cfg.height_px * 4) as usize];
@@ -2852,6 +4093,8 @@ mod tests {
             selection_background: Rgba8::new(10, 20, 30, 255), // invisible
             caret: Rgba8::new(0, 0, 200, 255),
             styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
 
         let cfg = RenderConfig {
@@ -2869,6 +4112,7 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
         let mut out = vec![0u8; (cfg.width_px * cfg.height_px * 4) as usize];
@@ -2911,6 +4155,8 @@ mod tests {
             selection_background: Rgba8::new(200, 0, 0, 255),
             caret: Rgba8::new(0, 0, 200, 255),
             styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
 
         let cfg = RenderConfig {
@@ -2928,6 +4174,7 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
         let carets = [
@@ -2982,6 +4229,8 @@ mod tests {
             selection_background: Rgba8::new(200, 0, 0, 255),
             caret: Rgba8::new(0, 0, 200, 255),
             styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
         };
         theme.styles.insert(
             GUTTER_BACKGROUND_STYLE_ID,
@@ -3012,6 +4261,7 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
         let carets = [VisualCaret { row: 0, x_cells: 2 }];
@@ -3066,17 +4316,31 @@ mod tests {
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
         let required = SkiaRenderer::required_rgba_len(cfg).unwrap();
         let mut out = vec![0u8; required.saturating_sub(1)];
         let err = renderer
-            .render_rgba_into(&grid, &[], &[], &[], cfg, &RenderTheme::default(), out.as_mut_slice())
+            .render_rgba_into(
+                &grid,
+                &[],
+                &[],
+                &[],
+                cfg,
+                &RenderTheme::default(),
+                out.as_mut_slice(),
+            )
             .unwrap_err();
         assert!(matches!(err, RenderError::BufferTooSmall { .. }));
     }
 
-    fn shape_glyph_count(shaper: &Shaper, text: &str, font: &Font, enable_ligatures: bool) -> usize {
+    fn shape_glyph_count(
+        shaper: &Shaper,
+        text: &str,
+        font: &Font,
+        enable_ligatures: bool,
+    ) -> usize {
         let features = SkiaRenderer::ligature_features(enable_ligatures);
         let width = 1_000_000.0;
         let utf8_len = text.as_bytes().len();
@@ -3141,11 +4405,16 @@ mod tests {
 
         if cfg!(target_os = "macos") {
             // On macOS we expect at least one of the common serif fonts to exist and expose `fi`.
-            assert!(found, "expected a system font where `fi` forms a ligature when enabled");
+            assert!(
+                found,
+                "expected a system font where `fi` forms a ligature when enabled"
+            );
         } else if !found {
             // Some minimal environments may not ship serif fonts with classic ligatures.
             // Keep this as a soft assertion so CI can still run headless.
-            eprintln!("no candidate font produced a detectable 'fi' ligature; skipping hard assertion");
+            eprintln!(
+                "no candidate font produced a detectable 'fi' ligature; skipping hard assertion"
+            );
         }
     }
 
@@ -3175,6 +4444,7 @@ mod tests {
             enable_ligatures: true,
             caret_width_px: 2.0,
             show_caret: true,
+            ..RenderConfig::default()
         };
 
         let _ = renderer

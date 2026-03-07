@@ -12,6 +12,18 @@ public final class EditorUI {
         case bottom = 2
     }
 
+    public enum WhitespaceRenderMode: UInt8 {
+        case none = 0
+        case selection = 1
+        case all = 2
+    }
+
+    public enum FoldMarkerStyle: UInt8 {
+        case hidden = 0
+        case block = 1
+        case triangle = 2
+    }
+
     public init(library: EditorCoreUIFFILibrary, initialText: String = "", viewportWidthCells: UInt32 = 120) throws {
         self.library = library
         guard let ptr = initialText.withCString({ cstr in
@@ -34,12 +46,36 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_theme")
     }
 
+    public func setChromeTheme(_ theme: EcuChromeTheme) throws {
+        var ffiTheme = theme.ffi
+        let status = withUnsafePointer(to: &ffiTheme) { ptr in
+            editor_core_ui_ffi_editor_ui_set_chrome_theme(handle, ptr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_set_chrome_theme")
+    }
+
     public func setStyleColors(_ styles: [EcuStyleColors]) throws {
         let ffi = styles.map { $0.ffi }
         let status = ffi.withUnsafeBufferPointer { ptr in
             editor_core_ui_ffi_editor_ui_set_style_colors(handle, ptr.baseAddress, UInt32(ptr.count))
         }
         try library.ensureStatus(status, context: "editor_ui_set_style_colors")
+    }
+
+    public func setStyleFonts(_ fonts: [EcuStyleFont]) throws {
+        let ffi = fonts.map { $0.ffi }
+        let status = ffi.withUnsafeBufferPointer { ptr in
+            editor_core_ui_ffi_editor_ui_set_style_fonts(handle, ptr.baseAddress, UInt32(ptr.count))
+        }
+        try library.ensureStatus(status, context: "editor_ui_set_style_fonts")
+    }
+
+    public func setStyleTextDecorations(_ decorations: [EcuStyleTextDecorations]) throws {
+        let ffi = decorations.map { $0.ffi }
+        let status = ffi.withUnsafeBufferPointer { ptr in
+            editor_core_ui_ffi_editor_ui_set_style_text_decorations(handle, ptr.baseAddress, UInt32(ptr.count))
+        }
+        try library.ensureStatus(status, context: "editor_ui_set_style_text_decorations")
     }
 
     public func sublimeSetSyntaxYAML(_ yaml: String) throws {
@@ -96,6 +132,40 @@ public final class EditorUI {
 
     public func treeSitterDisable() {
         editor_core_ui_ffi_editor_ui_treesitter_disable(handle)
+    }
+
+    /// Enable an stdio LSP session managed by Rust.
+    ///
+    /// Notes:
+    /// - `rootURI` / `documentURI` should be `file:///...` URIs for best server behavior.
+    /// - `args` is a single whitespace-separated string (best-effort; no shell quoting).
+    public func lspEnable(command: String, args: String? = nil, rootURI: String, documentURI: String, languageId: String) throws {
+        let status: Int32 = command.withCString { cmdCStr in
+            rootURI.withCString { rootCStr in
+                documentURI.withCString { docCStr in
+                    languageId.withCString { langCStr in
+                        if let args {
+                            return args.withCString { argsCStr in
+                                editor_core_ui_ffi_editor_ui_lsp_enable(handle, cmdCStr, argsCStr, rootCStr, docCStr, langCStr)
+                            }
+                        }
+                        return editor_core_ui_ffi_editor_ui_lsp_enable(handle, cmdCStr, nil, rootCStr, docCStr, langCStr)
+                    }
+                }
+            }
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_enable")
+    }
+
+    public func lspDisable() {
+        editor_core_ui_ffi_editor_ui_lsp_disable(handle)
+    }
+
+    public func lspIsEnabled() throws -> Bool {
+        var out: UInt8 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_is_enabled(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_lsp_is_enabled")
+        return out != 0
     }
 
     /// Poll and apply any completed async processing (Tree-sitter highlighting/folding).
@@ -219,6 +289,21 @@ public final class EditorUI {
     public func setCaretVisible(_ visible: Bool) throws {
         let status = editor_core_ui_ffi_editor_ui_set_caret_visible(handle, visible ? 1 : 0)
         try library.ensureStatus(status, context: "editor_ui_set_caret_visible")
+    }
+
+    public func setIndentGuidesEnabled(_ enabled: Bool) throws {
+        let status = editor_core_ui_ffi_editor_ui_set_indent_guides_enabled(handle, enabled ? 1 : 0)
+        try library.ensureStatus(status, context: "editor_ui_set_indent_guides_enabled")
+    }
+
+    public func setWhitespaceRenderMode(_ mode: WhitespaceRenderMode) throws {
+        let status = editor_core_ui_ffi_editor_ui_set_whitespace_render_mode(handle, mode.rawValue)
+        try library.ensureStatus(status, context: "editor_ui_set_whitespace_render_mode")
+    }
+
+    public func setFoldMarkerStyle(_ style: FoldMarkerStyle) throws {
+        let status = editor_core_ui_ffi_editor_ui_set_fold_marker_style(handle, style.rawValue)
+        try library.ensureStatus(status, context: "editor_ui_set_fold_marker_style")
     }
 
     /// Configure the ASCII word-boundary character set for editor-friendly "word" operations.

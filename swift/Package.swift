@@ -20,7 +20,8 @@ let package = Package(
         .library(name: "EditorCoreUIFFI", targets: ["EditorCoreUIFFI"]),
         .library(name: "EditorCoreAppKit", targets: ["EditorCoreAppKit"]),
         .executable(name: "EditorCoreFFIDemo", targets: ["EditorCoreFFIDemo"]),
-        .executable(name: "EditorCoreSkiaAppKitDemo", targets: ["EditorCoreSkiaAppKitDemo"])
+        .executable(name: "EditorCoreSkiaAppKitDemo", targets: ["EditorCoreSkiaAppKitDemo"]),
+        .executable(name: "AttoEditor", targets: ["AttoEditor"])
     ],
     targets: [
         .plugin(
@@ -92,6 +93,11 @@ let package = Package(
             name: "EditorCoreSkiaAppKitDemo",
             dependencies: ["EditorCoreAppKit", "EditorCoreUIFFI"],
             path: "Sources/EditorCoreSkiaAppKitDemo"
+        ),
+        .executableTarget(
+            name: "AttoEditor",
+            dependencies: ["EditorCoreAppKit", "EditorCoreUIFFI"],
+            path: "Sources/AttoEditor"
         ),
         .testTarget(
             name: "EditorCoreFFITests",

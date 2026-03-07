@@ -23,6 +23,14 @@ typedef struct EcuTheme {
   EcuRgba8 caret;
 } EcuTheme;
 
+typedef struct EcuChromeTheme {
+  EcuRgba8 gutter_background;
+  EcuRgba8 gutter_foreground;
+  EcuRgba8 gutter_separator;
+  EcuRgba8 fold_marker_collapsed;
+  EcuRgba8 fold_marker_expanded;
+} EcuChromeTheme;
+
 typedef enum EcuTextVerticalAlign {
   // 0=top, 1=center, 2=bottom (kept stable for ABI)
   ECU_TEXT_VERTICAL_ALIGN_TOP = 0,
@@ -41,6 +49,46 @@ typedef struct EcuStyleColors {
   EcuRgba8 foreground;
   EcuRgba8 background;
 } EcuStyleColors;
+
+typedef enum EcuUnderlineStyle {
+  // 1=single, 2=double, 3=squiggly (0 is reserved)
+  ECU_UNDERLINE_STYLE_SINGLE = 1,
+  ECU_UNDERLINE_STYLE_DOUBLE = 2,
+  ECU_UNDERLINE_STYLE_SQUIGGLY = 3,
+} EcuUnderlineStyle;
+
+// A single StyleId text-decoration override entry.
+//
+// flags bitmask:
+// - bit 0: underline style present
+// - bit 1: underline color present
+// - bit 2: strikethrough present
+// - bit 3: strikethrough color present
+//
+// underline_style values: see `EcuUnderlineStyle`.
+// strikethrough values: 0=disabled, 1=enabled.
+typedef struct EcuStyleTextDecorations {
+  uint32_t style_id;
+  uint32_t flags;
+  uint32_t underline_style;
+  EcuRgba8 underline_color;
+  uint32_t strikethrough;
+  EcuRgba8 strikethrough_color;
+} EcuStyleTextDecorations;
+
+// A single StyleId font-style override entry.
+//
+// flags bitmask:
+// - bit 0: bold present
+// - bit 1: italic present
+//
+// bold / italic values: 0=disabled, 1=enabled.
+typedef struct EcuStyleFont {
+  uint32_t style_id;
+  uint32_t flags;
+  uint32_t bold;
+  uint32_t italic;
+} EcuStyleFont;
 
 typedef struct EcuSelectionRange {
   uint32_t start;
@@ -84,9 +132,18 @@ EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8,
 void editor_core_ui_ffi_editor_ui_free(EditorUi* ui);
 
 int32_t editor_core_ui_ffi_editor_ui_set_theme(EditorUi* ui, const EcuTheme* theme);
+int32_t editor_core_ui_ffi_editor_ui_set_chrome_theme(EditorUi* ui, const EcuChromeTheme* theme);
 int32_t editor_core_ui_ffi_editor_ui_set_style_colors(EditorUi* ui,
                                                       const EcuStyleColors* styles,
                                                       uint32_t style_count);
+int32_t editor_core_ui_ffi_editor_ui_set_style_fonts(EditorUi* ui,
+                                                     const EcuStyleFont* fonts,
+                                                     uint32_t font_count);
+int32_t editor_core_ui_ffi_editor_ui_set_style_text_decorations(
+    EditorUi* ui,
+    const EcuStyleTextDecorations* decorations,
+    uint32_t decoration_count
+);
 
 // Sublime syntax integration (highlighting + folding).
 int32_t editor_core_ui_ffi_editor_ui_sublime_set_syntax_yaml(EditorUi* ui, const char* yaml_utf8);
@@ -112,6 +169,16 @@ int32_t editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(EditorUi* u
                                                                      const char* capture_utf8,
                                                                      uint32_t* out_style_id);
 char* editor_core_ui_ffi_editor_ui_treesitter_capture_for_style_id(EditorUi* ui, uint32_t style_id);
+
+// LSP integration (optional; stdio session managed by Rust).
+int32_t editor_core_ui_ffi_editor_ui_lsp_enable(EditorUi* ui,
+                                               const char* cmd_utf8,
+                                               const char* args_utf8, // nullable, split by whitespace
+                                               const char* root_uri_utf8,
+                                               const char* doc_uri_utf8,
+                                               const char* language_id_utf8);
+void editor_core_ui_ffi_editor_ui_lsp_disable(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_lsp_is_enabled(EditorUi* ui, uint8_t* out_enabled);
 
 // LSP-derived state ingestion (diagnostics + semantic tokens).
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json(
@@ -151,6 +218,11 @@ int32_t editor_core_ui_ffi_editor_ui_set_font_families_csv(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_set_font_ligatures_enabled(EditorUi* ui, uint8_t enabled);
 int32_t editor_core_ui_ffi_editor_ui_set_caret_width_px(EditorUi* ui, float width_px);
 int32_t editor_core_ui_ffi_editor_ui_set_caret_visible(EditorUi* ui, uint8_t visible);
+int32_t editor_core_ui_ffi_editor_ui_set_indent_guides_enabled(EditorUi* ui, uint8_t enabled);
+int32_t editor_core_ui_ffi_editor_ui_set_whitespace_render_mode(EditorUi* ui,
+                                                               uint8_t mode /* 0=None, 1=Selection, 2=All */);
+int32_t editor_core_ui_ffi_editor_ui_set_fold_marker_style(EditorUi* ui,
+                                                          uint8_t style /* 0=Hidden, 1=Block, 2=Triangle */);
 int32_t editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(
     EditorUi* ui,
     const char* boundary_chars_utf8

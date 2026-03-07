@@ -165,58 +165,23 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
         do {
             let library = EditorCoreUIFFILibrary()
 
-            var initialText = """
-            // EditorCoreSkiaAppKitDemo
+            // Demo: open a real Rust source file from this repo so LSP can provide real semantic
+            // tokens / inlay hints / diagnostics.
+            let repoRootURL = URL(fileURLWithPath: #file)
+                .deletingLastPathComponent() // EditorCoreSkiaAppKitDemo
+                .deletingLastPathComponent() // Sources
+                .deletingLastPathComponent() // swift
+                .deletingLastPathComponent() // repo root
+
+            let demoFileURL = repoRootURL.appendingPathComponent("editor-core/crates/tui-editor/src/main.rs")
+            let initialText = (try? String(contentsOf: demoFileURL, encoding: .utf8)) ?? """
+            // Failed to load demo file:
+            // \(demoFileURL.path)
             //
-            // 这是一个自绘版 demo：
-            // - Rust: editor-core + editor-core-ui + Skia（Metal/GPU 绘制到 MTLTexture）
-            // - Swift/AppKit: MTKView + NSTextInputClient（IME）+ present CAMetalDrawable
-            //
-            // 支持：
-            // - 输入/删除/选区（鼠标拖拽）
-            // - 多光标：Cmd+Click
-            // - 矩形选择：Option+Drag
-            // - 双击拖拽：按 word 扩展选区
-            // - 三击拖拽：按 line 扩展选区
-            // - Shift+方向键扩选
-            // - 右键菜单：Cut/Copy/Paste/Select All（可由 host 自定义）
-            // - gutter（行号 + 折叠标记），点击 gutter 折叠/展开
-            // - 中文输入（marked text / commit text）
-            // - Cmd-Z / Cmd-Shift-Z（undo/redo）
-            // - 搜索/替换：窗口顶部（match highlights overlay）
-            // - Cmd+Click 打开 DocumentLink（演示链接：https://example.com）
-            // - Minimap（可开关，且可放在滚动条左/右）
-            // - Caret 闪烁（可禁用/调速）
-            //
-            // TODO：
-            // - 更完整的主题系统（StyleId -> Theme 映射）
-            // - 增量重绘 / dirty rect（进一步降低每次输入的渲染成本）
-            //
-            // 下面是一段 Rust 代码（用于 Tree-sitter folds 演示，需 host 启用 Tree-sitter）：
-            fn main() {
-              if true {
-                println!("hello");
-              }
-            }
+            // Please open `crates/tui-editor/src/main.rs` manually.
             """
-            // 让 demo 文档足够长，方便测试滚动条 / 平滑滚动 / “光标移出 viewport 自动滚动”等功能。
-            let longLines = (0..<600).map { i -> String in
-                // 同时混入 CJK + Emoji，方便验证多字体 fallback 与 grapheme 逻辑。
-                //
-                // 注意：demo 默认启用 Rust Tree-sitter，如果把大量非 Rust 文本直接塞进文档（不在注释里），
-                // parser 需要做大量错误恢复，可能导致“每次输入都很慢”的错觉。
-                // 这里把滚动压力测试内容放进 Rust 行注释，既保持可读性，又避免 Tree-sitter 进入 worst-case。
-                if i % 40 == 0 {
-                    return "// line \(String(format: "%04d", i)): 段落开始（下面有空行）🙂"
-                }
-                if i % 40 == 1 {
-                    return ""
-                }
-                return "// line \(String(format: "%04d", i)): The quick brown fox jumps over the lazy dog. 你好，世界 😀"
-            }
-            initialText += "\n\n// --- Scroll Stress Test ---\n"
-            initialText += longLines.joined(separator: "\n")
-            initialText += "\n"
+            let lspRootURI = repoRootURL.absoluteString
+            let lspDocURI = demoFileURL.absoluteString
 
             let fontFamiliesCSV = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_FONT_FAMILIES"]
             let editorView = try EditorCoreSkiaView(
@@ -229,31 +194,53 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_ENABLE_LIGATURES"] == "1" {
                 try editorView.editor.setFontLigaturesEnabled(true)
             }
-            // Demo: enable Tree-sitter (Rust) for highlighting + folding regions.
-            //
-            // 性能排查时可通过 `EDITOR_CORE_APPKIT_DISABLE_TREESITTER=1` 关闭，帮助定位“输入变更很慢”是否来自 processor。
-            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DISABLE_TREESITTER"] != "1" {
-                try editorView.editor.treeSitterRustEnableDefault()
-            } else {
-                NSLog("EditorCoreSkiaAppKitDemo: Tree-sitter disabled by EDITOR_CORE_APPKIT_DISABLE_TREESITTER=1")
-            }
-
-            // Demo: style colors for reserved overlay IDs.
-            // - LSP document links underline: 0x0800_0003
-            // - Search match highlights: 0x0800_0004
-            try editorView.editor.setStyleColors([
-                EcuStyleColors(styleId: 0x0800_0003, foreground: EcuRgba8(r: 0x00, g: 0x66, b: 0xCC, a: 0xFF)),
-                EcuStyleColors(styleId: 0x0800_0004, background: EcuRgba8(r: 0xFF, g: 0xF3, b: 0xB0, a: 0xFF)),
-            ])
-
-            // Demo: inject a single LSP DocumentLink so Cmd+Click can open it.
-            // We compute the UTF-16 range programmatically to avoid off-by-one mistakes.
-            do {
-                let urlText = "https://example.com"
-                if let link = DemoLspJSON.makeSingleDocumentLinkJSON(text: initialText, target: urlText) {
-                    try editorView.editor.lspApplyDocumentLinksJSON(link)
+            // Demo: enable LSP (rust-analyzer) by default; fall back to Tree-sitter if unavailable.
+            let disableLSP = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DISABLE_LSP"] == "1"
+            var lspEnabled = false
+            if disableLSP == false {
+                do {
+                    let cmd = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_LSP_CMD"] ?? "rust-analyzer"
+                    let args = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_LSP_ARGS"]
+                    try editorView.editor.lspEnable(
+                        command: cmd,
+                        args: args,
+                        rootURI: lspRootURI,
+                        documentURI: lspDocURI,
+                        languageId: "rust"
+                    )
+                    lspEnabled = true
+                    editorView.alwaysPollProcessing = true
+                } catch {
+                    NSLog("EditorCoreSkiaAppKitDemo: failed to enable LSP: %@", String(describing: error))
+                    lspEnabled = false
                 }
             }
+
+            if lspEnabled == false {
+                // Demo: enable Tree-sitter (Rust) for highlighting + folding regions.
+                //
+                // 性能排查时可通过 `EDITOR_CORE_APPKIT_DISABLE_TREESITTER=1` 关闭，帮助定位“输入变更很慢”是否来自 processor。
+                if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DISABLE_TREESITTER"] != "1" {
+                    try editorView.editor.treeSitterRustEnableDefault()
+                } else {
+                    NSLog("EditorCoreSkiaAppKitDemo: Tree-sitter disabled by EDITOR_CORE_APPKIT_DISABLE_TREESITTER=1")
+                }
+            } else {
+                // Avoid mixed highlighting: when LSP is active, Tree-sitter highlighting is not needed.
+                editorView.editor.treeSitterDisable()
+            }
+
+            // Demo: theme system (StyleId -> colors + text decorations).
+            //
+            // `demoRustLspDark()` includes:
+            // - semantic token colors (LSP)
+            // - inlay hint / code lens virtual text styling
+            // - diagnostics squiggly underline
+            let theme = EditorCoreSkiaTheme.demoRustLspDark()
+            try theme.apply(to: editorView)
+            // Demo: show whitespace (selection-only) + indent guides by default for easier theme/renderer validation.
+            try editorView.editor.setWhitespaceRenderMode(.selection)
+            try editorView.editor.setIndentGuidesEnabled(true)
 
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
@@ -261,7 +248,7 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
                 backing: .buffered,
                 defer: false
             )
-            window.title = "EditorCoreSkiaAppKitDemo"
+            window.title = "EditorCoreSkiaAppKitDemo (\(demoFileURL.lastPathComponent))"
 
             let searchField = NSSearchField(frame: .zero)
             searchField.placeholderString = "Find"
@@ -370,6 +357,10 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
 
             let editorContainer = EditorCoreSkiaMinimapContainer(editorView: editorView, showsMinimap: true, minimapPlacement: .rightOfScrollbar)
             self.minimapContainer = editorContainer
+
+            // 把主题应用到 minimap + scrollbar（minimap 背景默认会比 editor background 略暗一点）。
+            try theme.apply(to: editorContainer)
+
             minimapToggle.target = self
             minimapToggle.action = #selector(minimapToggled(_:))
             minimapPlacement.target = self
@@ -463,35 +454,6 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
-    }
-}
-
-private enum DemoLspJSON {
-    /// Build a JSON array with a single `DocumentLink` for the first occurrence of `target` in `text`.
-    ///
-    /// The range is reported in UTF-16 code units (LSP style).
-    static func makeSingleDocumentLinkJSON(text: String, target: String) -> String? {
-        let ns = text as NSString
-        let range = ns.range(of: target)
-        guard range.location != NSNotFound, range.length > 0 else { return nil }
-
-        let prefix = ns.substring(to: range.location)
-        let lines = prefix.components(separatedBy: "\n")
-        let line = max(0, lines.count - 1)
-        let colStart = lines.last?.utf16.count ?? 0
-        let colEnd = colStart + range.length
-
-        return """
-        [
-          {
-            "range": {
-              "start": { "line": \(line), "character": \(colStart) },
-              "end":   { "line": \(line), "character": \(colEnd) }
-            },
-            "target": "\(target)"
-          }
-        ]
-        """
     }
 }
 
