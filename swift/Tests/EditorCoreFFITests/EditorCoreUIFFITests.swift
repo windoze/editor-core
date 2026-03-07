@@ -115,6 +115,35 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(s3.end, 3)
     }
 
+    func testInsertTabDefaultSpacesModeInsertsToNextStop() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc", viewportWidthCells: 80)
+
+        // Caret at end of "abc" (col=3, tab_width=4) => inserts 1 space.
+        try ui.setSelections([EcuSelectionRange(start: 3, end: 3)], primaryIndex: 0)
+        try ui.insertTab()
+        XCTAssertEqual(try ui.text(), "abc ")
+    }
+
+    func testInsertTabRespectsTabWidthSettingInSpacesMode() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "a", viewportWidthCells: 80)
+
+        try ui.setTabWidth(2)
+        try ui.setSelections([EcuSelectionRange(start: 1, end: 1)], primaryIndex: 0)
+        try ui.insertTab()
+        XCTAssertEqual(try ui.text(), "a ")
+    }
+
+    func testInsertTabRespectsTabKeyBehaviorTabMode() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)
+
+        try ui.setTabKeyBehavior(.tab)
+        try ui.insertTab()
+        XCTAssertEqual(try ui.text(), "\t")
+    }
+
     func testCreateInsertUndoRedoRenderAndQueries() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)

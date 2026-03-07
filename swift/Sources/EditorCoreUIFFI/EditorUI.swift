@@ -12,6 +12,11 @@ public final class EditorUI {
         case bottom = 2
     }
 
+    public enum TabKeyBehavior: UInt8 {
+        case tab = 0
+        case spaces = 1
+    }
+
     public enum WhitespaceRenderMode: UInt8 {
         case none = 0
         case selection = 1
@@ -356,6 +361,16 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_fold_marker_style")
     }
 
+    public func setTabWidth(_ widthCells: UInt32) throws {
+        let status = editor_core_ui_ffi_editor_ui_set_tab_width(handle, widthCells)
+        try library.ensureStatus(status, context: "editor_ui_set_tab_width")
+    }
+
+    public func setTabKeyBehavior(_ behavior: TabKeyBehavior) throws {
+        let status = editor_core_ui_ffi_editor_ui_set_tab_key_behavior(handle, behavior.rawValue)
+        try library.ensureStatus(status, context: "editor_ui_set_tab_key_behavior")
+    }
+
     /// Configure the ASCII word-boundary character set for editor-friendly "word" operations.
     ///
     /// This is similar in spirit to VSCode's `wordSeparators`.
@@ -450,6 +465,11 @@ public final class EditorUI {
             editor_core_ui_ffi_editor_ui_insert_text(handle, cstr)
         }
         try library.ensureStatus(status, context: "editor_ui_insert_text")
+    }
+
+    public func insertTab() throws {
+        let status = editor_core_ui_ffi_editor_ui_insert_tab(handle)
+        try library.ensureStatus(status, context: "editor_ui_insert_tab")
     }
 
     public func backspace() throws {

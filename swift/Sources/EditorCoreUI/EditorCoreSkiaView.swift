@@ -1475,7 +1475,7 @@ public final class EditorCoreSkiaView: MTKView {
                 try editor.commitText("\n")
                 didEditText = true
             case #selector(insertTab(_:)):
-                try editor.commitText("\t")
+                try editor.insertTab()
                 didEditText = true
             case #selector(cancelOperation(_:)):
                 // Escape: cancel marked text / composition (restore original replaced range).

@@ -39,7 +39,7 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
             let state = try EditorState(library: library, initialText: "x", viewportWidth: 80)
             try state.moveTo(line: 0, column: 0)
             assertSuccess(try run(state, #"{"kind":"edit","op":"insert_tab"}"#))
-            XCTAssertEqual(try state.text(), "\tx")
+            XCTAssertEqual(try state.text(), "    x")
         }
 
         do {
@@ -68,7 +68,7 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
             let state = try EditorState(library: library, initialText: "a\nb", viewportWidth: 80)
             try state.moveTo(line: 1, column: 0)
             assertSuccess(try run(state, #"{"kind":"edit","op":"indent"}"#))
-            XCTAssertEqual(try state.text(), "a\n\tb")
+            XCTAssertEqual(try state.text(), "a\n    b")
 
             assertSuccess(try run(state, #"{"kind":"edit","op":"outdent"}"#))
             XCTAssertEqual(try state.text(), "a\nb")
