@@ -75,20 +75,15 @@ pub const INDENT_GUIDE_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 6;
 pub const WHITESPACE_STYLE_ID: u32 = UI_OVERLAY_BASE_STYLE_ID | 7;
 
 /// How to render fold markers in the gutter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FoldMarkerStyle {
     /// Do not draw fold markers (folding can still exist, but the gutter indicator is hidden).
     Hidden,
     /// Fill the whole fold-marker cell with the configured color (legacy behavior).
+    #[default]
     Block,
     /// Draw a VSCode-like triangle indicator.
     Triangle,
-}
-
-impl Default for FoldMarkerStyle {
-    fn default() -> Self {
-        Self::Block
-    }
 }
 
 /// How to render whitespace characters (spaces + tabs).
@@ -185,20 +180,15 @@ pub struct TextDecorations {
 /// This controls how the font's baseline is positioned between the line's top and bottom edges.
 /// It does **not** change hit-testing or selection/caret rectangles, which remain based on
 /// the monospace cell grid + `line_height_px`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TextVerticalAlign {
     /// Keep glyphs flush to the top of the line box (baseline at `-ascent`).
     Top,
     /// Center glyphs within the line box (distribute extra leading equally).
+    #[default]
     Center,
     /// Keep glyphs flush to the bottom of the line box (baseline at `line_height_px - descent`).
     Bottom,
-}
-
-impl Default for TextVerticalAlign {
-    fn default() -> Self {
-        Self::Center
-    }
 }
 
 /// Pixel-size configuration for rendering a viewport.
@@ -434,6 +424,12 @@ pub struct SkiaRenderer {
     metal: Option<SkiaMetalState>,
 }
 
+impl Default for SkiaRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SkiaRenderer {
     pub fn new() -> Self {
         let font_size = RenderConfig::default().font_size;
@@ -657,6 +653,7 @@ impl SkiaRenderer {
         ]
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_shaped_run(
         &self,
         canvas: &skia_safe::Canvas,
@@ -707,7 +704,7 @@ impl SkiaRenderer {
 
         let width = 1_000_000.0;
         let features = Self::ligature_features(enable_ligatures);
-        let utf8_len = run_text.as_bytes().len();
+        let utf8_len = run_text.len();
 
         let mut font_it = Shaper::new_trivial_font_run_iterator(font, utf8_len);
         let mut bidi_it = skia_safe::shapers::primitive::trivial_bidi_run_iterator(0, utf8_len);
@@ -800,6 +797,7 @@ impl SkiaRenderer {
     /// Render a viewport `grid` into a caller-provided RGBA8 buffer (premultiplied).
     ///
     /// Only the first `width_px * height_px * 4` bytes are written.
+    #[allow(clippy::too_many_arguments)]
     pub fn render_rgba_into(
         &mut self,
         grid: &HeadlessGrid,
@@ -848,6 +846,7 @@ impl SkiaRenderer {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_headless_grid_to_canvas(
         &mut self,
         canvas: &skia_safe::Canvas,
@@ -972,7 +971,9 @@ impl SkiaRenderer {
             }
 
             // Indent guides + whitespace markers are drawn after selection but before text.
-            if config.show_indent_guides || config.whitespace_render_mode != WhitespaceRenderMode::None {
+            if config.show_indent_guides
+                || config.whitespace_render_mode != WhitespaceRenderMode::None
+            {
                 let row_abs = grid.start_visual_row as i64 + row_idx as i64;
                 let line_total_cells: i64 = line.cells.iter().map(|c| c.width as i64).sum::<i64>()
                     + line.segment_x_start_cells as i64;
@@ -1003,14 +1004,10 @@ impl SkiaRenderer {
                             // Place the guide on the boundary *between* indentation levels,
                             // i.e. right after a tabstop width.
                             let boundary_cells = level.saturating_mul(tab_w);
-                            let x_px = (text_origin_x + boundary_cells as f32 * config.cell_width_px)
+                            let x_px = (text_origin_x
+                                + boundary_cells as f32 * config.cell_width_px)
                                 .round();
-                            let rect = Rect::from_xywh(
-                                x_px,
-                                y_top,
-                                1.0,
-                                config.line_height_px,
-                            );
+                            let rect = Rect::from_xywh(x_px, y_top, 1.0, config.line_height_px);
                             canvas.draw_rect(rect, &paint);
                         }
                     }
@@ -1019,7 +1016,7 @@ impl SkiaRenderer {
                 let whitespace_mode = config.whitespace_render_mode;
                 let draw_whitespace = match whitespace_mode {
                     WhitespaceRenderMode::None => false,
-                    WhitespaceRenderMode::Selection => selections.is_empty() == false,
+                    WhitespaceRenderMode::Selection => !selections.is_empty(),
                     WhitespaceRenderMode::All => true,
                 };
                 if draw_whitespace {
@@ -1231,10 +1228,10 @@ impl SkiaRenderer {
                         });
                     }
 
-                    if let Some(r) = pending.as_mut() {
-                        if let PendingRunKind::LigatureText { text } = &mut r.kind {
-                            text.push(cell.ch);
-                        }
+                    if let Some(r) = pending.as_mut()
+                        && let PendingRunKind::LigatureText { text } = &mut r.kind
+                    {
+                        text.push(cell.ch);
                     }
                 } else {
                     let font_index = self.font_index_for_char(cell.ch, font_variant);
@@ -1258,15 +1255,15 @@ impl SkiaRenderer {
                         });
                     }
 
-                    if let Some(r) = pending.as_mut() {
-                        if let PendingRunKind::Glyphs { glyphs, positions } = &mut r.kind {
-                            let font = self.font_for_variant_index(font_variant, font_index);
-                            let glyph = font.unichar_to_glyph(cell.ch as u32 as i32);
-                            let rel_x_px = (x_cells.saturating_sub(r.start_x_cells) as f32)
-                                * config.cell_width_px;
-                            glyphs.push(glyph);
-                            positions.push(Point::new(rel_x_px, 0.0));
-                        }
+                    if let Some(r) = pending.as_mut()
+                        && let PendingRunKind::Glyphs { glyphs, positions } = &mut r.kind
+                    {
+                        let font = self.font_for_variant_index(font_variant, font_index);
+                        let glyph = font.unichar_to_glyph(cell.ch as u32 as i32);
+                        let rel_x_px =
+                            (x_cells.saturating_sub(r.start_x_cells) as f32) * config.cell_width_px;
+                        glyphs.push(glyph);
+                        positions.push(Point::new(rel_x_px, 0.0));
                     }
                 }
 
@@ -1314,6 +1311,7 @@ impl SkiaRenderer {
     /// - wrap the texture as a Skia GPU render target
     /// - draw into it
     /// - flush and submit the work for the created surface
+    #[allow(clippy::too_many_arguments)]
     pub fn render_rgba_into_metal_texture(
         &mut self,
         grid: &HeadlessGrid,
@@ -1398,6 +1396,7 @@ impl SkiaRenderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_composed_grid_to_canvas(
         &mut self,
         canvas: &skia_safe::Canvas,
@@ -1525,61 +1524,57 @@ impl SkiaRenderer {
             let baseline_y = y_top + baseline_offset;
 
             // Gutter: fold markers + line numbers for document lines (first visual segment only).
-            if config.gutter_width_cells > 0 {
-                if let ComposedLineKind::Document {
+            if config.gutter_width_cells > 0
+                && let ComposedLineKind::Document {
                     logical_line,
                     visual_in_logical,
                 } = line.kind
-                {
-                    if visual_in_logical == 0 {
-                        let marker_state =
-                            fold_marker_state_for_line(logical_line as u32, fold_markers);
-                        if let Some(is_collapsed) = marker_state {
-                            let style_id = if is_collapsed {
-                                FOLD_MARKER_COLLAPSED_STYLE_ID
-                            } else {
-                                FOLD_MARKER_EXPANDED_STYLE_ID
-                            };
-                            let rect = Rect::from_xywh(
-                                gutter_x,
-                                y_top,
-                                config.cell_width_px,
-                                config.line_height_px,
-                            );
-                            draw_fold_marker(
-                                canvas,
-                                rect,
-                                is_collapsed,
-                                config.fold_marker_style,
-                                theme,
-                                style_id,
-                            );
-                        }
-
-                        // Line number text (best-effort; tests should not depend on glyph rasterization).
-                        let gutter_fg = resolve_style_foreground(
-                            GUTTER_FOREGROUND_STYLE_ID,
-                            theme,
-                            theme.foreground,
-                        );
-                        let mut paint = Paint::default();
-                        paint.set_anti_alias(false);
-                        paint.set_color(rgba_to_skia_color(gutter_fg));
-
-                        let line_no = (logical_line + 1).to_string();
-                        let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
-                        canvas.draw_str(
-                            line_no,
-                            Point::new(x_px, baseline_y),
-                            self.normal_primary_font(),
-                            &paint,
-                        );
-                    }
+                && visual_in_logical == 0
+            {
+                let marker_state = fold_marker_state_for_line(logical_line as u32, fold_markers);
+                if let Some(is_collapsed) = marker_state {
+                    let style_id = if is_collapsed {
+                        FOLD_MARKER_COLLAPSED_STYLE_ID
+                    } else {
+                        FOLD_MARKER_EXPANDED_STYLE_ID
+                    };
+                    let rect = Rect::from_xywh(
+                        gutter_x,
+                        y_top,
+                        config.cell_width_px,
+                        config.line_height_px,
+                    );
+                    draw_fold_marker(
+                        canvas,
+                        rect,
+                        is_collapsed,
+                        config.fold_marker_style,
+                        theme,
+                        style_id,
+                    );
                 }
+
+                // Line number text (best-effort; tests should not depend on glyph rasterization).
+                let gutter_fg =
+                    resolve_style_foreground(GUTTER_FOREGROUND_STYLE_ID, theme, theme.foreground);
+                let mut paint = Paint::default();
+                paint.set_anti_alias(false);
+                paint.set_color(rgba_to_skia_color(gutter_fg));
+
+                let line_no = (logical_line + 1).to_string();
+                let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
+                canvas.draw_str(
+                    line_no,
+                    Point::new(x_px, baseline_y),
+                    self.normal_primary_font(),
+                    &paint,
+                );
             }
 
             // Indent guides + whitespace markers are drawn after selection but before text.
-            if config.show_indent_guides || config.whitespace_render_mode != WhitespaceRenderMode::None {
+            if config.show_indent_guides
+                || config.whitespace_render_mode != WhitespaceRenderMode::None
+            {
                 if config.show_indent_guides {
                     let mut indent_cells: u32 = 0;
                     for cell in &line.cells {
@@ -1606,14 +1601,10 @@ impl SkiaRenderer {
                             // Place the guide on the boundary *between* indentation levels,
                             // i.e. right after a tabstop width.
                             let boundary_cells = level.saturating_mul(tab_w);
-                            let x_px = (text_origin_x + boundary_cells as f32 * config.cell_width_px)
+                            let x_px = (text_origin_x
+                                + boundary_cells as f32 * config.cell_width_px)
                                 .round();
-                            let rect = Rect::from_xywh(
-                                x_px,
-                                y_top,
-                                1.0,
-                                config.line_height_px,
-                            );
+                            let rect = Rect::from_xywh(x_px, y_top, 1.0, config.line_height_px);
                             canvas.draw_rect(rect, &paint);
                         }
                     }
@@ -1622,7 +1613,7 @@ impl SkiaRenderer {
                 let whitespace_mode = config.whitespace_render_mode;
                 let draw_whitespace = match whitespace_mode {
                     WhitespaceRenderMode::None => false,
-                    WhitespaceRenderMode::Selection => sel_ranges.is_empty() == false,
+                    WhitespaceRenderMode::Selection => !sel_ranges.is_empty(),
                     WhitespaceRenderMode::All => true,
                 };
                 if draw_whitespace {
@@ -1832,10 +1823,10 @@ impl SkiaRenderer {
                         });
                     }
 
-                    if let Some(r) = pending.as_mut() {
-                        if let PendingRunKind::LigatureText { text } = &mut r.kind {
-                            text.push(cell.ch);
-                        }
+                    if let Some(r) = pending.as_mut()
+                        && let PendingRunKind::LigatureText { text } = &mut r.kind
+                    {
+                        text.push(cell.ch);
                     }
                 } else {
                     let font_index = self.font_index_for_char(cell.ch, font_variant);
@@ -1859,15 +1850,15 @@ impl SkiaRenderer {
                         });
                     }
 
-                    if let Some(r) = pending.as_mut() {
-                        if let PendingRunKind::Glyphs { glyphs, positions } = &mut r.kind {
-                            let font = self.font_for_variant_index(font_variant, font_index);
-                            let glyph = font.unichar_to_glyph(cell.ch as u32 as i32);
-                            let rel_x_px = (x_cells.saturating_sub(r.start_x_cells) as f32)
-                                * config.cell_width_px;
-                            glyphs.push(glyph);
-                            positions.push(Point::new(rel_x_px, 0.0));
-                        }
+                    if let Some(r) = pending.as_mut()
+                        && let PendingRunKind::Glyphs { glyphs, positions } = &mut r.kind
+                    {
+                        let font = self.font_for_variant_index(font_variant, font_index);
+                        let glyph = font.unichar_to_glyph(cell.ch as u32 as i32);
+                        let rel_x_px =
+                            (x_cells.saturating_sub(r.start_x_cells) as f32) * config.cell_width_px;
+                        glyphs.push(glyph);
+                        positions.push(Point::new(rel_x_px, 0.0));
                     }
                 }
 
@@ -1917,6 +1908,7 @@ impl SkiaRenderer {
     /// Render a composed viewport into a Metal texture (macOS only).
     ///
     /// See [`Self::render_rgba_into_metal_texture`] for the host-side expectations.
+    #[allow(clippy::too_many_arguments)]
     pub fn render_composed_into_metal_texture(
         &mut self,
         grid: &ComposedGrid,
@@ -2002,6 +1994,7 @@ impl SkiaRenderer {
     ///   placeholders, wrap indent) is present.
     /// - Selection highlight is applied only to document cells (`ComposedCellSource::Document`);
     ///   virtual text is not considered part of the selection.
+    #[allow(clippy::too_many_arguments)]
     pub fn render_composed_rgba_into(
         &mut self,
         grid: &ComposedGrid,
@@ -2156,55 +2149,48 @@ impl SkiaRenderer {
             let baseline_y = y_top + baseline_offset;
 
             // Gutter: fold markers + line numbers for document lines (first visual segment only).
-            if config.gutter_width_cells > 0 {
-                if let ComposedLineKind::Document {
+            if config.gutter_width_cells > 0
+                && let ComposedLineKind::Document {
                     logical_line,
                     visual_in_logical,
                 } = line.kind
-                {
-                    if visual_in_logical == 0 {
-                        let marker_state =
-                            fold_marker_state_for_line(logical_line as u32, fold_markers);
-                        if let Some(is_collapsed) = marker_state {
-                            let style_id = if is_collapsed {
-                                FOLD_MARKER_COLLAPSED_STYLE_ID
-                            } else {
-                                FOLD_MARKER_EXPANDED_STYLE_ID
-                            };
-                            let marker_color =
-                                resolve_style_background(style_id, theme, theme.foreground);
-                            let rect = Rect::from_xywh(
-                                gutter_x,
-                                y_top,
-                                config.cell_width_px,
-                                config.line_height_px,
-                            );
-                            let mut paint = Paint::default();
-                            paint.set_anti_alias(false);
-                            paint.set_color(rgba_to_skia_color(marker_color));
-                            canvas.draw_rect(rect, &paint);
-                        }
-
-                        // Line number text (best-effort; tests should not depend on glyph rasterization).
-                        let gutter_fg = resolve_style_foreground(
-                            GUTTER_FOREGROUND_STYLE_ID,
-                            theme,
-                            theme.foreground,
-                        );
-                        let mut paint = Paint::default();
-                        paint.set_anti_alias(false);
-                        paint.set_color(rgba_to_skia_color(gutter_fg));
-
-                        let line_no = (logical_line + 1).to_string();
-                        let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
-                        canvas.draw_str(
-                            line_no,
-                            Point::new(x_px, baseline_y),
-                            self.normal_primary_font(),
-                            &paint,
-                        );
-                    }
+                && visual_in_logical == 0
+            {
+                let marker_state = fold_marker_state_for_line(logical_line as u32, fold_markers);
+                if let Some(is_collapsed) = marker_state {
+                    let style_id = if is_collapsed {
+                        FOLD_MARKER_COLLAPSED_STYLE_ID
+                    } else {
+                        FOLD_MARKER_EXPANDED_STYLE_ID
+                    };
+                    let marker_color = resolve_style_background(style_id, theme, theme.foreground);
+                    let rect = Rect::from_xywh(
+                        gutter_x,
+                        y_top,
+                        config.cell_width_px,
+                        config.line_height_px,
+                    );
+                    let mut paint = Paint::default();
+                    paint.set_anti_alias(false);
+                    paint.set_color(rgba_to_skia_color(marker_color));
+                    canvas.draw_rect(rect, &paint);
                 }
+
+                // Line number text (best-effort; tests should not depend on glyph rasterization).
+                let gutter_fg =
+                    resolve_style_foreground(GUTTER_FOREGROUND_STYLE_ID, theme, theme.foreground);
+                let mut paint = Paint::default();
+                paint.set_anti_alias(false);
+                paint.set_color(rgba_to_skia_color(gutter_fg));
+
+                let line_no = (logical_line + 1).to_string();
+                let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
+                canvas.draw_str(
+                    line_no,
+                    Point::new(x_px, baseline_y),
+                    self.normal_primary_font(),
+                    &paint,
+                );
             }
 
             #[derive(Debug)]
@@ -2286,9 +2272,9 @@ impl SkiaRenderer {
                 if eligible_for_ligatures {
                     let font_index = self.font_index_for_char(cell.ch, font_variant);
 
-                    let can_extend = pending
-                        .as_ref()
-                        .is_some_and(|r| r.font_variant == font_variant && r.font_index == font_index && r.fg == fg);
+                    let can_extend = pending.as_ref().is_some_and(|r| {
+                        r.font_variant == font_variant && r.font_index == font_index && r.fg == fg
+                    });
                     if !can_extend {
                         flush(self, &mut pending);
                         pending = Some(PendingRun {
@@ -2385,12 +2371,11 @@ fn composed_line_index_for_offset(grid: &ComposedGrid, char_offset: usize) -> Op
         // char_offset == end
         //
         // Prefer the next document line if it starts at the same offset (wrap boundary).
-        if let Some(next) = grid.lines.get(idx + 1) {
-            if matches!(next.kind, ComposedLineKind::Document { .. })
-                && next.char_offset_start == char_offset
-            {
-                continue;
-            }
+        if let Some(next) = grid.lines.get(idx + 1)
+            && matches!(next.kind, ComposedLineKind::Document { .. })
+            && next.char_offset_start == char_offset
+        {
+            continue;
         }
         return Some(idx);
     }
@@ -2514,7 +2499,11 @@ fn make_configured_font(typeface: Option<skia_safe::Typeface>, size: f32) -> Fon
     font
 }
 
-fn load_fonts_from_families_with_style(families: &[String], size: f32, style: FontStyle) -> Vec<Font> {
+fn load_fonts_from_families_with_style(
+    families: &[String],
+    size: f32,
+    style: FontStyle,
+) -> Vec<Font> {
     let mgr = FontMgr::new();
     let mut out = Vec::<Font>::new();
 
@@ -2683,7 +2672,11 @@ fn with_alpha(c: Rgba8, a: u8) -> Rgba8 {
     Rgba8::new(c.r, c.g, c.b, a)
 }
 
-fn resolve_style_foreground_or_background(style_id: u32, theme: &RenderTheme, fallback: Rgba8) -> Rgba8 {
+fn resolve_style_foreground_or_background(
+    style_id: u32,
+    theme: &RenderTheme,
+    fallback: Rgba8,
+) -> Rgba8 {
     theme
         .styles
         .get(&style_id)
@@ -2875,10 +2868,10 @@ struct LineDecorationRun {
 }
 
 fn flush_decoration_run(out: &mut Vec<LineDecorationRun>, run: &mut Option<LineDecorationRun>) {
-    if let Some(r) = run.take() {
-        if r.width_cells > 0 {
-            out.push(r);
-        }
+    if let Some(r) = run.take()
+        && r.width_cells > 0
+    {
+        out.push(r);
     }
 }
 
@@ -2966,7 +2959,7 @@ fn resolve_cell_line_decorations(
         consider(&mut best_underline, 400, usize::MAX, kind, color);
     }
 
-    if style_ids.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID) {
+    if style_ids.contains(&IME_MARKED_TEXT_STYLE_ID) {
         let spec = theme
             .text_decorations
             .get(&IME_MARKED_TEXT_STYLE_ID)
@@ -2982,7 +2975,7 @@ fn resolve_cell_line_decorations(
         consider(&mut best_underline, 300, usize::MAX, kind, color);
     }
 
-    if style_ids.iter().any(|&id| id == DOCUMENT_LINK_STYLE_ID) {
+    if style_ids.contains(&DOCUMENT_LINK_STYLE_ID) {
         let spec = theme
             .text_decorations
             .get(&DOCUMENT_LINK_STYLE_ID)
@@ -3153,6 +3146,7 @@ fn draw_squiggly_underline(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_strikethrough(
     canvas: &skia_safe::Canvas,
     x_px: f32,
@@ -3614,7 +3608,7 @@ mod tests {
         let bytes_per_row = cfg.width_px as usize * 4;
 
         // Squiggle alternates between y=9 and y=8 with a 2px segment width (scale=1).
-        let idx_bottom = 9 * bytes_per_row + 1 * 4; // x=1 inside first bottom segment
+        let idx_bottom = 9 * bytes_per_row + 4; // x=1 inside first bottom segment
         assert_eq!(
             &rgba[idx_bottom..idx_bottom + 4],
             &[deco.r, deco.g, deco.b, deco.a]
@@ -4343,7 +4337,7 @@ mod tests {
     ) -> usize {
         let features = SkiaRenderer::ligature_features(enable_ligatures);
         let width = 1_000_000.0;
-        let utf8_len = text.as_bytes().len();
+        let utf8_len = text.len();
 
         let mut font_it = Shaper::new_trivial_font_run_iterator(font, utf8_len);
         let mut bidi_it = skia_safe::shapers::primitive::trivial_bidi_run_iterator(0, utf8_len);

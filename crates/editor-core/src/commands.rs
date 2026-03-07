@@ -5126,7 +5126,11 @@ impl CommandExecutor {
 
         let len = chars.len();
         let col = column.min(len);
-        let idx = if col < len { col } else { len.saturating_sub(1) };
+        let idx = if col < len {
+            col
+        } else {
+            len.saturating_sub(1)
+        };
 
         let classify = |ch: char| self.editor.word_boundary.is_word_token_char(ch);
 
@@ -5139,7 +5143,10 @@ impl CommandExecutor {
                 let mut start = i;
                 while start > 0
                     && chars[start - 1].is_ascii()
-                    && self.editor.word_boundary.is_ascii_word_char(chars[start - 1])
+                    && self
+                        .editor
+                        .word_boundary
+                        .is_ascii_word_char(chars[start - 1])
                 {
                     start -= 1;
                 }
@@ -5162,6 +5169,7 @@ impl CommandExecutor {
         }
 
         // Search to the right.
+        #[allow(clippy::needless_range_loop)]
         for i in (idx + 1)..len {
             if classify(chars[i]) {
                 return Some(token_span_at(i));
@@ -5385,7 +5393,9 @@ impl CommandExecutor {
         };
 
         if line >= line_count {
-            let line_text = line_index.get_line_text(line_count.saturating_sub(1)).unwrap_or_default();
+            let line_text = line_index
+                .get_line_text(line_count.saturating_sub(1))
+                .unwrap_or_default();
             return Position::new(line_count.saturating_sub(1), line_text.chars().count());
         }
 

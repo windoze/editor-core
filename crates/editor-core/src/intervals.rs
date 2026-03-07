@@ -442,7 +442,8 @@ impl FoldingManager {
         // User folds should override derived folds when they share the same (start, end) range.
         // This makes toggling/collapsing derived regions from the UI deterministic: we can record
         // the user's collapsed/expanded choice as a user region and have it win in the merged view.
-        self.merged_regions.extend(self.user_regions.iter().cloned());
+        self.merged_regions
+            .extend(self.user_regions.iter().cloned());
         self.merged_regions
             .extend(self.derived_regions.iter().cloned());
 
@@ -510,7 +511,13 @@ impl FoldingManager {
         //
         // Choose the smallest region (end-start) among all regions that contain `line`,
         // preferring user regions on ties.
-        let mut best: Option<(bool /*is_user*/, usize /*idx*/, usize /*len*/, usize /*end*/, usize /*start*/)> = None;
+        let mut best: Option<(
+            bool,  /*is_user*/
+            usize, /*idx*/
+            usize, /*len*/
+            usize, /*end*/
+            usize, /*start*/
+        )> = None;
 
         for (is_user, regions) in [
             (true, self.user_regions.as_slice()),
@@ -539,9 +546,7 @@ impl FoldingManager {
             }
         }
 
-        let Some((is_user, idx, _len, _end, _start)) = best else {
-            return None;
-        };
+        let (is_user, idx, _len, _end, _start) = best?;
 
         if is_user {
             self.user_regions.get_mut(idx)

@@ -18,11 +18,10 @@ use editor_core_lsp::{
     lsp_inlay_hints_to_processing_edit, semantic_tokens_to_intervals,
 };
 use editor_core_render_skia::{
-    FoldMarker, FoldMarkerStyle, RenderConfig, RenderError, RenderTheme, Rgba8, SkiaRenderer,
-    StyleColors, StyleFont, TextDecorations, TextVerticalAlign, VisualCaret, VisualSelection,
-    WhitespaceRenderMode,
-    FOLD_MARKER_COLLAPSED_STYLE_ID, FOLD_MARKER_EXPANDED_STYLE_ID, GUTTER_BACKGROUND_STYLE_ID,
-    GUTTER_FOREGROUND_STYLE_ID, GUTTER_SEPARATOR_STYLE_ID,
+    FOLD_MARKER_COLLAPSED_STYLE_ID, FOLD_MARKER_EXPANDED_STYLE_ID, FoldMarker, FoldMarkerStyle,
+    GUTTER_BACKGROUND_STYLE_ID, GUTTER_FOREGROUND_STYLE_ID, GUTTER_SEPARATOR_STYLE_ID,
+    RenderConfig, RenderError, RenderTheme, Rgba8, SkiaRenderer, StyleColors, StyleFont,
+    TextDecorations, TextVerticalAlign, VisualCaret, VisualSelection, WhitespaceRenderMode,
 };
 use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
 use editor_core_treesitter::{
@@ -386,16 +385,16 @@ impl TreeSitterAsyncWorker {
                         }
                         Err(mpsc::RecvTimeoutError::Timeout) => {
                             // We reached the debounce/cooldown boundary; run queries if needed.
-                            if dirty_for_query == false {
+                            if !dirty_for_query {
                                 continue;
                             }
                             if awaiting_full_sync {
                                 continue;
                             }
-                            if let Some(cooldown) = cooldown_until {
-                                if std::time::Instant::now() < cooldown {
-                                    continue;
-                                }
+                            if let Some(cooldown) = cooldown_until
+                                && std::time::Instant::now() < cooldown
+                            {
+                                continue;
                             }
 
                             let Some(p) = processor.as_mut() else {
@@ -2820,38 +2819,35 @@ impl EditorUi {
                 if self.has_virtual_text_decorations() {
                     let (_start_composed, _row_count, grid) = self.composed_viewport_grid();
                     let (local_row, _x_cells) = self.pixel_to_local_row_col(x_px, y_px);
-                    if let Some(line) = grid.lines.get(local_row) {
-                        if let editor_core::ComposedLineKind::Document { logical_line, .. } =
+                    if let Some(line) = grid.lines.get(local_row)
+                        && let editor_core::ComposedLineKind::Document { logical_line, .. } =
                             line.kind
-                        {
-                            if let Some(region) = self
-                                .state
-                                .get_folding_state()
-                                .regions
-                                .iter()
-                                .filter(|r| r.start_line == logical_line)
-                                .min_by_key(|r| r.end_line)
-                                .cloned()
-                            {
-                                if region.is_collapsed {
-                                    self.state.execute(Command::Style(StyleCommand::Unfold {
-                                        start_line: region.start_line,
-                                    }))?;
-                                } else {
-                                    self.state.execute(Command::Style(StyleCommand::Fold {
-                                        start_line: region.start_line,
-                                        end_line: region.end_line,
-                                    }))?;
-                                }
-                                self.mouse_anchor = None;
-                                return Ok(());
-                            }
+                        && let Some(region) = self
+                            .state
+                            .get_folding_state()
+                            .regions
+                            .iter()
+                            .filter(|r| r.start_line == logical_line)
+                            .min_by_key(|r| r.end_line)
+                            .cloned()
+                    {
+                        if region.is_collapsed {
+                            self.state.execute(Command::Style(StyleCommand::Unfold {
+                                start_line: region.start_line,
+                            }))?;
+                        } else {
+                            self.state.execute(Command::Style(StyleCommand::Fold {
+                                start_line: region.start_line,
+                                end_line: region.end_line,
+                            }))?;
                         }
+                        self.mouse_anchor = None;
+                        return Ok(());
                     }
                 } else {
                     let (row, _x_cells) = self.pixel_to_visual(x_px, y_px);
-                    if let Some(pos) = self.state.visual_position_to_logical(row, 0) {
-                        if let Some(region) = self
+                    if let Some(pos) = self.state.visual_position_to_logical(row, 0)
+                        && let Some(region) = self
                             .state
                             .get_folding_state()
                             .regions
@@ -2859,20 +2855,19 @@ impl EditorUi {
                             .filter(|r| r.start_line == pos.line)
                             .min_by_key(|r| r.end_line)
                             .cloned()
-                        {
-                            if region.is_collapsed {
-                                self.state.execute(Command::Style(StyleCommand::Unfold {
-                                    start_line: region.start_line,
-                                }))?;
-                            } else {
-                                self.state.execute(Command::Style(StyleCommand::Fold {
-                                    start_line: region.start_line,
-                                    end_line: region.end_line,
-                                }))?;
-                            }
-                            self.mouse_anchor = None;
-                            return Ok(());
+                    {
+                        if region.is_collapsed {
+                            self.state.execute(Command::Style(StyleCommand::Unfold {
+                                start_line: region.start_line,
+                            }))?;
+                        } else {
+                            self.state.execute(Command::Style(StyleCommand::Fold {
+                                start_line: region.start_line,
+                                end_line: region.end_line,
+                            }))?;
                         }
+                        self.mouse_anchor = None;
+                        return Ok(());
                     }
                 }
             }
@@ -3262,7 +3257,7 @@ impl EditorUi {
         };
 
         let mut applied = false;
-        if edits.is_empty() == false {
+        if !edits.is_empty() {
             self.state.apply_processing_edits(edits);
             applied = true;
         }
@@ -3316,7 +3311,7 @@ impl EditorUi {
                         let line_index = &self.state.editor().line_index;
                         lsp_document_links_to_processing_edits(line_index, &result)
                     };
-                    if edits.is_empty() == false {
+                    if !edits.is_empty() {
                         self.state.apply_processing_edits(edits);
                         applied = true;
                     }
@@ -3351,9 +3346,15 @@ impl EditorUi {
             return Ok(());
         };
 
-        let request_inlay = inlay_range.and_then(|(start, end)| if end > start { Some((start, end)) } else { None });
-        let request_code_lens = self.lsp_code_lens_in_flight == false;
-        let request_document_links = self.lsp_document_links_in_flight == false;
+        let request_inlay = inlay_range.and_then(|(start, end)| {
+            if end > start {
+                Some((start, end))
+            } else {
+                None
+            }
+        });
+        let request_code_lens = !self.lsp_code_lens_in_flight;
+        let request_document_links = !self.lsp_document_links_in_flight;
 
         shared
             .with_session_mut(|lsp| {
@@ -3630,12 +3631,11 @@ fn composed_line_index_for_offset(
             return Some(idx);
         }
 
-        if let Some(next) = grid.lines.get(idx + 1) {
-            if matches!(next.kind, editor_core::ComposedLineKind::Document { .. })
-                && next.char_offset_start == char_offset
-            {
-                continue;
-            }
+        if let Some(next) = grid.lines.get(idx + 1)
+            && matches!(next.kind, editor_core::ComposedLineKind::Document { .. })
+            && next.char_offset_start == char_offset
+        {
+            continue;
         }
         return Some(idx);
     }
@@ -4173,14 +4173,12 @@ mod tests {
         assert!(
             grid.lines[0].cells[0]
                 .styles
-                .iter()
-                .any(|&id| id == IME_MARKED_TEXT_STYLE_ID)
+                .contains(&IME_MARKED_TEXT_STYLE_ID)
         );
         assert!(
             grid.lines[0].cells[1]
                 .styles
-                .iter()
-                .any(|&id| id == IME_MARKED_TEXT_STYLE_ID)
+                .contains(&IME_MARKED_TEXT_STYLE_ID)
         );
 
         // Committing clears the marked style layer.
@@ -4190,7 +4188,7 @@ mod tests {
             grid2.lines[0]
                 .cells
                 .iter()
-                .all(|c| !c.styles.iter().any(|&id| id == IME_MARKED_TEXT_STYLE_ID)),
+                .all(|c| !c.styles.contains(&IME_MARKED_TEXT_STYLE_ID)),
             "expected IME marked text style to be cleared after commit"
         );
     }
@@ -5103,7 +5101,7 @@ fn main() {
             padding_y_px: 0.0,
             ..RenderConfig::default()
         });
-        let style_id = (7u32 << 16) | 0u32;
+        let style_id = 7u32 << 16;
         ui.set_theme(RenderTheme {
             background: editor_core_render_skia::Rgba8::new(10, 20, 30, 255),
             foreground: editor_core_render_skia::Rgba8::new(250, 250, 250, 255),

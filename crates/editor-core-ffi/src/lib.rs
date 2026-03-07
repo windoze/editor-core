@@ -4,9 +4,9 @@
 //! Complex payloads use UTF-8 JSON strings for forward-compatible schema evolution.
 
 use editor_core::commands::{
-    Command, CommandResult, CursorCommand, EditCommand, Position, Selection, SelectionDirection,
-    ExpandSelectionDirection, ExpandSelectionUnit, StyleCommand, TabKeyBehavior, TextEditSpec,
-    ViewCommand,
+    Command, CommandResult, CursorCommand, EditCommand, ExpandSelectionDirection,
+    ExpandSelectionUnit, Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior,
+    TextEditSpec, ViewCommand,
 };
 use editor_core::decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
@@ -3314,10 +3314,10 @@ pub extern "C" fn editor_core_ffi_treesitter_processor_new(
         });
 
         let mut config = TreeSitterProcessorConfig::new(language, highlights_query);
-        if let Some(folds_query) = optional_string(folds_query, "folds_query")? {
-            if !folds_query.trim().is_empty() {
-                config = config.with_folds_query(folds_query);
-            }
+        if let Some(folds_query) = optional_string(folds_query, "folds_query")?
+            && !folds_query.trim().is_empty()
+        {
+            config = config.with_folds_query(folds_query);
         }
 
         if let Some(capture_styles_json) =
