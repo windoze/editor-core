@@ -1017,6 +1017,7 @@ public final class EditorCoreSkiaView: MTKView {
         }
         requestRedraw()
         invalidateIMECharacterCoordinates()
+        notifyViewportStateDidChange()
     }
 
     /// Try to open an LSP document link at the given view point (in backing pixels).
@@ -1075,6 +1076,7 @@ public final class EditorCoreSkiaView: MTKView {
         }
         requestRedraw()
         invalidateIMECharacterCoordinates()
+        notifyViewportStateDidChange()
     }
 
     public override func mouseUp(with event: NSEvent) {
@@ -1085,6 +1087,7 @@ public final class EditorCoreSkiaView: MTKView {
         editor.mouseUp()
         requestRedraw()
         invalidateIMECharacterCoordinates()
+        notifyViewportStateDidChange()
     }
 
     private func expandWordSelectionToward(activeOffset: UInt32, origin: (start: UInt32, end: UInt32)) throws {
