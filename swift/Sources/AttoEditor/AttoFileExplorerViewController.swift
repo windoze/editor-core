@@ -111,11 +111,25 @@ final class AttoFileExplorerViewController: NSViewController, NSOutlineViewDataS
 
     // MARK: - Actions
 
+    func _handleDoubleClick(item: Any) {
+        guard let node = item as? AttoFileNode else { return }
+
+        if node.isDirectory {
+            if outlineView.isItemExpanded(node) {
+                outlineView.collapseItem(node)
+            } else {
+                outlineView.expandItem(node)
+            }
+            return
+        }
+
+        onOpenFile?(node.url)
+    }
+
     @objc private func doubleClicked(_ sender: Any?) {
         let row = outlineView.clickedRow
-        guard row >= 0, let item = outlineView.item(atRow: row) as? AttoFileNode else { return }
-        guard item.isDirectory == false else { return }
-        onOpenFile?(item.url)
+        guard row >= 0, let item = outlineView.item(atRow: row) else { return }
+        _handleDoubleClick(item: item)
     }
 
     // MARK: - OutlineView data source
