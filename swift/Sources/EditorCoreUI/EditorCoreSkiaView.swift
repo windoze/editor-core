@@ -123,6 +123,15 @@ public final class EditorCoreSkiaView: MTKView {
     /// - If it returns `nil`, the view falls back to a simple default menu (cut/copy/paste/select all).
     public var contextMenuProvider: ((EditorCoreSkiaContextMenuContext) -> NSMenu?)?
 
+    /// Cmd-click hook (e.g. "Go to Definition" UX).
+    ///
+    /// Notes:
+    /// - This fires only for Cmd-click *without* Option (Cmd+Option is reserved for multi-cursor).
+    /// - It runs after document-link detection; if a document link is present, the view opens it and
+    ///   does not call this hook.
+    /// - Return `true` to indicate the click was handled and should not fall back to normal caret/selection.
+    public var onCommandClick: ((EditorCoreSkiaContextMenuContext) -> Bool)?
+
     /// Called when async derived-state processing (e.g. Tree-sitter) applied new edits.
     ///
     /// This is primarily useful for tests and for hosts that want explicit "derived state updated" signals.
@@ -979,14 +988,24 @@ public final class EditorCoreSkiaView: MTKView {
         wordSelectionOrigin = nil
 
         do {
-            if event.modifierFlags.contains(.command) {
+            if event.modifierFlags.contains(.command), event.modifierFlags.contains(.option) {
+                // Cmd+Option+Click: add a new caret at point (multi-cursor).
+                let offset = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
+                try editor.addCaret(atCharOffset: offset, makePrimary: true)
+            } else if event.modifierFlags.contains(.command) {
                 // Cmd+Click: prefer opening document links (VSCode-style) when a link is present.
                 if event.clickCount == 1, openDocumentLinkIfPresent(xPx: xPx, yPx: yPx) {
                     return
                 }
-                // Cmd+Click: add a new caret at point (multi-cursor).
-                let offset = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-                try editor.addCaret(atCharOffset: offset, makePrimary: true)
+                // Cmd+Click hook (e.g. go-to-definition).
+                if event.clickCount == 1, let onCommandClick {
+                    let ctx = buildContextMenuContext(for: event)
+                    if onCommandClick(ctx) {
+                        return
+                    }
+                }
+                // Fall back to a normal caret move.
+                try editor.mouseDown(xPx: xPx, yPx: yPx)
             } else if event.modifierFlags.contains(.option) {
                 // Option+Drag: rectangular (box) selection.
                 let anchor = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
