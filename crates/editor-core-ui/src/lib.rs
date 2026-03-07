@@ -617,6 +617,14 @@ impl EditorUi {
         self.state.editor().get_text()
     }
 
+    pub fn is_modified(&self) -> bool {
+        self.state.get_document_state().is_modified
+    }
+
+    pub fn mark_saved(&mut self) {
+        self.state.mark_saved();
+    }
+
     pub fn cursor_state(&self) -> editor_core::CursorState {
         self.state.get_cursor_state()
     }

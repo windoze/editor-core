@@ -731,6 +731,18 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    public func isModified() throws -> Bool {
+        var out: UInt8 = 0
+        let status = editor_core_ui_ffi_editor_ui_is_modified(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_is_modified")
+        return out != 0
+    }
+
+    public func markSaved() throws {
+        let status = editor_core_ui_ffi_editor_ui_mark_saved(handle)
+        try library.ensureStatus(status, context: "editor_ui_mark_saved")
+    }
+
     /// Get selected text (primary + secondary selections), joined with `\\n`.
     public func selectedText() throws -> String {
         guard let ptr = editor_core_ui_ffi_editor_ui_get_selected_text(handle) else {

@@ -355,6 +355,10 @@ int32_t editor_core_ui_ffi_editor_ui_render_metal(EditorUi* ui, void* metal_text
 
 char* editor_core_ui_ffi_editor_ui_get_text(EditorUi* ui);
 
+// Document modified state (dirty tracking).
+int32_t editor_core_ui_ffi_editor_ui_is_modified(EditorUi* ui, uint8_t* out_modified);
+int32_t editor_core_ui_ffi_editor_ui_mark_saved(EditorUi* ui);
+
 // Selected text (primary + secondary selections), joined with '\n'.
 char* editor_core_ui_ffi_editor_ui_get_selected_text(EditorUi* ui);
 

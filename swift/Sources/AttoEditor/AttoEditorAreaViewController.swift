@@ -154,6 +154,7 @@ final class AttoEditorAreaViewController: NSViewController {
         do {
             let text = try tab.editCore.editor.text()
             try text.write(to: tab.fileURL, atomically: true, encoding: .utf8)
+            try tab.editCore.editor.markSaved()
             tab.isDirty = false
             tab.isPreview = false
             refreshTabBar()
@@ -243,9 +244,7 @@ final class AttoEditorAreaViewController: NSViewController {
             tab.isPreview = false
         }
 
-        if tab.isDirty == false {
-            tab.isDirty = true
-        }
+        tab.isDirty = (try? tab.editCore.editor.isModified()) ?? true
 
         refreshTabBar()
         updateWindowTitle()
