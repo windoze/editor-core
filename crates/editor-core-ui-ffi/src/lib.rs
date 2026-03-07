@@ -1494,6 +1494,55 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_fold_marker_style(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_tab_width(
+    ui: *mut EditorUi,
+    width_cells: u32,
+) -> c_int {
+    if width_cells == 0 {
+        return status_from_invalid_argument("width_cells must be > 0".to_string());
+    }
+
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.set_tab_width(width_cells as usize)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_tab_key_behavior(
+    ui: *mut EditorUi,
+    behavior: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        use editor_core::TabKeyBehavior;
+
+        let ui = require_mut(ui, "ui")?;
+        let behavior = match behavior {
+            0 => TabKeyBehavior::Tab,
+            1 => TabKeyBehavior::Spaces,
+            _ => return Err(format!("invalid tab key behavior: {behavior}")),
+        };
+        ui.set_tab_key_behavior(behavior)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(
     ui: *mut EditorUi,
     boundary_chars_utf8: *const c_char,
@@ -1725,6 +1774,20 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_insert_text(
             .to_str()
             .map_err(|_| "text_utf8 is not valid UTF-8".to_string())?;
         ui.insert_text(text).map(|_| ECU_OK).map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_insert_tab(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.insert_tab().map(|_| ECU_OK).map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -3598,6 +3661,84 @@ mod tests {
         );
         assert_eq!(out_len as usize, buf.len());
         assert_eq!(pixel(&buf, 80, 70, 30), [10, 20, 30, 255]);
+
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+    }
+
+    #[test]
+    fn ffi_insert_tab_default_spaces_mode_inserts_to_next_stop() {
+        let initial = CString::new("abc").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        // Caret at end of "abc" (col=3, tab_width=4) => inserts 1 space.
+        let ranges = [EcuSelectionRange { start: 3, end: 3 }];
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), 1, 0) },
+            ECU_OK
+        );
+        assert_eq!(editor_core_ui_ffi_editor_ui_insert_tab(ui), ECU_OK);
+
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        assert!(!text_ptr.is_null());
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
+        assert_eq!(text, "abc ");
+
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+    }
+
+    #[test]
+    fn ffi_insert_tab_respects_tab_width_setting_in_spaces_mode() {
+        let initial = CString::new("a").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        assert_eq!(editor_core_ui_ffi_editor_ui_set_tab_width(ui, 2), ECU_OK);
+
+        // Caret at end of "a" (col=1, tab_width=2) => inserts 1 space.
+        let ranges = [EcuSelectionRange { start: 1, end: 1 }];
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_selections(ui, ranges.as_ptr(), 1, 0) },
+            ECU_OK
+        );
+        assert_eq!(editor_core_ui_ffi_editor_ui_insert_tab(ui), ECU_OK);
+
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        assert!(!text_ptr.is_null());
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
+        assert_eq!(text, "a ");
+
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+    }
+
+    #[test]
+    fn ffi_insert_tab_respects_tab_key_behavior_tab_mode() {
+        let initial = CString::new("").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_tab_key_behavior(ui, 0),
+            ECU_OK
+        );
+        assert_eq!(editor_core_ui_ffi_editor_ui_insert_tab(ui), ECU_OK);
+
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        assert!(!text_ptr.is_null());
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
+        assert_eq!(text, "\t");
 
         unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }

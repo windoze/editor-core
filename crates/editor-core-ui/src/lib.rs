@@ -2003,6 +2003,27 @@ impl EditorUi {
         Ok(())
     }
 
+    /// Configure how the Tab key behaves when using `EditCommand::InsertTab`.
+    pub fn set_tab_key_behavior(
+        &mut self,
+        behavior: editor_core::TabKeyBehavior,
+    ) -> Result<(), UiError> {
+        self.state
+            .execute(Command::View(ViewCommand::SetTabKeyBehavior { behavior }))?;
+        Ok(())
+    }
+
+    /// Configure the tab width (in monospace grid cells).
+    ///
+    /// This affects:
+    /// - visual layout/rendering of `'\t'` characters
+    /// - `EditCommand::InsertTab` in spaces mode (insert to the next tab stop)
+    pub fn set_tab_width(&mut self, width_cells: usize) -> Result<(), UiError> {
+        self.state
+            .execute(Command::View(ViewCommand::SetTabWidth { width: width_cells }))?;
+        Ok(())
+    }
+
     /// Reset word-boundary configuration to the default (ASCII identifier-like words).
     pub fn reset_word_boundary_defaults(&mut self) -> Result<(), UiError> {
         self.state
@@ -2294,6 +2315,13 @@ impl EditorUi {
         self.state.execute(Command::Edit(EditCommand::InsertText {
             text: text.to_string(),
         }))?;
+        self.refresh_processing()?;
+        self.ensure_primary_caret_visible_after_edit();
+        Ok(())
+    }
+
+    pub fn insert_tab(&mut self) -> Result<(), UiError> {
+        self.state.execute(Command::Edit(EditCommand::InsertTab))?;
         self.refresh_processing()?;
         self.ensure_primary_caret_visible_after_edit();
         Ok(())

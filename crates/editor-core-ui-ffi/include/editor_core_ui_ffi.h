@@ -38,6 +38,12 @@ typedef enum EcuTextVerticalAlign {
   ECU_TEXT_VERTICAL_ALIGN_BOTTOM = 2,
 } EcuTextVerticalAlign;
 
+typedef enum EcuTabKeyBehavior {
+  // 0=tab, 1=spaces (kept stable for ABI)
+  ECU_TAB_KEY_BEHAVIOR_TAB = 0,
+  ECU_TAB_KEY_BEHAVIOR_SPACES = 1,
+} EcuTabKeyBehavior;
+
 // A single StyleId override entry.
 //
 // flags bitmask:
@@ -244,6 +250,11 @@ int32_t editor_core_ui_ffi_editor_ui_set_whitespace_render_mode(EditorUi* ui,
                                                                uint8_t mode /* 0=None, 1=Selection, 2=All */);
 int32_t editor_core_ui_ffi_editor_ui_set_fold_marker_style(EditorUi* ui,
                                                           uint8_t style /* 0=Hidden, 1=Block, 2=Triangle */);
+int32_t editor_core_ui_ffi_editor_ui_set_tab_width(EditorUi* ui, uint32_t width_cells);
+int32_t editor_core_ui_ffi_editor_ui_set_tab_key_behavior(
+    EditorUi* ui,
+    uint8_t behavior /* EcuTabKeyBehavior */
+);
 int32_t editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(
     EditorUi* ui,
     const char* boundary_chars_utf8
@@ -267,6 +278,7 @@ void editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_reveal_primary_caret(EditorUi* ui);
 
 int32_t editor_core_ui_ffi_editor_ui_insert_text(EditorUi* ui, const char* text_utf8);
+int32_t editor_core_ui_ffi_editor_ui_insert_tab(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_backspace(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_delete_forward(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_delete_word_back(EditorUi* ui);
