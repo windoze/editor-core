@@ -30,6 +30,11 @@ public final class EditCoreUI: NSView {
         set { container.minimapPlacement = newValue }
     }
 
+    public var minimapOpacity: CGFloat {
+        get { container.minimapOpacity }
+        set { container.minimapOpacity = newValue }
+    }
+
     // MARK: - EditorCoreSkiaView forwarding (common host hooks)
 
     public var pasteboard: NSPasteboard {
@@ -122,7 +127,8 @@ public final class EditCoreUI: NSView {
         fontFamiliesCSV: String? = nil,
         showsMinimap: Bool = true,
         minimapWidth: CGFloat = 120,
-        minimapPlacement: EditorCoreSkiaMinimapPlacement = .rightOfScrollbar
+        minimapPlacement: EditorCoreSkiaMinimapPlacement = .rightOfScrollbar,
+        minimapOpacity: CGFloat = 0.5
     ) throws {
         self.editorView = try EditorCoreSkiaView(
             library: library,
@@ -134,7 +140,8 @@ public final class EditCoreUI: NSView {
             editorView: editorView,
             showsMinimap: showsMinimap,
             minimapWidth: minimapWidth,
-            minimapPlacement: minimapPlacement
+            minimapPlacement: minimapPlacement,
+            minimapOpacity: minimapOpacity
         )
 
         super.init(frame: .zero)
@@ -170,4 +177,3 @@ public final class EditCoreUI: NSView {
         window?.makeFirstResponder(editorView)
     }
 }
-

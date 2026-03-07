@@ -7,6 +7,14 @@ public final class EditorCoreSkiaMinimapView: NSView {
     public let editorView: EditorCoreSkiaView
     public var editor: EditorUI { editorView.editor }
 
+    /// Overall minimap opacity (applies to background + content + viewport indicator).
+    ///
+    /// This is intentionally a single “global” knob so hosts can make the minimap less intrusive.
+    /// Values are clamped to `0...1`.
+    public var opacity: CGFloat = 0.5 {
+        didSet { applyOpacity() }
+    }
+
     /// Hard cap for detailed (per-line) minimap rendering.
     ///
     /// Above this threshold the minimap still shows the viewport indicator, but skips per-line
@@ -47,6 +55,7 @@ public final class EditorCoreSkiaMinimapView: NSView {
 
         wantsLayer = true
         translatesAutoresizingMaskIntoConstraints = false
+        applyOpacity()
 
         viewportObserverToken = editorView.addViewportStateObserver { [weak self] in
             guard let self else { return }
@@ -312,6 +321,10 @@ public final class EditorCoreSkiaMinimapView: NSView {
         let lineHeightPx = max(1e-6, capped)
         let contentHeightPx = min(h, total * lineHeightPx)
         return (lineHeightPx, contentHeightPx)
+    }
+
+    private func applyOpacity() {
+        alphaValue = opacity.clamped(to: 0...1)
     }
 }
 

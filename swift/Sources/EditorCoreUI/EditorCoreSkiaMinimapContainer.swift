@@ -30,6 +30,11 @@ public final class EditorCoreSkiaMinimapContainer: NSView {
         didSet { updateMinimapPlacement() }
     }
 
+    public var minimapOpacity: CGFloat {
+        get { minimapView.opacity }
+        set { minimapView.opacity = newValue }
+    }
+
     private let minimapWidthConstraint: NSLayoutConstraint
     private var layoutConstraints: [NSLayoutConstraint] = []
 
@@ -37,7 +42,8 @@ public final class EditorCoreSkiaMinimapContainer: NSView {
         editorView: EditorCoreSkiaView,
         showsMinimap: Bool = false,
         minimapWidth: CGFloat = 120,
-        minimapPlacement: EditorCoreSkiaMinimapPlacement = .rightOfScrollbar
+        minimapPlacement: EditorCoreSkiaMinimapPlacement = .rightOfScrollbar,
+        minimapOpacity: CGFloat = 0.5
     ) {
         self.editorView = editorView
         self.scrollContainer = EditorCoreSkiaScrollContainer(editorView: editorView)
@@ -55,6 +61,7 @@ public final class EditorCoreSkiaMinimapContainer: NSView {
 
         scrollContainer.translatesAutoresizingMaskIntoConstraints = false
         minimapView.translatesAutoresizingMaskIntoConstraints = false
+        minimapView.opacity = minimapOpacity
 
         addSubview(scrollContainer)
         updateMinimapPlacement()

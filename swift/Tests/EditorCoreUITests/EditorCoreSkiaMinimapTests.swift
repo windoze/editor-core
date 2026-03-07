@@ -85,6 +85,18 @@ final class EditorCoreSkiaMinimapTests: XCTestCase {
         XCTAssertEqual(grid.actualLineCount, 3)
     }
 
+    func testMinimapOpacityDefaultsToHalfAndIsConfigurable() throws {
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
+        let editorView = try EditorCoreSkiaView(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)
+        let container = EditorCoreSkiaMinimapContainer(editorView: editorView, showsMinimap: true, minimapWidth: 100)
+
+        XCTAssertEqual(container.minimapOpacity, 0.5, accuracy: 0.001)
+        XCTAssertEqual(container.minimapView.alphaValue, 0.5, accuracy: 0.001)
+
+        container.minimapOpacity = 0.8
+        XCTAssertEqual(container.minimapView.alphaValue, 0.8, accuracy: 0.001)
+    }
+
     func testMinimapDragMovesViewport() throws {
         let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let longText = (0..<400).map(String.init).joined(separator: "\n")
