@@ -24,6 +24,17 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private var activeViewportObserver: EditorCoreSkiaView.ViewportStateObserverToken?
 
+    private struct HoverRequestContext {
+        let tabID: UUID
+        let info: EditorCoreSkiaHoverInfo
+    }
+
+    private var hoverContext: HoverRequestContext?
+    private var hoverDebounceWorkItem: DispatchWorkItem?
+    private var hoverPollTimer: DispatchSourceTimer?
+    private var hoverPopover: NSPopover?
+    private var hoverPopoverLabel: NSTextField?
+
     init(library: EditorCoreUIFFILibrary, theme: EditorCoreSkiaTheme, workspaceRootURL: URL) {
         self.library = library
         self.theme = theme
@@ -193,6 +204,7 @@ final class AttoEditorAreaViewController: NSViewController {
         selectedTabID = id
 
         updateAlwaysPollProcessingForSelectedTab()
+        cancelHoverUI()
 
         showTabContent(tab)
         refreshTabBar()
@@ -444,7 +456,180 @@ final class AttoEditorAreaViewController: NSViewController {
         editCore.onDidMutateDocumentText = { [weak self] in
             self?.handleTabDidMutateDocumentText(tabID: tabId)
         }
+        editCore.onHover = { [weak self] info in
+            self?.handleHover(info: info, tabID: tabId)
+        }
+        editCore.onHoverExit = { [weak self] in
+            self?.handleHoverExit(tabID: tabId)
+        }
         return tab
+    }
+
+    // MARK: - LSP hover tooltip (AttoEditor UX)
+
+    private func handleHover(info: EditorCoreSkiaHoverInfo, tabID: UUID) {
+        guard activeTab?.id == tabID else { return }
+        guard let tab = activeTab else { return }
+
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            cancelHoverUI()
+            return
+        }
+
+        hoverContext = HoverRequestContext(tabID: tabID, info: info)
+        hoverDebounceWorkItem?.cancel()
+        hoverPollTimer?.cancel()
+
+        let work = DispatchWorkItem { [weak self] in
+            self?.requestHoverForCurrentContext()
+        }
+        hoverDebounceWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    private func handleHoverExit(tabID: UUID) {
+        guard hoverContext?.tabID == tabID else { return }
+        cancelHoverUI()
+    }
+
+    private func requestHoverForCurrentContext() {
+        guard let ctx = hoverContext else { return }
+        guard activeTab?.id == ctx.tabID else { return }
+        guard let tab = activeTab else { return }
+
+        do {
+            _ = try tab.editCore.editor.lspRequestHover(
+                logicalLine: ctx.info.logicalLine,
+                logicalColumn: ctx.info.logicalColumn
+            )
+        } catch {
+            return
+        }
+
+        startHoverPollTimer(tabID: ctx.tabID, editorView: tab.editCore.editorView)
+    }
+
+    private func startHoverPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        hoverPollTimer?.cancel()
+
+        var remainingTicks = 30 // ~1.5s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.hoverContext, ctx.tabID == tabID else {
+                self.cancelHoverUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelHoverUI()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelHoverUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastHoverResultJSON()
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            let text = AttoLspHoverFormatter.displayText(fromHoverResultJSON: json)
+            self.showHoverPopover(text: text, at: ctx.info, in: editorView)
+            timer.cancel()
+        }
+
+        hoverPollTimer = timer
+        timer.resume()
+    }
+
+    private func showHoverPopover(text: String?, at info: EditorCoreSkiaHoverInfo, in editorView: EditorCoreSkiaView) {
+        guard let text else {
+            cancelHoverUI()
+            return
+        }
+
+        guard editorView.window != nil else { return }
+
+        let popover: NSPopover
+        if let existing = hoverPopover {
+            popover = existing
+        } else {
+            let p = NSPopover()
+            p.behavior = .transient
+            p.animates = true
+
+            let vc = NSViewController()
+            let effect = NSVisualEffectView(frame: .zero)
+            effect.material = .hudWindow
+            effect.blendingMode = .withinWindow
+            effect.state = .active
+            effect.translatesAutoresizingMaskIntoConstraints = false
+
+            let label = NSTextField(wrappingLabelWithString: "")
+            label.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+            label.textColor = NSColor.labelColor
+            label.translatesAutoresizingMaskIntoConstraints = false
+
+            effect.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 10),
+                label.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -10),
+                label.topAnchor.constraint(equalTo: effect.topAnchor, constant: 8),
+                label.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -8),
+            ])
+
+            vc.view = effect
+            p.contentViewController = vc
+            hoverPopover = p
+            hoverPopoverLabel = label
+            popover = p
+        }
+
+        hoverPopoverLabel?.stringValue = text
+        popover.contentSize = preferredHoverPopoverSize(text: text, font: hoverPopoverLabel?.font)
+
+        let rect = NSRect(x: info.viewPoint.x, y: info.viewPoint.y, width: 1, height: 1)
+        if popover.isShown {
+            popover.performClose(nil)
+        }
+        popover.show(relativeTo: rect, of: editorView, preferredEdge: .maxY)
+    }
+
+    private func preferredHoverPopoverSize(text: String, font: NSFont?) -> NSSize {
+        let maxWidth: CGFloat = 420
+        let maxHeight: CGFloat = 260
+        let padW: CGFloat = 20
+        let padH: CGFloat = 16
+
+        let f = font ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let attrs: [NSAttributedString.Key: Any] = [.font: f]
+        let bounds = (text as NSString).boundingRect(
+            with: NSSize(width: max(1, maxWidth - padW), height: 10_000),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attrs
+        )
+        let h = min(maxHeight, ceil(bounds.height) + padH)
+        return NSSize(width: maxWidth, height: max(44, h))
+    }
+
+    private func cancelHoverUI() {
+        hoverDebounceWorkItem?.cancel()
+        hoverDebounceWorkItem = nil
+
+        hoverPollTimer?.cancel()
+        hoverPollTimer = nil
+
+        hoverContext = nil
+
+        hoverPopover?.performClose(nil)
     }
 }
 

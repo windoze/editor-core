@@ -180,6 +180,19 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_enable(EditorUi* ui,
 void editor_core_ui_ffi_editor_ui_lsp_disable(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_lsp_is_enabled(EditorUi* ui, uint8_t* out_enabled);
 
+// LSP interactive requests (optional; demo UX).
+//
+// These APIs are non-blocking: they enqueue an LSP request and store the result internally.
+// Hosts should poll via `editor_core_ui_ffi_editor_ui_poll_processing` and then read the latest
+// result via the corresponding `take_*` function.
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_hover(EditorUi* ui,
+                                                       uint32_t line,
+                                                       uint32_t column,
+                                                       uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_hover_json(EditorUi* ui,
+                                                              uint8_t* out_has_result,
+                                                              char** out_result_json_utf8);
+
 // LSP-derived state ingestion (diagnostics + semantic tokens).
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json(
     EditorUi* ui,

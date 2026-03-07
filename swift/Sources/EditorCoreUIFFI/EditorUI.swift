@@ -168,6 +168,31 @@ public final class EditorUI {
         return out != 0
     }
 
+    /// Request an LSP hover (`textDocument/hover`) for a logical position.
+    ///
+    /// Notes:
+    /// - `logicalLine` / `logicalColumn` are 0-based and counted in Unicode scalars.
+    /// - This request is non-blocking; the result is delivered via internal LSP polling.
+    public func lspRequestHover(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_request_hover(handle, logicalLine, logicalColumn, &out)
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_hover")
+        return out
+    }
+
+    /// Take the last LSP hover `result` payload as JSON (`Hover | null`).
+    ///
+    /// Returns `nil` when there is no new hover result.
+    public func lspTakeLastHoverResultJSON() throws -> String? {
+        var has: UInt8 = 0
+        var ptr: UnsafeMutablePointer<CChar>?
+        let status = editor_core_ui_ffi_editor_ui_lsp_take_last_hover_json(handle, &has, &ptr)
+        try library.ensureStatus(status, context: "editor_ui_lsp_take_last_hover_json")
+        guard has != 0, let ptr else { return nil }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
     /// Poll and apply any completed async processing (Tree-sitter highlighting/folding).
     ///
     /// This call is non-blocking: it never waits for background work.

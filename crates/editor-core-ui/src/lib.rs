@@ -576,6 +576,9 @@ pub struct EditorUi {
     lsp_inlay_in_flight: bool,
     lsp_code_lens_in_flight: bool,
     lsp_document_links_in_flight: bool,
+    lsp_hover_in_flight: bool,
+    lsp_hover_last_request_id: Option<u64>,
+    lsp_hover_last_result_json: Option<String>,
     marked: Option<MarkedRange>,
     search_query: Option<SearchQueryState>,
     mouse_anchor: Option<Position>,
@@ -607,6 +610,9 @@ impl EditorUi {
             lsp_inlay_in_flight: false,
             lsp_code_lens_in_flight: false,
             lsp_document_links_in_flight: false,
+            lsp_hover_in_flight: false,
+            lsp_hover_last_request_id: None,
+            lsp_hover_last_result_json: None,
             marked: None,
             search_query: None,
             mouse_anchor: None,
@@ -1634,6 +1640,9 @@ impl EditorUi {
         self.lsp_inlay_in_flight = false;
         self.lsp_code_lens_in_flight = false;
         self.lsp_document_links_in_flight = false;
+        self.lsp_hover_in_flight = false;
+        self.lsp_hover_last_request_id = None;
+        self.lsp_hover_last_result_json = None;
         Ok(())
     }
 
@@ -1649,6 +1658,9 @@ impl EditorUi {
         self.lsp_inlay_in_flight = false;
         self.lsp_code_lens_in_flight = false;
         self.lsp_document_links_in_flight = false;
+        self.lsp_hover_in_flight = false;
+        self.lsp_hover_last_request_id = None;
+        self.lsp_hover_last_result_json = None;
         clear_lsp_state(&mut self.state);
     }
 
@@ -1660,6 +1672,38 @@ impl EditorUi {
             return false;
         };
         guard.is_some()
+    }
+
+    /// Request LSP hover information for a given logical position (0-based line/column in Unicode scalars).
+    ///
+    /// The result is delivered asynchronously via `poll_processing` and can be read by calling
+    /// [`Self::lsp_take_last_hover_result_json`].
+    pub fn lsp_request_hover(&mut self, line: usize, column: usize) -> Result<u64, UiError> {
+        self.flush_lsp_did_change_from_delta();
+
+        let Some(shared) = self.lsp.as_ref() else {
+            return Err(UiError::Processor("LSP is not enabled".to_string()));
+        };
+        let Some(doc_uri) = self.lsp_document_uri.as_deref() else {
+            return Err(UiError::Processor("LSP document URI missing".to_string()));
+        };
+
+        let line_index = &self.state.editor().line_index;
+        let id = shared
+            .with_session_mut(|lsp| {
+                lsp.set_active_document(doc_uri)?;
+                lsp.request_hover(line_index, line, column)
+            })
+            .map_err(UiError::Processor)?;
+
+        self.lsp_hover_in_flight = true;
+        self.lsp_hover_last_request_id = Some(id);
+        self.lsp_hover_last_result_json = None;
+        Ok(id)
+    }
+
+    pub fn lsp_take_last_hover_result_json(&mut self) -> Option<String> {
+        self.lsp_hover_last_result_json.take()
     }
 
     pub fn poll_processing(&mut self) -> Result<ProcessingPollResult, UiError> {
@@ -3322,6 +3366,23 @@ impl EditorUi {
                     if !edits.is_empty() {
                         self.state.apply_processing_edits(edits);
                         applied = true;
+                    }
+                }
+                "textDocument/hover" => {
+                    if self.lsp_hover_last_request_id == Some(resp.id) {
+                        self.lsp_hover_in_flight = false;
+
+                        if resp.error.is_some() {
+                            self.lsp_hover_last_result_json = None;
+                            continue;
+                        }
+
+                        let result = resp.result.unwrap_or(serde_json::Value::Null);
+                        self.lsp_hover_last_result_json = if result.is_null() {
+                            None
+                        } else {
+                            Some(result.to_string())
+                        };
                     }
                 }
                 _ => {}
