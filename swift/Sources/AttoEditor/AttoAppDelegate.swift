@@ -53,8 +53,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         splitVC.addSplitViewItem(sidebarItem)
         splitVC.addSplitViewItem(contentItem)
 
+        let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+            ?? CGRect(origin: .zero, size: AttoWindowSizing.preferredContentSize)
+        let contentSize = AttoWindowSizing.defaultContentSize(forVisibleFrame: visibleFrame)
+
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1180, height: 780),
+            contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -62,8 +66,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         win.title = "AttoEditor"
         // AttoEditor uses an in-app tab strip; disallow macOS window tabbing UI.
         win.tabbingMode = .disallowed
-        win.center()
         win.contentViewController = splitVC
+        win.contentMinSize = AttoWindowSizing.minimumContentSize
+        win.setContentSize(contentSize)
+        win.center()
         win.makeKeyAndOrderFront(nil)
 
         NSApplication.shared.activate(ignoringOtherApps: true)

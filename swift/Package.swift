@@ -109,5 +109,10 @@ let package = Package(
             dependencies: ["EditorCoreUI"],
             path: "Tests/EditorCoreUITests"
         ),
+        .testTarget(
+            name: "AttoEditorTests",
+            dependencies: ["AttoEditor"],
+            path: "Tests/AttoEditorTests"
+        ),
     ]
 )
