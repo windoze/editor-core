@@ -193,6 +193,31 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    /// Request LSP go-to-definition (`textDocument/definition`) for a logical position.
+    ///
+    /// Notes:
+    /// - `logicalLine` / `logicalColumn` are 0-based and counted in Unicode scalars.
+    /// - This request is non-blocking; the result is delivered via internal LSP polling.
+    public func lspRequestDefinition(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_request_definition(handle, logicalLine, logicalColumn, &out)
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_definition")
+        return out
+    }
+
+    /// Take the last LSP definition `result` payload as JSON (`Definition | null`).
+    ///
+    /// Returns `nil` when there is no new definition result.
+    public func lspTakeLastDefinitionResultJSON() throws -> String? {
+        var has: UInt8 = 0
+        var ptr: UnsafeMutablePointer<CChar>?
+        let status = editor_core_ui_ffi_editor_ui_lsp_take_last_definition_json(handle, &has, &ptr)
+        try library.ensureStatus(status, context: "editor_ui_lsp_take_last_definition_json")
+        guard has != 0, let ptr else { return nil }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
     /// Poll and apply any completed async processing (Tree-sitter highlighting/folding).
     ///
     /// This call is non-blocking: it never waits for background work.
@@ -412,6 +437,12 @@ public final class EditorUI {
     ///   - subRowOffset: Normalized 0..=65535 fraction within the row.
     public func setSmoothScrollState(topVisualRow: UInt32, subRowOffset: UInt32) {
         editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(handle, topVisualRow, subRowOffset)
+    }
+
+    /// Adjust scroll position to ensure the primary caret is visible (best-effort).
+    public func revealPrimaryCaret() throws {
+        let status = editor_core_ui_ffi_editor_ui_reveal_primary_caret(handle)
+        try library.ensureStatus(status, context: "editor_ui_reveal_primary_caret")
     }
 
     public func insertText(_ text: String) throws {

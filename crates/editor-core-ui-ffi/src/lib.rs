@@ -955,6 +955,91 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_hover_json(
     }
 }
 
+/// Request LSP go-to-definition for a logical position (0-based line/column in Unicode scalars).
+///
+/// This is non-blocking: the result arrives asynchronously and can be read via
+/// `editor_core_ui_ffi_editor_ui_lsp_take_last_definition_json` after polling processing.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_request_id` must be a valid pointer to a `u64`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_definition(
+    ui: *mut EditorUi,
+    line: u32,
+    column: u32,
+    out_request_id: *mut u64,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_request_id.is_null() {
+            return Err("out_request_id is null".to_string());
+        }
+
+        let id = ui
+            .lsp_request_definition(line as usize, column as usize)
+            .map_err(map_ui_error)?;
+        unsafe {
+            *out_request_id = id;
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Take the last LSP go-to-definition result payload as JSON (`Definition | null`).
+///
+/// - On success, returns `ECU_OK` and sets:
+///   - `out_has_result = 1` and `out_result_json_utf8` to a newly allocated string, or
+///   - `out_has_result = 0` and `out_result_json_utf8 = NULL` when there is no new result.
+///
+/// Caller must free the returned string with `editor_core_ui_ffi_string_free`.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_has_result` and `out_result_json_utf8` must be valid pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_definition_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_has_result.is_null() {
+            return Err("out_has_result is null".to_string());
+        }
+        if out_result_json_utf8.is_null() {
+            return Err("out_result_json_utf8 is null".to_string());
+        }
+
+        let json = ui.lsp_take_last_definition_result_json();
+        unsafe {
+            if let Some(json) = json {
+                *out_has_result = 1;
+                *out_result_json_utf8 = make_c_string_ptr(json);
+            } else {
+                *out_has_result = 0;
+                *out_result_json_utf8 = ptr::null_mut();
+            }
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Poll and apply any completed async processing (Tree-sitter highlighting/folding).
 ///
 /// This is non-blocking: it never waits for the worker thread.
@@ -1607,6 +1692,26 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(
         top_visual_row as usize,
         (sub_row_offset.min(u16::MAX as u32)) as u16,
     );
+}
+
+/// Reveal the primary caret by adjusting the viewport scroll position (best-effort).
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_reveal_primary_caret(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.reveal_primary_caret();
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -6248,6 +6353,71 @@ contexts:
             ECU_OK
         );
         assert_eq!(gutter, 7);
+
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+    }
+
+    #[test]
+    fn ffi_reveal_primary_caret_scrolls_to_make_caret_visible() {
+        let text = (0..100).map(|_| "x").collect::<Vec<_>>().join("\n");
+        let initial = CString::new(text).unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 14.0, 10.0, 8.0, 0.0, 0.0);
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 800, 50, 1.0);
+        unsafe { editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(ui, 0, 0) };
+
+        // Line 50, col 0 in "x\nx\n..." => offset 50*(1+1) = 100.
+        let range = EcuSelectionRange { start: 100, end: 100 };
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_selections(ui, &range as *const _, 1, 0) },
+            ECU_OK
+        );
+
+        assert_eq!(editor_core_ui_ffi_editor_ui_reveal_primary_caret(ui), ECU_OK);
+
+        let mut vp = EcuViewportState {
+            width_cells: 0,
+            height_rows: 0,
+            has_height: 0,
+            scroll_top: 0,
+            sub_row_offset: 0,
+            overscan_rows: 0,
+            visible_start: 0,
+            visible_end: 0,
+            prefetch_start: 0,
+            prefetch_end: 0,
+            total_visual_lines: 0,
+        };
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_viewport_state(ui, &mut vp),
+            ECU_OK
+        );
+        assert_eq!(vp.has_height, 1);
+        assert_eq!(vp.height_rows, 5);
+        assert_eq!(vp.scroll_top, 46);
+
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+    }
+
+    #[test]
+    fn ffi_lsp_request_definition_errors_when_lsp_disabled() {
+        let initial = CString::new("hello").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let mut out_id: u64 = 0;
+        let code = unsafe { editor_core_ui_ffi_editor_ui_lsp_request_definition(ui, 0, 0, &mut out_id) };
+        assert_eq!(code, ECU_ERR_INTERNAL);
+
+        let msg_ptr = editor_core_ui_ffi_last_error_message();
+        let msg = unsafe { CStr::from_ptr(msg_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { editor_core_ui_ffi_string_free(msg_ptr) };
+        assert!(msg.to_lowercase().contains("lsp") && msg.to_lowercase().contains("enabled"));
 
         unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }

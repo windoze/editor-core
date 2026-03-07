@@ -579,6 +579,9 @@ pub struct EditorUi {
     lsp_hover_in_flight: bool,
     lsp_hover_last_request_id: Option<u64>,
     lsp_hover_last_result_json: Option<String>,
+    lsp_definition_in_flight: bool,
+    lsp_definition_last_request_id: Option<u64>,
+    lsp_definition_last_result_json: Option<String>,
     marked: Option<MarkedRange>,
     search_query: Option<SearchQueryState>,
     mouse_anchor: Option<Position>,
@@ -613,6 +616,9 @@ impl EditorUi {
             lsp_hover_in_flight: false,
             lsp_hover_last_request_id: None,
             lsp_hover_last_result_json: None,
+            lsp_definition_in_flight: false,
+            lsp_definition_last_request_id: None,
+            lsp_definition_last_result_json: None,
             marked: None,
             search_query: None,
             mouse_anchor: None,
@@ -629,6 +635,10 @@ impl EditorUi {
 
     pub fn mark_saved(&mut self) {
         self.state.mark_saved();
+    }
+
+    pub fn reveal_primary_caret(&mut self) {
+        self.ensure_primary_caret_visible_after_navigation();
     }
 
     pub fn cursor_state(&self) -> editor_core::CursorState {
@@ -1643,6 +1653,9 @@ impl EditorUi {
         self.lsp_hover_in_flight = false;
         self.lsp_hover_last_request_id = None;
         self.lsp_hover_last_result_json = None;
+        self.lsp_definition_in_flight = false;
+        self.lsp_definition_last_request_id = None;
+        self.lsp_definition_last_result_json = None;
         Ok(())
     }
 
@@ -1661,6 +1674,9 @@ impl EditorUi {
         self.lsp_hover_in_flight = false;
         self.lsp_hover_last_request_id = None;
         self.lsp_hover_last_result_json = None;
+        self.lsp_definition_in_flight = false;
+        self.lsp_definition_last_request_id = None;
+        self.lsp_definition_last_result_json = None;
         clear_lsp_state(&mut self.state);
     }
 
@@ -1704,6 +1720,38 @@ impl EditorUi {
 
     pub fn lsp_take_last_hover_result_json(&mut self) -> Option<String> {
         self.lsp_hover_last_result_json.take()
+    }
+
+    /// Request LSP go-to-definition for a given logical position (0-based line/column in Unicode scalars).
+    ///
+    /// The result is delivered asynchronously via `poll_processing` and can be read by calling
+    /// [`Self::lsp_take_last_definition_result_json`].
+    pub fn lsp_request_definition(&mut self, line: usize, column: usize) -> Result<u64, UiError> {
+        self.flush_lsp_did_change_from_delta();
+
+        let Some(shared) = self.lsp.as_ref() else {
+            return Err(UiError::Processor("LSP is not enabled".to_string()));
+        };
+        let Some(doc_uri) = self.lsp_document_uri.as_deref() else {
+            return Err(UiError::Processor("LSP document URI missing".to_string()));
+        };
+
+        let line_index = &self.state.editor().line_index;
+        let id = shared
+            .with_session_mut(|lsp| {
+                lsp.set_active_document(doc_uri)?;
+                lsp.request_definition(line_index, line, column)
+            })
+            .map_err(UiError::Processor)?;
+
+        self.lsp_definition_in_flight = true;
+        self.lsp_definition_last_request_id = Some(id);
+        self.lsp_definition_last_result_json = None;
+        Ok(id)
+    }
+
+    pub fn lsp_take_last_definition_result_json(&mut self) -> Option<String> {
+        self.lsp_definition_last_result_json.take()
     }
 
     pub fn poll_processing(&mut self) -> Result<ProcessingPollResult, UiError> {
@@ -3379,6 +3427,23 @@ impl EditorUi {
 
                         let result = resp.result.unwrap_or(serde_json::Value::Null);
                         self.lsp_hover_last_result_json = if result.is_null() {
+                            None
+                        } else {
+                            Some(result.to_string())
+                        };
+                    }
+                }
+                "textDocument/definition" => {
+                    if self.lsp_definition_last_request_id == Some(resp.id) {
+                        self.lsp_definition_in_flight = false;
+
+                        if resp.error.is_some() {
+                            self.lsp_definition_last_result_json = None;
+                            continue;
+                        }
+
+                        let result = resp.result.unwrap_or(serde_json::Value::Null);
+                        self.lsp_definition_last_result_json = if result.is_null() {
                             None
                         } else {
                             Some(result.to_string())
@@ -5481,5 +5546,36 @@ fn main() {
             .unwrap();
         assert_eq!(replaced_all, 2);
         assert_eq!(ui.text(), "baz bar baz\n");
+    }
+
+    #[test]
+    fn ui_reveal_primary_caret_scrolls_to_make_caret_visible() {
+        // 100 lines, no wrapping: visual rows == logical lines.
+        let text = (0..100).map(|_| "x").collect::<Vec<_>>().join("\n");
+        let mut ui = EditorUi::new(text.as_str(), 80);
+        ui.set_render_metrics(14.0, 10.0, 8.0, 0.0, 0.0);
+        // 5 visible rows.
+        ui.set_viewport_px(800, 50, 1.0).unwrap();
+        ui.set_smooth_scroll_state(0, 0);
+        assert_eq!(ui.viewport_state().scroll_top, 0);
+
+        // Place caret at line 50 (0-based).
+        let line_index = &ui.state.editor().line_index;
+        let offset = line_index.position_to_char_offset(50, 0);
+        ui.set_selections_offsets(&[(offset, offset)], 0).unwrap();
+
+        ui.reveal_primary_caret();
+        // Expected: caret row 50 must be visible within 5 rows -> top should be 46.
+        assert_eq!(ui.viewport_state().scroll_top, 46);
+    }
+
+    #[test]
+    fn ui_lsp_request_definition_errors_when_lsp_disabled() {
+        let mut ui = EditorUi::new("hello", 80);
+        let err = ui.lsp_request_definition(0, 0).unwrap_err();
+        match err {
+            UiError::Processor(msg) => assert_eq!(msg, "LSP is not enabled"),
+            other => panic!("expected UiError::Processor, got: {other:?}"),
+        }
     }
 }

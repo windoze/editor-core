@@ -260,6 +260,30 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(vp2.subRowOffset, 0)
     }
 
+    func testRevealPrimaryCaretScrollsToShowCaret() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let text = (0..<100).map { _ in "x" }.joined(separator: "\n")
+        let ui = try EditorUI(library: lib, initialText: text, viewportWidthCells: 80)
+
+        try ui.setRenderMetrics(fontSize: 14, lineHeightPx: 10, cellWidthPx: 8, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 800, heightPx: 50, scale: 1)
+        ui.setSmoothScrollState(topVisualRow: 0, subRowOffset: 0)
+
+        // Line 50, col 0 in "x\nx\n..." => offset 50*(1+1) = 100.
+        try ui.setSelections([EcuSelectionRange(start: 100, end: 100)], primaryIndex: 0)
+        try ui.revealPrimaryCaret()
+
+        let vp = try ui.viewportState()
+        XCTAssertEqual(vp.heightRows, 5)
+        XCTAssertEqual(vp.scrollTop, 46)
+    }
+
+    func testLspRequestDefinitionThrowsWhenLspDisabled() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "hello", viewportWidthCells: 80)
+        XCTAssertThrowsError(try ui.lspRequestDefinition(logicalLine: 0, logicalColumn: 0))
+    }
+
     func testStyleColorsOverrideAffectsRendering() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         // Use a space in the styled cell so glyph rasterization does not affect the pixel sample.

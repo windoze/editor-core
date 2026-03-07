@@ -193,6 +193,14 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_hover_json(EditorUi* ui,
                                                               uint8_t* out_has_result,
                                                               char** out_result_json_utf8);
 
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_definition(EditorUi* ui,
+                                                            uint32_t line,
+                                                            uint32_t column,
+                                                            uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_definition_json(EditorUi* ui,
+                                                                   uint8_t* out_has_result,
+                                                                   char** out_result_json_utf8);
+
 // LSP-derived state ingestion (diagnostics + semantic tokens).
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json(
     EditorUi* ui,
@@ -255,6 +263,8 @@ int32_t editor_core_ui_ffi_editor_ui_get_viewport_state(EditorUi* ui,
 void editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(EditorUi* ui,
                                                           uint32_t top_visual_row,
                                                           uint32_t sub_row_offset);
+
+int32_t editor_core_ui_ffi_editor_ui_reveal_primary_caret(EditorUi* ui);
 
 int32_t editor_core_ui_ffi_editor_ui_insert_text(EditorUi* ui, const char* text_utf8);
 int32_t editor_core_ui_ffi_editor_ui_backspace(EditorUi* ui);
