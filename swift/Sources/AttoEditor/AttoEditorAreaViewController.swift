@@ -414,7 +414,8 @@ final class AttoEditorAreaViewController: NSViewController {
         )
 
         // VSCode-like defaults.
-        try editCore.editor.setGutterWidthCells(6)
+        // 保持至少 6 个 cell 的 gutter（折叠标记 + 行号），但仍允许在超大文件时自动扩展。
+        editCore.editorView.minimumGutterWidthCells = 6
         // Visual aids enabled by default in AttoEditor MVP.
         try editCore.editor.setWhitespaceRenderMode(.selection)
         try editCore.editor.setIndentGuidesEnabled(true)

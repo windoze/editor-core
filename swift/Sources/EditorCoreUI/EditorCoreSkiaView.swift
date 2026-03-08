@@ -383,7 +383,21 @@ public final class EditorCoreSkiaView: MTKView {
     private var cachedMarkedRange: (epoch: UInt64, start: UInt32, len: UInt32, value: NSRange)?
 
     private var lineHeightPx: Float = 18
+    /// 当前 gutter 宽度（以 cell 为单位）；用于避免频繁跨 FFI 发送重复的 set 操作。
     private var gutterWidthCells: UInt32 = 4
+
+    /// gutter 的最小宽度（以 cell 为单位）。
+    ///
+    /// - 该值会影响“行号宽度自适应”逻辑：真实需要的宽度会与该值取 max。
+    /// - 典型用法：host 想要 VSCode 风格更宽的 gutter，但仍希望在超大文件（10K/1M 行）时继续自动扩展。
+    public var minimumGutterWidthCells: UInt32 = 4 {
+        didSet {
+            if minimumGutterWidthCells == oldValue { return }
+            // Best-effort：当 host 更新最小 gutter 宽度时，立即尝试同步到 Rust 侧。
+            _ = updateGutterWidthIfNeeded()
+            requestRedraw()
+        }
+    }
 
     private var rectSelectionAnchorOffset: UInt32?
     private var lineSelectionAnchorOffset: UInt32?
@@ -424,10 +438,7 @@ public final class EditorCoreSkiaView: MTKView {
     private func updateGutterWidthIfNeeded() -> Bool {
         do {
             let lineCount = try editor.logicalLineCount()
-            let maxLineNo = max(1, lineCount)
-            let digits = UInt32(String(maxLineNo).count)
-            // Renderer reserves the first gutter cell for fold markers.
-            let required = max(4, 1 + digits)
+            let required = max(minimumGutterWidthCells, Self.requiredGutterWidthCells(lineCount: lineCount))
             if required == gutterWidthCells { return false }
 
             gutterWidthCells = required
@@ -437,6 +448,20 @@ public final class EditorCoreSkiaView: MTKView {
             // Gutter resizing is best-effort; never break input/rendering because of it.
             return false
         }
+    }
+
+    /// 根据逻辑行数计算需要的 gutter 宽度（cell）。
+    ///
+    /// 说明：
+    /// - renderer 会在 gutter 的第 1 个 cell 预留给 fold marker，因此行号至少需要 `1 + digits`。
+    /// - `EditorCoreSkiaView` 当前的 `cellWidthPx` 是“固定网格”近似值（并非严格基于 font metrics），
+    ///   当行号位数变大时，Skia 的字形 advance 误差会累积，导致行号靠近分隔线时出现轻微裁切/重叠。
+    ///   因此从 5 位数（>= 10K 行）开始，我们额外预留 1 个 padding cell。
+    internal static func requiredGutterWidthCells(lineCount: UInt32) -> UInt32 {
+        let maxLineNo = max(1, lineCount)
+        let digits = UInt32(String(maxLineNo).count)
+        let extraPadding: UInt32 = digits >= 5 ? 1 : 0
+        return max(4, 1 + digits + extraPadding)
     }
 
     private func documentTextForInputQueries() -> String? {
