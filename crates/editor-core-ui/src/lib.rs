@@ -4,6 +4,7 @@
 //! implementation (Skia in `editor-core-render-skia`) to draw the viewport.
 
 mod multi_document;
+mod keybindings;
 
 use editor_core::intervals::Interval;
 use editor_core::workspace::{BufferId, ViewId, Workspace};
@@ -40,6 +41,10 @@ use std::time::{Duration, Instant};
 use thiserror::Error;
 
 pub use multi_document::{MultiDocumentEditorUi, TabId, TabSearchResult};
+pub use keybindings::{
+    dispatch_command_to_editor_ui, Key, KeyStroke, Keybinding, KeybindingContext, KeybindingResolver,
+    KeybindingResolverResult, KeybindingWhen, Keymap, Modifiers, Platform, ResolvedCommand,
+};
 
 #[derive(Debug, Error)]
 pub enum UiError {

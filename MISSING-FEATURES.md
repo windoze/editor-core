@@ -217,13 +217,23 @@ this workspace (per your request).
   - Tests: `crates/editor-core-ui/tests/multi_document_ui_tests.rs`
   - Example: `cargo run -p editor-core-ui --example multi_document_ui`
 
-- [ ] **[ui] Keybinding resolution + command dispatch**
+- [x] **[ui] Keybinding resolution + command dispatch**
   - The workspace provides commands; a full editor still needs:
     - keymap format (user config)
     - chord handling (e.g. `Ctrl+K Ctrl+C`)
     - platform normalization (Cmd/Ctrl variants)
     - focus/when-clauses (editor vs panels)
-  - This is currently not part of `editor-core-ui`.
+  - Implemented as a small, host-agnostic keybinding layer in `editor-core-ui`:
+    - `crates/editor-core-ui/src/keybindings.rs`
+      - Keymap format: VSCode-ish JSON array (`keys`/`command`/`when`/`args`, plus `mac`/`win`/`linux` overrides)
+      - Chords: whitespace-separated sequences (`Ctrl+K Ctrl+C`) with an internal pending-chord state + timeout
+      - Platform normalization: `primary` maps to Cmd on macOS, Ctrl elsewhere
+      - `when` clauses: boolean expression parser (`&&`, `||`, `!`, parentheses) evaluated against `KeybindingContext`
+      - Command dispatch helper: `dispatch_command_to_editor_ui(...)` (small built-in command set; unknown commands fall through to host)
+  - Tests:
+    - `crates/editor-core-ui/tests/keybindings_tests.rs`
+    - `crates/editor-core-ui/tests/fixtures/keymap_basic.json`
+  - Example: `cargo run -p editor-core-ui --example keybindings`
 
 - [ ] **[ui] Full mouse + gesture interaction layer**
   - Core selection primitives exist, but a production editor typically expects a cohesive “mouse
