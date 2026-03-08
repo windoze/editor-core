@@ -107,7 +107,7 @@ this workspace (per your request).
 
 ## Language & tooling gaps (`editor-core-*` integrations)
 
-- [ ] **[integration] Language registry / configuration system**
+- [x] **[integration] Language registry / configuration system**
   - `editor-core-lang` currently only contains `CommentConfig`.
   - A full editor typically needs a unified per-language config surface for:
     - comment tokens (already)
@@ -116,6 +116,13 @@ this workspace (per your request).
     - word separators (beyond the current ASCII-boundary override)
     - optional Tree-sitter grammar + query resolution
     - optional LSP launch config (server command, root detection, initialization options)
+  - Implemented in `crates/editor-core-lang`:
+    - `LanguageRegistry` + `LanguageConfig` (+ matching by file name / extension)
+    - `AutoPairsConfig`, `IndentationConfig`, `WordBoundaryLanguageConfig`
+    - `TreeSitterLanguageConfig` (data-only; resolved by integration layers)
+    - `LspLanguageConfig` with `detect_root_dir` helper (marker-based root detection)
+  - Tests: `crates/editor-core-lang/tests/language_registry_tests.rs`
+  - Example: `cargo run -p editor-core-lang --example language_registry`
 
 - [ ] **[integration] Tree-sitter structural selection / syntax-aware “expand selection”**
   - `editor-core-treesitter` produces highlighting + folding, but does not expose a syntax-tree
