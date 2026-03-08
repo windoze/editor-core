@@ -9,6 +9,5 @@
 // 规则：每当 `crates/editor-core-ui-ffi/include/editor_core_ui_ffi.h` 的导出符号发生变化时，
 // 递增该值。
 int editor_core_ui_ffi_swiftpm_api_revision(void) {
-    return 2;
+    return 3;
 }
-

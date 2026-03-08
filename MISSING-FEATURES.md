@@ -235,13 +235,26 @@ this workspace (per your request).
     - `crates/editor-core-ui/tests/fixtures/keymap_basic.json`
   - Example: `cargo run -p editor-core-ui --example keybindings`
 
-- [ ] **[ui] Full mouse + gesture interaction layer**
+- [x] **[ui] Full mouse + gesture interaction layer**
   - Core selection primitives exist, but a production editor typically expects a cohesive “mouse
     policy” implementation:
     - single/double/triple click semantics
     - drag selection + rectangular selection modifiers
     - word/line/paragraph selection rules matching platform expectations
     - scroll wheel inertia / trackpad phases (platform-specific)
+  - Implemented as a small “mouse policy” state machine inside `editor-core-ui::EditorUi`:
+    - `EditorUi::mouse_down_with_modifiers_and_click_count(...)` (modifiers + click count)
+    - Drag selection is mode-aware (`Char` / `Word` / `Line` / `Paragraph` / `Rect`) and reuses the
+      kernel’s selection primitives (`SelectWord`, `set_line_selection_offsets`, rect selection, …).
+  - UI/host integration:
+    - `EditorCoreSkiaView` (Swift/AppKit) now forwards `clickCount` + modifier flags into Rust via
+      `EditorUI.mouseDownEx(...)` (and relies on Rust for drag selection modes).
+  - Tests:
+    - Rust: `crates/editor-core-ui/tests/mouse_gesture_tests.rs`
+    - Swift: `swift/Tests/EditorCoreUITests/EditorCoreSkiaViewWordDragSelectionTests.swift`,
+      `swift/Tests/EditorCoreUITests/EditorCoreSkiaViewParagraphSelectionTests.swift`,
+      `swift/Tests/EditorCoreUITests/EditorCoreSkiaViewCommandClickTests.swift`
+  - Example: `cargo run -p editor-core-ui --example mouse_gestures`
 
 - [ ] **[ui] Cross-platform windowing / widget integration**
   - `editor-core-render-skia` renders; it does not provide an actual cross-platform app/window.

@@ -386,6 +386,19 @@ int32_t editor_core_ui_ffi_editor_ui_commit_text(EditorUi* ui, const char* text_
 int32_t editor_core_ui_ffi_editor_ui_paste_text(EditorUi* ui, const char* text_utf8);
 
 int32_t editor_core_ui_ffi_editor_ui_mouse_down(EditorUi* ui, float x_px, float y_px);
+// Extended mouse down with modifier + click-count support.
+//
+// - `modifiers` bit layout:
+//   - bit0: shift
+//   - bit1: ctrl
+//   - bit2: alt/option
+//   - bit3: meta/cmd
+// - `click_count`: 1=single, 2=double, 3=triple, 4+=paragraph.
+int32_t editor_core_ui_ffi_editor_ui_mouse_down_ex(EditorUi* ui,
+                                                  float x_px,
+                                                  float y_px,
+                                                  uint32_t modifiers,
+                                                  uint32_t click_count);
 int32_t editor_core_ui_ffi_editor_ui_mouse_dragged(EditorUi* ui, float x_px, float y_px);
 void editor_core_ui_ffi_editor_ui_mouse_up(EditorUi* ui);
 

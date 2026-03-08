@@ -399,11 +399,6 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
-    private var rectSelectionAnchorOffset: UInt32?
-    private var lineSelectionAnchorOffset: UInt32?
-    private var wordSelectionAnchorOffset: UInt32?
-    private var wordSelectionOrigin: (start: UInt32, end: UInt32)?
-
     private var hoverTrackingArea: NSTrackingArea?
     private var lastHoverCharOffset: UInt32?
 
@@ -1054,54 +1049,41 @@ public final class EditorCoreSkiaView: MTKView {
         )
         debugLogInput(event, xPx: xPx, yPx: yPx, phase: "down", force: true)
 
-        rectSelectionAnchorOffset = nil
-        lineSelectionAnchorOffset = nil
-        wordSelectionAnchorOffset = nil
-        wordSelectionOrigin = nil
-
         do {
-            if event.modifierFlags.contains(.command), event.modifierFlags.contains(.option) {
-                // Cmd+Option+Click: add a new caret at point (multi-cursor).
-                let offset = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-                try editor.addCaret(atCharOffset: offset, makePrimary: true)
-            } else if event.modifierFlags.contains(.command) {
-                // Cmd+Click: prefer opening document links (VSCode-style) when a link is present.
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+            // Cmd+Click 依然保留给“文档链接 / go-to-definition”等 host 级 hook。
+            // 但 Cmd+Option+Click 需要保留给 multi-cursor（避免与 cmd-click hook 冲突）。
+            if flags.contains(.command), flags.contains(.option) == false {
                 if event.clickCount == 1, openDocumentLinkIfPresent(xPx: xPx, yPx: yPx) {
                     return
                 }
-                // Cmd+Click hook (e.g. go-to-definition).
+
                 if event.clickCount == 1, let onCommandClick {
                     let ctx = buildContextMenuContext(for: event)
                     if onCommandClick(ctx) {
                         return
                     }
                 }
-                // Fall back to a normal caret move.
-                try editor.mouseDown(xPx: xPx, yPx: yPx)
-            } else if event.modifierFlags.contains(.option) {
-                // Option+Drag: rectangular (box) selection.
-                let anchor = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-                rectSelectionAnchorOffset = anchor
-                try editor.setRectSelection(anchorOffset: anchor, activeOffset: anchor)
+
+                // Cmd-click hook 未处理：退化成“普通点选/选择”。
+                // 注意：这里刻意 strip `.command`，避免 Rust 的 mouse policy 把 Cmd 解释成 multi-cursor。
+                let stripped = flags.subtracting(.command)
+                let mods = Self.ecuMouseModifiers(from: stripped)
+                try editor.mouseDownEx(
+                    xPx: xPx,
+                    yPx: yPx,
+                    modifiers: mods,
+                    clickCount: UInt32(max(1, event.clickCount))
+                )
             } else {
-                // Double/triple click selection.
-                if event.clickCount == 2 {
-                    let anchor = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-                    wordSelectionAnchorOffset = anchor
-                    try editor.mouseDown(xPx: xPx, yPx: yPx)
-                    try editor.selectWord()
-                    wordSelectionOrigin = try editor.selectionOffsets()
-                } else if event.clickCount >= 3 {
-                    // Triple-click: select line (code editor behavior).
-                    //
-                    // If user keeps dragging after triple-click, we extend the selection by full lines.
-                    let anchor = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-                    lineSelectionAnchorOffset = anchor
-                    try editor.mouseDown(xPx: xPx, yPx: yPx)
-                    try editor.selectLine()
-                } else {
-                    try editor.mouseDown(xPx: xPx, yPx: yPx)
-                }
+                let mods = Self.ecuMouseModifiers(from: flags)
+                try editor.mouseDownEx(
+                    xPx: xPx,
+                    yPx: yPx,
+                    modifiers: mods,
+                    clickCount: UInt32(max(1, event.clickCount))
+                )
             }
         } catch {
             NSSound.beep()
@@ -1150,18 +1132,7 @@ public final class EditorCoreSkiaView: MTKView {
         )
         debugLogInput(event, xPx: xPx, yPx: yPx, phase: "drag", force: false)
         do {
-            if let anchor = rectSelectionAnchorOffset {
-                let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-                try editor.setRectSelection(anchorOffset: anchor, activeOffset: active)
-            } else if let anchor = lineSelectionAnchorOffset {
-                let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-                try editor.setLineSelection(anchorOffset: anchor, activeOffset: active)
-            } else if wordSelectionAnchorOffset != nil, let origin = wordSelectionOrigin {
-                let active = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-                try expandWordSelectionToward(activeOffset: active, origin: origin)
-            } else {
-                try editor.mouseDragged(xPx: xPx, yPx: yPx)
-            }
+            try editor.mouseDragged(xPx: xPx, yPx: yPx)
         } catch {
             NSSound.beep()
         }
@@ -1171,43 +1142,24 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public override func mouseUp(with event: NSEvent) {
-        rectSelectionAnchorOffset = nil
-        lineSelectionAnchorOffset = nil
-        wordSelectionAnchorOffset = nil
-        wordSelectionOrigin = nil
         editor.mouseUp()
         requestRedraw()
         invalidateIMECharacterCoordinates()
         notifyViewportStateDidChange()
     }
 
-    private func expandWordSelectionToward(activeOffset: UInt32, origin: (start: UInt32, end: UInt32)) throws {
-        // Normal "double-click then drag" behavior:
-        // - anchor to the original word selection
-        // - extend by word towards the active point
-        // - allow shrinking when the drag direction changes by resetting to the origin first
-        //
-        // The core `ExpandSelectionBy` command is expand-only by design, so the view resets the
-        // selection to the original word range on every drag event.
-        try editor.setSelections([EcuSelectionRange(start: origin.start, end: origin.end)], primaryIndex: 0)
-
-        // Now expand by one word at a time until the active point is inside the selection.
-        var remaining = 2048
-        while remaining > 0 {
-            let s = try editor.selectionOffsets()
-            if activeOffset < s.start {
-                try editor.expandSelectionBy(unit: .word, count: 1, direction: .backward)
-                let next = try editor.selectionOffsets()
-                if next.start == s.start { break }
-            } else if activeOffset > s.end {
-                try editor.expandSelectionBy(unit: .word, count: 1, direction: .forward)
-                let next = try editor.selectionOffsets()
-                if next.end == s.end { break }
-            } else {
-                break
-            }
-            remaining -= 1
-        }
+    private static func ecuMouseModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {
+        // Bit layout mirrors `editor_core_ui::Modifiers` (see `editor_core_ui_ffi.h`):
+        // - bit0: shift
+        // - bit1: ctrl
+        // - bit2: alt/option
+        // - bit3: meta/cmd
+        var out: UInt32 = 0
+        if flags.contains(.shift) { out |= 0b0001 }
+        if flags.contains(.control) { out |= 0b0010 }
+        if flags.contains(.option) { out |= 0b0100 }
+        if flags.contains(.command) { out |= 0b1000 }
+        return out
     }
 
     public override func scrollWheel(with event: NSEvent) {

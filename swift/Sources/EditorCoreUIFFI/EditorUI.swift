@@ -825,8 +825,22 @@ public final class EditorUI {
     }
 
     public func mouseDown(xPx: Float, yPx: Float) throws {
-        let status = editor_core_ui_ffi_editor_ui_mouse_down(handle, xPx, yPx)
-        try library.ensureStatus(status, context: "editor_ui_mouse_down")
+        try mouseDownEx(xPx: xPx, yPx: yPx, modifiers: 0, clickCount: 1)
+    }
+
+    /// Mouse down with modifier + click-count support.
+    ///
+    /// - Parameters:
+    ///   - modifiers: bit layout mirrors the C header (`editor_core_ui_ffi.h`)
+    ///   - clickCount: 1=single, 2=double, 3=triple, 4+=paragraph.
+    public func mouseDownEx(
+        xPx: Float,
+        yPx: Float,
+        modifiers: UInt32,
+        clickCount: UInt32
+    ) throws {
+        let status = editor_core_ui_ffi_editor_ui_mouse_down_ex(handle, xPx, yPx, modifiers, clickCount)
+        try library.ensureStatus(status, context: "editor_ui_mouse_down_ex")
     }
 
     public func mouseDragged(xPx: Float, yPx: Float) throws {
