@@ -334,6 +334,8 @@ pub struct Workspace {
     next_view_id: u64,
     views: BTreeMap<ViewId, ViewEntry>,
     active_view: Option<ViewId>,
+
+    intelligence: crate::WorkspaceIntelligence,
 }
 
 impl std::fmt::Debug for Workspace {
@@ -343,6 +345,7 @@ impl std::fmt::Debug for Workspace {
             .field("view_count", &self.views.len())
             .field("uri_count", &self.uri_to_buffer.len())
             .field("active_view", &self.active_view)
+            .field("intelligence_set_count", &self.intelligence.len())
             .finish()
     }
 }
@@ -377,6 +380,16 @@ impl Workspace {
     pub fn active_buffer_id(&self) -> Option<BufferId> {
         let view_id = self.active_view?;
         self.views.get(&view_id).map(|v| v.buffer)
+    }
+
+    /// Read workspace-scoped language intelligence result sets (references/call hierarchy/etc.).
+    pub fn intelligence(&self) -> &crate::WorkspaceIntelligence {
+        &self.intelligence
+    }
+
+    /// Mutate workspace-scoped language intelligence result sets (references/call hierarchy/etc.).
+    pub fn intelligence_mut(&mut self) -> &mut crate::WorkspaceIntelligence {
+        &mut self.intelligence
     }
 
     /// Set the active view.
@@ -1047,6 +1060,12 @@ impl Workspace {
                 Self::notify_view(other, change_type, delta.clone());
             }
 
+            if buffer_text_changed
+                && let Some(uri) = buffer.meta.uri.as_deref()
+            {
+                self.intelligence.mark_stale_for_uri(uri);
+            }
+
             buffer.version = buffer.version.saturating_add(1);
         } else {
             Self::notify_view(view, change_type, None);
@@ -1583,6 +1602,10 @@ impl Workspace {
             let changed = delta.is_some() || after_char_count != before_char_count;
 
             if changed {
+                if let Some(uri) = buffer.meta.uri.as_deref() {
+                    self.intelligence.mark_stale_for_uri(uri);
+                }
+
                 if let Some(ref delta_arc) = delta {
                     buffer.last_text_delta = Some(delta_arc.clone());
                     let new_index = &buffer.executor.editor().line_index;

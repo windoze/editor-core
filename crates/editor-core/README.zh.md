@@ -12,6 +12,8 @@
   （派生折叠 + 稳定的用户折叠）。
 - **符号/大纲模型**：`DocumentOutline`、`DocumentSymbol`、`WorkspaceSymbol`，用于构建大纲树与符号搜索 UI
   （通常由 LSP 填充）。
+- **语言智能结果集**：`WorkspaceIntelligence`，用于跨文件存储 references / call hierarchy / type hierarchy 等结果
+  （当相关 buffer 被编辑时可标记为 stale）。
 - **无头快照**：`SnapshotGenerator` → `HeadlessGrid`，用于构建“文本网格”UI。
 - **轻量 minimap 快照**：`MinimapGrid`，用于概览渲染（避免逐 `Cell` 负载）。
 - **支持装饰的组合快照**：`ComposedGrid` 可以注入虚拟文本（inlay hints、code lens），宿主无需重写布局规则即可从快照渲染。

@@ -131,6 +131,7 @@ pub mod decorations;
 pub mod delta;
 pub mod diagnostics;
 pub mod intervals;
+pub mod intelligence;
 pub mod layout;
 pub mod line_ending;
 pub mod line_index;
@@ -162,6 +163,11 @@ pub use intervals::{
     DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, DOCUMENT_LINK_STYLE_ID, FOLD_PLACEHOLDER_STYLE_ID,
     FoldRegion, FoldingManager, IME_MARKED_TEXT_STYLE_ID, INLAY_HINT_STYLE_ID, IntervalTree,
     MATCH_HIGHLIGHT_STYLE_ID, StyleLayerId,
+};
+pub use intelligence::{
+    CallHierarchyIncomingCall, CallHierarchyOutgoingCall, CallHierarchyResultSet, HierarchyItem,
+    IntelligenceResultSet, ReferencesResultSet, ResultSetId, ResultSetKind, TypeHierarchyResultSet,
+    WorkspaceIntelligence,
 };
 pub use layout::{LayoutEngine, WrapIndent, WrapMode};
 pub use line_ending::LineEnding;

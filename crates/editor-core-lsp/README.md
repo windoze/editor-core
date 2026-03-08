@@ -18,6 +18,8 @@ requirements, and a small dependency surface.
   - hover (`textDocument/hover`) → `LspHover` (markdown-ish rendering helper)
   - signature help (`textDocument/signatureHelp`) → `LspSignatureHelp`
   - code actions (`textDocument/codeAction`) → `LspCodeActionItem` / apply plan extraction
+  - call hierarchy (`textDocument/prepareCallHierarchy`, `callHierarchy/*`) → `editor_core::HierarchyItem` + call edge models
+  - type hierarchy (`textDocument/prepareTypeHierarchy`, `typeHierarchy/*`) → `editor_core::HierarchyItem`
 - **Workspace edit preview helpers**:
   - `summarize_workspace_edit(...)` for basic preview/conflict signals (overlapping edits)
 - **Common UX bridges** (LSP → kernel derived state):

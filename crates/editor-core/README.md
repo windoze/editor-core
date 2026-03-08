@@ -13,6 +13,8 @@ snapshots and drive edits through the command/state APIs.
   (derived folds + stable user folds).
 - **Symbols/outline model** (`DocumentOutline`, `DocumentSymbol`, `WorkspaceSymbol`) for building
   outline trees and symbol search UIs (typically populated from LSP).
+- **Language intelligence result sets** (`WorkspaceIntelligence`) for storing cross-file results
+  like references, call hierarchy, and type hierarchy (with staleness tracking on buffer edits).
 - **Headless snapshots** (`SnapshotGenerator` → `HeadlessGrid`) for building “text grid” UIs.
 - **Lightweight minimap snapshots** (`MinimapGrid`) for overview rendering without per-cell payload.
 - **Decoration-aware composed snapshots** (`ComposedGrid`) that inject virtual text (inlay hints,

@@ -175,13 +175,25 @@ this workspace (per your request).
   - Implemented in `LspWorkspaceSync::poll_workspace()` (auto-applies by default; see
     `LspWorkspaceSync::set_auto_apply_workspace_edits` and `LspWorkspaceSync::drain_events`).
 
-- [ ] **[integration] More complete “language intelligence” derived state**
+- [x] **[integration] More complete “language intelligence” derived state**
   - The kernel has derived-state plumbing (`ProcessingEdit`), but the workspace does not yet ship a
     unified model for some common code-editor surfaces (depending on your target UX):
     - call hierarchy view models
     - type hierarchy view models
     - references panels / search result collections as first-class state
-  - These can be done in hosts, but become painful to keep consistent across UIs.
+  - Implemented as a small, UI-agnostic schema + storage layer:
+    - `editor-core`: `crates/editor-core/src/intelligence.rs`
+      - typed models: `ReferencesResultSet`, `CallHierarchyResultSet`, `TypeHierarchyResultSet`
+      - workspace storage: `WorkspaceIntelligence` (stores multiple result sets by `ResultSetId`)
+      - staleness tracking: when an open buffer with a matching `uri` is edited,
+        `Workspace` marks referencing result sets as `is_stale=true`
+    - `editor-core-lsp`: typed parsers (no `lsp-types` dependency):
+      - `crates/editor-core-lsp/src/lsp_call_hierarchy.rs`
+      - `crates/editor-core-lsp/src/lsp_type_hierarchy.rs`
+  - Tests:
+    - `crates/editor-core/tests/language_intelligence_state.rs`
+    - `crates/editor-core-lsp/src/lsp_call_hierarchy.rs` (unit tests)
+    - `crates/editor-core-lsp/src/lsp_type_hierarchy.rs` (unit tests)
 
 ---
 

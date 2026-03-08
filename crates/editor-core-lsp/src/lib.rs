@@ -7,6 +7,7 @@
 
 pub mod editor;
 pub mod lsp_client;
+pub mod lsp_call_hierarchy;
 pub mod lsp_completion;
 pub mod lsp_code_actions;
 pub mod lsp_decorations;
@@ -19,6 +20,7 @@ pub mod lsp_symbols;
 pub mod lsp_sync;
 pub mod lsp_text_edits;
 pub mod lsp_transport;
+pub mod lsp_type_hierarchy;
 pub mod lsp_uri;
 pub mod workspace_sync;
 
@@ -27,6 +29,10 @@ pub use editor::{
     SemanticTokensLegend, clear_lsp_state, lsp_clear_edits, lsp_diagnostics_to_processing_edits,
 };
 pub use lsp_client::{LspClient, LspInbound, LspOutbound};
+pub use lsp_call_hierarchy::{
+    call_hierarchy_incoming_calls_from_value, call_hierarchy_item_from_value,
+    call_hierarchy_items_from_value, call_hierarchy_outgoing_calls_from_value,
+};
 pub use lsp_completion::{
     CompletionTextEditMode, apply_completion_item, completion_item_to_text_edit_specs,
 };
@@ -71,6 +77,7 @@ pub use lsp_text_edits::{
     WorkspaceEditDocumentSummary, WorkspaceEditSummary,
 };
 pub use lsp_transport::{read_lsp_message, write_lsp_message};
+pub use lsp_type_hierarchy::{type_hierarchy_item_from_value, type_hierarchy_items_from_value};
 pub use lsp_uri::{file_uri_to_path, path_to_file_uri, percent_decode_path, percent_encode_path};
 pub use workspace_sync::{
     AppliedWorkspaceEditDocument, ApplyWorkspaceEditResult, LspWorkspaceSync,
