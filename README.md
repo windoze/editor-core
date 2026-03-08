@@ -18,6 +18,7 @@ drive edits through the command/state APIs.
 
 - `crates/editor-core/` — core headless editor engine (`PieceTable`, `LineIndex`, `LayoutEngine`, snapshots, commands/state).
   - See `crates/editor-core/README.md`
+- `crates/editor-core-diff/` — line-based diff + hunk primitives (useful for “modified lines” gutters and diff views).
 - `crates/editor-core-lang/` — lightweight language configs (e.g. comment tokens) for kernel features.
 - `crates/editor-core-lsp/` — LSP integration (UTF-16 conversions, semantic tokens decoding, stdio JSON-RPC client/session).
   - See `crates/editor-core-lsp/README.md`

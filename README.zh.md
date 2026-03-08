@@ -17,6 +17,7 @@
 
 - `crates/editor-core/` — 核心无头编辑器引擎（`PieceTable`、`LineIndex`、`LayoutEngine`、快照、命令/状态）。
   - 参见 `crates/editor-core/README.md`
+- `crates/editor-core-diff/` — 基于行的 diff + hunk 原语（可用于“修改行”侧边栏标记和 diff 视图）。
 - `crates/editor-core-lang/` — 轻量级语言配置（例如注释 token），用于驱动内核功能。
 - `crates/editor-core-lsp/` — LSP 集成（UTF-16 转换、语义 token 解码、stdio JSON-RPC 客户端/会话）。
   - 参见 `crates/editor-core-lsp/README.md`

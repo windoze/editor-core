@@ -1,0 +1,21 @@
+[package]
+name = "editor-core-diff"
+version.workspace = true
+description = "Diff and hunk primitives for editor-core integrations (line-based)."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["editor", "diff", "hunk", "text", "patch"]
+categories = ["text-editors", "text-processing"]
+readme = "README.md"
+
+[dependencies]
+imara-diff = "0.2.0"
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+

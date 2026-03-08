@@ -58,11 +58,16 @@ this workspace (per your request).
   - No first-class bookmark/mark model that shifts correctly under edits.
   - A jump list (navigation history) is also typically expected in editors with go-to-definition.
 
-- [ ] **[core] Diff / hunk primitives**
-  - No built-in diff/hunk computation suitable for:
-    - “modified lines” gutter indicators
-    - diff views / merge editors (UI aside)
-  - This likely belongs in a new crate (similar to the older roadmap idea of `editor-core-diff`).
+- [x] **[core] Diff / hunk primitives**
+  - Implemented as a small, UI-agnostic crate: `crates/editor-core-diff/`.
+  - Exposes a pragmatic line-based diff model (powered by `imara-diff`):
+    - `diff_line_hunks(before, after, LineDiffConfig)` → `Vec<LineHunk>`
+    - per-line records via `DiffLine` / `DiffLineKind` (context/add/remove)
+    - context-line expansion + hunk merging
+  - Tests + fixtures:
+    - `crates/editor-core-diff/tests/line_hunks.rs`
+    - `crates/editor-core-diff/tests/fixtures/`
+  - Example: `cargo run -p editor-core-diff --example diff_hunks`
 
 - [ ] **[core] Snippet engine (placeholders + navigation)**
   - The LSP completion helper currently **downgrades** snippet-formatted inserts to plain text
