@@ -41,6 +41,10 @@ snapshots and drive edits through the command/state APIs.
     - `EditCommand::TypeChar` + `AutoPairsConfig` (auto-close, wrap selection, skip over closing, delete-pair)
     - `CursorCommand::MoveToMatchingBracket`
     - `StyleCommand::UpdateBracketMatchHighlights` (writes `StyleLayerId::BRACKET_MATCHES` with `MATCH_HIGHLIGHT_STYLE_ID`)
+- **Bookmarks / marks / jump list** (anchors stable under edits):
+  - `EditorStateManager::{toggle_bookmark_at_cursor_line, goto_next_bookmark, goto_prev_bookmark, set_mark_at_cursor, goto_mark, push_jump_location, jump_back, jump_forward}`
+  - `Workspace::{toggle_bookmark_at_cursor_line, bookmark_lines, goto_next_bookmark, goto_prev_bookmark, set_mark_at_cursor, goto_mark, push_jump_location, jump_back, jump_forward}`
+  - emits `StateChangeType::NavigationChanged` when bookmark/mark/jump-list state changes
 - **Search utilities** (`find_next`, `find_prev`, `find_all`) operating on character offsets.
 
 ## Choosing an API surface (single view vs workspace)

@@ -126,6 +126,7 @@
 //! - via `editor-core-lsp` provides UTF-16 code unit coordinate conversion (for upper-layer protocols/integrations)
 //! - via `editor-core-sublime` provides `.sublime-syntax` syntax highlighting and folding (optional integration)
 
+pub mod anchors;
 pub mod commands;
 pub mod decorations;
 pub mod delta;
@@ -152,6 +153,7 @@ pub use commands::{
     UndoHistoryRestoreError, UndoHistorySelectionSet, UndoHistorySnapshot, UndoHistoryStep,
     UndoHistoryTextEdit, ViewCommand,
 };
+pub use anchors::{AnchorBias, TextAnchor};
 pub use decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
 };
@@ -189,7 +191,7 @@ pub use symbols::{
     Utf16Range, WorkspaceSymbol,
 };
 pub use workspace::{
-    BufferId, BufferMetadata, OpenBufferResult, ViewId, ViewSmoothScrollState, Workspace,
-    WorkspaceError, WorkspaceSearchResult, WorkspaceUndoHistoryRestoreError,
+    BufferId, BufferMetadata, JumpTarget, OpenBufferResult, ViewId, ViewSmoothScrollState,
+    Workspace, WorkspaceError, WorkspaceSearchResult, WorkspaceUndoHistoryRestoreError,
     WorkspaceViewportState,
 };

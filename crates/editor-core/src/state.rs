@@ -38,11 +38,12 @@ use crate::intervals::{FoldRegion, Interval, StyleId, StyleLayerId};
 use crate::processing::{DocumentProcessor, ProcessingEdit};
 use crate::snapshot::{ComposedGrid, HeadlessGrid};
 use crate::{
-    Command, CommandError, CommandExecutor, CommandResult, CursorCommand, Decoration,
+    AnchorBias, Command, CommandError, CommandExecutor, CommandResult, CursorCommand, Decoration,
     DecorationLayerId, Diagnostic, EditCommand, EditorCore, LineEnding, Position, Selection,
-    SelectionDirection, StyleCommand, UndoHistoryRestoreError, UndoHistorySnapshot, ViewCommand,
+    SelectionDirection, StyleCommand, TextAnchor, UndoHistoryRestoreError, UndoHistorySnapshot,
+    ViewCommand,
 };
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -170,6 +171,8 @@ pub enum StateChangeType {
     CursorMoved,
     /// Selection changed
     SelectionChanged,
+    /// Navigation / anchor state changed (bookmarks, marks, jump list, ...).
+    NavigationChanged,
     /// Viewport changed
     ViewportChanged,
     /// Folding state changed
@@ -248,6 +251,164 @@ pub struct EditorState {
 /// State change callback function type
 pub type StateChangeCallback = Box<dyn FnMut(&StateChange) + Send>;
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct BookmarkSet {
+    anchors: Vec<TextAnchor>,
+}
+
+impl BookmarkSet {
+    fn toggle_line_start(&mut self, line_start_offset: usize) -> bool {
+        let anchor = TextAnchor::new(line_start_offset, AnchorBias::Left);
+        match self
+            .anchors
+            .binary_search_by_key(&anchor.offset, |a| a.offset)
+        {
+            Ok(idx) => {
+                self.anchors.remove(idx);
+                false
+            }
+            Err(idx) => {
+                self.anchors.insert(idx, anchor);
+                true
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.anchors.clear();
+    }
+
+    fn apply_delta(&mut self, delta: &TextDelta) {
+        for a in &mut self.anchors {
+            a.apply_delta(delta);
+        }
+        self.anchors.sort_by_key(|a| a.offset);
+        self.anchors.dedup_by_key(|a| a.offset);
+    }
+
+    fn line_numbers(&self, line_index: &crate::LineIndex) -> Vec<usize> {
+        let mut lines: Vec<usize> = self
+            .anchors
+            .iter()
+            .map(|a| line_index.char_offset_to_position(a.offset).0)
+            .collect();
+        lines.sort_unstable();
+        lines.dedup();
+        lines
+    }
+
+    fn next_after_line_start(&self, current_line_start: usize) -> Option<TextAnchor> {
+        self.anchors
+            .iter()
+            .copied()
+            .find(|a| a.offset > current_line_start)
+            .or_else(|| self.anchors.first().copied())
+    }
+
+    fn prev_before_line_start(&self, current_line_start: usize) -> Option<TextAnchor> {
+        self.anchors
+            .iter()
+            .copied()
+            .rfind(|a| a.offset < current_line_start)
+            .or_else(|| self.anchors.last().copied())
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct MarkSet {
+    marks: BTreeMap<String, TextAnchor>,
+}
+
+impl MarkSet {
+    fn set(&mut self, name: String, offset: usize) {
+        self.marks
+            .insert(name, TextAnchor::new(offset, AnchorBias::Right));
+    }
+
+    fn get(&self, name: &str) -> Option<TextAnchor> {
+        self.marks.get(name).copied()
+    }
+
+    fn remove(&mut self, name: &str) -> bool {
+        self.marks.remove(name).is_some()
+    }
+
+    fn clear(&mut self) {
+        self.marks.clear();
+    }
+
+    fn names(&self) -> Vec<String> {
+        self.marks.keys().cloned().collect()
+    }
+
+    fn apply_delta(&mut self, delta: &TextDelta) {
+        for anchor in self.marks.values_mut() {
+            anchor.apply_delta(delta);
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct JumpList {
+    back: Vec<TextAnchor>,
+    forward: Vec<TextAnchor>,
+    max_len: usize,
+}
+
+impl JumpList {
+    fn new(max_len: usize) -> Self {
+        Self {
+            back: Vec::new(),
+            forward: Vec::new(),
+            max_len: max_len.max(1),
+        }
+    }
+
+    fn record(&mut self, offset: usize) {
+        let anchor = TextAnchor::new(offset, AnchorBias::Right);
+        if self.back.last().is_some_and(|last| *last == anchor) {
+            return;
+        }
+
+        self.back.push(anchor);
+        self.forward.clear();
+
+        if self.back.len() > self.max_len {
+            let overflow = self.back.len() - self.max_len;
+            self.back.drain(0..overflow);
+        }
+    }
+
+    fn back(&mut self, current_offset: usize) -> Option<TextAnchor> {
+        let current = TextAnchor::new(current_offset, AnchorBias::Right);
+        let target = self.back.pop()?;
+        if !self.forward.last().is_some_and(|last| *last == current) {
+            self.forward.push(current);
+        }
+        Some(target)
+    }
+
+    fn forward(&mut self, current_offset: usize) -> Option<TextAnchor> {
+        let current = TextAnchor::new(current_offset, AnchorBias::Right);
+        let target = self.forward.pop()?;
+        if !self.back.last().is_some_and(|last| *last == current) {
+            self.back.push(current);
+        }
+        Some(target)
+    }
+
+    fn clear(&mut self) {
+        self.back.clear();
+        self.forward.clear();
+    }
+
+    fn apply_delta(&mut self, delta: &TextDelta) {
+        for a in self.back.iter_mut().chain(self.forward.iter_mut()) {
+            a.apply_delta(delta);
+        }
+    }
+}
+
 /// Editor state manager
 ///
 /// `EditorStateManager` wraps the command executor ([`CommandExecutor`]) and its internal [`EditorCore`]
@@ -313,6 +474,9 @@ pub struct EditorStateManager {
     viewport_height: Option<usize>,
     /// Structured text delta produced by the last document edit.
     last_text_delta: Option<Arc<TextDelta>>,
+    bookmarks: BookmarkSet,
+    marks: MarkSet,
+    jump_list: JumpList,
 }
 
 impl EditorStateManager {
@@ -328,6 +492,9 @@ impl EditorStateManager {
             overscan_rows: 0,
             viewport_height: None,
             last_text_delta: None,
+            bookmarks: BookmarkSet::default(),
+            marks: MarkSet::default(),
+            jump_list: JumpList::new(200),
         }
     }
 
@@ -411,6 +578,7 @@ impl EditorStateManager {
                         delta_present
                     }
                 }
+                StateChangeType::NavigationChanged => true,
                 // Style/folding/diagnostics commands are currently treated as "success means change".
                 StateChangeType::FoldingChanged
                 | StateChangeType::StyleChanged
@@ -423,6 +591,11 @@ impl EditorStateManager {
                 if matches!(change_type, StateChangeType::DocumentModified) {
                     let is_modified = !self.executor.is_clean();
                     let delta = self.executor.take_last_text_delta().map(Arc::new);
+                    if let Some(ref delta) = delta {
+                        self.bookmarks.apply_delta(delta);
+                        self.marks.apply_delta(delta);
+                        self.jump_list.apply_delta(delta);
+                    }
                     self.last_text_delta = delta.clone();
                     self.mark_modified_internal(change_type, Some(is_modified), delta);
                 } else {
@@ -1114,6 +1287,215 @@ impl EditorStateManager {
     /// Take the structured text delta produced by the last document edit, if any.
     pub fn take_last_text_delta(&mut self) -> Option<Arc<TextDelta>> {
         self.last_text_delta.take()
+    }
+
+    /// Toggle a bookmark at the current cursor line.
+    ///
+    /// Returns `true` if a bookmark was added, or `false` if an existing bookmark on that line was
+    /// removed.
+    pub fn toggle_bookmark_at_cursor_line(&mut self) -> bool {
+        let line = self.executor.editor().cursor_position().line;
+        let line_start = self
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(line, 0);
+        let added = self.bookmarks.toggle_line_start(line_start);
+        self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
+        added
+    }
+
+    /// Return all bookmark line numbers (0-based).
+    pub fn bookmark_lines(&self) -> Vec<usize> {
+        self.bookmarks
+            .line_numbers(&self.executor.editor().line_index)
+    }
+
+    /// Clear all bookmarks.
+    pub fn clear_bookmarks(&mut self) {
+        self.bookmarks.clear();
+        self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
+    }
+
+    /// Move the cursor to the next bookmark (wrapping to the first bookmark).
+    ///
+    /// Returns the new cursor position, or `None` if there are no bookmarks.
+    pub fn goto_next_bookmark(&mut self) -> Result<Option<Position>, CommandError> {
+        let line = self.executor.editor().cursor_position().line;
+        let current_line_start = self
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(line, 0);
+
+        let Some(target) = self.bookmarks.next_after_line_start(current_line_start) else {
+            return Ok(None);
+        };
+
+        let (line, column) = self
+            .executor
+            .editor()
+            .line_index
+            .char_offset_to_position(target.offset);
+        self.execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
+        let _ = self.execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        Ok(Some(Position::new(line, column)))
+    }
+
+    /// Move the cursor to the previous bookmark (wrapping to the last bookmark).
+    ///
+    /// Returns the new cursor position, or `None` if there are no bookmarks.
+    pub fn goto_prev_bookmark(&mut self) -> Result<Option<Position>, CommandError> {
+        let line = self.executor.editor().cursor_position().line;
+        let current_line_start = self
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(line, 0);
+
+        let Some(target) = self.bookmarks.prev_before_line_start(current_line_start) else {
+            return Ok(None);
+        };
+
+        let (line, column) = self
+            .executor
+            .editor()
+            .line_index
+            .char_offset_to_position(target.offset);
+        self.execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
+        let _ = self.execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        Ok(Some(Position::new(line, column)))
+    }
+
+    /// Set (or replace) a named mark at the current cursor position.
+    pub fn set_mark_at_cursor(&mut self, name: String) -> Result<(), CommandError> {
+        if name.trim().is_empty() {
+            return Err(CommandError::Other("Mark name cannot be empty".to_string()));
+        }
+
+        let pos = self.executor.editor().cursor_position();
+        let offset = self
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(pos.line, pos.column);
+        self.marks.set(name, offset);
+        self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
+        Ok(())
+    }
+
+    /// Move the cursor to a named mark (if present).
+    ///
+    /// Returns the new cursor position, or `None` if the mark does not exist.
+    pub fn goto_mark(&mut self, name: &str) -> Result<Option<Position>, CommandError> {
+        let Some(anchor) = self.marks.get(name) else {
+            return Ok(None);
+        };
+        let (line, column) = self
+            .executor
+            .editor()
+            .line_index
+            .char_offset_to_position(anchor.offset);
+        self.execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
+        let _ = self.execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        Ok(Some(Position::new(line, column)))
+    }
+
+    /// Remove a named mark.
+    ///
+    /// Returns `true` if the mark existed.
+    pub fn clear_mark(&mut self, name: &str) -> bool {
+        let existed = self.marks.remove(name);
+        if existed {
+            self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
+        }
+        existed
+    }
+
+    /// Return all mark names (deterministic order).
+    pub fn mark_names(&self) -> Vec<String> {
+        self.marks.names()
+    }
+
+    /// Clear all marks.
+    pub fn clear_all_marks(&mut self) {
+        self.marks.clear();
+        self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
+    }
+
+    /// Record the current cursor position as a jump-list location.
+    ///
+    /// Typical usage: call this *before* performing a “jump” (go-to-definition, search result,
+    /// symbol navigation, ...).
+    pub fn push_jump_location(&mut self) {
+        let pos = self.executor.editor().cursor_position();
+        let offset = self
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(pos.line, pos.column);
+        self.jump_list.record(offset);
+        self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
+    }
+
+    /// Jump back in the jump list.
+    ///
+    /// Returns the new cursor position, or `None` if there is no back entry.
+    pub fn jump_back(&mut self) -> Result<Option<Position>, CommandError> {
+        let pos = self.executor.editor().cursor_position();
+        let current_offset = self
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(pos.line, pos.column);
+
+        let Some(target) = self.jump_list.back(current_offset) else {
+            return Ok(None);
+        };
+
+        self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
+
+        let (line, column) = self
+            .executor
+            .editor()
+            .line_index
+            .char_offset_to_position(target.offset);
+        self.execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
+        let _ = self.execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        Ok(Some(Position::new(line, column)))
+    }
+
+    /// Jump forward in the jump list.
+    ///
+    /// Returns the new cursor position, or `None` if there is no forward entry.
+    pub fn jump_forward(&mut self) -> Result<Option<Position>, CommandError> {
+        let pos = self.executor.editor().cursor_position();
+        let current_offset = self
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(pos.line, pos.column);
+
+        let Some(target) = self.jump_list.forward(current_offset) else {
+            return Ok(None);
+        };
+
+        self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
+
+        let (line, column) = self
+            .executor
+            .editor()
+            .line_index
+            .char_offset_to_position(target.offset);
+        self.execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
+        let _ = self.execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        Ok(Some(Position::new(line, column)))
+    }
+
+    /// Clear the jump list (both back/forward stacks).
+    pub fn clear_jump_list(&mut self) {
+        self.jump_list.clear();
+        self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
     }
 
     /// Notify all callbacks

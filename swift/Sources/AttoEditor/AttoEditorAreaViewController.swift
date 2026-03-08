@@ -254,6 +254,16 @@ final class AttoEditorAreaViewController: NSViewController {
         tab.editCore.editorView.moveToMatchingBracket()
     }
 
+    func jumpBackInActiveTab() {
+        guard let tab = activeTab else { return }
+        tab.editCore.editorView.jumpBack()
+    }
+
+    func jumpForwardInActiveTab() {
+        guard let tab = activeTab else { return }
+        tab.editCore.editorView.jumpForward()
+    }
+
     func formatDocumentWithLspInActiveTab() {
         guard let tab = activeTab else { return }
         tab.editCore.editorView.formatDocumentWithLSP()

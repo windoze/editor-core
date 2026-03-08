@@ -1551,6 +1551,34 @@ public final class EditorCoreSkiaView: MTKView {
         notifyViewportStateDidChange()
     }
 
+    /// Jump back in the editor jump list (no-op when empty).
+    public func jumpBack() {
+        updateViewportIfNeeded()
+        do {
+            try editor.jumpBack()
+        } catch {
+            NSSound.beep()
+            return
+        }
+        requestRedraw()
+        invalidateIMECharacterCoordinates()
+        notifyViewportStateDidChange()
+    }
+
+    /// Jump forward in the editor jump list (no-op when empty).
+    public func jumpForward() {
+        updateViewportIfNeeded()
+        do {
+            try editor.jumpForward()
+        } catch {
+            NSSound.beep()
+            return
+        }
+        requestRedraw()
+        invalidateIMECharacterCoordinates()
+        notifyViewportStateDidChange()
+    }
+
     /// Format the current document via LSP (`textDocument/formatting`) and apply edits locally.
     ///
     /// This is intended for explicit user actions (command palette / menu item).

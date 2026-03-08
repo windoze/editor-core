@@ -2412,6 +2412,144 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_matching_bracket(
     }
 }
 
+// MARK: - Bookmarks / marks / jump list
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_toggle_bookmark_at_cursor_line(
+    ui: *mut EditorUi,
+    out_added: *mut u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let out_added = require_mut(out_added, "out_added")?;
+        let added = ui
+            .toggle_bookmark_at_cursor_line()
+            .map_err(map_ui_error)?;
+        *out_added = if added { 1 } else { 0 };
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_goto_next_bookmark(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let _ = ui.goto_next_bookmark().map_err(map_ui_error)?;
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_goto_prev_bookmark(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let _ = ui.goto_prev_bookmark().map_err(map_ui_error)?;
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_mark_at_cursor(
+    ui: *mut EditorUi,
+    name_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let name = require_str(name_utf8, "name_utf8")?;
+        ui.set_mark_at_cursor(name.to_string())
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_goto_mark(
+    ui: *mut EditorUi,
+    name_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let name = require_str(name_utf8, "name_utf8")?;
+        let _ = ui.goto_mark(name).map_err(map_ui_error)?;
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_push_jump_location(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.push_jump_location().map_err(map_ui_error)?;
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_jump_back(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let _ = ui.jump_back().map_err(map_ui_error)?;
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_jump_forward(ui: *mut EditorUi) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let _ = ui.jump_forward().map_err(map_ui_error)?;
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_visual_line_start(
     ui: *mut EditorUi,

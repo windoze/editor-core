@@ -25,6 +25,7 @@ use crate::processing::ProcessingEdit;
 use crate::search::{SearchError, SearchMatch, SearchOptions, find_all};
 use crate::selection_set::selection_direction;
 use crate::state::CursorState;
+use crate::{AnchorBias, TextAnchor};
 use crate::{LineIndex, Position, Selection, SelectionDirection, TabKeyBehavior, ViewCommand};
 use crate::{StateChange, StateChangeCallback, StateChangeType, WrapIndent, WrapMode};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -81,6 +82,15 @@ pub struct OpenBufferResult {
     pub buffer_id: BufferId,
     /// The initial view id into that buffer.
     pub view_id: ViewId,
+}
+
+/// A navigation target produced by jump-list operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JumpTarget {
+    /// Target buffer id.
+    pub buffer_id: BufferId,
+    /// Target position in logical coordinates.
+    pub position: Position,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,6 +167,8 @@ struct BufferEntry {
     executor: CommandExecutor,
     version: u64,
     last_text_delta: Option<Arc<TextDelta>>,
+    bookmarks: BookmarkSet,
+    marks: MarkSet,
 }
 
 struct ViewEntry {
@@ -169,6 +181,7 @@ struct ViewEntry {
     overscan_rows: usize,
     viewport_height: Option<usize>,
     last_text_delta: Option<Arc<TextDelta>>,
+    jump_list: JumpList,
 }
 
 /// Workspace-level errors.
@@ -324,6 +337,172 @@ fn apply_selection_delta(
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct BookmarkSet {
+    anchors: Vec<TextAnchor>,
+}
+
+impl BookmarkSet {
+    fn toggle_line_start(&mut self, line_start_offset: usize) -> bool {
+        let anchor = TextAnchor::new(line_start_offset, AnchorBias::Left);
+        match self
+            .anchors
+            .binary_search_by_key(&anchor.offset, |a| a.offset)
+        {
+            Ok(idx) => {
+                self.anchors.remove(idx);
+                false
+            }
+            Err(idx) => {
+                self.anchors.insert(idx, anchor);
+                true
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.anchors.clear();
+    }
+
+    fn apply_delta(&mut self, delta: &TextDelta) {
+        for a in &mut self.anchors {
+            a.apply_delta(delta);
+        }
+        self.anchors.sort_by_key(|a| a.offset);
+        self.anchors.dedup_by_key(|a| a.offset);
+    }
+
+    fn line_numbers(&self, line_index: &LineIndex) -> Vec<usize> {
+        let mut lines: Vec<usize> = self
+            .anchors
+            .iter()
+            .map(|a| line_index.char_offset_to_position(a.offset).0)
+            .collect();
+        lines.sort_unstable();
+        lines.dedup();
+        lines
+    }
+
+    fn next_after_line_start(&self, current_line_start: usize) -> Option<TextAnchor> {
+        self.anchors
+            .iter()
+            .copied()
+            .find(|a| a.offset > current_line_start)
+            .or_else(|| self.anchors.first().copied())
+    }
+
+    fn prev_before_line_start(&self, current_line_start: usize) -> Option<TextAnchor> {
+        self.anchors
+            .iter()
+            .copied()
+            .rfind(|a| a.offset < current_line_start)
+            .or_else(|| self.anchors.last().copied())
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct MarkSet {
+    marks: BTreeMap<String, TextAnchor>,
+}
+
+impl MarkSet {
+    fn set(&mut self, name: String, offset: usize) {
+        self.marks
+            .insert(name, TextAnchor::new(offset, AnchorBias::Right));
+    }
+
+    fn get(&self, name: &str) -> Option<TextAnchor> {
+        self.marks.get(name).copied()
+    }
+
+    fn remove(&mut self, name: &str) -> bool {
+        self.marks.remove(name).is_some()
+    }
+
+    fn clear(&mut self) {
+        self.marks.clear();
+    }
+
+    fn names(&self) -> Vec<String> {
+        self.marks.keys().cloned().collect()
+    }
+
+    fn apply_delta(&mut self, delta: &TextDelta) {
+        for anchor in self.marks.values_mut() {
+            anchor.apply_delta(delta);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct JumpEntry {
+    buffer_id: BufferId,
+    anchor: TextAnchor,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct JumpList {
+    back: Vec<JumpEntry>,
+    forward: Vec<JumpEntry>,
+    max_len: usize,
+}
+
+impl JumpList {
+    fn new(max_len: usize) -> Self {
+        Self {
+            back: Vec::new(),
+            forward: Vec::new(),
+            max_len: max_len.max(1),
+        }
+    }
+
+    fn record(&mut self, entry: JumpEntry) {
+        if self.back.last().is_some_and(|last| *last == entry) {
+            return;
+        }
+
+        self.back.push(entry);
+        self.forward.clear();
+
+        if self.back.len() > self.max_len {
+            let overflow = self.back.len() - self.max_len;
+            self.back.drain(0..overflow);
+        }
+    }
+
+    fn back(&mut self, current: JumpEntry) -> Option<JumpEntry> {
+        let target = self.back.pop()?;
+        if !self.forward.last().is_some_and(|last| *last == current) {
+            self.forward.push(current);
+        }
+        Some(target)
+    }
+
+    fn forward(&mut self, current: JumpEntry) -> Option<JumpEntry> {
+        let target = self.forward.pop()?;
+        if !self.back.last().is_some_and(|last| *last == current) {
+            self.back.push(current);
+        }
+        Some(target)
+    }
+
+    fn clear(&mut self) {
+        self.back.clear();
+        self.forward.clear();
+    }
+
+    fn apply_delta(&mut self, buffer_id: BufferId, delta: &TextDelta) {
+        for entry in self
+            .back
+            .iter_mut()
+            .chain(self.forward.iter_mut())
+            .filter(|e| e.buffer_id == buffer_id)
+        {
+            entry.anchor.apply_delta(delta);
+        }
+    }
+}
+
 /// A collection of open buffers and their views.
 #[derive(Default)]
 pub struct Workspace {
@@ -430,6 +609,8 @@ impl Workspace {
                 executor,
                 version: 0,
                 last_text_delta: None,
+                bookmarks: BookmarkSet::default(),
+                marks: MarkSet::default(),
             },
         );
 
@@ -527,6 +708,7 @@ impl Workspace {
                 overscan_rows: 0,
                 viewport_height: None,
                 last_text_delta: None,
+                jump_list: JumpList::new(200),
             },
         );
 
@@ -1051,6 +1233,16 @@ impl Workspace {
                         *sel = apply_selection_delta(&before_line_index, new_index, sel, delta_arc);
                     }
                 }
+
+                // Keep navigation state stable under edits.
+                buffer.bookmarks.apply_delta(delta_arc);
+                buffer.marks.apply_delta(delta_arc);
+                for other in views.values_mut() {
+                    if other.buffer != buffer_id {
+                        continue;
+                    }
+                    other.jump_list.apply_delta(buffer_id, delta_arc);
+                }
             }
 
             for other in views.values_mut() {
@@ -1072,6 +1264,475 @@ impl Workspace {
         }
 
         Ok(result)
+    }
+
+    /// Toggle a bookmark at the **current cursor line** for the given view.
+    ///
+    /// Returns `true` if a bookmark was added, or `false` if an existing bookmark on that line was
+    /// removed.
+    pub fn toggle_bookmark_at_cursor_line(
+        &mut self,
+        view_id: ViewId,
+    ) -> Result<bool, WorkspaceError> {
+        let Some(buffer_id) = self.views.get(&view_id).map(|v| v.buffer) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        let Some(view) = self.views.get(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+
+        let line_start = buffer
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(view.core.cursor_position.line, 0);
+
+        let added = buffer.bookmarks.toggle_line_start(line_start);
+
+        for v in self.views.values_mut() {
+            if v.buffer == buffer_id {
+                Self::notify_view(v, StateChangeType::NavigationChanged, None);
+            }
+        }
+
+        Ok(added)
+    }
+
+    /// Return all bookmark line numbers (0-based) for a buffer.
+    pub fn bookmark_lines(&self, buffer_id: BufferId) -> Result<Vec<usize>, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(buffer.bookmarks.line_numbers(&buffer.executor.editor().line_index))
+    }
+
+    /// Clear all bookmarks for a buffer.
+    pub fn clear_bookmarks(&mut self, buffer_id: BufferId) -> Result<(), WorkspaceError> {
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        buffer.bookmarks.clear();
+
+        for v in self.views.values_mut() {
+            if v.buffer == buffer_id {
+                Self::notify_view(v, StateChangeType::NavigationChanged, None);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn move_view_cursor_to_anchor(
+        view: &mut ViewEntry,
+        buffer: &BufferEntry,
+        anchor: TextAnchor,
+    ) -> Position {
+        let (line, column) = buffer.executor.editor().line_index.char_offset_to_position(anchor.offset);
+        view.core.cursor_position = Position::new(line, column);
+        view.core.preferred_x_cells = buffer
+            .executor
+            .editor()
+            .logical_position_to_visual(line, column)
+            .map(|(_, x)| x);
+        view.core.selection = None;
+        view.core.secondary_selections.clear();
+        view.core.cursor_position
+    }
+
+    /// Move the cursor to the next bookmark (wrapping to the first bookmark).
+    ///
+    /// Returns the new cursor position, or `None` if there are no bookmarks.
+    pub fn goto_next_bookmark(
+        &mut self,
+        view_id: ViewId,
+    ) -> Result<Option<Position>, WorkspaceError> {
+        let Some(buffer_id) = self.views.get(&view_id).map(|v| v.buffer) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+
+        let current_line_start = buffer
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(
+                self.views
+                    .get(&view_id)
+                    .ok_or(WorkspaceError::ViewNotFound(view_id))?
+                    .core
+                    .cursor_position
+                    .line,
+                0,
+            );
+
+        let Some(target) = buffer.bookmarks.next_after_line_start(current_line_start) else {
+            return Ok(None);
+        };
+
+        let Some(view) = self.views.get_mut(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let pos = Self::move_view_cursor_to_anchor(view, buffer, target);
+        Self::notify_view(view, StateChangeType::SelectionChanged, None);
+        Ok(Some(pos))
+    }
+
+    /// Move the cursor to the previous bookmark (wrapping to the last bookmark).
+    ///
+    /// Returns the new cursor position, or `None` if there are no bookmarks.
+    pub fn goto_prev_bookmark(
+        &mut self,
+        view_id: ViewId,
+    ) -> Result<Option<Position>, WorkspaceError> {
+        let Some(buffer_id) = self.views.get(&view_id).map(|v| v.buffer) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+
+        let current_line_start = buffer
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(
+                self.views
+                    .get(&view_id)
+                    .ok_or(WorkspaceError::ViewNotFound(view_id))?
+                    .core
+                    .cursor_position
+                    .line,
+                0,
+            );
+
+        let Some(target) = buffer
+            .bookmarks
+            .prev_before_line_start(current_line_start)
+        else {
+            return Ok(None);
+        };
+
+        let Some(view) = self.views.get_mut(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let pos = Self::move_view_cursor_to_anchor(view, buffer, target);
+        Self::notify_view(view, StateChangeType::SelectionChanged, None);
+        Ok(Some(pos))
+    }
+
+    /// Set (or replace) a named mark at the current cursor position of the given view.
+    pub fn set_mark_at_cursor(
+        &mut self,
+        view_id: ViewId,
+        name: String,
+    ) -> Result<(), WorkspaceError> {
+        if name.trim().is_empty() {
+            return Err(WorkspaceError::CommandFailed {
+                view: view_id,
+                message: "Mark name cannot be empty".to_string(),
+            });
+        }
+
+        let Some(buffer_id) = self.views.get(&view_id).map(|v| v.buffer) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        let Some(view) = self.views.get(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+
+        let pos = view.core.cursor_position;
+        let offset = buffer
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(pos.line, pos.column);
+        buffer.marks.set(name, offset);
+
+        for v in self.views.values_mut() {
+            if v.buffer == buffer_id {
+                Self::notify_view(v, StateChangeType::NavigationChanged, None);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Move the cursor to a named mark (if present).
+    ///
+    /// Returns the new cursor position, or `None` if the mark does not exist.
+    pub fn goto_mark(
+        &mut self,
+        view_id: ViewId,
+        name: &str,
+    ) -> Result<Option<Position>, WorkspaceError> {
+        let Some(buffer_id) = self.views.get(&view_id).map(|v| v.buffer) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+
+        let Some(anchor) = buffer.marks.get(name) else {
+            return Ok(None);
+        };
+
+        let Some(view) = self.views.get_mut(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let pos = Self::move_view_cursor_to_anchor(view, buffer, anchor);
+        Self::notify_view(view, StateChangeType::SelectionChanged, None);
+        Ok(Some(pos))
+    }
+
+    /// Remove a named mark from a buffer.
+    ///
+    /// Returns `true` if the mark existed.
+    pub fn clear_mark(
+        &mut self,
+        buffer_id: BufferId,
+        name: &str,
+    ) -> Result<bool, WorkspaceError> {
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        let existed = buffer.marks.remove(name);
+        if existed {
+            for v in self.views.values_mut() {
+                if v.buffer == buffer_id {
+                    Self::notify_view(v, StateChangeType::NavigationChanged, None);
+                }
+            }
+        }
+        Ok(existed)
+    }
+
+    /// Return all mark names for a buffer (deterministic order).
+    pub fn mark_names(&self, buffer_id: BufferId) -> Result<Vec<String>, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(buffer.marks.names())
+    }
+
+    /// Clear all marks for a buffer.
+    pub fn clear_all_marks(&mut self, buffer_id: BufferId) -> Result<(), WorkspaceError> {
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        buffer.marks.clear();
+        for v in self.views.values_mut() {
+            if v.buffer == buffer_id {
+                Self::notify_view(v, StateChangeType::NavigationChanged, None);
+            }
+        }
+        Ok(())
+    }
+
+    /// Record the current cursor position as a jump-list location for a view.
+    ///
+    /// Typical usage: call this *before* performing a “jump” (go-to-definition, search result,
+    /// symbol navigation, ...).
+    pub fn push_jump_location(&mut self, view_id: ViewId) -> Result<(), WorkspaceError> {
+        let Some(buffer_id) = self.views.get(&view_id).map(|v| v.buffer) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        let Some(view) = self.views.get_mut(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+
+        let pos = view.core.cursor_position;
+        let offset = buffer
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(pos.line, pos.column);
+
+        view.jump_list.record(JumpEntry {
+            buffer_id,
+            anchor: TextAnchor::new(offset, AnchorBias::Right),
+        });
+
+        Self::notify_view(view, StateChangeType::NavigationChanged, None);
+        Ok(())
+    }
+
+    /// Jump back in the view's jump list.
+    ///
+    /// Returns the navigation target (including the buffer id). If the target belongs to the
+    /// current view's buffer, this method also moves the cursor and clears selection.
+    pub fn jump_back(&mut self, view_id: ViewId) -> Result<Option<JumpTarget>, WorkspaceError> {
+        let Some(buffer_id) = self.views.get(&view_id).map(|v| v.buffer) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+
+        let current_pos = self
+            .views
+            .get(&view_id)
+            .ok_or(WorkspaceError::ViewNotFound(view_id))?
+            .core
+            .cursor_position;
+        let current_offset = buffer
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(current_pos.line, current_pos.column);
+        let current = JumpEntry {
+            buffer_id,
+            anchor: TextAnchor::new(current_offset, AnchorBias::Right),
+        };
+
+        let Some(view) = self.views.get_mut(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(target) = view.jump_list.back(current) else {
+            return Ok(None);
+        };
+
+        let Some(target_buffer) = self.buffers.get(&target.buffer_id) else {
+            Self::notify_view(view, StateChangeType::NavigationChanged, None);
+            return Ok(None);
+        };
+
+        let (line, column) = target_buffer
+            .executor
+            .editor()
+            .line_index
+            .char_offset_to_position(target.anchor.offset);
+        let target_pos = Position::new(line, column);
+
+        let out = JumpTarget {
+            buffer_id: target.buffer_id,
+            position: target_pos,
+        };
+
+        if target.buffer_id == buffer_id {
+            Self::move_view_cursor_to_anchor(view, buffer, target.anchor);
+            Self::notify_view(view, StateChangeType::SelectionChanged, None);
+        } else {
+            Self::notify_view(view, StateChangeType::NavigationChanged, None);
+        }
+
+        Ok(Some(out))
+    }
+
+    /// Jump forward in the view's jump list.
+    ///
+    /// Returns the navigation target (including the buffer id). If the target belongs to the
+    /// current view's buffer, this method also moves the cursor and clears selection.
+    pub fn jump_forward(&mut self, view_id: ViewId) -> Result<Option<JumpTarget>, WorkspaceError> {
+        let Some(buffer_id) = self.views.get(&view_id).map(|v| v.buffer) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+
+        let current_pos = self
+            .views
+            .get(&view_id)
+            .ok_or(WorkspaceError::ViewNotFound(view_id))?
+            .core
+            .cursor_position;
+        let current_offset = buffer
+            .executor
+            .editor()
+            .line_index
+            .position_to_char_offset(current_pos.line, current_pos.column);
+        let current = JumpEntry {
+            buffer_id,
+            anchor: TextAnchor::new(current_offset, AnchorBias::Right),
+        };
+
+        let Some(view) = self.views.get_mut(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        let Some(target) = view.jump_list.forward(current) else {
+            return Ok(None);
+        };
+
+        let Some(target_buffer) = self.buffers.get(&target.buffer_id) else {
+            Self::notify_view(view, StateChangeType::NavigationChanged, None);
+            return Ok(None);
+        };
+
+        let (line, column) = target_buffer
+            .executor
+            .editor()
+            .line_index
+            .char_offset_to_position(target.anchor.offset);
+        let target_pos = Position::new(line, column);
+
+        let out = JumpTarget {
+            buffer_id: target.buffer_id,
+            position: target_pos,
+        };
+
+        if target.buffer_id == buffer_id {
+            Self::move_view_cursor_to_anchor(view, buffer, target.anchor);
+            Self::notify_view(view, StateChangeType::SelectionChanged, None);
+        } else {
+            Self::notify_view(view, StateChangeType::NavigationChanged, None);
+        }
+
+        Ok(Some(out))
+    }
+
+    /// Clear the jump list (both back/forward stacks) for a view.
+    pub fn clear_jump_list(&mut self, view_id: ViewId) -> Result<(), WorkspaceError> {
+        let Some(view) = self.views.get_mut(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        view.jump_list.clear();
+        Self::notify_view(view, StateChangeType::NavigationChanged, None);
+        Ok(())
+    }
+
+    /// Apply a previously produced [`JumpTarget`] to a view (moves the cursor and clears
+    /// selection).
+    pub fn apply_jump_target(
+        &mut self,
+        view_id: ViewId,
+        target: JumpTarget,
+    ) -> Result<(), WorkspaceError> {
+        let Some(view) = self.views.get_mut(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        if view.buffer != target.buffer_id {
+            return Err(WorkspaceError::CommandFailed {
+                view: view_id,
+                message: "JumpTarget buffer does not match view buffer".to_string(),
+            });
+        }
+
+        let Some(buffer) = self.buffers.get(&view.buffer) else {
+            return Err(WorkspaceError::BufferNotFound(view.buffer));
+        };
+
+        view.core.cursor_position = target.position;
+        view.core.preferred_x_cells = buffer
+            .executor
+            .editor()
+            .logical_position_to_visual(target.position.line, target.position.column)
+            .map(|(_, x)| x);
+        view.core.selection = None;
+        view.core.secondary_selections.clear();
+
+        Self::notify_view(view, StateChangeType::SelectionChanged, None);
+        Ok(())
     }
 
     /// Set the viewport height for a view (used for `ViewportState` calculations).

@@ -356,6 +356,18 @@ int32_t editor_core_ui_ffi_editor_ui_move_grapheme_right(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_word_left(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_word_right(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_to_matching_bracket(EditorUi* ui);
+
+// Bookmarks / marks / jump list.
+int32_t editor_core_ui_ffi_editor_ui_toggle_bookmark_at_cursor_line(EditorUi* ui,
+                                                                   uint8_t* out_added);
+int32_t editor_core_ui_ffi_editor_ui_goto_next_bookmark(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_goto_prev_bookmark(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_set_mark_at_cursor(EditorUi* ui, const char* name_utf8);
+int32_t editor_core_ui_ffi_editor_ui_goto_mark(EditorUi* ui, const char* name_utf8);
+int32_t editor_core_ui_ffi_editor_ui_push_jump_location(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_jump_back(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_jump_forward(EditorUi* ui);
+
 int32_t editor_core_ui_ffi_editor_ui_move_to_visual_line_start(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_to_visual_line_end(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_to_document_start(EditorUi* ui);

@@ -54,9 +54,31 @@ this workspace (per your request).
 - [ ] **[core] Undo tree (branching history)** (optional power feature)
   - Current undo/redo is linear. Branching undo (like Vim’s undo tree) is not exposed.
 
-- [ ] **[core] Bookmarks / marks / jump list**
-  - No first-class bookmark/mark model that shifts correctly under edits.
-  - A jump list (navigation history) is also typically expected in editors with go-to-definition.
+- [x] **[core] Bookmarks / marks / jump list**
+  - Implemented as a small anchored-offset model (`TextAnchor`) plus workspace/state APIs that
+    remain stable under edits (via `TextDelta`).
+  - Core primitives:
+    - `crates/editor-core/src/anchors.rs`: `TextAnchor` + `AnchorBias` with `apply_delta(...)`
+    - `StateChangeType::NavigationChanged` for bookmark/mark/jump-list updates
+  - Workspace APIs (`crates/editor-core/src/workspace.rs`):
+    - bookmarks: `toggle_bookmark_at_cursor_line`, `bookmark_lines`, `goto_next_bookmark`, `goto_prev_bookmark`, `clear_bookmarks`
+    - marks: `set_mark_at_cursor`, `goto_mark`, `clear_mark`, `clear_all_marks`, `mark_names`
+    - jump list: `push_jump_location`, `jump_back`, `jump_forward`, `clear_jump_list`, `apply_jump_target`
+    - automatic shifting under edits in `Workspace::execute(...)` (updates bookmarks/marks/jump list via `TextDelta`)
+  - Single-view APIs (`crates/editor-core/src/state.rs`):
+    - bookmarks: `toggle_bookmark_at_cursor_line`, `bookmark_lines`, `goto_next_bookmark`, `goto_prev_bookmark`, `clear_bookmarks`
+    - marks: `set_mark_at_cursor`, `goto_mark`, `clear_mark`, `clear_all_marks`, `mark_names`
+    - jump list: `push_jump_location`, `jump_back`, `jump_forward`, `clear_jump_list`
+    - automatic shifting under edits in `EditorStateManager::execute(...)` (applies `TextDelta` to anchors)
+  - Tests + fixtures:
+    - `crates/editor-core/tests/bookmarks_marks_jumplist.rs`
+    - `crates/editor-core/tests/fixtures/navigation_sample.txt`
+  - Example: `crates/editor-core/examples/bookmarks_marks_jumplist.rs`
+  - UI/FFI integration:
+    - Rust UI wrapper: `crates/editor-core-ui/src/lib.rs` (bookmark/mark/jump-list methods)
+    - C ABI: `crates/editor-core-ui-ffi/src/lib.rs` + header updates
+    - Swift: `swift/Sources/EditorCoreUIFFI/EditorUI.swift` + `EditorCoreSkiaView.jumpBack/jumpForward()`
+    - AttoEditor command palette: “Go: Back” / “Go: Forward”
 
 - [x] **[core] Diff / hunk primitives**
   - Implemented as a small, UI-agnostic crate: `crates/editor-core-diff/`.

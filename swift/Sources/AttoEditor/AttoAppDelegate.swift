@@ -198,6 +198,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(title: "Go: Go to File…") { [weak self] in
                 self?.showQuickOpen()
             },
+            .init(title: "Go: Back") { [weak self] in
+                self?.editorAreaController?.jumpBackInActiveTab()
+            },
+            .init(title: "Go: Forward") { [weak self] in
+                self?.editorAreaController?.jumpForwardInActiveTab()
+            },
             .init(title: "Go: Go to Matching Bracket") { [weak self] in
                 self?.editorAreaController?.moveToMatchingBracketInActiveTab()
             },
