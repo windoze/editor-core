@@ -256,11 +256,21 @@ this workspace (per your request).
       `swift/Tests/EditorCoreUITests/EditorCoreSkiaViewCommandClickTests.swift`
   - Example: `cargo run -p editor-core-ui --example mouse_gestures`
 
-- [ ] **[ui] Cross-platform windowing / widget integration**
+- [x] **[ui] Cross-platform windowing / widget integration**
   - `editor-core-render-skia` renders; it does not provide an actual cross-platform app/window.
   - A complete editor needs a “shell” (winit/tao/AppKit/WinUI/GTK/Qt) that manages:
     - surfaces, DPI scale, frame scheduling
     - accessibility and input method plumbing
+  - Implemented as a minimal cross-platform “shell” example using `winit` + `softbuffer`
+    (CPU-rendered Skia → RGBA → blit):
+    - Example: `cargo run -p editor-core-ui --example winit_editor`
+    - Window/viewport integration:
+      - Handles DPI scale and resize (`set_viewport_px(...)` + updated `RenderConfig`)
+      - Frame scheduling via `request_redraw` and `RedrawRequested`
+      - Basic input mapping (typing, arrows, mouse selection, wheel scroll)
+    - Utility helper for shells:
+      - `editor-core-ui::rgba8_to_argb_u32` (`crates/editor-core-ui/src/windowing.rs`)
+  - Tests: `crates/editor-core-ui/tests/windowing_tests.rs`
 
 - [ ] **[ui] IME and complex text input hardening across platforms**
   - The kernel has IME-friendly edit primitives (`ReplaceCoalescingUndo*`) and UI layers have

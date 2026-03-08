@@ -5,6 +5,7 @@
 
 mod multi_document;
 mod keybindings;
+mod windowing;
 
 use editor_core::intervals::Interval;
 use editor_core::workspace::{BufferId, ViewId, Workspace};
@@ -45,6 +46,7 @@ pub use keybindings::{
     dispatch_command_to_editor_ui, Key, KeyStroke, Keybinding, KeybindingContext, KeybindingResolver,
     KeybindingResolverResult, KeybindingWhen, Keymap, Modifiers, Platform, ResolvedCommand,
 };
+pub use windowing::{rgba8_to_argb_u32, WindowingError};
 
 #[derive(Debug, Error)]
 pub enum UiError {
