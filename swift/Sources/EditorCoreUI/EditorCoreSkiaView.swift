@@ -592,6 +592,53 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
+    /// Create an AppKit view from an existing `EditorUI` handle.
+    ///
+    /// This is intended for multi-view/split-pane scenarios, where multiple `EditorCoreSkiaView`
+    /// instances share the same document via `EditorUI.cloneView(...)`.
+    ///
+    /// Notes:
+    /// - Unlike `init(library:initialText:viewportWidthCells:)`, this initializer does **not**
+    ///   apply a default theme or reset gutter settings. It assumes the caller has already
+    ///   configured the `EditorUI` (or cloned it from an already-configured view).
+    public init(editor: EditorUI, fontFamiliesCSV: String? = nil) throws {
+        self.editor = editor
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw EditorCoreSkiaViewError.metalUnavailable
+        }
+        guard let queue = device.makeCommandQueue() else {
+            throw EditorCoreSkiaViewError.metalCommandQueueUnavailable
+        }
+        self.metalCommandQueue = queue
+        super.init(frame: .zero, device: device)
+
+        if textCacheDebugEnabled {
+            NSLog("EditorCoreSkiaView text cache debug enabled (EDITOR_CORE_APPKIT_DEBUG_TEXT_CACHE=1)")
+        }
+        if perfDebugEnabled {
+            NSLog("EditorCoreSkiaView perf debug enabled (EDITOR_CORE_APPKIT_DEBUG_PERF=1)")
+        }
+
+        enableSetNeedsDisplay = false
+        isPaused = false
+        framebufferOnly = false
+        colorPixelFormat = .bgra8Unorm
+        delegate = self
+
+        // 让 Rust/Skia 走 Metal 后端渲染到 `CAMetalDrawable.texture`。
+        try editor.enableMetal(device: device, commandQueue: queue)
+
+        // Best-effort: keep the Swift-side gutter cache consistent with the underlying handle.
+        if let current = try? editor.gutterWidthCells() {
+            gutterWidthCells = current
+        }
+        _ = updateGutterWidthIfNeeded()
+
+        if let fontFamiliesCSV, fontFamiliesCSV.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            try editor.setFontFamiliesCSV(fontFamiliesCSV)
+        }
+    }
+
     @available(*, unavailable, message: "请使用 init(library:initialText:viewportWidthCells:) 构造。")
     public override init(frame frameRect: NSRect, device: MTLDevice?) {
         fatalError("unavailable")

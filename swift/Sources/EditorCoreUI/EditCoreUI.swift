@@ -159,6 +159,42 @@ public final class EditCoreUI: NSView {
         ])
     }
 
+    /// Construct `EditCoreUI` from an existing `EditorUI` handle.
+    ///
+    /// This is useful for split panes / multi-view, where the caller creates additional views via
+    /// `EditorUI.cloneView(...)` and then wraps them in a full editor UI (scrollbar + minimap).
+    public init(
+        editor: EditorUI,
+        fontFamiliesCSV: String? = nil,
+        showsMinimap: Bool = true,
+        minimapWidth: CGFloat = 120,
+        minimapPlacement: EditorCoreSkiaMinimapPlacement = .rightOfScrollbar,
+        minimapOpacity: CGFloat = 0.5
+    ) throws {
+        self.editorView = try EditorCoreSkiaView(editor: editor, fontFamiliesCSV: fontFamiliesCSV)
+        self.container = EditorCoreSkiaMinimapContainer(
+            editorView: editorView,
+            showsMinimap: showsMinimap,
+            minimapWidth: minimapWidth,
+            minimapPlacement: minimapPlacement,
+            minimapOpacity: minimapOpacity
+        )
+
+        super.init(frame: .zero)
+
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+
+        addSubview(container)
+        container.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: trailingAnchor),
+            container.topAnchor.constraint(equalTo: topAnchor),
+            container.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
     @available(*, unavailable, message: "请使用 init(library:initialText:viewportWidthCells:) 构造。")
     public override init(frame frameRect: NSRect) {
         fatalError("unavailable")
