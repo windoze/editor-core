@@ -558,20 +558,20 @@ fn get_or_start_shared_lsp_session(
     Ok(shared)
 }
 
-/// A minimal "single buffer, single view" UI wrapper.
-///
-/// Later we can add a `Workspace`-backed version for tabs/splits.
-pub struct EditorUi {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LspClientRequest {
+    Hover { view: ViewId },
+    Definition { view: ViewId },
+}
+
+struct EditorUiDoc {
     ws: Workspace,
     buffer_id: BufferId,
-    view_id: ViewId,
-    renderer: SkiaRenderer,
-    theme: RenderTheme,
-    render_config: RenderConfig,
     sublime: Option<SublimeProcessor>,
     treesitter: Option<TreeSitterAsyncWorker>,
     treesitter_capture_mapper: TreeSitterCaptureMapper,
     treesitter_processing_config: TreeSitterProcessingConfig,
+    treesitter_doc_version: u64,
     lsp: Option<Arc<SharedLspSession>>,
     lsp_document_uri: Option<String>,
     lsp_delta_calc: Option<DeltaCalculator>,
@@ -579,37 +579,17 @@ pub struct EditorUi {
     lsp_inlay_in_flight: bool,
     lsp_code_lens_in_flight: bool,
     lsp_document_links_in_flight: bool,
-    lsp_hover_in_flight: bool,
-    lsp_hover_last_request_id: Option<u64>,
-    lsp_hover_last_result_json: Option<String>,
-    lsp_definition_in_flight: bool,
-    lsp_definition_last_request_id: Option<u64>,
-    lsp_definition_last_result_json: Option<String>,
-    marked: Option<MarkedRange>,
-    search_query: Option<SearchQueryState>,
-    mouse_anchor: Option<Position>,
+    lsp_client_requests: HashMap<u64, LspClientRequest>,
+    lsp_latest_hover_request_id: HashMap<ViewId, u64>,
+    lsp_latest_definition_request_id: HashMap<ViewId, u64>,
+    lsp_last_hover_result_json: HashMap<ViewId, String>,
+    lsp_last_definition_result_json: HashMap<ViewId, String>,
 }
 
-impl Drop for EditorUi {
-    fn drop(&mut self) {
-        if self.lsp.is_some() {
-            self.lsp_disable();
-        }
-    }
-}
-
-impl EditorUi {
-    fn line_index(&self) -> Result<&editor_core::LineIndex, UiError> {
-        self.ws
-            .buffer_line_index(self.buffer_id)
-            .map_err(|e| UiError::Processor(format!("{e:?}")))
-    }
-
-    fn exec_core(&mut self, command: Command) -> Result<CommandResult, UiError> {
-        self.ws.execute(self.view_id, command).map_err(|e| match e {
-            editor_core::WorkspaceError::CommandFailed { message, .. } => {
-                UiError::Processor(message)
-            }
+impl EditorUiDoc {
+    fn exec_core(&mut self, view_id: ViewId, command: Command) -> Result<CommandResult, UiError> {
+        self.ws.execute(view_id, command).map_err(|e| match e {
+            editor_core::WorkspaceError::CommandFailed { message, .. } => UiError::Processor(message),
             editor_core::WorkspaceError::ApplyEditsFailed { message, .. } => {
                 UiError::Processor(message)
             }
@@ -626,22 +606,116 @@ impl EditorUi {
             .map_err(|e| UiError::Processor(format!("{e:?}")))
     }
 
+    fn lsp_is_enabled(&self) -> bool {
+        let Some(shared) = self.lsp.as_ref() else {
+            return false;
+        };
+        let Ok(guard) = shared.session.lock() else {
+            return false;
+        };
+        guard.is_some()
+    }
+
+    fn lsp_disable(&mut self) {
+        if let (Some(shared), Some(uri)) = (self.lsp.as_ref(), self.lsp_document_uri.as_deref()) {
+            let uri = uri.to_string();
+            let _ = shared.with_session_mut(|session| session.close_document(uri.as_str()));
+        }
+
+        self.lsp = None;
+        self.lsp_document_uri = None;
+        self.lsp_delta_calc = None;
+        self.lsp_aux_refresh_due = None;
+        self.lsp_inlay_in_flight = false;
+        self.lsp_code_lens_in_flight = false;
+        self.lsp_document_links_in_flight = false;
+        self.lsp_client_requests.clear();
+        self.lsp_latest_hover_request_id.clear();
+        self.lsp_latest_definition_request_id.clear();
+        self.lsp_last_hover_result_json.clear();
+        self.lsp_last_definition_result_json.clear();
+
+        let _ = self.apply_processing_edits(editor_core_lsp::lsp_clear_edits());
+    }
+}
+
+/// 单 buffer UI 句柄（每个实例对应一个 `Workspace` view）。
+///
+/// - 通过 [`Self::clone_view`] 可为同一文档创建额外 view（用于 split panes / 多视图）。
+/// - 文本与派生状态（Sublime/Tree-sitter/LSP）在同一 buffer 内共享；光标/选择/滚动等是 view 级别。
+pub struct EditorUi {
+    doc: Arc<Mutex<EditorUiDoc>>,
+    buffer_id: BufferId,
+    view_id: ViewId,
+    renderer: SkiaRenderer,
+    theme: RenderTheme,
+    render_config: RenderConfig,
+    marked: Option<MarkedRange>,
+    search_query: Option<SearchQueryState>,
+    mouse_anchor: Option<Position>,
+}
+
+impl Drop for EditorUi {
+    fn drop(&mut self) {
+        let is_last_handle = Arc::strong_count(&self.doc) == 1;
+        let mut doc = self.doc.lock().unwrap_or_else(|e| e.into_inner());
+
+        if is_last_handle {
+            if doc.lsp.is_some() {
+                doc.lsp_disable();
+            }
+        } else {
+            doc.lsp_latest_hover_request_id.remove(&self.view_id);
+            doc.lsp_latest_definition_request_id.remove(&self.view_id);
+            doc.lsp_last_hover_result_json.remove(&self.view_id);
+            doc.lsp_last_definition_result_json.remove(&self.view_id);
+        }
+
+        let _ = doc.ws.close_view(self.view_id);
+    }
+}
+
+impl EditorUi {
+    fn lock_doc(&self) -> std::sync::MutexGuard<'_, EditorUiDoc> {
+        self.doc.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn with_line_index<R>(&self, f: impl FnOnce(&editor_core::LineIndex) -> R) -> Result<R, UiError> {
+        let doc = self.lock_doc();
+        let line_index = doc
+            .ws
+            .buffer_line_index(self.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        Ok(f(line_index))
+    }
+
+    fn exec_core(&mut self, command: Command) -> Result<CommandResult, UiError> {
+        let mut doc = self.lock_doc();
+        doc.exec_core(self.view_id, command)
+    }
+
+    fn apply_processing_edits<I>(&mut self, edits: I) -> Result<(), UiError>
+    where
+        I: IntoIterator<Item = ProcessingEdit>,
+    {
+        let mut doc = self.lock_doc();
+        doc.apply_processing_edits(edits)
+    }
+
     pub fn new(initial_text: &str, viewport_width_cells: usize) -> Self {
         let mut ws = Workspace::new();
         let opened = ws
             .open_buffer(None, initial_text, viewport_width_cells.max(1))
             .expect("open initial workspace buffer");
-        Self {
+        let buffer_id = opened.buffer_id;
+        let doc = Arc::new(Mutex::new(EditorUiDoc {
             ws,
-            buffer_id: opened.buffer_id,
-            view_id: opened.view_id,
-            renderer: SkiaRenderer::new(),
-            theme: RenderTheme::default(),
-            render_config: RenderConfig::default(),
+            buffer_id,
             sublime: None,
             treesitter: None,
             treesitter_capture_mapper: TreeSitterCaptureMapper::default(),
             treesitter_processing_config: TreeSitterProcessingConfig::default(),
+            treesitter_doc_version: 0,
             lsp: None,
             lsp_document_uri: None,
             lsp_delta_calc: None,
@@ -649,30 +723,63 @@ impl EditorUi {
             lsp_inlay_in_flight: false,
             lsp_code_lens_in_flight: false,
             lsp_document_links_in_flight: false,
-            lsp_hover_in_flight: false,
-            lsp_hover_last_request_id: None,
-            lsp_hover_last_result_json: None,
-            lsp_definition_in_flight: false,
-            lsp_definition_last_request_id: None,
-            lsp_definition_last_result_json: None,
+            lsp_client_requests: HashMap::new(),
+            lsp_latest_hover_request_id: HashMap::new(),
+            lsp_latest_definition_request_id: HashMap::new(),
+            lsp_last_hover_result_json: HashMap::new(),
+            lsp_last_definition_result_json: HashMap::new(),
+        }));
+        Self {
+            doc,
+            buffer_id,
+            view_id: opened.view_id,
+            renderer: SkiaRenderer::new(),
+            theme: RenderTheme::default(),
+            render_config: RenderConfig::default(),
             marked: None,
             search_query: None,
             mouse_anchor: None,
         }
     }
 
+    /// 为同一文档创建一个新的 view（光标/滚动独立，文本共享）。
+    pub fn clone_view(&self, viewport_width_cells: usize) -> Result<Self, UiError> {
+        let view_id = {
+            let mut doc = self.lock_doc();
+            let buffer_id = doc.buffer_id;
+            doc.ws
+                .create_view(buffer_id, viewport_width_cells.max(1))
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?
+        };
+
+        Ok(Self {
+            doc: Arc::clone(&self.doc),
+            buffer_id: self.buffer_id,
+            view_id,
+            renderer: SkiaRenderer::new(),
+            theme: self.theme.clone(),
+            render_config: self.render_config,
+            marked: None,
+            search_query: None,
+            mouse_anchor: None,
+        })
+    }
+
     pub fn text(&self) -> String {
-        self.ws
-            .buffer_text(self.buffer_id)
+        let doc = self.lock_doc();
+        doc.ws
+            .buffer_text(doc.buffer_id)
             .unwrap_or_else(|_| "".to_string())
     }
 
     pub fn is_modified(&self) -> bool {
-        self.ws.is_modified_for_view(self.view_id).unwrap_or(false)
+        let doc = self.lock_doc();
+        doc.ws.is_modified_for_view(self.view_id).unwrap_or(false)
     }
 
     pub fn mark_saved(&mut self) {
-        let _ = self.ws.mark_saved_for_view(self.view_id);
+        let mut doc = self.lock_doc();
+        let _ = doc.ws.mark_saved_for_view(self.view_id);
     }
 
     pub fn reveal_primary_caret(&mut self) {
@@ -680,7 +787,8 @@ impl EditorUi {
     }
 
     pub fn cursor_state(&self) -> editor_core::CursorState {
-        self.ws
+        let doc = self.lock_doc();
+        doc.ws
             .cursor_state_for_view(self.view_id)
             .unwrap_or(editor_core::CursorState {
                 position: Position::new(0, 0),
@@ -696,8 +804,9 @@ impl EditorUi {
         &mut self,
         runtime: TreeSitterProcessingConfig,
     ) -> Result<(), UiError> {
-        self.treesitter_processing_config = runtime;
-        if let Some(worker) = self.treesitter.as_mut() {
+        let mut doc = self.lock_doc();
+        doc.treesitter_processing_config = runtime;
+        if let Some(worker) = doc.treesitter.as_mut() {
             worker
                 .tx
                 .send(TreeSitterWorkerMsg::UpdateRuntimeConfig { runtime })
@@ -713,7 +822,8 @@ impl EditorUi {
     /// If there is no selection, `start == end == caret_offset`.
     pub fn primary_selection_offsets(&self) -> (usize, usize) {
         let cursor = self.cursor_state();
-        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+        let doc = self.lock_doc();
+        let Ok(line_index) = doc.ws.buffer_line_index(self.buffer_id) else {
             return (cursor.offset, cursor.offset);
         };
         if let Some(sel) = cursor.selection {
@@ -733,7 +843,8 @@ impl EditorUi {
     ///   current order.
     pub fn selected_text(&self) -> String {
         let cursor = self.cursor_state();
-        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+        let doc = self.lock_doc();
+        let Ok(line_index) = doc.ws.buffer_line_index(self.buffer_id) else {
             return String::new();
         };
 
@@ -764,7 +875,7 @@ impl EditorUi {
             if len == 0 {
                 continue;
             }
-            if let Ok(text) = self.ws.buffer_text_range(self.buffer_id, start, len) {
+            if let Ok(text) = doc.ws.buffer_text_range(doc.buffer_id, start, len) {
                 parts.push(text);
             }
         }
@@ -781,12 +892,15 @@ impl EditorUi {
     /// This mirrors the JSON shape from `editor-core-ffi` (`value_minimap_grid`) so hosts can reuse
     /// the same decoding logic.
     pub fn minimap_json(&mut self, start_visual_row: usize, count: usize) -> String {
-        let grid = match self
-            .ws
-            .get_minimap_content(self.view_id, start_visual_row, count)
-        {
-            Ok(grid) => grid,
-            Err(_) => return "{}".to_string(),
+        let grid = {
+            let mut doc = self.lock_doc();
+            match doc
+                .ws
+                .get_minimap_content(self.view_id, start_visual_row, count)
+            {
+                Ok(grid) => grid,
+                Err(_) => return "{}".to_string(),
+            }
         };
         let value = serde_json::json!({
             "start_visual_row": grid.start_visual_row,
@@ -813,7 +927,8 @@ impl EditorUi {
     /// Each range is inclusive-exclusive in Unicode scalar indices.
     pub fn selections_offsets(&self) -> (Vec<(usize, usize)>, usize) {
         let cursor = self.cursor_state();
-        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+        let doc = self.lock_doc();
+        let Ok(line_index) = doc.ws.buffer_line_index(self.buffer_id) else {
             return (Vec::new(), 0);
         };
 
@@ -860,19 +975,21 @@ impl EditorUi {
             ));
         }
 
-        let line_index = self.line_index()?;
-        let mut selections: Vec<Selection> = Vec::with_capacity(ranges.len());
-        for (start, end) in ranges {
-            let (start_line, start_col) = line_index.char_offset_to_position(*start);
-            let (end_line, end_col) = line_index.char_offset_to_position(*end);
-            let start_pos = Position::new(start_line, start_col);
-            let end_pos = Position::new(end_line, end_col);
-            selections.push(Selection {
-                start: start_pos,
-                end: end_pos,
-                direction: SelectionDirection::Forward,
-            });
-        }
+        let selections = self.with_line_index(|line_index| {
+            let mut selections: Vec<Selection> = Vec::with_capacity(ranges.len());
+            for (start, end) in ranges {
+                let (start_line, start_col) = line_index.char_offset_to_position(*start);
+                let (end_line, end_col) = line_index.char_offset_to_position(*end);
+                let start_pos = Position::new(start_line, start_col);
+                let end_pos = Position::new(end_line, end_col);
+                selections.push(Selection {
+                    start: start_pos,
+                    end: end_pos,
+                    direction: SelectionDirection::Forward,
+                });
+            }
+            selections
+        })?;
 
         self.exec_core(Command::Cursor(CursorCommand::SetSelections {
             selections,
@@ -930,14 +1047,15 @@ impl EditorUi {
         anchor_offset: usize,
         active_offset: usize,
     ) -> Result<(), UiError> {
-        let line_index = self.line_index()?;
-        let line_count = line_index.line_count();
+        let (line_count, a_line, b_line) = self.with_line_index(|line_index| {
+            let line_count = line_index.line_count();
+            let (a_line, _a_col) = line_index.char_offset_to_position(anchor_offset);
+            let (b_line, _b_col) = line_index.char_offset_to_position(active_offset);
+            (line_count, a_line, b_line)
+        })?;
         if line_count == 0 {
             return Ok(());
         }
-
-        let (a_line, _a_col) = line_index.char_offset_to_position(anchor_offset);
-        let (b_line, _b_col) = line_index.char_offset_to_position(active_offset);
 
         let start_line = a_line.min(b_line);
         let end_line = a_line.max(b_line);
@@ -951,13 +1069,14 @@ impl EditorUi {
     /// - 段落定义：连续的“空行”或连续的“非空行”构成一个段落。
     /// - 选区行为：类似 `SelectLine`，会尽量包含段落末尾的换行（若存在下一行）。
     pub fn select_paragraph_at_char_offset(&mut self, char_offset: usize) -> Result<(), UiError> {
-        let line_index = self.line_index()?;
-        let line_count = line_index.line_count();
+        let (line_count, line) = self.with_line_index(|line_index| {
+            let line_count = line_index.line_count();
+            let (line, _col) = line_index.char_offset_to_position(char_offset);
+            (line_count, line)
+        })?;
         if line_count == 0 {
             return Ok(());
         }
-
-        let (line, _col) = line_index.char_offset_to_position(char_offset);
         let (start_line, end_line) = self.paragraph_line_range_for_line(line);
         let (start, end) = self.paragraph_offsets_for_line_range(start_line, end_line);
         self.set_selections_offsets(&[(start, end)], 0)?;
@@ -970,14 +1089,15 @@ impl EditorUi {
         anchor_offset: usize,
         active_offset: usize,
     ) -> Result<(), UiError> {
-        let line_index = self.line_index()?;
-        let line_count = line_index.line_count();
+        let (line_count, a_line, b_line) = self.with_line_index(|line_index| {
+            let line_count = line_index.line_count();
+            let (a_line, _a_col) = line_index.char_offset_to_position(anchor_offset);
+            let (b_line, _b_col) = line_index.char_offset_to_position(active_offset);
+            (line_count, a_line, b_line)
+        })?;
         if line_count == 0 {
             return Ok(());
         }
-
-        let (a_line, _a_col) = line_index.char_offset_to_position(anchor_offset);
-        let (b_line, _b_col) = line_index.char_offset_to_position(active_offset);
 
         let (a_start, a_end) = self.paragraph_line_range_for_line(a_line);
         let (b_start, b_end) = self.paragraph_line_range_for_line(b_line);
@@ -1013,9 +1133,11 @@ impl EditorUi {
         anchor_offset: usize,
         active_offset: usize,
     ) -> Result<(), UiError> {
-        let line_index = self.line_index()?;
-        let (a_line, a_col) = line_index.char_offset_to_position(anchor_offset);
-        let (b_line, b_col) = line_index.char_offset_to_position(active_offset);
+        let (a_line, a_col, b_line, b_col) = self.with_line_index(|line_index| {
+            let (a_line, a_col) = line_index.char_offset_to_position(anchor_offset);
+            let (b_line, b_col) = line_index.char_offset_to_position(active_offset);
+            (a_line, a_col, b_line, b_col)
+        })?;
         self.exec_core(Command::Cursor(CursorCommand::SetRectSelection {
             anchor: Position::new(a_line, a_col),
             active: Position::new(b_line, b_col),
@@ -1028,8 +1150,8 @@ impl EditorUi {
         char_offset: usize,
         make_primary: bool,
     ) -> Result<(), UiError> {
-        let line_index = self.line_index()?;
-        let (line, column) = line_index.char_offset_to_position(char_offset);
+        let (line, column) =
+            self.with_line_index(|line_index| line_index.char_offset_to_position(char_offset))?;
         let pos = Position::new(line, column);
 
         let cursor = self.cursor_state();
@@ -1054,37 +1176,56 @@ impl EditorUi {
     }
 
     fn is_blank_line(&self, line: usize) -> bool {
-        self.ws
-            .buffer_line_index(self.buffer_id)
-            .ok()
-            .and_then(|idx| idx.get_line_text(line))
-            .unwrap_or_default()
-            .trim()
-            .is_empty()
+        self.with_line_index(|idx| {
+            idx.get_line_text(line)
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
+        })
+        .unwrap_or(true)
     }
 
     fn paragraph_line_range_for_line(&self, line: usize) -> (usize, usize) {
-        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
-            return (0, 0);
-        };
-        let line_count = line_index.line_count();
-        if line_count == 0 {
-            return (0, 0);
-        }
+        self.with_line_index(|line_index| {
+            let line_count = line_index.line_count();
+            if line_count == 0 {
+                return (0, 0);
+            }
 
-        let mut start = line.min(line_count.saturating_sub(1));
-        let mut end = start;
+            let mut start = line.min(line_count.saturating_sub(1));
+            let mut end = start;
 
-        let want_blank = self.is_blank_line(start);
+            let want_blank = line_index
+                .get_line_text(start)
+                .unwrap_or_default()
+                .trim()
+                .is_empty();
 
-        while start > 0 && self.is_blank_line(start - 1) == want_blank {
-            start -= 1;
-        }
-        while end + 1 < line_count && self.is_blank_line(end + 1) == want_blank {
-            end += 1;
-        }
+            while start > 0
+                && line_index
+                    .get_line_text(start - 1)
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty()
+                    == want_blank
+            {
+                start -= 1;
+            }
 
-        (start, end)
+            while end + 1 < line_count
+                && line_index
+                    .get_line_text(end + 1)
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty()
+                    == want_blank
+            {
+                end += 1;
+            }
+
+            (start, end)
+        })
+        .unwrap_or((0, 0))
     }
 
     fn paragraph_offsets_for_line_range(
@@ -1092,26 +1233,26 @@ impl EditorUi {
         start_line: usize,
         end_line: usize,
     ) -> (usize, usize) {
-        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
-            return (0, 0);
-        };
-        let line_count = line_index.line_count();
-        if line_count == 0 {
-            return (0, 0);
-        }
+        self.with_line_index(|line_index| {
+            let line_count = line_index.line_count();
+            if line_count == 0 {
+                return (0, 0);
+            }
 
-        let start_line = start_line.min(line_count.saturating_sub(1));
-        let end_line = end_line.min(line_count.saturating_sub(1));
+            let start_line = start_line.min(line_count.saturating_sub(1));
+            let end_line = end_line.min(line_count.saturating_sub(1));
 
-        let start = line_index.position_to_char_offset(start_line, 0);
-        let end = if end_line + 1 < line_count {
-            line_index.position_to_char_offset(end_line + 1, 0)
-        } else {
-            let line_text = line_index.get_line_text(end_line).unwrap_or_default();
-            line_index.position_to_char_offset(end_line, line_text.chars().count())
-        };
+            let start = line_index.position_to_char_offset(start_line, 0);
+            let end = if end_line + 1 < line_count {
+                line_index.position_to_char_offset(end_line + 1, 0)
+            } else {
+                let line_text = line_index.get_line_text(end_line).unwrap_or_default();
+                line_index.position_to_char_offset(end_line, line_text.chars().count())
+            };
 
-        (start, end)
+            (start, end)
+        })
+        .unwrap_or((0, 0))
     }
 
     /// Return the current IME marked text range as `(start, len)` in character offsets.
@@ -1125,9 +1266,10 @@ impl EditorUi {
     /// - `line` and `column` are also counted in Unicode scalar values (Rust `char`s).
     /// - `char_offset` is clamped to the document length.
     pub fn char_offset_to_logical_position(&self, char_offset: usize) -> (usize, usize) {
-        let doc_len = self.ws.buffer_char_count(self.buffer_id).unwrap_or(0);
+        let doc = self.lock_doc();
+        let doc_len = doc.ws.buffer_char_count(self.buffer_id).unwrap_or(0);
         let off = char_offset.min(doc_len);
-        self.ws
+        doc.ws
             .buffer_line_index(self.buffer_id)
             .ok()
             .map(|idx| idx.char_offset_to_position(off))
@@ -1137,7 +1279,8 @@ impl EditorUi {
     /// Map a character offset (Unicode scalar index) to visual `(row, x_cells)`.
     pub fn char_offset_to_visual(&mut self, char_offset: usize) -> Option<(usize, usize)> {
         let (line, column) = self.char_offset_to_logical_position(char_offset);
-        self.ws
+        let mut doc = self.lock_doc();
+        doc.ws
             .logical_to_visual_for_view(self.view_id, line, column)
             .ok()
             .flatten()
@@ -1145,11 +1288,12 @@ impl EditorUi {
 
     /// Map a visual `(row, x_cells)` position to a character offset.
     pub fn visual_to_char_offset(&mut self, row: usize, x_cells: usize) -> Option<usize> {
-        let pos = self
+        let mut doc = self.lock_doc();
+        let pos = doc
             .ws
             .visual_position_to_logical_for_view(self.view_id, row, x_cells)
             .ok()??;
-        self.ws
+        doc.ws
             .buffer_line_index(self.buffer_id)
             .ok()
             .map(|idx| idx.position_to_char_offset(pos.line, pos.column))
@@ -1218,7 +1362,8 @@ impl EditorUi {
     /// - Uses `DecorationLayerId::DOCUMENT_LINKS` and returns the `data_json` payload embedded by
     ///   `editor-core-lsp`.
     pub fn document_link_json_at_char_offset(&self, char_offset: usize) -> Option<String> {
-        let layer = self
+        let doc = self.lock_doc();
+        let layer = doc
             .ws
             .buffer_decorations(self.buffer_id)
             .ok()?
@@ -1328,7 +1473,10 @@ impl EditorUi {
             return;
         }
 
-        let doc_len = self.ws.buffer_char_count(self.buffer_id).unwrap_or(0);
+        let doc_len = {
+            let doc = self.lock_doc();
+            doc.ws.buffer_char_count(self.buffer_id).unwrap_or(0)
+        };
         let mut intervals: Vec<Interval> = Vec::with_capacity(ranges.len());
         for (start, end) in ranges {
             let s = (*start).min(doc_len);
@@ -1385,10 +1533,12 @@ impl EditorUi {
             return Ok(0);
         };
 
-        let text = self
-            .ws
-            .buffer_text(self.buffer_id)
-            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        let text = {
+            let doc = self.lock_doc();
+            doc.ws
+                .buffer_text(self.buffer_id)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?
+        };
         let matches = editor_core::search::find_all(&text, q.query.as_str(), q.options)
             .map_err(|e| UiError::Processor(e.to_string()))?;
         let ranges: Vec<(usize, usize)> = matches.iter().map(|m| (m.start, m.end)).collect();
@@ -1461,7 +1611,10 @@ impl EditorUi {
         let syntax = set
             .load_from_str(yaml)
             .map_err(|e| UiError::Processor(e.to_string()))?;
-        self.sublime = Some(SublimeProcessor::new(syntax, set));
+        {
+            let mut doc = self.lock_doc();
+            doc.sublime = Some(SublimeProcessor::new(syntax, set));
+        }
         self.refresh_processing()
     }
 
@@ -1470,22 +1623,29 @@ impl EditorUi {
         let syntax = set
             .load_from_path(path)
             .map_err(|e| UiError::Processor(e.to_string()))?;
-        self.sublime = Some(SublimeProcessor::new(syntax, set));
+        {
+            let mut doc = self.lock_doc();
+            doc.sublime = Some(SublimeProcessor::new(syntax, set));
+        }
         self.refresh_processing()
     }
 
     pub fn disable_sublime_syntax(&mut self) {
-        self.sublime = None;
+        let mut doc = self.lock_doc();
+        doc.sublime = None;
     }
 
-    pub fn sublime_scope_for_style_id(&self, style_id: u32) -> Option<&str> {
-        self.sublime
+    pub fn sublime_scope_for_style_id(&self, style_id: u32) -> Option<String> {
+        let doc = self.lock_doc();
+        doc.sublime
             .as_ref()
             .and_then(|p| p.scope_mapper.scope_for_style_id(style_id))
+            .map(|s| s.to_string())
     }
 
     pub fn sublime_style_id_for_scope(&mut self, scope: &str) -> Result<u32, UiError> {
-        let Some(proc) = self.sublime.as_mut() else {
+        let mut doc = self.lock_doc();
+        let Some(proc) = doc.sublime.as_mut() else {
             return Err(UiError::Processor(
                 "sublime syntax processor is not enabled".to_string(),
             ));
@@ -1519,11 +1679,33 @@ impl EditorUi {
         let query = tree_sitter::Query::new(&language, highlights_query)
             .map_err(|e| UiError::Processor(e.to_string()))?;
 
-        let mut capture_styles = BTreeMap::<String, u32>::new();
-        for name in query.capture_names() {
-            let style_id = self.treesitter_capture_mapper.style_id_for_capture(name);
-            capture_styles.insert(name.to_string(), style_id);
-        }
+        let prefetch_char_range = self.treesitter_prefetch_char_range();
+        let (capture_styles, runtime, text, version) = {
+            let mut doc = self.lock_doc();
+            let mut capture_styles = BTreeMap::<String, u32>::new();
+            for name in query.capture_names() {
+                let style_id = doc.treesitter_capture_mapper.style_id_for_capture(name);
+                capture_styles.insert(name.to_string(), style_id);
+            }
+
+            doc.treesitter = None;
+            doc.apply_processing_edits([
+                ProcessingEdit::ClearStyleLayer {
+                    layer: StyleLayerId::TREE_SITTER,
+                },
+                ProcessingEdit::ClearFoldingRegions,
+            ])?;
+
+            let text = doc
+                .ws
+                .buffer_text(doc.buffer_id)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+
+            doc.treesitter_doc_version = doc.treesitter_doc_version.saturating_add(1);
+            let version = doc.treesitter_doc_version;
+            let runtime = doc.treesitter_processing_config;
+            (capture_styles, runtime, text, version)
+        };
 
         let mut config = TreeSitterProcessorConfig::new(language, highlights_query.to_string());
         if let Some(folds_query) = folds_query {
@@ -1531,22 +1713,7 @@ impl EditorUi {
         }
         config.capture_styles = capture_styles;
 
-        self.treesitter = None;
-        self.apply_processing_edits([
-            ProcessingEdit::ClearStyleLayer {
-                layer: StyleLayerId::TREE_SITTER,
-            },
-            ProcessingEdit::ClearFoldingRegions,
-        ])?;
-
         let mut worker = TreeSitterAsyncWorker::spawn();
-        let text = self
-            .ws
-            .buffer_text(self.buffer_id)
-            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
-        let version = self.ws.view_version(self.view_id).unwrap_or(0);
-        let prefetch_char_range = self.treesitter_prefetch_char_range();
-        let runtime = self.treesitter_processing_config;
         worker.requested_version = Some(version);
         worker
             .tx
@@ -1558,12 +1725,16 @@ impl EditorUi {
                 prefetch_char_range,
             })
             .map_err(|_| UiError::Processor("failed to start tree-sitter worker".to_string()))?;
-        self.treesitter = Some(worker);
+        {
+            let mut doc = self.lock_doc();
+            doc.treesitter = Some(worker);
+        }
         Ok(())
     }
 
     pub fn disable_treesitter(&mut self) {
-        self.treesitter = None;
+        let mut doc = self.lock_doc();
+        doc.treesitter = None;
     }
 
     /// Enable an LSP session (stdio) for the current document.
@@ -1584,10 +1755,16 @@ impl EditorUi {
     ) -> Result<(), UiError> {
         // Clear any existing LSP-derived state first so a failed start doesn't leave stale
         // semantic tokens / diagnostics around.
-        if self.lsp.is_some() {
-            self.lsp_disable();
-        }
-        let _ = self.apply_processing_edits(editor_core_lsp::lsp_clear_edits());
+        let initial_text = {
+            let mut doc = self.lock_doc();
+            if doc.lsp.is_some() {
+                doc.lsp_disable();
+            }
+            let _ = doc.apply_processing_edits(editor_core_lsp::lsp_clear_edits());
+            doc.ws
+                .buffer_text(doc.buffer_id)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?
+        };
 
         let token_types = vec![
             "namespace",
@@ -1660,10 +1837,6 @@ impl EditorUi {
         cmd_proc.args(args);
         cmd_proc.stderr(Stdio::null());
 
-        let initial_text = self
-            .ws
-            .buffer_text(self.buffer_id)
-            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
         let start = LspSessionStartOptions {
             cmd: cmd_proc,
             // Single-document demo: keep workspace folder features disabled.
@@ -1707,51 +1880,32 @@ impl EditorUi {
             })
             .map_err(UiError::Processor)?;
 
-        self.lsp = Some(shared);
-        self.lsp_document_uri = Some(doc_uri);
-        self.lsp_delta_calc = Some(DeltaCalculator::from_text(&initial_text));
-        self.lsp_aux_refresh_due = Some(Instant::now());
-        self.lsp_inlay_in_flight = false;
-        self.lsp_code_lens_in_flight = false;
-        self.lsp_document_links_in_flight = false;
-        self.lsp_hover_in_flight = false;
-        self.lsp_hover_last_request_id = None;
-        self.lsp_hover_last_result_json = None;
-        self.lsp_definition_in_flight = false;
-        self.lsp_definition_last_request_id = None;
-        self.lsp_definition_last_result_json = None;
+        {
+            let mut doc = self.lock_doc();
+            doc.lsp = Some(shared);
+            doc.lsp_document_uri = Some(doc_uri);
+            doc.lsp_delta_calc = Some(DeltaCalculator::from_text(&initial_text));
+            doc.lsp_aux_refresh_due = Some(Instant::now());
+            doc.lsp_inlay_in_flight = false;
+            doc.lsp_code_lens_in_flight = false;
+            doc.lsp_document_links_in_flight = false;
+            doc.lsp_client_requests.clear();
+            doc.lsp_latest_hover_request_id.clear();
+            doc.lsp_latest_definition_request_id.clear();
+            doc.lsp_last_hover_result_json.clear();
+            doc.lsp_last_definition_result_json.clear();
+        }
         Ok(())
     }
 
     pub fn lsp_disable(&mut self) {
-        if let (Some(shared), Some(uri)) = (self.lsp.as_ref(), self.lsp_document_uri.as_deref()) {
-            let uri = uri.to_string();
-            let _ = shared.with_session_mut(|session| session.close_document(uri.as_str()));
-        }
-        self.lsp = None;
-        self.lsp_document_uri = None;
-        self.lsp_delta_calc = None;
-        self.lsp_aux_refresh_due = None;
-        self.lsp_inlay_in_flight = false;
-        self.lsp_code_lens_in_flight = false;
-        self.lsp_document_links_in_flight = false;
-        self.lsp_hover_in_flight = false;
-        self.lsp_hover_last_request_id = None;
-        self.lsp_hover_last_result_json = None;
-        self.lsp_definition_in_flight = false;
-        self.lsp_definition_last_request_id = None;
-        self.lsp_definition_last_result_json = None;
-        let _ = self.apply_processing_edits(editor_core_lsp::lsp_clear_edits());
+        let mut doc = self.lock_doc();
+        doc.lsp_disable();
     }
 
     pub fn lsp_is_enabled(&self) -> bool {
-        let Some(shared) = self.lsp.as_ref() else {
-            return false;
-        };
-        let Ok(guard) = shared.session.lock() else {
-            return false;
-        };
-        guard.is_some()
+        let doc = self.lock_doc();
+        doc.lsp_is_enabled()
     }
 
     /// Request LSP hover information for a given logical position (0-based line/column in Unicode scalars).
@@ -1761,14 +1915,18 @@ impl EditorUi {
     pub fn lsp_request_hover(&mut self, line: usize, column: usize) -> Result<u64, UiError> {
         self.flush_lsp_did_change_from_delta();
 
-        let Some(shared) = self.lsp.as_ref() else {
+        let mut doc = self.lock_doc();
+        let Some(shared) = doc.lsp.as_ref() else {
             return Err(UiError::Processor("LSP is not enabled".to_string()));
         };
-        let Some(doc_uri) = self.lsp_document_uri.as_deref() else {
+        let Some(doc_uri) = doc.lsp_document_uri.as_deref() else {
             return Err(UiError::Processor("LSP document URI missing".to_string()));
         };
 
-        let line_index = self.line_index()?;
+        let line_index = doc
+            .ws
+            .buffer_line_index(doc.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
         let id = shared
             .with_session_mut(|lsp| {
                 lsp.set_active_document(doc_uri)?;
@@ -1776,14 +1934,16 @@ impl EditorUi {
             })
             .map_err(UiError::Processor)?;
 
-        self.lsp_hover_in_flight = true;
-        self.lsp_hover_last_request_id = Some(id);
-        self.lsp_hover_last_result_json = None;
+        doc.lsp_client_requests
+            .insert(id, LspClientRequest::Hover { view: self.view_id });
+        doc.lsp_latest_hover_request_id.insert(self.view_id, id);
+        doc.lsp_last_hover_result_json.remove(&self.view_id);
         Ok(id)
     }
 
     pub fn lsp_take_last_hover_result_json(&mut self) -> Option<String> {
-        self.lsp_hover_last_result_json.take()
+        let mut doc = self.lock_doc();
+        doc.lsp_last_hover_result_json.remove(&self.view_id)
     }
 
     /// Request LSP go-to-definition for a given logical position (0-based line/column in Unicode scalars).
@@ -1793,14 +1953,18 @@ impl EditorUi {
     pub fn lsp_request_definition(&mut self, line: usize, column: usize) -> Result<u64, UiError> {
         self.flush_lsp_did_change_from_delta();
 
-        let Some(shared) = self.lsp.as_ref() else {
+        let mut doc = self.lock_doc();
+        let Some(shared) = doc.lsp.as_ref() else {
             return Err(UiError::Processor("LSP is not enabled".to_string()));
         };
-        let Some(doc_uri) = self.lsp_document_uri.as_deref() else {
+        let Some(doc_uri) = doc.lsp_document_uri.as_deref() else {
             return Err(UiError::Processor("LSP document URI missing".to_string()));
         };
 
-        let line_index = self.line_index()?;
+        let line_index = doc
+            .ws
+            .buffer_line_index(doc.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
         let id = shared
             .with_session_mut(|lsp| {
                 lsp.set_active_document(doc_uri)?;
@@ -1808,32 +1972,48 @@ impl EditorUi {
             })
             .map_err(UiError::Processor)?;
 
-        self.lsp_definition_in_flight = true;
-        self.lsp_definition_last_request_id = Some(id);
-        self.lsp_definition_last_result_json = None;
+        doc.lsp_client_requests.insert(
+            id,
+            LspClientRequest::Definition {
+                view: self.view_id,
+            },
+        );
+        doc.lsp_latest_definition_request_id
+            .insert(self.view_id, id);
+        doc.lsp_last_definition_result_json.remove(&self.view_id);
         Ok(id)
     }
 
     pub fn lsp_take_last_definition_result_json(&mut self) -> Option<String> {
-        self.lsp_definition_last_result_json.take()
+        let mut doc = self.lock_doc();
+        doc.lsp_last_definition_result_json.remove(&self.view_id)
     }
 
     pub fn poll_processing(&mut self) -> Result<ProcessingPollResult, UiError> {
         let prefetch_char_range = self.treesitter_prefetch_char_range();
         let (treesitter_pending, latest_to_apply) = {
-            let Some(worker) = self.treesitter.as_mut() else {
+            let mut doc = self.lock_doc();
+            if doc.treesitter.is_none() {
+                drop(doc);
                 let lsp_applied = self.poll_lsp_best_effort();
                 return Ok(ProcessingPollResult {
                     applied: lsp_applied,
                     pending: self.lsp_is_enabled(),
                 });
-            };
+            }
 
             let mut latest: Option<(u64, Vec<ProcessingEdit>, TreeSitterUpdateMode)> = None;
             let mut need_full_sync = false;
 
             loop {
-                match worker.rx.try_recv() {
+                let ev = {
+                    let worker = doc
+                        .treesitter
+                        .as_mut()
+                        .expect("treesitter worker missing");
+                    worker.rx.try_recv()
+                };
+                match ev {
                     Ok(TreeSitterWorkerEvent::Processed {
                         version,
                         edits,
@@ -1859,14 +2039,15 @@ impl EditorUi {
             }
 
             if need_full_sync {
-                let text = self
+                let text = doc
                     .ws
-                    .buffer_text(self.buffer_id)
+                    .buffer_text(doc.buffer_id)
                     .map_err(|e| UiError::Processor(format!("{e:?}")))?;
-                let version = self.ws.view_version(self.view_id).unwrap_or(0);
+                doc.treesitter_doc_version = doc.treesitter_doc_version.saturating_add(1);
+                let version = doc.treesitter_doc_version;
+                let worker = doc.treesitter.as_mut().expect("treesitter worker missing");
                 worker.requested_version = Some(version);
-                worker
-                    .tx
+                worker.tx
                     .send(TreeSitterWorkerMsg::FullSync {
                         version,
                         text,
@@ -1877,8 +2058,10 @@ impl EditorUi {
                     })?;
             }
 
-            let requested = worker.requested_version;
-            let pending = worker.is_pending();
+            let (requested, pending) = {
+                let worker = doc.treesitter.as_ref().expect("treesitter worker missing");
+                (worker.requested_version, worker.is_pending())
+            };
 
             let to_apply = latest.and_then(|(version, edits, update_mode)| {
                 if requested.is_some_and(|requested| version < requested) {
@@ -1893,13 +2076,15 @@ impl EditorUi {
 
         let mut treesitter_applied = false;
         if let Some((version, edits, update_mode)) = latest_to_apply {
-            self.apply_processing_edits(edits)?;
-            treesitter_applied = true;
-
-            if let Some(worker) = self.treesitter.as_mut() {
-                worker.applied_version = Some(version);
-                worker.last_update_mode = Some(update_mode);
+            {
+                let mut doc = self.lock_doc();
+                doc.apply_processing_edits(edits)?;
+                if let Some(worker) = doc.treesitter.as_mut() {
+                    worker.applied_version = Some(version);
+                    worker.last_update_mode = Some(update_mode);
+                }
             }
+            treesitter_applied = true;
         }
 
         let lsp_applied = self.poll_lsp_best_effort();
@@ -1911,16 +2096,20 @@ impl EditorUi {
     }
 
     pub fn treesitter_last_update_mode(&self) -> Option<TreeSitterUpdateMode> {
-        self.treesitter.as_ref().and_then(|w| w.last_update_mode)
+        let doc = self.lock_doc();
+        doc.treesitter.as_ref().and_then(|w| w.last_update_mode)
     }
 
-    pub fn treesitter_capture_for_style_id(&self, style_id: u32) -> Option<&str> {
-        self.treesitter_capture_mapper
+    pub fn treesitter_capture_for_style_id(&self, style_id: u32) -> Option<String> {
+        let doc = self.lock_doc();
+        doc.treesitter_capture_mapper
             .capture_for_style_id(style_id)
+            .map(|s| s.to_string())
     }
 
     pub fn treesitter_style_id_for_capture(&mut self, capture_name: &str) -> u32 {
-        self.treesitter_capture_mapper
+        let mut doc = self.lock_doc();
+        doc.treesitter_capture_mapper
             .style_id_for_capture(capture_name)
     }
 
@@ -1939,16 +2128,18 @@ impl EditorUi {
             ));
         };
 
-        let line_index = self.line_index()?;
-        let edits = lsp_diagnostics_to_processing_edits(line_index, &params);
+        let edits = self.with_line_index(|line_index| {
+            lsp_diagnostics_to_processing_edits(line_index, &params)
+        })?;
         self.apply_processing_edits(edits)?;
         Ok(())
     }
 
     pub fn lsp_apply_semantic_tokens(&mut self, data: &[u32]) -> Result<(), UiError> {
-        let line_index = self.line_index()?;
-        let intervals = semantic_tokens_to_intervals(data, line_index, encode_semantic_style_id)
-            .map_err(|e| UiError::Processor(e.to_string()))?;
+        let intervals = self.with_line_index(|line_index| {
+            semantic_tokens_to_intervals(data, line_index, encode_semantic_style_id)
+                .map_err(|e| UiError::Processor(e.to_string()))
+        })??;
         self.apply_processing_edits([ProcessingEdit::ReplaceStyleLayer {
             layer: StyleLayerId::SEMANTIC_TOKENS,
             intervals,
@@ -1962,8 +2153,9 @@ impl EditorUi {
     pub fn lsp_apply_document_highlights_json(&mut self, result_json: &str) -> Result<(), UiError> {
         let result_value: serde_json::Value =
             serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
-        let line_index = self.line_index()?;
-        let edit = lsp_document_highlights_to_processing_edit(line_index, &result_value);
+        let edit = self.with_line_index(|line_index| {
+            lsp_document_highlights_to_processing_edit(line_index, &result_value)
+        })?;
         self.apply_processing_edits([edit])?;
         Ok(())
     }
@@ -1974,8 +2166,9 @@ impl EditorUi {
     pub fn lsp_apply_inlay_hints_json(&mut self, result_json: &str) -> Result<(), UiError> {
         let result_value: serde_json::Value =
             serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
-        let line_index = self.line_index()?;
-        let edit = lsp_inlay_hints_to_processing_edit(line_index, &result_value);
+        let edit = self.with_line_index(|line_index| {
+            lsp_inlay_hints_to_processing_edit(line_index, &result_value)
+        })?;
         self.apply_processing_edits([edit])?;
         Ok(())
     }
@@ -1986,8 +2179,9 @@ impl EditorUi {
     pub fn lsp_apply_code_lens_json(&mut self, result_json: &str) -> Result<(), UiError> {
         let result_value: serde_json::Value =
             serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
-        let line_index = self.line_index()?;
-        let edit = lsp_code_lens_to_processing_edit(line_index, &result_value);
+        let edit = self.with_line_index(|line_index| {
+            lsp_code_lens_to_processing_edit(line_index, &result_value)
+        })?;
         self.apply_processing_edits([edit])?;
         Ok(())
     }
@@ -2000,8 +2194,9 @@ impl EditorUi {
     pub fn lsp_apply_document_links_json(&mut self, result_json: &str) -> Result<(), UiError> {
         let result_value: serde_json::Value =
             serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
-        let line_index = self.line_index()?;
-        let edits = lsp_document_links_to_processing_edits(line_index, &result_value);
+        let edits = self.with_line_index(|line_index| {
+            lsp_document_links_to_processing_edits(line_index, &result_value)
+        })?;
         self.apply_processing_edits(edits)?;
         Ok(())
     }
@@ -2161,24 +2356,33 @@ impl EditorUi {
         let usable_h = (height_px as f32 - self.render_config.padding_y_px).max(1.0);
         let line_h = self.render_config.line_height_px.max(1.0);
         let height_rows = (usable_h / line_h).floor().max(1.0) as usize;
-        self.ws
-            .set_viewport_height(self.view_id, height_rows)
-            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        {
+            let mut doc = self.lock_doc();
+            doc.ws
+                .set_viewport_height(self.view_id, height_rows)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        }
         Ok(())
     }
 
     pub fn viewport_state(&mut self) -> editor_core::ViewportState {
-        let Ok(v) = self.ws.viewport_state_for_view(self.view_id) else {
-            return editor_core::ViewportState {
-                width: 0,
-                height: None,
-                scroll_top: 0,
-                sub_row_offset: 0,
-                overscan_rows: 0,
-                visible_lines: 0..0,
-                prefetch_lines: 0..0,
-                total_visual_lines: 0,
-            };
+        let v = {
+            let mut doc = self.lock_doc();
+            match doc.ws.viewport_state_for_view(self.view_id) {
+                Ok(v) => v,
+                Err(_) => {
+                    return editor_core::ViewportState {
+                        width: 0,
+                        height: None,
+                        scroll_top: 0,
+                        sub_row_offset: 0,
+                        overscan_rows: 0,
+                        visible_lines: 0..0,
+                        prefetch_lines: 0..0,
+                        total_visual_lines: 0,
+                    };
+                }
+            }
         };
         editor_core::ViewportState {
             width: v.width,
@@ -2196,11 +2400,7 @@ impl EditorUi {
     ///
     /// Note: this is independent of soft-wrapping/folding (which affect visual rows).
     pub fn logical_line_count(&self) -> u32 {
-        let n = self
-            .ws
-            .buffer_line_index(self.buffer_id)
-            .map(|idx| idx.line_count())
-            .unwrap_or(0);
+        let n = self.with_line_index(|idx| idx.line_count()).unwrap_or(0);
         (n.min(u32::MAX as usize)) as u32
     }
 
@@ -2217,6 +2417,7 @@ impl EditorUi {
         let max_pos_rows = viewport.total_visual_lines.saturating_sub(height_rows) as f32;
 
         let smooth = self
+            .lock_doc()
             .ws
             .smooth_scroll_state_for_view(self.view_id)
             .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
@@ -2237,7 +2438,8 @@ impl EditorUi {
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            let _ = self.ws.set_smooth_scroll_state(self.view_id, next);
+            let mut doc = self.lock_doc();
+            let _ = doc.ws.set_smooth_scroll_state(self.view_id, next);
         }
     }
 
@@ -2268,12 +2470,13 @@ impl EditorUi {
             .map(|s| s.end)
             .unwrap_or(cursor.position);
 
-        let Some((caret_row, _caret_x)) = self
-            .ws
-            .logical_to_visual_for_view(self.view_id, active.line, active.column)
-            .ok()
-            .flatten()
-        else {
+        let Some((caret_row, _caret_x)) = ({
+            let mut doc = self.lock_doc();
+            doc.ws
+                .logical_to_visual_for_view(self.view_id, active.line, active.column)
+                .ok()
+                .flatten()
+        }) else {
             return;
         };
 
@@ -2285,14 +2488,16 @@ impl EditorUi {
         }
         new_top = new_top.min(self.max_scroll_top(&viewport));
 
-        let smooth = self
-            .ws
-            .smooth_scroll_state_for_view(self.view_id)
-            .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
-                top_visual_row: viewport.scroll_top,
-                sub_row_offset: viewport.sub_row_offset,
-                overscan_rows: viewport.overscan_rows,
-            });
+        let smooth = {
+            let doc = self.lock_doc();
+            doc.ws
+                .smooth_scroll_state_for_view(self.view_id)
+                .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+                    top_visual_row: viewport.scroll_top,
+                    sub_row_offset: viewport.sub_row_offset,
+                    overscan_rows: viewport.overscan_rows,
+                })
+        };
         let next = editor_core::workspace::ViewSmoothScrollState {
             top_visual_row: new_top,
             // Keyboard navigation should snap to full rows for a stable caret position.
@@ -2300,7 +2505,8 @@ impl EditorUi {
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            let _ = self.ws.set_smooth_scroll_state(self.view_id, next);
+            let mut doc = self.lock_doc();
+            let _ = doc.ws.set_smooth_scroll_state(self.view_id, next);
         }
     }
 
@@ -2323,12 +2529,13 @@ impl EditorUi {
             .map(|s| s.end)
             .unwrap_or(cursor.position);
 
-        let Some((caret_row, _caret_x)) = self
-            .ws
-            .logical_to_visual_for_view(self.view_id, active.line, active.column)
-            .ok()
-            .flatten()
-        else {
+        let Some((caret_row, _caret_x)) = ({
+            let mut doc = self.lock_doc();
+            doc.ws
+                .logical_to_visual_for_view(self.view_id, active.line, active.column)
+                .ok()
+                .flatten()
+        }) else {
             return;
         };
 
@@ -2348,14 +2555,16 @@ impl EditorUi {
 
         new_top = new_top.min(self.max_scroll_top(&viewport));
 
-        let smooth = self
-            .ws
-            .smooth_scroll_state_for_view(self.view_id)
-            .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
-                top_visual_row: viewport.scroll_top,
-                sub_row_offset: viewport.sub_row_offset,
-                overscan_rows: viewport.overscan_rows,
-            });
+        let smooth = {
+            let doc = self.lock_doc();
+            doc.ws
+                .smooth_scroll_state_for_view(self.view_id)
+                .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+                    top_visual_row: viewport.scroll_top,
+                    sub_row_offset: viewport.sub_row_offset,
+                    overscan_rows: viewport.overscan_rows,
+                })
+        };
         let next = editor_core::workspace::ViewSmoothScrollState {
             top_visual_row: new_top,
             // When an edit forces us to scroll, snap to a full row so the caret lands predictably.
@@ -2363,7 +2572,8 @@ impl EditorUi {
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            let _ = self.ws.set_smooth_scroll_state(self.view_id, next);
+            let mut doc = self.lock_doc();
+            let _ = doc.ws.set_smooth_scroll_state(self.view_id, next);
         }
     }
 
@@ -2381,21 +2591,24 @@ impl EditorUi {
         let old = viewport.scroll_top as isize;
         let new_top = (old + delta_rows).clamp(0, max_top.max(0)) as usize;
 
-        let smooth = self
-            .ws
-            .smooth_scroll_state_for_view(self.view_id)
-            .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
-                top_visual_row: viewport.scroll_top,
-                sub_row_offset: viewport.sub_row_offset,
-                overscan_rows: viewport.overscan_rows,
-            });
+        let smooth = {
+            let doc = self.lock_doc();
+            doc.ws
+                .smooth_scroll_state_for_view(self.view_id)
+                .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+                    top_visual_row: viewport.scroll_top,
+                    sub_row_offset: viewport.sub_row_offset,
+                    overscan_rows: viewport.overscan_rows,
+                })
+        };
         let next = editor_core::workspace::ViewSmoothScrollState {
             top_visual_row: new_top,
             sub_row_offset: 0,
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            let _ = self.ws.set_smooth_scroll_state(self.view_id, next);
+            let mut doc = self.lock_doc();
+            let _ = doc.ws.set_smooth_scroll_state(self.view_id, next);
         }
     }
 
@@ -2422,14 +2635,16 @@ impl EditorUi {
             .max(1);
         let max_pos_rows = viewport.total_visual_lines.saturating_sub(height_rows) as f32;
 
-        let smooth = self
-            .ws
-            .smooth_scroll_state_for_view(self.view_id)
-            .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
-                top_visual_row: viewport.scroll_top,
-                sub_row_offset: viewport.sub_row_offset,
-                overscan_rows: viewport.overscan_rows,
-            });
+        let smooth = {
+            let doc = self.lock_doc();
+            doc.ws
+                .smooth_scroll_state_for_view(self.view_id)
+                .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+                    top_visual_row: viewport.scroll_top,
+                    sub_row_offset: viewport.sub_row_offset,
+                    overscan_rows: viewport.overscan_rows,
+                })
+        };
         let pos_rows = smooth.top_visual_row as f32 + (smooth.sub_row_offset as f32 / 65536.0);
         let delta_rows = delta_y_px / line_h;
         let new_pos = (pos_rows + delta_rows).clamp(0.0, max_pos_rows.max(0.0));
@@ -2444,7 +2659,8 @@ impl EditorUi {
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            let _ = self.ws.set_smooth_scroll_state(self.view_id, next);
+            let mut doc = self.lock_doc();
+            let _ = doc.ws.set_smooth_scroll_state(self.view_id, next);
         }
     }
 
@@ -2605,19 +2821,18 @@ impl EditorUi {
             self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
         }
 
-        let line_index = self.line_index()?;
-        let line_count = line_index.line_count();
-        if line_count == 0 {
+        let pos = self.with_line_index(|line_index| {
+            let line_count = line_index.line_count();
+            if line_count == 0 {
+                return None;
+            }
+            let last_line = line_count.saturating_sub(1);
+            let text = line_index.get_line_text(last_line).unwrap_or_default();
+            Some((last_line, text.chars().count()))
+        })?;
+        let Some((last_line, col)) = pos else {
             return Ok(());
-        }
-        let last_line = line_count.saturating_sub(1);
-        let text = self
-            .ws
-            .buffer_line_index(self.buffer_id)
-            .ok()
-            .and_then(|idx| idx.get_line_text(last_line))
-            .unwrap_or_default();
-        let col = text.chars().count();
+        };
 
         self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: last_line,
@@ -2791,14 +3006,18 @@ impl EditorUi {
         }))?;
         self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
 
-        let line_index = self.line_index()?;
-        let line_count = line_index.line_count();
-        if line_count == 0 {
+        let pos = self.with_line_index(|line_index| {
+            let line_count = line_index.line_count();
+            if line_count == 0 {
+                return None;
+            }
+            let last_line = line_count.saturating_sub(1);
+            let text = line_index.get_line_text(last_line).unwrap_or_default();
+            Some((last_line, text.chars().count()))
+        })?;
+        let Some((last_line, col)) = pos else {
             return Ok(());
-        }
-        let last_line = line_count.saturating_sub(1);
-        let text = line_index.get_line_text(last_line).unwrap_or_default();
-        let col = text.chars().count();
+        };
 
         self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: last_line,
@@ -2876,10 +3095,12 @@ impl EditorUi {
         // composition is cancelled (e.g. Escape / IME clears marked text).
         let (start, replace_len, original_text, original_len) =
             if let Some((start, len)) = replace_range {
-                let original = self
-                    .ws
-                    .buffer_text_range(self.buffer_id, start, len)
-                    .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+                let original = {
+                    let doc = self.lock_doc();
+                    doc.ws
+                        .buffer_text_range(self.buffer_id, start, len)
+                        .map_err(|e| UiError::Processor(format!("{e:?}")))?
+                };
                 (start, len, original, len)
             } else if let Some(marked) = self.marked.as_ref() {
                 (
@@ -2890,16 +3111,20 @@ impl EditorUi {
                 )
             } else {
                 let cursor = self.cursor_state();
-                let line_index = self.line_index()?;
                 if let Some(sel) = cursor.selection {
-                    let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
-                    let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
-                    let (start, end) = if a <= b { (a, b) } else { (b, a) };
+                    let (start, end) = self.with_line_index(|line_index| {
+                        let a =
+                            line_index.position_to_char_offset(sel.start.line, sel.start.column);
+                        let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
+                        if a <= b { (a, b) } else { (b, a) }
+                    })?;
                     let len = end.saturating_sub(start);
-                    let original = self
-                        .ws
-                        .buffer_text_range(self.buffer_id, start, len)
-                        .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+                    let original = {
+                        let doc = self.lock_doc();
+                        doc.ws
+                            .buffer_text_range(self.buffer_id, start, len)
+                            .map_err(|e| UiError::Processor(format!("{e:?}")))?
+                    };
                     (start, len, original, len)
                 } else {
                     (cursor.offset, 0, String::new(), 0)
@@ -2927,9 +3152,11 @@ impl EditorUi {
             // Restore selection to the original range (best-effort).
             let a_off = start;
             let b_off = start.saturating_add(original_len);
-            let line_index = self.line_index()?;
-            let (a_line, a_col) = line_index.char_offset_to_position(a_off);
-            let (b_line, b_col) = line_index.char_offset_to_position(b_off);
+            let (a_line, a_col, b_line, b_col) = self.with_line_index(|line_index| {
+                let (a_line, a_col) = line_index.char_offset_to_position(a_off);
+                let (b_line, b_col) = line_index.char_offset_to_position(b_off);
+                (a_line, a_col, b_line, b_col)
+            })?;
 
             if original_len > 0 {
                 self.exec_core(Command::Cursor(CursorCommand::SetSelection {
@@ -3032,59 +3259,72 @@ impl EditorUi {
                 if self.has_virtual_text_decorations() {
                     let (_start_composed, _row_count, grid) = self.composed_viewport_grid();
                     let (local_row, _x_cells) = self.pixel_to_local_row_col(x_px, y_px);
-                    if let Some(line) = grid.lines.get(local_row)
-                        && let editor_core::ComposedLineKind::Document { logical_line, .. } =
+                    if let Some(line) = grid.lines.get(local_row) {
+                        if let editor_core::ComposedLineKind::Document { logical_line, .. } =
                             line.kind
-                        && let Some(region) = self
-                            .ws
-                            .folding_regions_for_buffer(self.buffer_id)
-                            .ok()
-                            .unwrap_or_default()
-                            .iter()
-                            .filter(|r| r.start_line == logical_line)
-                            .min_by_key(|r| r.end_line)
-                            .cloned()
-                    {
-                        if region.is_collapsed {
-                            self.exec_core(Command::Style(StyleCommand::Unfold {
-                                start_line: region.start_line,
-                            }))?;
-                        } else {
-                            self.exec_core(Command::Style(StyleCommand::Fold {
-                                start_line: region.start_line,
-                                end_line: region.end_line,
-                            }))?;
+                        {
+                            let fold_regions = {
+                                let doc = self.lock_doc();
+                                doc.ws
+                                    .folding_regions_for_buffer(self.buffer_id)
+                                    .unwrap_or_default()
+                            };
+                            if let Some(region) = fold_regions
+                                .iter()
+                                .filter(|r| r.start_line == logical_line)
+                                .min_by_key(|r| r.end_line)
+                                .cloned()
+                            {
+                                if region.is_collapsed {
+                                    self.exec_core(Command::Style(StyleCommand::Unfold {
+                                        start_line: region.start_line,
+                                    }))?;
+                                } else {
+                                    self.exec_core(Command::Style(StyleCommand::Fold {
+                                        start_line: region.start_line,
+                                        end_line: region.end_line,
+                                    }))?;
+                                }
+                                self.mouse_anchor = None;
+                                return Ok(());
+                            }
                         }
-                        self.mouse_anchor = None;
-                        return Ok(());
                     }
                 } else {
                     let (row, _x_cells) = self.pixel_to_visual(x_px, y_px);
-                    if let Ok(Some(pos)) =
-                        self.ws
+                    let pos = {
+                        let mut doc = self.lock_doc();
+                        doc.ws
                             .visual_position_to_logical_for_view(self.view_id, row, 0)
-                        && let Some(region) = self
-                            .ws
-                            .folding_regions_for_buffer(self.buffer_id)
                             .ok()
-                            .unwrap_or_default()
+                            .flatten()
+                    };
+                    if let Some(pos) = pos {
+                        let fold_regions = {
+                            let doc = self.lock_doc();
+                            doc.ws
+                                .folding_regions_for_buffer(self.buffer_id)
+                                .unwrap_or_default()
+                        };
+                        if let Some(region) = fold_regions
                             .iter()
                             .filter(|r| r.start_line == pos.line)
                             .min_by_key(|r| r.end_line)
                             .cloned()
-                    {
-                        if region.is_collapsed {
-                            self.exec_core(Command::Style(StyleCommand::Unfold {
-                                start_line: region.start_line,
-                            }))?;
-                        } else {
-                            self.exec_core(Command::Style(StyleCommand::Fold {
-                                start_line: region.start_line,
-                                end_line: region.end_line,
-                            }))?;
+                        {
+                            if region.is_collapsed {
+                                self.exec_core(Command::Style(StyleCommand::Unfold {
+                                    start_line: region.start_line,
+                                }))?;
+                            } else {
+                                self.exec_core(Command::Style(StyleCommand::Fold {
+                                    start_line: region.start_line,
+                                    end_line: region.end_line,
+                                }))?;
+                            }
+                            self.mouse_anchor = None;
+                            return Ok(());
                         }
-                        self.mouse_anchor = None;
-                        return Ok(());
                     }
                 }
             }
@@ -3170,15 +3410,19 @@ impl EditorUi {
 
         let mut render_config = self.render_config;
         render_config.scroll_y_px = scroll_y_px;
-        render_config.tab_width_cells =
-            (self.ws.tab_width_for_view(self.view_id).unwrap_or(4)).min(u32::MAX as usize) as u32;
+        render_config.tab_width_cells = {
+            let doc = self.lock_doc();
+            (doc.ws.tab_width_for_view(self.view_id).unwrap_or(4)).min(u32::MAX as usize) as u32
+        };
 
         let mut fold_markers = Vec::<FoldMarker>::new();
-        for region in self
-            .ws
-            .folding_regions_for_buffer(self.buffer_id)
-            .unwrap_or_default()
-        {
+        let fold_regions = {
+            let doc = self.lock_doc();
+            doc.ws
+                .folding_regions_for_buffer(self.buffer_id)
+                .unwrap_or_default()
+        };
+        for region in fold_regions {
             if region.end_line <= region.start_line {
                 continue;
             }
@@ -3190,10 +3434,12 @@ impl EditorUi {
         let required = SkiaRenderer::required_rgba_len(self.render_config)?;
         if self.has_virtual_text_decorations() {
             let start_composed = self.composed_start_row_for_doc_row(start_row);
-            let grid = self
-                .ws
-                .get_viewport_content_composed(self.view_id, start_composed, row_count)
-                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+            let grid = {
+                let mut doc = self.lock_doc();
+                doc.ws
+                    .get_viewport_content_composed(self.view_id, start_composed, row_count)
+                    .map_err(|e| UiError::Processor(format!("{e:?}")))?
+            };
             self.renderer.render_composed_rgba_into(
                 &grid,
                 caret_offsets.as_slice(),
@@ -3204,10 +3450,12 @@ impl EditorUi {
                 out_rgba,
             )?;
         } else {
-            let grid = self
-                .ws
-                .get_viewport_content_styled(self.view_id, start_row, row_count)
-                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+            let grid = {
+                let mut doc = self.lock_doc();
+                doc.ws
+                    .get_viewport_content_styled(self.view_id, start_row, row_count)
+                    .map_err(|e| UiError::Processor(format!("{e:?}")))?
+            };
             let selections = self.all_selections_visual();
             let carets = self.all_carets_visual();
             self.renderer.render_rgba_into(
@@ -3261,15 +3509,19 @@ impl EditorUi {
 
         let mut render_config = self.render_config;
         render_config.scroll_y_px = scroll_y_px;
-        render_config.tab_width_cells =
-            (self.ws.tab_width_for_view(self.view_id).unwrap_or(4)).min(u32::MAX as usize) as u32;
+        render_config.tab_width_cells = {
+            let doc = self.lock_doc();
+            (doc.ws.tab_width_for_view(self.view_id).unwrap_or(4)).min(u32::MAX as usize) as u32
+        };
 
         let mut fold_markers = Vec::<FoldMarker>::new();
-        for region in self
-            .ws
-            .folding_regions_for_buffer(self.buffer_id)
-            .unwrap_or_default()
-        {
+        let fold_regions = {
+            let doc = self.lock_doc();
+            doc.ws
+                .folding_regions_for_buffer(self.buffer_id)
+                .unwrap_or_default()
+        };
+        for region in fold_regions {
             if region.end_line <= region.start_line {
                 continue;
             }
@@ -3281,10 +3533,12 @@ impl EditorUi {
 
         if self.has_virtual_text_decorations() {
             let start_composed = self.composed_start_row_for_doc_row(start_row);
-            let grid = self
-                .ws
-                .get_viewport_content_composed(self.view_id, start_composed, row_count)
-                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+            let grid = {
+                let mut doc = self.lock_doc();
+                doc.ws
+                    .get_viewport_content_composed(self.view_id, start_composed, row_count)
+                    .map_err(|e| UiError::Processor(format!("{e:?}")))?
+            };
             self.renderer.render_composed_into_metal_texture(
                 &grid,
                 caret_offsets.as_slice(),
@@ -3295,10 +3549,12 @@ impl EditorUi {
                 metal_texture,
             )?;
         } else {
-            let grid = self
-                .ws
-                .get_viewport_content_styled(self.view_id, start_row, row_count)
-                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+            let grid = {
+                let mut doc = self.lock_doc();
+                doc.ws
+                    .get_viewport_content_styled(self.view_id, start_row, row_count)
+                    .map_err(|e| UiError::Processor(format!("{e:?}")))?
+            };
             let selections = self.all_selections_visual();
             let carets = self.all_carets_visual();
             self.renderer.render_rgba_into_metal_texture(
@@ -3316,7 +3572,8 @@ impl EditorUi {
     }
 
     fn has_virtual_text_decorations(&self) -> bool {
-        self.ws
+        let doc = self.lock_doc();
+        doc.ws
             .buffer_decorations(self.buffer_id)
             .ok()
             .map(|decorations| {
@@ -3339,17 +3596,18 @@ impl EditorUi {
         let start_visual = lines.start;
         let end_visual = lines.end.saturating_sub(1);
 
-        let (start_line, _) = self
+        let mut doc = self.lock_doc();
+        let (start_line, _) = doc
             .ws
             .visual_to_logical_for_view(self.view_id, start_visual)
             .ok()?;
-        let (end_line, _) = self
+        let (end_line, _) = doc
             .ws
             .visual_to_logical_for_view(self.view_id, end_visual)
             .ok()?;
         let end_line_excl = end_line.saturating_add(1);
 
-        let line_index = self.line_index().ok()?;
+        let line_index = doc.ws.buffer_line_index(self.buffer_id).ok()?;
         let start = line_index.position_to_char_offset(start_line, 0);
         let end = line_index.position_to_char_offset(end_line_excl, 0);
         if end > start {
@@ -3360,27 +3618,44 @@ impl EditorUi {
     }
 
     fn refresh_processing(&mut self) -> Result<(), UiError> {
-        if self.sublime.is_some() {
-            let edits = {
-                let line_index = self
-                    .ws
-                    .buffer_line_index(self.buffer_id)
-                    .map_err(|e| UiError::Processor(format!("{e:?}")))?;
-                let proc = self
-                    .sublime
-                    .as_mut()
-                    .ok_or_else(|| UiError::Processor("sublime processor missing".to_string()))?;
-                proc.compute_processing_edits(line_index)
-                    .map_err(|e| UiError::Processor(e.to_string()))?
-            };
-            self.apply_processing_edits(edits)?;
-        }
         let prefetch_char_range = self.treesitter_prefetch_char_range();
-        if let Some(worker) = self.treesitter.as_mut() {
-            let version = self.ws.view_version(self.view_id).unwrap_or(0);
-            worker.requested_version = Some(version);
+        let mut doc = self.lock_doc();
+        let buffer_id = doc.buffer_id;
 
-            if let Some(delta) = self.ws.take_last_text_delta_for_view(self.view_id) {
+        if doc.sublime.is_some() {
+            // Clone the line index to avoid keeping an immutable borrow of `doc.ws` alive while we
+            // mutably borrow the processor.
+            let line_index = doc
+                .ws
+                .buffer_line_index(buffer_id)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?
+                .clone();
+            let proc = doc
+                .sublime
+                .as_mut()
+                .ok_or_else(|| UiError::Processor("sublime processor missing".to_string()))?;
+            let edits = proc
+                .compute_processing_edits(&line_index)
+                .map_err(|e| UiError::Processor(e.to_string()))?;
+            doc.apply_processing_edits(edits)?;
+        }
+
+        let delta = doc
+            .ws
+            .take_last_text_delta_for_buffer(buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        let Some(delta) = delta else {
+            return Ok(());
+        };
+        if delta.is_empty() {
+            return Ok(());
+        }
+
+        if doc.treesitter.is_some() {
+            doc.treesitter_doc_version = doc.treesitter_doc_version.saturating_add(1);
+            let version = doc.treesitter_doc_version;
+            if let Some(worker) = doc.treesitter.as_mut() {
+                worker.requested_version = Some(version);
                 worker
                     .tx
                     .send(TreeSitterWorkerMsg::ApplyDelta {
@@ -3391,51 +3666,71 @@ impl EditorUi {
                     .map_err(|_| {
                         UiError::Processor("failed to send delta to tree-sitter worker".to_string())
                     })?;
-            } else {
-                let text = self
-                    .ws
-                    .buffer_text(self.buffer_id)
-                    .map_err(|e| UiError::Processor(format!("{e:?}")))?;
-                worker
-                    .tx
-                    .send(TreeSitterWorkerMsg::FullSync {
-                        version,
-                        text,
-                        prefetch_char_range,
-                    })
-                    .map_err(|_| {
-                        UiError::Processor("failed to full-sync tree-sitter worker".to_string())
-                    })?;
             }
         }
+
         // Keep LSP (if enabled) in sync with incremental edits.
-        self.flush_lsp_did_change_from_delta();
+        if doc.lsp.is_some() {
+            let Some(doc_uri) = doc.lsp_document_uri.clone() else {
+                doc.lsp_disable();
+                return Ok(());
+            };
+            let Some(shared) = doc.lsp.clone() else {
+                return Ok(());
+            };
+
+            let changes = {
+                let Some(calc) = doc.lsp_delta_calc.as_mut() else {
+                    doc.lsp_disable();
+                    return Ok(());
+                };
+                Self::lsp_changes_for_text_delta(calc, delta.as_ref())
+            };
+            if changes.is_empty() {
+                return Ok(());
+            }
+
+            if shared
+                .with_session_mut(|session| {
+                    session.set_active_document(doc_uri.as_str())?;
+                    session.did_change_many(changes)
+                })
+                .is_err()
+            {
+                doc.lsp_disable();
+                return Ok(());
+            }
+
+            // Defer inlay hints / code lens refresh slightly to avoid spamming on rapid typing.
+            doc.lsp_aux_refresh_due = Some(Instant::now() + Duration::from_millis(250));
+        }
         Ok(())
     }
 
     fn flush_lsp_did_change_from_delta(&mut self) {
-        let Some(delta) = self
-            .ws
-            .take_last_text_delta_for_buffer(self.buffer_id)
-            .ok()
-            .flatten()
-        else {
+        let mut doc = self.lock_doc();
+        let buffer_id = doc.buffer_id;
+        let delta = match doc.ws.take_last_text_delta_for_buffer(buffer_id) {
+            Ok(delta) => delta,
+            Err(_) => None,
+        };
+        let Some(delta) = delta else {
             return;
         };
         if delta.is_empty() {
             return;
         }
 
-        let Some(shared) = self.lsp.clone() else {
+        let Some(shared) = doc.lsp.clone() else {
             return;
         };
-        let Some(doc_uri) = self.lsp_document_uri.clone() else {
-            self.lsp_disable();
+        let Some(doc_uri) = doc.lsp_document_uri.clone() else {
+            doc.lsp_disable();
             return;
         };
 
-        let Some(calc) = self.lsp_delta_calc.as_mut() else {
-            self.lsp_disable();
+        let Some(calc) = doc.lsp_delta_calc.as_mut() else {
+            doc.lsp_disable();
             return;
         };
 
@@ -3451,12 +3746,12 @@ impl EditorUi {
             })
             .is_err()
         {
-            self.lsp_disable();
+            doc.lsp_disable();
             return;
         }
 
         // Defer inlay hints / code lens refresh slightly to avoid spamming on rapid typing.
-        self.lsp_aux_refresh_due = Some(Instant::now() + Duration::from_millis(250));
+        doc.lsp_aux_refresh_due = Some(Instant::now() + Duration::from_millis(250));
     }
 
     fn lsp_changes_for_text_delta(
@@ -3500,38 +3795,42 @@ impl EditorUi {
     }
 
     fn poll_lsp_best_effort(&mut self) -> bool {
-        let Some(shared) = self.lsp.clone() else {
-            return false;
-        };
-        let Some(doc_uri) = self.lsp_document_uri.clone() else {
-            self.lsp_disable();
-            return true;
+        let (shared, doc_uri) = {
+            let mut doc = self.lock_doc();
+            let Some(shared) = doc.lsp.clone() else {
+                return false;
+            };
+            let Some(doc_uri) = doc.lsp_document_uri.clone() else {
+                doc.lsp_disable();
+                return true;
+            };
+            (shared, doc_uri)
         };
 
-        let edits = {
-            let line_index = match self.ws.buffer_line_index(self.buffer_id) {
+        let mut applied = false;
+        {
+            let mut doc = self.lock_doc();
+            let line_index = match doc.ws.buffer_line_index(doc.buffer_id) {
                 Ok(idx) => idx,
                 Err(_) => {
-                    self.lsp_disable();
+                    doc.lsp_disable();
                     return true;
                 }
             };
-            match shared.with_session_mut(|session| {
+            let edits = match shared.with_session_mut(|session| {
                 session.set_active_document(doc_uri.as_str())?;
                 session.poll_edits_with_line_index(line_index)
             }) {
                 Ok(edits) => edits,
                 Err(_reason) => {
-                    self.lsp_disable();
+                    doc.lsp_disable();
                     return true;
                 }
+            };
+            if !edits.is_empty() {
+                let _ = doc.apply_processing_edits(edits);
+                applied = true;
             }
-        };
-
-        let mut applied = false;
-        if !edits.is_empty() {
-            let _ = self.apply_processing_edits(edits);
-            applied = true;
         }
 
         if self.maybe_request_lsp_aux().is_err() {
@@ -3550,6 +3849,7 @@ impl EditorUi {
             return applied;
         }
 
+        let mut doc = self.lock_doc();
         for ev in events {
             let LspEvent::Response(resp) = ev else {
                 continue;
@@ -3557,80 +3857,88 @@ impl EditorUi {
 
             match resp.method.as_str() {
                 "textDocument/inlayHint" => {
-                    self.lsp_inlay_in_flight = false;
+                    doc.lsp_inlay_in_flight = false;
                     let result = resp.result.unwrap_or(serde_json::Value::Null);
-                    let edit = match self.ws.buffer_line_index(self.buffer_id) {
+                    let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
                         Ok(line_index) => lsp_inlay_hints_to_processing_edit(line_index, &result),
                         Err(_) => {
-                            self.lsp_disable();
+                            doc.lsp_disable();
                             return true;
                         }
                     };
-                    let _ = self.apply_processing_edits([edit]);
+                    let _ = doc.apply_processing_edits([edit]);
                     applied = true;
                 }
                 "textDocument/codeLens" => {
-                    self.lsp_code_lens_in_flight = false;
+                    doc.lsp_code_lens_in_flight = false;
                     let result = resp.result.unwrap_or(serde_json::Value::Null);
-                    let edit = match self.ws.buffer_line_index(self.buffer_id) {
+                    let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
                         Ok(line_index) => lsp_code_lens_to_processing_edit(line_index, &result),
                         Err(_) => {
-                            self.lsp_disable();
+                            doc.lsp_disable();
                             return true;
                         }
                     };
-                    let _ = self.apply_processing_edits([edit]);
+                    let _ = doc.apply_processing_edits([edit]);
                     applied = true;
                 }
                 "textDocument/documentLink" => {
-                    self.lsp_document_links_in_flight = false;
+                    doc.lsp_document_links_in_flight = false;
                     let result = resp.result.unwrap_or(serde_json::Value::Null);
-                    let edits = match self.ws.buffer_line_index(self.buffer_id) {
-                        Ok(line_index) => {
-                            lsp_document_links_to_processing_edits(line_index, &result)
-                        }
+                    let edits = match doc.ws.buffer_line_index(doc.buffer_id) {
+                        Ok(line_index) => lsp_document_links_to_processing_edits(line_index, &result),
                         Err(_) => {
-                            self.lsp_disable();
+                            doc.lsp_disable();
                             return true;
                         }
                     };
                     if !edits.is_empty() {
-                        let _ = self.apply_processing_edits(edits);
+                        let _ = doc.apply_processing_edits(edits);
                         applied = true;
                     }
                 }
                 "textDocument/hover" => {
-                    if self.lsp_hover_last_request_id == Some(resp.id) {
-                        self.lsp_hover_in_flight = false;
+                    if let Some(LspClientRequest::Hover { view }) =
+                        doc.lsp_client_requests.remove(&resp.id)
+                    {
+                        if doc.lsp_latest_hover_request_id.get(&view) != Some(&resp.id) {
+                            continue;
+                        }
 
                         if resp.error.is_some() {
-                            self.lsp_hover_last_result_json = None;
+                            doc.lsp_last_hover_result_json.remove(&view);
                             continue;
                         }
 
                         let result = resp.result.unwrap_or(serde_json::Value::Null);
-                        self.lsp_hover_last_result_json = if result.is_null() {
-                            None
+                        if result.is_null() {
+                            doc.lsp_last_hover_result_json.remove(&view);
                         } else {
-                            Some(result.to_string())
-                        };
+                            doc.lsp_last_hover_result_json
+                                .insert(view, result.to_string());
+                        }
                     }
                 }
                 "textDocument/definition" => {
-                    if self.lsp_definition_last_request_id == Some(resp.id) {
-                        self.lsp_definition_in_flight = false;
+                    if let Some(LspClientRequest::Definition { view }) =
+                        doc.lsp_client_requests.remove(&resp.id)
+                    {
+                        if doc.lsp_latest_definition_request_id.get(&view) != Some(&resp.id) {
+                            continue;
+                        }
 
                         if resp.error.is_some() {
-                            self.lsp_definition_last_result_json = None;
+                            doc.lsp_last_definition_result_json.remove(&view);
                             continue;
                         }
 
                         let result = resp.result.unwrap_or(serde_json::Value::Null);
-                        self.lsp_definition_last_result_json = if result.is_null() {
-                            None
+                        if result.is_null() {
+                            doc.lsp_last_definition_result_json.remove(&view);
                         } else {
-                            Some(result.to_string())
-                        };
+                            doc.lsp_last_definition_result_json
+                                .insert(view, result.to_string());
+                        }
                     }
                 }
                 _ => {}
@@ -3641,44 +3949,50 @@ impl EditorUi {
     }
 
     fn maybe_request_lsp_aux(&mut self) -> Result<(), UiError> {
-        let Some(due) = self.lsp_aux_refresh_due else {
-            return Ok(());
-        };
-        if Instant::now() < due {
-            return Ok(());
-        }
-        self.lsp_aux_refresh_due = None;
-
-        let inlay_range = if self.lsp_inlay_in_flight {
-            None
-        } else {
-            self.treesitter_prefetch_char_range()
-        };
-        let line_index = self.line_index()?;
-
-        let Some(shared) = self.lsp.as_ref() else {
-            return Ok(());
-        };
-        let Some(doc_uri) = self.lsp_document_uri.as_deref() else {
-            return Ok(());
-        };
-
-        let request_inlay = inlay_range.and_then(|(start, end)| {
-            if end > start {
-                Some((start, end))
-            } else {
-                None
+        let (shared, doc_uri, allow_inlay, request_code_lens, request_document_links) = {
+            let mut doc = self.lock_doc();
+            let Some(due) = doc.lsp_aux_refresh_due else {
+                return Ok(());
+            };
+            if Instant::now() < due {
+                return Ok(());
             }
+            doc.lsp_aux_refresh_due = None;
+
+            let Some(shared) = doc.lsp.clone() else {
+                return Ok(());
+            };
+            let Some(doc_uri) = doc.lsp_document_uri.clone() else {
+                return Ok(());
+            };
+
+            let allow_inlay = !doc.lsp_inlay_in_flight;
+            let request_code_lens = !doc.lsp_code_lens_in_flight;
+            let request_document_links = !doc.lsp_document_links_in_flight;
+            (shared, doc_uri, allow_inlay, request_code_lens, request_document_links)
+        };
+
+        let inlay_range = if allow_inlay {
+            self.treesitter_prefetch_char_range()
+        } else {
+            None
+        };
+        let request_inlay_range = inlay_range.and_then(|(start, end)| {
+            if end > start { Some((start, end)) } else { None }
         });
-        let request_code_lens = !self.lsp_code_lens_in_flight;
-        let request_document_links = !self.lsp_document_links_in_flight;
+
+        let mut doc = self.lock_doc();
+        let line_index = doc
+            .ws
+            .buffer_line_index(doc.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
 
         shared
             .with_session_mut(|lsp| {
-                lsp.set_active_document(doc_uri)?;
+                lsp.set_active_document(doc_uri.as_str())?;
 
                 // Inlay hints: prefer the viewport prefetch range (good UX + avoids huge payloads).
-                if let Some((start, end)) = request_inlay {
+                if let Some((start, end)) = request_inlay_range {
                     lsp.request_inlay_hints(line_index, start, end)?;
                 }
 
@@ -3694,14 +4008,14 @@ impl EditorUi {
             })
             .map_err(UiError::Processor)?;
 
-        if request_inlay.is_some() {
-            self.lsp_inlay_in_flight = true;
+        if request_inlay_range.is_some() {
+            doc.lsp_inlay_in_flight = true;
         }
         if request_code_lens {
-            self.lsp_code_lens_in_flight = true;
+            doc.lsp_code_lens_in_flight = true;
         }
         if request_document_links {
-            self.lsp_document_links_in_flight = true;
+            doc.lsp_document_links_in_flight = true;
         }
 
         Ok(())
@@ -3710,12 +4024,13 @@ impl EditorUi {
     fn all_selections_visual(&mut self) -> Vec<VisualSelection> {
         let cursor = self.cursor_state();
         let mut out = Vec::new();
+        let mut doc = self.lock_doc();
 
         for sel in cursor.selections {
             if sel.start == sel.end {
                 continue;
             }
-            let Some((a_row, a_x)) = self
+            let Some((a_row, a_x)) = doc
                 .ws
                 .logical_to_visual_for_view(self.view_id, sel.start.line, sel.start.column)
                 .ok()
@@ -3723,7 +4038,7 @@ impl EditorUi {
             else {
                 continue;
             };
-            let Some((b_row, b_x)) = self
+            let Some((b_row, b_x)) = doc
                 .ws
                 .logical_to_visual_for_view(self.view_id, sel.end.line, sel.end.column)
                 .ok()
@@ -3748,8 +4063,9 @@ impl EditorUi {
 
         let mut secondary = Vec::new();
         let mut primary = Vec::new();
+        let mut doc = self.lock_doc();
         for (idx, sel) in cursor.selections.iter().enumerate() {
-            let Some((row, x_cells)) = self
+            let Some((row, x_cells)) = doc
                 .ws
                 .logical_to_visual_for_view(self.view_id, sel.end.line, sel.end.column)
                 .ok()
@@ -3775,7 +4091,8 @@ impl EditorUi {
 
     fn all_caret_offsets(&self) -> Vec<usize> {
         let cursor = self.cursor_state();
-        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+        let doc = self.lock_doc();
+        let Ok(line_index) = doc.ws.buffer_line_index(self.buffer_id) else {
             return Vec::new();
         };
         let primary_idx = cursor.primary_selection_index;
@@ -3834,10 +4151,12 @@ impl EditorUi {
         let start_doc_row = viewport.scroll_top;
         let row_count = self.viewport_row_count_for_render(&viewport);
         let start_composed = self.composed_start_row_for_doc_row(start_doc_row);
-        let grid = self
-            .ws
-            .get_viewport_content_composed(self.view_id, start_composed, row_count)
-            .unwrap_or_else(|_| editor_core::ComposedGrid::new(start_composed, row_count));
+        let grid = {
+            let mut doc = self.lock_doc();
+            doc.ws
+                .get_viewport_content_composed(self.view_id, start_composed, row_count)
+                .unwrap_or_else(|_| editor_core::ComposedGrid::new(start_composed, row_count))
+        };
         (start_composed, row_count, grid)
     }
 
@@ -3877,33 +4196,34 @@ impl EditorUi {
 
     fn composed_start_row_for_doc_row(&mut self, doc_row: usize) -> usize {
         // Fast path: no above-line virtual text => composed rows are identical to doc visual rows.
-        let has_above_line =
-            self.ws
-                .buffer_decorations(self.buffer_id)
-                .ok()
-                .is_some_and(|decorations| {
-                    decorations.values().any(|layer| {
-                        layer.iter().any(|d| {
-                            d.placement == editor_core::DecorationPlacement::AboveLine
-                                && d.text.as_ref().is_some_and(|t| !t.is_empty())
-                        })
+        let mut doc = self.lock_doc();
+        let has_above_line = doc
+            .ws
+            .buffer_decorations(self.buffer_id)
+            .ok()
+            .is_some_and(|decorations| {
+                decorations.values().any(|layer| {
+                    layer.iter().any(|d| {
+                        d.placement == editor_core::DecorationPlacement::AboveLine
+                            && d.text.as_ref().is_some_and(|t| !t.is_empty())
                     })
-                });
+                })
+            });
         if !has_above_line {
             return doc_row;
         }
 
         let Ok((top_logical_line, _visual_in_logical)) =
-            self.ws.visual_to_logical_for_view(self.view_id, doc_row)
+            doc.ws.visual_to_logical_for_view(self.view_id, doc_row)
         else {
             return doc_row;
         };
 
         // Count above-line decorations per logical line.
-        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+        let Ok(line_index) = doc.ws.buffer_line_index(self.buffer_id) else {
             return doc_row;
         };
-        let Ok(decorations) = self.ws.buffer_decorations(self.buffer_id) else {
+        let Ok(decorations) = doc.ws.buffer_decorations(self.buffer_id) else {
             return doc_row;
         };
         let mut above_count: HashMap<usize, usize> = HashMap::new();
@@ -3923,10 +4243,7 @@ impl EditorUi {
             }
         }
 
-        let regions = self
-            .ws
-            .folding_regions_for_buffer(self.buffer_id)
-            .unwrap_or_default();
+        let regions = doc.ws.folding_regions_for_buffer(self.buffer_id).unwrap_or_default();
         let mut prefix = 0usize;
         for line in 0..top_logical_line {
             if is_logical_line_hidden(regions.as_slice(), line) {
@@ -4059,6 +4376,56 @@ mod tests {
     fn ui_text_roundtrip() {
         let ui = EditorUi::new("hello", 80);
         assert_eq!(ui.text(), "hello");
+    }
+
+    #[test]
+    fn ui_clone_view_shares_text_but_keeps_view_state_independent() {
+        let mut ui1 = EditorUi::new("abc\ndef\n", 80);
+        let mut ui2 = ui1.clone_view(80).unwrap();
+
+        ui1.set_selections_offsets(&[(0, 0)], 0).unwrap();
+        ui2.set_selections_offsets(&[(4, 4)], 0).unwrap();
+        assert_eq!(ui1.primary_selection_offsets(), (0, 0));
+        assert_eq!(ui2.primary_selection_offsets(), (4, 4));
+
+        // Text edits are shared across views.
+        ui1.insert_text("X").unwrap();
+        assert_eq!(ui1.text(), "Xabc\ndef\n");
+        assert_eq!(ui2.text(), "Xabc\ndef\n");
+
+        // Each view tracks its own caret/selection, but receives the same text delta.
+        assert_eq!(ui1.primary_selection_offsets(), (1, 1));
+        assert_eq!(ui2.primary_selection_offsets(), (5, 5));
+
+        // Cursor moves in one view do not affect the other view.
+        ui1.execute(Command::Cursor(CursorCommand::MoveTo {
+            line: 0,
+            column: 0,
+        }))
+        .unwrap();
+        assert_eq!(ui1.cursor_state().offset, 0);
+        assert_eq!(ui2.cursor_state().offset, 5);
+    }
+
+    #[test]
+    fn ui_clone_view_has_independent_scroll_state() {
+        let text = (0..200)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut ui1 = EditorUi::new(text.as_str(), 80);
+        let mut ui2 = ui1.clone_view(80).unwrap();
+
+        ui1.set_render_metrics(14.0, 10.0, 8.0, 0.0, 0.0);
+        ui2.set_render_metrics(14.0, 10.0, 8.0, 0.0, 0.0);
+        ui1.set_viewport_px(800, 50, 1.0).unwrap(); // 5 rows visible
+        ui2.set_viewport_px(800, 50, 1.0).unwrap();
+
+        ui1.set_smooth_scroll_state(10, 0);
+        ui2.set_smooth_scroll_state(20, 0);
+
+        assert_eq!(ui1.viewport_state().scroll_top, 10);
+        assert_eq!(ui2.viewport_state().scroll_top, 20);
     }
 
     #[test]
@@ -4502,7 +4869,12 @@ mod tests {
         // Cursor is at offset 1 => (line 0, column 1).
         assert_eq!(ui.cursor_state().position, Position::new(0, 1));
 
-        let grid = ui.ws.get_viewport_content_styled(ui.view_id, 0, 1).unwrap();
+        let grid = {
+            let mut doc = ui.lock_doc();
+            doc.ws
+                .get_viewport_content_styled(ui.view_id, 0, 1)
+                .unwrap()
+        };
         assert_eq!(grid.lines.len(), 1);
         assert_eq!(grid.lines[0].cells.len(), 2);
         assert!(
@@ -4518,7 +4890,12 @@ mod tests {
 
         // Committing clears the marked style layer.
         ui.commit_text("你好!").unwrap();
-        let grid2 = ui.ws.get_viewport_content_styled(ui.view_id, 0, 1).unwrap();
+        let grid2 = {
+            let mut doc = ui.lock_doc();
+            doc.ws
+                .get_viewport_content_styled(ui.view_id, 0, 1)
+                .unwrap()
+        };
         assert!(
             grid2.lines[0]
                 .cells
@@ -4961,10 +5338,12 @@ mod tests {
         ui.set_viewport_px(200, 80, 1.0).unwrap();
         ui.set_gutter_width_cells(2).unwrap();
 
+        let regions = {
+            let doc = ui.lock_doc();
+            doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
+        };
         assert!(
-            ui.ws
-                .folding_regions_for_buffer(ui.buffer_id)
-                .unwrap()
+            regions
                 .iter()
                 .any(|r| r.start_line == 0 && !r.is_collapsed),
             "expected a fold region starting at line 0"
@@ -4972,20 +5351,22 @@ mod tests {
 
         // Click in gutter at visual row 0.
         ui.mouse_down(5.0, 10.0).unwrap();
+        let regions = {
+            let doc = ui.lock_doc();
+            doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
+        };
         assert!(
-            ui.ws
-                .folding_regions_for_buffer(ui.buffer_id)
-                .unwrap()
-                .iter()
-                .any(|r| r.start_line == 0 && r.is_collapsed),
+            regions.iter().any(|r| r.start_line == 0 && r.is_collapsed),
             "expected fold region to become collapsed after gutter click"
         );
 
         ui.mouse_down(5.0, 10.0).unwrap();
+        let regions = {
+            let doc = ui.lock_doc();
+            doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
+        };
         assert!(
-            ui.ws
-                .folding_regions_for_buffer(ui.buffer_id)
-                .unwrap()
+            regions
                 .iter()
                 .any(|r| r.start_line == 0 && !r.is_collapsed),
             "expected fold region to expand after second gutter click"
@@ -5012,7 +5393,10 @@ mod tests {
         ui.set_viewport_px(260, 200, 1.0).unwrap();
         ui.set_gutter_width_cells(2).unwrap();
 
-        let regions = ui.ws.folding_regions_for_buffer(ui.buffer_id).unwrap();
+        let regions = {
+            let doc = ui.lock_doc();
+            doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
+        };
         assert!(
             regions.len() >= 2,
             "expected nested fold regions from Tree-sitter"
@@ -5033,11 +5417,13 @@ mod tests {
             .expect("expected an outer region containing inner");
 
         let click_gutter_at_start_line = |ui: &mut EditorUi, start_line: usize| {
-            let (row, _x_cells) = ui
-                .ws
-                .logical_to_visual_for_view(ui.view_id, start_line, 0)
-                .unwrap()
-                .expect("start line should be visible");
+            let (row, _x_cells) = {
+                let mut doc = ui.lock_doc();
+                doc.ws
+                    .logical_to_visual_for_view(ui.view_id, start_line, 0)
+                    .unwrap()
+                    .expect("start line should be visible")
+            };
             let y = row as f32 * ui.render_config.line_height_px
                 + ui.render_config.line_height_px * 0.5;
             ui.mouse_down(5.0, y).unwrap();
@@ -5046,53 +5432,61 @@ mod tests {
 
         // 1) Fold inner.
         click_gutter_at_start_line(&mut ui, inner.start_line);
+        let regions = {
+            let doc = ui.lock_doc();
+            doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
+        };
         assert!(
-            ui.ws
-                .folding_regions_for_buffer(ui.buffer_id)
-                .unwrap()
-                .iter()
-                .any(|r| r.start_line == inner.start_line
+            regions.iter().any(|r| {
+                r.start_line == inner.start_line
                     && r.end_line == inner.end_line
-                    && r.is_collapsed),
+                    && r.is_collapsed
+            }),
             "expected inner region to be collapsed"
         );
 
         // 2) Fold outer.
         click_gutter_at_start_line(&mut ui, outer.start_line);
+        let regions = {
+            let doc = ui.lock_doc();
+            doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
+        };
         assert!(
-            ui.ws
-                .folding_regions_for_buffer(ui.buffer_id)
-                .unwrap()
-                .iter()
-                .any(|r| r.start_line == outer.start_line
+            regions.iter().any(|r| {
+                r.start_line == outer.start_line
                     && r.end_line == outer.end_line
-                    && r.is_collapsed),
+                    && r.is_collapsed
+            }),
             "expected outer region to be collapsed"
         );
 
         // 3) Unfold outer.
         click_gutter_at_start_line(&mut ui, outer.start_line);
+        let regions = {
+            let doc = ui.lock_doc();
+            doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
+        };
         assert!(
-            ui.ws
-                .folding_regions_for_buffer(ui.buffer_id)
-                .unwrap()
-                .iter()
-                .any(|r| r.start_line == outer.start_line
+            regions.iter().any(|r| {
+                r.start_line == outer.start_line
                     && r.end_line == outer.end_line
-                    && !r.is_collapsed),
+                    && !r.is_collapsed
+            }),
             "expected outer region to be expanded"
         );
 
         // 4) Unfold inner (must still be toggleable).
         click_gutter_at_start_line(&mut ui, inner.start_line);
+        let regions = {
+            let doc = ui.lock_doc();
+            doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
+        };
         assert!(
-            ui.ws
-                .folding_regions_for_buffer(ui.buffer_id)
-                .unwrap()
-                .iter()
-                .any(|r| r.start_line == inner.start_line
+            regions.iter().any(|r| {
+                r.start_line == inner.start_line
                     && r.end_line == inner.end_line
-                    && !r.is_collapsed),
+                    && !r.is_collapsed
+            }),
             "expected inner region to be expanded after outer unfolded"
         );
     }
@@ -5213,11 +5607,16 @@ world
             .sublime_style_id_for_scope("comment.line.number-sign.toml")
             .unwrap();
         assert_eq!(
-            ui.sublime_scope_for_style_id(comment_style),
+            ui.sublime_scope_for_style_id(comment_style).as_deref(),
             Some("comment.line.number-sign.toml")
         );
 
-        let grid = ui.ws.get_viewport_content_styled(ui.view_id, 0, 8).unwrap();
+        let grid = {
+            let mut doc = ui.lock_doc();
+            doc.ws
+                .get_viewport_content_styled(ui.view_id, 0, 8)
+                .unwrap()
+        };
         assert!(
             grid.lines
                 .iter()
@@ -5226,7 +5625,10 @@ world
             "expected at least one comment-styled cell"
         );
 
-        let regions = ui.ws.folding_regions_for_buffer(ui.buffer_id).unwrap();
+        let regions = {
+            let doc = ui.lock_doc();
+            doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
+        };
         assert!(
             regions.iter().any(|r| r.start_line == 1 && r.end_line == 5),
             "expected fold region for multi-line array (lines 1..=5)"
@@ -5249,7 +5651,12 @@ world
         let comment_style = ui
             .sublime_style_id_for_scope("comment.line.number-sign.toml")
             .unwrap();
-        let grid = ui.ws.get_viewport_content_styled(ui.view_id, 0, 2).unwrap();
+        let grid = {
+            let mut doc = ui.lock_doc();
+            doc.ws
+                .get_viewport_content_styled(ui.view_id, 0, 2)
+                .unwrap()
+        };
         assert!(
             grid.lines
                 .iter()
@@ -5283,15 +5690,20 @@ fn main() {
         let comment_style = ui.treesitter_style_id_for_capture("comment");
         let string_style = ui.treesitter_style_id_for_capture("string");
         assert_eq!(
-            ui.treesitter_capture_for_style_id(comment_style),
+            ui.treesitter_capture_for_style_id(comment_style).as_deref(),
             Some("comment")
         );
         assert_eq!(
-            ui.treesitter_capture_for_style_id(string_style),
+            ui.treesitter_capture_for_style_id(string_style).as_deref(),
             Some("string")
         );
 
-        let grid = ui.ws.get_viewport_content_styled(ui.view_id, 0, 4).unwrap();
+        let grid = {
+            let mut doc = ui.lock_doc();
+            doc.ws
+                .get_viewport_content_styled(ui.view_id, 0, 4)
+                .unwrap()
+        };
         assert!(
             grid.lines
                 .iter()
@@ -5307,7 +5719,10 @@ fn main() {
             "expected at least one string-styled cell"
         );
 
-        let regions = ui.ws.folding_regions_for_buffer(ui.buffer_id).unwrap();
+        let regions = {
+            let doc = ui.lock_doc();
+            doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
+        };
         assert!(
             regions.iter().any(|r| r.start_line == 1 && r.end_line == 3),
             "expected fold region for multi-line function"
@@ -5512,20 +5927,27 @@ fn main() {
         ]"#;
         ui.lsp_apply_document_links_json(result_json).unwrap();
 
-        let decorations = ui
-            .ws
-            .buffer_decorations(ui.buffer_id)
-            .unwrap()
-            .get(&editor_core::DecorationLayerId::DOCUMENT_LINKS)
-            .cloned()
-            .unwrap_or_default();
+        let decorations = {
+            let doc = ui.lock_doc();
+            doc.ws
+                .buffer_decorations(ui.buffer_id)
+                .unwrap()
+                .get(&editor_core::DecorationLayerId::DOCUMENT_LINKS)
+                .cloned()
+                .unwrap_or_default()
+        };
         assert_eq!(
             decorations.len(),
             1,
             "expected one document link decoration"
         );
 
-        let grid = ui.ws.get_viewport_content_styled(ui.view_id, 0, 1).unwrap();
+        let grid = {
+            let mut doc = ui.lock_doc();
+            doc.ws
+                .get_viewport_content_styled(ui.view_id, 0, 1)
+                .unwrap()
+        };
         assert!(
             grid.lines
                 .iter()
@@ -5762,8 +6184,11 @@ fn main() {
         assert_eq!(ui.viewport_state().scroll_top, 0);
 
         // Place caret at line 50 (0-based).
-        let line_index = ui.ws.buffer_line_index(ui.buffer_id).unwrap();
-        let offset = line_index.position_to_char_offset(50, 0);
+        let offset = {
+            let doc = ui.lock_doc();
+            let line_index = doc.ws.buffer_line_index(ui.buffer_id).unwrap();
+            line_index.position_to_char_offset(50, 0)
+        };
         ui.set_selections_offsets(&[(offset, offset)], 0).unwrap();
 
         ui.reveal_primary_caret();
