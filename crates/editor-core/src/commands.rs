@@ -961,42 +961,79 @@ struct UndoStep {
 
 #[derive(Debug)]
 struct UndoRedoManager {
-    undo_stack: Vec<UndoStep>,
-    redo_stack: Vec<UndoStep>,
+    /// All nodes in the undo tree (stable indices).
+    ///
+    /// - Node `0` is the root ("base" state) and has no step.
+    /// - Other nodes contain one [`UndoStep`] representing an edit from `parent → node`.
+    nodes: Vec<UndoNode>,
+    /// Current node id in the undo tree.
+    current: UndoNodeId,
+    /// Count of nodes that currently hold a step (excludes root and pruned tombstones).
+    step_count: usize,
     max_undo: usize,
-    /// Clean point tracking. Uses `undo_stack.len()` as the saved position in the linear history.
-    /// When `redo_stack` is non-empty, `clean_index` may be greater than `undo_stack.len()`.
-    clean_index: Option<usize>,
+    /// Clean point tracking (node id in the undo tree).
+    clean_node: Option<UndoNodeId>,
     next_group_id: usize,
     open_group_id: Option<usize>,
 }
 
+type UndoNodeId = usize;
+
+#[derive(Debug)]
+struct UndoNode {
+    parent: Option<UndoNodeId>,
+    children: Vec<UndoNodeId>,
+    /// The selected child branch to use for `Redo` when multiple exist.
+    preferred_child: Option<UndoNodeId>,
+    /// The step that produced this node (none for root and pruned tombstones).
+    step: Option<UndoStep>,
+}
+
 impl UndoRedoManager {
     fn new(max_undo: usize) -> Self {
+        let max_undo = max_undo.max(1);
         Self {
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
+            nodes: vec![UndoNode {
+                parent: None,
+                children: Vec::new(),
+                preferred_child: None,
+                step: None,
+            }],
+            current: 0,
+            step_count: 0,
             max_undo,
-            clean_index: Some(0),
+            clean_node: Some(0),
             next_group_id: 0,
             open_group_id: None,
         }
     }
 
     fn can_undo(&self) -> bool {
-        !self.undo_stack.is_empty()
+        self.current != 0
     }
 
     fn can_redo(&self) -> bool {
-        !self.redo_stack.is_empty()
+        !self.nodes[self.current].children.is_empty()
     }
 
     fn undo_depth(&self) -> usize {
-        self.undo_stack.len()
+        let mut depth = 0usize;
+        let mut node = self.current;
+        while node != 0 {
+            depth = depth.saturating_add(1);
+            node = self.nodes[node].parent.unwrap_or(0);
+        }
+        depth
     }
 
     fn redo_depth(&self) -> usize {
-        self.redo_stack.len()
+        let mut depth = 0usize;
+        let mut node = self.current;
+        while let Some(child) = self.selected_child(node) {
+            depth = depth.saturating_add(1);
+            node = child;
+        }
+        depth
     }
 
     fn current_group_id(&self) -> Option<usize> {
@@ -1004,11 +1041,11 @@ impl UndoRedoManager {
     }
 
     fn is_clean(&self) -> bool {
-        self.clean_index == Some(self.undo_stack.len())
+        self.clean_node == Some(self.current)
     }
 
     fn mark_clean(&mut self) {
-        self.clean_index = Some(self.undo_stack.len());
+        self.clean_node = Some(self.current);
         self.end_group();
     }
 
@@ -1016,38 +1053,10 @@ impl UndoRedoManager {
         self.open_group_id = None;
     }
 
-    fn clear_redo_and_adjust_clean(&mut self) {
-        if self.redo_stack.is_empty() {
-            return;
-        }
-
-        // If clean point is in redo area, it becomes unreachable after clearing redo.
-        if let Some(clean_index) = self.clean_index
-            && clean_index > self.undo_stack.len()
-        {
-            self.clean_index = None;
-        }
-
-        self.redo_stack.clear();
-    }
-
     fn push_step(&mut self, mut step: UndoStep, coalescible_insert: bool) -> usize {
-        self.clear_redo_and_adjust_clean();
-
-        if self.undo_stack.len() >= self.max_undo {
-            self.undo_stack.remove(0);
-            if let Some(clean_index) = self.clean_index {
-                if clean_index == 0 {
-                    self.clean_index = None;
-                } else {
-                    self.clean_index = Some(clean_index - 1);
-                }
-            }
-        }
-
         let reuse_open_group = coalescible_insert
             && self.open_group_id.is_some()
-            && self.clean_index != Some(self.undo_stack.len());
+            && self.clean_node != Some(self.current);
 
         if reuse_open_group {
             step.group_id = self.open_group_id.expect("checked");
@@ -1063,36 +1072,195 @@ impl UndoRedoManager {
         }
 
         let group_id = step.group_id;
-        self.undo_stack.push(step);
+        let parent = self.current;
+        let new_id = self.nodes.len();
+        self.nodes.push(UndoNode {
+            parent: Some(parent),
+            children: Vec::new(),
+            preferred_child: None,
+            step: Some(step),
+        });
+
+        self.nodes[parent].children.push(new_id);
+        self.nodes[parent].preferred_child = Some(new_id);
+        self.current = new_id;
+        self.step_count = self.step_count.saturating_add(1);
+
+        self.prune_if_needed();
         group_id
     }
 
     fn pop_undo_group(&mut self) -> Option<Vec<UndoStep>> {
-        let last_group_id = self.undo_stack.last().map(|s| s.group_id)?;
-        let mut steps: Vec<UndoStep> = Vec::new();
+        let mut node = self.current;
+        let group_id = self.nodes[node].step.as_ref().map(|s| s.group_id)?;
 
-        while let Some(step) = self.undo_stack.last() {
-            if step.group_id != last_group_id {
+        let mut steps: Vec<UndoStep> = Vec::new();
+        while node != 0 {
+            let current_step_group = self.nodes[node].step.as_ref().map(|s| s.group_id);
+            if current_step_group != Some(group_id) {
                 break;
             }
-            steps.push(self.undo_stack.pop().expect("checked"));
+
+            let step = self.nodes[node].step.as_ref()?.clone();
+            steps.push(step);
+
+            let parent = self.nodes[node].parent.unwrap_or(0);
+            // Remember which branch we came from so redo follows it.
+            if parent != 0 || node != 0 {
+                self.nodes[parent].preferred_child = Some(node);
+            }
+
+            node = parent;
         }
 
+        if steps.is_empty() {
+            return None;
+        }
+
+        self.current = node;
         Some(steps)
     }
 
     fn pop_redo_group(&mut self) -> Option<Vec<UndoStep>> {
-        let last_group_id = self.redo_stack.last().map(|s| s.group_id)?;
-        let mut steps: Vec<UndoStep> = Vec::new();
+        let first = self.selected_child(self.current)?;
+        let group_id = self.nodes[first].step.as_ref().map(|s| s.group_id)?;
 
-        while let Some(step) = self.redo_stack.last() {
-            if step.group_id != last_group_id {
+        let mut node = self.current;
+        let mut steps: Vec<UndoStep> = Vec::new();
+        while let Some(child) = self.selected_child(node) {
+            let child_group = self.nodes[child].step.as_ref().map(|s| s.group_id);
+            if child_group != Some(group_id) {
                 break;
             }
-            steps.push(self.redo_stack.pop().expect("checked"));
+
+            // Ensure this branch remains the selected redo path.
+            self.nodes[node].preferred_child = Some(child);
+
+            steps.push(self.nodes[child].step.as_ref()?.clone());
+            node = child;
         }
 
+        if steps.is_empty() {
+            return None;
+        }
+
+        self.current = node;
         Some(steps)
+    }
+
+    fn redo_branch_count(&self) -> usize {
+        self.nodes[self.current].children.len()
+    }
+
+    fn selected_redo_branch_index(&self) -> Option<usize> {
+        let node = &self.nodes[self.current];
+        let selected = self.selected_child(self.current)?;
+        node.children.iter().position(|c| *c == selected)
+    }
+
+    fn select_redo_branch(&mut self, index: usize) -> Result<(), CommandError> {
+        let children = self.nodes[self.current].children.clone();
+        if index >= children.len() {
+            return Err(CommandError::Other(format!(
+                "Invalid redo branch index {} (count={})",
+                index,
+                children.len()
+            )));
+        }
+        self.nodes[self.current].preferred_child = Some(children[index]);
+        Ok(())
+    }
+
+    fn selected_child(&self, node: UndoNodeId) -> Option<UndoNodeId> {
+        let n = &self.nodes[node];
+        if n.children.is_empty() {
+            return None;
+        }
+        if let Some(pref) = n.preferred_child {
+            if n.children.iter().any(|c| *c == pref) {
+                return Some(pref);
+            }
+        }
+        n.children.last().copied()
+    }
+
+    fn prune_if_needed(&mut self) {
+        while self.step_count > self.max_undo {
+            if let Some(leaf) = self.find_prunable_leaf() {
+                self.remove_leaf_node(leaf);
+                continue;
+            }
+
+            if self.prune_root_child() {
+                continue;
+            }
+
+            // No safe pruning candidate found; give up.
+            break;
+        }
+    }
+
+    fn find_prunable_leaf(&self) -> Option<UndoNodeId> {
+        (1..self.nodes.len())
+            .filter(|id| *id != self.current)
+            .filter(|id| self.nodes[*id].step.is_some())
+            .filter(|id| self.nodes[*id].children.is_empty())
+            .min()
+    }
+
+    fn remove_leaf_node(&mut self, id: UndoNodeId) {
+        let parent = self.nodes[id].parent.unwrap_or(0);
+        self.nodes[parent].children.retain(|c| *c != id);
+        if self.nodes[parent].preferred_child == Some(id) {
+            self.nodes[parent].preferred_child = self.nodes[parent].children.last().copied();
+        }
+
+        if self.clean_node == Some(id) {
+            self.clean_node = None;
+        }
+
+        self.nodes[id].parent = None;
+        self.nodes[id].children.clear();
+        self.nodes[id].preferred_child = None;
+        self.nodes[id].step = None;
+
+        self.step_count = self.step_count.saturating_sub(1);
+    }
+
+    fn prune_root_child(&mut self) -> bool {
+        let children = self.nodes[0].children.clone();
+        if children.len() != 1 {
+            return false;
+        }
+        let doomed = children[0];
+        if doomed == self.current {
+            return false;
+        }
+        if self.nodes[doomed].step.is_none() {
+            return false;
+        }
+
+        // Re-parent all of `doomed`'s children directly under root (root now represents the state
+        // *after* `doomed`).
+        let adopted = std::mem::take(&mut self.nodes[doomed].children);
+        for child in &adopted {
+            self.nodes[*child].parent = Some(0);
+        }
+
+        self.nodes[0].children = adopted;
+        self.nodes[0].preferred_child = self.nodes[0].children.last().copied();
+
+        if self.clean_node == Some(doomed) {
+            self.clean_node = Some(0);
+        }
+
+        self.nodes[doomed].parent = None;
+        self.nodes[doomed].children.clear();
+        self.nodes[doomed].preferred_child = None;
+        self.nodes[doomed].step = None;
+
+        self.step_count = self.step_count.saturating_sub(1);
+        true
     }
 }
 
@@ -1116,7 +1284,7 @@ pub struct UndoHistorySnapshot {
     pub redo_stack: Vec<UndoHistoryStep>,
     /// Configured maximum undo history depth.
     pub max_undo: usize,
-    /// Clean point tracking in the linear history (see `UndoRedoManager::clean_index`).
+    /// Clean point tracking in the linearized history (index into `undo_stack + redo_stack`).
     pub clean_index: Option<usize>,
     /// The next group id to allocate.
     pub next_group_id: usize,
@@ -1200,10 +1368,26 @@ const UNDO_HISTORY_SNAPSHOT_FORMAT_VERSION: u32 = 1;
 
 impl UndoRedoManager {
     fn snapshot(&self) -> UndoHistorySnapshot {
+        let undo_nodes = self.undo_path_nodes_oldest_first();
+        let redo_nodes_nearest_first = self.redo_path_nodes_nearest_first();
+
+        let clean_index = self.clean_node.and_then(|clean| {
+            if clean == 0 {
+                return Some(0);
+            }
+            if let Some(pos) = undo_nodes.iter().position(|id| *id == clean) {
+                return Some(pos + 1);
+            }
+            if let Some(pos) = redo_nodes_nearest_first.iter().position(|id| *id == clean) {
+                return Some(undo_nodes.len() + pos + 1);
+            }
+            None
+        });
+
         UndoHistorySnapshot {
             format_version: UNDO_HISTORY_SNAPSHOT_FORMAT_VERSION,
             undo_stack: self
-                .undo_stack
+                .undo_path_steps_oldest_first()
                 .iter()
                 .map(|step| UndoHistoryStep {
                     group_id: step.group_id,
@@ -1228,7 +1412,7 @@ impl UndoRedoManager {
                 })
                 .collect(),
             redo_stack: self
-                .redo_stack
+                .redo_path_steps_newest_first()
                 .iter()
                 .map(|step| UndoHistoryStep {
                     group_id: step.group_id,
@@ -1253,7 +1437,7 @@ impl UndoRedoManager {
                 })
                 .collect(),
             max_undo: self.max_undo,
-            clean_index: self.clean_index,
+            clean_index,
             next_group_id: self.next_group_id,
             open_group_id: self.open_group_id,
         }
@@ -1269,7 +1453,7 @@ impl UndoRedoManager {
             ));
         }
 
-        let undo_stack = snapshot
+        let undo_steps = snapshot
             .undo_stack
             .into_iter()
             .map(|step| UndoStep {
@@ -1295,7 +1479,7 @@ impl UndoRedoManager {
             })
             .collect::<Vec<_>>();
 
-        let redo_stack = snapshot
+        let redo_steps = snapshot
             .redo_stack
             .into_iter()
             .map(|step| UndoStep {
@@ -1321,7 +1505,7 @@ impl UndoRedoManager {
             })
             .collect::<Vec<_>>();
 
-        let total_steps = undo_stack.len() + redo_stack.len();
+        let total_steps = undo_steps.len() + redo_steps.len();
         let max_undo = snapshot.max_undo.max(total_steps).max(1);
         if let Some(clean_index) = snapshot.clean_index
             && clean_index > total_steps
@@ -1332,14 +1516,112 @@ impl UndoRedoManager {
             });
         }
 
-        self.undo_stack = undo_stack;
-        self.redo_stack = redo_stack;
+        // Rebuild as a linear chain (snapshots do not persist alternative branches).
+        self.nodes = vec![UndoNode {
+            parent: None,
+            children: Vec::new(),
+            preferred_child: None,
+            step: None,
+        }];
+        self.current = 0;
+        self.step_count = 0;
+
+        let mut node = 0usize;
+        let mut undo_node_ids: Vec<UndoNodeId> = Vec::new();
+        for step in undo_steps {
+            let new_id = self.nodes.len();
+            self.nodes.push(UndoNode {
+                parent: Some(node),
+                children: Vec::new(),
+                preferred_child: None,
+                step: Some(step),
+            });
+            self.nodes[node].children.push(new_id);
+            self.nodes[node].preferred_child = Some(new_id);
+            node = new_id;
+            undo_node_ids.push(new_id);
+            self.step_count = self.step_count.saturating_add(1);
+        }
+
+        let current_node = node;
+
+        // `redo_steps` in the v1 snapshot format is stored in "stack order" (newest → oldest).
+        // We recreate the redo path in redo order (oldest → newest) as a simple child chain.
+        let mut redo_node_ids_nearest_first: Vec<UndoNodeId> = Vec::new();
+        let mut redo_parent = current_node;
+        for step in redo_steps.into_iter().rev() {
+            let new_id = self.nodes.len();
+            self.nodes.push(UndoNode {
+                parent: Some(redo_parent),
+                children: Vec::new(),
+                preferred_child: None,
+                step: Some(step),
+            });
+            self.nodes[redo_parent].children.push(new_id);
+            self.nodes[redo_parent].preferred_child = Some(new_id);
+            redo_parent = new_id;
+            redo_node_ids_nearest_first.push(new_id);
+            self.step_count = self.step_count.saturating_add(1);
+        }
+
+        self.current = current_node;
         self.max_undo = max_undo;
-        self.clean_index = snapshot.clean_index;
         self.next_group_id = snapshot.next_group_id;
         self.open_group_id = snapshot.open_group_id;
 
+        self.clean_node = snapshot.clean_index.and_then(|idx| {
+            if idx == 0 {
+                return Some(0);
+            }
+            let undo_len = undo_node_ids.len();
+            if idx <= undo_len {
+                return undo_node_ids.get(idx - 1).copied();
+            }
+            let redo_pos = idx.saturating_sub(undo_len + 1);
+            redo_node_ids_nearest_first.get(redo_pos).copied()
+        });
+
         Ok(())
+    }
+
+    fn undo_path_nodes_oldest_first(&self) -> Vec<UndoNodeId> {
+        let mut nodes: Vec<UndoNodeId> = Vec::new();
+        let mut node = self.current;
+        while node != 0 {
+            nodes.push(node);
+            node = self.nodes[node].parent.unwrap_or(0);
+        }
+        nodes.reverse();
+        nodes
+    }
+
+    fn redo_path_nodes_nearest_first(&self) -> Vec<UndoNodeId> {
+        let mut out: Vec<UndoNodeId> = Vec::new();
+        let mut node = self.current;
+        while let Some(child) = self.selected_child(node) {
+            out.push(child);
+            node = child;
+        }
+        out
+    }
+
+    fn undo_path_steps_oldest_first(&self) -> Vec<UndoStep> {
+        self.undo_path_nodes_oldest_first()
+            .into_iter()
+            .filter_map(|id| self.nodes[id].step.as_ref().cloned())
+            .collect()
+    }
+
+    /// Redo path steps in the legacy "redo stack order" (newest → oldest), matching the v1
+    /// `UndoHistorySnapshot` semantics.
+    fn redo_path_steps_newest_first(&self) -> Vec<UndoStep> {
+        let mut steps: Vec<UndoStep> = self
+            .redo_path_nodes_nearest_first()
+            .into_iter()
+            .filter_map(|id| self.nodes[id].step.as_ref().cloned())
+            .collect();
+        steps.reverse();
+        steps
     }
 }
 
@@ -2707,6 +2989,26 @@ impl CommandExecutor {
         self.undo_redo.redo_depth()
     }
 
+    /// Number of redo branches available at the current history node.
+    ///
+    /// - In a purely linear history, this is `0` or `1`.
+    /// - When you undo and then make a new edit, the previous redo path becomes an **alternate
+    ///   branch** (undo tree).
+    pub fn redo_branch_count(&self) -> usize {
+        self.undo_redo.redo_branch_count()
+    }
+
+    /// Index of the currently selected redo branch at the current node, if any.
+    pub fn selected_redo_branch_index(&self) -> Option<usize> {
+        self.undo_redo.selected_redo_branch_index()
+    }
+
+    /// Select which redo branch `EditCommand::Redo` will follow from the current node.
+    pub fn select_redo_branch(&mut self, index: usize) -> Result<(), CommandError> {
+        self.undo_redo.end_group();
+        self.undo_redo.select_redo_branch(index)
+    }
+
     /// Currently open undo group ID (for insert coalescing only)
     pub fn current_change_group(&self) -> Option<usize> {
         self.undo_redo.current_group_id()
@@ -2943,11 +3245,6 @@ impl CommandExecutor {
             self.restore_selection_set(step.before_selection.clone());
         }
 
-        // Move steps to redo stack in the same pop order (newest->oldest) so redo pops oldest first.
-        for step in steps {
-            self.undo_redo.redo_stack.push(step);
-        }
-
         self.last_text_delta = Some(TextDelta {
             before_char_count,
             after_char_count: self.editor.piece_table.char_count(),
@@ -2988,11 +3285,6 @@ impl CommandExecutor {
 
             self.apply_redo_edits(&step.edits)?;
             self.restore_selection_set(step.after_selection.clone());
-        }
-
-        // Reapplied steps return to undo stack in the same order (oldest->newest).
-        for step in steps {
-            self.undo_redo.undo_stack.push(step);
         }
 
         self.last_text_delta = Some(TextDelta {

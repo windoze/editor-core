@@ -22,6 +22,9 @@ snapshots and drive edits through the command/state APIs.
 - **Command interface** (`CommandExecutor`) and **state/query layer** (`EditorStateManager`).
 - **Undo history persistence ("hot exit")** via `undo_history_snapshot` / `restore_undo_history`
   (optional `serde` feature for easy JSON serialization).
+- **Undo tree (branching history)** (optional power feature):
+  - new edits after undo create alternate branches instead of discarding the previous redo path
+  - select which branch `Redo` follows via `CommandExecutor::{redo_branch_count, select_redo_branch}`
 - **Workspace model** (`Workspace`) for multi-buffer + multi-view (split panes):
   - open buffers: `Workspace::open_buffer` → `OpenBufferResult { buffer_id, view_id }`
   - create additional views: `Workspace::create_view`
@@ -44,6 +47,9 @@ snapshots and drive edits through the command/state APIs.
     - `EditCommand::TypeChar` + `AutoPairsConfig` (auto-close, wrap selection, skip over closing, delete-pair)
     - `CursorCommand::MoveToMatchingBracket`
     - `StyleCommand::UpdateBracketMatchHighlights` (writes `StyleLayerId::BRACKET_MATCHES` with `MATCH_HIGHLIGHT_STYLE_ID`)
+  - snippet engine (placeholders + navigation):
+    - `EditCommand::ApplySnippet` (for LSP completion snippets / template inserts)
+    - `CursorCommand::SnippetNextPlaceholder` / `SnippetPrevPlaceholder`
 - **Bookmarks / marks / jump list** (anchors stable under edits):
   - `EditorStateManager::{toggle_bookmark_at_cursor_line, goto_next_bookmark, goto_prev_bookmark, set_mark_at_cursor, goto_mark, push_jump_location, jump_back, jump_forward}`
   - `Workspace::{toggle_bookmark_at_cursor_line, bookmark_lines, goto_next_bookmark, goto_prev_bookmark, set_mark_at_cursor, goto_mark, push_jump_location, jump_back, jump_forward}`

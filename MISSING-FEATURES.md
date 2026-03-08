@@ -51,8 +51,23 @@ this workspace (per your request).
   - Implemented via `undo_history_snapshot` / `restore_undo_history` (see `UndoHistorySnapshot`).
     Optional `editor-core` feature `serde` enables `serde` (de)serialization of the snapshot types.
 
-- [ ] **[core] Undo tree (branching history)** (optional power feature)
-  - Current undo/redo is linear. Branching undo (like Vim’s undo tree) is not exposed.
+- [x] **[core] Undo tree (branching history)** (optional power feature)
+  - Implemented an in-memory branching undo model (Vim-like “undo tree”) inside `UndoRedoManager`.
+  - Semantics:
+    - `Undo` walks up the history tree (group-aware, same as before)
+    - `Redo` walks down the currently selected branch
+    - when you undo and then make a new edit, the previous redo path becomes an **alternate branch**
+      instead of being discarded
+  - Exposed APIs:
+    - `CommandExecutor::redo_branch_count()` / `selected_redo_branch_index()` / `select_redo_branch(...)`
+    - `UndoRedoState` now includes `redo_branch_count` + `selected_redo_branch_index`
+  - Persistence:
+    - `UndoHistorySnapshot` remains v1-compatible and stores a **linearized view** of the currently
+      selected branch (alternative branches are in-memory only).
+  - Tests:
+    - `crates/editor-core/tests/undo_tree.rs`
+  - Example:
+    - `crates/editor-core/examples/undo_tree.rs`
 
 - [x] **[core] Bookmarks / marks / jump list**
   - Implemented as a small anchored-offset model (`TextAnchor`) plus workspace/state APIs that

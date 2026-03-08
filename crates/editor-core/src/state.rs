@@ -122,6 +122,10 @@ pub struct UndoRedoState {
     pub undo_depth: usize,
     /// Redo stack depth
     pub redo_depth: usize,
+    /// Number of redo branches available at the current history node.
+    pub redo_branch_count: usize,
+    /// Currently selected redo branch index, if any.
+    pub selected_redo_branch_index: Option<usize>,
     /// Current change group ID
     pub current_change_group: Option<usize>,
 }
@@ -870,6 +874,8 @@ impl EditorStateManager {
             can_redo: self.executor.can_redo(),
             undo_depth: self.executor.undo_depth(),
             redo_depth: self.executor.redo_depth(),
+            redo_branch_count: self.executor.redo_branch_count(),
+            selected_redo_branch_index: self.executor.selected_redo_branch_index(),
             current_change_group: self.executor.current_change_group(),
         }
     }
