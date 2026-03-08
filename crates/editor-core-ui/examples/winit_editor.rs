@@ -5,11 +5,13 @@
 //!
 //! Notes:
 //! - This is intentionally lightweight and CPU-rendered (Skia → RGBA → softbuffer blit).
+//! - Uses `EditorUi::render_rgba_visible_into_with_damage(...)` + `present_with_damage(...)` to
+//!   demonstrate a partial redraw path.
 //! - The goal is to demonstrate a workable window/event loop integration path.
 
 use editor_core_render_skia::RenderConfig;
 use editor_core_ui::{
-    rgba8_to_argb_u32, utf8_byte_range_to_char_range, EditorUi, Modifiers,
+    rgba8_to_argb_u32, utf8_byte_range_to_char_range, DamageRect, EditorUi, Modifiers,
 };
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -75,17 +77,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if rgba.len() != required {
                         rgba.resize(required, 0);
                     }
-                    let _ = ui.render_rgba_visible_into(&mut rgba);
+                    let (_written, damage) = ui
+                        .render_rgba_visible_into_with_damage(&mut rgba)
+                        .unwrap_or((0, vec![DamageRect {
+                            x: 0,
+                            y: 0,
+                            width: physical_size.width.max(1),
+                            height: physical_size.height.max(1),
+                        }]));
+                    if damage.is_empty() {
+                        return;
+                    }
 
                     let pixels = w.saturating_mul(h);
                     if argb.len() != pixels {
                         argb.resize(pixels, 0);
                     }
-                    let _ = rgba8_to_argb_u32(&rgba, &mut argb);
+                    let full_damage = damage.len() == 1
+                        && damage[0].x == 0
+                        && damage[0].y == 0
+                        && damage[0].width == physical_size.width.max(1)
+                        && damage[0].height == physical_size.height.max(1);
+                    if full_damage {
+                        let _ = rgba8_to_argb_u32(&rgba, &mut argb);
+                    } else {
+                        rgba8_to_argb_u32_damage(&rgba, &mut argb, physical_size.width.max(1), physical_size.height.max(1), &damage);
+                    }
 
                     if let Ok(mut buffer) = surface.buffer_mut() {
-                        buffer.copy_from_slice(&argb);
-                        let _ = buffer.present();
+                        let age = buffer.age();
+                        if age != 1 {
+                            // Buffer contents may not match the previously presented frame; fall back
+                            // to a full copy to keep correctness.
+                            buffer.copy_from_slice(&argb);
+                            let _ = buffer.present();
+                            return;
+                        }
+
+                        // Only update dirty rects in the backing buffer, then present with damage.
+                        let buf_w = buffer.width().get() as usize;
+                        let buf_h = buffer.height().get() as usize;
+                        copy_damage_rects_to_buffer(&argb, buf_w, buf_h, &mut buffer, &damage);
+                        let sb_damage = to_softbuffer_damage(&damage);
+                        if sb_damage.is_empty() {
+                            let _ = buffer.present();
+                        } else {
+                            let _ = buffer.present_with_damage(sb_damage.as_slice());
+                        }
                     }
                 }
                 WindowEvent::Resized(size) => {
@@ -245,6 +283,94 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     Ok(())
+}
+
+fn rgba8_to_argb_u32_damage(
+    src_rgba: &[u8],
+    dst_argb: &mut [u32],
+    width_px: u32,
+    height_px: u32,
+    damage: &[DamageRect],
+) {
+    let w = width_px.max(1) as usize;
+    let h = height_px.max(1) as usize;
+    if src_rgba.len() < w.saturating_mul(h).saturating_mul(4) || dst_argb.len() < w.saturating_mul(h) {
+        return;
+    }
+
+    for rect in damage {
+        let x0 = rect.x.min(width_px) as usize;
+        let x1 = rect.x.saturating_add(rect.width).min(width_px) as usize;
+        let y0 = rect.y.min(height_px) as usize;
+        let y1 = rect.y.saturating_add(rect.height).min(height_px) as usize;
+        if x0 >= x1 || y0 >= y1 {
+            continue;
+        }
+
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let idx = y.saturating_mul(w).saturating_add(x);
+                let base = idx.saturating_mul(4);
+                let r = src_rgba[base] as u32;
+                let g = src_rgba[base + 1] as u32;
+                let b = src_rgba[base + 2] as u32;
+                let a = src_rgba[base + 3] as u32;
+                dst_argb[idx] = (a << 24) | (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+}
+
+fn copy_damage_rects_to_buffer(
+    argb: &[u32],
+    width_px: usize,
+    height_px: usize,
+    buffer: &mut [u32],
+    damage: &[DamageRect],
+) {
+    let w = width_px.max(1);
+    let h = height_px.max(1);
+    if argb.len() < w.saturating_mul(h) {
+        return;
+    }
+
+    for rect in damage {
+        let x0 = rect.x as usize;
+        let x1 = rect.x.saturating_add(rect.width) as usize;
+        let y0 = rect.y as usize;
+        let y1 = rect.y.saturating_add(rect.height) as usize;
+
+        let x0 = x0.min(w);
+        let x1 = x1.min(w);
+        let y0 = y0.min(h);
+        let y1 = y1.min(h);
+
+        if x0 >= x1 || y0 >= y1 {
+            continue;
+        }
+
+        for y in y0..y1 {
+            let row_start = y * w;
+            let src = &argb[row_start + x0..row_start + x1];
+            let dst = &mut buffer[row_start + x0..row_start + x1];
+            dst.copy_from_slice(src);
+        }
+    }
+}
+
+fn to_softbuffer_damage(damage: &[DamageRect]) -> Vec<softbuffer::Rect> {
+    let mut out: Vec<softbuffer::Rect> = Vec::new();
+    for r in damage {
+        let Some(w) = NonZeroU32::new(r.width) else { continue };
+        let Some(h) = NonZeroU32::new(r.height) else { continue };
+        out.push(softbuffer::Rect {
+            x: r.x,
+            y: r.y,
+            width: w,
+            height: h,
+        });
+    }
+    out
 }
 
 fn resize_ui(

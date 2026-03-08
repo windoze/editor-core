@@ -9,6 +9,9 @@ mod ime;
 mod windowing;
 
 use editor_core::intervals::Interval;
+use editor_core::snapshot::{
+    ComposedCellSource, ComposedGrid, ComposedLineKind, HeadlessGrid,
+};
 use editor_core::workspace::{BufferId, ViewId, Workspace};
 use editor_core::{
     AutoPairsConfig, Command, CommandResult, CursorCommand, DecorationKind, DecorationLayerId,
@@ -27,7 +30,8 @@ use editor_core_render_skia::{
     FOLD_MARKER_COLLAPSED_STYLE_ID, FOLD_MARKER_EXPANDED_STYLE_ID, FoldMarker, FoldMarkerStyle,
     GUTTER_BACKGROUND_STYLE_ID, GUTTER_FOREGROUND_STYLE_ID, GUTTER_SEPARATOR_STYLE_ID,
     RenderConfig, RenderError, RenderTheme, Rgba8, SkiaRenderer, StyleColors, StyleFont,
-    TextDecorations, TextVerticalAlign, VisualCaret, VisualSelection, WhitespaceRenderMode,
+    TextDecorations, TextVerticalAlign, UnderlineStyle, VisualCaret, VisualSelection,
+    WhitespaceRenderMode,
 };
 use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
 use editor_core_treesitter::{
@@ -35,7 +39,9 @@ use editor_core_treesitter::{
 };
 use editor_core_treesitter_queries as treesitter_queries;
 use std::collections::{BTreeMap, HashMap};
+use std::collections::hash_map::DefaultHasher;
 use std::ffi::c_void;
+use std::hash::{Hash, Hasher};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, OnceLock, Weak, mpsc};
 use std::thread;
@@ -83,6 +89,19 @@ impl Default for ChromeTheme {
             fold_marker_expanded: Rgba8::new(0xAA, 0xAA, 0xAA, 0xFF),
         }
     }
+}
+
+/// Pixel-space damage rectangle for incremental/partial redraw.
+///
+/// The coordinate space matches the RGBA buffer produced by `render_rgba_*` APIs:
+/// - origin `(0, 0)` is the **top-left** corner of the buffer
+/// - units are **physical pixels**
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DamageRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -673,6 +692,25 @@ impl EditorUiDoc {
     }
 }
 
+#[derive(Debug, Clone)]
+struct RenderFrameCache {
+    view_version: u64,
+    render_config: RenderConfig,
+    theme_hash: u64,
+    start_visual_row: usize,
+    row_count: usize,
+    has_virtual_text: bool,
+    row_signatures: Vec<u64>,
+}
+
+#[derive(Debug, Clone)]
+struct MinimapCache {
+    view_version: u64,
+    start_visual_row: usize,
+    count: usize,
+    json: String,
+}
+
 /// 单 buffer UI 句柄（每个实例对应一个 `Workspace` view）。
 ///
 /// - 通过 [`Self::clone_view`] 可为同一文档创建额外 view（用于 split panes / 多视图）。
@@ -689,6 +727,8 @@ pub struct EditorUi {
     mouse_drag: Option<MouseDragState>,
     auto_pairs: AutoPairsConfig,
     bracket_match_highlights_enabled: bool,
+    render_cache: Option<RenderFrameCache>,
+    minimap_cache: Option<MinimapCache>,
 }
 
 impl Drop for EditorUi {
@@ -794,6 +834,8 @@ impl EditorUi {
             mouse_drag: None,
             auto_pairs: AutoPairsConfig::default(),
             bracket_match_highlights_enabled: false,
+            render_cache: None,
+            minimap_cache: None,
         }
     }
 
@@ -819,6 +861,8 @@ impl EditorUi {
             mouse_drag: None,
             auto_pairs: self.auto_pairs.clone(),
             bracket_match_highlights_enabled: self.bracket_match_highlights_enabled,
+            render_cache: None,
+            minimap_cache: None,
         };
 
         // Clone should preserve view-local UX settings (auto-pairs, bracket matching highlights, ...),
@@ -993,15 +1037,27 @@ impl EditorUi {
     /// This mirrors the JSON shape from `editor-core-ffi` (`value_minimap_grid`) so hosts can reuse
     /// the same decoding logic.
     pub fn minimap_json(&mut self, start_visual_row: usize, count: usize) -> String {
+        let view_version = {
+            let doc = self.lock_doc();
+            doc.ws.view_version(self.view_id).unwrap_or(0)
+        };
+        if let Some(cache) = self.minimap_cache.as_ref()
+            && cache.view_version == view_version
+            && cache.start_visual_row == start_visual_row
+            && cache.count == count
+        {
+            return cache.json.clone();
+        }
+
         let grid = {
             let mut doc = self.lock_doc();
-            match doc
-                .ws
+            doc.ws
                 .get_minimap_content(self.view_id, start_visual_row, count)
-            {
-                Ok(grid) => grid,
-                Err(_) => return "{}".to_string(),
-            }
+                .ok()
+        };
+        let Some(grid) = grid else {
+            self.minimap_cache = None;
+            return "{}".to_string();
         };
         let value = serde_json::json!({
             "start_visual_row": grid.start_visual_row,
@@ -1020,7 +1076,14 @@ impl EditorUi {
                 })
             }).collect::<Vec<_>>(),
         });
-        serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string())
+        let json = serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string());
+        self.minimap_cache = Some(MinimapCache {
+            view_version,
+            start_visual_row,
+            count,
+            json: json.clone(),
+        });
+        json
     }
 
     /// Return all selections (including primary) as character-offset ranges, plus the primary index.
@@ -3987,6 +4050,290 @@ impl EditorUi {
         Ok(required)
     }
 
+    /// 增量渲染：只重绘脏行（尽量小的像素区域），并返回需要 present 的 damage rect 列表。
+    ///
+    /// 约定：
+    /// - 调用方需要复用 `out_rgba` 缓冲区，并保证其内容仍然是**上一帧**的像素结果；
+    ///   本方法只会更新 dirty rect 覆盖的像素区域。
+    /// - 若 viewport/config/theme 发生变化，本方法会自动退化为全量渲染（damage 为整屏）。
+    pub fn render_rgba_visible_into_with_damage(
+        &mut self,
+        out_rgba: &mut [u8],
+    ) -> Result<(usize, Vec<DamageRect>), UiError> {
+        // Non-blocking: apply any completed async processing (Tree-sitter highlighting/folding).
+        let _ = self.poll_processing()?;
+
+        let viewport = self.viewport_state();
+        let start_doc_row = viewport.scroll_top;
+        let row_count = self.viewport_row_count_for_render(&viewport);
+        let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
+
+        let mut render_config = self.render_config;
+        render_config.scroll_y_px = scroll_y_px;
+        render_config.tab_width_cells = {
+            let doc = self.lock_doc();
+            (doc.ws.tab_width_for_view(self.view_id).unwrap_or(4)).min(u32::MAX as usize) as u32
+        };
+
+        let required = SkiaRenderer::required_rgba_len(self.render_config)?;
+        if out_rgba.len() < required {
+            return Err(RenderError::BufferTooSmall {
+                required,
+                provided: out_rgba.len(),
+            }
+            .into());
+        }
+
+        let has_virtual_text = self.has_virtual_text_decorations();
+        let start_visual_row = if has_virtual_text {
+            self.composed_start_row_for_doc_row(start_doc_row)
+        } else {
+            start_doc_row
+        };
+
+        let theme_hash = hash_render_theme(&self.theme);
+        let view_version = {
+            let doc = self.lock_doc();
+            doc.ws.view_version(self.view_id).unwrap_or(0)
+        };
+
+        // Fold markers affect gutter rendering; treat them as part of the row signature.
+        let fold_markers = {
+            let fold_regions = {
+                let doc = self.lock_doc();
+                doc.ws
+                    .folding_regions_for_buffer(self.buffer_id)
+                    .unwrap_or_default()
+            };
+            let mut out = Vec::<FoldMarker>::new();
+            for region in fold_regions {
+                if region.end_line <= region.start_line {
+                    continue;
+                }
+                out.push(FoldMarker {
+                    logical_line: region.start_line as u32,
+                    is_collapsed: region.is_collapsed,
+                });
+            }
+            out
+        };
+
+        // Fast-path: nothing changed since the last frame.
+        if let Some(cache) = self.render_cache.as_ref()
+            && cache.view_version == view_version
+            && cache.render_config == render_config
+            && cache.theme_hash == theme_hash
+            && cache.start_visual_row == start_visual_row
+            && cache.row_count == row_count
+            && cache.has_virtual_text == has_virtual_text
+        {
+            return Ok((required, Vec::new()));
+        }
+
+        if has_virtual_text {
+            let (selection_ranges, _primary_idx) = self.selections_offsets();
+            let caret_offsets = self.all_caret_offsets();
+
+            let grid: ComposedGrid = {
+                let mut doc = self.lock_doc();
+                doc.ws
+                    .get_viewport_content_composed(self.view_id, start_visual_row, row_count)
+                    .map_err(|e| UiError::Processor(format!("{e:?}")))?
+            };
+
+            let row_signatures = composed_row_signatures(
+                &grid,
+                row_count,
+                caret_offsets.as_slice(),
+                selection_ranges.as_slice(),
+                fold_markers.as_slice(),
+                render_config,
+            );
+
+            let cache_ok = self
+                .render_cache
+                .as_ref()
+                .is_some_and(|c| {
+                    c.render_config == render_config
+                        && c.theme_hash == theme_hash
+                        && c.start_visual_row == start_visual_row
+                        && c.row_count == row_count
+                        && c.has_virtual_text == has_virtual_text
+                        && c.row_signatures.len() == row_signatures.len()
+                });
+
+            if !cache_ok {
+                self.renderer.render_composed_rgba_into(
+                    &grid,
+                    caret_offsets.as_slice(),
+                    selection_ranges.as_slice(),
+                    fold_markers.as_slice(),
+                    render_config,
+                    &self.theme,
+                    out_rgba,
+                )?;
+                self.render_cache = Some(RenderFrameCache {
+                    view_version,
+                    render_config,
+                    theme_hash,
+                    start_visual_row,
+                    row_count,
+                    has_virtual_text,
+                    row_signatures,
+                });
+                return Ok((
+                    required,
+                    vec![DamageRect {
+                        x: 0,
+                        y: 0,
+                        width: render_config.width_px,
+                        height: render_config.height_px,
+                    }],
+                ));
+            }
+
+            let prev = self
+                .render_cache
+                .as_ref()
+                .map(|c| c.row_signatures.as_slice())
+                .unwrap_or(&[]);
+            let dirty_ranges = dirty_row_ranges(prev, row_signatures.as_slice());
+
+            if dirty_ranges.is_empty() {
+                if let Some(cache) = self.render_cache.as_mut() {
+                    cache.view_version = view_version;
+                    cache.row_signatures = row_signatures;
+                }
+                return Ok((required, Vec::new()));
+            }
+
+            self.renderer.render_composed_rgba_into_partial_rows(
+                &grid,
+                caret_offsets.as_slice(),
+                selection_ranges.as_slice(),
+                fold_markers.as_slice(),
+                render_config,
+                &self.theme,
+                out_rgba,
+                dirty_ranges.as_slice(),
+            )?;
+
+            let mut damage: Vec<DamageRect> = Vec::new();
+            for (start, end) in &dirty_ranges {
+                if let Some(rect) = damage_rect_for_row_range(*start, *end, render_config) {
+                    damage.push(rect);
+                }
+            }
+
+            if let Some(cache) = self.render_cache.as_mut() {
+                cache.view_version = view_version;
+                cache.row_signatures = row_signatures;
+            }
+
+            Ok((required, damage))
+        } else {
+            let grid: HeadlessGrid = {
+                let mut doc = self.lock_doc();
+                doc.ws
+                    .get_viewport_content_styled(self.view_id, start_visual_row, row_count)
+                    .map_err(|e| UiError::Processor(format!("{e:?}")))?
+            };
+            let selections = self.all_selections_visual();
+            let carets = self.all_carets_visual();
+
+            let row_signatures = headless_row_signatures(
+                &grid,
+                row_count,
+                carets.as_slice(),
+                selections.as_slice(),
+                fold_markers.as_slice(),
+                render_config,
+            );
+
+            let cache_ok = self
+                .render_cache
+                .as_ref()
+                .is_some_and(|c| {
+                    c.render_config == render_config
+                        && c.theme_hash == theme_hash
+                        && c.start_visual_row == start_visual_row
+                        && c.row_count == row_count
+                        && c.has_virtual_text == has_virtual_text
+                        && c.row_signatures.len() == row_signatures.len()
+                });
+
+            if !cache_ok {
+                self.renderer.render_rgba_into(
+                    &grid,
+                    carets.as_slice(),
+                    selections.as_slice(),
+                    fold_markers.as_slice(),
+                    render_config,
+                    &self.theme,
+                    out_rgba,
+                )?;
+                self.render_cache = Some(RenderFrameCache {
+                    view_version,
+                    render_config,
+                    theme_hash,
+                    start_visual_row,
+                    row_count,
+                    has_virtual_text,
+                    row_signatures,
+                });
+                return Ok((
+                    required,
+                    vec![DamageRect {
+                        x: 0,
+                        y: 0,
+                        width: render_config.width_px,
+                        height: render_config.height_px,
+                    }],
+                ));
+            }
+
+            let prev = self
+                .render_cache
+                .as_ref()
+                .map(|c| c.row_signatures.as_slice())
+                .unwrap_or(&[]);
+            let dirty_ranges = dirty_row_ranges(prev, row_signatures.as_slice());
+
+            if dirty_ranges.is_empty() {
+                if let Some(cache) = self.render_cache.as_mut() {
+                    cache.view_version = view_version;
+                    cache.row_signatures = row_signatures;
+                }
+                return Ok((required, Vec::new()));
+            }
+
+            self.renderer.render_rgba_into_partial_rows(
+                &grid,
+                carets.as_slice(),
+                selections.as_slice(),
+                fold_markers.as_slice(),
+                render_config,
+                &self.theme,
+                out_rgba,
+                dirty_ranges.as_slice(),
+            )?;
+
+            let mut damage: Vec<DamageRect> = Vec::new();
+            for (start, end) in &dirty_ranges {
+                if let Some(rect) = damage_rect_for_row_range(*start, *end, render_config) {
+                    damage.push(rect);
+                }
+            }
+
+            if let Some(cache) = self.render_cache.as_mut() {
+                cache.view_version = view_version;
+                cache.row_signatures = row_signatures;
+            }
+
+            Ok((required, damage))
+        }
+    }
+
     /// Enable the Skia Metal backend (macOS only).
     ///
     /// This is a rendering backend switch only; it does not affect editor state.
@@ -4784,6 +5131,341 @@ impl EditorUi {
         }
         doc_row.saturating_add(prefix)
     }
+}
+
+fn hash_render_theme(theme: &RenderTheme) -> u64 {
+    fn hash_rgba8(hasher: &mut DefaultHasher, c: Rgba8) {
+        c.r.hash(hasher);
+        c.g.hash(hasher);
+        c.b.hash(hasher);
+        c.a.hash(hasher);
+    }
+
+    fn hash_opt_rgba8(hasher: &mut DefaultHasher, c: Option<Rgba8>) {
+        match c {
+            None => 0u8.hash(hasher),
+            Some(v) => {
+                1u8.hash(hasher);
+                hash_rgba8(hasher, v);
+            }
+        }
+    }
+
+    fn hash_style_colors(hasher: &mut DefaultHasher, c: StyleColors) {
+        hash_opt_rgba8(hasher, c.foreground);
+        hash_opt_rgba8(hasher, c.background);
+    }
+
+    fn hash_style_font(hasher: &mut DefaultHasher, f: StyleFont) {
+        f.bold.hash(hasher);
+        f.italic.hash(hasher);
+    }
+
+    fn hash_text_decorations(hasher: &mut DefaultHasher, d: TextDecorations) {
+        let underline_tag: u8 = match d.underline {
+            None => 0,
+            Some(UnderlineStyle::Single) => 1,
+            Some(UnderlineStyle::Double) => 2,
+            Some(UnderlineStyle::Squiggly) => 3,
+        };
+        underline_tag.hash(hasher);
+        hash_opt_rgba8(hasher, d.underline_color);
+
+        d.strikethrough.hash(hasher);
+        hash_opt_rgba8(hasher, d.strikethrough_color);
+    }
+
+    let mut hasher = DefaultHasher::new();
+
+    hash_rgba8(&mut hasher, theme.background);
+    hash_rgba8(&mut hasher, theme.foreground);
+    hash_rgba8(&mut hasher, theme.selection_background);
+    hash_rgba8(&mut hasher, theme.caret);
+
+    for (style_id, colors) in &theme.styles {
+        style_id.hash(&mut hasher);
+        hash_style_colors(&mut hasher, *colors);
+    }
+    for (style_id, font) in &theme.style_fonts {
+        style_id.hash(&mut hasher);
+        hash_style_font(&mut hasher, *font);
+    }
+    for (style_id, deco) in &theme.text_decorations {
+        style_id.hash(&mut hasher);
+        hash_text_decorations(&mut hasher, *deco);
+    }
+
+    hasher.finish()
+}
+
+fn damage_rect_for_row_range(
+    start_row: usize,
+    end_row: usize,
+    config: RenderConfig,
+) -> Option<DamageRect> {
+    if start_row >= end_row {
+        return None;
+    }
+
+    let y0 = config.padding_y_px + start_row as f32 * config.line_height_px - config.scroll_y_px;
+    let y1 = config.padding_y_px + end_row as f32 * config.line_height_px - config.scroll_y_px;
+    if !y0.is_finite() || !y1.is_finite() {
+        return None;
+    }
+
+    let mut y0i = y0.floor() as i64;
+    let mut y1i = y1.ceil() as i64;
+
+    let h_total = config.height_px as i64;
+    y0i = y0i.clamp(0, h_total);
+    y1i = y1i.clamp(0, h_total);
+    if y1i <= y0i {
+        return None;
+    }
+
+    Some(DamageRect {
+        x: 0,
+        y: y0i as u32,
+        width: config.width_px,
+        height: (y1i - y0i) as u32,
+    })
+}
+
+fn dirty_row_ranges(prev: &[u64], next: &[u64]) -> Vec<(usize, usize)> {
+    if prev.len() != next.len() {
+        if next.is_empty() {
+            return Vec::new();
+        }
+        return vec![(0, next.len())];
+    }
+
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let mut start: Option<usize> = None;
+
+    for i in 0..next.len() {
+        let dirty = prev[i] != next[i];
+        match (dirty, start) {
+            (true, None) => start = Some(i),
+            (false, Some(s)) => {
+                ranges.push((s, i));
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(s) = start {
+        ranges.push((s, next.len()));
+    }
+    ranges
+}
+
+fn headless_row_signatures(
+    grid: &HeadlessGrid,
+    row_count: usize,
+    carets: &[VisualCaret],
+    selections: &[VisualSelection],
+    fold_markers: &[FoldMarker],
+    config: RenderConfig,
+) -> Vec<u64> {
+    fn fold_marker_state_for_line(logical_line: u32, fold_markers: &[FoldMarker]) -> Option<bool> {
+        fold_markers
+            .iter()
+            .find(|m| m.logical_line == logical_line)
+            .map(|m| m.is_collapsed)
+    }
+
+    fn normalize_sel(sel: &VisualSelection) -> (u32, u32, u32, u32) {
+        let a = (sel.start_row, sel.start_x_cells);
+        let b = (sel.end_row, sel.end_x_cells);
+        if a <= b {
+            (sel.start_row, sel.start_x_cells, sel.end_row, sel.end_x_cells)
+        } else {
+            (sel.end_row, sel.end_x_cells, sel.start_row, sel.start_x_cells)
+        }
+    }
+
+    fn selection_segment_for_row(sel: &VisualSelection, row: u32) -> Option<(u32, u32)> {
+        let (sr, sx, er, ex) = normalize_sel(sel);
+        if row < sr || row > er {
+            return None;
+        }
+        if sr == er {
+            return Some((sx.min(ex), sx.max(ex)));
+        }
+        if row == sr {
+            return Some((sx, u32::MAX));
+        }
+        if row == er {
+            return Some((0, ex));
+        }
+        Some((0, u32::MAX))
+    }
+
+    let mut out: Vec<u64> = Vec::with_capacity(row_count);
+    for row_idx in 0..row_count {
+        let mut hasher = DefaultHasher::new();
+
+        if let Some(line) = grid.lines.get(row_idx) {
+            line.logical_line_index.hash(&mut hasher);
+            line.visual_in_logical.hash(&mut hasher);
+            line.char_offset_start.hash(&mut hasher);
+            line.char_offset_end.hash(&mut hasher);
+            line.segment_x_start_cells.hash(&mut hasher);
+            line.is_fold_placeholder_appended.hash(&mut hasher);
+
+            for cell in &line.cells {
+                (cell.ch as u32).hash(&mut hasher);
+                cell.width.hash(&mut hasher);
+                cell.styles.len().hash(&mut hasher);
+                for style_id in &cell.styles {
+                    style_id.hash(&mut hasher);
+                }
+            }
+
+            if config.gutter_width_cells > 0 && line.visual_in_logical == 0 {
+                let state =
+                    fold_marker_state_for_line(line.logical_line_index as u32, fold_markers);
+                state.hash(&mut hasher);
+            }
+        } else {
+            // Beyond `actual_line_count`: background only.
+            0u8.hash(&mut hasher);
+        }
+
+        // Selection overlay affects selection background and whitespace markers (Selection mode).
+        let mut sel_segs: Vec<(u32, u32)> = Vec::new();
+        for sel in selections {
+            if let Some(seg) = selection_segment_for_row(sel, row_idx as u32) {
+                sel_segs.push(seg);
+            }
+        }
+        sel_segs.sort_unstable();
+        for seg in sel_segs {
+            seg.hash(&mut hasher);
+        }
+
+        // Carets are drawn on top only when enabled.
+        if config.show_caret {
+            let mut xs: Vec<u32> = carets
+                .iter()
+                .filter(|c| c.row as usize == row_idx)
+                .map(|c| c.x_cells)
+                .collect();
+            xs.sort_unstable();
+            for x in xs {
+                x.hash(&mut hasher);
+            }
+        }
+
+        out.push(hasher.finish());
+    }
+    out
+}
+
+fn composed_row_signatures(
+    grid: &ComposedGrid,
+    row_count: usize,
+    caret_offsets: &[usize],
+    selection_ranges: &[(usize, usize)],
+    fold_markers: &[FoldMarker],
+    config: RenderConfig,
+) -> Vec<u64> {
+    fn fold_marker_state_for_line(logical_line: u32, fold_markers: &[FoldMarker]) -> Option<bool> {
+        fold_markers
+            .iter()
+            .find(|m| m.logical_line == logical_line)
+            .map(|m| m.is_collapsed)
+    }
+
+    let mut sel_ranges: Vec<(usize, usize)> = Vec::new();
+    for (a, b) in selection_ranges {
+        if *a == *b {
+            continue;
+        }
+        if *a <= *b {
+            sel_ranges.push((*a, *b));
+        } else {
+            sel_ranges.push((*b, *a));
+        }
+    }
+
+    let mut carets: Vec<(usize, u32)> = Vec::new();
+    if config.show_caret {
+        for &caret_offset in caret_offsets {
+            let Some(local_row) = composed_line_index_for_offset(grid, caret_offset) else {
+                continue;
+            };
+            let line = &grid.lines[local_row];
+            let x_cells = caret_x_cells_in_composed_line(line, caret_offset);
+            carets.push((local_row, x_cells));
+        }
+        carets.sort_unstable();
+    }
+
+    let mut out: Vec<u64> = Vec::with_capacity(row_count);
+    for row_idx in 0..row_count {
+        let mut hasher = DefaultHasher::new();
+
+        if let Some(line) = grid.lines.get(row_idx) {
+            match line.kind {
+                ComposedLineKind::Document {
+                    logical_line,
+                    visual_in_logical,
+                } => {
+                    1u8.hash(&mut hasher);
+                    logical_line.hash(&mut hasher);
+                    visual_in_logical.hash(&mut hasher);
+                    if config.gutter_width_cells > 0 && visual_in_logical == 0 {
+                        let state = fold_marker_state_for_line(logical_line as u32, fold_markers);
+                        state.hash(&mut hasher);
+                    }
+                }
+                ComposedLineKind::VirtualAboveLine { logical_line } => {
+                    2u8.hash(&mut hasher);
+                    logical_line.hash(&mut hasher);
+                }
+            }
+
+            line.char_offset_start.hash(&mut hasher);
+            line.char_offset_end.hash(&mut hasher);
+
+            for cell in &line.cells {
+                (cell.ch as u32).hash(&mut hasher);
+                cell.width.hash(&mut hasher);
+                cell.styles.len().hash(&mut hasher);
+                for style_id in &cell.styles {
+                    style_id.hash(&mut hasher);
+                }
+
+                match cell.source {
+                    ComposedCellSource::Document { offset } => {
+                        1u8.hash(&mut hasher);
+                        offset.hash(&mut hasher);
+                        let selected = sel_ranges
+                            .iter()
+                            .any(|(s, e)| offset >= *s && offset < *e);
+                        selected.hash(&mut hasher);
+                    }
+                    ComposedCellSource::Virtual { anchor_offset } => {
+                        2u8.hash(&mut hasher);
+                        anchor_offset.hash(&mut hasher);
+                    }
+                }
+            }
+        } else {
+            0u8.hash(&mut hasher);
+        }
+
+        if config.show_caret {
+            for (r, x) in carets.iter().filter(|(r, _x)| *r == row_idx) {
+                r.hash(&mut hasher);
+                x.hash(&mut hasher);
+            }
+        }
+
+        out.push(hasher.finish());
+    }
+    out
 }
 
 fn is_logical_line_hidden(regions: &[editor_core::FoldRegion], logical_line: usize) -> bool {

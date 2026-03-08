@@ -295,11 +295,35 @@ this workspace (per your request).
     - Swift/AppKit: `swift/Tests/EditorCoreUITests/EditorCoreSkiaViewIMETests.swift`,
       `swift/Tests/EditorCoreUITests/EditorCoreSkiaViewTextInputRangeTests.swift`
 
-- [ ] **[ui] Rendering performance features (caching + partial redraw)**
+- [x] **[ui] Rendering performance features (caching + partial redraw)**
   - Skia rendering exists, but “full editor” workloads often need:
     - glyph run caching across frames
     - minimap rendering strategy (throttling / caching)
     - partial invalidation (only redraw dirty rows when possible)
+  - Implemented as a pragmatic v0 incremental rendering layer:
+    - `editor-core-render-skia`:
+      - Shaped run cache for ligature-eligible ASCII runs (`ShapedRunCache`) to avoid re-shaping the
+        same text across frames.
+      - Partial redraw APIs that clear + redraw only dirty row ranges:
+        - `SkiaRenderer::render_rgba_into_partial_rows(...)`
+        - `SkiaRenderer::render_composed_rgba_into_partial_rows(...)`
+      - Rendering now uses background paint fills (clip-respecting) rather than `canvas.clear`, so
+        row-range redraw can be implemented via clip + redraw.
+      - Tests:
+        - `crates/editor-core-render-skia/src/lib.rs` (partial redraw matches full redraw for both
+          headless + composed grids).
+    - `editor-core-ui`:
+      - `EditorUi::render_rgba_visible_into_with_damage(...) -> (len, Vec<DamageRect>)`
+        computes per-row signatures (text/styles + selection/caret overlays + fold markers) and
+        returns pixel-space damage rects for hosts.
+      - `EditorUi::minimap_json(...)` is cached by `(view_version, start, count)` to avoid rebuilding
+        JSON when unchanged.
+      - Tests:
+        - `crates/editor-core-ui/tests/render_damage_tests.rs`
+    - Example integration:
+      - `cargo run -p editor-core-ui --example winit_editor` now uses incremental rendering +
+        `softbuffer::Buffer::present_with_damage(...)` (with conservative fallbacks when the
+        softbuffer backing buffer is not the previous frame).
 
 ---
 

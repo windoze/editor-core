@@ -12,10 +12,10 @@ use skia_safe::Shaper;
 use skia_safe::shaper::run_handler::{Buffer, RunInfo};
 use skia_safe::shaper::{Feature, RunHandler};
 use skia_safe::{
-    AlphaType, Color, Color4f, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle,
+    AlphaType, Color, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle,
     FourByteTag, GlyphId, ImageInfo, Paint, Path, PathBuilder, Point, Rect, surfaces,
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ffi::c_void;
 use thiserror::Error;
 
@@ -340,7 +340,7 @@ struct SkiaMetalState {
     context: gpu::DirectContext,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum FontVariant {
     Normal,
     Bold,
@@ -407,6 +407,68 @@ impl FontSet {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ShapedRunKey {
+    text: String,
+    font_variant: FontVariant,
+    font_index: usize,
+    cell_width_bits: u32,
+    enable_ligatures: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ShapedRun {
+    glyphs: Vec<GlyphId>,
+    positions: Vec<Point>,
+}
+
+#[derive(Debug)]
+struct ShapedRunCache {
+    entries: HashMap<ShapedRunKey, ShapedRun>,
+    order: VecDeque<ShapedRunKey>,
+    capacity: usize,
+}
+
+impl ShapedRunCache {
+    fn new(capacity: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+            capacity: capacity.max(1),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+        self.order.clear();
+    }
+
+    fn get(&self, key: &ShapedRunKey) -> Option<&ShapedRun> {
+        self.entries.get(key)
+    }
+
+    fn insert(&mut self, key: ShapedRunKey, run: ShapedRun) {
+        if self.capacity == 0 {
+            return;
+        }
+
+        if self.entries.contains_key(&key) {
+            // Keep insertion idempotent; do not grow `order` with duplicates.
+            self.entries.insert(key, run);
+            return;
+        }
+
+        self.entries.insert(key.clone(), run);
+        self.order.push_back(key);
+
+        while self.order.len() > self.capacity {
+            if let Some(old) = self.order.pop_front() {
+                self.entries.remove(&old);
+            }
+        }
+    }
+}
+
 /// A renderer instance (Skia backend in later steps).
 ///
 /// For MVP0 we keep this as a placeholder; implementation will be added
@@ -420,6 +482,7 @@ pub struct SkiaRenderer {
     font_families: Vec<String>,
     font_size: f32,
     shaper: Shaper,
+    shaped_run_cache: ShapedRunCache,
     #[cfg(target_os = "macos")]
     metal: Option<SkiaMetalState>,
 }
@@ -465,6 +528,7 @@ impl SkiaRenderer {
             font_families: families,
             font_size,
             shaper: Shaper::new(None),
+            shaped_run_cache: ShapedRunCache::new(4096),
             #[cfg(target_os = "macos")]
             metal: None,
         }
@@ -535,6 +599,9 @@ impl SkiaRenderer {
             self.font_size,
             FontStyle::bold_italic(),
         ));
+
+        // Typeface chain changed; cached shaping results are no longer reliable.
+        self.shaped_run_cache.clear();
     }
 
     fn font_set(&self, variant: FontVariant) -> &FontSet {
@@ -642,6 +709,9 @@ impl SkiaRenderer {
         self.fonts_bold.ensure_size(size);
         self.fonts_italic.ensure_size(size);
         self.fonts_bold_italic.ensure_size(size);
+
+        // Font size affects shaping; drop cached results.
+        self.shaped_run_cache.clear();
     }
 
     fn ligature_features(enabled: bool) -> [Feature; 3] {
@@ -654,11 +724,12 @@ impl SkiaRenderer {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn draw_shaped_run(
-        &self,
+    fn draw_shaped_run_cached(
+        &mut self,
         canvas: &skia_safe::Canvas,
         run_text: &str,
-        font: &Font,
+        font_variant: FontVariant,
+        font_index: usize,
         x_px: f32,
         baseline_y: f32,
         cell_width_px: f32,
@@ -666,6 +737,27 @@ impl SkiaRenderer {
         enable_ligatures: bool,
     ) {
         if run_text.is_empty() {
+            return;
+        }
+
+        let key = ShapedRunKey {
+            text: run_text.to_string(),
+            font_variant,
+            font_index,
+            cell_width_bits: cell_width_px.to_bits(),
+            enable_ligatures,
+        };
+
+        let font = self.font_for_variant_index(font_variant, font_index);
+
+        if let Some(run) = self.shaped_run_cache.get(&key) {
+            canvas.draw_glyphs_at(
+                run.glyphs.as_slice(),
+                run.positions.as_slice(),
+                Point::new(x_px, baseline_y),
+                font,
+                paint,
+            );
             return;
         }
 
@@ -748,6 +840,14 @@ impl SkiaRenderer {
             Point::new(x_px, baseline_y),
             font,
             paint,
+        );
+
+        self.shaped_run_cache.insert(
+            key,
+            ShapedRun {
+                glyphs: handler.out_glyphs,
+                positions,
+            },
         );
     }
 
@@ -843,7 +943,94 @@ impl SkiaRenderer {
             fold_markers,
             config,
             theme,
+            None,
         )
+    }
+
+    /// Render only the specified (local) visual row ranges into an existing RGBA buffer.
+    ///
+    /// Notes:
+    /// - This is intended for incremental/partial redraw: the caller must keep `out_rgba`
+    ///   containing the *previous* frame and provide correct dirty ranges.
+    /// - The renderer will clear and redraw only the pixels covered by the provided row ranges.
+    /// - Smooth scrolling (`config.scroll_y_px`) and viewport shape changes should typically
+    ///   fall back to a full redraw, because prior pixels are no longer valid.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_rgba_into_partial_rows(
+        &mut self,
+        grid: &HeadlessGrid,
+        carets: &[VisualCaret],
+        selections: &[VisualSelection],
+        fold_markers: &[FoldMarker],
+        config: RenderConfig,
+        theme: &RenderTheme,
+        out_rgba: &mut [u8],
+        dirty_row_ranges: &[(usize, usize)],
+    ) -> Result<(), RenderError> {
+        if dirty_row_ranges.is_empty() {
+            return Ok(());
+        }
+
+        let required = Self::required_rgba_len(config)?;
+        if out_rgba.len() < required {
+            return Err(RenderError::BufferTooSmall {
+                required,
+                provided: out_rgba.len(),
+            });
+        }
+
+        self.ensure_font_size(config.font_size);
+
+        let width = config.width_px as i32;
+        let height = config.height_px as i32;
+
+        let bytes_per_row = config.width_px as usize * 4;
+        let pixels = &mut out_rgba[..required];
+
+        let info = ImageInfo::new(
+            (width, height),
+            ColorType::RGBA8888,
+            AlphaType::Premul,
+            Some(ColorSpace::new_srgb()),
+        );
+
+        let mut surface = surfaces::wrap_pixels(&info, pixels, bytes_per_row, None)
+            .ok_or(RenderError::SurfaceCreateFailed)?;
+
+        let canvas = surface.canvas();
+
+        let total_rows = grid.count.max(grid.lines.len());
+        for &(start, end) in dirty_row_ranges {
+            let start = start.min(total_rows);
+            let end = end.min(total_rows);
+            if start >= end {
+                continue;
+            }
+
+            let y_top =
+                config.padding_y_px + start as f32 * config.line_height_px - config.scroll_y_px;
+            let h_px = (end - start) as f32 * config.line_height_px;
+            if !h_px.is_finite() || h_px <= 0.0 {
+                continue;
+            }
+
+            let rect = Rect::from_xywh(0.0, y_top, config.width_px as f32, h_px);
+            canvas.save();
+            canvas.clip_rect(rect, skia_safe::ClipOp::Intersect, false);
+            self.draw_headless_grid_to_canvas(
+                canvas,
+                grid,
+                carets,
+                selections,
+                fold_markers,
+                config,
+                theme,
+                Some((start, end)),
+            )?;
+            canvas.restore();
+        }
+
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -856,8 +1043,12 @@ impl SkiaRenderer {
         fold_markers: &[FoldMarker],
         config: RenderConfig,
         theme: &RenderTheme,
+        row_range: Option<(usize, usize)>,
     ) -> Result<(), RenderError> {
-        canvas.clear(rgba_to_skia_color4f(theme.background));
+        let mut bg_paint = Paint::default();
+        bg_paint.set_anti_alias(false);
+        bg_paint.set_color(rgba_to_skia_color(theme.background));
+        canvas.draw_paint(&bg_paint);
 
         let gutter_x = config.padding_x_px;
         let gutter_w_px = config.gutter_width_cells as f32 * config.cell_width_px;
@@ -880,11 +1071,17 @@ impl SkiaRenderer {
             canvas.draw_rect(sep_rect, &sep_paint);
         }
 
+        let total_rows = grid.lines.len();
+        let (row_start, row_end) = row_range.unwrap_or((0, total_rows));
+        let row_start = row_start.min(total_rows);
+        let row_end = row_end.min(total_rows);
+
         // 1) Draw per-cell backgrounds (including styled backgrounds).
         //
         // Selection is an overlay and must win over style backgrounds, so we draw it in a
         // separate pass *after* this.
-        for (row_idx, line) in grid.lines.iter().enumerate() {
+        for row_idx in row_start..row_end {
+            let line = &grid.lines[row_idx];
             let y_top =
                 config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
             let mut x_cells = line.segment_x_start_cells as u32;
@@ -904,7 +1101,14 @@ impl SkiaRenderer {
         }
 
         // 2) Selection overlay (under text, over backgrounds).
-        for sel in selections {
+        for sel in selections.iter().filter(|sel| {
+            if row_range.is_none() {
+                return true;
+            }
+            let min_row = sel.start_row.min(sel.end_row) as usize;
+            let max_row = sel.start_row.max(sel.end_row) as usize;
+            min_row < row_end && max_row >= row_start
+        }) {
             draw_selection(
                 canvas,
                 grid,
@@ -923,7 +1127,8 @@ impl SkiaRenderer {
         let baseline_offset = self.baseline_offset_px(config);
 
         // Text + underlines.
-        for (row_idx, line) in grid.lines.iter().enumerate() {
+        for row_idx in row_start..row_end {
+            let line = &grid.lines[row_idx];
             let y_top =
                 config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
             let baseline_y = y_top + baseline_offset;
@@ -1141,16 +1346,16 @@ impl SkiaRenderer {
                 paint.set_anti_alias(true);
                 paint.set_color(rgba_to_skia_color(run.fg));
 
-                let font = renderer.font_for_variant_index(run.font_variant, run.font_index);
                 match run.kind {
                     PendingRunKind::LigatureText { text } => {
                         if text.is_empty() {
                             return;
                         }
-                        renderer.draw_shaped_run(
+                        renderer.draw_shaped_run_cached(
                             canvas,
                             text.as_str(),
-                            font,
+                            run.font_variant,
+                            run.font_index,
                             x_px,
                             baseline_y,
                             config.cell_width_px,
@@ -1162,6 +1367,7 @@ impl SkiaRenderer {
                         if glyphs.is_empty() || glyphs.len() != positions.len() {
                             return;
                         }
+                        let font = renderer.font_for_variant_index(run.font_variant, run.font_index);
                         canvas.draw_glyphs_at(
                             glyphs.as_slice(),
                             positions.as_slice(),
@@ -1292,7 +1498,13 @@ impl SkiaRenderer {
 
         // Carets on top.
         if config.show_caret {
-            for caret in carets {
+            for caret in carets.iter().filter(|caret| {
+                if row_range.is_none() {
+                    return true;
+                }
+                let r = caret.row as usize;
+                r >= row_start && r < row_end
+            }) {
                 draw_caret(canvas, grid, *caret, text_origin_x, config, theme.caret);
             }
         }
@@ -1361,6 +1573,7 @@ impl SkiaRenderer {
                 fold_markers,
                 config,
                 theme,
+                None,
             )?;
 
             // Submit GPU work after drawing.
@@ -1406,8 +1619,12 @@ impl SkiaRenderer {
         fold_markers: &[FoldMarker],
         config: RenderConfig,
         theme: &RenderTheme,
+        row_range: Option<(usize, usize)>,
     ) -> Result<(), RenderError> {
-        canvas.clear(rgba_to_skia_color4f(theme.background));
+        let mut bg_paint = Paint::default();
+        bg_paint.set_anti_alias(false);
+        bg_paint.set_color(rgba_to_skia_color(theme.background));
+        canvas.draw_paint(&bg_paint);
 
         let gutter_x = config.padding_x_px;
         let gutter_w_px = config.gutter_width_cells as f32 * config.cell_width_px;
@@ -1429,6 +1646,11 @@ impl SkiaRenderer {
             sep_paint.set_color(rgba_to_skia_color(sep));
             canvas.draw_rect(sep_rect, &sep_paint);
         }
+
+        let total_rows = grid.lines.len();
+        let (row_start, row_end) = row_range.unwrap_or((0, total_rows));
+        let row_start = row_start.min(total_rows);
+        let row_end = row_end.min(total_rows);
 
         // Resolve caret positions in the composed grid (visible subset only).
         #[derive(Debug, Clone, Copy)]
@@ -1453,7 +1675,8 @@ impl SkiaRenderer {
         let baseline_offset = self.baseline_offset_px(config);
 
         // 1) Draw per-cell backgrounds (including styled backgrounds).
-        for (row_idx, line) in grid.lines.iter().enumerate() {
+        for row_idx in row_start..row_end {
+            let line = &grid.lines[row_idx];
             let y_top =
                 config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
             let mut x_cells: u32 = 0;
@@ -1489,7 +1712,8 @@ impl SkiaRenderer {
         }
 
         if !sel_ranges.is_empty() {
-            for (row_idx, line) in grid.lines.iter().enumerate() {
+            for row_idx in row_start..row_end {
+                let line = &grid.lines[row_idx];
                 if !matches!(line.kind, ComposedLineKind::Document { .. }) {
                     continue;
                 }
@@ -1518,7 +1742,8 @@ impl SkiaRenderer {
         }
 
         // 3) Text + underlines.
-        for (row_idx, line) in grid.lines.iter().enumerate() {
+        for row_idx in row_start..row_end {
+            let line = &grid.lines[row_idx];
             let y_top =
                 config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
             let baseline_y = y_top + baseline_offset;
@@ -1736,16 +1961,16 @@ impl SkiaRenderer {
                 paint.set_anti_alias(true);
                 paint.set_color(rgba_to_skia_color(run.fg));
 
-                let font = renderer.font_for_variant_index(run.font_variant, run.font_index);
                 match run.kind {
                     PendingRunKind::LigatureText { text } => {
                         if text.is_empty() {
                             return;
                         }
-                        renderer.draw_shaped_run(
+                        renderer.draw_shaped_run_cached(
                             canvas,
                             text.as_str(),
-                            font,
+                            run.font_variant,
+                            run.font_index,
                             x_px,
                             baseline_y,
                             config.cell_width_px,
@@ -1757,6 +1982,7 @@ impl SkiaRenderer {
                         if glyphs.is_empty() || glyphs.len() != positions.len() {
                             return;
                         }
+                        let font = renderer.font_for_variant_index(run.font_variant, run.font_index);
                         canvas.draw_glyphs_at(
                             glyphs.as_slice(),
                             positions.as_slice(),
@@ -1888,7 +2114,10 @@ impl SkiaRenderer {
         // Carets on top.
         if config.show_caret {
             let caret_width = config.caret_width_px.max(1.0);
-            for caret in pending_carets {
+            for caret in pending_carets
+                .into_iter()
+                .filter(|c| c.local_row >= row_start && c.local_row < row_end)
+            {
                 let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
                 let y_top = config.padding_y_px + caret.local_row as f32 * config.line_height_px
                     - config.scroll_y_px;
@@ -1957,6 +2186,7 @@ impl SkiaRenderer {
                 fold_markers,
                 config,
                 theme,
+                None,
             )?;
 
             if let Some(metal) = self.metal.as_mut() {
@@ -2032,317 +2262,95 @@ impl SkiaRenderer {
             .ok_or(RenderError::SurfaceCreateFailed)?;
 
         let canvas = surface.canvas();
-        canvas.clear(rgba_to_skia_color4f(theme.background));
+        self.draw_composed_grid_to_canvas(
+            canvas,
+            grid,
+            caret_offsets,
+            selection_ranges,
+            fold_markers,
+            config,
+            theme,
+            None,
+        )
+    }
 
-        let gutter_x = config.padding_x_px;
-        let gutter_w_px = config.gutter_width_cells as f32 * config.cell_width_px;
-        let text_origin_x = gutter_x + gutter_w_px;
-
-        if config.gutter_width_cells > 0 && gutter_w_px > 0.0 {
-            let gutter_bg =
-                resolve_style_background(GUTTER_BACKGROUND_STYLE_ID, theme, theme.background);
-            let rect = Rect::from_xywh(gutter_x, 0.0, gutter_w_px, config.height_px as f32);
-            let mut paint = Paint::default();
-            paint.set_anti_alias(false);
-            paint.set_color(rgba_to_skia_color(gutter_bg));
-            canvas.draw_rect(rect, &paint);
-
-            let sep = resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
-            let sep_rect = Rect::from_xywh(text_origin_x, 0.0, 1.0, config.height_px as f32);
-            let mut sep_paint = Paint::default();
-            sep_paint.set_anti_alias(false);
-            sep_paint.set_color(rgba_to_skia_color(sep));
-            canvas.draw_rect(sep_rect, &sep_paint);
+    /// Render only the specified (local) composed visual row ranges into an existing RGBA buffer.
+    ///
+    /// This follows the same contract as [`Self::render_rgba_into_partial_rows`], but operates on
+    /// `ComposedGrid` (virtual text-aware).
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_composed_rgba_into_partial_rows(
+        &mut self,
+        grid: &ComposedGrid,
+        caret_offsets: &[usize],
+        selection_ranges: &[(usize, usize)],
+        fold_markers: &[FoldMarker],
+        config: RenderConfig,
+        theme: &RenderTheme,
+        out_rgba: &mut [u8],
+        dirty_row_ranges: &[(usize, usize)],
+    ) -> Result<(), RenderError> {
+        if dirty_row_ranges.is_empty() {
+            return Ok(());
         }
 
-        // Resolve caret positions in the composed grid (visible subset only).
-        #[derive(Debug, Clone, Copy)]
-        struct PendingCaret {
-            local_row: usize,
-            x_cells: u32,
-        }
-        let mut pending_carets: Vec<PendingCaret> = Vec::new();
-        for &caret_offset in caret_offsets {
-            let Some(local_row) = composed_line_index_for_offset(grid, caret_offset) else {
-                continue;
-            };
-            let line = &grid.lines[local_row];
-            let x_cells = caret_x_cells_in_composed_line(line, caret_offset);
-            pending_carets.push(PendingCaret { local_row, x_cells });
+        let required = Self::required_rgba_len(config)?;
+        if out_rgba.len() < required {
+            return Err(RenderError::BufferTooSmall {
+                required,
+                provided: out_rgba.len(),
+            });
         }
 
-        debug_assert!(
-            !self.fonts_normal.fonts.is_empty(),
-            "SkiaRenderer must always have at least one font"
+        self.ensure_font_size(config.font_size);
+
+        let width = config.width_px as i32;
+        let height = config.height_px as i32;
+
+        let bytes_per_row = config.width_px as usize * 4;
+        let pixels = &mut out_rgba[..required];
+
+        let info = ImageInfo::new(
+            (width, height),
+            ColorType::RGBA8888,
+            AlphaType::Premul,
+            Some(ColorSpace::new_srgb()),
         );
-        let baseline_offset = self.baseline_offset_px(config);
 
-        // 1) Draw per-cell backgrounds (including styled backgrounds).
-        for (row_idx, line) in grid.lines.iter().enumerate() {
-            let y_top =
-                config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
-            let mut x_cells: u32 = 0;
-            for cell in &line.cells {
-                let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
-                let (_fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
-                if bg != theme.background {
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
-                    let mut bg_paint = Paint::default();
-                    bg_paint.set_anti_alias(false);
-                    bg_paint.set_color(rgba_to_skia_color(bg));
-                    canvas.draw_rect(rect, &bg_paint);
-                }
-                x_cells = x_cells.saturating_add(cell.width as u32);
-            }
-        }
+        let mut surface = surfaces::wrap_pixels(&info, pixels, bytes_per_row, None)
+            .ok_or(RenderError::SurfaceCreateFailed)?;
 
-        // 2) Selection overlay (under text, over backgrounds).
-        //
-        // Note: selection highlight is applied only to document cells. Virtual text is not
-        // considered part of the selection.
-        let mut sel_ranges: Vec<(usize, usize)> = Vec::new();
-        for (a, b) in selection_ranges {
-            if *a == *b {
+        let canvas = surface.canvas();
+
+        let total_rows = grid.count.max(grid.lines.len());
+        for &(start, end) in dirty_row_ranges {
+            let start = start.min(total_rows);
+            let end = end.min(total_rows);
+            if start >= end {
                 continue;
             }
-            if *a <= *b {
-                sel_ranges.push((*a, *b));
-            } else {
-                sel_ranges.push((*b, *a));
-            }
-        }
 
-        if !sel_ranges.is_empty() {
-            for (row_idx, line) in grid.lines.iter().enumerate() {
-                if !matches!(line.kind, ComposedLineKind::Document { .. }) {
-                    continue;
-                }
-                let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px
-                    - config.scroll_y_px;
-                let mut x_cells: u32 = 0;
-                for cell in &line.cells {
-                    let selected = match cell.source {
-                        ComposedCellSource::Document { offset } => {
-                            sel_ranges.iter().any(|(s, e)| offset >= *s && offset < *e)
-                        }
-                        _ => false,
-                    };
-                    if selected {
-                        let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
-                        let w_px = cell.width as f32 * config.cell_width_px;
-                        let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
-                        let mut sel_paint = Paint::default();
-                        sel_paint.set_anti_alias(false);
-                        sel_paint.set_color(rgba_to_skia_color(theme.selection_background));
-                        canvas.draw_rect(rect, &sel_paint);
-                    }
-                    x_cells = x_cells.saturating_add(cell.width as u32);
-                }
-            }
-        }
-
-        // 3) Text + underlines.
-        for (row_idx, line) in grid.lines.iter().enumerate() {
             let y_top =
-                config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
-            let baseline_y = y_top + baseline_offset;
-
-            // Gutter: fold markers + line numbers for document lines (first visual segment only).
-            if config.gutter_width_cells > 0
-                && let ComposedLineKind::Document {
-                    logical_line,
-                    visual_in_logical,
-                } = line.kind
-                && visual_in_logical == 0
-            {
-                let marker_state = fold_marker_state_for_line(logical_line as u32, fold_markers);
-                if let Some(is_collapsed) = marker_state {
-                    let style_id = if is_collapsed {
-                        FOLD_MARKER_COLLAPSED_STYLE_ID
-                    } else {
-                        FOLD_MARKER_EXPANDED_STYLE_ID
-                    };
-                    let marker_color = resolve_style_background(style_id, theme, theme.foreground);
-                    let rect = Rect::from_xywh(
-                        gutter_x,
-                        y_top,
-                        config.cell_width_px,
-                        config.line_height_px,
-                    );
-                    let mut paint = Paint::default();
-                    paint.set_anti_alias(false);
-                    paint.set_color(rgba_to_skia_color(marker_color));
-                    canvas.draw_rect(rect, &paint);
-                }
-
-                // Line number text (best-effort; tests should not depend on glyph rasterization).
-                let gutter_fg =
-                    resolve_style_foreground(GUTTER_FOREGROUND_STYLE_ID, theme, theme.foreground);
-                let mut paint = Paint::default();
-                paint.set_anti_alias(false);
-                paint.set_color(rgba_to_skia_color(gutter_fg));
-
-                let line_no = (logical_line + 1).to_string();
-                let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
-                canvas.draw_str(
-                    line_no,
-                    Point::new(x_px, baseline_y),
-                    self.normal_primary_font(),
-                    &paint,
-                );
+                config.padding_y_px + start as f32 * config.line_height_px - config.scroll_y_px;
+            let h_px = (end - start) as f32 * config.line_height_px;
+            if !h_px.is_finite() || h_px <= 0.0 {
+                continue;
             }
 
-            #[derive(Debug)]
-            struct PendingRun {
-                start_x_cells: u32,
-                font_variant: FontVariant,
-                font_index: usize,
-                fg: Rgba8,
-                text: String,
-            }
-
-            let mut pending: Option<PendingRun> = None;
-            let mut decoration_runs: Vec<LineDecorationRun> = Vec::new();
-            let mut underline_run: Option<LineDecorationRun> = None;
-            let mut strike_run: Option<LineDecorationRun> = None;
-
-            let mut x_cells: u32 = 0;
-
-            let flush = |renderer: &mut SkiaRenderer, pending: &mut Option<PendingRun>| {
-                let Some(run) = pending.take() else {
-                    return;
-                };
-                if run.text.is_empty() {
-                    return;
-                }
-                let x_px = text_origin_x + run.start_x_cells as f32 * config.cell_width_px;
-
-                let mut paint = Paint::default();
-                paint.set_anti_alias(true);
-                paint.set_color(rgba_to_skia_color(run.fg));
-
-                let font = renderer.font_for_variant_index(run.font_variant, run.font_index);
-                renderer.draw_shaped_run(
-                    canvas,
-                    run.text.as_str(),
-                    font,
-                    x_px,
-                    baseline_y,
-                    config.cell_width_px,
-                    &paint,
-                    config.enable_ligatures,
-                );
-            };
-
-            for cell in &line.cells {
-                let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
-                let (fg, _bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
-                let font_variant = resolve_cell_font_variant(cell.styles.as_slice(), theme);
-                let decos = resolve_cell_line_decorations(cell.styles.as_slice(), theme, fg);
-
-                if let Some((kind, color)) = decos.underline {
-                    extend_decoration_run(
-                        &mut decoration_runs,
-                        &mut underline_run,
-                        kind,
-                        x_cells,
-                        cell.width as u32,
-                        color,
-                    );
-                } else {
-                    flush_decoration_run(&mut decoration_runs, &mut underline_run);
-                }
-
-                if let Some(color) = decos.strikethrough {
-                    extend_decoration_run(
-                        &mut decoration_runs,
-                        &mut strike_run,
-                        LineDecorationKind::Strikethrough,
-                        x_cells,
-                        cell.width as u32,
-                        color,
-                    );
-                } else {
-                    flush_decoration_run(&mut decoration_runs, &mut strike_run);
-                }
-
-                let eligible_for_ligatures =
-                    config.enable_ligatures && cell.width == 1 && cell.ch.is_ascii();
-                if eligible_for_ligatures {
-                    let font_index = self.font_index_for_char(cell.ch, font_variant);
-
-                    let can_extend = pending.as_ref().is_some_and(|r| {
-                        r.font_variant == font_variant && r.font_index == font_index && r.fg == fg
-                    });
-                    if !can_extend {
-                        flush(self, &mut pending);
-                        pending = Some(PendingRun {
-                            start_x_cells: x_cells,
-                            font_variant,
-                            font_index,
-                            fg,
-                            text: String::new(),
-                        });
-                    }
-
-                    if let Some(r) = pending.as_mut() {
-                        r.text.push(cell.ch);
-                    }
-                } else {
-                    flush(self, &mut pending);
-
-                    let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_color(rgba_to_skia_color(fg));
-                    let font_index = self.font_index_for_char(cell.ch, font_variant);
-                    let font = self.font_for_variant_index(font_variant, font_index);
-                    canvas.draw_str(
-                        cell.ch.to_string(),
-                        Point::new(x_px, baseline_y),
-                        font,
-                        &paint,
-                    );
-                }
-
-                x_cells = x_cells.saturating_add(cell.width as u32);
-            }
-
-            flush(self, &mut pending);
-
-            flush_decoration_run(&mut decoration_runs, &mut underline_run);
-            flush_decoration_run(&mut decoration_runs, &mut strike_run);
-
-            // Text decorations last (underline/strikethrough), so they stay visible over glyphs.
-            let (_spacing, metrics) = { self.normal_primary_font().metrics() };
-            for run in decoration_runs {
-                draw_decoration_run(
-                    canvas,
-                    run,
-                    text_origin_x,
-                    y_top,
-                    baseline_y,
-                    metrics,
-                    config,
-                );
-            }
-        }
-
-        // Carets on top.
-        if config.show_caret {
-            let caret_width = config.caret_width_px.max(1.0);
-            for caret in pending_carets {
-                let x_px = text_origin_x + caret.x_cells as f32 * config.cell_width_px;
-                let y_top = config.padding_y_px + caret.local_row as f32 * config.line_height_px
-                    - config.scroll_y_px;
-
-                let rect = Rect::from_xywh(x_px, y_top, caret_width, config.line_height_px);
-
-                let mut paint = Paint::default();
-                paint.set_anti_alias(false);
-                paint.set_color(rgba_to_skia_color(theme.caret));
-                canvas.draw_rect(rect, &paint);
-            }
+            let rect = Rect::from_xywh(0.0, y_top, config.width_px as f32, h_px);
+            canvas.save();
+            canvas.clip_rect(rect, skia_safe::ClipOp::Intersect, false);
+            self.draw_composed_grid_to_canvas(
+                canvas,
+                grid,
+                caret_offsets,
+                selection_ranges,
+                fold_markers,
+                config,
+                theme,
+                Some((start, end)),
+            )?;
+            canvas.restore();
         }
 
         Ok(())
@@ -2556,15 +2564,6 @@ fn pick_reasonable_monospace_typeface_with_style(style: FontStyle) -> Option<ski
 
 fn rgba_to_skia_color(c: Rgba8) -> Color {
     Color::from_argb(c.a, c.r, c.g, c.b)
-}
-
-fn rgba_to_skia_color4f(c: Rgba8) -> Color4f {
-    Color4f::new(
-        c.r as f32 / 255.0,
-        c.g as f32 / 255.0,
-        c.b as f32 / 255.0,
-        c.a as f32 / 255.0,
-    )
 }
 
 fn make_shaper_feature(tag: FourByteTag, value: u32) -> Feature {
@@ -3777,6 +3776,240 @@ mod tests {
 
         // Caret should be caret color (x=30, y=10).
         assert_eq!(pixel(&rgba, cfg.width_px, 30, 10), [0, 0, 200, 255]);
+    }
+
+    #[test]
+    fn render_partial_rows_matches_full_redraw_headless() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = HeadlessGrid::new(0, 2);
+        for line_idx in 0..2 {
+            let mut line = HeadlessLine::new(line_idx, false);
+            line.add_cell(Cell::new(' ', 1));
+            line.add_cell(Cell::new(' ', 1));
+            line.add_cell(Cell::new(' ', 1));
+            grid.add_line(line);
+        }
+
+        let theme = RenderTheme {
+            background: Rgba8::new(10, 20, 30, 255),
+            foreground: Rgba8::new(250, 250, 250, 255),
+            selection_background: Rgba8::new(200, 0, 0, 255),
+            caret: Rgba8::new(0, 0, 200, 255),
+            styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
+        };
+
+        let cfg = RenderConfig {
+            width_px: 80,
+            height_px: 40,
+            scale: 1.0,
+            font_size: 12.0,
+            line_height_px: 20.0,
+            text_vertical_align: TextVerticalAlign::Center,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            scroll_y_px: 0.0,
+            gutter_width_cells: 0,
+            enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
+            ..RenderConfig::default()
+        };
+
+        let old_carets = [VisualCaret { row: 0, x_cells: 1 }];
+        let old_selections = [VisualSelection {
+            start_row: 0,
+            start_x_cells: 0,
+            end_row: 0,
+            end_x_cells: 2,
+        }];
+
+        let new_carets = [VisualCaret { row: 1, x_cells: 1 }];
+        let new_selections = [VisualSelection {
+            start_row: 1,
+            start_x_cells: 0,
+            end_row: 1,
+            end_x_cells: 2,
+        }];
+
+        let mut out = renderer
+            .render_rgba(
+                &grid,
+                old_carets.as_slice(),
+                old_selections.as_slice(),
+                &[],
+                cfg,
+                &theme,
+            )
+            .unwrap();
+
+        renderer
+            .render_rgba_into_partial_rows(
+                &grid,
+                new_carets.as_slice(),
+                new_selections.as_slice(),
+                &[],
+                cfg,
+                &theme,
+                &mut out,
+                &[(0, 2)],
+            )
+            .unwrap();
+
+        let full_new = renderer
+            .render_rgba(
+                &grid,
+                new_carets.as_slice(),
+                new_selections.as_slice(),
+                &[],
+                cfg,
+                &theme,
+            )
+            .unwrap();
+
+        assert_eq!(out, full_new);
+    }
+
+    #[test]
+    fn render_partial_rows_matches_full_redraw_composed() {
+        let mut renderer = SkiaRenderer::new();
+
+        let mut grid = ComposedGrid::new(0, 2);
+        grid.lines.push(ComposedLine {
+            kind: ComposedLineKind::Document {
+                logical_line: 0,
+                visual_in_logical: 0,
+            },
+            char_offset_start: 0,
+            char_offset_end: 3,
+            cells: vec![
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Document { offset: 0 },
+                },
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Document { offset: 1 },
+                },
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Document { offset: 2 },
+                },
+            ],
+        });
+        grid.lines.push(ComposedLine {
+            kind: ComposedLineKind::Document {
+                logical_line: 1,
+                visual_in_logical: 0,
+            },
+            char_offset_start: 3,
+            char_offset_end: 6,
+            cells: vec![
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Document { offset: 3 },
+                },
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Document { offset: 4 },
+                },
+                ComposedCell {
+                    ch: ' ',
+                    width: 1,
+                    styles: Vec::new(),
+                    source: ComposedCellSource::Document { offset: 5 },
+                },
+            ],
+        });
+
+        let theme = RenderTheme {
+            background: Rgba8::new(10, 20, 30, 255),
+            foreground: Rgba8::new(250, 250, 250, 255),
+            selection_background: Rgba8::new(200, 0, 0, 255),
+            caret: Rgba8::new(0, 0, 200, 255),
+            styles: BTreeMap::new(),
+            style_fonts: BTreeMap::new(),
+            text_decorations: BTreeMap::new(),
+        };
+
+        let cfg = RenderConfig {
+            width_px: 80,
+            height_px: 40,
+            scale: 1.0,
+            font_size: 12.0,
+            line_height_px: 20.0,
+            text_vertical_align: TextVerticalAlign::Center,
+            cell_width_px: 10.0,
+            padding_x_px: 0.0,
+            padding_y_px: 0.0,
+            scroll_y_px: 0.0,
+            gutter_width_cells: 0,
+            enable_ligatures: false,
+            caret_width_px: 2.0,
+            show_caret: true,
+            ..RenderConfig::default()
+        };
+
+        let old_carets = [0usize];
+        let old_selections = [(0usize, 2usize)];
+
+        let new_carets = [3usize];
+        let new_selections = [(3usize, 5usize)];
+
+        let required = SkiaRenderer::required_rgba_len(cfg).unwrap();
+        let mut out = vec![0u8; required];
+        renderer
+            .render_composed_rgba_into(
+                &grid,
+                old_carets.as_slice(),
+                old_selections.as_slice(),
+                &[],
+                cfg,
+                &theme,
+                &mut out,
+            )
+            .unwrap();
+
+        renderer
+            .render_composed_rgba_into_partial_rows(
+                &grid,
+                new_carets.as_slice(),
+                new_selections.as_slice(),
+                &[],
+                cfg,
+                &theme,
+                &mut out,
+                &[(0, 2)],
+            )
+            .unwrap();
+
+        let mut full_new = vec![0u8; required];
+        renderer
+            .render_composed_rgba_into(
+                &grid,
+                new_carets.as_slice(),
+                new_selections.as_slice(),
+                &[],
+                cfg,
+                &theme,
+                &mut full_new,
+            )
+            .unwrap();
+
+        assert_eq!(out, full_new);
     }
 
     #[test]
