@@ -21,7 +21,8 @@ use crate::delta::TextDelta;
 use crate::processing::ProcessingEdit;
 use crate::search::{SearchError, SearchMatch, SearchOptions, find_all};
 use crate::selection_set::selection_direction;
-use crate::{LineIndex, Position, Selection, TabKeyBehavior, ViewCommand};
+use crate::state::CursorState;
+use crate::{LineIndex, Position, Selection, SelectionDirection, TabKeyBehavior, ViewCommand};
 use crate::{StateChange, StateChangeCallback, StateChangeType, WrapIndent, WrapMode};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
@@ -486,6 +487,47 @@ impl Workspace {
         self.uri_to_buffer.get(uri).copied()
     }
 
+    /// Get a reference to a buffer's line index (logical line/column <-> char offsets).
+    pub fn buffer_line_index(&self, buffer_id: BufferId) -> Result<&LineIndex, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(&buffer.executor.editor().line_index)
+    }
+
+    /// Returns whether a buffer has unsaved text edits.
+    ///
+    /// Notes:
+    /// - This tracks the executor's "clean point" (usually the last `mark_saved_*` call),
+    ///   and is restored by undoing back to that clean point.
+    pub fn buffer_is_modified(&self, buffer_id: BufferId) -> Result<bool, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(!buffer.executor.is_clean())
+    }
+
+    /// Returns whether the view's underlying buffer has unsaved text edits.
+    pub fn is_modified_for_view(&self, view_id: ViewId) -> Result<bool, WorkspaceError> {
+        let buffer_id = self.buffer_id_for_view(view_id)?;
+        self.buffer_is_modified(buffer_id)
+    }
+
+    /// Mark the current state of a buffer as saved (clean point).
+    pub fn mark_saved_for_buffer(&mut self, buffer_id: BufferId) -> Result<(), WorkspaceError> {
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        buffer.executor.mark_clean();
+        Ok(())
+    }
+
+    /// Mark the current state of a view's buffer as saved (clean point).
+    pub fn mark_saved_for_view(&mut self, view_id: ViewId) -> Result<(), WorkspaceError> {
+        let buffer_id = self.buffer_id_for_view(view_id)?;
+        self.mark_saved_for_buffer(buffer_id)
+    }
+
     /// Get a buffer's metadata.
     pub fn buffer_metadata(&self, id: BufferId) -> Option<&BufferMetadata> {
         self.buffers.get(&id).map(|e| &e.meta)
@@ -513,6 +555,71 @@ impl Workspace {
             .get(&id)
             .map(|v| v.core.selection.clone())
             .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
+    /// Get a view's normalized cursor/selection snapshot.
+    ///
+    /// This matches the semantics of `EditorStateManager::get_cursor_state`, but for workspace views.
+    pub fn cursor_state_for_view(&self, id: ViewId) -> Result<CursorState, WorkspaceError> {
+        let Some(view) = self.views.get(&id) else {
+            return Err(WorkspaceError::ViewNotFound(id));
+        };
+        let Some(buffer) = self.buffers.get(&view.buffer) else {
+            return Err(WorkspaceError::BufferNotFound(view.buffer));
+        };
+
+        let line_index = &buffer.executor.editor().line_index;
+
+        let mut selections: Vec<Selection> =
+            Vec::with_capacity(1 + view.core.secondary_selections.len());
+        let primary = view.core.selection.clone().unwrap_or(Selection {
+            start: view.core.cursor_position,
+            end: view.core.cursor_position,
+            direction: SelectionDirection::Forward,
+        });
+        selections.push(primary);
+        selections.extend(view.core.secondary_selections.iter().cloned());
+
+        let (selections, primary_selection_index) =
+            crate::selection_set::normalize_selections(selections, 0);
+        let primary = selections
+            .get(primary_selection_index)
+            .cloned()
+            .unwrap_or(Selection {
+                start: view.core.cursor_position,
+                end: view.core.cursor_position,
+                direction: SelectionDirection::Forward,
+            });
+
+        let position = primary.end;
+        let offset = line_index.position_to_char_offset(position.line, position.column);
+
+        let selection = if primary.start == primary.end {
+            None
+        } else {
+            Some(primary)
+        };
+
+        let multi_cursors: Vec<Position> = selections
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, sel)| {
+                if idx == primary_selection_index {
+                    None
+                } else {
+                    Some(sel.end)
+                }
+            })
+            .collect();
+
+        Ok(CursorState {
+            position,
+            offset,
+            multi_cursors,
+            selection,
+            selections,
+            primary_selection_index,
+        })
     }
 
     /// Get the scroll position (top visual row) for a view.
