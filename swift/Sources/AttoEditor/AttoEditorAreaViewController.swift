@@ -254,6 +254,11 @@ final class AttoEditorAreaViewController: NSViewController {
         tab.editCore.editorView.moveToMatchingBracket()
     }
 
+    func formatDocumentWithLspInActiveTab() {
+        guard let tab = activeTab else { return }
+        tab.editCore.editorView.formatDocumentWithLSP()
+    }
+
     // MARK: - Status bar
 
     private var activeTab: AttoEditorTab? {

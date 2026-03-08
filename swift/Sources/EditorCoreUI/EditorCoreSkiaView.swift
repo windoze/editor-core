@@ -1599,6 +1599,35 @@ public final class EditorCoreSkiaView: MTKView {
         notifyViewportStateDidChange()
     }
 
+    /// Format the current document via LSP (`textDocument/formatting`) and apply edits locally.
+    ///
+    /// This is intended for explicit user actions (command palette / menu item).
+    public func formatDocumentWithLSP(timeoutMs: UInt32 = 2000) {
+        updateViewportIfNeeded()
+        do {
+            guard try editor.lspIsEnabled() else {
+                NSSound.beep()
+                return
+            }
+
+            // Small, VSCode-ish defaults.
+            let optionsJSON = """
+            { "tabSize": 4, "insertSpaces": true }
+            """
+            let applied = try editor.lspFormatDocument(formattingOptionsJSON: optionsJSON, timeoutMs: timeoutMs)
+            if applied {
+                didMutateDocumentText()
+            }
+        } catch {
+            NSSound.beep()
+            return
+        }
+
+        requestRedraw()
+        invalidateIMECharacterCoordinates()
+        notifyViewportStateDidChange()
+    }
+
     // MARK: - Clipboard
 
     public override func selectAll(_ sender: Any?) {

@@ -243,6 +243,26 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    /// Format the current document via LSP (`textDocument/formatting`) and apply edits locally.
+    ///
+    /// Notes:
+    /// - This is a blocking request intended for explicit user actions (e.g. "Format Document").
+    /// - `formattingOptionsJSON` should match LSP `FormattingOptions`.
+    @discardableResult
+    public func lspFormatDocument(formattingOptionsJSON: String? = nil, timeoutMs: UInt32 = 2000) throws -> Bool {
+        var applied: UInt8 = 0
+        let status: Int32
+        if let formattingOptionsJSON {
+            status = formattingOptionsJSON.withCString { cstr in
+                editor_core_ui_ffi_editor_ui_lsp_format_document(handle, cstr, timeoutMs, &applied)
+            }
+        } else {
+            status = editor_core_ui_ffi_editor_ui_lsp_format_document(handle, nil, timeoutMs, &applied)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_format_document")
+        return applied != 0
+    }
+
     /// Poll and apply any completed async processing (Tree-sitter highlighting/folding).
     ///
     /// This call is non-blocking: it never waits for background work.

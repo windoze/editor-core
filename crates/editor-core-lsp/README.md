@@ -14,6 +14,12 @@ requirements, and a small dependency surface.
   - stable style id encoding/decoding helpers
   - `SemanticTokensManager` for relative→absolute conversion
 - **Workspace edit helpers**: parse/apply `TextEdit` / `WorkspaceEdit` shapes using `serde_json::Value`.
+- **Typed payload parsers** (still `serde_json::Value` input, no `lsp-types`):
+  - hover (`textDocument/hover`) → `LspHover` (markdown-ish rendering helper)
+  - signature help (`textDocument/signatureHelp`) → `LspSignatureHelp`
+  - code actions (`textDocument/codeAction`) → `LspCodeActionItem` / apply plan extraction
+- **Workspace edit preview helpers**:
+  - `summarize_workspace_edit(...)` for basic preview/conflict signals (overlapping edits)
 - **Common UX bridges** (LSP → kernel derived state):
   - document highlights → `ProcessingEdit::ReplaceStyleLayer` (`StyleLayerId::DOCUMENT_HIGHLIGHTS`)
   - document links → `ProcessingEdit::ReplaceDecorations` (`DecorationLayerId::DOCUMENT_LINKS`)
@@ -25,6 +31,8 @@ requirements, and a small dependency surface.
 - **Stdio JSON-RPC client** (`LspClient`) for driving an LSP server process.
 - **High-level session wrapper** (`LspSession`) that polls messages, emits typed events, and produces
   derived-state edits (`ProcessingEdit`) for the editor.
+  - Includes a small blocking helper `LspSession::wait_for_response(...)` for explicit user actions
+    (formatting/rename/code actions), when appropriate.
 
 ## Design overview
 

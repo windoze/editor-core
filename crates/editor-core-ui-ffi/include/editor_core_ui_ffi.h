@@ -214,6 +214,14 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_definition_json(EditorUi* ui,
                                                                    uint8_t* out_has_result,
                                                                    char** out_result_json_utf8);
 
+// LSP "turnkey" helpers (blocking user actions).
+int32_t editor_core_ui_ffi_editor_ui_lsp_format_document(
+    EditorUi* ui,
+    const char* formatting_options_json_utf8, // nullable
+    uint32_t timeout_ms,
+    uint8_t* out_applied
+);
+
 // LSP-derived state ingestion (diagnostics + semantic tokens).
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json(
     EditorUi* ui,

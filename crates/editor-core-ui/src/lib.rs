@@ -16,7 +16,7 @@ use editor_core_lsp::{
     LspSessionStartOptions, encode_semantic_style_id, lsp_code_lens_to_processing_edit,
     lsp_diagnostics_to_processing_edits, lsp_document_highlights_to_processing_edit,
     lsp_document_links_to_processing_edits, lsp_inlay_hints_to_processing_edit,
-    semantic_tokens_to_intervals,
+    semantic_tokens_to_intervals, char_offsets_for_lsp_range, text_edits_from_value,
 };
 use editor_core_render_skia::{
     FOLD_MARKER_COLLAPSED_STYLE_ID, FOLD_MARKER_EXPANDED_STYLE_ID, FoldMarker, FoldMarkerStyle,
@@ -1963,6 +1963,12 @@ impl EditorUi {
 
         {
             let mut doc = self.lock_doc();
+            let buffer_id = doc.buffer_id;
+            // Ensure the buffer is addressable by URI so workspace-wide LSP edits (formatting,
+            // rename, code actions, workspace/applyEdit, ...) can be routed correctly.
+            doc.ws
+                .set_buffer_uri(buffer_id, Some(doc_uri.clone()))
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
             doc.lsp = Some(shared);
             doc.lsp_document_uri = Some(doc_uri);
             doc.lsp_delta_calc = Some(DeltaCalculator::from_text(&initial_text));
@@ -2064,6 +2070,67 @@ impl EditorUi {
     pub fn lsp_take_last_definition_result_json(&mut self) -> Option<String> {
         let mut doc = self.lock_doc();
         doc.lsp_last_definition_result_json.remove(&self.view_id)
+    }
+
+    /// Format the active document via LSP (`textDocument/formatting`) and apply edits locally.
+    ///
+    /// This is a "turnkey" helper intended for editor commands (explicit user actions).
+    /// It blocks for up to `timeout_ms` while waiting for the response.
+    ///
+    /// Returns `true` if any text edits were applied.
+    pub fn lsp_format_document(
+        &mut self,
+        formatting_options_json: &str,
+        timeout_ms: u32,
+    ) -> Result<bool, UiError> {
+        self.flush_lsp_did_change_from_delta();
+
+        let options: serde_json::Value = if formatting_options_json.trim().is_empty() {
+            serde_json::json!({
+                "tabSize": 4,
+                "insertSpaces": true,
+            })
+        } else {
+            serde_json::from_str(formatting_options_json)
+                .map_err(|e| UiError::Processor(e.to_string()))?
+        };
+
+        let (shared, doc_uri, buffer_id) = {
+            let doc = self.lock_doc();
+            let Some(shared) = doc.lsp.clone() else {
+                return Err(UiError::Processor("LSP is not enabled".to_string()));
+            };
+            let Some(doc_uri) = doc.lsp_document_uri.clone() else {
+                return Err(UiError::Processor("LSP document URI missing".to_string()));
+            };
+            (shared, doc_uri, doc.buffer_id)
+        };
+
+        // 1) Issue request.
+        let request_id = shared
+            .with_session_mut(|lsp| {
+                lsp.set_active_document(doc_uri.as_str())?;
+                lsp.request_formatting(options)
+            })
+            .map_err(UiError::Processor)?;
+
+        // 2) Wait for response (raw JSON-RPC response).
+        let resp = shared
+            .with_session_mut(|lsp| {
+                lsp.wait_for_response(request_id, Duration::from_millis(timeout_ms as u64))
+            })
+            .map_err(UiError::Processor)?;
+
+        if let Some(err) = resp.get("error") {
+            return Err(UiError::Processor(format!(
+                "LSP formatting failed: {}",
+                err.to_string()
+            )));
+        }
+
+        let result = resp.get("result").cloned().unwrap_or(serde_json::Value::Null);
+        let did_apply = self.lsp_apply_text_edits_value(buffer_id, &result)?;
+        Ok(did_apply)
     }
 
     pub fn poll_processing(&mut self) -> Result<ProcessingPollResult, UiError> {
@@ -2220,6 +2287,63 @@ impl EditorUi {
             intervals,
         }])?;
         Ok(())
+    }
+
+    /// Apply an LSP `TextEdit[] | null` payload to the current buffer.
+    ///
+    /// This is primarily intended for applying LSP formatting results in a UI-friendly way.
+    ///
+    /// Returns `true` if any edits were applied.
+    pub fn lsp_apply_text_edits_json(&mut self, text_edits_json: &str) -> Result<bool, UiError> {
+        let value: serde_json::Value =
+            serde_json::from_str(text_edits_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        let buffer_id = {
+            let doc = self.lock_doc();
+            doc.buffer_id
+        };
+        self.lsp_apply_text_edits_value(buffer_id, &value)
+    }
+
+    fn lsp_apply_text_edits_value(
+        &mut self,
+        buffer_id: BufferId,
+        value: &serde_json::Value,
+    ) -> Result<bool, UiError> {
+        let edits = text_edits_from_value(value);
+        if edits.is_empty() {
+            return Ok(false);
+        }
+
+        {
+            let mut doc = self.lock_doc();
+            let line_index = doc
+                .ws
+                .buffer_line_index(buffer_id)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+
+            let mut specs = edits
+                .iter()
+                .map(|edit| {
+                    let (start, end) = char_offsets_for_lsp_range(line_index, &edit.range);
+                    editor_core::TextEditSpec {
+                        start,
+                        end,
+                        text: edit.new_text.clone(),
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            // Match `Workspace::apply_text_edits` behavior (descending by start).
+            specs.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+            doc.ws
+                .apply_text_edits(vec![(buffer_id, specs)])
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        }
+
+        self.refresh_processing()?;
+        self.ensure_primary_caret_visible_after_edit();
+        Ok(true)
     }
 
     /// Apply LSP document highlight result payload (`DocumentHighlight[] | null`) as a style layer.
@@ -6491,5 +6615,29 @@ fn main() {
             UiError::Processor(msg) => assert_eq!(msg, "LSP is not enabled"),
             other => panic!("expected UiError::Processor, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn ui_lsp_apply_text_edits_json_converts_utf16_ranges_with_emoji() {
+        let mut ui = EditorUi::new("a😀b\nc\n", 80);
+
+        // Replace the 😀 (UTF-16 length 2) with "Z".
+        let edits = r#"[{"range":{"start":{"line":0,"character":1},"end":{"line":0,"character":3}},"newText":"Z"}]"#;
+        let applied = ui.lsp_apply_text_edits_json(edits).unwrap();
+        assert!(applied);
+        assert_eq!(ui.text(), "aZb\nc\n");
+    }
+
+    #[test]
+    fn ui_lsp_apply_text_edits_json_applies_multiple_edits_in_one_call() {
+        let mut ui = EditorUi::new("abc\n", 80);
+
+        // Two non-overlapping edits expressed in pre-edit coordinates:
+        // - replace "b" with "B"
+        // - insert "X" at the start
+        let edits = r#"[{"range":{"start":{"line":0,"character":1},"end":{"line":0,"character":2}},"newText":"B"},{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"X"}]"#;
+        let applied = ui.lsp_apply_text_edits_json(edits).unwrap();
+        assert!(applied);
+        assert_eq!(ui.text(), "XaBc\n");
     }
 }

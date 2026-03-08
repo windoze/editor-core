@@ -143,7 +143,7 @@ this workspace (per your request).
     - Swift/AppKit: `EditorUI.treeSitterEnableQueryPack(_:)` and AttoEditor uses it for Rust fallback
   - Tests: `crates/editor-core-treesitter-queries/src/lib.rs` (unit tests)
 
-- [ ] **[integration] LSP feature coverage beyond the current bridges**
+- [x] **[integration] LSP feature coverage beyond the current bridges**
   - `editor-core-lsp` covers a useful subset (semantic tokens, folding, diagnostics, inlay hints,
     code lens, document links/highlights, completion apply helpers, symbol parsing).
   - Typical “full editor” LSP expectations still missing as **turnkey helpers**:
@@ -153,6 +153,17 @@ this workspace (per your request).
     - references (`textDocument/references`)
     - code actions (`textDocument/codeAction`) + apply helpers (incl. commands)
     - formatting (`textDocument/formatting`, range formatting) + apply helpers
+  - Implemented via:
+    - Requests exist in `editor_core_lsp::LspSession` (`request_signature_help`, `request_references`,
+      `request_rename`, `request_code_action`, `request_formatting`, ...)
+    - Parsing helpers (typed, no `lsp-types` dependency):
+      - `crates/editor-core-lsp/src/lsp_hover.rs` (`hover_from_value`, markdown-ish rendering)
+      - `crates/editor-core-lsp/src/lsp_signature_help.rs` (`signature_help_from_value`)
+      - `crates/editor-core-lsp/src/lsp_code_actions.rs` (`code_action_items_from_value`, apply plan)
+      - `crates/editor-core-lsp/src/lsp_text_edits.rs` (`summarize_workspace_edit` for preview/conflicts)
+    - UI/FFI turnkey formatting:
+      - `editor-core-ui::EditorUi::lsp_format_document(...)` (blocking request + apply)
+      - Swift `EditorUI.lspFormatDocument(...)` and AttoEditor command “Edit: Format Document”
 
 - [x] **[integration] Responding to `workspace/applyEdit` automatically**
   - `LspClient::handle_server_request` currently replies to `workspace/applyEdit` with

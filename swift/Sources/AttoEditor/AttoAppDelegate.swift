@@ -183,6 +183,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(title: "File: Save") { [weak self] in
                 self?.saveMenuClicked(nil)
             },
+            .init(title: "Edit: Format Document") { [weak self] in
+                self?.editorAreaController?.formatDocumentWithLspInActiveTab()
+            },
             .init(title: "View: Toggle Sidebar") { [weak self] in
                 self?.toggleSidebar()
             },

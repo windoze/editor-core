@@ -260,6 +260,21 @@ impl LspSession {
         &self.client
     }
 
+    /// Wait for a specific JSON-RPC response id and return the raw message as JSON.
+    ///
+    /// This is a low-level helper intended for "explicit user actions" that prefer a blocking
+    /// request/response workflow (e.g. formatting, rename, code actions).
+    ///
+    /// Notes:
+    /// - While waiting, the underlying client will still respond to common server->client requests
+    ///   (e.g. `workspace/configuration`) to avoid deadlocks.
+    /// - Notifications received during the wait are not queued; callers should keep waits short.
+    pub fn wait_for_response(&mut self, request_id: u64, timeout: Duration) -> Result<Value, String> {
+        self.client
+            .wait_for_response(request_id, timeout)
+            .map_err(|e| e.to_string())
+    }
+
     /// Get a mutable reference to the underlying stdio JSON-RPC client.
     pub fn client_mut(&mut self) -> &mut LspClient {
         &mut self.client
