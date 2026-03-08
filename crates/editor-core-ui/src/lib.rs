@@ -589,7 +589,9 @@ struct EditorUiDoc {
 impl EditorUiDoc {
     fn exec_core(&mut self, view_id: ViewId, command: Command) -> Result<CommandResult, UiError> {
         self.ws.execute(view_id, command).map_err(|e| match e {
-            editor_core::WorkspaceError::CommandFailed { message, .. } => UiError::Processor(message),
+            editor_core::WorkspaceError::CommandFailed { message, .. } => {
+                UiError::Processor(message)
+            }
             editor_core::WorkspaceError::ApplyEditsFailed { message, .. } => {
                 UiError::Processor(message)
             }
@@ -680,7 +682,10 @@ impl EditorUi {
         self.doc.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn with_line_index<R>(&self, f: impl FnOnce(&editor_core::LineIndex) -> R) -> Result<R, UiError> {
+    fn with_line_index<R>(
+        &self,
+        f: impl FnOnce(&editor_core::LineIndex) -> R,
+    ) -> Result<R, UiError> {
         let doc = self.lock_doc();
         let line_index = doc
             .ws
@@ -1175,6 +1180,7 @@ impl EditorUi {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn is_blank_line(&self, line: usize) -> bool {
         self.with_line_index(|idx| {
             idx.get_line_text(line)
@@ -1972,12 +1978,8 @@ impl EditorUi {
             })
             .map_err(UiError::Processor)?;
 
-        doc.lsp_client_requests.insert(
-            id,
-            LspClientRequest::Definition {
-                view: self.view_id,
-            },
-        );
+        doc.lsp_client_requests
+            .insert(id, LspClientRequest::Definition { view: self.view_id });
         doc.lsp_latest_definition_request_id
             .insert(self.view_id, id);
         doc.lsp_last_definition_result_json.remove(&self.view_id);
@@ -2007,10 +2009,7 @@ impl EditorUi {
 
             loop {
                 let ev = {
-                    let worker = doc
-                        .treesitter
-                        .as_mut()
-                        .expect("treesitter worker missing");
+                    let worker = doc.treesitter.as_mut().expect("treesitter worker missing");
                     worker.rx.try_recv()
                 };
                 match ev {
@@ -2047,7 +2046,8 @@ impl EditorUi {
                 let version = doc.treesitter_doc_version;
                 let worker = doc.treesitter.as_mut().expect("treesitter worker missing");
                 worker.requested_version = Some(version);
-                worker.tx
+                worker
+                    .tx
                     .send(TreeSitterWorkerMsg::FullSync {
                         version,
                         text,
@@ -2490,13 +2490,13 @@ impl EditorUi {
 
         let smooth = {
             let doc = self.lock_doc();
-            doc.ws
-                .smooth_scroll_state_for_view(self.view_id)
-                .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+            doc.ws.smooth_scroll_state_for_view(self.view_id).unwrap_or(
+                editor_core::workspace::ViewSmoothScrollState {
                     top_visual_row: viewport.scroll_top,
                     sub_row_offset: viewport.sub_row_offset,
                     overscan_rows: viewport.overscan_rows,
-                })
+                },
+            )
         };
         let next = editor_core::workspace::ViewSmoothScrollState {
             top_visual_row: new_top,
@@ -2557,13 +2557,13 @@ impl EditorUi {
 
         let smooth = {
             let doc = self.lock_doc();
-            doc.ws
-                .smooth_scroll_state_for_view(self.view_id)
-                .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+            doc.ws.smooth_scroll_state_for_view(self.view_id).unwrap_or(
+                editor_core::workspace::ViewSmoothScrollState {
                     top_visual_row: viewport.scroll_top,
                     sub_row_offset: viewport.sub_row_offset,
                     overscan_rows: viewport.overscan_rows,
-                })
+                },
+            )
         };
         let next = editor_core::workspace::ViewSmoothScrollState {
             top_visual_row: new_top,
@@ -2593,13 +2593,13 @@ impl EditorUi {
 
         let smooth = {
             let doc = self.lock_doc();
-            doc.ws
-                .smooth_scroll_state_for_view(self.view_id)
-                .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+            doc.ws.smooth_scroll_state_for_view(self.view_id).unwrap_or(
+                editor_core::workspace::ViewSmoothScrollState {
                     top_visual_row: viewport.scroll_top,
                     sub_row_offset: viewport.sub_row_offset,
                     overscan_rows: viewport.overscan_rows,
-                })
+                },
+            )
         };
         let next = editor_core::workspace::ViewSmoothScrollState {
             top_visual_row: new_top,
@@ -2637,13 +2637,13 @@ impl EditorUi {
 
         let smooth = {
             let doc = self.lock_doc();
-            doc.ws
-                .smooth_scroll_state_for_view(self.view_id)
-                .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+            doc.ws.smooth_scroll_state_for_view(self.view_id).unwrap_or(
+                editor_core::workspace::ViewSmoothScrollState {
                     top_visual_row: viewport.scroll_top,
                     sub_row_offset: viewport.sub_row_offset,
                     overscan_rows: viewport.overscan_rows,
-                })
+                },
+            )
         };
         let pos_rows = smooth.top_visual_row as f32 + (smooth.sub_row_offset as f32 / 65536.0);
         let delta_rows = delta_y_px / line_h;
@@ -3093,8 +3093,32 @@ impl EditorUi {
         // Determine which document range is being replaced, and the "original" text
         // (the selection at the moment composition starts) so we can restore it if
         // composition is cancelled (e.g. Escape / IME clears marked text).
-        let (start, replace_len, original_text, original_len) =
-            if let Some((start, len)) = replace_range {
+        let (start, replace_len, original_text, original_len) = if let Some((start, len)) =
+            replace_range
+        {
+            let original = {
+                let doc = self.lock_doc();
+                doc.ws
+                    .buffer_text_range(self.buffer_id, start, len)
+                    .map_err(|e| UiError::Processor(format!("{e:?}")))?
+            };
+            (start, len, original, len)
+        } else if let Some(marked) = self.marked.as_ref() {
+            (
+                marked.start,
+                marked.len,
+                marked.original_text.clone(),
+                marked.original_len,
+            )
+        } else {
+            let cursor = self.cursor_state();
+            if let Some(sel) = cursor.selection {
+                let (start, end) = self.with_line_index(|line_index| {
+                    let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
+                    let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
+                    if a <= b { (a, b) } else { (b, a) }
+                })?;
+                let len = end.saturating_sub(start);
                 let original = {
                     let doc = self.lock_doc();
                     doc.ws
@@ -3102,34 +3126,10 @@ impl EditorUi {
                         .map_err(|e| UiError::Processor(format!("{e:?}")))?
                 };
                 (start, len, original, len)
-            } else if let Some(marked) = self.marked.as_ref() {
-                (
-                    marked.start,
-                    marked.len,
-                    marked.original_text.clone(),
-                    marked.original_len,
-                )
             } else {
-                let cursor = self.cursor_state();
-                if let Some(sel) = cursor.selection {
-                    let (start, end) = self.with_line_index(|line_index| {
-                        let a =
-                            line_index.position_to_char_offset(sel.start.line, sel.start.column);
-                        let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
-                        if a <= b { (a, b) } else { (b, a) }
-                    })?;
-                    let len = end.saturating_sub(start);
-                    let original = {
-                        let doc = self.lock_doc();
-                        doc.ws
-                            .buffer_text_range(self.buffer_id, start, len)
-                            .map_err(|e| UiError::Processor(format!("{e:?}")))?
-                    };
-                    (start, len, original, len)
-                } else {
-                    (cursor.offset, 0, String::new(), 0)
-                }
-            };
+                (cursor.offset, 0, String::new(), 0)
+            }
+        };
 
         // Empty marked text means "cancel/clear composition": restore original replaced text.
         if new_len == 0 {
@@ -3259,35 +3259,34 @@ impl EditorUi {
                 if self.has_virtual_text_decorations() {
                     let (_start_composed, _row_count, grid) = self.composed_viewport_grid();
                     let (local_row, _x_cells) = self.pixel_to_local_row_col(x_px, y_px);
-                    if let Some(line) = grid.lines.get(local_row) {
-                        if let editor_core::ComposedLineKind::Document { logical_line, .. } =
+                    if let Some(line) = grid.lines.get(local_row)
+                        && let editor_core::ComposedLineKind::Document { logical_line, .. } =
                             line.kind
+                    {
+                        let fold_regions = {
+                            let doc = self.lock_doc();
+                            doc.ws
+                                .folding_regions_for_buffer(self.buffer_id)
+                                .unwrap_or_default()
+                        };
+                        if let Some(region) = fold_regions
+                            .iter()
+                            .filter(|r| r.start_line == logical_line)
+                            .min_by_key(|r| r.end_line)
+                            .cloned()
                         {
-                            let fold_regions = {
-                                let doc = self.lock_doc();
-                                doc.ws
-                                    .folding_regions_for_buffer(self.buffer_id)
-                                    .unwrap_or_default()
-                            };
-                            if let Some(region) = fold_regions
-                                .iter()
-                                .filter(|r| r.start_line == logical_line)
-                                .min_by_key(|r| r.end_line)
-                                .cloned()
-                            {
-                                if region.is_collapsed {
-                                    self.exec_core(Command::Style(StyleCommand::Unfold {
-                                        start_line: region.start_line,
-                                    }))?;
-                                } else {
-                                    self.exec_core(Command::Style(StyleCommand::Fold {
-                                        start_line: region.start_line,
-                                        end_line: region.end_line,
-                                    }))?;
-                                }
-                                self.mouse_anchor = None;
-                                return Ok(());
+                            if region.is_collapsed {
+                                self.exec_core(Command::Style(StyleCommand::Unfold {
+                                    start_line: region.start_line,
+                                }))?;
+                            } else {
+                                self.exec_core(Command::Style(StyleCommand::Fold {
+                                    start_line: region.start_line,
+                                    end_line: region.end_line,
+                                }))?;
                             }
+                            self.mouse_anchor = None;
+                            return Ok(());
                         }
                     }
                 } else {
@@ -3710,10 +3709,10 @@ impl EditorUi {
     fn flush_lsp_did_change_from_delta(&mut self) {
         let mut doc = self.lock_doc();
         let buffer_id = doc.buffer_id;
-        let delta = match doc.ws.take_last_text_delta_for_buffer(buffer_id) {
-            Ok(delta) => delta,
-            Err(_) => None,
-        };
+        let delta = doc
+            .ws
+            .take_last_text_delta_for_buffer(buffer_id)
+            .unwrap_or_default();
         let Some(delta) = delta else {
             return;
         };
@@ -3886,7 +3885,9 @@ impl EditorUi {
                     doc.lsp_document_links_in_flight = false;
                     let result = resp.result.unwrap_or(serde_json::Value::Null);
                     let edits = match doc.ws.buffer_line_index(doc.buffer_id) {
-                        Ok(line_index) => lsp_document_links_to_processing_edits(line_index, &result),
+                        Ok(line_index) => {
+                            lsp_document_links_to_processing_edits(line_index, &result)
+                        }
                         Err(_) => {
                             doc.lsp_disable();
                             return true;
@@ -3969,7 +3970,13 @@ impl EditorUi {
             let allow_inlay = !doc.lsp_inlay_in_flight;
             let request_code_lens = !doc.lsp_code_lens_in_flight;
             let request_document_links = !doc.lsp_document_links_in_flight;
-            (shared, doc_uri, allow_inlay, request_code_lens, request_document_links)
+            (
+                shared,
+                doc_uri,
+                allow_inlay,
+                request_code_lens,
+                request_document_links,
+            )
         };
 
         let inlay_range = if allow_inlay {
@@ -3978,7 +3985,11 @@ impl EditorUi {
             None
         };
         let request_inlay_range = inlay_range.and_then(|(start, end)| {
-            if end > start { Some((start, end)) } else { None }
+            if end > start {
+                Some((start, end))
+            } else {
+                None
+            }
         });
 
         let mut doc = self.lock_doc();
@@ -4197,18 +4208,18 @@ impl EditorUi {
     fn composed_start_row_for_doc_row(&mut self, doc_row: usize) -> usize {
         // Fast path: no above-line virtual text => composed rows are identical to doc visual rows.
         let mut doc = self.lock_doc();
-        let has_above_line = doc
-            .ws
-            .buffer_decorations(self.buffer_id)
-            .ok()
-            .is_some_and(|decorations| {
-                decorations.values().any(|layer| {
-                    layer.iter().any(|d| {
-                        d.placement == editor_core::DecorationPlacement::AboveLine
-                            && d.text.as_ref().is_some_and(|t| !t.is_empty())
+        let has_above_line =
+            doc.ws
+                .buffer_decorations(self.buffer_id)
+                .ok()
+                .is_some_and(|decorations| {
+                    decorations.values().any(|layer| {
+                        layer.iter().any(|d| {
+                            d.placement == editor_core::DecorationPlacement::AboveLine
+                                && d.text.as_ref().is_some_and(|t| !t.is_empty())
+                        })
                     })
-                })
-            });
+                });
         if !has_above_line {
             return doc_row;
         }
@@ -4243,7 +4254,10 @@ impl EditorUi {
             }
         }
 
-        let regions = doc.ws.folding_regions_for_buffer(self.buffer_id).unwrap_or_default();
+        let regions = doc
+            .ws
+            .folding_regions_for_buffer(self.buffer_id)
+            .unwrap_or_default();
         let mut prefix = 0usize;
         for line in 0..top_logical_line {
             if is_logical_line_hidden(regions.as_slice(), line) {
@@ -5343,9 +5357,7 @@ mod tests {
             doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
         };
         assert!(
-            regions
-                .iter()
-                .any(|r| r.start_line == 0 && !r.is_collapsed),
+            regions.iter().any(|r| r.start_line == 0 && !r.is_collapsed),
             "expected a fold region starting at line 0"
         );
 
@@ -5366,9 +5378,7 @@ mod tests {
             doc.ws.folding_regions_for_buffer(ui.buffer_id).unwrap()
         };
         assert!(
-            regions
-                .iter()
-                .any(|r| r.start_line == 0 && !r.is_collapsed),
+            regions.iter().any(|r| r.start_line == 0 && !r.is_collapsed),
             "expected fold region to expand after second gutter click"
         );
     }
@@ -5438,9 +5448,7 @@ mod tests {
         };
         assert!(
             regions.iter().any(|r| {
-                r.start_line == inner.start_line
-                    && r.end_line == inner.end_line
-                    && r.is_collapsed
+                r.start_line == inner.start_line && r.end_line == inner.end_line && r.is_collapsed
             }),
             "expected inner region to be collapsed"
         );
@@ -5453,9 +5461,7 @@ mod tests {
         };
         assert!(
             regions.iter().any(|r| {
-                r.start_line == outer.start_line
-                    && r.end_line == outer.end_line
-                    && r.is_collapsed
+                r.start_line == outer.start_line && r.end_line == outer.end_line && r.is_collapsed
             }),
             "expected outer region to be collapsed"
         );
@@ -5468,9 +5474,7 @@ mod tests {
         };
         assert!(
             regions.iter().any(|r| {
-                r.start_line == outer.start_line
-                    && r.end_line == outer.end_line
-                    && !r.is_collapsed
+                r.start_line == outer.start_line && r.end_line == outer.end_line && !r.is_collapsed
             }),
             "expected outer region to be expanded"
         );
@@ -5483,9 +5487,7 @@ mod tests {
         };
         assert!(
             regions.iter().any(|r| {
-                r.start_line == inner.start_line
-                    && r.end_line == inner.end_line
-                    && !r.is_collapsed
+                r.start_line == inner.start_line && r.end_line == inner.end_line && !r.is_collapsed
             }),
             "expected inner region to be expanded after outer unfolded"
         );

@@ -1,6 +1,6 @@
 use editor_core::{
-    Command, CursorCommand, Decoration, DecorationKind, DecorationPlacement, DecorationRange,
-    DecorationLayerId, EditCommand, OpenBufferResult, Position, ProcessingEdit, StyleCommand,
+    Command, CursorCommand, Decoration, DecorationKind, DecorationLayerId, DecorationPlacement,
+    DecorationRange, EditCommand, OpenBufferResult, Position, ProcessingEdit, StyleCommand,
     ViewCommand, Workspace, WorkspaceError,
 };
 
@@ -89,7 +89,7 @@ fn test_workspace_dirty_tracking_and_mark_saved() {
     let mut ws = Workspace::new();
     let OpenBufferResult { view_id, .. } = ws.open_buffer(None, "x", 80).unwrap();
 
-    assert_eq!(ws.is_modified_for_view(view_id).unwrap(), false);
+    assert!(!ws.is_modified_for_view(view_id).unwrap());
 
     ws.execute(
         view_id,
@@ -98,11 +98,12 @@ fn test_workspace_dirty_tracking_and_mark_saved() {
         }),
     )
     .unwrap();
-    assert_eq!(ws.is_modified_for_view(view_id).unwrap(), true);
+    assert!(ws.is_modified_for_view(view_id).unwrap());
 
     // Undoing back to the initial clean point should clear the modified flag.
-    ws.execute(view_id, Command::Edit(EditCommand::Undo)).unwrap();
-    assert_eq!(ws.is_modified_for_view(view_id).unwrap(), false);
+    ws.execute(view_id, Command::Edit(EditCommand::Undo))
+        .unwrap();
+    assert!(!ws.is_modified_for_view(view_id).unwrap());
 
     // Mark-saved establishes a new clean point.
     ws.execute(
@@ -112,9 +113,9 @@ fn test_workspace_dirty_tracking_and_mark_saved() {
         }),
     )
     .unwrap();
-    assert_eq!(ws.is_modified_for_view(view_id).unwrap(), true);
+    assert!(ws.is_modified_for_view(view_id).unwrap());
     ws.mark_saved_for_view(view_id).unwrap();
-    assert_eq!(ws.is_modified_for_view(view_id).unwrap(), false);
+    assert!(!ws.is_modified_for_view(view_id).unwrap());
 }
 
 #[test]
@@ -152,8 +153,7 @@ fn test_workspace_cursor_state_for_view_matches_editor_state_manager_semantics()
 #[test]
 fn test_workspace_buffer_helpers_text_decorations_folding_and_tab_width() {
     let mut ws = Workspace::new();
-    let OpenBufferResult { buffer_id, view_id } =
-        ws.open_buffer(None, "a😊b\nxyz\n", 80).unwrap();
+    let OpenBufferResult { buffer_id, view_id } = ws.open_buffer(None, "a😊b\nxyz\n", 80).unwrap();
 
     assert_eq!(
         ws.buffer_char_count(buffer_id).unwrap(),
@@ -198,9 +198,11 @@ fn test_workspace_buffer_helpers_text_decorations_folding_and_tab_width() {
     )
     .unwrap();
     let regions = ws.folding_regions_for_buffer(buffer_id).unwrap();
-    assert!(regions
-        .iter()
-        .any(|r| r.start_line == 0 && r.end_line == 1 && r.is_collapsed));
+    assert!(
+        regions
+            .iter()
+            .any(|r| r.start_line == 0 && r.end_line == 1 && r.is_collapsed)
+    );
 
     // Tab width is per view.
     ws.execute(
