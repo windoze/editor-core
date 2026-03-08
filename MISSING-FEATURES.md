@@ -99,11 +99,23 @@ this workspace (per your request).
     - tracking “active snippet ranges” under subsequent edits
     - tab/shift-tab navigation between placeholders
 
-- [ ] **[core] Language-aware indentation beyond “copy leading whitespace”**
-  - `InsertNewline { auto_indent: true }` copies the current line’s leading whitespace, but there’s
-    no syntax-aware indentation engine (brace/paren rules, hanging indent, etc.).
-  - A pragmatic route is: data-driven indentation rules in `editor-core-lang`, optionally refined
-    by Tree-sitter queries.
+- [x] **[core] Language-aware indentation beyond “copy leading whitespace”**
+  - `InsertNewline { auto_indent: true }` previously only copied leading whitespace.
+  - Implemented a pragmatic rule-driven auto-indent engine using `editor-core-lang::IndentationConfig`:
+    - view-local config: `ViewCommand::SetIndentationConfig { config }`
+    - indentation unit controlled by `IndentStyle` (tabs or spaces with width)
+    - indent triggers: if the text before the caret ends with a trigger (`{`, `:`, ...), increase indent
+    - “between braces” helper: `{|}` → inserts a blank indented line and keeps the closing delimiter aligned
+  - Implementation details:
+    - `crates/editor-core/src/commands.rs`:
+      - `CommandExecutor` stores `indentation_config: IndentationConfig`
+      - `execute_insert_newline_command` computes indent based on triggers + brace-pair special-case
+    - `crates/editor-core/src/workspace.rs`: view-local storage + propagation via `ViewCore`
+    - `crates/editor-core/src/lib.rs`: re-exports `IndentationConfig` / `IndentStyle`
+  - Tests:
+    - `crates/editor-core/tests/auto_indent.rs`
+  - Example:
+    - `crates/editor-core/examples/auto_indent.rs`
 
 - [x] **[core] Auto-pairs + bracket matching**
   - Typical baseline editor behavior that’s not exposed as first-class kernel commands:

@@ -37,6 +37,9 @@ snapshots and drive edits through the command/state APIs.
   - comment toggling: `ToggleComment` (language-config driven)
   - selection/multi-cursor ops: `SelectLine`, `SelectWord`, `ExpandSelection`, `AddCursorAbove/Below`,
     `AddNextOccurrence`, `AddAllOccurrences`
+  - language-aware auto-indent for newlines:
+    - `EditCommand::InsertNewline { auto_indent: true }` uses view-local `IndentationConfig`
+      (set via `ViewCommand::SetIndentationConfig`)
   - auto-pairs + bracket matching:
     - `EditCommand::TypeChar` + `AutoPairsConfig` (auto-close, wrap selection, skip over closing, delete-pair)
     - `CursorCommand::MoveToMatchingBracket`

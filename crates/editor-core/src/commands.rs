@@ -50,7 +50,7 @@ use crate::snapshot::{
 use crate::{
     FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex, PieceTable,
 };
-use editor_core_lang::CommentConfig;
+use editor_core_lang::{CommentConfig, IndentStyle, IndentationConfig};
 use regex::RegexBuilder;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -573,6 +573,15 @@ pub enum ViewCommand {
     SetTabKeyBehavior {
         /// Tab key behavior.
         behavior: TabKeyBehavior,
+    },
+    /// Configure language-aware auto-indentation behavior used by [`EditCommand::InsertNewline`]
+    /// when `auto_indent=true`.
+    ///
+    /// Notes:
+    /// - This is view-local (each view can have different indentation rules).
+    SetIndentationConfig {
+        /// Indentation configuration.
+        config: IndentationConfig,
     },
     /// Configure auto-pairs behavior used by [`EditCommand::TypeChar`].
     SetAutoPairsConfig {
@@ -2496,6 +2505,8 @@ pub struct CommandExecutor {
     undo_redo: UndoRedoManager,
     /// Controls how [`EditCommand::InsertTab`] behaves.
     tab_key_behavior: TabKeyBehavior,
+    /// Language-aware indentation config used by [`EditCommand::InsertNewline`] when `auto_indent=true`.
+    indentation_config: IndentationConfig,
     /// Auto-pairs configuration used by [`EditCommand::TypeChar`] and delete-pair behavior.
     auto_pairs: AutoPairsConfig,
     /// Preferred line ending for saving (internal storage is always LF).
@@ -2514,6 +2525,7 @@ impl CommandExecutor {
             command_history: Vec::new(),
             undo_redo: UndoRedoManager::new(1000),
             tab_key_behavior: TabKeyBehavior::Spaces,
+            indentation_config: IndentationConfig::default(),
             auto_pairs: AutoPairsConfig::default(),
             line_ending: LineEnding::detect_in_text(text),
             preferred_x_cells: None,
@@ -2677,6 +2689,18 @@ impl CommandExecutor {
     /// Set tab key behavior used by [`EditCommand::InsertTab`].
     pub fn set_tab_key_behavior(&mut self, behavior: TabKeyBehavior) {
         self.tab_key_behavior = behavior;
+    }
+
+    /// Get the current indentation configuration used by [`EditCommand::InsertNewline`] when
+    /// `auto_indent=true`.
+    pub fn indentation_config(&self) -> &IndentationConfig {
+        &self.indentation_config
+    }
+
+    /// Replace the indentation configuration used by [`EditCommand::InsertNewline`] when
+    /// `auto_indent=true`.
+    pub fn set_indentation_config(&mut self, config: IndentationConfig) {
+        self.indentation_config = config;
     }
 
     /// Get the current auto-pairs configuration.
@@ -4033,6 +4057,39 @@ impl CommandExecutor {
             .collect()
     }
 
+    fn split_at_char<'a>(s: &'a str, char_idx: usize) -> (&'a str, &'a str) {
+        let byte_idx = s
+            .char_indices()
+            .nth(char_idx)
+            .map(|(b, _)| b)
+            .unwrap_or_else(|| s.len());
+        s.split_at(byte_idx)
+    }
+
+    fn last_non_space_or_tab(s: &str) -> Option<char> {
+        s.chars().rev().find(|ch| *ch != ' ' && *ch != '\t')
+    }
+
+    fn first_non_space_or_tab(s: &str) -> Option<char> {
+        s.chars().find(|ch| *ch != ' ' && *ch != '\t')
+    }
+
+    fn matching_closer_for(open: char) -> Option<char> {
+        match open {
+            '{' => Some('}'),
+            '[' => Some(']'),
+            '(' => Some(')'),
+            _ => None,
+        }
+    }
+
+    fn indent_unit_for_newline(&self) -> String {
+        match self.indentation_config.style {
+            IndentStyle::Tabs => "\t".to_string(),
+            IndentStyle::Spaces(width) => " ".repeat(width.max(1) as usize),
+        }
+    }
+
     fn indent_unit(&self) -> String {
         match self.tab_key_behavior {
             TabKeyBehavior::Tab => "\t".to_string(),
@@ -4071,6 +4128,7 @@ impl CommandExecutor {
             deleted_text: String,
             insert_text: String,
             insert_char_len: usize,
+            caret_offset_in_insert: usize,
         }
 
         let mut ops: Vec<Op> = Vec::with_capacity(selections.len());
@@ -4089,18 +4147,46 @@ impl CommandExecutor {
                 self.editor.piece_table.get_range(start_offset, delete_len)
             };
 
-            let indent = if auto_indent {
+            let (insert_text, caret_offset_in_insert) = if auto_indent {
                 let line_text = self
                     .editor
                     .line_index
                     .get_line_text(range_start_pos.line)
                     .unwrap_or_default();
-                Self::leading_whitespace_prefix(&line_text)
+                let base_indent = Self::leading_whitespace_prefix(&line_text);
+                let indent_unit = self.indent_unit_for_newline();
+
+                let (before_cursor, after_cursor) =
+                    Self::split_at_char(&line_text, range_start_pos.column);
+                let before_last = Self::last_non_space_or_tab(before_cursor);
+                let after_first = Self::first_non_space_or_tab(after_cursor);
+
+                // Special-case: between a matching pair like `{|}` → insert a blank indented line
+                // and keep the closing delimiter aligned.
+                if let Some(open) = before_last
+                    && self.indentation_config.indent_triggers.contains(&open)
+                    && Self::matching_closer_for(open).is_some_and(|close| after_first == Some(close))
+                {
+                    let inner_indent = format!("{base_indent}{indent_unit}");
+                    let insert = format!("\n{inner_indent}\n{base_indent}");
+                    let caret = 1 + inner_indent.chars().count();
+                    (insert, caret)
+                } else {
+                    let mut indent = base_indent;
+                    if let Some(last) = before_last
+                        && self.indentation_config.indent_triggers.contains(&last)
+                    {
+                        indent.push_str(&indent_unit);
+                    }
+
+                    let insert = format!("\n{indent}");
+                    let caret = insert.chars().count();
+                    (insert, caret)
+                }
             } else {
-                String::new()
+                ("\n".to_string(), 1)
             };
 
-            let insert_text = format!("\n{}", indent);
             let insert_char_len = insert_text.chars().count();
 
             ops.push(Op {
@@ -4111,6 +4197,7 @@ impl CommandExecutor {
                 deleted_text,
                 insert_text,
                 insert_char_len,
+                caret_offset_in_insert,
             });
         }
 
@@ -4125,7 +4212,7 @@ impl CommandExecutor {
             let op = &mut ops[idx];
             let effective_start = (op.start_offset as i64 + delta) as usize;
             op.start_after = effective_start;
-            caret_offsets[op.selection_index] = effective_start + op.insert_char_len;
+            caret_offsets[op.selection_index] = effective_start + op.caret_offset_in_insert;
             delta += op.insert_char_len as i64 - op.delete_len as i64;
         }
 
@@ -8857,6 +8944,10 @@ impl CommandExecutor {
             }
             ViewCommand::SetTabKeyBehavior { behavior } => {
                 self.tab_key_behavior = behavior;
+                Ok(CommandResult::Success)
+            }
+            ViewCommand::SetIndentationConfig { config } => {
+                self.indentation_config = config;
                 Ok(CommandResult::Success)
             }
             ViewCommand::SetAutoPairsConfig { config } => {

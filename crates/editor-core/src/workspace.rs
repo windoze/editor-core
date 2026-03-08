@@ -26,7 +26,10 @@ use crate::search::{SearchError, SearchMatch, SearchOptions, find_all};
 use crate::selection_set::selection_direction;
 use crate::state::CursorState;
 use crate::{AnchorBias, TextAnchor};
-use crate::{LineIndex, Position, Selection, SelectionDirection, TabKeyBehavior, ViewCommand};
+use crate::{
+    IndentationConfig, LineIndex, Position, Selection, SelectionDirection, TabKeyBehavior,
+    ViewCommand,
+};
 use crate::{StateChange, StateChangeCallback, StateChangeType, WrapIndent, WrapMode};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
@@ -103,6 +106,7 @@ struct ViewCore {
     wrap_indent: WrapIndent,
     tab_width: usize,
     tab_key_behavior: TabKeyBehavior,
+    indentation_config: IndentationConfig,
     auto_pairs: AutoPairsConfig,
     preferred_x_cells: Option<usize>,
 }
@@ -119,6 +123,7 @@ impl ViewCore {
             wrap_indent: editor.layout_engine.wrap_indent(),
             tab_width: editor.layout_engine.tab_width(),
             tab_key_behavior: executor.tab_key_behavior(),
+            indentation_config: executor.indentation_config().clone(),
             auto_pairs: executor.auto_pairs_config().clone(),
             preferred_x_cells: executor.preferred_x_cells(),
         }
@@ -157,6 +162,7 @@ impl ViewCore {
         }
 
         executor.set_tab_key_behavior(self.tab_key_behavior);
+        executor.set_indentation_config(self.indentation_config.clone());
         executor.set_auto_pairs_config(self.auto_pairs.clone());
         executor.set_preferred_x_cells(self.preferred_x_cells);
     }
@@ -2243,6 +2249,7 @@ impl Workspace {
                 wrap_indent: buffer.executor.editor().layout_engine.wrap_indent(),
                 tab_width: buffer.executor.editor().layout_engine.tab_width(),
                 tab_key_behavior: buffer.executor.tab_key_behavior(),
+                indentation_config: buffer.executor.indentation_config().clone(),
                 auto_pairs: buffer.executor.auto_pairs_config().clone(),
                 preferred_x_cells: None,
             };

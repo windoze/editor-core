@@ -656,6 +656,7 @@ impl EditorStateManager {
             ) => Some(StateChangeType::ViewportChanged),
             Command::View(
                 ViewCommand::SetTabKeyBehavior { .. }
+                | ViewCommand::SetIndentationConfig { .. }
                 | ViewCommand::SetAutoPairsConfig { .. }
                 | ViewCommand::SetAutoPairsEnabled { .. }
                 | ViewCommand::SetWordBoundaryAsciiBoundaryChars { .. }
