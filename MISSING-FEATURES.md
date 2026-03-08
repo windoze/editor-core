@@ -78,12 +78,18 @@ this workspace (per your request).
   - A pragmatic route is: data-driven indentation rules in `editor-core-lang`, optionally refined
     by Tree-sitter queries.
 
-- [ ] **[core] Auto-pairs + bracket matching**
+- [x] **[core] Auto-pairs + bracket matching**
   - Typical baseline editor behavior that’s not exposed as first-class kernel commands:
     - auto-close pairs (`()`, `{}`, `[]`, quotes)
     - “skip over” closing delimiters
     - delete-pair behavior
     - highlight matching bracket / jump to matching bracket
+  - Implemented via:
+    - `EditCommand::TypeChar` + `AutoPairsConfig` (view-local; set via `ViewCommand::SetAutoPairsConfig` / `SetAutoPairsEnabled`)
+    - delete-pair behavior integrated into `Backspace` / `DeleteForward` when enabled
+    - `CursorCommand::MoveToMatchingBracket`
+    - `StyleCommand::UpdateBracketMatchHighlights` / `ClearBracketMatchHighlights` (writes `StyleLayerId::BRACKET_MATCHES` with `MATCH_HIGHLIGHT_STYLE_ID`)
+  - Tests: `crates/editor-core/tests/auto_pairs_brackets.rs`
 
 ---
 

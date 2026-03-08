@@ -145,10 +145,11 @@ mod text;
 pub mod workspace;
 
 pub use commands::{
-    Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
-    ExpandSelectionDirection, ExpandSelectionUnit, Position, Selection, SelectionDirection,
-    StyleCommand, TabKeyBehavior, TextEditSpec, UndoHistoryRestoreError, UndoHistorySelectionSet,
-    UndoHistorySnapshot, UndoHistoryStep, UndoHistoryTextEdit, ViewCommand,
+    AutoPair, AutoPairsConfig, Command, CommandError, CommandExecutor, CommandResult,
+    CursorCommand, EditCommand, EditorCore, ExpandSelectionDirection, ExpandSelectionUnit,
+    Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, TextEditSpec,
+    UndoHistoryRestoreError, UndoHistorySelectionSet, UndoHistorySnapshot, UndoHistoryStep,
+    UndoHistoryTextEdit, ViewCommand,
 };
 pub use decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,

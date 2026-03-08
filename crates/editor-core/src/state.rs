@@ -454,7 +454,8 @@ impl EditorStateManager {
                 | CursorCommand::MoveGraphemeLeft
                 | CursorCommand::MoveGraphemeRight
                 | CursorCommand::MoveWordLeft
-                | CursorCommand::MoveWordRight,
+                | CursorCommand::MoveWordRight
+                | CursorCommand::MoveToMatchingBracket,
             ) => Some(StateChangeType::CursorMoved),
             Command::Cursor(
                 CursorCommand::SetSelection { .. }
@@ -482,14 +483,19 @@ impl EditorStateManager {
             ) => Some(StateChangeType::ViewportChanged),
             Command::View(
                 ViewCommand::SetTabKeyBehavior { .. }
+                | ViewCommand::SetAutoPairsConfig { .. }
+                | ViewCommand::SetAutoPairsEnabled { .. }
                 | ViewCommand::SetWordBoundaryAsciiBoundaryChars { .. }
                 | ViewCommand::ResetWordBoundaryDefaults
                 | ViewCommand::ScrollTo { .. }
                 | ViewCommand::GetViewport { .. },
             ) => None,
-            Command::Style(StyleCommand::AddStyle { .. } | StyleCommand::RemoveStyle { .. }) => {
-                Some(StateChangeType::StyleChanged)
-            }
+            Command::Style(
+                StyleCommand::AddStyle { .. }
+                | StyleCommand::RemoveStyle { .. }
+                | StyleCommand::UpdateBracketMatchHighlights
+                | StyleCommand::ClearBracketMatchHighlights,
+            ) => Some(StateChangeType::StyleChanged),
             Command::Style(
                 StyleCommand::Fold { .. } | StyleCommand::Unfold { .. } | StyleCommand::UnfoldAll,
             ) => Some(StateChangeType::FoldingChanged),

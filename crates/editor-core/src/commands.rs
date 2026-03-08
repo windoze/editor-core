@@ -141,6 +141,75 @@ pub enum TabKeyBehavior {
     Spaces,
 }
 
+/// A single auto-pair entry (opening + closing delimiter).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct AutoPair {
+    /// Opening delimiter.
+    pub open: char,
+    /// Closing delimiter.
+    pub close: char,
+}
+
+impl AutoPair {
+    /// Create a new auto-pair entry.
+    pub const fn new(open: char, close: char) -> Self {
+        Self { open, close }
+    }
+}
+
+/// Auto-pairs configuration used by [`EditCommand::TypeChar`], and optionally by delete-like
+/// commands (pair deletion).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct AutoPairsConfig {
+    /// Master enable switch for auto-pairs behaviors.
+    pub enabled: bool,
+    /// Configured delimiter pairs (order matters when overlapping; first match wins).
+    pub pairs: Vec<AutoPair>,
+    /// When typing an opening delimiter over a non-empty selection, wrap the selection.
+    pub wrap_selection: bool,
+    /// When typing a closing delimiter and the next character matches, skip over it instead of inserting.
+    pub skip_over_closing: bool,
+    /// When backspacing/deleting adjacent matching delimiters, delete both.
+    pub delete_pair: bool,
+}
+
+impl Default for AutoPairsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            pairs: vec![
+                AutoPair::new('(', ')'),
+                AutoPair::new('[', ']'),
+                AutoPair::new('{', '}'),
+                AutoPair::new('"', '"'),
+                AutoPair::new('\'', '\''),
+                AutoPair::new('`', '`'),
+            ],
+            wrap_selection: true,
+            skip_over_closing: true,
+            delete_pair: true,
+        }
+    }
+}
+
+impl AutoPairsConfig {
+    fn close_for_open(&self, open: char) -> Option<char> {
+        self.pairs.iter().find(|p| p.open == open).map(|p| p.close)
+    }
+
+    fn open_for_close(&self, close: char) -> Option<char> {
+        self.pairs.iter().find(|p| p.close == close).map(|p| p.open)
+    }
+
+    fn is_matching_pair(&self, open: char, close: char) -> bool {
+        self.pairs
+            .iter()
+            .any(|p| p.open == open && p.close == close)
+    }
+}
+
 /// A simple document text edit (character offsets, half-open).
 ///
 /// This is commonly used for applying a batch of "simultaneous" edits (e.g. rename, refactor, or
@@ -224,6 +293,16 @@ pub enum EditCommand {
     InsertText {
         /// Text to insert/replace at each selection/caret.
         text: String,
+    },
+    /// Type a single character using auto-pairs rules (if enabled).
+    ///
+    /// This is intended for UI "typing" paths (not paste). It supports:
+    /// - auto-close pairs (`()`, `{}`, `[]`, quotes)
+    /// - skip over existing closing delimiters
+    /// - wrap selection with pairs (optional)
+    TypeChar {
+        /// The typed character.
+        ch: char,
     },
     /// Insert a tab at each caret (or replace each selection), using the current tab settings.
     ///
@@ -380,6 +459,10 @@ pub enum CursorCommand {
     MoveWordLeft,
     /// Move cursor right to the next Unicode word boundary (UAX #29).
     MoveWordRight,
+    /// Move each caret to its matching bracket (if the caret is on or adjacent to a bracket).
+    ///
+    /// Matching is performed for the configured bracket pairs (typically `()`, `[]`, `{}`).
+    MoveToMatchingBracket,
     /// Set selection range
     SetSelection {
         /// Selection start position.
@@ -491,6 +574,16 @@ pub enum ViewCommand {
         /// Tab key behavior.
         behavior: TabKeyBehavior,
     },
+    /// Configure auto-pairs behavior used by [`EditCommand::TypeChar`].
+    SetAutoPairsConfig {
+        /// Auto-pairs config.
+        config: AutoPairsConfig,
+    },
+    /// Enable/disable auto-pairs behavior (convenience wrapper over [`ViewCommand::SetAutoPairsConfig`]).
+    SetAutoPairsEnabled {
+        /// Whether auto-pairs are enabled.
+        enabled: bool,
+    },
     /// Override the ASCII word-boundary character set used by editor-friendly "word" operations.
     ///
     /// This is similar in spirit to VSCode's `wordSeparators`.
@@ -553,6 +646,12 @@ pub enum StyleCommand {
     },
     /// Unfold all folds
     UnfoldAll,
+    /// Recompute bracket-match highlights for the current cursor/selections.
+    ///
+    /// This updates the derived style layer [`StyleLayerId::BRACKET_MATCHES`].
+    UpdateBracketMatchHighlights,
+    /// Clear bracket-match highlights (removes [`StyleLayerId::BRACKET_MATCHES`]).
+    ClearBracketMatchHighlights,
 }
 
 /// Unified command enum
@@ -2397,6 +2496,8 @@ pub struct CommandExecutor {
     undo_redo: UndoRedoManager,
     /// Controls how [`EditCommand::InsertTab`] behaves.
     tab_key_behavior: TabKeyBehavior,
+    /// Auto-pairs configuration used by [`EditCommand::TypeChar`] and delete-pair behavior.
+    auto_pairs: AutoPairsConfig,
     /// Preferred line ending for saving (internal storage is always LF).
     line_ending: LineEnding,
     /// Sticky x position for visual-row cursor movement (in cells).
@@ -2413,6 +2514,7 @@ impl CommandExecutor {
             command_history: Vec::new(),
             undo_redo: UndoRedoManager::new(1000),
             tab_key_behavior: TabKeyBehavior::Spaces,
+            auto_pairs: AutoPairsConfig::default(),
             line_ending: LineEnding::detect_in_text(text),
             preferred_x_cells: None,
             last_text_delta: None,
@@ -2577,6 +2679,21 @@ impl CommandExecutor {
         self.tab_key_behavior = behavior;
     }
 
+    /// Get the current auto-pairs configuration.
+    pub fn auto_pairs_config(&self) -> &AutoPairsConfig {
+        &self.auto_pairs
+    }
+
+    /// Replace the auto-pairs configuration.
+    pub fn set_auto_pairs_config(&mut self, config: AutoPairsConfig) {
+        self.auto_pairs = config;
+    }
+
+    /// Enable/disable auto-pairs behavior (convenience wrapper).
+    pub fn set_auto_pairs_enabled(&mut self, enabled: bool) {
+        self.auto_pairs.enabled = enabled;
+    }
+
     /// Get the sticky x position (in cells) used by visual-row cursor movement.
     pub fn preferred_x_cells(&self) -> Option<usize> {
         self.preferred_x_cells
@@ -2632,6 +2749,7 @@ impl CommandExecutor {
             EditCommand::Backspace => self.execute_backspace_command(),
             EditCommand::DeleteForward => self.execute_delete_forward_command(),
             EditCommand::InsertText { text } => self.execute_insert_text_command(text),
+            EditCommand::TypeChar { ch } => self.execute_type_char_command(ch),
             EditCommand::InsertTab => self.execute_insert_tab_command(),
             EditCommand::InsertNewline { auto_indent } => {
                 self.execute_insert_newline_command(auto_indent)
@@ -3017,6 +3135,605 @@ impl CommandExecutor {
             undo_group_id: Some(group_id),
         });
 
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_type_char_command(&mut self, ch: char) -> Result<CommandResult, CommandError> {
+        if !self.auto_pairs.enabled {
+            return self.execute_insert_text_command(ch.to_string());
+        }
+
+        // Treat CR as LF (internal model uses LF).
+        let ch = if ch == '\r' { '\n' } else { ch };
+
+        // Most typing paths won't call TypeChar for newline/tab, but handle it gracefully.
+        if ch == '\n' {
+            return self.execute_insert_newline_command(true);
+        }
+        if ch == '\t' {
+            return self.execute_insert_tab_command();
+        }
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+        let primary_index = before_selection.primary_index;
+
+        #[derive(Debug, Clone)]
+        enum AfterSel {
+            Caret {
+                delta_from_start: usize,
+            },
+            Range {
+                start_delta: usize,
+                end_delta: usize,
+            },
+        }
+
+        #[derive(Debug)]
+        struct Op {
+            selection_index: usize,
+            start_offset: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            insert_text: String,
+            insert_char_len: usize,
+            apply: bool,
+            after: AfterSel,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(selections.len());
+
+        let doc_char_count = self.editor.piece_table.char_count();
+
+        let next_char_matches = |this: &Self, offset: usize, ch: char| -> bool {
+            this.editor.line_index.char_at(offset) == Some(ch)
+        };
+
+        for (selection_index, selection) in selections.iter().enumerate() {
+            let (range_start_pos, range_end_pos) = if selection.start <= selection.end {
+                (selection.start, selection.end)
+            } else {
+                (selection.end, selection.start)
+            };
+
+            let (start_offset, start_pad) =
+                self.position_to_char_offset_and_virtual_pad(range_start_pos);
+            let end_offset = self.position_to_char_offset_clamped(range_end_pos);
+
+            let delete_len = end_offset.saturating_sub(start_offset);
+            let deleted_text = if delete_len == 0 {
+                String::new()
+            } else {
+                self.editor.piece_table.get_range(start_offset, delete_len)
+            };
+
+            // Skip-over closing delimiter: only for empty selections/carets.
+            if self.auto_pairs.skip_over_closing
+                && delete_len == 0
+                && start_pad == 0
+                && self.auto_pairs.open_for_close(ch).is_some()
+                && next_char_matches(self, start_offset, ch)
+            {
+                ops.push(Op {
+                    selection_index,
+                    start_offset,
+                    start_after: start_offset,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    insert_text: String::new(),
+                    insert_char_len: 0,
+                    apply: false,
+                    after: AfterSel::Caret {
+                        delta_from_start: 1,
+                    },
+                });
+                continue;
+            }
+
+            let mut insert_text = String::new();
+            for _ in 0..start_pad {
+                insert_text.push(' ');
+            }
+
+            let mut apply = true;
+            let after = if let Some(close) = self.auto_pairs.close_for_open(ch) {
+                if delete_len > 0 && self.auto_pairs.wrap_selection {
+                    // Wrap selection: open + (selected) + close; keep selection on inner text.
+                    insert_text.push(ch);
+                    insert_text.push_str(&deleted_text);
+                    insert_text.push(close);
+                    AfterSel::Range {
+                        start_delta: start_pad + 1,
+                        end_delta: start_pad + 1 + delete_len,
+                    }
+                } else if delete_len == 0 {
+                    // Auto-close pair and place caret between.
+                    insert_text.push(ch);
+                    insert_text.push(close);
+                    AfterSel::Caret {
+                        delta_from_start: start_pad + 1,
+                    }
+                } else {
+                    // Replace selection with the typed opening delimiter.
+                    insert_text.push(ch);
+                    AfterSel::Caret {
+                        delta_from_start: start_pad + 1,
+                    }
+                }
+            } else {
+                // Normal typing.
+                insert_text.push(ch);
+                AfterSel::Caret {
+                    delta_from_start: start_pad + 1,
+                }
+            };
+
+            let insert_char_len = insert_text.chars().count();
+            if insert_char_len == 0 && delete_len == 0 {
+                apply = false;
+            }
+
+            ops.push(Op {
+                selection_index,
+                start_offset,
+                start_after: start_offset,
+                delete_len,
+                deleted_text,
+                insert_text,
+                insert_char_len,
+                apply,
+                after,
+            });
+        }
+
+        // If no text edits will be applied, we still need to update the cursor/selection state
+        // (e.g. skip-over closing delimiters).
+        if !ops
+            .iter()
+            .any(|op| op.apply && (op.delete_len > 0 || !op.insert_text.is_empty()))
+        {
+            let mut new_selections: Vec<Selection> = Vec::with_capacity(ops.len());
+            for op in &ops {
+                let offset = match op.after {
+                    AfterSel::Caret { delta_from_start } => op.start_offset + delta_from_start,
+                    AfterSel::Range { .. } => op.start_offset,
+                }
+                .min(doc_char_count);
+
+                let (line, column) = self.editor.line_index.char_offset_to_position(offset);
+                let pos = Position::new(line, column);
+                new_selections.push(Selection {
+                    start: pos,
+                    end: pos,
+                    direction: SelectionDirection::Forward,
+                });
+            }
+
+            let (new_selections, new_primary_index) =
+                crate::selection_set::normalize_selections(new_selections, primary_index);
+            let primary = new_selections
+                .get(new_primary_index)
+                .cloned()
+                .ok_or_else(|| CommandError::Other("Invalid primary caret".to_string()))?;
+
+            self.editor.cursor_position = primary.end;
+            self.editor.selection = None;
+            self.editor.secondary_selections = new_selections
+                .into_iter()
+                .enumerate()
+                .filter_map(|(idx, sel)| (idx != new_primary_index).then_some(sel))
+                .collect();
+
+            return Ok(CommandResult::Success);
+        }
+
+        // Compute per-op post-edit start offsets (ascending by start_offset with delta).
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_offset);
+
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = (op.start_offset as i64 + delta) as usize;
+            op.start_after = effective_start;
+
+            if op.apply {
+                delta += op.insert_char_len as i64 - op.delete_len as i64;
+            }
+        }
+
+        // Apply edits safely (descending offsets).
+        let mut desc_indices = asc_indices;
+        desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+
+        for &idx in &desc_indices {
+            let op = &ops[idx];
+            if !op.apply {
+                continue;
+            }
+
+            let edit_line = self
+                .editor
+                .line_index
+                .char_offset_to_position(op.start_offset)
+                .0;
+            let deleted_newlines = op
+                .deleted_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let inserted_newlines = op
+                .insert_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+            if line_delta != 0 {
+                self.editor
+                    .folding_manager
+                    .apply_line_delta(edit_line, line_delta);
+            }
+
+            if op.delete_len > 0 {
+                self.editor
+                    .piece_table
+                    .delete(op.start_offset, op.delete_len);
+                self.editor
+                    .interval_tree
+                    .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+                for layer_tree in self.editor.style_layers.values_mut() {
+                    layer_tree
+                        .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+                }
+            }
+
+            if !op.insert_text.is_empty() {
+                self.editor
+                    .piece_table
+                    .insert(op.start_offset, &op.insert_text);
+                self.editor
+                    .interval_tree
+                    .update_for_insertion(op.start_offset, op.insert_char_len);
+                for layer_tree in self.editor.style_layers.values_mut() {
+                    layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
+                }
+            }
+
+            self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                &op.insert_text,
+            );
+        }
+
+        self.editor
+            .folding_manager
+            .clamp_to_line_count(self.editor.line_index.line_count());
+
+        // Build post-edit selection set (one entry per original selection index).
+        let mut new_selections: Vec<Selection> = vec![
+            Selection {
+                start: Position::new(0, 0),
+                end: Position::new(0, 0),
+                direction: SelectionDirection::Forward,
+            };
+            ops.len()
+        ];
+
+        for op in &ops {
+            let base = op.start_after;
+            let (start_offset, end_offset, is_range) = match op.after {
+                AfterSel::Caret { delta_from_start } => {
+                    let caret = base.saturating_add(delta_from_start);
+                    (caret, caret, false)
+                }
+                AfterSel::Range {
+                    start_delta,
+                    end_delta,
+                } => (
+                    base.saturating_add(start_delta),
+                    base.saturating_add(end_delta),
+                    true,
+                ),
+            };
+
+            let (start_line, start_col) = self
+                .editor
+                .line_index
+                .char_offset_to_position(start_offset.min(self.editor.piece_table.char_count()));
+            let (end_line, end_col) = self
+                .editor
+                .line_index
+                .char_offset_to_position(end_offset.min(self.editor.piece_table.char_count()));
+
+            let start_pos = Position::new(start_line, start_col);
+            let end_pos = Position::new(end_line, end_col);
+
+            new_selections[op.selection_index] = Selection {
+                start: start_pos,
+                end: end_pos,
+                direction: if is_range && start_pos > end_pos {
+                    SelectionDirection::Backward
+                } else {
+                    SelectionDirection::Forward
+                },
+            };
+        }
+
+        let (new_selections, new_primary_index) =
+            crate::selection_set::normalize_selections(new_selections, primary_index);
+        let primary = new_selections
+            .get(new_primary_index)
+            .cloned()
+            .ok_or_else(|| CommandError::Other("Invalid primary selection".to_string()))?;
+
+        self.editor.cursor_position = primary.end;
+        self.editor.selection = if primary.start == primary.end {
+            None
+        } else {
+            Some(primary.clone())
+        };
+        self.editor.secondary_selections = new_selections
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, sel)| (idx != new_primary_index).then_some(sel))
+            .collect();
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .filter(|op| op.apply)
+            .map(|op| TextEdit {
+                start_before: op.start_offset,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.insert_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let is_pure_insert = edits.iter().all(|e| e.deleted_text.is_empty());
+        let coalescible_insert = is_pure_insert && ch != '\n';
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, coalescible_insert);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn bracket_pair_for_char(bracket: char) -> Option<(char, char, bool)> {
+        match bracket {
+            '(' => Some(('(', ')', true)),
+            ')' => Some(('(', ')', false)),
+            '[' => Some(('[', ']', true)),
+            ']' => Some(('[', ']', false)),
+            '{' => Some(('{', '}', true)),
+            '}' => Some(('{', '}', false)),
+            _ => None,
+        }
+    }
+
+    /// Returns `(bracket_offset, open, close, is_open)` for a bracket adjacent to the caret.
+    ///
+    /// This follows a common editor convention:
+    /// - prefer the character *before* the caret (caret is "after" a bracket)
+    /// - otherwise fall back to the character *at* the caret
+    fn bracket_at_caret(&self, caret_offset: usize) -> Option<(usize, char, char, bool)> {
+        let doc_char_count = self.editor.line_index.char_count();
+
+        if caret_offset > 0 {
+            if let Some(ch) = self.editor.line_index.char_at(caret_offset - 1) {
+                if let Some((open, close, is_open)) = Self::bracket_pair_for_char(ch) {
+                    return Some((caret_offset - 1, open, close, is_open));
+                }
+            }
+        }
+
+        if caret_offset < doc_char_count {
+            if let Some(ch) = self.editor.line_index.char_at(caret_offset) {
+                if let Some((open, close, is_open)) = Self::bracket_pair_for_char(ch) {
+                    return Some((caret_offset, open, close, is_open));
+                }
+            }
+        }
+
+        None
+    }
+
+    fn matching_bracket_offset(
+        &self,
+        bracket_offset: usize,
+        open: char,
+        close: char,
+        is_open: bool,
+    ) -> Option<usize> {
+        let doc_char_count = self.editor.line_index.char_count();
+        if doc_char_count == 0 {
+            return None;
+        }
+
+        if is_open {
+            // Scan forward.
+            let mut nesting = 0usize;
+            let mut offset = bracket_offset.saturating_add(1);
+            while offset < doc_char_count {
+                let ch = self.editor.line_index.char_at(offset)?;
+                if ch == open {
+                    nesting = nesting.saturating_add(1);
+                } else if ch == close {
+                    if nesting == 0 {
+                        return Some(offset);
+                    }
+                    nesting = nesting.saturating_sub(1);
+                }
+                offset = offset.saturating_add(1);
+            }
+            None
+        } else {
+            // Scan backward.
+            if bracket_offset == 0 {
+                return None;
+            }
+
+            let mut nesting = 0usize;
+            let mut offset = bracket_offset;
+            while offset > 0 {
+                offset = offset.saturating_sub(1);
+                let ch = self.editor.line_index.char_at(offset)?;
+                if ch == close {
+                    nesting = nesting.saturating_add(1);
+                } else if ch == open {
+                    if nesting == 0 {
+                        return Some(offset);
+                    }
+                    nesting = nesting.saturating_sub(1);
+                }
+            }
+            None
+        }
+    }
+
+    fn execute_move_to_matching_bracket_command(&mut self) -> Result<CommandResult, CommandError> {
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+        let primary_index = before_selection.primary_index;
+        let doc_char_count = self.editor.piece_table.char_count();
+
+        let mut new_carets: Vec<Selection> = Vec::with_capacity(selections.len());
+        for selection in &selections {
+            let caret_offset = self.position_to_char_offset_clamped(selection.end);
+            let target_offset = self
+                .bracket_at_caret(caret_offset)
+                .and_then(|(bracket_offset, open, close, is_open)| {
+                    self.matching_bracket_offset(bracket_offset, open, close, is_open)
+                })
+                .unwrap_or(caret_offset)
+                .min(doc_char_count);
+
+            let (line, column) = self
+                .editor
+                .line_index
+                .char_offset_to_position(target_offset);
+            let pos = Position::new(line, column);
+            new_carets.push(Selection {
+                start: pos,
+                end: pos,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        let (new_carets, new_primary_index) =
+            crate::selection_set::normalize_selections(new_carets, primary_index);
+        let primary = new_carets
+            .get(new_primary_index)
+            .cloned()
+            .ok_or_else(|| CommandError::Other("Invalid primary caret".to_string()))?;
+
+        self.editor.cursor_position = primary.end;
+        self.preferred_x_cells = self
+            .editor
+            .logical_position_to_visual(primary.end.line, primary.end.column)
+            .map(|(_, x)| x);
+        self.editor.selection = None;
+        self.editor.secondary_selections = new_carets
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, sel)| (idx != new_primary_index).then_some(sel))
+            .collect();
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_update_bracket_match_highlights_command(
+        &mut self,
+    ) -> Result<CommandResult, CommandError> {
+        let snapshot = self.snapshot_selection_set();
+        let selections = snapshot.selections;
+
+        let mut intervals: Vec<(usize, usize, StyleId)> =
+            Vec::with_capacity(selections.len().saturating_mul(2));
+
+        for selection in &selections {
+            let caret_offset = self.position_to_char_offset_clamped(selection.end);
+            let Some((bracket_offset, open, close, is_open)) = self.bracket_at_caret(caret_offset)
+            else {
+                continue;
+            };
+            let Some(other_offset) =
+                self.matching_bracket_offset(bracket_offset, open, close, is_open)
+            else {
+                continue;
+            };
+
+            intervals.push((
+                bracket_offset,
+                bracket_offset.saturating_add(1),
+                crate::MATCH_HIGHLIGHT_STYLE_ID,
+            ));
+            intervals.push((
+                other_offset,
+                other_offset.saturating_add(1),
+                crate::MATCH_HIGHLIGHT_STYLE_ID,
+            ));
+        }
+
+        intervals.sort_unstable();
+        intervals.dedup();
+
+        if intervals.is_empty() {
+            self.editor
+                .style_layers
+                .remove(&StyleLayerId::BRACKET_MATCHES);
+            return Ok(CommandResult::Success);
+        }
+
+        let tree = self
+            .editor
+            .style_layers
+            .entry(StyleLayerId::BRACKET_MATCHES)
+            .or_default();
+        tree.clear();
+        for (start, end, style_id) in intervals {
+            if start < end {
+                tree.insert(crate::intervals::Interval::new(start, end, style_id));
+            }
+        }
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_clear_bracket_match_highlights_command(
+        &mut self,
+    ) -> Result<CommandResult, CommandError> {
+        self.editor
+            .style_layers
+            .remove(&StyleLayerId::BRACKET_MATCHES);
         Ok(CommandResult::Success)
     }
 
@@ -7281,7 +7998,23 @@ impl CommandExecutor {
                 }
             } else {
                 let caret_offset = self.position_to_char_offset_clamped(selection.end);
-                if forward {
+                let maybe_pair_delete = (self.auto_pairs.enabled && self.auto_pairs.delete_pair)
+                    .then(|| {
+                        if caret_offset == 0 || caret_offset >= doc_char_count {
+                            return None;
+                        }
+
+                        let open = self.editor.line_index.char_at(caret_offset - 1)?;
+                        let close = self.editor.line_index.char_at(caret_offset)?;
+                        self.auto_pairs
+                            .is_matching_pair(open, close)
+                            .then_some((caret_offset - 1, (caret_offset + 1).min(doc_char_count)))
+                    })
+                    .flatten();
+
+                if let Some(range) = maybe_pair_delete {
+                    range
+                } else if forward {
                     if caret_offset >= doc_char_count {
                         (caret_offset, caret_offset)
                     } else {
@@ -8080,6 +8813,7 @@ impl CommandExecutor {
             CursorCommand::AddAllOccurrences { options } => {
                 self.execute_add_all_occurrences_command(options)
             }
+            CursorCommand::MoveToMatchingBracket => self.execute_move_to_matching_bracket_command(),
             CursorCommand::FindNext { query, options } => {
                 self.execute_find_command(query, options, true)
             }
@@ -8123,6 +8857,14 @@ impl CommandExecutor {
             }
             ViewCommand::SetTabKeyBehavior { behavior } => {
                 self.tab_key_behavior = behavior;
+                Ok(CommandResult::Success)
+            }
+            ViewCommand::SetAutoPairsConfig { config } => {
+                self.set_auto_pairs_config(config);
+                Ok(CommandResult::Success)
+            }
+            ViewCommand::SetAutoPairsEnabled { enabled } => {
+                self.set_auto_pairs_enabled(enabled);
                 Ok(CommandResult::Success)
             }
             ViewCommand::SetWordBoundaryAsciiBoundaryChars { boundary_chars } => {
@@ -8197,6 +8939,12 @@ impl CommandExecutor {
             StyleCommand::UnfoldAll => {
                 self.editor.folding_manager.expand_all();
                 Ok(CommandResult::Success)
+            }
+            StyleCommand::UpdateBracketMatchHighlights => {
+                self.execute_update_bracket_match_highlights_command()
+            }
+            StyleCommand::ClearBracketMatchHighlights => {
+                self.execute_clear_bracket_match_highlights_command()
             }
         }
     }

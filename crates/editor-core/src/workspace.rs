@@ -15,8 +15,8 @@
 //! same buffer.
 
 use crate::commands::{
-    Command, CommandExecutor, CommandResult, CursorCommand, EditCommand, TextEditSpec,
-    UndoHistoryRestoreError, UndoHistorySnapshot,
+    AutoPairsConfig, Command, CommandExecutor, CommandResult, CursorCommand, EditCommand,
+    TextEditSpec, UndoHistoryRestoreError, UndoHistorySnapshot,
 };
 use crate::decorations::{Decoration, DecorationLayerId};
 use crate::delta::TextDelta;
@@ -93,6 +93,7 @@ struct ViewCore {
     wrap_indent: WrapIndent,
     tab_width: usize,
     tab_key_behavior: TabKeyBehavior,
+    auto_pairs: AutoPairsConfig,
     preferred_x_cells: Option<usize>,
 }
 
@@ -108,6 +109,7 @@ impl ViewCore {
             wrap_indent: editor.layout_engine.wrap_indent(),
             tab_width: editor.layout_engine.tab_width(),
             tab_key_behavior: executor.tab_key_behavior(),
+            auto_pairs: executor.auto_pairs_config().clone(),
             preferred_x_cells: executor.preferred_x_cells(),
         }
     }
@@ -145,6 +147,7 @@ impl ViewCore {
         }
 
         executor.set_tab_key_behavior(self.tab_key_behavior);
+        executor.set_auto_pairs_config(self.auto_pairs.clone());
         executor.set_preferred_x_cells(self.preferred_x_cells);
     }
 }
@@ -904,6 +907,7 @@ impl Workspace {
                 | CursorCommand::MoveGraphemeRight
                 | CursorCommand::MoveWordLeft
                 | CursorCommand::MoveWordRight
+                | CursorCommand::MoveToMatchingBracket
                 | CursorCommand::FindNext { .. }
                 | CursorCommand::FindPrev { .. },
             ) => Some(StateChangeType::CursorMoved),
@@ -911,7 +915,10 @@ impl Workspace {
             Command::View(ViewCommand::ScrollTo { .. } | ViewCommand::GetViewport { .. }) => None,
             Command::View(_) => Some(StateChangeType::ViewportChanged),
             Command::Style(
-                crate::StyleCommand::AddStyle { .. } | crate::StyleCommand::RemoveStyle { .. },
+                crate::StyleCommand::AddStyle { .. }
+                | crate::StyleCommand::RemoveStyle { .. }
+                | crate::StyleCommand::UpdateBracketMatchHighlights
+                | crate::StyleCommand::ClearBracketMatchHighlights,
             ) => Some(StateChangeType::StyleChanged),
             Command::Style(
                 crate::StyleCommand::Fold { .. }
@@ -1556,6 +1563,7 @@ impl Workspace {
                 wrap_indent: buffer.executor.editor().layout_engine.wrap_indent(),
                 tab_width: buffer.executor.editor().layout_engine.tab_width(),
                 tab_key_behavior: buffer.executor.tab_key_behavior(),
+                auto_pairs: buffer.executor.auto_pairs_config().clone(),
                 preferred_x_cells: None,
             };
             neutral.apply_to_executor(&mut buffer.executor);

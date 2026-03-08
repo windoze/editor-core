@@ -35,6 +35,10 @@ snapshots and drive edits through the command/state APIs.
   - comment toggling: `ToggleComment` (language-config driven)
   - selection/multi-cursor ops: `SelectLine`, `SelectWord`, `ExpandSelection`, `AddCursorAbove/Below`,
     `AddNextOccurrence`, `AddAllOccurrences`
+  - auto-pairs + bracket matching:
+    - `EditCommand::TypeChar` + `AutoPairsConfig` (auto-close, wrap selection, skip over closing, delete-pair)
+    - `CursorCommand::MoveToMatchingBracket`
+    - `StyleCommand::UpdateBracketMatchHighlights` (writes `StyleLayerId::BRACKET_MATCHES` with `MATCH_HIGHLIGHT_STYLE_ID`)
 - **Search utilities** (`find_next`, `find_prev`, `find_all`) operating on character offsets.
 
 ## Choosing an API surface (single view vs workspace)

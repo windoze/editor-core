@@ -83,6 +83,9 @@ impl StyleLayerId {
 
     /// Match highlights overlay layer (search matches, bracket highlights, etc).
     pub const MATCH_HIGHLIGHTS: Self = Self(9);
+
+    /// Bracket match overlay layer (matching bracket highlights).
+    pub const BRACKET_MATCHES: Self = Self(10);
 }
 
 /// Interval structure
