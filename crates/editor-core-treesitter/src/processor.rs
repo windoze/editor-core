@@ -177,6 +177,42 @@ impl TreeSitterProcessor {
         self.last_update_mode
     }
 
+    /// Expand a `(start, end)` selection to the next enclosing syntax node.
+    ///
+    /// Returns `None` if the processor has no parsed tree yet (call `process()`/`sync_to()` first),
+    /// or if the selection is already at the root node.
+    ///
+    /// Notes:
+    /// - Offsets are Unicode scalar indices (Rust `char` offsets), matching editor-core APIs.
+    /// - The returned range is best-effort and is based on Tree-sitter node byte ranges mapped
+    ///   through the processor's internal `LineIndex`.
+    pub fn expand_selection_syntax(&self, start: usize, end: usize) -> Option<(usize, usize)> {
+        let tree = self.tree.as_ref()?;
+        let root = tree.root_node();
+
+        let (sel_start, sel_end) = if start <= end { (start, end) } else { (end, start) };
+        let start_byte = self.line_index.char_offset_to_byte_offset(sel_start);
+        let end_byte = self.line_index.char_offset_to_byte_offset(sel_end);
+
+        let mut node = root.descendant_for_byte_range(start_byte, end_byte)?;
+
+        loop {
+            let node_start = self.line_index.byte_offset_to_char_offset(node.start_byte());
+            let node_end = self.line_index.byte_offset_to_char_offset(node.end_byte());
+
+            // If the selection already matches this node exactly, expand to its parent (if any).
+            if node_start == sel_start && node_end == sel_end {
+                if let Some(parent) = node.parent() {
+                    node = parent;
+                    continue;
+                }
+                return None;
+            }
+
+            return Some((node_start, node_end));
+        }
+    }
+
     fn sync_from_text_full(&mut self, text: &str) {
         self.text.clear();
         self.text.push_str(text);

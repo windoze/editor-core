@@ -124,9 +124,13 @@ this workspace (per your request).
   - Tests: `crates/editor-core-lang/tests/language_registry_tests.rs`
   - Example: `cargo run -p editor-core-lang --example language_registry`
 
-- [ ] **[integration] Tree-sitter structural selection / syntax-aware “expand selection”**
+- [x] **[integration] Tree-sitter structural selection / syntax-aware “expand selection”**
   - `editor-core-treesitter` produces highlighting + folding, but does not expose a syntax-tree
     driven selection expansion API (common in Helix/Zed/modern IDEs).
+  - Implemented as `TreeSitterProcessor::expand_selection_syntax(start, end) -> Option<(start, end)>`
+    (returns the next enclosing syntax node range in `char` offsets).
+  - Tests: `crates/editor-core-treesitter/tests/treesitter_processor.rs`
+  - Example: `cargo run -p editor-core-treesitter --example structural_selection`
 
 - [ ] **[integration] Tree-sitter query packs / distribution**
   - The workspace has Tree-sitter processing primitives, but no first-class “query pack” story:

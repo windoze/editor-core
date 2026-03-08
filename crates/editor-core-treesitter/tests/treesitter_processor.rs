@@ -219,3 +219,56 @@ fn test_sync_to_and_compute_edits_supports_debounced_query_and_char_range() {
         assert!(interval.end <= end_first_line + 1);
     }
 }
+
+#[test]
+fn test_expand_selection_syntax_expands_identifier_then_function_item() {
+    let text = include_str!("fixtures/rust_sample.rs");
+    let state = EditorStateManager::new(text, 80);
+
+    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
+        .with_folds_query(rust_test_folds_query())
+        .with_simple_capture_styles([("comment", 1), ("string", 2), ("type", 3), ("function", 4)]);
+
+    let mut processor = TreeSitterProcessor::new(config).unwrap();
+    let _ = processor.process(&state).unwrap();
+
+    let add_start = char_offset_of(text, "add");
+    let caret = add_start + 1; // inside identifier
+
+    let (s1, e1) = processor
+        .expand_selection_syntax(caret, caret)
+        .expect("should expand");
+    assert_eq!(slice_chars(text, s1, e1), "add");
+
+    let (s2, e2) = processor
+        .expand_selection_syntax(s1, e1)
+        .expect("should expand again");
+    let expanded = slice_chars(text, s2, e2);
+    assert!(expanded.contains("fn add("));
+    assert!(expanded.contains("a + b"));
+}
+
+#[test]
+fn test_expand_selection_syntax_returns_none_when_already_at_root() {
+    let text = include_str!("fixtures/rust_sample.rs");
+    let state = EditorStateManager::new(text, 80);
+
+    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
+        .with_folds_query(rust_test_folds_query())
+        .with_simple_capture_styles([("comment", 1)]);
+
+    let mut processor = TreeSitterProcessor::new(config).unwrap();
+    let _ = processor.process(&state).unwrap();
+
+    let len = text.chars().count();
+    assert!(processor.expand_selection_syntax(0, len).is_none());
+}
+
+fn char_offset_of(text: &str, needle: &str) -> usize {
+    let byte = text.find(needle).expect("needle not found");
+    text[..byte].chars().count()
+}
+
+fn slice_chars(text: &str, start: usize, end: usize) -> String {
+    text.chars().skip(start).take(end.saturating_sub(start)).collect()
+}
