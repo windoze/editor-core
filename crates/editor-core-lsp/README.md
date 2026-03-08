@@ -154,6 +154,11 @@ with `LspWorkspaceSync` (from `crates/editor-core-lsp/src/workspace_sync.rs`):
   - route `publishDiagnostics` into the correct buffer by URI
 - For server-driven multi-file edits, call
   `LspWorkspaceSync::apply_workspace_edit(&mut workspace, &workspace_edit_value)`.
+  - Note: `poll_workspace()` also automatically handles server->client `workspace/applyEdit`
+    requests by applying their `WorkspaceEdit` payload into the workspace and responding with
+    `{ applied: true/false }` (best-effort; unknown URIs are reported as skipped).
+    - Disable this behavior via `LspWorkspaceSync::set_auto_apply_workspace_edits(false)` and
+      handle deferred requests from `LspWorkspaceSync::drain_events()`.
 
 ## Notes
 

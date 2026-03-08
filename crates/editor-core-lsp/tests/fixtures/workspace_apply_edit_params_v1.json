@@ -1,0 +1,39 @@
+{
+  "changes": {
+    "file:///a": [
+      {
+        "range": {
+          "start": { "line": 0, "character": 0 },
+          "end": { "line": 0, "character": 1 }
+        },
+        "newText": "A"
+      },
+      {
+        "range": {
+          "start": { "line": 0, "character": 1 },
+          "end": { "line": 0, "character": 2 }
+        },
+        "newText": "B"
+      }
+    ],
+    "file:///b": [
+      {
+        "range": {
+          "start": { "line": 0, "character": 3 },
+          "end": { "line": 0, "character": 3 }
+        },
+        "newText": "!"
+      }
+    ],
+    "file:///c": [
+      {
+        "range": {
+          "start": { "line": 0, "character": 0 },
+          "end": { "line": 0, "character": 0 }
+        },
+        "newText": "ignored"
+      }
+    ]
+  }
+}
+

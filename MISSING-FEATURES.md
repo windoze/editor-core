@@ -120,13 +120,15 @@ this workspace (per your request).
     - code actions (`textDocument/codeAction`) + apply helpers (incl. commands)
     - formatting (`textDocument/formatting`, range formatting) + apply helpers
 
-- [ ] **[integration] Responding to `workspace/applyEdit` automatically**
+- [x] **[integration] Responding to `workspace/applyEdit` automatically**
   - `LspClient::handle_server_request` currently replies to `workspace/applyEdit` with
     `{ applied: false, ... }` because it’s headless.
   - A full editor integration should:
     - apply edits into the active `Workspace`
     - respond `applied: true` (or `false` with a concrete failure reason)
     - preserve undo grouping per document
+  - Implemented in `LspWorkspaceSync::poll_workspace()` (auto-applies by default; see
+    `LspWorkspaceSync::set_auto_apply_workspace_edits` and `LspWorkspaceSync::drain_events`).
 
 - [ ] **[integration] More complete “language intelligence” derived state**
   - The kernel has derived-state plumbing (`ProcessingEdit`), but the workspace does not yet ship a
