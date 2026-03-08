@@ -147,6 +147,14 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_treesitter_rust_enable_with_queries")
     }
 
+    /// Enable Tree-sitter highlighting/folding using a built-in query pack id (e.g. `"rust"`).
+    public func treeSitterEnableQueryPack(_ packId: String) throws {
+        let status: Int32 = packId.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_treesitter_enable_query_pack(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_treesitter_enable_query_pack")
+    }
+
     public func treeSitterDisable() {
         editor_core_ui_ffi_editor_ui_treesitter_disable(handle)
     }

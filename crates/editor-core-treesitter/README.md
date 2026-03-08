@@ -36,4 +36,5 @@ state.apply_processor(&mut processor).unwrap();
 - Incrementality is driven by `EditorStateManager::last_text_delta()`; if no delta is available (or
   it doesn't match the processor's internal text), the processor falls back to a full re-parse.
 - Queries are Tree-sitter queries (`.scm`) and capture names are mapped to `StyleId` by the host.
-
+  - For built-in query bundles (highlights + folds) keyed by language id, see
+    `editor-core-treesitter-queries`.

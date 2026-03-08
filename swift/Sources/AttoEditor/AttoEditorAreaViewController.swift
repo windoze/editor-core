@@ -459,10 +459,10 @@ final class AttoEditorAreaViewController: NSViewController {
                     editCore.editor.treeSitterDisable()
                 } catch {
                     // Fall back to Tree-sitter highlighting if LSP is unavailable.
-                    try? editCore.editor.treeSitterRustEnableDefault()
+                    try? editCore.editor.treeSitterEnableQueryPack("rust")
                 }
             } else {
-                try? editCore.editor.treeSitterRustEnableDefault()
+                try? editCore.editor.treeSitterEnableQueryPack("rust")
             }
         }
 

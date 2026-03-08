@@ -789,6 +789,28 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queri
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_enable_query_pack(
+    ui: *mut EditorUi,
+    pack_id_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let pack_id = require_cstr(pack_id_utf8, "pack_id_utf8")?
+            .to_str()
+            .map_err(|_| "pack_id_utf8 is not valid UTF-8".to_string())?;
+        ui.set_treesitter_query_pack(pack_id)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// # Safety
 ///
 /// `ui` must be a valid pointer to an `EditorUi`.

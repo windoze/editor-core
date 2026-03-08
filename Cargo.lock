@@ -440,6 +440,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "editor-core-treesitter-queries"
+version = "0.3.0"
+dependencies = [
+ "tree-sitter",
+ "tree-sitter-rust",
+]
+
+[[package]]
 name = "editor-core-ui"
 version = "0.3.0"
 dependencies = [
@@ -449,6 +457,7 @@ dependencies = [
  "editor-core-render-skia",
  "editor-core-sublime",
  "editor-core-treesitter",
+ "editor-core-treesitter-queries",
  "libc",
  "pretty_assertions",
  "serde_json",

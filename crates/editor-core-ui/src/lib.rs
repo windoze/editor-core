@@ -28,6 +28,7 @@ use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
 use editor_core_treesitter::{
     TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterUpdateMode,
 };
+use editor_core_treesitter_queries as treesitter_queries;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use std::process::Stdio;
@@ -1723,20 +1724,22 @@ impl EditorUi {
         Ok(proc.scope_mapper.style_id_for_scope(scope))
     }
 
-    pub fn set_treesitter_rust_default(&mut self) -> Result<(), UiError> {
-        self.set_treesitter_rust_with_queries(
-            tree_sitter_rust::HIGHLIGHTS_QUERY,
-            Some(
-                r#"
-                (function_item) @fold
-                (impl_item) @fold
-                (struct_item) @fold
-                (enum_item) @fold
-                (mod_item) @fold
-                (block) @fold
-                "#,
-            ),
+    /// Enable Tree-sitter highlighting/folding using a built-in query pack id (e.g. `"rust"`).
+    pub fn set_treesitter_query_pack(&mut self, pack_id: &str) -> Result<(), UiError> {
+        let Some(pack) = treesitter_queries::query_pack(pack_id) else {
+            return Err(UiError::Processor(format!(
+                "unknown tree-sitter query pack id: {pack_id}"
+            )));
+        };
+        self.set_treesitter_with_language_and_queries(
+            (pack.language)(),
+            pack.highlights_query,
+            pack.folds_query,
         )
+    }
+
+    pub fn set_treesitter_rust_default(&mut self) -> Result<(), UiError> {
+        self.set_treesitter_query_pack("rust")
     }
 
     pub fn set_treesitter_rust_with_queries(
@@ -1745,7 +1748,15 @@ impl EditorUi {
         folds_query: Option<&str>,
     ) -> Result<(), UiError> {
         let language: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+        self.set_treesitter_with_language_and_queries(language, highlights_query, folds_query)
+    }
 
+    fn set_treesitter_with_language_and_queries(
+        &mut self,
+        language: tree_sitter::Language,
+        highlights_query: &str,
+        folds_query: Option<&str>,
+    ) -> Result<(), UiError> {
         let query = tree_sitter::Query::new(&language, highlights_query)
             .map_err(|e| UiError::Processor(e.to_string()))?;
 

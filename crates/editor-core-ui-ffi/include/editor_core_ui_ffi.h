@@ -172,6 +172,8 @@ int32_t editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queries(
     const char* highlights_query_utf8,
     const char* folds_query_utf8 // nullable
 );
+int32_t editor_core_ui_ffi_editor_ui_treesitter_enable_query_pack(EditorUi* ui,
+                                                                  const char* pack_id_utf8);
 void editor_core_ui_ffi_editor_ui_treesitter_disable(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_poll_processing(EditorUi* ui,
                                                      uint8_t* out_applied,

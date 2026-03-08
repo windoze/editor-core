@@ -1,0 +1,19 @@
+[package]
+name = "editor-core-treesitter-queries"
+version.workspace = true
+description = "Built-in Tree-sitter query packs for editor-core integrations."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["editor", "tree-sitter", "highlighting", "folding"]
+categories = ["text-editors", "text-processing"]
+readme = "README.md"
+
+[dependencies]
+tree-sitter = "0.26"
+tree-sitter-rust = "0.24"
+

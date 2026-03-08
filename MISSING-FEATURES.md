@@ -132,11 +132,16 @@ this workspace (per your request).
   - Tests: `crates/editor-core-treesitter/tests/treesitter_processor.rs`
   - Example: `cargo run -p editor-core-treesitter --example structural_selection`
 
-- [ ] **[integration] Tree-sitter query packs / distribution**
+- [x] **[integration] Tree-sitter query packs / distribution**
   - The workspace has Tree-sitter processing primitives, but no first-class “query pack” story:
     - shipping and selecting highlight/fold queries per language
     - mapping captures to `StyleId`s in a consistent themeable way
   - Today this is mostly “bring your own query string”.
+  - Implemented as a small built-in registry crate:
+    - `crates/editor-core-treesitter-queries` provides `TreeSitterQueryPack` (id → language + queries)
+    - `editor-core-ui::EditorUi::set_treesitter_query_pack(pack_id)` selects a pack (Rust: `"rust"`)
+    - Swift/AppKit: `EditorUI.treeSitterEnableQueryPack(_:)` and AttoEditor uses it for Rust fallback
+  - Tests: `crates/editor-core-treesitter-queries/src/lib.rs` (unit tests)
 
 - [ ] **[integration] LSP feature coverage beyond the current bridges**
   - `editor-core-lsp` covers a useful subset (semantic tokens, folding, diagnostics, inlay hints,
