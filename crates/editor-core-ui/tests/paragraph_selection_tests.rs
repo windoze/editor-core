@@ -43,4 +43,3 @@ fn set_paragraph_selection_offsets_selects_union_of_paragraphs() {
     ui.set_paragraph_selection_offsets(6, 8).unwrap();
     assert_eq!(ui.primary_selection_offsets(), (6, 12));
 }
-

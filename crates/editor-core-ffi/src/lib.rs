@@ -3155,7 +3155,9 @@ pub extern "C" fn editor_core_ffi_sublime_processor_new_from_path(
 /// `processor` must be a valid pointer returned by a constructor in this crate, or null.
 /// The pointer must not be used after this call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn editor_core_ffi_sublime_processor_free(processor: *mut EcfSublimeProcessor) {
+pub unsafe extern "C" fn editor_core_ffi_sublime_processor_free(
+    processor: *mut EcfSublimeProcessor,
+) {
     if processor.is_null() {
         return;
     }

@@ -1,5 +1,5 @@
 use editor_core::{
-    DecorationKind, DecorationLayerId, DecorationPlacement, LineIndex, INLAY_HINT_STYLE_ID,
+    DecorationKind, DecorationLayerId, DecorationPlacement, INLAY_HINT_STYLE_ID, LineIndex,
 };
 use editor_core_lsp::{lsp_inlay_hints_to_decorations, lsp_inlay_hints_to_processing_edit};
 use serde_json::json;

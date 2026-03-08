@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 use editor_core::{Command, CommandExecutor, EditCommand, EditorStateManager};
 use editor_core_treesitter::{TreeSitterProcessor, TreeSitterProcessorConfig};
 use editor_core_ui::EditorUi;
@@ -23,7 +23,9 @@ fn demo_rust_text(func_count: usize) -> String {
         out.push_str("            s ^= j;\n");
         out.push_str("        }\n");
         out.push_str("    }\n");
-        out.push_str("    // 混入一些非 ASCII 文本，模拟真实文件（不会被 Rust grammar 捕获太多）。\n");
+        out.push_str(
+            "    // 混入一些非 ASCII 文本，模拟真实文件（不会被 Rust grammar 捕获太多）。\n",
+        );
         out.push_str("    let _msg = \"你好，世界 😀\";\n");
         out.push_str("    s\n");
         out.push_str("}\n\n");
@@ -32,11 +34,7 @@ fn demo_rust_text(func_count: usize) -> String {
     out
 }
 
-fn setup_editor_ui(
-    text: &str,
-    enable_treesitter: bool,
-    viewport_width_cells: usize,
-) -> EditorUi {
+fn setup_editor_ui(text: &str, enable_treesitter: bool, viewport_width_cells: usize) -> EditorUi {
     let mut ui = EditorUi::new(text, viewport_width_cells);
     // 与 demo 类似的渲染参数；用于 render benchmark 时得到一致的像素工作量。
     ui.set_render_metrics(13.0, 18.0, 8.0, 8.0, 8.0);
@@ -62,8 +60,8 @@ fn setup_treesitter_processor_for_rust() -> TreeSitterProcessor {
         capture_styles.insert(name.to_string(), 0x0200_0000u32 + idx as u32);
     }
 
-    let mut config = TreeSitterProcessorConfig::new(language, highlights.to_string())
-        .with_default_rust_folds();
+    let mut config =
+        TreeSitterProcessorConfig::new(language, highlights.to_string()).with_default_rust_folds();
     config.capture_styles = capture_styles;
     TreeSitterProcessor::new(config).unwrap()
 }
@@ -124,67 +122,79 @@ fn bench_treesitter_process_incremental(c: &mut Criterion) {
 fn bench_ui_insert_text(c: &mut Criterion) {
     let text = demo_rust_text(200);
 
-    c.bench_function("editor_core_ui/insert_text/demo/100_inserts/no_processors", |b| {
-        b.iter_batched(
-            || setup_editor_ui(&text, false, 120),
-            |mut ui| {
-                for _ in 0..100 {
-                    ui.insert_text("x").unwrap();
-                }
-                black_box(ui.text().len());
-            },
-            BatchSize::LargeInput,
-        )
-    });
+    c.bench_function(
+        "editor_core_ui/insert_text/demo/100_inserts/no_processors",
+        |b| {
+            b.iter_batched(
+                || setup_editor_ui(&text, false, 120),
+                |mut ui| {
+                    for _ in 0..100 {
+                        ui.insert_text("x").unwrap();
+                    }
+                    black_box(ui.text().len());
+                },
+                BatchSize::LargeInput,
+            )
+        },
+    );
 
-    c.bench_function("editor_core_ui/insert_text/demo/100_inserts/treesitter", |b| {
-        b.iter_batched(
-            || setup_editor_ui(&text, true, 120),
-            |mut ui| {
-                for _ in 0..100 {
-                    ui.insert_text("x").unwrap();
-                }
-                black_box(ui.text().len());
-            },
-            BatchSize::LargeInput,
-        )
-    });
+    c.bench_function(
+        "editor_core_ui/insert_text/demo/100_inserts/treesitter",
+        |b| {
+            b.iter_batched(
+                || setup_editor_ui(&text, true, 120),
+                |mut ui| {
+                    for _ in 0..100 {
+                        ui.insert_text("x").unwrap();
+                    }
+                    black_box(ui.text().len());
+                },
+                BatchSize::LargeInput,
+            )
+        },
+    );
 }
 
 fn bench_ui_render_rgba_visible(c: &mut Criterion) {
     let text = demo_rust_text(200);
 
-    c.bench_function("editor_core_ui/render_rgba_visible/demo/1_frame/no_processors", |b| {
-        b.iter_batched(
-            || {
-                let ui = setup_editor_ui(&text, false, 120);
-                let out = vec![0u8; ui.required_rgba_len()];
-                (ui, out)
-            },
-            |(mut ui, mut out)| {
-                let n = ui.render_rgba_visible_into(out.as_mut_slice()).unwrap();
-                black_box(n);
-                black_box(out[0]);
-            },
-            BatchSize::LargeInput,
-        )
-    });
+    c.bench_function(
+        "editor_core_ui/render_rgba_visible/demo/1_frame/no_processors",
+        |b| {
+            b.iter_batched(
+                || {
+                    let ui = setup_editor_ui(&text, false, 120);
+                    let out = vec![0u8; ui.required_rgba_len()];
+                    (ui, out)
+                },
+                |(mut ui, mut out)| {
+                    let n = ui.render_rgba_visible_into(out.as_mut_slice()).unwrap();
+                    black_box(n);
+                    black_box(out[0]);
+                },
+                BatchSize::LargeInput,
+            )
+        },
+    );
 
-    c.bench_function("editor_core_ui/render_rgba_visible/demo/1_frame/treesitter", |b| {
-        b.iter_batched(
-            || {
-                let ui = setup_editor_ui(&text, true, 120);
-                let out = vec![0u8; ui.required_rgba_len()];
-                (ui, out)
-            },
-            |(mut ui, mut out)| {
-                let n = ui.render_rgba_visible_into(out.as_mut_slice()).unwrap();
-                black_box(n);
-                black_box(out[0]);
-            },
-            BatchSize::LargeInput,
-        )
-    });
+    c.bench_function(
+        "editor_core_ui/render_rgba_visible/demo/1_frame/treesitter",
+        |b| {
+            b.iter_batched(
+                || {
+                    let ui = setup_editor_ui(&text, true, 120);
+                    let out = vec![0u8; ui.required_rgba_len()];
+                    (ui, out)
+                },
+                |(mut ui, mut out)| {
+                    let n = ui.render_rgba_visible_into(out.as_mut_slice()).unwrap();
+                    black_box(n);
+                    black_box(out[0]);
+                },
+                BatchSize::LargeInput,
+            )
+        },
+    );
 }
 
 fn bench_ui_typing_and_render(c: &mut Criterion) {

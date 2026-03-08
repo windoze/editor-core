@@ -118,7 +118,10 @@ fn test_process_text_api_supports_incremental_and_full_resync() {
     };
 
     let edits2 = processor.process_text(2, Some(&delta), None).unwrap();
-    assert_eq!(processor.last_update_mode(), TreeSitterUpdateMode::Incremental);
+    assert_eq!(
+        processor.last_update_mode(),
+        TreeSitterUpdateMode::Incremental
+    );
     assert!(!edits2.is_empty());
 
     // Corrupt delta should surface as a mismatch unless the caller provides a full resync text.
@@ -138,8 +141,13 @@ fn test_process_text_api_supports_incremental_and_full_resync() {
     ));
 
     let full = format!("{insert}{initial}");
-    let edits3 = processor.process_text(3, Some(&bad_delta), Some(&full)).unwrap();
-    assert_eq!(processor.last_update_mode(), TreeSitterUpdateMode::FullReparse);
+    let edits3 = processor
+        .process_text(3, Some(&bad_delta), Some(&full))
+        .unwrap();
+    assert_eq!(
+        processor.last_update_mode(),
+        TreeSitterUpdateMode::FullReparse
+    );
     assert!(!edits3.is_empty());
 }
 
@@ -149,7 +157,12 @@ fn test_sync_to_and_compute_edits_supports_debounced_query_and_char_range() {
 
     let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
         .with_folds_query(rust_test_folds_query())
-        .with_simple_capture_styles([("comment", 10), ("string", 11), ("type", 12), ("function", 13)]);
+        .with_simple_capture_styles([
+            ("comment", 10),
+            ("string", 11),
+            ("type", 12),
+            ("function", 13),
+        ]);
 
     let mut processor = TreeSitterProcessor::new(config).unwrap();
 

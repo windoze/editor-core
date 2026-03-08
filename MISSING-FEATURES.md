@@ -44,10 +44,12 @@ this workspace (per your request).
 
 ## Kernel gaps (`crates/editor-core/`)
 
-- [ ] **[core] Undo history persistence** (serialize/restore)
+- [x] **[core] Undo history persistence** (serialize/restore)
   - Undo/redo exists, but there is no built-in way to persist and later restore the undo stack,
     clean point, and grouping boundaries.
   - Needed for “hot exit” workflows and some embedded-editor use cases.
+  - Implemented via `undo_history_snapshot` / `restore_undo_history` (see `UndoHistorySnapshot`).
+    Optional `editor-core` feature `serde` enables `serde` (de)serialization of the snapshot types.
 
 - [ ] **[core] Undo tree (branching history)** (optional power feature)
   - Current undo/redo is linear. Branching undo (like Vim’s undo tree) is not exposed.

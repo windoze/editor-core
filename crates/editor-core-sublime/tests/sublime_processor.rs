@@ -38,4 +38,3 @@ fn test_sublime_processor_compute_processing_edits_from_line_index() {
         "expected fold replacement with preserve_collapsed=false"
     );
 }
-

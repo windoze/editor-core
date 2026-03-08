@@ -18,6 +18,8 @@ snapshots and drive edits through the command/state APIs.
 - **Decoration-aware composed snapshots** (`ComposedGrid`) that inject virtual text (inlay hints,
   code lens) so hosts can render from snapshot data without re-implementing layout rules.
 - **Command interface** (`CommandExecutor`) and **state/query layer** (`EditorStateManager`).
+- **Undo history persistence ("hot exit")** via `undo_history_snapshot` / `restore_undo_history`
+  (optional `serde` feature for easy JSON serialization).
 - **Workspace model** (`Workspace`) for multi-buffer + multi-view (split panes):
   - open buffers: `Workspace::open_buffer` → `OpenBufferResult { buffer_id, view_id }`
   - create additional views: `Workspace::create_view`
@@ -120,6 +122,26 @@ executor.execute(Command::Cursor(CursorCommand::MoveTo {
 })).unwrap();
 
 assert_eq!(executor.editor().cursor_position(), Position::new(1, 2));
+```
+
+### Undo history persistence ("hot exit")
+
+For "hot exit" / restore workflows, persist the document text plus a snapshot of the undo/redo
+history, then restore both on startup.
+
+```rust
+use editor_core::{Command, CommandExecutor, EditCommand};
+
+let mut executor = CommandExecutor::new("hello", 80);
+executor.execute(Command::Edit(EditCommand::InsertText { text: "!".into() })).unwrap();
+
+let snapshot = executor.undo_history_snapshot();
+
+// Persist `executor.editor().get_text()` + `snapshot` in your host application.
+let text = executor.editor().get_text().to_string();
+
+let mut restored = CommandExecutor::new(&text, 80);
+restored.restore_undo_history(snapshot).unwrap();
 ```
 
 ### State queries + change notifications

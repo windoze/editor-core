@@ -40,7 +40,7 @@ use crate::snapshot::{ComposedGrid, HeadlessGrid};
 use crate::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, Decoration,
     DecorationLayerId, Diagnostic, EditCommand, EditorCore, LineEnding, Position, Selection,
-    SelectionDirection, StyleCommand, ViewCommand,
+    SelectionDirection, StyleCommand, UndoHistoryRestoreError, UndoHistorySnapshot, ViewCommand,
 };
 use std::collections::HashSet;
 use std::ops::Range;
@@ -1072,6 +1072,26 @@ impl EditorStateManager {
     pub fn mark_saved(&mut self) {
         self.executor.mark_clean();
         self.is_modified = false;
+    }
+
+    /// Capture a persistable snapshot of the undo/redo history for this document.
+    pub fn undo_history_snapshot(&self) -> UndoHistorySnapshot {
+        self.executor.undo_history_snapshot()
+    }
+
+    /// Restore a previously captured [`UndoHistorySnapshot`].
+    ///
+    /// Notes:
+    /// - This does **not** modify the current document text.
+    /// - Callers should only restore a snapshot into the **same text** it was captured from.
+    pub fn restore_undo_history(
+        &mut self,
+        snapshot: UndoHistorySnapshot,
+    ) -> Result<(), UndoHistoryRestoreError> {
+        self.last_text_delta = None;
+        self.executor.restore_undo_history(snapshot)?;
+        self.is_modified = !self.executor.is_clean();
+        Ok(())
     }
 
     /// Notify state change (without modifying version number)

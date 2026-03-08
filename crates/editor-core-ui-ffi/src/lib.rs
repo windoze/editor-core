@@ -6437,12 +6437,16 @@ contexts:
         let mut start: u32 = 0;
         let mut end: u32 = 0;
         assert_eq!(
-            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui1, &mut start, &mut end) },
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_selection_offsets(ui1, &mut start, &mut end)
+            },
             ECU_OK
         );
         assert_eq!((start, end), (0, 0));
         assert_eq!(
-            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui2, &mut start, &mut end) },
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_selection_offsets(ui2, &mut start, &mut end)
+            },
             ECU_OK
         );
         assert_eq!((start, end), (4, 4));
@@ -6464,7 +6468,9 @@ contexts:
 
         // Each view tracks its own selection, but receives the same text delta.
         assert_eq!(
-            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui2, &mut start, &mut end) },
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_selection_offsets(ui2, &mut start, &mut end)
+            },
             ECU_OK
         );
         assert_eq!((start, end), (5, 5));
@@ -6630,13 +6636,19 @@ contexts:
         unsafe { editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(ui, 0, 0) };
 
         // Line 50, col 0 in "x\nx\n..." => offset 50*(1+1) = 100.
-        let range = EcuSelectionRange { start: 100, end: 100 };
+        let range = EcuSelectionRange {
+            start: 100,
+            end: 100,
+        };
         assert_eq!(
             unsafe { editor_core_ui_ffi_editor_ui_set_selections(ui, &range as *const _, 1, 0) },
             ECU_OK
         );
 
-        assert_eq!(editor_core_ui_ffi_editor_ui_reveal_primary_caret(ui), ECU_OK);
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_reveal_primary_caret(ui),
+            ECU_OK
+        );
 
         let mut vp = EcuViewportState {
             width_cells: 0,
@@ -6669,7 +6681,8 @@ contexts:
         assert!(!ui.is_null());
 
         let mut out_id: u64 = 0;
-        let code = unsafe { editor_core_ui_ffi_editor_ui_lsp_request_definition(ui, 0, 0, &mut out_id) };
+        let code =
+            unsafe { editor_core_ui_ffi_editor_ui_lsp_request_definition(ui, 0, 0, &mut out_id) };
         assert_eq!(code, ECU_ERR_INTERNAL);
 
         let msg_ptr = editor_core_ui_ffi_last_error_message();

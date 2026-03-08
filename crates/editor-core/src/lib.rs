@@ -147,7 +147,8 @@ pub mod workspace;
 pub use commands::{
     Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
     ExpandSelectionDirection, ExpandSelectionUnit, Position, Selection, SelectionDirection,
-    StyleCommand, TabKeyBehavior, TextEditSpec, ViewCommand,
+    StyleCommand, TabKeyBehavior, TextEditSpec, UndoHistoryRestoreError, UndoHistorySelectionSet,
+    UndoHistorySnapshot, UndoHistoryStep, UndoHistoryTextEdit, ViewCommand,
 };
 pub use decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
@@ -156,12 +157,10 @@ pub use delta::{TextDelta, TextDeltaEdit};
 pub use diagnostics::{Diagnostic, DiagnosticRange, DiagnosticSeverity};
 pub use editor_core_lang::CommentConfig;
 pub use intervals::{
-    CODE_LENS_STYLE_ID,
-    DOCUMENT_LINK_STYLE_ID,
-    DOCUMENT_HIGHLIGHT_READ_STYLE_ID, DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
-    DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, FOLD_PLACEHOLDER_STYLE_ID, IME_MARKED_TEXT_STYLE_ID,
-    INLAY_HINT_STYLE_ID, MATCH_HIGHLIGHT_STYLE_ID, FoldRegion, FoldingManager, IntervalTree,
-    StyleLayerId,
+    CODE_LENS_STYLE_ID, DOCUMENT_HIGHLIGHT_READ_STYLE_ID, DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
+    DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, DOCUMENT_LINK_STYLE_ID, FOLD_PLACEHOLDER_STYLE_ID,
+    FoldRegion, FoldingManager, IME_MARKED_TEXT_STYLE_ID, INLAY_HINT_STYLE_ID, IntervalTree,
+    MATCH_HIGHLIGHT_STYLE_ID, StyleLayerId,
 };
 pub use layout::{LayoutEngine, WrapIndent, WrapMode};
 pub use line_ending::LineEnding;
@@ -184,5 +183,6 @@ pub use symbols::{
 };
 pub use workspace::{
     BufferId, BufferMetadata, OpenBufferResult, ViewId, ViewSmoothScrollState, Workspace,
-    WorkspaceError, WorkspaceSearchResult, WorkspaceViewportState,
+    WorkspaceError, WorkspaceSearchResult, WorkspaceUndoHistoryRestoreError,
+    WorkspaceViewportState,
 };

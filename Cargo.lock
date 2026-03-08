@@ -366,6 +366,8 @@ dependencies = [
  "rand",
  "regex",
  "ropey",
+ "serde",
+ "serde_json",
  "unicode-segmentation",
  "unicode-width 0.2.0",
 ]

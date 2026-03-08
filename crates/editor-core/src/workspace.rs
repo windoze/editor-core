@@ -16,9 +16,10 @@
 
 use crate::commands::{
     Command, CommandExecutor, CommandResult, CursorCommand, EditCommand, TextEditSpec,
+    UndoHistoryRestoreError, UndoHistorySnapshot,
 };
-use crate::delta::TextDelta;
 use crate::decorations::{Decoration, DecorationLayerId};
+use crate::delta::TextDelta;
 use crate::intervals::FoldRegion;
 use crate::processing::ProcessingEdit;
 use crate::search::{SearchError, SearchMatch, SearchOptions, find_all};
@@ -191,6 +192,38 @@ pub enum WorkspaceError {
         message: String,
     },
 }
+
+/// Errors produced when restoring undo history for a workspace buffer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkspaceUndoHistoryRestoreError {
+    /// A buffer id was not found.
+    BufferNotFound(BufferId),
+    /// Restoring the undo history failed (corrupt snapshot or version mismatch).
+    RestoreFailed {
+        /// Target buffer id.
+        buffer: BufferId,
+        /// Underlying restore error.
+        error: UndoHistoryRestoreError,
+    },
+}
+
+impl std::fmt::Display for WorkspaceUndoHistoryRestoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BufferNotFound(id) => write!(f, "Buffer not found (id={})", id.get()),
+            Self::RestoreFailed { buffer, error } => {
+                write!(
+                    f,
+                    "Restore undo history failed (buffer={}): {}",
+                    buffer.get(),
+                    error
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for WorkspaceUndoHistoryRestoreError {}
 
 /// Search matches for a single open buffer in a [`Workspace`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -575,6 +608,49 @@ impl Workspace {
     pub fn mark_saved_for_view(&mut self, view_id: ViewId) -> Result<(), WorkspaceError> {
         let buffer_id = self.buffer_id_for_view(view_id)?;
         self.mark_saved_for_buffer(buffer_id)
+    }
+
+    /// Capture a persistable snapshot of a buffer's undo/redo history.
+    pub fn undo_history_snapshot_for_buffer(
+        &self,
+        buffer_id: BufferId,
+    ) -> Result<UndoHistorySnapshot, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(buffer.executor.undo_history_snapshot())
+    }
+
+    /// Restore a buffer's undo/redo history from a previously captured snapshot.
+    ///
+    /// Notes:
+    /// - This does **not** modify the current buffer text.
+    /// - Callers should only restore a snapshot into the **same text** it was captured from.
+    pub fn restore_undo_history_for_buffer(
+        &mut self,
+        buffer_id: BufferId,
+        snapshot: UndoHistorySnapshot,
+    ) -> Result<(), WorkspaceUndoHistoryRestoreError> {
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceUndoHistoryRestoreError::BufferNotFound(buffer_id));
+        };
+
+        buffer.last_text_delta = None;
+        for view in self.views.values_mut() {
+            if view.buffer == buffer_id {
+                view.last_text_delta = None;
+            }
+        }
+
+        buffer
+            .executor
+            .restore_undo_history(snapshot)
+            .map_err(|err| WorkspaceUndoHistoryRestoreError::RestoreFailed {
+                buffer: buffer_id,
+                error: err,
+            })?;
+
+        Ok(())
     }
 
     /// Get a buffer's metadata.

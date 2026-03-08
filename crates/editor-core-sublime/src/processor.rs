@@ -56,7 +56,10 @@ impl SublimeProcessor {
         self.preserve_collapsed_folds = preserve;
     }
 
-    fn highlight(&mut self, line_index: &LineIndex) -> Result<SublimeHighlightResult, SublimeSyntaxError> {
+    fn highlight(
+        &mut self,
+        line_index: &LineIndex,
+    ) -> Result<SublimeHighlightResult, SublimeSyntaxError> {
         highlight_document(
             self.syntax.clone(),
             line_index,

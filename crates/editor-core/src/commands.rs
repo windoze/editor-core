@@ -52,6 +52,8 @@ use crate::{
 };
 use editor_core_lang::CommentConfig;
 use regex::RegexBuilder;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
@@ -59,6 +61,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 /// Position coordinates (line and column numbers)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Position {
     /// Zero-based logical line index.
     pub line: usize,
@@ -89,6 +92,7 @@ impl PartialOrd for Position {
 
 /// Selection range
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Selection {
     /// Selection start position
     pub start: Position,
@@ -100,6 +104,7 @@ pub struct Selection {
 
 /// Selection direction
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum SelectionDirection {
     /// Forward selection (from start to end)
     Forward,
@@ -952,6 +957,253 @@ impl UndoRedoManager {
         }
 
         Some(steps)
+    }
+}
+
+/// A persistable snapshot of the undo/redo history for a single document.
+///
+/// This is intended for "hot exit" workflows: persist the editor text plus this snapshot, then
+/// restore both on startup so undo/redo keeps working across restarts.
+///
+/// Notes:
+/// - This snapshot does **not** include the current document text; callers are responsible for
+///   persisting/restoring the text separately.
+/// - Restoring a snapshot into a different document text will produce undefined undo behavior.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct UndoHistorySnapshot {
+    /// Snapshot format version for forward compatibility.
+    pub format_version: u32,
+    /// Undo steps (oldest → newest).
+    pub undo_stack: Vec<UndoHistoryStep>,
+    /// Redo steps (oldest → newest).
+    pub redo_stack: Vec<UndoHistoryStep>,
+    /// Configured maximum undo history depth.
+    pub max_undo: usize,
+    /// Clean point tracking in the linear history (see `UndoRedoManager::clean_index`).
+    pub clean_index: Option<usize>,
+    /// The next group id to allocate.
+    pub next_group_id: usize,
+    /// Currently open coalescing group id, if any.
+    pub open_group_id: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+/// A single undo/redo step in a persisted history snapshot.
+pub struct UndoHistoryStep {
+    /// Undo group id. Grouped undo pops all adjacent steps with the same id.
+    pub group_id: usize,
+    /// Text edits captured by this step.
+    pub edits: Vec<UndoHistoryTextEdit>,
+    /// Selection set snapshot before applying this step.
+    pub before_selection: UndoHistorySelectionSet,
+    /// Selection set snapshot after applying this step.
+    pub after_selection: UndoHistorySelectionSet,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+/// A single persisted text edit in an undo/redo step.
+pub struct UndoHistoryTextEdit {
+    /// Start offset in the document *before* applying the edit.
+    pub start_before: usize,
+    /// Start offset in the document *after* applying the edit.
+    pub start_after: usize,
+    /// Deleted text (from the pre-edit document).
+    pub deleted_text: String,
+    /// Inserted text (from the post-edit document).
+    pub inserted_text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+/// Persisted selection set state captured alongside undo/redo steps.
+pub struct UndoHistorySelectionSet {
+    /// All selections (primary + secondary); may include empty selections (carets).
+    pub selections: Vec<Selection>,
+    /// Index of the primary selection in `selections`.
+    pub primary_index: usize,
+}
+
+/// Errors produced when restoring undo history snapshots.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UndoHistoryRestoreError {
+    /// The snapshot uses a newer/unknown format version.
+    UnsupportedFormatVersion(u32),
+    /// The snapshot contains an invalid clean point index.
+    InvalidCleanIndex {
+        /// The invalid clean index value found in the snapshot.
+        clean_index: usize,
+        /// The maximum valid clean index (`undo_stack.len() + redo_stack.len()`).
+        max_index: usize,
+    },
+}
+
+impl std::fmt::Display for UndoHistoryRestoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedFormatVersion(v) => {
+                write!(f, "Unsupported undo history snapshot format_version={}", v)
+            }
+            Self::InvalidCleanIndex {
+                clean_index,
+                max_index,
+            } => write!(
+                f,
+                "Invalid undo history snapshot clean_index={} (max={})",
+                clean_index, max_index
+            ),
+        }
+    }
+}
+
+impl std::error::Error for UndoHistoryRestoreError {}
+
+const UNDO_HISTORY_SNAPSHOT_FORMAT_VERSION: u32 = 1;
+
+impl UndoRedoManager {
+    fn snapshot(&self) -> UndoHistorySnapshot {
+        UndoHistorySnapshot {
+            format_version: UNDO_HISTORY_SNAPSHOT_FORMAT_VERSION,
+            undo_stack: self
+                .undo_stack
+                .iter()
+                .map(|step| UndoHistoryStep {
+                    group_id: step.group_id,
+                    edits: step
+                        .edits
+                        .iter()
+                        .map(|edit| UndoHistoryTextEdit {
+                            start_before: edit.start_before,
+                            start_after: edit.start_after,
+                            deleted_text: edit.deleted_text.clone(),
+                            inserted_text: edit.inserted_text.clone(),
+                        })
+                        .collect(),
+                    before_selection: UndoHistorySelectionSet {
+                        selections: step.before_selection.selections.clone(),
+                        primary_index: step.before_selection.primary_index,
+                    },
+                    after_selection: UndoHistorySelectionSet {
+                        selections: step.after_selection.selections.clone(),
+                        primary_index: step.after_selection.primary_index,
+                    },
+                })
+                .collect(),
+            redo_stack: self
+                .redo_stack
+                .iter()
+                .map(|step| UndoHistoryStep {
+                    group_id: step.group_id,
+                    edits: step
+                        .edits
+                        .iter()
+                        .map(|edit| UndoHistoryTextEdit {
+                            start_before: edit.start_before,
+                            start_after: edit.start_after,
+                            deleted_text: edit.deleted_text.clone(),
+                            inserted_text: edit.inserted_text.clone(),
+                        })
+                        .collect(),
+                    before_selection: UndoHistorySelectionSet {
+                        selections: step.before_selection.selections.clone(),
+                        primary_index: step.before_selection.primary_index,
+                    },
+                    after_selection: UndoHistorySelectionSet {
+                        selections: step.after_selection.selections.clone(),
+                        primary_index: step.after_selection.primary_index,
+                    },
+                })
+                .collect(),
+            max_undo: self.max_undo,
+            clean_index: self.clean_index,
+            next_group_id: self.next_group_id,
+            open_group_id: self.open_group_id,
+        }
+    }
+
+    fn restore_from_snapshot(
+        &mut self,
+        snapshot: UndoHistorySnapshot,
+    ) -> Result<(), UndoHistoryRestoreError> {
+        if snapshot.format_version != UNDO_HISTORY_SNAPSHOT_FORMAT_VERSION {
+            return Err(UndoHistoryRestoreError::UnsupportedFormatVersion(
+                snapshot.format_version,
+            ));
+        }
+
+        let undo_stack = snapshot
+            .undo_stack
+            .into_iter()
+            .map(|step| UndoStep {
+                group_id: step.group_id,
+                edits: step
+                    .edits
+                    .into_iter()
+                    .map(|edit| TextEdit {
+                        start_before: edit.start_before,
+                        start_after: edit.start_after,
+                        deleted_text: edit.deleted_text,
+                        inserted_text: edit.inserted_text,
+                    })
+                    .collect(),
+                before_selection: SelectionSetSnapshot {
+                    selections: step.before_selection.selections,
+                    primary_index: step.before_selection.primary_index,
+                },
+                after_selection: SelectionSetSnapshot {
+                    selections: step.after_selection.selections,
+                    primary_index: step.after_selection.primary_index,
+                },
+            })
+            .collect::<Vec<_>>();
+
+        let redo_stack = snapshot
+            .redo_stack
+            .into_iter()
+            .map(|step| UndoStep {
+                group_id: step.group_id,
+                edits: step
+                    .edits
+                    .into_iter()
+                    .map(|edit| TextEdit {
+                        start_before: edit.start_before,
+                        start_after: edit.start_after,
+                        deleted_text: edit.deleted_text,
+                        inserted_text: edit.inserted_text,
+                    })
+                    .collect(),
+                before_selection: SelectionSetSnapshot {
+                    selections: step.before_selection.selections,
+                    primary_index: step.before_selection.primary_index,
+                },
+                after_selection: SelectionSetSnapshot {
+                    selections: step.after_selection.selections,
+                    primary_index: step.after_selection.primary_index,
+                },
+            })
+            .collect::<Vec<_>>();
+
+        let total_steps = undo_stack.len() + redo_stack.len();
+        let max_undo = snapshot.max_undo.max(total_steps).max(1);
+        if let Some(clean_index) = snapshot.clean_index
+            && clean_index > total_steps
+        {
+            return Err(UndoHistoryRestoreError::InvalidCleanIndex {
+                clean_index,
+                max_index: total_steps,
+            });
+        }
+
+        self.undo_stack = undo_stack;
+        self.redo_stack = redo_stack;
+        self.max_undo = max_undo;
+        self.clean_index = snapshot.clean_index;
+        self.next_group_id = snapshot.next_group_id;
+        self.open_group_id = snapshot.open_group_id;
+
+        Ok(())
     }
 }
 
@@ -2283,6 +2535,26 @@ impl CommandExecutor {
     /// Mark current state as clean point (call after saving file)
     pub fn mark_clean(&mut self) {
         self.undo_redo.mark_clean();
+    }
+
+    /// Capture a persistable snapshot of the undo/redo history for this document.
+    ///
+    /// Callers are expected to persist the current document text separately.
+    pub fn undo_history_snapshot(&self) -> UndoHistorySnapshot {
+        self.undo_redo.snapshot()
+    }
+
+    /// Restore a previously captured [`UndoHistorySnapshot`].
+    ///
+    /// Notes:
+    /// - This does **not** modify the current document text.
+    /// - Callers should only restore a snapshot into the **same text** it was captured from.
+    pub fn restore_undo_history(
+        &mut self,
+        snapshot: UndoHistorySnapshot,
+    ) -> Result<(), UndoHistoryRestoreError> {
+        self.last_text_delta = None;
+        self.undo_redo.restore_from_snapshot(snapshot)
     }
 
     /// Get a reference to the Editor Core

@@ -42,18 +42,23 @@ fn insert_text_empty_deletes_non_empty_selections_only() {
     assert!(executor.editor().selection().is_none());
     assert_eq!(executor.editor().cursor_position(), Position::new(0, 0));
     assert_eq!(executor.editor().secondary_selections().len(), 2);
-    assert!(executor
-        .editor()
-        .secondary_selections()
-        .iter()
-        .all(|s| s.start == s.end));
+    assert!(
+        executor
+            .editor()
+            .secondary_selections()
+            .iter()
+            .all(|s| s.start == s.end)
+    );
 }
 
 #[test]
 fn insert_text_empty_is_noop_when_there_is_no_selection() {
     let mut executor = CommandExecutor::new("abc", 80);
     executor
-        .execute(Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 }))
+        .execute(Command::Cursor(CursorCommand::MoveTo {
+            line: 0,
+            column: 1,
+        }))
         .unwrap();
 
     executor
@@ -63,6 +68,8 @@ fn insert_text_empty_is_noop_when_there_is_no_selection() {
         .unwrap();
 
     assert_eq!(executor.editor().get_text(), "abc");
-    assert!(!executor.can_undo(), "expected no undo step for a no-op insert");
+    assert!(
+        !executor.can_undo(),
+        "expected no undo step for a no-op insert"
+    );
 }
-

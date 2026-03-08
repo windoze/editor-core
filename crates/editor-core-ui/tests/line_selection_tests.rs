@@ -43,4 +43,3 @@ fn set_line_selection_offsets_single_line_selects_that_line() {
     ui.set_line_selection_offsets(6, 6).unwrap();
     assert_eq!(ui.primary_selection_offsets(), (6, 7));
 }
-

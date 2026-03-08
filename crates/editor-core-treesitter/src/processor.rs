@@ -471,7 +471,11 @@ impl TreeSitterProcessor {
         let byte_range = char_range.and_then(|(start_char, end_char)| {
             let start = self.line_index.char_offset_to_byte_offset(start_char);
             let end = self.line_index.char_offset_to_byte_offset(end_char);
-            if end > start { Some((start, end)) } else { None }
+            if end > start {
+                Some((start, end))
+            } else {
+                None
+            }
         });
 
         let intervals = self.collect_highlight_intervals_in_byte_range(tree, byte_range);

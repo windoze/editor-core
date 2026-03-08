@@ -19,10 +19,16 @@ unicode-width = "0.2"
 ropey = "1.6"
 regex = "1.11"
 editor-core-lang = { version = "0.3.0", path = "../editor-core-lang" }
+serde = { version = "1.0", features = ["derive"], optional = true }
+
+[features]
+default = []
+serde = ["dep:serde"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 rand = "0.8"
+serde_json = "1.0"
 
 [[bench]]
 name = "performance"
