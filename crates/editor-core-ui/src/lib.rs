@@ -4,18 +4,19 @@
 //! implementation (Skia in `editor-core-render-skia`) to draw the viewport.
 
 use editor_core::intervals::Interval;
+use editor_core::workspace::{BufferId, ViewId, Workspace};
 use editor_core::{
     Command, CommandResult, CursorCommand, DecorationKind, DecorationLayerId, EditCommand,
-    EditorStateManager, ExpandSelectionDirection, ExpandSelectionUnit, IME_MARKED_TEXT_STYLE_ID,
+    ExpandSelectionDirection, ExpandSelectionUnit, IME_MARKED_TEXT_STYLE_ID,
     MATCH_HIGHLIGHT_STYLE_ID, Position, ProcessingEdit, SearchOptions, Selection,
-    SelectionDirection, SmoothScrollState, StyleCommand, StyleLayerId, ViewCommand,
+    SelectionDirection, StyleCommand, StyleLayerId, ViewCommand,
 };
 use editor_core_lsp::{
     DeltaCalculator, LspContentChange, LspDocument, LspEvent, LspNotification, LspSession,
-    LspSessionStartOptions, clear_lsp_state, encode_semantic_style_id,
-    lsp_code_lens_to_processing_edit, lsp_diagnostics_to_processing_edits,
-    lsp_document_highlights_to_processing_edit, lsp_document_links_to_processing_edits,
-    lsp_inlay_hints_to_processing_edit, semantic_tokens_to_intervals,
+    LspSessionStartOptions, encode_semantic_style_id, lsp_code_lens_to_processing_edit,
+    lsp_diagnostics_to_processing_edits, lsp_document_highlights_to_processing_edit,
+    lsp_document_links_to_processing_edits, lsp_inlay_hints_to_processing_edit,
+    semantic_tokens_to_intervals,
 };
 use editor_core_render_skia::{
     FOLD_MARKER_COLLAPSED_STYLE_ID, FOLD_MARKER_EXPANDED_STYLE_ID, FoldMarker, FoldMarkerStyle,
@@ -561,7 +562,9 @@ fn get_or_start_shared_lsp_session(
 ///
 /// Later we can add a `Workspace`-backed version for tabs/splits.
 pub struct EditorUi {
-    state: EditorStateManager,
+    ws: Workspace,
+    buffer_id: BufferId,
+    view_id: ViewId,
     renderer: SkiaRenderer,
     theme: RenderTheme,
     render_config: RenderConfig,
@@ -596,9 +599,42 @@ impl Drop for EditorUi {
 }
 
 impl EditorUi {
+    fn line_index(&self) -> Result<&editor_core::LineIndex, UiError> {
+        self.ws
+            .buffer_line_index(self.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))
+    }
+
+    fn exec_core(&mut self, command: Command) -> Result<CommandResult, UiError> {
+        self.ws.execute(self.view_id, command).map_err(|e| match e {
+            editor_core::WorkspaceError::CommandFailed { message, .. } => {
+                UiError::Processor(message)
+            }
+            editor_core::WorkspaceError::ApplyEditsFailed { message, .. } => {
+                UiError::Processor(message)
+            }
+            other => UiError::Processor(format!("{other:?}")),
+        })
+    }
+
+    fn apply_processing_edits<I>(&mut self, edits: I) -> Result<(), UiError>
+    where
+        I: IntoIterator<Item = ProcessingEdit>,
+    {
+        self.ws
+            .apply_processing_edits(self.buffer_id, edits)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))
+    }
+
     pub fn new(initial_text: &str, viewport_width_cells: usize) -> Self {
+        let mut ws = Workspace::new();
+        let opened = ws
+            .open_buffer(None, initial_text, viewport_width_cells.max(1))
+            .expect("open initial workspace buffer");
         Self {
-            state: EditorStateManager::new(initial_text, viewport_width_cells),
+            ws,
+            buffer_id: opened.buffer_id,
+            view_id: opened.view_id,
             renderer: SkiaRenderer::new(),
             theme: RenderTheme::default(),
             render_config: RenderConfig::default(),
@@ -626,15 +662,17 @@ impl EditorUi {
     }
 
     pub fn text(&self) -> String {
-        self.state.editor().get_text()
+        self.ws
+            .buffer_text(self.buffer_id)
+            .unwrap_or_else(|_| "".to_string())
     }
 
     pub fn is_modified(&self) -> bool {
-        self.state.get_document_state().is_modified
+        self.ws.is_modified_for_view(self.view_id).unwrap_or(false)
     }
 
     pub fn mark_saved(&mut self) {
-        self.state.mark_saved();
+        let _ = self.ws.mark_saved_for_view(self.view_id);
     }
 
     pub fn reveal_primary_caret(&mut self) {
@@ -642,7 +680,16 @@ impl EditorUi {
     }
 
     pub fn cursor_state(&self) -> editor_core::CursorState {
-        self.state.get_cursor_state()
+        self.ws
+            .cursor_state_for_view(self.view_id)
+            .unwrap_or(editor_core::CursorState {
+                position: Position::new(0, 0),
+                offset: 0,
+                multi_cursors: Vec::new(),
+                selection: None,
+                selections: Vec::new(),
+                primary_selection_index: 0,
+            })
     }
 
     pub fn set_treesitter_processing_config(
@@ -665,8 +712,10 @@ impl EditorUi {
     ///
     /// If there is no selection, `start == end == caret_offset`.
     pub fn primary_selection_offsets(&self) -> (usize, usize) {
-        let cursor = self.state.get_cursor_state();
-        let line_index = &self.state.editor().line_index;
+        let cursor = self.cursor_state();
+        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+            return (cursor.offset, cursor.offset);
+        };
         if let Some(sel) = cursor.selection {
             let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
             let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
@@ -683,8 +732,10 @@ impl EditorUi {
     /// - The primary selection is placed first, followed by secondary selections in their
     ///   current order.
     pub fn selected_text(&self) -> String {
-        let cursor = self.state.get_cursor_state();
-        let line_index = &self.state.editor().line_index;
+        let cursor = self.cursor_state();
+        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+            return String::new();
+        };
 
         let mut order: Vec<usize> = Vec::with_capacity(cursor.selections.len());
         if cursor.primary_selection_index < cursor.selections.len() {
@@ -713,7 +764,9 @@ impl EditorUi {
             if len == 0 {
                 continue;
             }
-            parts.push(self.state.editor().piece_table.get_range(start, len));
+            if let Ok(text) = self.ws.buffer_text_range(self.buffer_id, start, len) {
+                parts.push(text);
+            }
         }
 
         if parts.len() == 1 {
@@ -727,8 +780,14 @@ impl EditorUi {
     ///
     /// This mirrors the JSON shape from `editor-core-ffi` (`value_minimap_grid`) so hosts can reuse
     /// the same decoding logic.
-    pub fn minimap_json(&self, start_visual_row: usize, count: usize) -> String {
-        let grid = self.state.get_minimap_content(start_visual_row, count);
+    pub fn minimap_json(&mut self, start_visual_row: usize, count: usize) -> String {
+        let grid = match self
+            .ws
+            .get_minimap_content(self.view_id, start_visual_row, count)
+        {
+            Ok(grid) => grid,
+            Err(_) => return "{}".to_string(),
+        };
         let value = serde_json::json!({
             "start_visual_row": grid.start_visual_row,
             "count": grid.count,
@@ -753,8 +812,10 @@ impl EditorUi {
     ///
     /// Each range is inclusive-exclusive in Unicode scalar indices.
     pub fn selections_offsets(&self) -> (Vec<(usize, usize)>, usize) {
-        let cursor = self.state.get_cursor_state();
-        let line_index = &self.state.editor().line_index;
+        let cursor = self.cursor_state();
+        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+            return (Vec::new(), 0);
+        };
 
         let mut out = Vec::with_capacity(cursor.selections.len());
         for sel in cursor.selections {
@@ -775,7 +836,7 @@ impl EditorUi {
     pub fn delete_selections_only(&mut self) -> Result<(), UiError> {
         // 复用 core 的 `InsertText` 逻辑：用空字符串替换各个 selection，
         // 对空 caret 则是 no-op，从而实现“只删选区不动 caret”的 cut 语义。
-        self.state.execute(Command::Edit(EditCommand::InsertText {
+        self.exec_core(Command::Edit(EditCommand::InsertText {
             text: String::new(),
         }))?;
         self.refresh_processing()?;
@@ -799,7 +860,7 @@ impl EditorUi {
             ));
         }
 
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let mut selections: Vec<Selection> = Vec::with_capacity(ranges.len());
         for (start, end) in ranges {
             let (start_line, start_col) = line_index.char_offset_to_position(*start);
@@ -813,57 +874,49 @@ impl EditorUi {
             });
         }
 
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelections {
-                selections,
-                primary_index,
-            }))?;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelections {
+            selections,
+            primary_index,
+        }))?;
         Ok(())
     }
 
     pub fn clear_secondary_selections(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::ClearSecondarySelections))?;
+        self.exec_core(Command::Cursor(CursorCommand::ClearSecondarySelections))?;
         Ok(())
     }
 
     pub fn add_cursor_above(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::AddCursorAbove))?;
+        self.exec_core(Command::Cursor(CursorCommand::AddCursorAbove))?;
         Ok(())
     }
 
     pub fn add_cursor_below(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::AddCursorBelow))?;
+        self.exec_core(Command::Cursor(CursorCommand::AddCursorBelow))?;
         Ok(())
     }
 
     pub fn add_next_occurrence(&mut self, options: SearchOptions) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::AddNextOccurrence {
-                options,
-            }))?;
+        self.exec_core(Command::Cursor(CursorCommand::AddNextOccurrence {
+            options,
+        }))?;
         Ok(())
     }
 
     pub fn add_all_occurrences(&mut self, options: SearchOptions) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::AddAllOccurrences {
-                options,
-            }))?;
+        self.exec_core(Command::Cursor(CursorCommand::AddAllOccurrences {
+            options,
+        }))?;
         Ok(())
     }
 
     pub fn select_word(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::SelectWord))?;
+        self.exec_core(Command::Cursor(CursorCommand::SelectWord))?;
         Ok(())
     }
 
     pub fn select_line(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::SelectLine))?;
+        self.exec_core(Command::Cursor(CursorCommand::SelectLine))?;
         Ok(())
     }
 
@@ -877,7 +930,7 @@ impl EditorUi {
         anchor_offset: usize,
         active_offset: usize,
     ) -> Result<(), UiError> {
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let line_count = line_index.line_count();
         if line_count == 0 {
             return Ok(());
@@ -898,7 +951,7 @@ impl EditorUi {
     /// - 段落定义：连续的“空行”或连续的“非空行”构成一个段落。
     /// - 选区行为：类似 `SelectLine`，会尽量包含段落末尾的换行（若存在下一行）。
     pub fn select_paragraph_at_char_offset(&mut self, char_offset: usize) -> Result<(), UiError> {
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let line_count = line_index.line_count();
         if line_count == 0 {
             return Ok(());
@@ -917,7 +970,7 @@ impl EditorUi {
         anchor_offset: usize,
         active_offset: usize,
     ) -> Result<(), UiError> {
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let line_count = line_index.line_count();
         if line_count == 0 {
             return Ok(());
@@ -937,8 +990,7 @@ impl EditorUi {
     }
 
     pub fn expand_selection(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::ExpandSelection))?;
+        self.exec_core(Command::Cursor(CursorCommand::ExpandSelection))?;
         Ok(())
     }
 
@@ -948,12 +1000,11 @@ impl EditorUi {
         count: usize,
         direction: ExpandSelectionDirection,
     ) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::ExpandSelectionBy {
-                unit,
-                count,
-                direction,
-            }))?;
+        self.exec_core(Command::Cursor(CursorCommand::ExpandSelectionBy {
+            unit,
+            count,
+            direction,
+        }))?;
         Ok(())
     }
 
@@ -962,14 +1013,13 @@ impl EditorUi {
         anchor_offset: usize,
         active_offset: usize,
     ) -> Result<(), UiError> {
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let (a_line, a_col) = line_index.char_offset_to_position(anchor_offset);
         let (b_line, b_col) = line_index.char_offset_to_position(active_offset);
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetRectSelection {
-                anchor: Position::new(a_line, a_col),
-                active: Position::new(b_line, b_col),
-            }))?;
+        self.exec_core(Command::Cursor(CursorCommand::SetRectSelection {
+            anchor: Position::new(a_line, a_col),
+            active: Position::new(b_line, b_col),
+        }))?;
         Ok(())
     }
 
@@ -978,11 +1028,11 @@ impl EditorUi {
         char_offset: usize,
         make_primary: bool,
     ) -> Result<(), UiError> {
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let (line, column) = line_index.char_offset_to_position(char_offset);
         let pos = Position::new(line, column);
 
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let mut selections = cursor.selections;
         selections.push(Selection {
             start: pos,
@@ -996,26 +1046,27 @@ impl EditorUi {
             cursor.primary_selection_index
         };
 
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelections {
-                selections,
-                primary_index,
-            }))?;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelections {
+            selections,
+            primary_index,
+        }))?;
         Ok(())
     }
 
     fn is_blank_line(&self, line: usize) -> bool {
-        self.state
-            .editor()
-            .line_index
-            .get_line_text(line)
+        self.ws
+            .buffer_line_index(self.buffer_id)
+            .ok()
+            .and_then(|idx| idx.get_line_text(line))
             .unwrap_or_default()
             .trim()
             .is_empty()
     }
 
     fn paragraph_line_range_for_line(&self, line: usize) -> (usize, usize) {
-        let line_index = &self.state.editor().line_index;
+        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+            return (0, 0);
+        };
         let line_count = line_index.line_count();
         if line_count == 0 {
             return (0, 0);
@@ -1041,7 +1092,9 @@ impl EditorUi {
         start_line: usize,
         end_line: usize,
     ) -> (usize, usize) {
-        let line_index = &self.state.editor().line_index;
+        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+            return (0, 0);
+        };
         let line_count = line_index.line_count();
         if line_count == 0 {
             return (0, 0);
@@ -1072,38 +1125,42 @@ impl EditorUi {
     /// - `line` and `column` are also counted in Unicode scalar values (Rust `char`s).
     /// - `char_offset` is clamped to the document length.
     pub fn char_offset_to_logical_position(&self, char_offset: usize) -> (usize, usize) {
-        let doc_len = self.state.editor().piece_table.char_count();
+        let doc_len = self.ws.buffer_char_count(self.buffer_id).unwrap_or(0);
         let off = char_offset.min(doc_len);
-        self.state.editor().line_index.char_offset_to_position(off)
+        self.ws
+            .buffer_line_index(self.buffer_id)
+            .ok()
+            .map(|idx| idx.char_offset_to_position(off))
+            .unwrap_or((0, 0))
     }
 
     /// Map a character offset (Unicode scalar index) to visual `(row, x_cells)`.
-    pub fn char_offset_to_visual(&self, char_offset: usize) -> Option<(usize, usize)> {
-        let (line, column) = self
-            .state
-            .editor()
-            .line_index
-            .char_offset_to_position(char_offset);
-        self.state.logical_position_to_visual(line, column)
+    pub fn char_offset_to_visual(&mut self, char_offset: usize) -> Option<(usize, usize)> {
+        let (line, column) = self.char_offset_to_logical_position(char_offset);
+        self.ws
+            .logical_to_visual_for_view(self.view_id, line, column)
+            .ok()
+            .flatten()
     }
 
     /// Map a visual `(row, x_cells)` position to a character offset.
-    pub fn visual_to_char_offset(&self, row: usize, x_cells: usize) -> Option<usize> {
-        let pos = self.state.visual_position_to_logical(row, x_cells)?;
-        Some(
-            self.state
-                .editor()
-                .line_index
-                .position_to_char_offset(pos.line, pos.column),
-        )
+    pub fn visual_to_char_offset(&mut self, row: usize, x_cells: usize) -> Option<usize> {
+        let pos = self
+            .ws
+            .visual_position_to_logical_for_view(self.view_id, row, x_cells)
+            .ok()??;
+        self.ws
+            .buffer_line_index(self.buffer_id)
+            .ok()
+            .map(|idx| idx.position_to_char_offset(pos.line, pos.column))
     }
 
     /// Map a character offset to a point in the view coordinate space (pixels).
     ///
     /// - `x_px` is left-to-right (in pixels)
     /// - `y_px` is top-to-bottom (in pixels), aligned to the top of the visual row
-    pub fn char_offset_to_view_point_px(&self, char_offset: usize) -> Option<(f32, f32)> {
-        let viewport = self.state.get_viewport_state();
+    pub fn char_offset_to_view_point_px(&mut self, char_offset: usize) -> Option<(f32, f32)> {
+        let viewport = self.viewport_state();
         let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
         if self.has_virtual_text_decorations() {
             let (_start_composed, _row_count, grid) = self.composed_viewport_grid();
@@ -1137,7 +1194,7 @@ impl EditorUi {
 
     /// Hit-test a point in the view coordinate space (pixels, top-left origin) and return the
     /// corresponding character offset (Unicode scalar index).
-    pub fn view_point_to_char_offset(&self, x_px: f32, y_px: f32) -> Option<usize> {
+    pub fn view_point_to_char_offset(&mut self, x_px: f32, y_px: f32) -> Option<usize> {
         if self.has_virtual_text_decorations() {
             let (_start_composed, _row_count, grid) = self.composed_viewport_grid();
             if grid.lines.is_empty() {
@@ -1162,9 +1219,9 @@ impl EditorUi {
     ///   `editor-core-lsp`.
     pub fn document_link_json_at_char_offset(&self, char_offset: usize) -> Option<String> {
         let layer = self
-            .state
-            .editor()
-            .decorations
+            .ws
+            .buffer_decorations(self.buffer_id)
+            .ok()?
             .get(&DecorationLayerId::DOCUMENT_LINKS)?;
 
         let mut best: Option<&editor_core::Decoration> = None;
@@ -1194,7 +1251,7 @@ impl EditorUi {
     }
 
     /// Hit-test and return the raw LSP `DocumentLink` JSON (if any) at the given view point.
-    pub fn document_link_json_at_view_point_px(&self, x_px: f32, y_px: f32) -> Option<String> {
+    pub fn document_link_json_at_view_point_px(&mut self, x_px: f32, y_px: f32) -> Option<String> {
         let off = self.view_point_to_char_offset(x_px, y_px)?;
         self.document_link_json_at_char_offset(off)
     }
@@ -1265,11 +1322,13 @@ impl EditorUi {
     /// - Passing an empty slice clears the layer.
     pub fn set_match_highlights_offsets(&mut self, ranges: &[(usize, usize)]) {
         if ranges.is_empty() {
-            self.state.clear_style_layer(StyleLayerId::MATCH_HIGHLIGHTS);
+            let _ = self.apply_processing_edits([ProcessingEdit::ClearStyleLayer {
+                layer: StyleLayerId::MATCH_HIGHLIGHTS,
+            }]);
             return;
         }
 
-        let doc_len = self.state.editor().piece_table.char_count();
+        let doc_len = self.ws.buffer_char_count(self.buffer_id).unwrap_or(0);
         let mut intervals: Vec<Interval> = Vec::with_capacity(ranges.len());
         for (start, end) in ranges {
             let s = (*start).min(doc_len);
@@ -1279,8 +1338,10 @@ impl EditorUi {
                 intervals.push(Interval::new(s, e, MATCH_HIGHLIGHT_STYLE_ID));
             }
         }
-        self.state
-            .replace_style_layer(StyleLayerId::MATCH_HIGHLIGHTS, intervals);
+        let _ = self.apply_processing_edits([ProcessingEdit::ReplaceStyleLayer {
+            layer: StyleLayerId::MATCH_HIGHLIGHTS,
+            intervals,
+        }]);
     }
 
     /// Set an active search query and update match highlights accordingly.
@@ -1324,7 +1385,10 @@ impl EditorUi {
             return Ok(0);
         };
 
-        let text = self.state.editor().piece_table.get_text();
+        let text = self
+            .ws
+            .buffer_text(self.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
         let matches = editor_core::search::find_all(&text, q.query.as_str(), q.options)
             .map_err(|e| UiError::Processor(e.to_string()))?;
         let ranges: Vec<(usize, usize)> = matches.iter().map(|m| (m.start, m.end)).collect();
@@ -1336,12 +1400,10 @@ impl EditorUi {
     ///
     /// Returns `true` when a match was found.
     pub fn find_next(&mut self, query: &str, options: SearchOptions) -> Result<bool, UiError> {
-        let result = self
-            .state
-            .execute(Command::Cursor(CursorCommand::FindNext {
-                query: query.to_string(),
-                options,
-            }))?;
+        let result = self.exec_core(Command::Cursor(CursorCommand::FindNext {
+            query: query.to_string(),
+            options,
+        }))?;
         Ok(matches!(result, CommandResult::SearchMatch { .. }))
     }
 
@@ -1349,12 +1411,10 @@ impl EditorUi {
     ///
     /// Returns `true` when a match was found.
     pub fn find_prev(&mut self, query: &str, options: SearchOptions) -> Result<bool, UiError> {
-        let result = self
-            .state
-            .execute(Command::Cursor(CursorCommand::FindPrev {
-                query: query.to_string(),
-                options,
-            }))?;
+        let result = self.exec_core(Command::Cursor(CursorCommand::FindPrev {
+            query: query.to_string(),
+            options,
+        }))?;
         Ok(matches!(result, CommandResult::SearchMatch { .. }))
     }
 
@@ -1365,13 +1425,11 @@ impl EditorUi {
         replacement: &str,
         options: SearchOptions,
     ) -> Result<usize, UiError> {
-        let result = self
-            .state
-            .execute(Command::Edit(EditCommand::ReplaceCurrent {
-                query: query.to_string(),
-                replacement: replacement.to_string(),
-                options,
-            }))?;
+        let result = self.exec_core(Command::Edit(EditCommand::ReplaceCurrent {
+            query: query.to_string(),
+            replacement: replacement.to_string(),
+            options,
+        }))?;
         self.refresh_processing()?;
         match result {
             CommandResult::ReplaceResult { replaced } => Ok(replaced),
@@ -1386,7 +1444,7 @@ impl EditorUi {
         replacement: &str,
         options: SearchOptions,
     ) -> Result<usize, UiError> {
-        let result = self.state.execute(Command::Edit(EditCommand::ReplaceAll {
+        let result = self.exec_core(Command::Edit(EditCommand::ReplaceAll {
             query: query.to_string(),
             replacement: replacement.to_string(),
             options,
@@ -1474,16 +1532,19 @@ impl EditorUi {
         config.capture_styles = capture_styles;
 
         self.treesitter = None;
-        self.state.apply_processing_edits([
+        self.apply_processing_edits([
             ProcessingEdit::ClearStyleLayer {
                 layer: StyleLayerId::TREE_SITTER,
             },
             ProcessingEdit::ClearFoldingRegions,
-        ]);
+        ])?;
 
         let mut worker = TreeSitterAsyncWorker::spawn();
-        let text = self.state.editor().get_text();
-        let version = self.state.version();
+        let text = self
+            .ws
+            .buffer_text(self.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        let version = self.ws.view_version(self.view_id).unwrap_or(0);
         let prefetch_char_range = self.treesitter_prefetch_char_range();
         let runtime = self.treesitter_processing_config;
         worker.requested_version = Some(version);
@@ -1526,7 +1587,7 @@ impl EditorUi {
         if self.lsp.is_some() {
             self.lsp_disable();
         }
-        clear_lsp_state(&mut self.state);
+        let _ = self.apply_processing_edits(editor_core_lsp::lsp_clear_edits());
 
         let token_types = vec![
             "namespace",
@@ -1599,7 +1660,10 @@ impl EditorUi {
         cmd_proc.args(args);
         cmd_proc.stderr(Stdio::null());
 
-        let initial_text = self.state.editor().get_text();
+        let initial_text = self
+            .ws
+            .buffer_text(self.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
         let start = LspSessionStartOptions {
             cmd: cmd_proc,
             // Single-document demo: keep workspace folder features disabled.
@@ -1677,7 +1741,7 @@ impl EditorUi {
         self.lsp_definition_in_flight = false;
         self.lsp_definition_last_request_id = None;
         self.lsp_definition_last_result_json = None;
-        clear_lsp_state(&mut self.state);
+        let _ = self.apply_processing_edits(editor_core_lsp::lsp_clear_edits());
     }
 
     pub fn lsp_is_enabled(&self) -> bool {
@@ -1704,7 +1768,7 @@ impl EditorUi {
             return Err(UiError::Processor("LSP document URI missing".to_string()));
         };
 
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let id = shared
             .with_session_mut(|lsp| {
                 lsp.set_active_document(doc_uri)?;
@@ -1736,7 +1800,7 @@ impl EditorUi {
             return Err(UiError::Processor("LSP document URI missing".to_string()));
         };
 
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let id = shared
             .with_session_mut(|lsp| {
                 lsp.set_active_document(doc_uri)?;
@@ -1756,7 +1820,7 @@ impl EditorUi {
 
     pub fn poll_processing(&mut self) -> Result<ProcessingPollResult, UiError> {
         let prefetch_char_range = self.treesitter_prefetch_char_range();
-        let (treesitter_applied, treesitter_pending) = {
+        let (treesitter_pending, latest_to_apply) = {
             let Some(worker) = self.treesitter.as_mut() else {
                 let lsp_applied = self.poll_lsp_best_effort();
                 return Ok(ProcessingPollResult {
@@ -1795,8 +1859,11 @@ impl EditorUi {
             }
 
             if need_full_sync {
-                let text = self.state.editor().get_text();
-                let version = self.state.version();
+                let text = self
+                    .ws
+                    .buffer_text(self.buffer_id)
+                    .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+                let version = self.ws.view_version(self.view_id).unwrap_or(0);
                 worker.requested_version = Some(version);
                 worker
                     .tx
@@ -1810,23 +1877,30 @@ impl EditorUi {
                     })?;
             }
 
-            let mut applied = false;
-            if let Some((version, edits, update_mode)) = latest {
-                if worker
-                    .requested_version
-                    .is_some_and(|requested| version < requested)
-                {
-                    // Stale result: the UI already requested a newer document version.
-                } else {
-                    self.state.apply_processing_edits(edits);
-                    worker.applied_version = Some(version);
-                    worker.last_update_mode = Some(update_mode);
-                    applied = true;
-                }
-            }
+            let requested = worker.requested_version;
+            let pending = worker.is_pending();
 
-            (applied, worker.is_pending())
+            let to_apply = latest.and_then(|(version, edits, update_mode)| {
+                if requested.is_some_and(|requested| version < requested) {
+                    None
+                } else {
+                    Some((version, edits, update_mode))
+                }
+            });
+
+            (pending, to_apply)
         };
+
+        let mut treesitter_applied = false;
+        if let Some((version, edits, update_mode)) = latest_to_apply {
+            self.apply_processing_edits(edits)?;
+            treesitter_applied = true;
+
+            if let Some(worker) = self.treesitter.as_mut() {
+                worker.applied_version = Some(version);
+                worker.last_update_mode = Some(update_mode);
+            }
+        }
 
         let lsp_applied = self.poll_lsp_best_effort();
 
@@ -1865,21 +1939,20 @@ impl EditorUi {
             ));
         };
 
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let edits = lsp_diagnostics_to_processing_edits(line_index, &params);
-        self.state.apply_processing_edits(edits);
+        self.apply_processing_edits(edits)?;
         Ok(())
     }
 
     pub fn lsp_apply_semantic_tokens(&mut self, data: &[u32]) -> Result<(), UiError> {
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let intervals = semantic_tokens_to_intervals(data, line_index, encode_semantic_style_id)
             .map_err(|e| UiError::Processor(e.to_string()))?;
-        self.state
-            .apply_processing_edits(vec![ProcessingEdit::ReplaceStyleLayer {
-                layer: StyleLayerId::SEMANTIC_TOKENS,
-                intervals,
-            }]);
+        self.apply_processing_edits([ProcessingEdit::ReplaceStyleLayer {
+            layer: StyleLayerId::SEMANTIC_TOKENS,
+            intervals,
+        }])?;
         Ok(())
     }
 
@@ -1889,9 +1962,9 @@ impl EditorUi {
     pub fn lsp_apply_document_highlights_json(&mut self, result_json: &str) -> Result<(), UiError> {
         let result_value: serde_json::Value =
             serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let edit = lsp_document_highlights_to_processing_edit(line_index, &result_value);
-        self.state.apply_processing_edits([edit]);
+        self.apply_processing_edits([edit])?;
         Ok(())
     }
 
@@ -1901,9 +1974,9 @@ impl EditorUi {
     pub fn lsp_apply_inlay_hints_json(&mut self, result_json: &str) -> Result<(), UiError> {
         let result_value: serde_json::Value =
             serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let edit = lsp_inlay_hints_to_processing_edit(line_index, &result_value);
-        self.state.apply_processing_edits([edit]);
+        self.apply_processing_edits([edit])?;
         Ok(())
     }
 
@@ -1913,9 +1986,9 @@ impl EditorUi {
     pub fn lsp_apply_code_lens_json(&mut self, result_json: &str) -> Result<(), UiError> {
         let result_value: serde_json::Value =
             serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let edit = lsp_code_lens_to_processing_edit(line_index, &result_value);
-        self.state.apply_processing_edits([edit]);
+        self.apply_processing_edits([edit])?;
         Ok(())
     }
 
@@ -1927,9 +2000,9 @@ impl EditorUi {
     pub fn lsp_apply_document_links_json(&mut self, result_json: &str) -> Result<(), UiError> {
         let result_value: serde_json::Value =
             serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
         let edits = lsp_document_links_to_processing_edits(line_index, &result_value);
-        self.state.apply_processing_edits(edits);
+        self.apply_processing_edits(edits)?;
         Ok(())
     }
 
@@ -1995,7 +2068,7 @@ impl EditorUi {
         &mut self,
         boundary_chars: &str,
     ) -> Result<(), UiError> {
-        self.state.execute(Command::View(
+        self.exec_core(Command::View(
             ViewCommand::SetWordBoundaryAsciiBoundaryChars {
                 boundary_chars: boundary_chars.to_string(),
             },
@@ -2008,8 +2081,7 @@ impl EditorUi {
         &mut self,
         behavior: editor_core::TabKeyBehavior,
     ) -> Result<(), UiError> {
-        self.state
-            .execute(Command::View(ViewCommand::SetTabKeyBehavior { behavior }))?;
+        self.exec_core(Command::View(ViewCommand::SetTabKeyBehavior { behavior }))?;
         Ok(())
     }
 
@@ -2019,15 +2091,15 @@ impl EditorUi {
     /// - visual layout/rendering of `'\t'` characters
     /// - `EditCommand::InsertTab` in spaces mode (insert to the next tab stop)
     pub fn set_tab_width(&mut self, width_cells: usize) -> Result<(), UiError> {
-        self.state
-            .execute(Command::View(ViewCommand::SetTabWidth { width: width_cells }))?;
+        self.exec_core(Command::View(ViewCommand::SetTabWidth {
+            width: width_cells,
+        }))?;
         Ok(())
     }
 
     /// Reset word-boundary configuration to the default (ASCII identifier-like words).
     pub fn reset_word_boundary_defaults(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::View(ViewCommand::ResetWordBoundaryDefaults))?;
+        self.exec_core(Command::View(ViewCommand::ResetWordBoundaryDefaults))?;
         Ok(())
     }
 
@@ -2077,10 +2149,9 @@ impl EditorUi {
             (width_px as f32 - self.render_config.padding_x_px * 2.0 - gutter_px).max(1.0);
         let cell_w = self.render_config.cell_width_px.max(1.0);
         let width_cells = (usable_w / cell_w).floor().max(1.0) as usize;
-        self.state
-            .execute(Command::View(ViewCommand::SetViewportWidth {
-                width: width_cells,
-            }))?;
+        self.exec_core(Command::View(ViewCommand::SetViewportWidth {
+            width: width_cells,
+        }))?;
 
         // `padding_y_px` is a top inset (like a "content inset"), not a symmetric top+bottom padding.
         //
@@ -2090,19 +2161,46 @@ impl EditorUi {
         let usable_h = (height_px as f32 - self.render_config.padding_y_px).max(1.0);
         let line_h = self.render_config.line_height_px.max(1.0);
         let height_rows = (usable_h / line_h).floor().max(1.0) as usize;
-        self.state.set_viewport_height(height_rows);
+        self.ws
+            .set_viewport_height(self.view_id, height_rows)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
         Ok(())
     }
 
-    pub fn viewport_state(&self) -> editor_core::ViewportState {
-        self.state.get_viewport_state()
+    pub fn viewport_state(&mut self) -> editor_core::ViewportState {
+        let Ok(v) = self.ws.viewport_state_for_view(self.view_id) else {
+            return editor_core::ViewportState {
+                width: 0,
+                height: None,
+                scroll_top: 0,
+                sub_row_offset: 0,
+                overscan_rows: 0,
+                visible_lines: 0..0,
+                prefetch_lines: 0..0,
+                total_visual_lines: 0,
+            };
+        };
+        editor_core::ViewportState {
+            width: v.width,
+            height: v.height,
+            scroll_top: v.scroll_top,
+            sub_row_offset: v.smooth_scroll.sub_row_offset,
+            overscan_rows: v.smooth_scroll.overscan_rows,
+            visible_lines: v.visible_lines,
+            prefetch_lines: v.prefetch_lines,
+            total_visual_lines: v.total_visual_lines,
+        }
     }
 
     /// Total logical line count (0-based lines, as seen by the editor model / line numbers).
     ///
     /// Note: this is independent of soft-wrapping/folding (which affect visual rows).
     pub fn logical_line_count(&self) -> u32 {
-        let n = self.state.editor().line_index.line_count();
+        let n = self
+            .ws
+            .buffer_line_index(self.buffer_id)
+            .map(|idx| idx.line_count())
+            .unwrap_or(0);
         (n.min(u32::MAX as usize)) as u32
     }
 
@@ -2111,14 +2209,21 @@ impl EditorUi {
     }
 
     pub fn set_smooth_scroll_state(&mut self, top_visual_row: usize, sub_row_offset: u16) {
-        let viewport = self.state.get_viewport_state();
+        let viewport = self.viewport_state();
         let height_rows = viewport
             .height
             .unwrap_or(viewport.total_visual_lines)
             .max(1);
         let max_pos_rows = viewport.total_visual_lines.saturating_sub(height_rows) as f32;
 
-        let smooth = self.state.get_smooth_scroll_state();
+        let smooth = self
+            .ws
+            .smooth_scroll_state_for_view(self.view_id)
+            .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+                top_visual_row: viewport.scroll_top,
+                sub_row_offset: viewport.sub_row_offset,
+                overscan_rows: viewport.overscan_rows,
+            });
         let pos_rows = top_visual_row as f32 + (sub_row_offset as f32 / 65536.0);
         let new_pos = pos_rows.clamp(0.0, max_pos_rows.max(0.0));
 
@@ -2126,13 +2231,13 @@ impl EditorUi {
         let frac = (new_pos - new_top as f32).clamp(0.0, 0.999_999);
         let sub = ((frac * 65536.0).floor() as u32).min(u16::MAX as u32) as u16;
 
-        let next = SmoothScrollState {
+        let next = editor_core::workspace::ViewSmoothScrollState {
             top_visual_row: new_top,
             sub_row_offset: sub,
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            self.state.set_smooth_scroll_state(next);
+            let _ = self.ws.set_smooth_scroll_state(self.view_id, next);
         }
     }
 
@@ -2148,7 +2253,7 @@ impl EditorUi {
     }
 
     fn ensure_primary_caret_visible_after_navigation(&mut self) {
-        let viewport = self.state.get_viewport_state();
+        let viewport = self.viewport_state();
         let Some(height_rows) = viewport.height else {
             return;
         };
@@ -2156,7 +2261,7 @@ impl EditorUi {
             return;
         }
 
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let active = cursor
             .selections
             .get(cursor.primary_selection_index)
@@ -2164,8 +2269,10 @@ impl EditorUi {
             .unwrap_or(cursor.position);
 
         let Some((caret_row, _caret_x)) = self
-            .state
-            .logical_position_to_visual(active.line, active.column)
+            .ws
+            .logical_to_visual_for_view(self.view_id, active.line, active.column)
+            .ok()
+            .flatten()
         else {
             return;
         };
@@ -2178,15 +2285,22 @@ impl EditorUi {
         }
         new_top = new_top.min(self.max_scroll_top(&viewport));
 
-        let smooth = self.state.get_smooth_scroll_state();
-        let next = SmoothScrollState {
+        let smooth = self
+            .ws
+            .smooth_scroll_state_for_view(self.view_id)
+            .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+                top_visual_row: viewport.scroll_top,
+                sub_row_offset: viewport.sub_row_offset,
+                overscan_rows: viewport.overscan_rows,
+            });
+        let next = editor_core::workspace::ViewSmoothScrollState {
             top_visual_row: new_top,
             // Keyboard navigation should snap to full rows for a stable caret position.
             sub_row_offset: 0,
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            self.state.set_smooth_scroll_state(next);
+            let _ = self.ws.set_smooth_scroll_state(self.view_id, next);
         }
     }
 
@@ -2194,7 +2308,7 @@ impl EditorUi {
     /// (typing/paste/undo) where we should not snap fractional smooth-scroll offsets unless the
     /// caret actually leaves the visible viewport.
     fn ensure_primary_caret_visible_after_edit(&mut self) {
-        let viewport = self.state.get_viewport_state();
+        let viewport = self.viewport_state();
         let Some(height_rows) = viewport.height else {
             return;
         };
@@ -2202,7 +2316,7 @@ impl EditorUi {
             return;
         }
 
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let active = cursor
             .selections
             .get(cursor.primary_selection_index)
@@ -2210,8 +2324,10 @@ impl EditorUi {
             .unwrap_or(cursor.position);
 
         let Some((caret_row, _caret_x)) = self
-            .state
-            .logical_position_to_visual(active.line, active.column)
+            .ws
+            .logical_to_visual_for_view(self.view_id, active.line, active.column)
+            .ok()
+            .flatten()
         else {
             return;
         };
@@ -2232,20 +2348,27 @@ impl EditorUi {
 
         new_top = new_top.min(self.max_scroll_top(&viewport));
 
-        let smooth = self.state.get_smooth_scroll_state();
-        let next = SmoothScrollState {
+        let smooth = self
+            .ws
+            .smooth_scroll_state_for_view(self.view_id)
+            .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+                top_visual_row: viewport.scroll_top,
+                sub_row_offset: viewport.sub_row_offset,
+                overscan_rows: viewport.overscan_rows,
+            });
+        let next = editor_core::workspace::ViewSmoothScrollState {
             top_visual_row: new_top,
             // When an edit forces us to scroll, snap to a full row so the caret lands predictably.
             sub_row_offset: 0,
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            self.state.set_smooth_scroll_state(next);
+            let _ = self.ws.set_smooth_scroll_state(self.view_id, next);
         }
     }
 
     pub fn scroll_by_rows(&mut self, delta_rows: isize) {
-        let viewport = self.state.get_viewport_state();
+        let viewport = self.viewport_state();
         let height_rows = viewport
             .height
             .unwrap_or(viewport.total_visual_lines)
@@ -2258,14 +2381,21 @@ impl EditorUi {
         let old = viewport.scroll_top as isize;
         let new_top = (old + delta_rows).clamp(0, max_top.max(0)) as usize;
 
-        let smooth = self.state.get_smooth_scroll_state();
-        let next = SmoothScrollState {
+        let smooth = self
+            .ws
+            .smooth_scroll_state_for_view(self.view_id)
+            .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+                top_visual_row: viewport.scroll_top,
+                sub_row_offset: viewport.sub_row_offset,
+                overscan_rows: viewport.overscan_rows,
+            });
+        let next = editor_core::workspace::ViewSmoothScrollState {
             top_visual_row: new_top,
             sub_row_offset: 0,
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            self.state.set_smooth_scroll_state(next);
+            let _ = self.ws.set_smooth_scroll_state(self.view_id, next);
         }
     }
 
@@ -2285,14 +2415,21 @@ impl EditorUi {
         }
 
         let line_h = self.render_config.line_height_px.max(1.0);
-        let viewport = self.state.get_viewport_state();
+        let viewport = self.viewport_state();
         let height_rows = viewport
             .height
             .unwrap_or(viewport.total_visual_lines)
             .max(1);
         let max_pos_rows = viewport.total_visual_lines.saturating_sub(height_rows) as f32;
 
-        let smooth = self.state.get_smooth_scroll_state();
+        let smooth = self
+            .ws
+            .smooth_scroll_state_for_view(self.view_id)
+            .unwrap_or(editor_core::workspace::ViewSmoothScrollState {
+                top_visual_row: viewport.scroll_top,
+                sub_row_offset: viewport.sub_row_offset,
+                overscan_rows: viewport.overscan_rows,
+            });
         let pos_rows = smooth.top_visual_row as f32 + (smooth.sub_row_offset as f32 / 65536.0);
         let delta_rows = delta_y_px / line_h;
         let new_pos = (pos_rows + delta_rows).clamp(0.0, max_pos_rows.max(0.0));
@@ -2301,18 +2438,18 @@ impl EditorUi {
         let frac = (new_pos - new_top as f32).clamp(0.0, 0.999_999);
         let sub = ((frac * 65536.0).floor() as u32).min(u16::MAX as u32) as u16;
 
-        let next = SmoothScrollState {
+        let next = editor_core::workspace::ViewSmoothScrollState {
             top_visual_row: new_top,
             sub_row_offset: sub,
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            self.state.set_smooth_scroll_state(next);
+            let _ = self.ws.set_smooth_scroll_state(self.view_id, next);
         }
     }
 
     pub fn insert_text(&mut self, text: &str) -> Result<(), UiError> {
-        self.state.execute(Command::Edit(EditCommand::InsertText {
+        self.exec_core(Command::Edit(EditCommand::InsertText {
             text: text.to_string(),
         }))?;
         self.refresh_processing()?;
@@ -2321,7 +2458,7 @@ impl EditorUi {
     }
 
     pub fn insert_tab(&mut self) -> Result<(), UiError> {
-        self.state.execute(Command::Edit(EditCommand::InsertTab))?;
+        self.exec_core(Command::Edit(EditCommand::InsertTab))?;
         self.refresh_processing()?;
         self.ensure_primary_caret_visible_after_edit();
         Ok(())
@@ -2332,39 +2469,35 @@ impl EditorUi {
         //
         // This matches typical native text behavior (e.g. emoji / combining marks) and
         // keeps deletion consistent with the grapheme-aware cursor movement APIs we expose.
-        self.state
-            .execute(Command::Edit(EditCommand::DeleteGraphemeBack))?;
+        self.exec_core(Command::Edit(EditCommand::DeleteGraphemeBack))?;
         self.refresh_processing()?;
         self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
     pub fn delete_forward(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Edit(EditCommand::DeleteGraphemeForward))?;
+        self.exec_core(Command::Edit(EditCommand::DeleteGraphemeForward))?;
         self.refresh_processing()?;
         self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
     pub fn delete_word_back(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Edit(EditCommand::DeleteWordBack))?;
+        self.exec_core(Command::Edit(EditCommand::DeleteWordBack))?;
         self.refresh_processing()?;
         self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
     pub fn delete_word_forward(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Edit(EditCommand::DeleteWordForward))?;
+        self.exec_core(Command::Edit(EditCommand::DeleteWordForward))?;
         self.refresh_processing()?;
         self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
     pub fn add_style(&mut self, start: usize, end: usize, style_id: u32) -> Result<(), UiError> {
-        self.state.execute(Command::Style(StyleCommand::AddStyle {
+        self.exec_core(Command::Style(StyleCommand::AddStyle {
             start,
             end,
             style_id,
@@ -2374,33 +2507,31 @@ impl EditorUi {
     }
 
     pub fn remove_style(&mut self, start: usize, end: usize, style_id: u32) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Style(StyleCommand::RemoveStyle {
-                start,
-                end,
-                style_id,
-            }))?;
+        self.exec_core(Command::Style(StyleCommand::RemoveStyle {
+            start,
+            end,
+            style_id,
+        }))?;
         self.refresh_processing()?;
         Ok(())
     }
 
     pub fn undo(&mut self) -> Result<(), UiError> {
-        self.state.execute(Command::Edit(EditCommand::Undo))?;
+        self.exec_core(Command::Edit(EditCommand::Undo))?;
         self.refresh_processing()?;
         self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
     pub fn redo(&mut self) -> Result<(), UiError> {
-        self.state.execute(Command::Edit(EditCommand::Redo))?;
+        self.exec_core(Command::Edit(EditCommand::Redo))?;
         self.refresh_processing()?;
         self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
 
     pub fn end_undo_group(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Edit(EditCommand::EndUndoGroup))?;
+        self.exec_core(Command::Edit(EditCommand::EndUndoGroup))?;
         Ok(())
     }
 
@@ -2411,68 +2542,57 @@ impl EditorUi {
         // Without this, some hosts may appear "stuck" because the selection remains visible
         // while the caret movement is not obvious (and some cursor movement strategies can
         // also depend on a clear selection).
-        if self.state.get_cursor_state().selection.is_some() {
-            self.state
-                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        if self.cursor_state().selection.is_some() {
+            self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
         }
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveVisualBy { delta_rows }))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveVisualBy { delta_rows }))?;
         self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
     pub fn move_grapheme_left(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveGraphemeLeft))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveGraphemeLeft))?;
         Ok(())
     }
 
     pub fn move_grapheme_right(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveGraphemeRight))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveGraphemeRight))?;
         Ok(())
     }
 
     pub fn move_word_left(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveWordLeft))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveWordLeft))?;
         Ok(())
     }
 
     pub fn move_word_right(&mut self) -> Result<(), UiError> {
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveWordRight))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveWordRight))?;
         Ok(())
     }
 
     pub fn move_to_visual_line_start(&mut self) -> Result<(), UiError> {
-        if self.state.get_cursor_state().selection.is_some() {
-            self.state
-                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        if self.cursor_state().selection.is_some() {
+            self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
         }
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveToVisualLineStart))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveToVisualLineStart))?;
         self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
     pub fn move_to_visual_line_end(&mut self) -> Result<(), UiError> {
-        if self.state.get_cursor_state().selection.is_some() {
-            self.state
-                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        if self.cursor_state().selection.is_some() {
+            self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
         }
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveToVisualLineEnd))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveToVisualLineEnd))?;
         self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
     pub fn move_to_document_start(&mut self) -> Result<(), UiError> {
-        if self.state.get_cursor_state().selection.is_some() {
-            self.state
-                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        if self.cursor_state().selection.is_some() {
+            self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
         }
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: 0,
             column: 0,
         }))?;
@@ -2481,25 +2601,25 @@ impl EditorUi {
     }
 
     pub fn move_to_document_end(&mut self) -> Result<(), UiError> {
-        if self.state.get_cursor_state().selection.is_some() {
-            self.state
-                .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        if self.cursor_state().selection.is_some() {
+            self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
         }
 
-        let line_count = self.state.editor().line_index.line_count();
+        let line_index = self.line_index()?;
+        let line_count = line_index.line_count();
         if line_count == 0 {
             return Ok(());
         }
         let last_line = line_count.saturating_sub(1);
         let text = self
-            .state
-            .editor()
-            .line_index
-            .get_line_text(last_line)
+            .ws
+            .buffer_line_index(self.buffer_id)
+            .ok()
+            .and_then(|idx| idx.get_line_text(last_line))
             .unwrap_or_default();
         let col = text.chars().count();
 
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: last_line,
             column: col,
         }))?;
@@ -2508,214 +2628,188 @@ impl EditorUi {
     }
 
     pub fn move_visual_by_pages(&mut self, delta_pages: isize) -> Result<(), UiError> {
-        let height_rows = self.state.get_viewport_state().height.unwrap_or(1) as isize;
+        let height_rows = self.viewport_state().height.unwrap_or(1) as isize;
         let height_rows = height_rows.max(1);
         self.move_visual_by_rows(delta_pages.saturating_mul(height_rows))
     }
 
     pub fn move_grapheme_left_and_modify_selection(&mut self) -> Result<(), UiError> {
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
         let active = cursor.position;
 
         // Move the internal caret to the active end, clear selection so movement applies, then restore.
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: active.line,
             column: active.column,
         }))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveGraphemeLeft))?;
+        self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveGraphemeLeft))?;
 
-        let new_active = self.state.editor().cursor_position();
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelection {
-                start: anchor,
-                end: new_active,
-            }))?;
+        let new_active = self.cursor_state().position;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
         Ok(())
     }
 
     pub fn move_word_left_and_modify_selection(&mut self) -> Result<(), UiError> {
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
         let active = cursor.position;
 
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: active.line,
             column: active.column,
         }))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveWordLeft))?;
+        self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveWordLeft))?;
 
-        let new_active = self.state.editor().cursor_position();
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelection {
-                start: anchor,
-                end: new_active,
-            }))?;
+        let new_active = self.cursor_state().position;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
         Ok(())
     }
 
     pub fn move_grapheme_right_and_modify_selection(&mut self) -> Result<(), UiError> {
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
         let active = cursor.position;
 
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: active.line,
             column: active.column,
         }))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveGraphemeRight))?;
+        self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveGraphemeRight))?;
 
-        let new_active = self.state.editor().cursor_position();
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelection {
-                start: anchor,
-                end: new_active,
-            }))?;
+        let new_active = self.cursor_state().position;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
         Ok(())
     }
 
     pub fn move_word_right_and_modify_selection(&mut self) -> Result<(), UiError> {
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
         let active = cursor.position;
 
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: active.line,
             column: active.column,
         }))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveWordRight))?;
+        self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveWordRight))?;
 
-        let new_active = self.state.editor().cursor_position();
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelection {
-                start: anchor,
-                end: new_active,
-            }))?;
+        let new_active = self.cursor_state().position;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
         Ok(())
     }
 
     pub fn move_to_visual_line_start_and_modify_selection(&mut self) -> Result<(), UiError> {
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
         let active = cursor.position;
 
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: active.line,
             column: active.column,
         }))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveToVisualLineStart))?;
+        self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveToVisualLineStart))?;
 
-        let new_active = self.state.editor().cursor_position();
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelection {
-                start: anchor,
-                end: new_active,
-            }))?;
+        let new_active = self.cursor_state().position;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
         self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
     pub fn move_to_visual_line_end_and_modify_selection(&mut self) -> Result<(), UiError> {
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
         let active = cursor.position;
 
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: active.line,
             column: active.column,
         }))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveToVisualLineEnd))?;
+        self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveToVisualLineEnd))?;
 
-        let new_active = self.state.editor().cursor_position();
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelection {
-                start: anchor,
-                end: new_active,
-            }))?;
+        let new_active = self.cursor_state().position;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
         self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
     pub fn move_to_document_start_and_modify_selection(&mut self) -> Result<(), UiError> {
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
         let active = cursor.position;
 
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: active.line,
             column: active.column,
         }))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: 0,
             column: 0,
         }))?;
 
-        let new_active = self.state.editor().cursor_position();
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelection {
-                start: anchor,
-                end: new_active,
-            }))?;
+        let new_active = self.cursor_state().position;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
         self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
 
     pub fn move_to_document_end_and_modify_selection(&mut self) -> Result<(), UiError> {
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
         let active = cursor.position;
 
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: active.line,
             column: active.column,
         }))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
 
-        let line_count = self.state.editor().line_index.line_count();
+        let line_index = self.line_index()?;
+        let line_count = line_index.line_count();
         if line_count == 0 {
             return Ok(());
         }
         let last_line = line_count.saturating_sub(1);
-        let text = self
-            .state
-            .editor()
-            .line_index
-            .get_line_text(last_line)
-            .unwrap_or_default();
+        let text = line_index.get_line_text(last_line).unwrap_or_default();
         let col = text.chars().count();
 
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: last_line,
             column: col,
         }))?;
 
-        let new_active = self.state.editor().cursor_position();
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelection {
-                start: anchor,
-                end: new_active,
-            }))?;
+        let new_active = self.cursor_state().position;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
         self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
@@ -2724,7 +2818,7 @@ impl EditorUi {
         &mut self,
         delta_pages: isize,
     ) -> Result<(), UiError> {
-        let height_rows = self.state.get_viewport_state().height.unwrap_or(1) as isize;
+        let height_rows = self.viewport_state().height.unwrap_or(1) as isize;
         let height_rows = height_rows.max(1);
         self.move_visual_by_rows_and_modify_selection(delta_pages.saturating_mul(height_rows))
     }
@@ -2733,25 +2827,22 @@ impl EditorUi {
         &mut self,
         delta_rows: isize,
     ) -> Result<(), UiError> {
-        let cursor = self.state.get_cursor_state();
+        let cursor = self.cursor_state();
         let anchor = cursor.selection.map(|s| s.start).unwrap_or(cursor.position);
         let active = cursor.position;
 
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: active.line,
             column: active.column,
         }))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::MoveVisualBy { delta_rows }))?;
+        self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.exec_core(Command::Cursor(CursorCommand::MoveVisualBy { delta_rows }))?;
 
-        let new_active = self.state.editor().cursor_position();
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelection {
-                start: anchor,
-                end: new_active,
-            }))?;
+        let new_active = self.cursor_state().position;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: new_active,
+        }))?;
         self.ensure_primary_caret_visible_after_navigation();
         Ok(())
     }
@@ -2785,7 +2876,10 @@ impl EditorUi {
         // composition is cancelled (e.g. Escape / IME clears marked text).
         let (start, replace_len, original_text, original_len) =
             if let Some((start, len)) = replace_range {
-                let original = self.state.editor().piece_table.get_range(start, len);
+                let original = self
+                    .ws
+                    .buffer_text_range(self.buffer_id, start, len)
+                    .map_err(|e| UiError::Processor(format!("{e:?}")))?;
                 (start, len, original, len)
             } else if let Some(marked) = self.marked.as_ref() {
                 (
@@ -2795,14 +2889,17 @@ impl EditorUi {
                     marked.original_len,
                 )
             } else {
-                let cursor = self.state.get_cursor_state();
-                let line_index = &self.state.editor().line_index;
+                let cursor = self.cursor_state();
+                let line_index = self.line_index()?;
                 if let Some(sel) = cursor.selection {
                     let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
                     let b = line_index.position_to_char_offset(sel.end.line, sel.end.column);
                     let (start, end) = if a <= b { (a, b) } else { (b, a) };
                     let len = end.saturating_sub(start);
-                    let original = self.state.editor().piece_table.get_range(start, len);
+                    let original = self
+                        .ws
+                        .buffer_text_range(self.buffer_id, start, len)
+                        .map_err(|e| UiError::Processor(format!("{e:?}")))?;
                     (start, len, original, len)
                 } else {
                     (cursor.offset, 0, String::new(), 0)
@@ -2812,52 +2909,46 @@ impl EditorUi {
         // Empty marked text means "cancel/clear composition": restore original replaced text.
         if new_len == 0 {
             if replace_len > 0 || !original_text.is_empty() {
-                self.state
-                    .execute(Command::Edit(EditCommand::ReplaceCoalescingUndo {
-                        start,
-                        length: replace_len,
-                        text: original_text.clone(),
-                    }))?;
+                self.exec_core(Command::Edit(EditCommand::ReplaceCoalescingUndo {
+                    start,
+                    length: replace_len,
+                    text: original_text.clone(),
+                }))?;
                 self.refresh_processing()?;
             }
 
             self.marked = None;
-            self.state
-                .apply_processing_edits([ProcessingEdit::ClearStyleLayer {
-                    layer: StyleLayerId::IME_MARKED_TEXT,
-                }]);
+            let _ = self.apply_processing_edits([ProcessingEdit::ClearStyleLayer {
+                layer: StyleLayerId::IME_MARKED_TEXT,
+            }]);
             // Do not let IME composition edits coalesce into subsequent typing.
-            self.state
-                .execute(Command::Edit(EditCommand::EndUndoGroup))?;
+            let _ = self.exec_core(Command::Edit(EditCommand::EndUndoGroup));
 
             // Restore selection to the original range (best-effort).
             let a_off = start;
             let b_off = start.saturating_add(original_len);
-            let line_index = &self.state.editor().line_index;
+            let line_index = self.line_index()?;
             let (a_line, a_col) = line_index.char_offset_to_position(a_off);
             let (b_line, b_col) = line_index.char_offset_to_position(b_off);
 
             if original_len > 0 {
-                self.state
-                    .execute(Command::Cursor(CursorCommand::SetSelection {
-                        start: Position::new(a_line, a_col),
-                        end: Position::new(b_line, b_col),
-                    }))?;
+                self.exec_core(Command::Cursor(CursorCommand::SetSelection {
+                    start: Position::new(a_line, a_col),
+                    end: Position::new(b_line, b_col),
+                }))?;
             } else {
-                self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+                self.exec_core(Command::Cursor(CursorCommand::MoveTo {
                     line: a_line,
                     column: a_col,
                 }))?;
-                self.state
-                    .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+                let _ = self.exec_core(Command::Cursor(CursorCommand::ClearSelection));
             }
             return Ok(());
         }
 
         // Start of composition: do not merge with the current typing group.
         if self.marked.is_none() {
-            self.state
-                .execute(Command::Edit(EditCommand::EndUndoGroup))?;
+            let _ = self.exec_core(Command::Edit(EditCommand::EndUndoGroup));
         }
 
         // Honor selection inside marked text (preedit caret / selection).
@@ -2869,7 +2960,7 @@ impl EditorUi {
         let a_off = start.saturating_add(sel_start);
         let b_off = start.saturating_add(sel_end);
 
-        self.state.execute(Command::Edit(
+        self.exec_core(Command::Edit(
             EditCommand::ReplaceCoalescingUndoWithSelection {
                 start,
                 length: replace_len,
@@ -2888,48 +2979,42 @@ impl EditorUi {
         });
 
         // Apply a dedicated style layer so the renderer can draw preedit (underline/background).
-        self.state
-            .apply_processing_edits([ProcessingEdit::ReplaceStyleLayer {
-                layer: StyleLayerId::IME_MARKED_TEXT,
-                intervals: vec![Interval::new(
-                    start,
-                    start.saturating_add(new_len),
-                    IME_MARKED_TEXT_STYLE_ID,
-                )],
-            }]);
+        self.apply_processing_edits([ProcessingEdit::ReplaceStyleLayer {
+            layer: StyleLayerId::IME_MARKED_TEXT,
+            intervals: vec![Interval::new(
+                start,
+                start.saturating_add(new_len),
+                IME_MARKED_TEXT_STYLE_ID,
+            )],
+        }])?;
         Ok(())
     }
 
     pub fn unmark_text(&mut self) {
         self.marked = None;
-        self.state
-            .apply_processing_edits([ProcessingEdit::ClearStyleLayer {
-                layer: StyleLayerId::IME_MARKED_TEXT,
-            }]);
+        let _ = self.apply_processing_edits([ProcessingEdit::ClearStyleLayer {
+            layer: StyleLayerId::IME_MARKED_TEXT,
+        }]);
     }
 
     pub fn commit_text(&mut self, text: &str) -> Result<(), UiError> {
         if let Some(marked) = self.marked.take() {
-            self.state
-                .execute(Command::Edit(EditCommand::ReplaceCoalescingUndo {
-                    start: marked.start,
-                    length: marked.len,
-                    text: text.to_string(),
-                }))?;
+            self.exec_core(Command::Edit(EditCommand::ReplaceCoalescingUndo {
+                start: marked.start,
+                length: marked.len,
+                text: text.to_string(),
+            }))?;
             self.refresh_processing()?;
 
             let end = marked.start + text.chars().count();
-            let (line, column) = self.state.editor().line_index.char_offset_to_position(end);
-            self.state
-                .execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
+            let (line, column) = self.char_offset_to_logical_position(end);
+            self.exec_core(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
 
-            self.state
-                .apply_processing_edits([ProcessingEdit::ClearStyleLayer {
-                    layer: StyleLayerId::IME_MARKED_TEXT,
-                }]);
+            let _ = self.apply_processing_edits([ProcessingEdit::ClearStyleLayer {
+                layer: StyleLayerId::IME_MARKED_TEXT,
+            }]);
             // Commit ends the composition undo group.
-            self.state
-                .execute(Command::Edit(EditCommand::EndUndoGroup))?;
+            let _ = self.exec_core(Command::Edit(EditCommand::EndUndoGroup));
             self.ensure_primary_caret_visible_after_edit();
             Ok(())
         } else {
@@ -2951,20 +3036,21 @@ impl EditorUi {
                         && let editor_core::ComposedLineKind::Document { logical_line, .. } =
                             line.kind
                         && let Some(region) = self
-                            .state
-                            .get_folding_state()
-                            .regions
+                            .ws
+                            .folding_regions_for_buffer(self.buffer_id)
+                            .ok()
+                            .unwrap_or_default()
                             .iter()
                             .filter(|r| r.start_line == logical_line)
                             .min_by_key(|r| r.end_line)
                             .cloned()
                     {
                         if region.is_collapsed {
-                            self.state.execute(Command::Style(StyleCommand::Unfold {
+                            self.exec_core(Command::Style(StyleCommand::Unfold {
                                 start_line: region.start_line,
                             }))?;
                         } else {
-                            self.state.execute(Command::Style(StyleCommand::Fold {
+                            self.exec_core(Command::Style(StyleCommand::Fold {
                                 start_line: region.start_line,
                                 end_line: region.end_line,
                             }))?;
@@ -2974,22 +3060,25 @@ impl EditorUi {
                     }
                 } else {
                     let (row, _x_cells) = self.pixel_to_visual(x_px, y_px);
-                    if let Some(pos) = self.state.visual_position_to_logical(row, 0)
+                    if let Ok(Some(pos)) =
+                        self.ws
+                            .visual_position_to_logical_for_view(self.view_id, row, 0)
                         && let Some(region) = self
-                            .state
-                            .get_folding_state()
-                            .regions
+                            .ws
+                            .folding_regions_for_buffer(self.buffer_id)
+                            .ok()
+                            .unwrap_or_default()
                             .iter()
                             .filter(|r| r.start_line == pos.line)
                             .min_by_key(|r| r.end_line)
                             .cloned()
                     {
                         if region.is_collapsed {
-                            self.state.execute(Command::Style(StyleCommand::Unfold {
+                            self.exec_core(Command::Style(StyleCommand::Unfold {
                                 start_line: region.start_line,
                             }))?;
                         } else {
-                            self.state.execute(Command::Style(StyleCommand::Fold {
+                            self.exec_core(Command::Style(StyleCommand::Fold {
                                 start_line: region.start_line,
                                 end_line: region.end_line,
                             }))?;
@@ -3004,15 +3093,14 @@ impl EditorUi {
         let Some(off) = self.view_point_to_char_offset(x_px, y_px) else {
             return Ok(());
         };
-        let (line, column) = self.state.editor().line_index.char_offset_to_position(off);
+        let (line, column) = self.char_offset_to_logical_position(off);
         let pos = Position::new(line, column);
 
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: pos.line,
             column: pos.column,
         }))?;
-        self.state
-            .execute(Command::Cursor(CursorCommand::ClearSelection))?;
+        self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
         self.mouse_anchor = Some(pos);
         Ok(())
     }
@@ -3024,18 +3112,17 @@ impl EditorUi {
         let Some(off) = self.view_point_to_char_offset(x_px, y_px) else {
             return Ok(());
         };
-        let (to_line, to_col) = self.state.editor().line_index.char_offset_to_position(off);
+        let (to_line, to_col) = self.char_offset_to_logical_position(off);
         let to = Position::new(to_line, to_col);
-        self.state
-            .execute(Command::Cursor(CursorCommand::SetSelection {
-                start: anchor,
-                end: to,
-            }))?;
+        self.exec_core(Command::Cursor(CursorCommand::SetSelection {
+            start: anchor,
+            end: to,
+        }))?;
         // Keep the editor's internal `cursor_position` in sync with the active end of the selection.
         //
         // `CursorCommand::SetSelection` intentionally does not update `cursor_position`, but UI
         // frontends expect keyboard navigation to continue from the caret shown at the active end.
-        self.state.execute(Command::Cursor(CursorCommand::MoveTo {
+        self.exec_core(Command::Cursor(CursorCommand::MoveTo {
             line: to.line,
             column: to.column,
         }))?;
@@ -3048,7 +3135,7 @@ impl EditorUi {
 
     pub fn execute(&mut self, command: Command) -> Result<CommandResult, UiError> {
         let is_edit = matches!(command, Command::Edit(_));
-        let result = self.state.execute(command)?;
+        let result = self.exec_core(command)?;
         if is_edit {
             self.refresh_processing()?;
             self.ensure_primary_caret_visible_after_edit();
@@ -3073,7 +3160,7 @@ impl EditorUi {
         // Non-blocking: apply any completed async processing (Tree-sitter highlighting/folding).
         let _ = self.poll_processing()?;
 
-        let viewport = self.state.get_viewport_state();
+        let viewport = self.viewport_state();
         let start_row = viewport.scroll_top;
         let row_count = self.viewport_row_count_for_render(&viewport);
         let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
@@ -3083,10 +3170,15 @@ impl EditorUi {
 
         let mut render_config = self.render_config;
         render_config.scroll_y_px = scroll_y_px;
-        render_config.tab_width_cells = self.state.editor().layout_engine.tab_width() as u32;
+        render_config.tab_width_cells =
+            (self.ws.tab_width_for_view(self.view_id).unwrap_or(4)).min(u32::MAX as usize) as u32;
 
         let mut fold_markers = Vec::<FoldMarker>::new();
-        for region in &self.state.get_folding_state().regions {
+        for region in self
+            .ws
+            .folding_regions_for_buffer(self.buffer_id)
+            .unwrap_or_default()
+        {
             if region.end_line <= region.start_line {
                 continue;
             }
@@ -3099,8 +3191,9 @@ impl EditorUi {
         if self.has_virtual_text_decorations() {
             let start_composed = self.composed_start_row_for_doc_row(start_row);
             let grid = self
-                .state
-                .get_viewport_content_composed(start_composed, row_count);
+                .ws
+                .get_viewport_content_composed(self.view_id, start_composed, row_count)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
             self.renderer.render_composed_rgba_into(
                 &grid,
                 caret_offsets.as_slice(),
@@ -3111,7 +3204,10 @@ impl EditorUi {
                 out_rgba,
             )?;
         } else {
-            let grid = self.state.get_viewport_content_styled(start_row, row_count);
+            let grid = self
+                .ws
+                .get_viewport_content_styled(self.view_id, start_row, row_count)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
             let selections = self.all_selections_visual();
             let carets = self.all_carets_visual();
             self.renderer.render_rgba_into(
@@ -3155,7 +3251,7 @@ impl EditorUi {
         // Non-blocking: apply any completed async processing (Tree-sitter highlighting/folding).
         let _ = self.poll_processing()?;
 
-        let viewport = self.state.get_viewport_state();
+        let viewport = self.viewport_state();
         let start_row = viewport.scroll_top;
         let row_count = self.viewport_row_count_for_render(&viewport);
         let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
@@ -3165,10 +3261,15 @@ impl EditorUi {
 
         let mut render_config = self.render_config;
         render_config.scroll_y_px = scroll_y_px;
-        render_config.tab_width_cells = self.state.editor().layout_engine.tab_width() as u32;
+        render_config.tab_width_cells =
+            (self.ws.tab_width_for_view(self.view_id).unwrap_or(4)).min(u32::MAX as usize) as u32;
 
         let mut fold_markers = Vec::<FoldMarker>::new();
-        for region in &self.state.get_folding_state().regions {
+        for region in self
+            .ws
+            .folding_regions_for_buffer(self.buffer_id)
+            .unwrap_or_default()
+        {
             if region.end_line <= region.start_line {
                 continue;
             }
@@ -3181,8 +3282,9 @@ impl EditorUi {
         if self.has_virtual_text_decorations() {
             let start_composed = self.composed_start_row_for_doc_row(start_row);
             let grid = self
-                .state
-                .get_viewport_content_composed(start_composed, row_count);
+                .ws
+                .get_viewport_content_composed(self.view_id, start_composed, row_count)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
             self.renderer.render_composed_into_metal_texture(
                 &grid,
                 caret_offsets.as_slice(),
@@ -3193,7 +3295,10 @@ impl EditorUi {
                 metal_texture,
             )?;
         } else {
-            let grid = self.state.get_viewport_content_styled(start_row, row_count);
+            let grid = self
+                .ws
+                .get_viewport_content_styled(self.view_id, start_row, row_count)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
             let selections = self.all_selections_visual();
             let carets = self.all_carets_visual();
             self.renderer.render_rgba_into_metal_texture(
@@ -3211,15 +3316,21 @@ impl EditorUi {
     }
 
     fn has_virtual_text_decorations(&self) -> bool {
-        self.state.editor().decorations.values().any(|layer| {
-            layer
-                .iter()
-                .any(|d| d.text.as_ref().is_some_and(|t| !t.is_empty()))
-        })
+        self.ws
+            .buffer_decorations(self.buffer_id)
+            .ok()
+            .map(|decorations| {
+                decorations.values().any(|layer| {
+                    layer
+                        .iter()
+                        .any(|d| d.text.as_ref().is_some_and(|t| !t.is_empty()))
+                })
+            })
+            .unwrap_or(false)
     }
 
-    fn treesitter_prefetch_char_range(&self) -> Option<(usize, usize)> {
-        let viewport = self.state.get_viewport_state();
+    fn treesitter_prefetch_char_range(&mut self) -> Option<(usize, usize)> {
+        let viewport = self.viewport_state();
         let lines = viewport.prefetch_lines;
         if lines.is_empty() {
             return None;
@@ -3228,11 +3339,17 @@ impl EditorUi {
         let start_visual = lines.start;
         let end_visual = lines.end.saturating_sub(1);
 
-        let (start_line, _) = self.state.visual_to_logical_line(start_visual);
-        let (end_line, _) = self.state.visual_to_logical_line(end_visual);
+        let (start_line, _) = self
+            .ws
+            .visual_to_logical_for_view(self.view_id, start_visual)
+            .ok()?;
+        let (end_line, _) = self
+            .ws
+            .visual_to_logical_for_view(self.view_id, end_visual)
+            .ok()?;
         let end_line_excl = end_line.saturating_add(1);
 
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index().ok()?;
         let start = line_index.position_to_char_offset(start_line, 0);
         let end = line_index.position_to_char_offset(end_line_excl, 0);
         if end > start {
@@ -3243,29 +3360,42 @@ impl EditorUi {
     }
 
     fn refresh_processing(&mut self) -> Result<(), UiError> {
-        if let Some(proc) = self.sublime.as_mut() {
-            self.state
-                .apply_processor(proc)
-                .map_err(|e| UiError::Processor(e.to_string()))?;
+        if self.sublime.is_some() {
+            let edits = {
+                let line_index = self
+                    .ws
+                    .buffer_line_index(self.buffer_id)
+                    .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+                let proc = self
+                    .sublime
+                    .as_mut()
+                    .ok_or_else(|| UiError::Processor("sublime processor missing".to_string()))?;
+                proc.compute_processing_edits(line_index)
+                    .map_err(|e| UiError::Processor(e.to_string()))?
+            };
+            self.apply_processing_edits(edits)?;
         }
         let prefetch_char_range = self.treesitter_prefetch_char_range();
         if let Some(worker) = self.treesitter.as_mut() {
-            let version = self.state.version();
+            let version = self.ws.view_version(self.view_id).unwrap_or(0);
             worker.requested_version = Some(version);
 
-            if let Some(delta) = self.state.last_text_delta().cloned() {
+            if let Some(delta) = self.ws.take_last_text_delta_for_view(self.view_id) {
                 worker
                     .tx
                     .send(TreeSitterWorkerMsg::ApplyDelta {
                         version,
-                        delta,
+                        delta: (*delta).clone(),
                         prefetch_char_range,
                     })
                     .map_err(|_| {
                         UiError::Processor("failed to send delta to tree-sitter worker".to_string())
                     })?;
             } else {
-                let text = self.state.editor().get_text();
+                let text = self
+                    .ws
+                    .buffer_text(self.buffer_id)
+                    .map_err(|e| UiError::Processor(format!("{e:?}")))?;
                 worker
                     .tx
                     .send(TreeSitterWorkerMsg::FullSync {
@@ -3284,7 +3414,12 @@ impl EditorUi {
     }
 
     fn flush_lsp_did_change_from_delta(&mut self) {
-        let Some(delta) = self.state.take_last_text_delta() else {
+        let Some(delta) = self
+            .ws
+            .take_last_text_delta_for_buffer(self.buffer_id)
+            .ok()
+            .flatten()
+        else {
             return;
         };
         if delta.is_empty() {
@@ -3304,7 +3439,7 @@ impl EditorUi {
             return;
         };
 
-        let changes = Self::lsp_changes_for_text_delta(calc, &delta);
+        let changes = Self::lsp_changes_for_text_delta(calc, delta.as_ref());
         if changes.is_empty() {
             return;
         }
@@ -3373,20 +3508,29 @@ impl EditorUi {
             return true;
         };
 
-        let edits = match shared.with_session_mut(|session| {
-            session.set_active_document(doc_uri.as_str())?;
-            session.poll_edits(&self.state)
-        }) {
-            Ok(edits) => edits,
-            Err(_reason) => {
-                self.lsp_disable();
-                return true;
+        let edits = {
+            let line_index = match self.ws.buffer_line_index(self.buffer_id) {
+                Ok(idx) => idx,
+                Err(_) => {
+                    self.lsp_disable();
+                    return true;
+                }
+            };
+            match shared.with_session_mut(|session| {
+                session.set_active_document(doc_uri.as_str())?;
+                session.poll_edits_with_line_index(line_index)
+            }) {
+                Ok(edits) => edits,
+                Err(_reason) => {
+                    self.lsp_disable();
+                    return true;
+                }
             }
         };
 
         let mut applied = false;
         if !edits.is_empty() {
-            self.state.apply_processing_edits(edits);
+            let _ = self.apply_processing_edits(edits);
             applied = true;
         }
 
@@ -3415,32 +3559,43 @@ impl EditorUi {
                 "textDocument/inlayHint" => {
                     self.lsp_inlay_in_flight = false;
                     let result = resp.result.unwrap_or(serde_json::Value::Null);
-                    let edit = {
-                        let line_index = &self.state.editor().line_index;
-                        lsp_inlay_hints_to_processing_edit(line_index, &result)
+                    let edit = match self.ws.buffer_line_index(self.buffer_id) {
+                        Ok(line_index) => lsp_inlay_hints_to_processing_edit(line_index, &result),
+                        Err(_) => {
+                            self.lsp_disable();
+                            return true;
+                        }
                     };
-                    self.state.apply_processing_edits([edit]);
+                    let _ = self.apply_processing_edits([edit]);
                     applied = true;
                 }
                 "textDocument/codeLens" => {
                     self.lsp_code_lens_in_flight = false;
                     let result = resp.result.unwrap_or(serde_json::Value::Null);
-                    let edit = {
-                        let line_index = &self.state.editor().line_index;
-                        lsp_code_lens_to_processing_edit(line_index, &result)
+                    let edit = match self.ws.buffer_line_index(self.buffer_id) {
+                        Ok(line_index) => lsp_code_lens_to_processing_edit(line_index, &result),
+                        Err(_) => {
+                            self.lsp_disable();
+                            return true;
+                        }
                     };
-                    self.state.apply_processing_edits([edit]);
+                    let _ = self.apply_processing_edits([edit]);
                     applied = true;
                 }
                 "textDocument/documentLink" => {
                     self.lsp_document_links_in_flight = false;
                     let result = resp.result.unwrap_or(serde_json::Value::Null);
-                    let edits = {
-                        let line_index = &self.state.editor().line_index;
-                        lsp_document_links_to_processing_edits(line_index, &result)
+                    let edits = match self.ws.buffer_line_index(self.buffer_id) {
+                        Ok(line_index) => {
+                            lsp_document_links_to_processing_edits(line_index, &result)
+                        }
+                        Err(_) => {
+                            self.lsp_disable();
+                            return true;
+                        }
                     };
                     if !edits.is_empty() {
-                        self.state.apply_processing_edits(edits);
+                        let _ = self.apply_processing_edits(edits);
                         applied = true;
                     }
                 }
@@ -3499,7 +3654,7 @@ impl EditorUi {
         } else {
             self.treesitter_prefetch_char_range()
         };
-        let line_index = &self.state.editor().line_index;
+        let line_index = self.line_index()?;
 
         let Some(shared) = self.lsp.as_ref() else {
             return Ok(());
@@ -3552,8 +3707,8 @@ impl EditorUi {
         Ok(())
     }
 
-    fn all_selections_visual(&self) -> Vec<VisualSelection> {
-        let cursor = self.state.get_cursor_state();
+    fn all_selections_visual(&mut self) -> Vec<VisualSelection> {
+        let cursor = self.cursor_state();
         let mut out = Vec::new();
 
         for sel in cursor.selections {
@@ -3561,14 +3716,18 @@ impl EditorUi {
                 continue;
             }
             let Some((a_row, a_x)) = self
-                .state
-                .logical_position_to_visual(sel.start.line, sel.start.column)
+                .ws
+                .logical_to_visual_for_view(self.view_id, sel.start.line, sel.start.column)
+                .ok()
+                .flatten()
             else {
                 continue;
             };
             let Some((b_row, b_x)) = self
-                .state
-                .logical_position_to_visual(sel.end.line, sel.end.column)
+                .ws
+                .logical_to_visual_for_view(self.view_id, sel.end.line, sel.end.column)
+                .ok()
+                .flatten()
             else {
                 continue;
             };
@@ -3583,16 +3742,18 @@ impl EditorUi {
         out
     }
 
-    fn all_carets_visual(&self) -> Vec<VisualCaret> {
-        let cursor = self.state.get_cursor_state();
+    fn all_carets_visual(&mut self) -> Vec<VisualCaret> {
+        let cursor = self.cursor_state();
         let primary_idx = cursor.primary_selection_index;
 
         let mut secondary = Vec::new();
         let mut primary = Vec::new();
         for (idx, sel) in cursor.selections.iter().enumerate() {
             let Some((row, x_cells)) = self
-                .state
-                .logical_position_to_visual(sel.end.line, sel.end.column)
+                .ws
+                .logical_to_visual_for_view(self.view_id, sel.end.line, sel.end.column)
+                .ok()
+                .flatten()
             else {
                 continue;
             };
@@ -3613,8 +3774,10 @@ impl EditorUi {
     }
 
     fn all_caret_offsets(&self) -> Vec<usize> {
-        let cursor = self.state.get_cursor_state();
-        let line_index = &self.state.editor().line_index;
+        let cursor = self.cursor_state();
+        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+            return Vec::new();
+        };
         let primary_idx = cursor.primary_selection_index;
 
         let mut secondary = Vec::new();
@@ -3631,8 +3794,8 @@ impl EditorUi {
         secondary
     }
 
-    fn pixel_to_visual(&self, x_px: f32, y_px: f32) -> (usize, usize) {
-        let viewport = self.state.get_viewport_state();
+    fn pixel_to_visual(&mut self, x_px: f32, y_px: f32) -> (usize, usize) {
+        let viewport = self.viewport_state();
         let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
         let gutter_px =
             self.render_config.gutter_width_cells as f32 * self.render_config.cell_width_px;
@@ -3649,8 +3812,8 @@ impl EditorUi {
         (global_row, col)
     }
 
-    fn pixel_to_local_row_col(&self, x_px: f32, y_px: f32) -> (usize, usize) {
-        let viewport = self.state.get_viewport_state();
+    fn pixel_to_local_row_col(&mut self, x_px: f32, y_px: f32) -> (usize, usize) {
+        let viewport = self.viewport_state();
         let scroll_y_px = self.sub_row_offset_to_scroll_y_px(viewport.sub_row_offset);
         let gutter_px =
             self.render_config.gutter_width_cells as f32 * self.render_config.cell_width_px;
@@ -3666,14 +3829,15 @@ impl EditorUi {
         (local_row, col)
     }
 
-    fn composed_viewport_grid(&self) -> (usize, usize, editor_core::ComposedGrid) {
-        let viewport = self.state.get_viewport_state();
+    fn composed_viewport_grid(&mut self) -> (usize, usize, editor_core::ComposedGrid) {
+        let viewport = self.viewport_state();
         let start_doc_row = viewport.scroll_top;
         let row_count = self.viewport_row_count_for_render(&viewport);
         let start_composed = self.composed_start_row_for_doc_row(start_doc_row);
         let grid = self
-            .state
-            .get_viewport_content_composed(start_composed, row_count);
+            .ws
+            .get_viewport_content_composed(self.view_id, start_composed, row_count)
+            .unwrap_or_else(|_| editor_core::ComposedGrid::new(start_composed, row_count));
         (start_composed, row_count, grid)
     }
 
@@ -3711,33 +3875,39 @@ impl EditorUi {
         (sub_row_offset as f32 / 65536.0) * line_h
     }
 
-    fn composed_start_row_for_doc_row(&self, doc_row: usize) -> usize {
+    fn composed_start_row_for_doc_row(&mut self, doc_row: usize) -> usize {
         // Fast path: no above-line virtual text => composed rows are identical to doc visual rows.
-        let mut has_above_line = false;
-        for layer in self.state.editor().decorations.values() {
-            for d in layer {
-                if d.placement == editor_core::DecorationPlacement::AboveLine
-                    && d.text.as_ref().is_some_and(|t| !t.is_empty())
-                {
-                    has_above_line = true;
-                    break;
-                }
-            }
-            if has_above_line {
-                break;
-            }
-        }
+        let has_above_line =
+            self.ws
+                .buffer_decorations(self.buffer_id)
+                .ok()
+                .is_some_and(|decorations| {
+                    decorations.values().any(|layer| {
+                        layer.iter().any(|d| {
+                            d.placement == editor_core::DecorationPlacement::AboveLine
+                                && d.text.as_ref().is_some_and(|t| !t.is_empty())
+                        })
+                    })
+                });
         if !has_above_line {
             return doc_row;
         }
 
-        let (top_logical_line, _visual_in_logical) =
-            self.state.editor().visual_to_logical_line(doc_row);
+        let Ok((top_logical_line, _visual_in_logical)) =
+            self.ws.visual_to_logical_for_view(self.view_id, doc_row)
+        else {
+            return doc_row;
+        };
 
         // Count above-line decorations per logical line.
-        let line_index = &self.state.editor().line_index;
+        let Ok(line_index) = self.ws.buffer_line_index(self.buffer_id) else {
+            return doc_row;
+        };
+        let Ok(decorations) = self.ws.buffer_decorations(self.buffer_id) else {
+            return doc_row;
+        };
         let mut above_count: HashMap<usize, usize> = HashMap::new();
-        for layer in self.state.editor().decorations.values() {
+        for layer in decorations.values() {
             for d in layer {
                 if d.placement != editor_core::DecorationPlacement::AboveLine {
                     continue;
@@ -3753,7 +3923,10 @@ impl EditorUi {
             }
         }
 
-        let regions = &self.state.get_folding_state().regions;
+        let regions = self
+            .ws
+            .folding_regions_for_buffer(self.buffer_id)
+            .unwrap_or_default();
         let mut prefix = 0usize;
         for line in 0..top_logical_line {
             if is_logical_line_hidden(regions.as_slice(), line) {
@@ -3934,24 +4107,24 @@ mod tests {
         });
         ui.set_viewport_px(80, 20, 1.0).unwrap();
 
-        let vp0 = ui.state.get_viewport_state();
+        let vp0 = ui.viewport_state();
         assert_eq!(vp0.height, Some(2));
         assert_eq!(vp0.scroll_top, 0);
 
         // Move down within the viewport: no scroll.
         ui.move_visual_by_rows(1).unwrap();
-        let vp1 = ui.state.get_viewport_state();
+        let vp1 = ui.viewport_state();
         assert_eq!(vp1.scroll_top, 0);
 
         // Move down out of the viewport: scroll should advance.
         ui.move_visual_by_rows(1).unwrap();
-        let vp2 = ui.state.get_viewport_state();
+        let vp2 = ui.viewport_state();
         assert_eq!(vp2.scroll_top, 1);
         assert_eq!(vp2.sub_row_offset, 0);
 
         // Jump to end: viewport should scroll so caret stays visible.
         ui.move_to_document_end().unwrap();
-        let vp3 = ui.state.get_viewport_state();
+        let vp3 = ui.viewport_state();
         let caret_off = ui.cursor_state().offset;
         let (caret_row, _caret_x) = ui.char_offset_to_visual(caret_off).unwrap();
         let h = vp3.height.unwrap_or(1);
@@ -3982,7 +4155,7 @@ mod tests {
         }
         ui.insert_text(&s).unwrap();
 
-        let vp = ui.state.get_viewport_state();
+        let vp = ui.viewport_state();
         let caret_off = ui.cursor_state().offset;
         let (caret_row, _caret_x) = ui.char_offset_to_visual(caret_off).unwrap();
         let h = vp.height.unwrap_or(1);
@@ -4329,7 +4502,7 @@ mod tests {
         // Cursor is at offset 1 => (line 0, column 1).
         assert_eq!(ui.cursor_state().position, Position::new(0, 1));
 
-        let grid = ui.state.get_viewport_content_styled(0, 1);
+        let grid = ui.ws.get_viewport_content_styled(ui.view_id, 0, 1).unwrap();
         assert_eq!(grid.lines.len(), 1);
         assert_eq!(grid.lines[0].cells.len(), 2);
         assert!(
@@ -4345,7 +4518,7 @@ mod tests {
 
         // Committing clears the marked style layer.
         ui.commit_text("你好!").unwrap();
-        let grid2 = ui.state.get_viewport_content_styled(0, 1);
+        let grid2 = ui.ws.get_viewport_content_styled(ui.view_id, 0, 1).unwrap();
         assert!(
             grid2.lines[0]
                 .cells
@@ -4651,7 +4824,7 @@ mod tests {
 
     #[test]
     fn ui_minimap_json_roundtrip_has_lines() {
-        let ui = EditorUi::new("a\nb\nc", 80);
+        let mut ui = EditorUi::new("a\nb\nc", 80);
         let json = ui.minimap_json(0, 20);
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(v.get("lines").is_some());
@@ -4679,21 +4852,21 @@ mod tests {
         });
         ui.set_viewport_px(80, 20, 1.0).unwrap();
 
-        let vp0 = ui.state.get_viewport_state();
+        let vp0 = ui.viewport_state();
         assert_eq!(vp0.scroll_top, 0);
         assert_eq!(vp0.sub_row_offset, 0);
         assert_eq!(ui.viewport_row_count_for_render(&vp0), 2);
 
         // Scrolling up at the top should clamp to 0 (no wrap-around / shake).
         ui.scroll_by_pixels(-5.0);
-        let vp0b = ui.state.get_viewport_state();
+        let vp0b = ui.viewport_state();
         assert_eq!(vp0b.scroll_top, 0);
         assert_eq!(vp0b.sub_row_offset, 0);
 
         // Scroll down by half a row.
         ui.scroll_by_pixels(5.0);
 
-        let vp = ui.state.get_viewport_state();
+        let vp = ui.viewport_state();
         assert_eq!(vp.scroll_top, 0);
         assert_eq!(vp.sub_row_offset, 32768); // 0.5 * 65536
         assert_eq!(ui.viewport_row_count_for_render(&vp), 3);
@@ -4712,7 +4885,7 @@ mod tests {
 
         // Scrolling back up by the same amount resets the sub-row offset.
         ui.scroll_by_pixels(-5.0);
-        let vp2 = ui.state.get_viewport_state();
+        let vp2 = ui.viewport_state();
         assert_eq!(vp2.scroll_top, 0);
         assert_eq!(vp2.sub_row_offset, 0);
     }
@@ -4789,9 +4962,9 @@ mod tests {
         ui.set_gutter_width_cells(2).unwrap();
 
         assert!(
-            ui.state
-                .get_folding_state()
-                .regions
+            ui.ws
+                .folding_regions_for_buffer(ui.buffer_id)
+                .unwrap()
                 .iter()
                 .any(|r| r.start_line == 0 && !r.is_collapsed),
             "expected a fold region starting at line 0"
@@ -4800,9 +4973,9 @@ mod tests {
         // Click in gutter at visual row 0.
         ui.mouse_down(5.0, 10.0).unwrap();
         assert!(
-            ui.state
-                .get_folding_state()
-                .regions
+            ui.ws
+                .folding_regions_for_buffer(ui.buffer_id)
+                .unwrap()
                 .iter()
                 .any(|r| r.start_line == 0 && r.is_collapsed),
             "expected fold region to become collapsed after gutter click"
@@ -4810,9 +4983,9 @@ mod tests {
 
         ui.mouse_down(5.0, 10.0).unwrap();
         assert!(
-            ui.state
-                .get_folding_state()
-                .regions
+            ui.ws
+                .folding_regions_for_buffer(ui.buffer_id)
+                .unwrap()
                 .iter()
                 .any(|r| r.start_line == 0 && !r.is_collapsed),
             "expected fold region to expand after second gutter click"
@@ -4839,7 +5012,7 @@ mod tests {
         ui.set_viewport_px(260, 200, 1.0).unwrap();
         ui.set_gutter_width_cells(2).unwrap();
 
-        let regions = ui.state.get_folding_state().regions;
+        let regions = ui.ws.folding_regions_for_buffer(ui.buffer_id).unwrap();
         assert!(
             regions.len() >= 2,
             "expected nested fold regions from Tree-sitter"
@@ -4861,8 +5034,9 @@ mod tests {
 
         let click_gutter_at_start_line = |ui: &mut EditorUi, start_line: usize| {
             let (row, _x_cells) = ui
-                .state
-                .logical_position_to_visual(start_line, 0)
+                .ws
+                .logical_to_visual_for_view(ui.view_id, start_line, 0)
+                .unwrap()
                 .expect("start line should be visible");
             let y = row as f32 * ui.render_config.line_height_px
                 + ui.render_config.line_height_px * 0.5;
@@ -4873,9 +5047,9 @@ mod tests {
         // 1) Fold inner.
         click_gutter_at_start_line(&mut ui, inner.start_line);
         assert!(
-            ui.state
-                .get_folding_state()
-                .regions
+            ui.ws
+                .folding_regions_for_buffer(ui.buffer_id)
+                .unwrap()
                 .iter()
                 .any(|r| r.start_line == inner.start_line
                     && r.end_line == inner.end_line
@@ -4886,9 +5060,9 @@ mod tests {
         // 2) Fold outer.
         click_gutter_at_start_line(&mut ui, outer.start_line);
         assert!(
-            ui.state
-                .get_folding_state()
-                .regions
+            ui.ws
+                .folding_regions_for_buffer(ui.buffer_id)
+                .unwrap()
                 .iter()
                 .any(|r| r.start_line == outer.start_line
                     && r.end_line == outer.end_line
@@ -4899,9 +5073,9 @@ mod tests {
         // 3) Unfold outer.
         click_gutter_at_start_line(&mut ui, outer.start_line);
         assert!(
-            ui.state
-                .get_folding_state()
-                .regions
+            ui.ws
+                .folding_regions_for_buffer(ui.buffer_id)
+                .unwrap()
                 .iter()
                 .any(|r| r.start_line == outer.start_line
                     && r.end_line == outer.end_line
@@ -4912,9 +5086,9 @@ mod tests {
         // 4) Unfold inner (must still be toggleable).
         click_gutter_at_start_line(&mut ui, inner.start_line);
         assert!(
-            ui.state
-                .get_folding_state()
-                .regions
+            ui.ws
+                .folding_regions_for_buffer(ui.buffer_id)
+                .unwrap()
                 .iter()
                 .any(|r| r.start_line == inner.start_line
                     && r.end_line == inner.end_line
@@ -5043,7 +5217,7 @@ world
             Some("comment.line.number-sign.toml")
         );
 
-        let grid = ui.state.get_viewport_content_styled(0, 8);
+        let grid = ui.ws.get_viewport_content_styled(ui.view_id, 0, 8).unwrap();
         assert!(
             grid.lines
                 .iter()
@@ -5052,7 +5226,7 @@ world
             "expected at least one comment-styled cell"
         );
 
-        let regions = ui.state.get_folding_state().regions;
+        let regions = ui.ws.folding_regions_for_buffer(ui.buffer_id).unwrap();
         assert!(
             regions.iter().any(|r| r.start_line == 1 && r.end_line == 5),
             "expected fold region for multi-line array (lines 1..=5)"
@@ -5075,7 +5249,7 @@ world
         let comment_style = ui
             .sublime_style_id_for_scope("comment.line.number-sign.toml")
             .unwrap();
-        let grid = ui.state.get_viewport_content_styled(0, 2);
+        let grid = ui.ws.get_viewport_content_styled(ui.view_id, 0, 2).unwrap();
         assert!(
             grid.lines
                 .iter()
@@ -5117,7 +5291,7 @@ fn main() {
             Some("string")
         );
 
-        let grid = ui.state.get_viewport_content_styled(0, 4);
+        let grid = ui.ws.get_viewport_content_styled(ui.view_id, 0, 4).unwrap();
         assert!(
             grid.lines
                 .iter()
@@ -5133,7 +5307,7 @@ fn main() {
             "expected at least one string-styled cell"
         );
 
-        let regions = ui.state.get_folding_state().regions;
+        let regions = ui.ws.folding_regions_for_buffer(ui.buffer_id).unwrap();
         assert!(
             regions.iter().any(|r| r.start_line == 1 && r.end_line == 3),
             "expected fold region for multi-line function"
@@ -5339,9 +5513,9 @@ fn main() {
         ui.lsp_apply_document_links_json(result_json).unwrap();
 
         let decorations = ui
-            .state
-            .editor()
-            .decorations
+            .ws
+            .buffer_decorations(ui.buffer_id)
+            .unwrap()
             .get(&editor_core::DecorationLayerId::DOCUMENT_LINKS)
             .cloned()
             .unwrap_or_default();
@@ -5351,7 +5525,7 @@ fn main() {
             "expected one document link decoration"
         );
 
-        let grid = ui.state.get_viewport_content_styled(0, 1);
+        let grid = ui.ws.get_viewport_content_styled(ui.view_id, 0, 1).unwrap();
         assert!(
             grid.lines
                 .iter()
@@ -5588,7 +5762,7 @@ fn main() {
         assert_eq!(ui.viewport_state().scroll_top, 0);
 
         // Place caret at line 50 (0-based).
-        let line_index = &ui.state.editor().line_index;
+        let line_index = ui.ws.buffer_line_index(ui.buffer_id).unwrap();
         let offset = line_index.position_to_char_offset(50, 0);
         ui.set_selections_offsets(&[(offset, offset)], 0).unwrap();
 
