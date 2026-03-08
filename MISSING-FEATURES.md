@@ -272,12 +272,28 @@ this workspace (per your request).
       - `editor-core-ui::rgba8_to_argb_u32` (`crates/editor-core-ui/src/windowing.rs`)
   - Tests: `crates/editor-core-ui/tests/windowing_tests.rs`
 
-- [ ] **[ui] IME and complex text input hardening across platforms**
+- [x] **[ui] IME and complex text input hardening across platforms**
   - The kernel has IME-friendly edit primitives (`ReplaceCoalescingUndo*`) and UI layers have
     marked-text style IDs, but a full editor still needs robust platform-specific IME behavior:
     - candidate window positioning
     - composition cancel/commit edge cases
     - per-platform event ordering quirks (AppKit/Win32/GTK)
+  - Implemented as a combination of kernel-friendly IME commands + UI-layer marked-text state,
+    plus explicit cross-platform helpers:
+    - `editor-core-ui::EditorUi`:
+      - `set_marked_text_with_selection(...)` (UI-side marked-range model, undo grouping, cancel restore)
+      - `commit_text(...)` (replace marked range and end composition group)
+    - Cross-platform utility for IME APIs that use UTF-8 byte indices:
+      - `editor-core-ui::utf8_byte_offset_to_char_offset`
+      - `editor-core-ui::utf8_byte_range_to_char_range`
+    - Candidate window positioning (non-AppKit shells):
+      - `winit_editor` demo updates `Window::set_ime_cursor_area(...)` based on `EditorUi` caret mapping
+      - Handles winit’s “empty preedit before commit” ordering by keeping the marked range alive until `Commit`
+  - Tests:
+    - Rust: `crates/editor-core-ui/tests/ime_undo_grouping_tests.rs`,
+      `crates/editor-core-ui/tests/ime_byte_offsets_tests.rs`
+    - Swift/AppKit: `swift/Tests/EditorCoreUITests/EditorCoreSkiaViewIMETests.swift`,
+      `swift/Tests/EditorCoreUITests/EditorCoreSkiaViewTextInputRangeTests.swift`
 
 - [ ] **[ui] Rendering performance features (caching + partial redraw)**
   - Skia rendering exists, but “full editor” workloads often need:

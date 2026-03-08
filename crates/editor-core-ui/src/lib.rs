@@ -5,6 +5,7 @@
 
 mod multi_document;
 mod keybindings;
+mod ime;
 mod windowing;
 
 use editor_core::intervals::Interval;
@@ -46,6 +47,7 @@ pub use keybindings::{
     dispatch_command_to_editor_ui, Key, KeyStroke, Keybinding, KeybindingContext, KeybindingResolver,
     KeybindingResolverResult, KeybindingWhen, Keymap, Modifiers, Platform, ResolvedCommand,
 };
+pub use ime::{utf8_byte_offset_to_char_offset, utf8_byte_range_to_char_range};
 pub use windowing::{rgba8_to_argb_u32, WindowingError};
 
 #[derive(Debug, Error)]
