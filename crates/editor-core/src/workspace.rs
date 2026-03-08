@@ -18,6 +18,8 @@ use crate::commands::{
     Command, CommandExecutor, CommandResult, CursorCommand, EditCommand, TextEditSpec,
 };
 use crate::delta::TextDelta;
+use crate::decorations::{Decoration, DecorationLayerId};
+use crate::intervals::FoldRegion;
 use crate::processing::ProcessingEdit;
 use crate::search::{SearchError, SearchMatch, SearchOptions, find_all};
 use crate::selection_set::selection_direction;
@@ -495,6 +497,53 @@ impl Workspace {
         Ok(&buffer.executor.editor().line_index)
     }
 
+    /// Get the document length for a buffer in Unicode scalar values (Rust `char`s).
+    pub fn buffer_char_count(&self, buffer_id: BufferId) -> Result<usize, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(buffer.executor.editor().piece_table.char_count())
+    }
+
+    /// Get a slice of the buffer text as a `String` by character offset + length.
+    ///
+    /// Notes:
+    /// - `start` and `len` are in Unicode scalar indices (Rust `char`s), not bytes.
+    /// - Out-of-bounds ranges are clamped by the underlying piece table.
+    pub fn buffer_text_range(
+        &self,
+        buffer_id: BufferId,
+        start: usize,
+        len: usize,
+    ) -> Result<String, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(buffer.executor.editor().piece_table.get_range(start, len))
+    }
+
+    /// Get all decoration layers for a buffer.
+    pub fn buffer_decorations(
+        &self,
+        buffer_id: BufferId,
+    ) -> Result<&BTreeMap<DecorationLayerId, Vec<Decoration>>, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(&buffer.executor.editor().decorations)
+    }
+
+    /// Get the current folding regions for a buffer (user folds + derived folds).
+    pub fn folding_regions_for_buffer(
+        &self,
+        buffer_id: BufferId,
+    ) -> Result<Vec<FoldRegion>, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(buffer.executor.editor().folding_manager.regions().to_vec())
+    }
+
     /// Returns whether a buffer has unsaved text edits.
     ///
     /// Notes:
@@ -554,6 +603,14 @@ impl Workspace {
         self.views
             .get(&id)
             .map(|v| v.core.selection.clone())
+            .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
+    /// Get the current tab width setting for a view (in monospace cells).
+    pub fn tab_width_for_view(&self, id: ViewId) -> Result<usize, WorkspaceError> {
+        self.views
+            .get(&id)
+            .map(|v| v.core.tab_width)
             .ok_or(WorkspaceError::ViewNotFound(id))
     }
 

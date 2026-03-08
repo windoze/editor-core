@@ -1,5 +1,7 @@
 use editor_core::{
-    Command, CursorCommand, EditCommand, OpenBufferResult, Position, Workspace, WorkspaceError,
+    Command, CursorCommand, Decoration, DecorationKind, DecorationPlacement, DecorationRange,
+    DecorationLayerId, EditCommand, OpenBufferResult, Position, ProcessingEdit, StyleCommand,
+    ViewCommand, Workspace, WorkspaceError,
 };
 
 #[test]
@@ -145,4 +147,66 @@ fn test_workspace_cursor_state_for_view_matches_editor_state_manager_semantics()
     assert_eq!(s2.position, Position::new(0, 2));
     assert_eq!(s2.offset, 2);
     assert!(s2.selection.is_some());
+}
+
+#[test]
+fn test_workspace_buffer_helpers_text_decorations_folding_and_tab_width() {
+    let mut ws = Workspace::new();
+    let OpenBufferResult { buffer_id, view_id } =
+        ws.open_buffer(None, "a😊b\nxyz\n", 80).unwrap();
+
+    assert_eq!(
+        ws.buffer_char_count(buffer_id).unwrap(),
+        "a😊b\nxyz\n".chars().count()
+    );
+    assert_eq!(ws.buffer_text_range(buffer_id, 0, 3).unwrap(), "a😊b");
+
+    // Decorations are readable via the workspace accessors.
+    assert!(ws.buffer_decorations(buffer_id).unwrap().is_empty());
+    ws.apply_processing_edits(
+        buffer_id,
+        [ProcessingEdit::ReplaceDecorations {
+            layer: DecorationLayerId::INLAY_HINTS,
+            decorations: vec![Decoration {
+                range: DecorationRange::new(0, 0),
+                placement: DecorationPlacement::After,
+                kind: DecorationKind::InlayHint,
+                text: Some("T".to_string()),
+                styles: Vec::new(),
+                tooltip: None,
+                data_json: None,
+            }],
+        }],
+    )
+    .unwrap();
+    assert_eq!(
+        ws.buffer_decorations(buffer_id)
+            .unwrap()
+            .get(&DecorationLayerId::INLAY_HINTS)
+            .map(|v| v.len())
+            .unwrap_or(0),
+        1
+    );
+
+    // Folding regions are buffer-wide and should be visible via the accessor.
+    ws.execute(
+        view_id,
+        Command::Style(StyleCommand::Fold {
+            start_line: 0,
+            end_line: 1,
+        }),
+    )
+    .unwrap();
+    let regions = ws.folding_regions_for_buffer(buffer_id).unwrap();
+    assert!(regions
+        .iter()
+        .any(|r| r.start_line == 0 && r.end_line == 1 && r.is_collapsed));
+
+    // Tab width is per view.
+    ws.execute(
+        view_id,
+        Command::View(ViewCommand::SetTabWidth { width: 8 }),
+    )
+    .unwrap();
+    assert_eq!(ws.tab_width_for_view(view_id).unwrap(), 8);
 }
