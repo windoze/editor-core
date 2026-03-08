@@ -89,7 +89,19 @@ this workspace (per your request).
     - delete-pair behavior integrated into `Backspace` / `DeleteForward` when enabled
     - `CursorCommand::MoveToMatchingBracket`
     - `StyleCommand::UpdateBracketMatchHighlights` / `ClearBracketMatchHighlights` (writes `StyleLayerId::BRACKET_MATCHES` with `MATCH_HIGHLIGHT_STYLE_ID`)
-  - Tests: `crates/editor-core/tests/auto_pairs_brackets.rs`
+  - UI/FFI integration:
+    - `editor-core-ui::EditorUi` exposes view-local toggles:
+      - `set_auto_pairs_enabled(...)`
+      - `set_bracket_match_highlights_enabled(...)` (auto-updates after cursor moves/edits)
+      - `move_to_matching_bracket()`
+      - `paste_text(...)` (clipboard path; always bulk insert, no auto-pairs)
+    - `editor-core-ui-ffi` exports the above to Swift/AppKit hosts.
+    - AttoEditor enables auto-pairs + bracket-match highlights by default when opening a tab,
+      and exposes “Go: Go to Matching Bracket” in the command palette.
+  - Tests:
+    - Kernel: `crates/editor-core/tests/auto_pairs_brackets.rs`
+    - UI wrapper: `crates/editor-core-ui/src/lib.rs` (unit tests)
+    - Swift/AppKit: `swift/Tests/AttoEditorTests/AttoAutoPairsAndBracketsTests.swift`
 
 ---
 

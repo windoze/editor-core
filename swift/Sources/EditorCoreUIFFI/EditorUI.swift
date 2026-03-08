@@ -383,6 +383,24 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_tab_key_behavior")
     }
 
+    /// Enable/disable auto-pairs behavior for typed characters.
+    ///
+    /// When enabled, single-character typing is routed through auto-pairs rules (auto-close,
+    /// wrap selection, skip-over closing, delete-pair).
+    public func setAutoPairsEnabled(_ enabled: Bool) throws {
+        let status = editor_core_ui_ffi_editor_ui_set_auto_pairs_enabled(handle, enabled ? 1 : 0)
+        try library.ensureStatus(status, context: "editor_ui_set_auto_pairs_enabled")
+    }
+
+    /// Enable/disable bracket-match highlighting.
+    ///
+    /// When enabled, the UI wrapper updates `StyleLayerId::BRACKET_MATCHES` after cursor moves and
+    /// edits so the renderer can highlight matching delimiters.
+    public func setBracketMatchHighlightsEnabled(_ enabled: Bool) throws {
+        let status = editor_core_ui_ffi_editor_ui_set_bracket_match_highlights_enabled(handle, enabled ? 1 : 0)
+        try library.ensureStatus(status, context: "editor_ui_set_bracket_match_highlights_enabled")
+    }
+
     /// Configure the ASCII word-boundary character set for editor-friendly "word" operations.
     ///
     /// This is similar in spirit to VSCode's `wordSeparators`.
@@ -649,6 +667,12 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_move_word_right")
     }
 
+    /// Jump the primary caret to the matching bracket (if any).
+    public func moveToMatchingBracket() throws {
+        let status = editor_core_ui_ffi_editor_ui_move_to_matching_bracket(handle)
+        try library.ensureStatus(status, context: "editor_ui_move_to_matching_bracket")
+    }
+
     public func moveToVisualLineStart() throws {
         let status = editor_core_ui_ffi_editor_ui_move_to_visual_line_start(handle)
         try library.ensureStatus(status, context: "editor_ui_move_to_visual_line_start")
@@ -758,6 +782,18 @@ public final class EditorUI {
             editor_core_ui_ffi_editor_ui_commit_text(handle, cstr)
         }
         try library.ensureStatus(status, context: "editor_ui_commit_text")
+    }
+
+    /// Paste text from the clipboard.
+    ///
+    /// Notes:
+    /// - This always uses the bulk insert path in Rust (no auto-pairs), even for a single character,
+    ///   to match typical editor semantics for paste operations.
+    public func pasteText(_ text: String) throws {
+        let status = text.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_paste_text(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_paste_text")
     }
 
     public func mouseDown(xPx: Float, yPx: Float) throws {

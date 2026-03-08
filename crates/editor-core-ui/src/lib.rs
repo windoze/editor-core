@@ -6,8 +6,8 @@
 use editor_core::intervals::Interval;
 use editor_core::workspace::{BufferId, ViewId, Workspace};
 use editor_core::{
-    Command, CommandResult, CursorCommand, DecorationKind, DecorationLayerId, EditCommand,
-    ExpandSelectionDirection, ExpandSelectionUnit, IME_MARKED_TEXT_STYLE_ID,
+    AutoPairsConfig, Command, CommandResult, CursorCommand, DecorationKind, DecorationLayerId,
+    EditCommand, ExpandSelectionDirection, ExpandSelectionUnit, IME_MARKED_TEXT_STYLE_ID,
     MATCH_HIGHLIGHT_STYLE_ID, Position, ProcessingEdit, SearchOptions, Selection,
     SelectionDirection, StyleCommand, StyleLayerId, ViewCommand,
 };
@@ -655,6 +655,8 @@ pub struct EditorUi {
     marked: Option<MarkedRange>,
     search_query: Option<SearchQueryState>,
     mouse_anchor: Option<Position>,
+    auto_pairs: AutoPairsConfig,
+    bracket_match_highlights_enabled: bool,
 }
 
 impl Drop for EditorUi {
@@ -696,7 +698,21 @@ impl EditorUi {
 
     fn exec_core(&mut self, command: Command) -> Result<CommandResult, UiError> {
         let mut doc = self.lock_doc();
-        doc.exec_core(self.view_id, command)
+        let result = doc.exec_core(self.view_id, command.clone())?;
+
+        if self.bracket_match_highlights_enabled {
+            match command {
+                Command::Edit(_) | Command::Cursor(_) => {
+                    let _ = doc.exec_core(
+                        self.view_id,
+                        Command::Style(StyleCommand::UpdateBracketMatchHighlights),
+                    );
+                }
+                Command::View(_) | Command::Style(_) => {}
+            }
+        }
+
+        Ok(result)
     }
 
     fn apply_processing_edits<I>(&mut self, edits: I) -> Result<(), UiError>
@@ -744,6 +760,8 @@ impl EditorUi {
             marked: None,
             search_query: None,
             mouse_anchor: None,
+            auto_pairs: AutoPairsConfig::default(),
+            bracket_match_highlights_enabled: false,
         }
     }
 
@@ -757,7 +775,7 @@ impl EditorUi {
                 .map_err(|e| UiError::Processor(format!("{e:?}")))?
         };
 
-        Ok(Self {
+        let mut ui = Self {
             doc: Arc::clone(&self.doc),
             buffer_id: self.buffer_id,
             view_id,
@@ -767,7 +785,53 @@ impl EditorUi {
             marked: None,
             search_query: None,
             mouse_anchor: None,
-        })
+            auto_pairs: self.auto_pairs.clone(),
+            bracket_match_highlights_enabled: self.bracket_match_highlights_enabled,
+        };
+
+        // Clone should preserve view-local UX settings (auto-pairs, bracket matching highlights, ...),
+        // not just copy the wrapper's fields.
+        ui.exec_core(Command::View(ViewCommand::SetAutoPairsConfig {
+            config: ui.auto_pairs.clone(),
+        }))?;
+        if ui.bracket_match_highlights_enabled {
+            let _ = ui.exec_core(Command::Style(StyleCommand::UpdateBracketMatchHighlights));
+        }
+
+        Ok(ui)
+    }
+
+    /// Enable/disable auto-pairs behavior for typed characters (`EditCommand::TypeChar`).
+    ///
+    /// Notes:
+    /// - This is view-local (each `EditorUi` handle corresponds to one `Workspace` view).
+    pub fn set_auto_pairs_enabled(&mut self, enabled: bool) -> Result<(), UiError> {
+        self.auto_pairs.enabled = enabled;
+        self.exec_core(Command::View(ViewCommand::SetAutoPairsConfig {
+            config: self.auto_pairs.clone(),
+        }))?;
+        Ok(())
+    }
+
+    /// Enable/disable bracket-match highlighting.
+    ///
+    /// When enabled, the UI wrapper updates `StyleLayerId::BRACKET_MATCHES` after cursor moves and
+    /// edits, so renderers can highlight the matching pair (if any).
+    pub fn set_bracket_match_highlights_enabled(&mut self, enabled: bool) -> Result<(), UiError> {
+        self.bracket_match_highlights_enabled = enabled;
+        if enabled {
+            let _ = self.exec_core(Command::Style(StyleCommand::UpdateBracketMatchHighlights));
+        } else {
+            let _ = self.exec_core(Command::Style(StyleCommand::ClearBracketMatchHighlights));
+        }
+        Ok(())
+    }
+
+    /// Jump the primary caret to the matching bracket (if any).
+    pub fn move_to_matching_bracket(&mut self) -> Result<(), UiError> {
+        self.exec_core(Command::Cursor(CursorCommand::MoveToMatchingBracket))?;
+        self.ensure_primary_caret_visible_after_navigation();
+        Ok(())
     }
 
     pub fn text(&self) -> String {
@@ -2665,6 +2729,44 @@ impl EditorUi {
     }
 
     pub fn insert_text(&mut self, text: &str) -> Result<(), UiError> {
+        // UI typing entry point:
+        // - For single-character typing, route through `TypeChar` so auto-pairs can engage.
+        // - For multi-character commits (IME commits, etc), keep the bulk `InsertText` path.
+        //
+        // Notes:
+        // - Keep `'\n'` out of the `TypeChar` path so enabling auto-pairs does not implicitly
+        //   change newline indentation behavior in hosts.
+        // - For clipboard paste (including single-character paste), prefer `paste_text` which
+        //   always uses `InsertText` and does not trigger auto-pairs rules.
+        if let Some(ch) = (text.chars().count() == 1)
+            .then(|| text.chars().next())
+            .flatten()
+            && ch != '\n'
+            && ch != '\r'
+            && ch != '\t'
+        {
+            self.exec_core(Command::Edit(EditCommand::TypeChar { ch }))?;
+        } else {
+            self.exec_core(Command::Edit(EditCommand::InsertText {
+                text: text.to_string(),
+            }))?;
+        }
+        self.refresh_processing()?;
+        self.ensure_primary_caret_visible_after_edit();
+        Ok(())
+    }
+
+    /// Clipboard paste entry point (no auto-pairs).
+    ///
+    /// This always uses `EditCommand::InsertText`, even for a single character, so that
+    /// auto-pairs rules don't engage for clipboard operations.
+    pub fn paste_text(&mut self, text: &str) -> Result<(), UiError> {
+        // If an IME marked range is active, treat paste as a commit that replaces the marked
+        // text and ends the composition group.
+        if self.marked.is_some() {
+            return self.commit_text(text);
+        }
+
         self.exec_core(Command::Edit(EditCommand::InsertText {
             text: text.to_string(),
         }))?;
@@ -2683,8 +2785,31 @@ impl EditorUi {
     pub fn backspace(&mut self) -> Result<(), UiError> {
         // UI-friendly default: delete the previous grapheme cluster (UAX #29).
         //
-        // This matches typical native text behavior (e.g. emoji / combining marks) and
-        // keeps deletion consistent with the grapheme-aware cursor movement APIs we expose.
+        // However, when auto-pairs are enabled, most editors prefer delete-pair behavior
+        // when the caret is between matching delimiters.
+        let cursor = self.cursor_state();
+        let can_try_delete_pair =
+            self.auto_pairs.enabled && self.auto_pairs.delete_pair && cursor.selection.is_none();
+        if can_try_delete_pair && cursor.multi_cursors.is_empty() {
+            let caret_off = cursor.offset;
+            if caret_off > 0 {
+                let pair = self
+                    .with_line_index(|idx| (idx.char_at(caret_off - 1), idx.char_at(caret_off)))?;
+                if let (Some(open), Some(close)) = pair
+                    && self
+                        .auto_pairs
+                        .pairs
+                        .iter()
+                        .any(|p| p.open == open && p.close == close)
+                {
+                    self.exec_core(Command::Edit(EditCommand::Backspace))?;
+                    self.refresh_processing()?;
+                    self.ensure_primary_caret_visible_after_edit();
+                    return Ok(());
+                }
+            }
+        }
+
         self.exec_core(Command::Edit(EditCommand::DeleteGraphemeBack))?;
         self.refresh_processing()?;
         self.ensure_primary_caret_visible_after_edit();
@@ -2692,6 +2817,30 @@ impl EditorUi {
     }
 
     pub fn delete_forward(&mut self) -> Result<(), UiError> {
+        // Mirror `backspace`: keep grapheme-aware deletion, but prefer delete-pair when enabled.
+        let cursor = self.cursor_state();
+        let can_try_delete_pair =
+            self.auto_pairs.enabled && self.auto_pairs.delete_pair && cursor.selection.is_none();
+        if can_try_delete_pair && cursor.multi_cursors.is_empty() {
+            let caret_off = cursor.offset;
+            if caret_off > 0 {
+                let pair = self
+                    .with_line_index(|idx| (idx.char_at(caret_off - 1), idx.char_at(caret_off)))?;
+                if let (Some(open), Some(close)) = pair
+                    && self
+                        .auto_pairs
+                        .pairs
+                        .iter()
+                        .any(|p| p.open == open && p.close == close)
+                {
+                    self.exec_core(Command::Edit(EditCommand::DeleteForward))?;
+                    self.refresh_processing()?;
+                    self.ensure_primary_caret_visible_after_edit();
+                    return Ok(());
+                }
+            }
+        }
+
         self.exec_core(Command::Edit(EditCommand::DeleteGraphemeForward))?;
         self.refresh_processing()?;
         self.ensure_primary_caret_visible_after_edit();
@@ -4662,6 +4811,131 @@ mod tests {
         ui2.set_selections_offsets(&[(0, 0)], 0).unwrap(); // caret at start
         ui2.delete_forward().unwrap();
         assert_eq!(ui2.text(), "");
+    }
+
+    #[test]
+    fn ui_auto_pairs_auto_close_skip_over_and_delete_pair_work_when_enabled() {
+        let mut ui = EditorUi::new("", 80);
+        ui.set_auto_pairs_enabled(true).unwrap();
+
+        ui.commit_text("(").unwrap();
+        assert_eq!(ui.text(), "()");
+        assert_eq!(ui.primary_selection_offsets(), (1, 1));
+
+        // Skip-over closing delimiter.
+        ui.commit_text(")").unwrap();
+        assert_eq!(ui.text(), "()");
+        assert_eq!(ui.primary_selection_offsets(), (2, 2));
+
+        // Delete-pair via UI backspace (grapheme-aware fallback + pair special-case).
+        ui.set_selections_offsets(&[(1, 1)], 0).unwrap();
+        ui.backspace().unwrap();
+        assert_eq!(ui.text(), "");
+        assert_eq!(ui.primary_selection_offsets(), (0, 0));
+    }
+
+    #[test]
+    fn ui_paste_text_does_not_trigger_auto_pairs_rules() {
+        let mut ui = EditorUi::new("", 80);
+        ui.set_auto_pairs_enabled(true).unwrap();
+
+        ui.paste_text("(").unwrap();
+        assert_eq!(ui.text(), "(");
+        assert_eq!(ui.primary_selection_offsets(), (1, 1));
+    }
+
+    #[test]
+    fn ui_clone_view_preserves_auto_pairs_config() {
+        let mut ui = EditorUi::new("", 80);
+        ui.set_auto_pairs_enabled(true).unwrap();
+
+        let mut cloned = ui.clone_view(80).unwrap();
+        cloned.commit_text("(").unwrap();
+
+        assert_eq!(cloned.text(), "()");
+        assert_eq!(cloned.primary_selection_offsets(), (1, 1));
+    }
+
+    #[test]
+    fn ui_clone_view_preserves_bracket_match_highlights_enabled() {
+        let mut ui = EditorUi::new("(a)", 80);
+        ui.set_bracket_match_highlights_enabled(true).unwrap();
+
+        let mut cloned = ui.clone_view(80).unwrap();
+        cloned.set_selections_offsets(&[(1, 1)], 0).unwrap();
+
+        let grid = {
+            let mut doc = cloned.lock_doc();
+            doc.ws
+                .get_viewport_content_styled(cloned.view_id, 0, 1)
+                .unwrap()
+        };
+        let styles_at_open = grid
+            .lines
+            .get(0)
+            .and_then(|l| l.cells.get(0))
+            .map(|c| c.styles.clone())
+            .unwrap_or_default();
+        let styles_at_close = grid
+            .lines
+            .get(0)
+            .and_then(|l| l.cells.get(2))
+            .map(|c| c.styles.clone())
+            .unwrap_or_default();
+
+        assert!(
+            styles_at_open.contains(&MATCH_HIGHLIGHT_STYLE_ID),
+            "expected opening bracket to have MATCH_HIGHLIGHT_STYLE_ID"
+        );
+        assert!(
+            styles_at_close.contains(&MATCH_HIGHLIGHT_STYLE_ID),
+            "expected closing bracket to have MATCH_HIGHLIGHT_STYLE_ID"
+        );
+    }
+
+    #[test]
+    fn ui_bracket_match_highlights_apply_match_style_to_brackets() {
+        let mut ui = EditorUi::new("(a)", 80);
+        ui.set_bracket_match_highlights_enabled(true).unwrap();
+
+        // Place caret between '(' and 'a' so the match is unambiguous.
+        ui.set_selections_offsets(&[(1, 1)], 0).unwrap();
+
+        let grid = {
+            let mut doc = ui.lock_doc();
+            doc.ws
+                .get_viewport_content_styled(ui.view_id, 0, 1)
+                .unwrap()
+        };
+        let styles_at_open = grid
+            .lines
+            .get(0)
+            .and_then(|l| l.cells.get(0))
+            .map(|c| c.styles.clone())
+            .unwrap_or_default();
+        let styles_at_close = grid
+            .lines
+            .get(0)
+            .and_then(|l| l.cells.get(2))
+            .map(|c| c.styles.clone())
+            .unwrap_or_default();
+
+        assert!(
+            styles_at_open.contains(&MATCH_HIGHLIGHT_STYLE_ID),
+            "expected opening bracket to have MATCH_HIGHLIGHT_STYLE_ID"
+        );
+        assert!(
+            styles_at_close.contains(&MATCH_HIGHLIGHT_STYLE_ID),
+            "expected closing bracket to have MATCH_HIGHLIGHT_STYLE_ID"
+        );
+    }
+
+    #[test]
+    fn ui_move_to_matching_bracket_jumps_to_pair() {
+        let mut ui = EditorUi::new("(a[b]c)", 80);
+        ui.set_selections_offsets(&[(1, 1)], 0).unwrap();
+        ui.move_to_matching_bracket().unwrap();
+        assert_eq!(ui.primary_selection_offsets(), (6, 6));
     }
 
     #[test]

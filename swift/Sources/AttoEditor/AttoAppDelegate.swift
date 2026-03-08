@@ -195,6 +195,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(title: "Go: Go to File…") { [weak self] in
                 self?.showQuickOpen()
             },
+            .init(title: "Go: Go to Matching Bracket") { [weak self] in
+                self?.editorAreaController?.moveToMatchingBracketInActiveTab()
+            },
         ]
     }
 

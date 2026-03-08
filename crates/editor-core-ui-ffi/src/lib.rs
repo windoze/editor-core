@@ -1570,6 +1570,44 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_tab_key_behavior(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_auto_pairs_enabled(
+    ui: *mut EditorUi,
+    enabled: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.set_auto_pairs_enabled(enabled != 0)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_bracket_match_highlights_enabled(
+    ui: *mut EditorUi,
+    enabled: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.set_bracket_match_highlights_enabled(enabled != 0)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(
     ui: *mut EditorUi,
     boundary_chars_utf8: *const c_char,
@@ -2289,6 +2327,24 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_move_word_right(ui: *mut EditorUi
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_matching_bracket(
+    ui: *mut EditorUi,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.move_to_matching_bracket()
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_move_to_visual_line_start(
     ui: *mut EditorUi,
 ) -> c_int {
@@ -2886,6 +2942,26 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_commit_text(
             .to_str()
             .map_err(|_| "text_utf8 is not valid UTF-8".to_string())?;
         ui.commit_text(text).map(|_| ECU_OK).map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_paste_text(
+    ui: *mut EditorUi,
+    text_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let text = require_cstr(text_utf8, "text_utf8")?
+            .to_str()
+            .map_err(|_| "text_utf8 is not valid UTF-8".to_string())?;
+        ui.paste_text(text).map(|_| ECU_OK).map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();

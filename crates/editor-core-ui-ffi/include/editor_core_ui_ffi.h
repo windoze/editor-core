@@ -260,6 +260,8 @@ int32_t editor_core_ui_ffi_editor_ui_set_tab_key_behavior(
     EditorUi* ui,
     uint8_t behavior /* EcuTabKeyBehavior */
 );
+int32_t editor_core_ui_ffi_editor_ui_set_auto_pairs_enabled(EditorUi* ui, uint8_t enabled);
+int32_t editor_core_ui_ffi_editor_ui_set_bracket_match_highlights_enabled(EditorUi* ui, uint8_t enabled);
 int32_t editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(
     EditorUi* ui,
     const char* boundary_chars_utf8
@@ -343,6 +345,7 @@ int32_t editor_core_ui_ffi_editor_ui_move_grapheme_left(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_grapheme_right(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_word_left(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_word_right(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_move_to_matching_bracket(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_to_visual_line_start(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_to_visual_line_end(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_move_to_document_start(EditorUi* ui);
@@ -370,6 +373,7 @@ int32_t editor_core_ui_ffi_editor_ui_set_marked_text_ex(EditorUi* ui,
                                                         uint32_t replace_len);
 void editor_core_ui_ffi_editor_ui_unmark_text(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_commit_text(EditorUi* ui, const char* text_utf8);
+int32_t editor_core_ui_ffi_editor_ui_paste_text(EditorUi* ui, const char* text_utf8);
 
 int32_t editor_core_ui_ffi_editor_ui_mouse_down(EditorUi* ui, float x_px, float y_px);
 int32_t editor_core_ui_ffi_editor_ui_mouse_dragged(EditorUi* ui, float x_px, float y_px);

@@ -93,4 +93,33 @@ final class EditorCoreSkiaViewClipboardTests: XCTestCase {
         let vp1 = try view.editor.viewportState()
         XCTAssertGreaterThan(vp1.scrollTop, 0, "expected paste to scroll the viewport to keep caret visible")
     }
+
+    func testPasteDoesNotTriggerAutoPairsForSingleCharacter() throws {
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
+        let view = try EditorCoreSkiaView(library: lib, initialText: "", viewportWidthCells: 80)
+
+        let pb = NSPasteboard(name: NSPasteboard.Name("EditorCoreSkiaViewClipboardTests-\(UUID().uuidString)"))
+        pb.clearContents()
+        view.pasteboard = pb
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = view
+        window.makeKeyAndOrderFront(nil)
+        view.layoutSubtreeIfNeeded()
+
+        try view.editor.setAutoPairsEnabled(true)
+
+        pb.setString("(", forType: .string)
+        view.paste(nil)
+
+        XCTAssertEqual(try view.editor.text(), "(")
+        let sel = try view.editor.selectionOffsets()
+        XCTAssertEqual(sel.start, 1)
+        XCTAssertEqual(sel.end, 1)
+    }
 }

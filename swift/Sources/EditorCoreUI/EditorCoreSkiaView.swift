@@ -1582,6 +1582,23 @@ public final class EditorCoreSkiaView: MTKView {
         notifyViewportStateDidChange()
     }
 
+    /// Jump the primary caret to the matching bracket (if any).
+    ///
+    /// This is a convenience wrapper that also triggers redraw + viewport observer callbacks,
+    /// so hosts can wire it into command palettes / menus without re-implementing bookkeeping.
+    public func moveToMatchingBracket() {
+        updateViewportIfNeeded()
+        do {
+            try editor.moveToMatchingBracket()
+        } catch {
+            NSSound.beep()
+            return
+        }
+        requestRedraw()
+        invalidateIMECharacterCoordinates()
+        notifyViewportStateDidChange()
+    }
+
     // MARK: - Clipboard
 
     public override func selectAll(_ sender: Any?) {
@@ -1663,7 +1680,7 @@ public final class EditorCoreSkiaView: MTKView {
         updateViewportIfNeeded()
         guard let text = pasteboard.string(forType: .string), text.isEmpty == false else { return }
         do {
-            try editor.commitText(text)
+            try editor.pasteText(text)
             didMutateDocumentText()
         } catch {
             NSSound.beep()

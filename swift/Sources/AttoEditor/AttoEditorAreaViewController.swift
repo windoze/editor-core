@@ -247,6 +247,13 @@ final class AttoEditorAreaViewController: NSViewController {
         tab.editCore.needsDisplay = true
     }
 
+    // MARK: - Editor commands
+
+    func moveToMatchingBracketInActiveTab() {
+        guard let tab = activeTab else { return }
+        tab.editCore.editorView.moveToMatchingBracket()
+    }
+
     // MARK: - Status bar
 
     private var activeTab: AttoEditorTab? {
@@ -425,6 +432,9 @@ final class AttoEditorAreaViewController: NSViewController {
             try editCore.editor.setFontLigaturesEnabled(true)
         }
         try editCore.applyTheme(theme)
+        // Enable baseline editor UX by default.
+        try editCore.editor.setAutoPairsEnabled(true)
+        try editCore.editor.setBracketMatchHighlightsEnabled(true)
 
         // LSP for Rust (best-effort).
         if url.pathExtension.lowercased() == "rs" {
