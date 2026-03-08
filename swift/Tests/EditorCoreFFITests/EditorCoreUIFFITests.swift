@@ -144,6 +144,43 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(try ui.text(), "\t")
     }
 
+    func testCloneViewSharesTextAndHasIndependentScrollState() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui1 = try EditorUI(
+            library: lib,
+            initialText: "abc\ndef\nghi\njkl\nmno\npqr\nstu\nvwx\nyz\n",
+            viewportWidthCells: 80
+        )
+        let ui2 = try ui1.cloneView(viewportWidthCells: 80)
+
+        // View state is independent.
+        try ui1.setSelections([EcuSelectionRange(start: 0, end: 0)], primaryIndex: 0)
+        try ui2.setSelections([EcuSelectionRange(start: 4, end: 4)], primaryIndex: 0)
+        XCTAssertEqual(try ui1.selectionOffsets().start, 0)
+        XCTAssertEqual(try ui2.selectionOffsets().start, 4)
+
+        // Text edits are shared.
+        try ui1.insertText("X")
+        XCTAssertEqual(try ui2.text(), "Xabc\ndef\nghi\njkl\nmno\npqr\nstu\nvwx\nyz\n")
+
+        // Each view tracks its own selection, but receives the same text delta.
+        let s2 = try ui2.selectionOffsets()
+        XCTAssertEqual(s2.start, 5)
+        XCTAssertEqual(s2.end, 5)
+
+        // Scroll is view-local.
+        try ui1.setRenderMetrics(fontSize: 10, lineHeightPx: 10, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui2.setRenderMetrics(fontSize: 10, lineHeightPx: 10, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui1.setViewportPx(widthPx: 80, heightPx: 20, scale: 1)
+        try ui2.setViewportPx(widthPx: 80, heightPx: 20, scale: 1)
+
+        ui1.setSmoothScrollState(topVisualRow: 1, subRowOffset: 0)
+        ui2.setSmoothScrollState(topVisualRow: 3, subRowOffset: 0)
+
+        XCTAssertEqual(try ui1.viewportState().scrollTop, 1)
+        XCTAssertEqual(try ui2.viewportState().scrollTop, 3)
+    }
+
     func testCreateInsertUndoRedoRenderAndQueries() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)

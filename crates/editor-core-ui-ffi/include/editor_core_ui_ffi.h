@@ -135,6 +135,11 @@ char* editor_core_ui_ffi_version(void);
 
 EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8,
                                           uint32_t viewport_width_cells);
+// Create a new view handle that shares the same document/buffer with `ui`.
+//
+// The returned handle must be freed with `editor_core_ui_ffi_editor_ui_free`.
+EditorUi* editor_core_ui_ffi_editor_ui_clone_view(EditorUi* ui,
+                                                  uint32_t viewport_width_cells);
 void editor_core_ui_ffi_editor_ui_free(EditorUi* ui);
 
 int32_t editor_core_ui_ffi_editor_ui_set_theme(EditorUi* ui, const EcuTheme* theme);

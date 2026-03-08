@@ -406,6 +406,33 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_new(
     }
 }
 
+/// Clone an Editor UI handle as a new view (shared document/buffer, independent view state).
+///
+/// Returns null on error and sets last error message.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_clone_view(
+    ui: *mut EditorUi,
+    viewport_width_cells: u32,
+) -> *mut EditorUi {
+    let default = ptr::null_mut();
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let cloned = ui
+            .clone_view(viewport_width_cells as usize)
+            .map_err(map_ui_error)?;
+        Ok(Box::into_raw(Box::new(cloned)))
+    }) {
+        Ok(ptr) => {
+            clear_last_error();
+            ptr
+        }
+        Err(err) => {
+            set_last_error(err);
+            default
+        }
+    }
+}
+
 /// Free an Editor UI handle.
 ///
 /// # Safety
@@ -6385,6 +6412,99 @@ contexts:
         assert_eq!(vp.sub_row_offset, 0);
 
         unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+    }
+
+    #[test]
+    fn ffi_clone_view_shares_text_and_has_independent_scroll_state() {
+        let initial = CString::new("abc\ndef\nghi\njkl\nmno\npqr\nstu\nvwx\nyz\n").unwrap();
+        let ui1 = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui1.is_null());
+        let ui2 = editor_core_ui_ffi_editor_ui_clone_view(ui1, 80);
+        assert!(!ui2.is_null());
+
+        // Initial view state is independent.
+        let r1 = EcuSelectionRange { start: 0, end: 0 };
+        let r2 = EcuSelectionRange { start: 4, end: 4 };
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_selections(ui1, &r1 as *const _, 1, 0) },
+            ECU_OK
+        );
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_set_selections(ui2, &r2 as *const _, 1, 0) },
+            ECU_OK
+        );
+
+        let mut start: u32 = 0;
+        let mut end: u32 = 0;
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui1, &mut start, &mut end) },
+            ECU_OK
+        );
+        assert_eq!((start, end), (0, 0));
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui2, &mut start, &mut end) },
+            ECU_OK
+        );
+        assert_eq!((start, end), (4, 4));
+
+        // Text edits are shared across views.
+        let insert = CString::new("X").unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_insert_text(ui1, insert.as_ptr()),
+            ECU_OK
+        );
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui2);
+        assert!(!text_ptr.is_null());
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
+        assert_eq!(text, "Xabc\ndef\nghi\njkl\nmno\npqr\nstu\nvwx\nyz\n");
+
+        // Each view tracks its own selection, but receives the same text delta.
+        assert_eq!(
+            unsafe { editor_core_ui_ffi_editor_ui_get_selection_offsets(ui2, &mut start, &mut end) },
+            ECU_OK
+        );
+        assert_eq!((start, end), (5, 5));
+
+        // Scroll state is view-local.
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui1, 10.0, 10.0, 10.0, 0.0, 0.0);
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui2, 10.0, 10.0, 10.0, 0.0, 0.0);
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui1, 80, 20, 1.0);
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui2, 80, 20, 1.0);
+
+        unsafe { editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(ui1, 1, 0) };
+        unsafe { editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(ui2, 3, 0) };
+
+        let mut vp1 = EcuViewportState {
+            width_cells: 0,
+            height_rows: 0,
+            has_height: 0,
+            scroll_top: 0,
+            sub_row_offset: 0,
+            overscan_rows: 0,
+            visible_start: 0,
+            visible_end: 0,
+            prefetch_start: 0,
+            prefetch_end: 0,
+            total_visual_lines: 0,
+        };
+        let mut vp2 = vp1;
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_viewport_state(ui1, &mut vp1),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_get_viewport_state(ui2, &mut vp2),
+            ECU_OK
+        );
+        assert_eq!(vp1.scroll_top, 1);
+        assert_eq!(vp2.scroll_top, 3);
+
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui2) };
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui1) };
     }
 
     #[test]

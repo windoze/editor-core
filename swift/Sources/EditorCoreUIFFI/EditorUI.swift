@@ -29,6 +29,11 @@ public final class EditorUI {
         case triangle = 2
     }
 
+    private init(library: EditorCoreUIFFILibrary, handle: OpaquePointer) {
+        self.library = library
+        self.handle = handle
+    }
+
     public init(library: EditorCoreUIFFILibrary, initialText: String = "", viewportWidthCells: UInt32 = 120) throws {
         self.library = library
         guard let ptr = initialText.withCString({ cstr in
@@ -41,6 +46,13 @@ public final class EditorUI {
 
     deinit {
         editor_core_ui_ffi_editor_ui_free(handle)
+    }
+
+    public func cloneView(viewportWidthCells: UInt32) throws -> EditorUI {
+        guard let ptr = editor_core_ui_ffi_editor_ui_clone_view(handle, viewportWidthCells) else {
+            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_clone_view", message: library.lastErrorMessageString())
+        }
+        return EditorUI(library: library, handle: ptr)
     }
 
     public func setTheme(_ theme: EcuTheme) throws {
