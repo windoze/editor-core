@@ -138,6 +138,7 @@ pub mod line_ending;
 pub mod line_index;
 pub mod processing;
 pub mod search;
+pub mod snippets;
 mod selection_set;
 pub mod snapshot;
 pub mod state;
@@ -176,6 +177,7 @@ pub use line_ending::LineEnding;
 pub use line_index::LineIndex;
 pub use processing::{DocumentProcessor, ProcessingEdit};
 pub use search::{SearchError, SearchMatch, SearchOptions};
+pub use snippets::{SnippetRange, SnippetSession, SnippetTabstop, SnippetTemplate, parse_snippet};
 pub use snapshot::{
     Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
     HeadlessGrid, HeadlessLine, MinimapGrid, MinimapLine, SnapshotGenerator,

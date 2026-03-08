@@ -523,6 +523,11 @@ impl EditorStateManager {
         self.executor.set_line_ending(line_ending);
     }
 
+    /// Return `true` if this editor currently has an active snippet session.
+    pub fn has_active_snippet_session(&self) -> bool {
+        self.executor.has_active_snippet_session()
+    }
+
     /// Get the current document text converted to the preferred line ending for saving.
     pub fn get_text_for_saving(&self) -> String {
         let text = self.editor().get_text();
@@ -641,6 +646,8 @@ impl EditorStateManager {
                 | CursorCommand::SelectWord
                 | CursorCommand::ExpandSelection
                 | CursorCommand::ExpandSelectionBy { .. }
+                | CursorCommand::SnippetNextPlaceholder
+                | CursorCommand::SnippetPrevPlaceholder
                 | CursorCommand::AddCursorAbove
                 | CursorCommand::AddCursorBelow
                 | CursorCommand::AddNextOccurrence { .. }

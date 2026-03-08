@@ -47,6 +47,7 @@ use crate::snapshot::{
     Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
     HeadlessGrid, HeadlessLine, MinimapGrid, MinimapLine,
 };
+use crate::snippets::{SnippetNavigation, SnippetSession, parse_snippet};
 use crate::{
     FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex, PieceTable,
 };
@@ -363,6 +364,25 @@ pub enum EditCommand {
         /// The edit list (character offsets, half-open).
         edits: Vec<TextEditSpec>,
     },
+    /// Apply a snippet-shaped insert as a single undoable step.
+    ///
+    /// This is primarily intended for LSP completion items with `insertTextFormat == 2`.
+    ///
+    /// - `start`/`end` are interpreted in **pre-edit** character offsets (half-open).
+    /// - `additional_edits` are applied in the same undo step (also in pre-edit coordinates).
+    /// - The snippet is expanded (placeholders removed / defaults inserted), and the first
+    ///   placeholder (lowest index) is selected for navigation via
+    ///   [`CursorCommand::SnippetNextPlaceholder`] / [`CursorCommand::SnippetPrevPlaceholder`].
+    ApplySnippet {
+        /// Inclusive start character offset.
+        start: usize,
+        /// Exclusive end character offset.
+        end: usize,
+        /// Snippet text in TextMate / VS Code snippet syntax.
+        snippet: String,
+        /// Additional text edits (LSP `additionalTextEdits`), in pre-edit coordinates.
+        additional_edits: Vec<TextEditSpec>,
+    },
     /// Smart backspace: if the caret is in leading whitespace, delete back to the previous tab stop.
     ///
     /// Otherwise, behaves like [`EditCommand::Backspace`].
@@ -463,6 +483,14 @@ pub enum CursorCommand {
     ///
     /// Matching is performed for the configured bracket pairs (typically `()`, `[]`, `{}`).
     MoveToMatchingBracket,
+    /// If a snippet session is active, jump to the **next** snippet tabstop (placeholder).
+    ///
+    /// This is typically bound to the Tab key while a completion snippet is active.
+    SnippetNextPlaceholder,
+    /// If a snippet session is active, jump to the **previous** snippet tabstop (placeholder).
+    ///
+    /// This is typically bound to Shift-Tab while a completion snippet is active.
+    SnippetPrevPlaceholder,
     /// Set selection range
     SetSelection {
         /// Selection start position.
@@ -2509,6 +2537,8 @@ pub struct CommandExecutor {
     indentation_config: IndentationConfig,
     /// Auto-pairs configuration used by [`EditCommand::TypeChar`] and delete-pair behavior.
     auto_pairs: AutoPairsConfig,
+    /// Active snippet session (placeholders + navigation), if any.
+    snippet_session: Option<SnippetSession>,
     /// Preferred line ending for saving (internal storage is always LF).
     line_ending: LineEnding,
     /// Sticky x position for visual-row cursor movement (in cells).
@@ -2527,6 +2557,7 @@ impl CommandExecutor {
             tab_key_behavior: TabKeyBehavior::Spaces,
             indentation_config: IndentationConfig::default(),
             auto_pairs: AutoPairsConfig::default(),
+            snippet_session: None,
             line_ending: LineEnding::detect_in_text(text),
             preferred_x_cells: None,
             last_text_delta: None,
@@ -2542,8 +2573,34 @@ impl CommandExecutor {
     pub fn execute(&mut self, command: Command) -> Result<CommandResult, CommandError> {
         self.last_text_delta = None;
 
+        // Snippet sessions are view-local and should generally end when the user performs an
+        // explicit navigation outside snippet tabstop traversal, or when history/programmatic
+        // edits occur (undo/redo, bulk apply edits, ...).
+        if matches!(
+            &command,
+            Command::Cursor(
+                CursorCommand::SnippetNextPlaceholder | CursorCommand::SnippetPrevPlaceholder
+            )
+        ) {
+            // keep session
+        } else if matches!(&command, Command::Cursor(_)) {
+            self.snippet_session = None;
+        } else if matches!(
+            &command,
+            Command::Edit(
+                EditCommand::Undo | EditCommand::Redo | EditCommand::ApplyTextEdits { .. }
+            )
+        ) {
+            self.snippet_session = None;
+        }
+
         // Save command to history
         self.command_history.push(command.clone());
+
+        let skip_snippet_delta = matches!(
+            &command,
+            Command::Edit(EditCommand::ApplySnippet { .. })
+        );
 
         let affects_visual_rows = matches!(
             &command,
@@ -2578,12 +2635,26 @@ impl CommandExecutor {
         }
 
         // Execute command
-        match command {
+        let result = match command {
             Command::Edit(edit_cmd) => self.execute_edit(edit_cmd),
             Command::Cursor(cursor_cmd) => self.execute_cursor(cursor_cmd),
             Command::View(view_cmd) => self.execute_view(view_cmd),
             Command::Style(style_cmd) => self.execute_style(style_cmd),
+        }?;
+
+        // Keep snippet placeholder ranges stable under subsequent edits.
+        //
+        // Note: snippet insertion itself (`ApplySnippet`) creates anchors in **post-edit**
+        // coordinates, so we must not apply the delta again for that command.
+        if !skip_snippet_delta {
+            if let (Some(delta), Some(session)) =
+                (self.last_text_delta.as_ref(), self.snippet_session.as_mut())
+            {
+                session.apply_delta(delta);
+            }
         }
+
+        Ok(result)
     }
 
     /// Get the structured text delta produced by the last successful `execute()` call, if any.
@@ -2718,6 +2789,24 @@ impl CommandExecutor {
         self.auto_pairs.enabled = enabled;
     }
 
+    /// Return `true` if a snippet session is currently active for this view.
+    pub fn has_active_snippet_session(&self) -> bool {
+        self.snippet_session
+            .as_ref()
+            .map(|s| s.is_active())
+            .unwrap_or(false)
+    }
+
+    /// Get the current snippet session (placeholders + navigation), if any.
+    pub fn snippet_session(&self) -> Option<&SnippetSession> {
+        self.snippet_session.as_ref()
+    }
+
+    /// Replace the current snippet session.
+    pub fn set_snippet_session(&mut self, session: Option<SnippetSession>) {
+        self.snippet_session = session;
+    }
+
     /// Get the sticky x position (in cells) used by visual-row cursor movement.
     pub fn preferred_x_cells(&self) -> Option<usize> {
         self.preferred_x_cells
@@ -2788,6 +2877,12 @@ impl CommandExecutor {
             EditCommand::SplitLine => self.execute_insert_newline_command(false),
             EditCommand::ToggleComment { config } => self.execute_toggle_comment_command(config),
             EditCommand::ApplyTextEdits { edits } => self.execute_apply_text_edits_command(edits),
+            EditCommand::ApplySnippet {
+                start,
+                end,
+                snippet,
+                additional_edits,
+            } => self.execute_apply_snippet_command(start, end, snippet, additional_edits),
             EditCommand::Insert { offset, text } => self.execute_insert_command(offset, text),
             EditCommand::Delete { start, length } => self.execute_delete_command(start, length),
             EditCommand::Replace {
@@ -3692,6 +3787,71 @@ impl CommandExecutor {
             .collect();
 
         Ok(CommandResult::Success)
+    }
+
+    fn execute_snippet_navigation_command(
+        &mut self,
+        forward: bool,
+    ) -> Result<CommandResult, CommandError> {
+        let Some(session) = self.snippet_session.as_mut() else {
+            return Ok(CommandResult::Success);
+        };
+
+        let action = if forward { session.next() } else { session.prev() };
+        match action {
+            SnippetNavigation::Noop => Ok(CommandResult::Success),
+            SnippetNavigation::Finish(offset) => {
+                let doc_char_count = self.editor.piece_table.char_count();
+                let target = offset.min(doc_char_count);
+                let (line, column) = self.editor.line_index.char_offset_to_position(target);
+                let pos = Position::new(line, column);
+
+                self.editor.cursor_position = pos;
+                self.editor.selection = None;
+                self.editor.secondary_selections.clear();
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(pos.line, pos.column)
+                    .map(|(_, x)| x);
+
+                self.snippet_session = None;
+                Ok(CommandResult::Success)
+            }
+            SnippetNavigation::SelectRanges(ranges) => {
+                if ranges.is_empty() {
+                    return Ok(CommandResult::Success);
+                }
+
+                let doc_char_count = self.editor.piece_table.char_count();
+                let mut selections: Vec<Selection> = Vec::with_capacity(ranges.len());
+                for (start, end) in ranges {
+                    let a = start.min(doc_char_count);
+                    let b = end.min(doc_char_count);
+                    let (s_line, s_col) = self.editor.line_index.char_offset_to_position(a);
+                    let (e_line, e_col) = self.editor.line_index.char_offset_to_position(b);
+                    selections.push(Selection {
+                        start: Position::new(s_line, s_col),
+                        end: Position::new(e_line, e_col),
+                        direction: SelectionDirection::Forward,
+                    });
+                }
+
+                let (selections, primary_index) =
+                    crate::selection_set::normalize_selections(selections, 0);
+                self.restore_selection_set(SelectionSetSnapshot {
+                    selections,
+                    primary_index,
+                });
+
+                let pos = self.editor.cursor_position;
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(pos.line, pos.column)
+                    .map(|(_, x)| x);
+
+                Ok(CommandResult::Success)
+            }
+        }
     }
 
     fn execute_update_bracket_match_highlights_command(
@@ -5550,6 +5710,219 @@ impl CommandExecutor {
             .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
             .collect();
         self.apply_text_ops(apply_ops)?;
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_apply_snippet_command(
+        &mut self,
+        start: usize,
+        end: usize,
+        snippet: String,
+        additional_edits: Vec<TextEditSpec>,
+    ) -> Result<CommandResult, CommandError> {
+        self.undo_redo.end_group();
+
+        // A new snippet insert replaces any existing snippet session.
+        self.snippet_session = None;
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+
+        if start > end {
+            return Err(CommandError::InvalidRange { start, end });
+        }
+        if end > before_char_count {
+            return Err(CommandError::InvalidRange { start, end });
+        }
+
+        let template = parse_snippet(&snippet);
+
+        let mut edits: Vec<TextEditSpec> = Vec::with_capacity(1 + additional_edits.len());
+        edits.push(TextEditSpec {
+            start,
+            end,
+            text: template.text.clone(),
+        });
+        edits.extend(additional_edits);
+
+        let max_offset = before_char_count;
+        for edit in &mut edits {
+            if edit.start > edit.end {
+                return Err(CommandError::InvalidRange {
+                    start: edit.start,
+                    end: edit.end,
+                });
+            }
+            if edit.end > max_offset {
+                return Err(CommandError::InvalidRange {
+                    start: edit.start,
+                    end: edit.end,
+                });
+            }
+            edit.text = crate::text::normalize_crlf_to_lf_string(edit.text.clone());
+        }
+
+        edits.sort_by_key(|e| (e.start, e.end));
+
+        // Validate non-overlap (pre-edit coordinates).
+        let mut prev_end = 0usize;
+        for (idx, edit) in edits.iter().enumerate() {
+            if idx > 0 && edit.start < prev_end {
+                return Err(CommandError::Other(
+                    "ApplySnippet requires non-overlapping edits".to_string(),
+                ));
+            }
+            prev_end = prev_end.max(edit.end);
+        }
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+            is_main: bool,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(edits.len());
+        for edit in edits {
+            let delete_len = edit.end.saturating_sub(edit.start);
+            let deleted_text = if delete_len == 0 {
+                String::new()
+            } else {
+                self.editor.piece_table.get_range(edit.start, delete_len)
+            };
+
+            let inserted_text = edit.text;
+            let inserted_len = inserted_text.chars().count();
+
+            ops.push(Op {
+                start_before: edit.start,
+                start_after: edit.start,
+                delete_len,
+                deleted_text,
+                inserted_text,
+                inserted_len,
+                is_main: edit.start == start && edit.end == end,
+            });
+        }
+
+        // Compute start_after using ascending order and delta accumulation.
+        let mut delta: i64 = 0;
+        for op in &mut ops {
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "ApplySnippet produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64 - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Figure out where the expanded snippet text begins in the post-edit document.
+        let main_start_after = ops
+            .iter()
+            .find(|op| op.is_main)
+            .map(|op| op.start_after)
+            .unwrap_or(start);
+
+        // Activate snippet session + select first tabstop (or jump to `$0` when there are none).
+        if let Some(session) = SnippetSession::new(main_start_after, &template) {
+            let ranges = session.current_ranges();
+            if ranges.is_empty() {
+                // Defensive fallback: treat as "no tabstops".
+                self.snippet_session = None;
+            } else {
+                let doc_char_count = self.editor.piece_table.char_count();
+                let mut selections: Vec<Selection> = Vec::with_capacity(ranges.len());
+                for (a, b) in ranges {
+                    let start = a.min(doc_char_count);
+                    let end = b.min(doc_char_count);
+                    let (s_line, s_col) = self.editor.line_index.char_offset_to_position(start);
+                    let (e_line, e_col) = self.editor.line_index.char_offset_to_position(end);
+                    selections.push(Selection {
+                        start: Position::new(s_line, s_col),
+                        end: Position::new(e_line, e_col),
+                        direction: SelectionDirection::Forward,
+                    });
+                }
+
+                let (selections, primary_index) =
+                    crate::selection_set::normalize_selections(selections, 0);
+                self.restore_selection_set(SelectionSetSnapshot {
+                    selections,
+                    primary_index,
+                });
+
+                let pos = self.editor.cursor_position;
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(pos.line, pos.column)
+                    .map(|(_, x)| x);
+
+                self.snippet_session = Some(session);
+            }
+        } else {
+            let doc_char_count = self.editor.piece_table.char_count();
+            let target = main_start_after
+                .saturating_add(template.final_offset)
+                .min(doc_char_count);
+            let (line, column) = self.editor.line_index.char_offset_to_position(target);
+            let pos = Position::new(line, column);
+            self.editor.cursor_position = pos;
+            self.editor.selection = None;
+            self.editor.secondary_selections.clear();
+            self.preferred_x_cells = self
+                .editor
+                .logical_position_to_visual(pos.line, pos.column)
+                .map(|(_, x)| x);
+        }
 
         let after_selection = self.snapshot_selection_set();
 
@@ -8901,6 +9274,12 @@ impl CommandExecutor {
                 self.execute_add_all_occurrences_command(options)
             }
             CursorCommand::MoveToMatchingBracket => self.execute_move_to_matching_bracket_command(),
+            CursorCommand::SnippetNextPlaceholder => {
+                self.execute_snippet_navigation_command(true)
+            }
+            CursorCommand::SnippetPrevPlaceholder => {
+                self.execute_snippet_navigation_command(false)
+            }
             CursorCommand::FindNext { query, options } => {
                 self.execute_find_command(query, options, true)
             }

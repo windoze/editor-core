@@ -26,7 +26,8 @@ requirements, and a small dependency surface.
   - document highlights → `ProcessingEdit::ReplaceStyleLayer` (`StyleLayerId::DOCUMENT_HIGHLIGHTS`)
   - document links → `ProcessingEdit::ReplaceDecorations` (`DecorationLayerId::DOCUMENT_LINKS`)
   - code lens → `ProcessingEdit::ReplaceDecorations` (`DecorationLayerId::CODE_LENS`)
-  - completion apply helpers: batch `additionalTextEdits` and best-effort snippet downgrade
+  - completion apply helpers: batch `additionalTextEdits` and apply snippet inserts
+    (`insertTextFormat == 2`) via `editor-core`’s snippet engine (placeholders + tabstop navigation)
 - **Symbols/outline helpers**:
   - document symbols (`textDocument/documentSymbol`) → `DocumentOutline` / `ProcessingEdit::ReplaceDocumentSymbols`
   - workspace symbols (`workspace/symbol`) → `Vec<WorkspaceSymbol>`

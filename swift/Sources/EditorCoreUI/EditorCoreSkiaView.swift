@@ -1499,8 +1499,13 @@ public final class EditorCoreSkiaView: MTKView {
                 try editor.commitText("\n")
                 didEditText = true
             case #selector(insertTab(_:)):
+                let wasSnippet = try editor.hasActiveSnippetSession()
                 try editor.insertTab()
-                didEditText = true
+                didEditText = !wasSnippet
+            case #selector(insertBacktab(_:)):
+                let wasSnippet = try editor.hasActiveSnippetSession()
+                try editor.insertBacktab()
+                didEditText = !wasSnippet
             case #selector(cancelOperation(_:)):
                 // Escape: cancel marked text / composition (restore original replaced range).
                 let marked = try editor.markedRange()

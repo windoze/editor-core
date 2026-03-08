@@ -24,6 +24,7 @@ use crate::intervals::FoldRegion;
 use crate::processing::ProcessingEdit;
 use crate::search::{SearchError, SearchMatch, SearchOptions, find_all};
 use crate::selection_set::selection_direction;
+use crate::snippets::SnippetSession;
 use crate::state::CursorState;
 use crate::{AnchorBias, TextAnchor};
 use crate::{
@@ -108,6 +109,7 @@ struct ViewCore {
     tab_key_behavior: TabKeyBehavior,
     indentation_config: IndentationConfig,
     auto_pairs: AutoPairsConfig,
+    snippet_session: Option<SnippetSession>,
     preferred_x_cells: Option<usize>,
 }
 
@@ -125,6 +127,7 @@ impl ViewCore {
             tab_key_behavior: executor.tab_key_behavior(),
             indentation_config: executor.indentation_config().clone(),
             auto_pairs: executor.auto_pairs_config().clone(),
+            snippet_session: executor.snippet_session().cloned(),
             preferred_x_cells: executor.preferred_x_cells(),
         }
     }
@@ -164,6 +167,7 @@ impl ViewCore {
         executor.set_tab_key_behavior(self.tab_key_behavior);
         executor.set_indentation_config(self.indentation_config.clone());
         executor.set_auto_pairs_config(self.auto_pairs.clone());
+        executor.set_snippet_session(self.snippet_session.clone());
         executor.set_preferred_x_cells(self.preferred_x_cells);
     }
 }
@@ -1238,6 +1242,10 @@ impl Workspace {
                     for sel in &mut other.core.secondary_selections {
                         *sel = apply_selection_delta(&before_line_index, new_index, sel, delta_arc);
                     }
+
+                    if let Some(ref mut session) = other.core.snippet_session {
+                        session.apply_delta(delta_arc);
+                    }
                 }
 
                 // Keep navigation state stable under edits.
@@ -1270,6 +1278,22 @@ impl Workspace {
         }
 
         Ok(result)
+    }
+
+    /// Return `true` if the given view currently has an active snippet session.
+    ///
+    /// Snippet sessions are created by snippet inserts (for example LSP completion items with
+    /// `insertTextFormat == 2`) and allow tab/shift-tab navigation between placeholders.
+    pub fn has_active_snippet_session(&self, view_id: ViewId) -> Result<bool, WorkspaceError> {
+        let Some(view) = self.views.get(&view_id) else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+        Ok(view
+            .core
+            .snippet_session
+            .as_ref()
+            .map(|s| s.is_active())
+            .unwrap_or(false))
     }
 
     /// Toggle a bookmark at the **current cursor line** for the given view.
@@ -2251,6 +2275,7 @@ impl Workspace {
                 tab_key_behavior: buffer.executor.tab_key_behavior(),
                 indentation_config: buffer.executor.indentation_config().clone(),
                 auto_pairs: buffer.executor.auto_pairs_config().clone(),
+                snippet_session: None,
                 preferred_x_cells: None,
             };
             neutral.apply_to_executor(&mut buffer.executor);

@@ -530,6 +530,18 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_insert_tab")
     }
 
+    public func insertBacktab() throws {
+        let status = editor_core_ui_ffi_editor_ui_insert_backtab(handle)
+        try library.ensureStatus(status, context: "editor_ui_insert_backtab")
+    }
+
+    public func hasActiveSnippetSession() throws -> Bool {
+        var out: UInt8 = 0
+        let status = editor_core_ui_ffi_editor_ui_has_active_snippet_session(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_has_active_snippet_session")
+        return out != 0
+    }
+
     public func backspace() throws {
         let status = editor_core_ui_ffi_editor_ui_backspace(handle)
         try library.ensureStatus(status, context: "editor_ui_backspace")

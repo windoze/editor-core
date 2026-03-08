@@ -296,6 +296,9 @@ int32_t editor_core_ui_ffi_editor_ui_reveal_primary_caret(EditorUi* ui);
 
 int32_t editor_core_ui_ffi_editor_ui_insert_text(EditorUi* ui, const char* text_utf8);
 int32_t editor_core_ui_ffi_editor_ui_insert_tab(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_insert_backtab(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_has_active_snippet_session(EditorUi* ui,
+                                                                uint8_t* out_active);
 int32_t editor_core_ui_ffi_editor_ui_backspace(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_delete_forward(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_delete_word_back(EditorUi* ui);

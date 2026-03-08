@@ -91,13 +91,30 @@ this workspace (per your request).
     - `crates/editor-core-diff/tests/fixtures/`
   - Example: `cargo run -p editor-core-diff --example diff_hunks`
 
-- [ ] **[core] Snippet engine (placeholders + navigation)**
-  - The LSP completion helper currently **downgrades** snippet-formatted inserts to plain text
-    (see `crates/editor-core-lsp/src/lsp_completion.rs`).
-  - A real snippet subsystem needs:
-    - parsing `${1:placeholder}`, `$0`, choice placeholders, variables
-    - tracking “active snippet ranges” under subsequent edits
-    - tab/shift-tab navigation between placeholders
+- [x] **[core] Snippet engine (placeholders + navigation)**
+  - Core primitives:
+    - `crates/editor-core/src/snippets.rs`: `parse_snippet(...)` + `SnippetTemplate` + `SnippetSession`
+    - parsing `${1:placeholder}`, `$0`, choice placeholders, variables (best-effort)
+    - mirrored tabstops (same index) expand to the same default text and are selected as multi-cursors
+  - Kernel commands:
+    - snippet insert: `EditCommand::ApplySnippet { start, end, snippet, additional_edits }`
+    - navigation: `CursorCommand::SnippetNextPlaceholder` / `SnippetPrevPlaceholder`
+  - Tracking under edits:
+    - `CommandExecutor::execute(...)` applies `TextDelta` to the active `SnippetSession`
+    - `Workspace::execute(...)` applies the same delta to other views’ snippet sessions
+  - LSP integration:
+    - `crates/editor-core-lsp/src/lsp_completion.rs`: snippet-shaped `CompletionItem`s now apply via
+      `EditCommand::ApplySnippet` (no downgrade), including `additionalTextEdits` in the same undo step
+  - Tests + fixtures:
+    - `crates/editor-core/tests/snippets.rs`
+    - `crates/editor-core/tests/fixtures/snippet_completion_site.txt`
+    - `crates/editor-core-lsp/tests/completion_apply.rs`
+  - Example:
+    - `crates/editor-core/examples/snippet_engine.rs`
+  - UI/FFI integration:
+    - `editor-core-ui::EditorUi::insert_tab` / `insert_backtab` navigate placeholders when a snippet is active
+    - `editor-core-ui-ffi` exports `editor_ui_insert_backtab` + `editor_ui_has_active_snippet_session`
+    - Swift/AppKit: `EditorUI.hasActiveSnippetSession()` + `EditorCoreSkiaView` handles `insertBacktab:`
 
 - [x] **[core] Language-aware indentation beyond “copy leading whitespace”**
   - `InsertNewline { auto_indent: true }` previously only copied leading whitespace.
