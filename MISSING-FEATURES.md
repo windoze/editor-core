@@ -199,7 +199,7 @@ this workspace (per your request).
 
 ## UI / rendering gaps (`editor-core-ui`, `editor-core-render-skia`)
 
-- [ ] **[ui] Multi-document UI wrapper**
+- [x] **[ui] Multi-document UI wrapper**
   - `editor-core` has `Workspace` (multi-buffer + multi-view), but `editor-core-ui::EditorUi`
     intentionally wraps **one buffer + one view** (with `clone_view` support).
   - A “full editor” needs a higher-level UI-facing orchestrator:
@@ -207,6 +207,15 @@ this workspace (per your request).
     - per-buffer language selection + processing pipeline
     - split management + focus tracking
     - global commands (e.g. “close all”, “save all”, “find in workspace”)
+  - Implemented as a small orchestrator on top of `EditorUi`:
+    - `editor-core-ui::MultiDocumentEditorUi` + `TabId` (`crates/editor-core-ui/src/multi_document.rs`)
+    - Supports:
+      - open/close/switch tabs
+      - per-tab split panes via `EditorUi::clone_view(...)` with active-view tracking
+      - “close all”
+      - in-memory search across all open tabs (`search_all_tabs`)
+  - Tests: `crates/editor-core-ui/tests/multi_document_ui_tests.rs`
+  - Example: `cargo run -p editor-core-ui --example multi_document_ui`
 
 - [ ] **[ui] Keybinding resolution + command dispatch**
   - The workspace provides commands; a full editor still needs:

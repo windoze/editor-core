@@ -3,6 +3,8 @@
 //! This crate owns editor state, performs input-event mapping, and uses a renderer
 //! implementation (Skia in `editor-core-render-skia`) to draw the viewport.
 
+mod multi_document;
+
 use editor_core::intervals::Interval;
 use editor_core::workspace::{BufferId, ViewId, Workspace};
 use editor_core::{
@@ -36,6 +38,8 @@ use std::sync::{Arc, Mutex, OnceLock, Weak, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 use thiserror::Error;
+
+pub use multi_document::{MultiDocumentEditorUi, TabId, TabSearchResult};
 
 #[derive(Debug, Error)]
 pub enum UiError {
