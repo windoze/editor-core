@@ -40,4 +40,3 @@ fn workspace_marks_intelligence_results_stale_on_buffer_edit() {
     assert!(ws.intelligence().get(refs_id).unwrap().is_stale());
     assert!(!ws.intelligence().get(other_id).unwrap().is_stale());
 }
-

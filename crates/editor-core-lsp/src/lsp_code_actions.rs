@@ -87,7 +87,9 @@ pub fn code_action_items_from_value(value: &Value) -> Vec<LspCodeActionItem> {
         .filter_map(|item| {
             // Heuristic: `CodeAction` must have `title`, and usually has `kind` or `edit` or `command`.
             // `Command` must have `title` + `command`.
-            if item.get("edit").is_some() || item.get("kind").is_some() || item.get("data").is_some()
+            if item.get("edit").is_some()
+                || item.get("kind").is_some()
+                || item.get("data").is_some()
             {
                 return LspCodeAction::from_value(item).map(LspCodeActionItem::CodeAction);
             }
@@ -151,4 +153,3 @@ mod tests {
         }
     }
 }
-

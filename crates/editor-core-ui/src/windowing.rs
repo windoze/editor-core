@@ -5,7 +5,10 @@ pub enum WindowingError {
     #[error("RGBA source length must be a multiple of 4 bytes")]
     InvalidSourceLen,
     #[error("pixel count mismatch: src={src_pixels} dst={dst_pixels}")]
-    PixelCountMismatch { src_pixels: usize, dst_pixels: usize },
+    PixelCountMismatch {
+        src_pixels: usize,
+        dst_pixels: usize,
+    },
 }
 
 /// Convert an RGBA8888 byte buffer (`[r, g, b, a, ...]`) into a `u32` ARGB buffer (`0xAARRGGBB`).
@@ -13,7 +16,7 @@ pub enum WindowingError {
 /// This is a small helper for windowing “shells” that want to present `EditorUi`’s CPU RGBA output
 /// via APIs like `softbuffer` (which commonly take `u32` pixels).
 pub fn rgba8_to_argb_u32(src_rgba: &[u8], dst_argb: &mut [u32]) -> Result<(), WindowingError> {
-    if src_rgba.len() % 4 != 0 {
+    if !src_rgba.len().is_multiple_of(4) {
         return Err(WindowingError::InvalidSourceLen);
     }
     let src_pixels = src_rgba.len() / 4;
@@ -35,4 +38,3 @@ pub fn rgba8_to_argb_u32(src_rgba: &[u8], dst_argb: &mut [u32]) -> Result<(), Wi
 
     Ok(())
 }
-

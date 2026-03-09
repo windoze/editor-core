@@ -1,6 +1,6 @@
 use crate::{FileIoError, FileIoOptions, read_utf8_file, write_utf8_file_atomic};
-use editor_core::workspace::{BufferId, OpenBufferResult, Workspace};
 use editor_core::LineEnding;
+use editor_core::workspace::{BufferId, OpenBufferResult, Workspace};
 use editor_core_lsp::{file_uri_to_path, path_to_file_uri};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -44,17 +44,9 @@ pub fn open_file_into_workspace(
 }
 
 /// A small I/O helper that wires filesystem reads/writes to `editor-core` workspace buffers.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct WorkspaceIo {
     pub io_options: FileIoOptions,
-}
-
-impl Default for WorkspaceIo {
-    fn default() -> Self {
-        Self {
-            io_options: FileIoOptions::default(),
-        }
-    }
 }
 
 impl WorkspaceIo {
@@ -62,17 +54,24 @@ impl WorkspaceIo {
         Self { io_options }
     }
 
-    pub fn buffer_file_path(ws: &Workspace, buffer_id: BufferId) -> Result<PathBuf, WorkspaceIoError> {
-        let meta = ws
-            .buffer_metadata(buffer_id)
-            .ok_or(editor_core::workspace::WorkspaceError::BufferNotFound(buffer_id))?;
+    pub fn buffer_file_path(
+        ws: &Workspace,
+        buffer_id: BufferId,
+    ) -> Result<PathBuf, WorkspaceIoError> {
+        let meta = ws.buffer_metadata(buffer_id).ok_or(
+            editor_core::workspace::WorkspaceError::BufferNotFound(buffer_id),
+        )?;
         let Some(uri) = meta.uri.as_deref() else {
             return Err(WorkspaceIoError::BufferHasNoPath(buffer_id));
         };
         file_uri_to_path(uri).ok_or_else(|| WorkspaceIoError::UnsupportedUri(uri.to_string()))
     }
 
-    pub fn save_buffer(&self, ws: &mut Workspace, buffer_id: BufferId) -> Result<(), WorkspaceIoError> {
+    pub fn save_buffer(
+        &self,
+        ws: &mut Workspace,
+        buffer_id: BufferId,
+    ) -> Result<(), WorkspaceIoError> {
         let path = Self::buffer_file_path(ws, buffer_id)?;
         let text = ws.buffer_text_for_saving(buffer_id)?;
         write_utf8_file_atomic(&path, &text, self.io_options)?;
@@ -103,9 +102,9 @@ impl WorkspaceIo {
                 continue;
             }
 
-            let meta = ws
-                .buffer_metadata(buffer_id)
-                .ok_or(editor_core::workspace::WorkspaceError::BufferNotFound(buffer_id))?;
+            let meta = ws.buffer_metadata(buffer_id).ok_or(
+                editor_core::workspace::WorkspaceError::BufferNotFound(buffer_id),
+            )?;
             if meta.uri.is_none() {
                 skipped_no_path.push(buffer_id);
                 continue;
@@ -184,7 +183,8 @@ mod tests {
 
         let path_b = temp.path().join("b.txt");
         let io = WorkspaceIo::default();
-        io.save_buffer_as(&mut ws, opened.buffer_id, &path_b).unwrap();
+        io.save_buffer_as(&mut ws, opened.buffer_id, &path_b)
+            .unwrap();
 
         let saved = std::fs::read_to_string(&path_b).unwrap();
         assert_eq!(saved, "a\n");

@@ -114,11 +114,7 @@ fn require_dir(path: &Path) -> Result<(), DistError> {
     )))
 }
 
-fn copy_file(
-    src: &Path,
-    dst: &Path,
-    overwrite: bool,
-) -> Result<(), DistError> {
+fn copy_file(src: &Path, dst: &Path, overwrite: bool) -> Result<(), DistError> {
     if !overwrite && dst.exists() {
         return Err(DistError::InvalidArgument(format!(
             "destination already exists: {}",
@@ -147,7 +143,11 @@ fn list_existing(dir: &Path, candidates: &[&str]) -> Vec<PathBuf> {
         .collect()
 }
 
-fn resolve_profile_dir(repo_root: &Path, target_triple: &str, profile: &str) -> Result<PathBuf, DistError> {
+fn resolve_profile_dir(
+    repo_root: &Path,
+    target_triple: &str,
+    profile: &str,
+) -> Result<PathBuf, DistError> {
     let target_dir = repo_root.join("target");
     require_dir(&target_dir)?;
 
@@ -172,9 +172,7 @@ fn headers_for_kind(repo_root: &Path, kind: &str) -> Result<Vec<PathBuf>, DistEr
         "core" => vec![repo_root.join("crates/editor-core-ffi/include/editor_core_ffi.h")],
         "ui" => vec![repo_root.join("crates/editor-core-ui-ffi/include/editor_core_ui_ffi.h")],
         other => {
-            return Err(DistError::InvalidArgument(format!(
-                "unknown kind: {other}"
-            )));
+            return Err(DistError::InvalidArgument(format!("unknown kind: {other}")));
         }
     };
     for h in &headers {
@@ -188,11 +186,19 @@ fn headers_for_kind(repo_root: &Path, kind: &str) -> Result<Vec<PathBuf>, DistEr
     Ok(headers)
 }
 
-fn libs_for_kind(profile_dir: &Path, kind: &str, mode: LinkMode) -> Result<Vec<PathBuf>, DistError> {
+fn libs_for_kind(
+    profile_dir: &Path,
+    kind: &str,
+    mode: LinkMode,
+) -> Result<Vec<PathBuf>, DistError> {
     let (static_candidates, dynamic_candidates, extra_dynamic_import_candidates) = match kind {
         "core" => (
             ["libeditor_core_ffi.a", "editor_core_ffi.lib"],
-            ["libeditor_core_ffi.dylib", "libeditor_core_ffi.so", "editor_core_ffi.dll"],
+            [
+                "libeditor_core_ffi.dylib",
+                "libeditor_core_ffi.so",
+                "editor_core_ffi.dll",
+            ],
             ["editor_core_ffi.dll.lib"],
         ),
         "ui" => (
@@ -205,9 +211,7 @@ fn libs_for_kind(profile_dir: &Path, kind: &str, mode: LinkMode) -> Result<Vec<P
             ["editor_core_ui_ffi.dll.lib"],
         ),
         other => {
-            return Err(DistError::InvalidArgument(format!(
-                "unknown kind: {other}"
-            )));
+            return Err(DistError::InvalidArgument(format!("unknown kind: {other}")));
         }
     };
 
@@ -261,7 +265,8 @@ pub fn package_ffi_dist(options: &FfiDistOptions) -> Result<FfiDistManifest, Dis
         ));
     }
 
-    let profile_dir = resolve_profile_dir(&options.repo_root, &options.target_triple, &options.profile)?;
+    let profile_dir =
+        resolve_profile_dir(&options.repo_root, &options.target_triple, &options.profile)?;
     let out_root = options
         .out_dir
         .join(&options.target_triple)
@@ -275,7 +280,8 @@ pub fn package_ffi_dist(options: &FfiDistOptions) -> Result<FfiDistManifest, Dis
     let mut entries = Vec::new();
 
     for kind in ["core", "ui"] {
-        let enabled = (kind == "core" && options.include_core) || (kind == "ui" && options.include_ui);
+        let enabled =
+            (kind == "core" && options.include_core) || (kind == "ui" && options.include_ui);
         if !enabled {
             continue;
         }
@@ -296,10 +302,9 @@ pub fn package_ffi_dist(options: &FfiDistOptions) -> Result<FfiDistManifest, Dis
 
         let mut lib_rel = Vec::new();
         for lib in libs {
-            let file_name = lib
-                .file_name()
-                .and_then(OsStr::to_str)
-                .ok_or_else(|| DistError::InvalidArgument("library has no file name".to_string()))?;
+            let file_name = lib.file_name().and_then(OsStr::to_str).ok_or_else(|| {
+                DistError::InvalidArgument("library has no file name".to_string())
+            })?;
             let dst = lib_dir.join(file_name);
             copy_file(&lib, &dst, options.overwrite)?;
             lib_rel.push(format!("lib/{file_name}"));

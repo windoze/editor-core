@@ -83,10 +83,7 @@ impl WorkspaceFileIndex {
                 let Some(name) = entry.file_name().to_str() else {
                     return true;
                 };
-                match name {
-                    ".git" | "target" | ".build" => false,
-                    _ => true,
-                }
+                !matches!(name, ".git" | "target" | ".build")
             })
             .build();
 
@@ -109,7 +106,11 @@ impl WorkspaceFileIndex {
         }
 
         // Stable display order when query is empty.
-        out.sort_by(|a, b| a.relative_path.to_lowercase().cmp(&b.relative_path.to_lowercase()));
+        out.sort_by(|a, b| {
+            a.relative_path
+                .to_lowercase()
+                .cmp(&b.relative_path.to_lowercase())
+        });
 
         self.cached = out;
         self.built = true;
@@ -117,7 +118,11 @@ impl WorkspaceFileIndex {
     }
 
     /// Fuzzy-search the indexed workspace file list.
-    pub fn search(&mut self, query: &str, limit: usize) -> Result<Vec<FileIndexEntry>, WorkspaceFileIndexError> {
+    pub fn search(
+        &mut self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<FileIndexEntry>, WorkspaceFileIndexError> {
         let entries = self.entries()?;
         let q = query.trim();
         if q.is_empty() {

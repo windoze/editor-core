@@ -11,7 +11,9 @@
 
 use crate::lsp_sync::{LspPosition, LspRange};
 use crate::lsp_text_edits::{LspTextEdit, char_offsets_for_lsp_range, text_edits_from_value};
-use editor_core::{Command, EditCommand, EditorStateManager, LineIndex, TextEditSpec, parse_snippet};
+use editor_core::{
+    Command, EditCommand, EditorStateManager, LineIndex, TextEditSpec, parse_snippet,
+};
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,16 +174,15 @@ pub fn apply_completion_item(
             }
         }
 
-        let (start, end, snippet_text) = if let Some(edit) =
-            completion_item_main_text_edit_raw(item, mode)
-        {
-            let (start, end) = char_offsets_for_lsp_range(line_index, &edit.range);
-            (start, end, edit.new_text)
-        } else if let Some(text) = completion_item_fallback_insert_text_raw(item) {
-            (fallback.0, fallback.1, text)
-        } else {
-            return Err("completion item 没有可应用的 textEdit / insertText".to_string());
-        };
+        let (start, end, snippet_text) =
+            if let Some(edit) = completion_item_main_text_edit_raw(item, mode) {
+                let (start, end) = char_offsets_for_lsp_range(line_index, &edit.range);
+                (start, end, edit.new_text)
+            } else if let Some(text) = completion_item_fallback_insert_text_raw(item) {
+                (fallback.0, fallback.1, text)
+            } else {
+                return Err("completion item 没有可应用的 textEdit / insertText".to_string());
+            };
 
         state_manager
             .execute(Command::Edit(EditCommand::ApplySnippet {

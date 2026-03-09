@@ -121,8 +121,12 @@ fn test_workspace_dirty_tracking_and_mark_saved() {
 #[test]
 fn test_workspace_buffer_ids_and_view_ids_are_deterministic() {
     let mut ws = Workspace::new();
-    let a = ws.open_buffer(Some("file:///a.txt".to_string()), "a", 80).unwrap();
-    let b = ws.open_buffer(Some("file:///b.txt".to_string()), "b", 80).unwrap();
+    let a = ws
+        .open_buffer(Some("file:///a.txt".to_string()), "a", 80)
+        .unwrap();
+    let b = ws
+        .open_buffer(Some("file:///b.txt".to_string()), "b", 80)
+        .unwrap();
 
     // Deterministic ordering (by raw id).
     assert_eq!(ws.buffer_ids(), vec![a.buffer_id, b.buffer_id]);

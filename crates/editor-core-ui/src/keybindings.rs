@@ -89,7 +89,11 @@ impl Modifiers {
     pub const META: Self = Self(Self::META_BIT);
 
     pub fn primary(platform: Platform) -> Self {
-        if platform.is_macos() { Self::META } else { Self::CTRL }
+        if platform.is_macos() {
+            Self::META
+        } else {
+            Self::CTRL
+        }
     }
 
     pub fn contains(self, other: Self) -> bool {
@@ -252,12 +256,12 @@ impl Keymap {
 
         let mut bindings: Vec<Keybinding> = Vec::with_capacity(arr.len());
         for (idx, item) in arr.iter().enumerate() {
-            let obj = item.as_object().ok_or_else(|| {
-                KeymapParseError::InvalidBinding {
+            let obj = item
+                .as_object()
+                .ok_or_else(|| KeymapParseError::InvalidBinding {
                     index: idx,
                     message: "expected an object".to_string(),
-                }
-            })?;
+                })?;
 
             let command = obj
                 .get("command")
@@ -271,8 +275,8 @@ impl Keymap {
             let keys_spec = key_sequence_for_platform(obj, platform).ok_or_else(|| {
                 KeymapParseError::InvalidBinding {
                     index: idx,
-                    message:
-                        "missing string field `keys`/`key` (or platform override like `mac`)".into(),
+                    message: "missing string field `keys`/`key` (or platform override like `mac`)"
+                        .into(),
                 }
             })?;
 
@@ -284,10 +288,12 @@ impl Keymap {
             })?;
 
             let when = match obj.get("when").and_then(|v| v.as_str()) {
-                Some(expr) => KeybindingWhen::parse(expr).map_err(|e| KeymapParseError::InvalidBinding {
-                    index: idx,
-                    message: format!("invalid `when`: {e}"),
-                })?,
+                Some(expr) => {
+                    KeybindingWhen::parse(expr).map_err(|e| KeymapParseError::InvalidBinding {
+                        index: idx,
+                        message: format!("invalid `when`: {e}"),
+                    })?
+                }
                 None => KeybindingWhen::Always,
             };
 
@@ -353,8 +359,11 @@ pub enum KeySequenceParseError {
     InvalidFunctionKey(String),
 }
 
-fn parse_key_sequence(spec: &str, platform: Platform) -> Result<Vec<KeyStroke>, KeySequenceParseError> {
-    let chords: Vec<&str> = spec.trim().split_whitespace().collect();
+fn parse_key_sequence(
+    spec: &str,
+    platform: Platform,
+) -> Result<Vec<KeyStroke>, KeySequenceParseError> {
+    let chords: Vec<&str> = spec.split_whitespace().collect();
     if chords.is_empty() {
         return Err(KeySequenceParseError::EmptySequence);
     }
@@ -954,5 +963,5 @@ fn is_ident_start(c: char) -> bool {
 }
 
 fn is_ident_continue(c: char) -> bool {
-    is_ident_start(c) || c.is_ascii_digit() || matches!(c, '.' | ':' | '-' )
+    is_ident_start(c) || c.is_ascii_digit() || matches!(c, '.' | ':' | '-')
 }

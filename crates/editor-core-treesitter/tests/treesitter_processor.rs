@@ -270,5 +270,8 @@ fn char_offset_of(text: &str, needle: &str) -> usize {
 }
 
 fn slice_chars(text: &str, start: usize, end: usize) -> String {
-    text.chars().skip(start).take(end.saturating_sub(start)).collect()
+    text.chars()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect()
 }

@@ -1176,10 +1176,10 @@ impl UndoRedoManager {
         if n.children.is_empty() {
             return None;
         }
-        if let Some(pref) = n.preferred_child {
-            if n.children.iter().any(|c| *c == pref) {
-                return Some(pref);
-            }
+        if let Some(pref) = n.preferred_child
+            && n.children.contains(&pref)
+        {
+            return Some(pref);
         }
         n.children.last().copied()
     }
@@ -2879,10 +2879,8 @@ impl CommandExecutor {
         // Save command to history
         self.command_history.push(command.clone());
 
-        let skip_snippet_delta = matches!(
-            &command,
-            Command::Edit(EditCommand::ApplySnippet { .. })
-        );
+        let skip_snippet_delta =
+            matches!(&command, Command::Edit(EditCommand::ApplySnippet { .. }));
 
         let affects_visual_rows = matches!(
             &command,
@@ -2928,12 +2926,11 @@ impl CommandExecutor {
         //
         // Note: snippet insertion itself (`ApplySnippet`) creates anchors in **post-edit**
         // coordinates, so we must not apply the delta again for that command.
-        if !skip_snippet_delta {
-            if let (Some(delta), Some(session)) =
+        if !skip_snippet_delta
+            && let (Some(delta), Some(session)) =
                 (self.last_text_delta.as_ref(), self.snippet_session.as_mut())
-            {
-                session.apply_delta(delta);
-            }
+        {
+            session.apply_delta(delta);
         }
 
         Ok(result)
@@ -3958,20 +3955,18 @@ impl CommandExecutor {
     fn bracket_at_caret(&self, caret_offset: usize) -> Option<(usize, char, char, bool)> {
         let doc_char_count = self.editor.line_index.char_count();
 
-        if caret_offset > 0 {
-            if let Some(ch) = self.editor.line_index.char_at(caret_offset - 1) {
-                if let Some((open, close, is_open)) = Self::bracket_pair_for_char(ch) {
-                    return Some((caret_offset - 1, open, close, is_open));
-                }
-            }
+        if caret_offset > 0
+            && let Some(ch) = self.editor.line_index.char_at(caret_offset - 1)
+            && let Some((open, close, is_open)) = Self::bracket_pair_for_char(ch)
+        {
+            return Some((caret_offset - 1, open, close, is_open));
         }
 
-        if caret_offset < doc_char_count {
-            if let Some(ch) = self.editor.line_index.char_at(caret_offset) {
-                if let Some((open, close, is_open)) = Self::bracket_pair_for_char(ch) {
-                    return Some((caret_offset, open, close, is_open));
-                }
-            }
+        if caret_offset < doc_char_count
+            && let Some(ch) = self.editor.line_index.char_at(caret_offset)
+            && let Some((open, close, is_open)) = Self::bracket_pair_for_char(ch)
+        {
+            return Some((caret_offset, open, close, is_open));
         }
 
         None
@@ -4089,7 +4084,11 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         };
 
-        let action = if forward { session.next() } else { session.prev() };
+        let action = if forward {
+            session.next()
+        } else {
+            session.prev()
+        };
         match action {
             SnippetNavigation::Noop => Ok(CommandResult::Success),
             SnippetNavigation::Finish(offset) => {
@@ -4509,7 +4508,7 @@ impl CommandExecutor {
             .collect()
     }
 
-    fn split_at_char<'a>(s: &'a str, char_idx: usize) -> (&'a str, &'a str) {
+    fn split_at_char(s: &str, char_idx: usize) -> (&str, &str) {
         let byte_idx = s
             .char_indices()
             .nth(char_idx)
@@ -4617,7 +4616,8 @@ impl CommandExecutor {
                 // and keep the closing delimiter aligned.
                 if let Some(open) = before_last
                     && self.indentation_config.indent_triggers.contains(&open)
-                    && Self::matching_closer_for(open).is_some_and(|close| after_first == Some(close))
+                    && Self::matching_closer_for(open)
+                        .is_some_and(|close| after_first == Some(close))
                 {
                     let inner_indent = format!("{base_indent}{indent_unit}");
                     let insert = format!("\n{inner_indent}\n{base_indent}");
@@ -9566,12 +9566,8 @@ impl CommandExecutor {
                 self.execute_add_all_occurrences_command(options)
             }
             CursorCommand::MoveToMatchingBracket => self.execute_move_to_matching_bracket_command(),
-            CursorCommand::SnippetNextPlaceholder => {
-                self.execute_snippet_navigation_command(true)
-            }
-            CursorCommand::SnippetPrevPlaceholder => {
-                self.execute_snippet_navigation_command(false)
-            }
+            CursorCommand::SnippetNextPlaceholder => self.execute_snippet_navigation_command(true),
+            CursorCommand::SnippetPrevPlaceholder => self.execute_snippet_navigation_command(false),
             CursorCommand::FindNext { query, options } => {
                 self.execute_find_command(query, options, true)
             }

@@ -1,7 +1,7 @@
+use editor_core::UndoHistorySnapshot;
 use editor_core::commands::{Selection, SelectionDirection};
 use editor_core::workspace::{BufferId, ViewId, Workspace};
 use editor_core::{Command, CursorCommand, LineEnding, ViewCommand, WrapIndent, WrapMode};
-use editor_core::{UndoHistorySnapshot};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use thiserror::Error;
@@ -152,9 +152,9 @@ impl HotExitSnapshot {
         let mut buffer_id_to_index = std::collections::HashMap::<BufferId, usize>::new();
 
         for buffer_id in ws.buffer_ids() {
-            let meta = ws
-                .buffer_metadata(buffer_id)
-                .ok_or_else(|| AppSessionError::InvalidSnapshot(format!("missing buffer {:?}", buffer_id.get())))?;
+            let meta = ws.buffer_metadata(buffer_id).ok_or_else(|| {
+                AppSessionError::InvalidSnapshot(format!("missing buffer {:?}", buffer_id.get()))
+            })?;
 
             let text_lf = ws.buffer_text(buffer_id)?;
             let line_ending = ws.line_ending_for_buffer(buffer_id)?;
@@ -208,7 +208,8 @@ impl HotExitSnapshot {
         }
 
         let active_view_id = ws.active_view_id();
-        let active_view_index = active_view_id.and_then(|id| ws.view_ids().iter().position(|v| *v == id));
+        let active_view_index =
+            active_view_id.and_then(|id| ws.view_ids().iter().position(|v| *v == id));
 
         Ok(Self {
             format_version: Self::VERSION,
@@ -243,9 +244,9 @@ impl HotExitSnapshot {
         let mut used_first_view: Vec<bool> = vec![false; self.buffers.len()];
 
         for view in &self.views {
-            let buffer_id = *buffer_index_to_id
-                .get(view.buffer_index)
-                .ok_or_else(|| AppSessionError::InvalidSnapshot("invalid buffer_index".to_string()))?;
+            let buffer_id = *buffer_index_to_id.get(view.buffer_index).ok_or_else(|| {
+                AppSessionError::InvalidSnapshot("invalid buffer_index".to_string())
+            })?;
 
             let view_id = if !used_first_view[view.buffer_index] {
                 used_first_view[view.buffer_index] = true;
@@ -277,7 +278,9 @@ impl HotExitSnapshot {
             )?;
             ws.execute(
                 view_id,
-                Command::View(ViewCommand::SetTabWidth { width: view.tab_width }),
+                Command::View(ViewCommand::SetTabWidth {
+                    width: view.tab_width,
+                }),
             )?;
 
             ws.set_scroll_top(view_id, view.scroll_top)?;
@@ -300,7 +303,9 @@ impl HotExitSnapshot {
                 view_id,
                 Command::Cursor(CursorCommand::SetSelections {
                     selections,
-                    primary_index: view.primary_selection_index.min(view.selections.len().saturating_sub(1)),
+                    primary_index: view
+                        .primary_selection_index
+                        .min(view.selections.len().saturating_sub(1)),
                 }),
             )?;
 
@@ -324,6 +329,12 @@ pub struct AppSession {
     pub recent_folders: Vec<String>,
     pub recent_files: Vec<String>,
     pub hot_exit: Option<HotExitSnapshot>,
+}
+
+impl Default for AppSession {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AppSession {
@@ -394,7 +405,9 @@ mod tests {
     #[test]
     fn hot_exit_snapshot_roundtrip_restores_text_undo_and_views() {
         let mut ws = Workspace::new();
-        let opened = ws.open_buffer(Some("file:///a.txt".to_string()), "a\r\nb\r\n", 80).unwrap();
+        let opened = ws
+            .open_buffer(Some("file:///a.txt".to_string()), "a\r\nb\r\n", 80)
+            .unwrap();
 
         // Make it dirty + create an undo step.
         ws.execute(
@@ -418,12 +431,17 @@ mod tests {
         assert_eq!(restored.buffer_text(b0).unwrap(), "Xa\nb\n");
 
         // Line ending preference should still be CRLF for saving.
-        assert_eq!(restored.line_ending_for_buffer(b0).unwrap(), LineEnding::Crlf);
+        assert_eq!(
+            restored.line_ending_for_buffer(b0).unwrap(),
+            LineEnding::Crlf
+        );
 
         // Undo should work after restore.
         let v0 = restored.active_view_id().unwrap();
         let mut restored = restored;
-        restored.execute(v0, Command::Edit(EditCommand::Undo)).unwrap();
+        restored
+            .execute(v0, Command::Edit(EditCommand::Undo))
+            .unwrap();
         assert_eq!(restored.buffer_text(b0).unwrap(), "a\nb\n");
     }
 

@@ -63,12 +63,12 @@ use editor_core::{
     ViewCommand,
     layout::{cell_width_at, visual_x_for_column},
 };
+use editor_core_app::WorkspaceFileIndex;
 use editor_core_highlight_simple::{
     RegexHighlightProcessor, SIMPLE_STYLE_BOOLEAN, SIMPLE_STYLE_COMMENT, SIMPLE_STYLE_KEY,
     SIMPLE_STYLE_NULL, SIMPLE_STYLE_NUMBER, SIMPLE_STYLE_SECTION, SIMPLE_STYLE_STRING,
     SimpleIniStyles, SimpleJsonStyles,
 };
-use editor_core_app::WorkspaceFileIndex;
 use editor_core_lsp::{
     DeltaCalculator, LspContentChange, LspDocument, LspSession, LspSessionStartOptions,
     clear_lsp_state, decode_semantic_style_id, path_to_file_uri,
@@ -220,7 +220,11 @@ impl App {
     fn new(file_path: PathBuf) -> io::Result<Self> {
         // 读取文件内容（如果存在）
         let opened_disk_exists = file_path.exists();
-        let content = if opened_disk_exists { fs::read_to_string(&file_path)? } else { String::new() };
+        let content = if opened_disk_exists {
+            fs::read_to_string(&file_path)?
+        } else {
+            String::new()
+        };
 
         let mut state_manager = EditorStateManager::new(&content, 80);
 
@@ -2222,7 +2226,10 @@ fn parse_path_with_location(arg: &str) -> (String, Option<(usize, Option<usize>)
 }
 
 fn parse_cli_args(args: &[String]) -> Result<CliRunConfig, CliParseError> {
-    let bin = args.get(0).cloned().unwrap_or_else(|| "tui-editor".to_string());
+    let bin = args
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "tui-editor".to_string());
 
     // TUI 形态本身就是前台阻塞运行，所以默认等价于 `--wait`。
     let mut wait = true;
@@ -2323,7 +2330,7 @@ fn resolve_open_path(path: &Path) -> io::Result<PathBuf> {
     let mut index = WorkspaceFileIndex::new(path);
     let first = index
         .search("", 1)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?
+        .map_err(|e| io::Error::other(e.to_string()))?
         .into_iter()
         .next()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "目录下没有可打开的文件"))?;
@@ -2385,7 +2392,7 @@ fn main() -> io::Result<()> {
                 eprintln!("{msg}");
                 process::exit(2);
             }
-        }
+        },
     };
 
     // 设置终端
@@ -2420,7 +2427,10 @@ fn main() -> io::Result<()> {
             let col_1 = target.column.unwrap_or(1);
             let line0 = line_1.saturating_sub(1);
             let col0 = col_1.saturating_sub(1);
-            let _ = app.execute(Command::Cursor(CursorCommand::MoveTo { line: line0, column: col0 }));
+            let _ = app.execute(Command::Cursor(CursorCommand::MoveTo {
+                line: line0,
+                column: col0,
+            }));
         }
 
         let result = run_app(&mut terminal, &mut app);
@@ -2431,7 +2441,11 @@ fn main() -> io::Result<()> {
 
         // `--wait` 语义：以磁盘文件是否发生变更作为退出码依据。
         if run.wait {
-            match disk_changed_since_open(&app.file_path, app.opened_disk_exists, &app.opened_disk_text) {
+            match disk_changed_since_open(
+                &app.file_path,
+                app.opened_disk_exists,
+                &app.opened_disk_text,
+            ) {
                 Ok(changed) => any_changed |= changed,
                 Err(e) => {
                     last_error = Some(format!("读取文件用于比较失败: {e}"));

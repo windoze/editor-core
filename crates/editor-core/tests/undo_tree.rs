@@ -108,4 +108,3 @@ fn redo_depth_follows_selected_branch_in_undo_tree() {
     executor.select_redo_branch(1).unwrap();
     assert_eq!(executor.redo_depth(), 1);
 }
-

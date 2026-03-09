@@ -190,14 +190,20 @@ impl TreeSitterProcessor {
         let tree = self.tree.as_ref()?;
         let root = tree.root_node();
 
-        let (sel_start, sel_end) = if start <= end { (start, end) } else { (end, start) };
+        let (sel_start, sel_end) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
         let start_byte = self.line_index.char_offset_to_byte_offset(sel_start);
         let end_byte = self.line_index.char_offset_to_byte_offset(sel_end);
 
         let mut node = root.descendant_for_byte_range(start_byte, end_byte)?;
 
         loop {
-            let node_start = self.line_index.byte_offset_to_char_offset(node.start_byte());
+            let node_start = self
+                .line_index
+                .byte_offset_to_char_offset(node.start_byte());
             let node_end = self.line_index.byte_offset_to_char_offset(node.end_byte());
 
             // If the selection already matches this node exactly, expand to its parent (if any).

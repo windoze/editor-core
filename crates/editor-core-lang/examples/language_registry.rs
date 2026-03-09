@@ -9,4 +9,3 @@ fn main() {
 
     println!("{} → {}", path.display(), lang.display_name);
 }
-

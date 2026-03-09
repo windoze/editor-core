@@ -3,15 +3,13 @@
 //! This crate owns editor state, performs input-event mapping, and uses a renderer
 //! implementation (Skia in `editor-core-render-skia`) to draw the viewport.
 
-mod multi_document;
-mod keybindings;
 mod ime;
+mod keybindings;
+mod multi_document;
 mod windowing;
 
 use editor_core::intervals::Interval;
-use editor_core::snapshot::{
-    ComposedCellSource, ComposedGrid, ComposedLineKind, HeadlessGrid,
-};
+use editor_core::snapshot::{ComposedCellSource, ComposedGrid, ComposedLineKind, HeadlessGrid};
 use editor_core::workspace::{BufferId, ViewId, Workspace};
 use editor_core::{
     AutoPairsConfig, Command, CommandResult, CursorCommand, DecorationKind, DecorationLayerId,
@@ -21,10 +19,10 @@ use editor_core::{
 };
 use editor_core_lsp::{
     DeltaCalculator, LspContentChange, LspDocument, LspEvent, LspNotification, LspSession,
-    LspSessionStartOptions, encode_semantic_style_id, lsp_code_lens_to_processing_edit,
-    lsp_diagnostics_to_processing_edits, lsp_document_highlights_to_processing_edit,
-    lsp_document_links_to_processing_edits, lsp_inlay_hints_to_processing_edit,
-    semantic_tokens_to_intervals, char_offsets_for_lsp_range, text_edits_from_value,
+    LspSessionStartOptions, char_offsets_for_lsp_range, encode_semantic_style_id,
+    lsp_code_lens_to_processing_edit, lsp_diagnostics_to_processing_edits,
+    lsp_document_highlights_to_processing_edit, lsp_document_links_to_processing_edits,
+    lsp_inlay_hints_to_processing_edit, semantic_tokens_to_intervals, text_edits_from_value,
 };
 use editor_core_render_skia::{
     FOLD_MARKER_COLLAPSED_STYLE_ID, FOLD_MARKER_EXPANDED_STYLE_ID, FoldMarker, FoldMarkerStyle,
@@ -38,8 +36,8 @@ use editor_core_treesitter::{
     TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterUpdateMode,
 };
 use editor_core_treesitter_queries as treesitter_queries;
-use std::collections::{BTreeMap, HashMap};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use std::hash::{Hash, Hasher};
 use std::process::Stdio;
@@ -48,13 +46,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
-pub use multi_document::{MultiDocumentEditorUi, TabId, TabSearchResult};
-pub use keybindings::{
-    dispatch_command_to_editor_ui, Key, KeyStroke, Keybinding, KeybindingContext, KeybindingResolver,
-    KeybindingResolverResult, KeybindingWhen, Keymap, Modifiers, Platform, ResolvedCommand,
-};
 pub use ime::{utf8_byte_offset_to_char_offset, utf8_byte_range_to_char_range};
-pub use windowing::{rgba8_to_argb_u32, WindowingError};
+pub use keybindings::{
+    Key, KeyStroke, Keybinding, KeybindingContext, KeybindingResolver, KeybindingResolverResult,
+    KeybindingWhen, Keymap, Modifiers, Platform, ResolvedCommand, dispatch_command_to_editor_ui,
+};
+pub use multi_document::{MultiDocumentEditorUi, TabId, TabSearchResult};
+pub use windowing::{WindowingError, rgba8_to_argb_u32};
 
 #[derive(Debug, Error)]
 pub enum UiError {
@@ -1394,7 +1392,10 @@ impl EditorUi {
         Ok(())
     }
 
-    fn word_unit_range_at_char_offset(&mut self, char_offset: usize) -> Result<(usize, usize), UiError> {
+    fn word_unit_range_at_char_offset(
+        &mut self,
+        char_offset: usize,
+    ) -> Result<(usize, usize), UiError> {
         let (line, column) = self.char_offset_to_logical_position(char_offset);
         self.exec_core(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
         self.exec_core(Command::Cursor(CursorCommand::ClearSelection))?;
@@ -2424,11 +2425,14 @@ impl EditorUi {
         if let Some(err) = resp.get("error") {
             return Err(UiError::Processor(format!(
                 "LSP formatting failed: {}",
-                err.to_string()
+                err
             )));
         }
 
-        let result = resp.get("result").cloned().unwrap_or(serde_json::Value::Null);
+        let result = resp
+            .get("result")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         let did_apply = self.lsp_apply_text_edits_value(buffer_id, &result)?;
         Ok(did_apply)
     }
@@ -4132,14 +4136,20 @@ impl EditorUi {
                 }))?;
             }
             MouseSelectionMode::Word => {
-                let (a_start, a_end) = state.anchor_unit_range.unwrap_or((state.anchor_offset, state.anchor_offset));
+                let (a_start, a_end) = state
+                    .anchor_unit_range
+                    .unwrap_or((state.anchor_offset, state.anchor_offset));
                 let (b_start, b_end) = self.word_unit_range_at_char_offset(off)?;
                 let start = a_start.min(b_start);
                 let end = a_end.max(b_end);
                 self.set_selections_offsets(&[(start, end)], 0)?;
 
                 // caret 位于 active 方向的边界（尽量贴近常见编辑器体验）。
-                let caret_off = if off >= state.anchor_offset { end } else { start };
+                let caret_off = if off >= state.anchor_offset {
+                    end
+                } else {
+                    start
+                };
                 let (caret_line, caret_col) = self.char_offset_to_logical_position(caret_off);
                 self.exec_core(Command::Cursor(CursorCommand::MoveTo {
                     line: caret_line,
@@ -4164,7 +4174,11 @@ impl EditorUi {
             MouseSelectionMode::Paragraph => {
                 self.set_paragraph_selection_offsets(state.anchor_offset, off)?;
                 let (start, end) = self.primary_selection_offsets();
-                let caret_off = if off >= state.anchor_offset { end } else { start };
+                let caret_off = if off >= state.anchor_offset {
+                    end
+                } else {
+                    start
+                };
                 let (caret_line, caret_col) = self.char_offset_to_logical_position(caret_off);
                 self.exec_core(Command::Cursor(CursorCommand::MoveTo {
                     line: caret_line,
@@ -4384,17 +4398,14 @@ impl EditorUi {
                 render_config,
             );
 
-            let cache_ok = self
-                .render_cache
-                .as_ref()
-                .is_some_and(|c| {
-                    c.render_config == render_config
-                        && c.theme_hash == theme_hash
-                        && c.start_visual_row == start_visual_row
-                        && c.row_count == row_count
-                        && c.has_virtual_text == has_virtual_text
-                        && c.row_signatures.len() == row_signatures.len()
-                });
+            let cache_ok = self.render_cache.as_ref().is_some_and(|c| {
+                c.render_config == render_config
+                    && c.theme_hash == theme_hash
+                    && c.start_visual_row == start_visual_row
+                    && c.row_count == row_count
+                    && c.has_virtual_text == has_virtual_text
+                    && c.row_signatures.len() == row_signatures.len()
+            });
 
             if !cache_ok {
                 self.renderer.render_composed_rgba_into(
@@ -4484,17 +4495,14 @@ impl EditorUi {
                 render_config,
             );
 
-            let cache_ok = self
-                .render_cache
-                .as_ref()
-                .is_some_and(|c| {
-                    c.render_config == render_config
-                        && c.theme_hash == theme_hash
-                        && c.start_visual_row == start_visual_row
-                        && c.row_count == row_count
-                        && c.has_virtual_text == has_virtual_text
-                        && c.row_signatures.len() == row_signatures.len()
-                });
+            let cache_ok = self.render_cache.as_ref().is_some_and(|c| {
+                c.render_config == render_config
+                    && c.theme_hash == theme_hash
+                    && c.start_visual_row == start_visual_row
+                    && c.row_count == row_count
+                    && c.has_virtual_text == has_virtual_text
+                    && c.row_signatures.len() == row_signatures.len()
+            });
 
             if !cache_ok {
                 self.renderer.render_rgba_into(
@@ -5512,9 +5520,19 @@ fn headless_row_signatures(
         let a = (sel.start_row, sel.start_x_cells);
         let b = (sel.end_row, sel.end_x_cells);
         if a <= b {
-            (sel.start_row, sel.start_x_cells, sel.end_row, sel.end_x_cells)
+            (
+                sel.start_row,
+                sel.start_x_cells,
+                sel.end_row,
+                sel.end_x_cells,
+            )
         } else {
-            (sel.end_row, sel.end_x_cells, sel.start_row, sel.start_x_cells)
+            (
+                sel.end_row,
+                sel.end_x_cells,
+                sel.start_row,
+                sel.start_x_cells,
+            )
         }
     }
 
@@ -5675,9 +5693,7 @@ fn composed_row_signatures(
                     ComposedCellSource::Document { offset } => {
                         1u8.hash(&mut hasher);
                         offset.hash(&mut hasher);
-                        let selected = sel_ranges
-                            .iter()
-                            .any(|(s, e)| offset >= *s && offset < *e);
+                        let selected = sel_ranges.iter().any(|(s, e)| offset >= *s && offset < *e);
                         selected.hash(&mut hasher);
                     }
                     ComposedCellSource::Virtual { anchor_offset } => {
@@ -6156,13 +6172,13 @@ mod tests {
         };
         let styles_at_open = grid
             .lines
-            .get(0)
-            .and_then(|l| l.cells.get(0))
+            .first()
+            .and_then(|l| l.cells.first())
             .map(|c| c.styles.clone())
             .unwrap_or_default();
         let styles_at_close = grid
             .lines
-            .get(0)
+            .first()
             .and_then(|l| l.cells.get(2))
             .map(|c| c.styles.clone())
             .unwrap_or_default();
@@ -6193,13 +6209,13 @@ mod tests {
         };
         let styles_at_open = grid
             .lines
-            .get(0)
-            .and_then(|l| l.cells.get(0))
+            .first()
+            .and_then(|l| l.cells.first())
             .map(|c| c.styles.clone())
             .unwrap_or_default();
         let styles_at_close = grid
             .lines
-            .get(0)
+            .first()
             .and_then(|l| l.cells.get(2))
             .map(|c| c.styles.clone())
             .unwrap_or_default();

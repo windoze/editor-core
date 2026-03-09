@@ -45,10 +45,10 @@ fn path_display(path: &Path, workspace_root: Option<&Path>) -> String {
 }
 
 fn language_name_for_path(reg: Option<&LanguageRegistry>, path: &Path) -> Option<String> {
-    if let Some(reg) = reg {
-        if let Some(lang) = reg.language_for_path(path) {
-            return Some(lang.display_name.clone());
-        }
+    if let Some(reg) = reg
+        && let Some(lang) = reg.language_for_path(path)
+    {
+        return Some(lang.display_name.clone());
     }
     path.extension()
         .and_then(|e| e.to_str())
@@ -82,7 +82,7 @@ pub fn status_bar_info(
     };
 
     let text = ws.buffer_text(buffer_id)?;
-    let file_size_bytes = text.as_bytes().len();
+    let file_size_bytes = text.len();
 
     let (path_display, language_name) = if let Some(path) = buffer_path(ws, buffer_id) {
         (
@@ -120,7 +120,11 @@ mod tests {
     fn status_bar_includes_relative_path_and_position() {
         let mut ws = Workspace::new();
         let opened = ws
-            .open_buffer(Some("file:///tmp/proj/src/main.rs".to_string()), "abc\n", 80)
+            .open_buffer(
+                Some("file:///tmp/proj/src/main.rs".to_string()),
+                "abc\n",
+                80,
+            )
             .unwrap();
         ws.execute(
             opened.view_id,

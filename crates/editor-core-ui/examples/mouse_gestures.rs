@@ -17,11 +17,17 @@ fn main() {
     // 1) Double click: select word ("two")
     ui.mouse_down_with_modifiers_and_click_count(45.0, 10.0, Modifiers::NONE, 2)
         .unwrap();
-    println!("double-click selection: {:?}", ui.primary_selection_offsets());
+    println!(
+        "double-click selection: {:?}",
+        ui.primary_selection_offsets()
+    );
 
     // 2) Drag into "three": expand by word
     ui.mouse_dragged(85.0, 10.0).unwrap();
-    println!("word-drag selection:    {:?}", ui.primary_selection_offsets());
+    println!(
+        "word-drag selection:    {:?}",
+        ui.primary_selection_offsets()
+    );
 
     // 3) Option/Alt + drag: rect selection across 3 lines
     ui.mouse_down_with_modifiers_and_click_count(15.0, 70.0, Modifiers::ALT, 1)
@@ -29,4 +35,3 @@ fn main() {
     ui.mouse_dragged(25.0, 110.0).unwrap();
     println!("rect selection ranges:  {:?}", ui.selections_offsets().0);
 }
-

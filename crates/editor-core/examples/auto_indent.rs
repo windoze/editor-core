@@ -5,10 +5,15 @@ fn main() {
 
     // Insert a newline between `{}`.
     state
-        .execute(Command::Cursor(CursorCommand::MoveTo { line: 0, column: 11 }))
+        .execute(Command::Cursor(CursorCommand::MoveTo {
+            line: 0,
+            column: 11,
+        }))
         .unwrap();
     state
-        .execute(Command::Edit(EditCommand::InsertNewline { auto_indent: true }))
+        .execute(Command::Edit(EditCommand::InsertNewline {
+            auto_indent: true,
+        }))
         .unwrap();
 
     println!("{}", state.editor().get_text());

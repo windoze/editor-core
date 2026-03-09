@@ -18,4 +18,3 @@ pub fn utf8_byte_range_to_char_range(s: &str, start: usize, end: usize) -> (usiz
     let b = utf8_byte_offset_to_char_offset(s, end);
     if b >= a { (a, b - a) } else { (b, a - b) }
 }
-

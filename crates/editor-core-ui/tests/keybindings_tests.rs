@@ -1,7 +1,6 @@
 use editor_core_ui::{
-    dispatch_command_to_editor_ui, EditorUi, Key, KeyStroke, KeybindingResolver,
-    KeybindingResolverResult, KeybindingWhen, Keymap, KeybindingContext, Modifiers, Platform,
-    ResolvedCommand,
+    EditorUi, Key, KeyStroke, KeybindingContext, KeybindingResolver, KeybindingResolverResult,
+    KeybindingWhen, Keymap, Modifiers, Platform, ResolvedCommand, dispatch_command_to_editor_ui,
 };
 use serde_json::json;
 
@@ -38,7 +37,8 @@ fn when_clause_parses_and_evaluates() {
 #[test]
 fn resolver_supports_chords_and_resets_state() {
     let platform = Platform::Linux;
-    let keymap = Keymap::from_json_str(include_str!("fixtures/keymap_basic.json"), platform).unwrap();
+    let keymap =
+        Keymap::from_json_str(include_str!("fixtures/keymap_basic.json"), platform).unwrap();
     let mut resolver = KeybindingResolver::new(platform, keymap);
 
     let ctx = KeybindingContext::new(platform)
@@ -60,7 +60,8 @@ fn resolver_supports_chords_and_resets_state() {
 #[test]
 fn resolver_respects_when_clause_for_prefix_matching() {
     let platform = Platform::Linux;
-    let keymap = Keymap::from_json_str(include_str!("fixtures/keymap_basic.json"), platform).unwrap();
+    let keymap =
+        Keymap::from_json_str(include_str!("fixtures/keymap_basic.json"), platform).unwrap();
     let mut resolver = KeybindingResolver::new(platform, keymap);
 
     // Same key sequence as the chord bindings, but `when` is false here.
@@ -101,4 +102,3 @@ fn dispatch_runs_editor_ui_commands() {
     assert!(dispatch_command_to_editor_ui(&mut ui, &insert).unwrap());
     assert_eq!(ui.text(), "Z");
 }
-

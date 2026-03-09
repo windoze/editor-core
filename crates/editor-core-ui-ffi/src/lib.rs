@@ -1121,7 +1121,9 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_format_document(
                 .map_err(|_| "formatting_options_json_utf8 is not valid UTF-8".to_string())?
         };
 
-        let applied = ui.lsp_format_document(options, timeout_ms).map_err(map_ui_error)?;
+        let applied = ui
+            .lsp_format_document(options, timeout_ms)
+            .map_err(map_ui_error)?;
         unsafe {
             *out_applied = if applied { 1 } else { 0 };
         }
@@ -2466,9 +2468,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_toggle_bookmark_at_cursor_line(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         let out_added = require_mut(out_added, "out_added")?;
-        let added = ui
-            .toggle_bookmark_at_cursor_line()
-            .map_err(map_ui_error)?;
+        let added = ui.toggle_bookmark_at_cursor_line().map_err(map_ui_error)?;
         *out_added = if added { 1 } else { 0 };
         Ok(ECU_OK)
     }) {
@@ -7073,12 +7073,7 @@ contexts:
 
         let mut applied: u8 = 0;
         let code = unsafe {
-            editor_core_ui_ffi_editor_ui_lsp_format_document(
-                ui,
-                ptr::null(),
-                50,
-                &mut applied,
-            )
+            editor_core_ui_ffi_editor_ui_lsp_format_document(ui, ptr::null(), 50, &mut applied)
         };
         assert_eq!(code, ECU_ERR_INTERNAL);
 

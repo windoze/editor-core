@@ -19,8 +19,16 @@ fn packages_headers_and_libs_into_stable_layout() {
     fs::create_dir_all(&profile_dir).unwrap();
     fs::write(profile_dir.join("libeditor_core_ffi.a"), b"core static\n").unwrap();
     fs::write(profile_dir.join("libeditor_core_ui_ffi.a"), b"ui static\n").unwrap();
-    fs::write(profile_dir.join("libeditor_core_ffi.dylib"), b"core dylib\n").unwrap();
-    fs::write(profile_dir.join("libeditor_core_ui_ffi.dylib"), b"ui dylib\n").unwrap();
+    fs::write(
+        profile_dir.join("libeditor_core_ffi.dylib"),
+        b"core dylib\n",
+    )
+    .unwrap();
+    fs::write(
+        profile_dir.join("libeditor_core_ui_ffi.dylib"),
+        b"ui dylib\n",
+    )
+    .unwrap();
 
     let mut opts = FfiDistOptions::for_repo_root(&repo_root);
     opts.out_dir = temp.path().join("out");
@@ -43,4 +51,3 @@ fn packages_headers_and_libs_into_stable_layout() {
     let parsed: FfiDistManifest = serde_json::from_slice(&manifest_bytes).unwrap();
     assert_eq!(parsed, manifest);
 }
-

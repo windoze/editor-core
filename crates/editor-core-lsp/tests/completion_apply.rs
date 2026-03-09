@@ -41,7 +41,10 @@ fn test_apply_completion_item_groups_edits_into_single_undo_step() {
     let expected_start = text.find("msg").expect("msg placeholder inserted");
     let expected_end = expected_start + "msg".len();
 
-    let sel = state.editor().selection().expect("placeholder should be selected");
+    let sel = state
+        .editor()
+        .selection()
+        .expect("placeholder should be selected");
     let a = state
         .editor()
         .line_index

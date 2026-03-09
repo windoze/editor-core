@@ -39,8 +39,11 @@ fn incremental_render_returns_damage_rects_for_caret_moves() {
     assert!(damage1.is_empty());
 
     // Move caret from row 0 -> row 4.
-    ui.execute(Command::Cursor(CursorCommand::MoveTo { line: 4, column: 0 }))
-        .unwrap();
+    ui.execute(Command::Cursor(CursorCommand::MoveTo {
+        line: 4,
+        column: 0,
+    }))
+    .unwrap();
 
     let (_len2, damage2) = ui.render_rgba_visible_into_with_damage(&mut rgba).unwrap();
     assert_eq!(

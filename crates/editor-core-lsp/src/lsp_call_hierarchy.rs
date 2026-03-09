@@ -8,8 +8,8 @@
 //! It intentionally avoids a full `lsp-types` dependency.
 
 use editor_core::{
-    CallHierarchyIncomingCall, CallHierarchyOutgoingCall, HierarchyItem, SymbolKind, SymbolLocation,
-    Utf16Position, Utf16Range,
+    CallHierarchyIncomingCall, CallHierarchyOutgoingCall, HierarchyItem, SymbolKind,
+    SymbolLocation, Utf16Position, Utf16Range,
 };
 use serde_json::Value;
 
@@ -39,7 +39,10 @@ pub fn call_hierarchy_item_from_value(value: &Value) -> Option<HierarchyItem> {
         .and_then(utf16_range_from_value)
         .unwrap_or(range);
 
-    let detail = value.get("detail").and_then(Value::as_str).map(|s| s.to_string());
+    let detail = value
+        .get("detail")
+        .and_then(Value::as_str)
+        .map(|s| s.to_string());
     let data_json = value.get("data").map(|v| v.to_string());
 
     Some(HierarchyItem {
@@ -178,4 +181,3 @@ mod tests {
         assert_eq!(calls[0].from_ranges[0].start.character, 3);
     }
 }
-

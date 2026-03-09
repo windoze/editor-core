@@ -5,13 +5,19 @@ fn main() {
 
     exec.execute(Command::Edit(EditCommand::InsertText { text: "a".into() }))
         .unwrap();
-    exec.execute(Command::Edit(EditCommand::EndUndoGroup)).unwrap();
+    exec.execute(Command::Edit(EditCommand::EndUndoGroup))
+        .unwrap();
     exec.execute(Command::Edit(EditCommand::InsertText { text: "b".into() }))
         .unwrap();
-    exec.execute(Command::Edit(EditCommand::EndUndoGroup)).unwrap();
+    exec.execute(Command::Edit(EditCommand::EndUndoGroup))
+        .unwrap();
 
     println!("text = {:?}", exec.editor().get_text());
-    println!("undo_depth={}, redo_depth={}", exec.undo_depth(), exec.redo_depth());
+    println!(
+        "undo_depth={}, redo_depth={}",
+        exec.undo_depth(),
+        exec.redo_depth()
+    );
 
     // Undo back to the branch point ("a").
     exec.execute(Command::Edit(EditCommand::Undo)).unwrap();
@@ -20,7 +26,8 @@ fn main() {
     // Create a new branch from the undone state.
     exec.execute(Command::Edit(EditCommand::InsertText { text: "c".into() }))
         .unwrap();
-    exec.execute(Command::Edit(EditCommand::EndUndoGroup)).unwrap();
+    exec.execute(Command::Edit(EditCommand::EndUndoGroup))
+        .unwrap();
     println!("after branching edit: {:?}", exec.editor().get_text());
 
     // Undo again to the branch point. Now there are 2 redo branches ("b" and "c").
@@ -36,4 +43,3 @@ fn main() {
     exec.execute(Command::Edit(EditCommand::Redo)).unwrap();
     println!("redo branch 0: {:?}", exec.editor().get_text());
 }
-

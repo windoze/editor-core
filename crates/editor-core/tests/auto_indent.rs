@@ -6,21 +6,32 @@ use editor_core::{
 #[test]
 fn insert_newline_auto_indent_increases_after_indent_trigger() {
     let mut exec = CommandExecutor::new("fn main() {", 80);
-    exec.execute(Command::Cursor(CursorCommand::MoveToLineEnd)).unwrap();
-    exec.execute(Command::Edit(EditCommand::InsertNewline { auto_indent: true }))
+    exec.execute(Command::Cursor(CursorCommand::MoveToLineEnd))
         .unwrap();
+    exec.execute(Command::Edit(EditCommand::InsertNewline {
+        auto_indent: true,
+    }))
+    .unwrap();
     assert_eq!(exec.editor().get_text(), "fn main() {\n    ");
 }
 
 #[test]
 fn insert_newline_between_braces_inserts_blank_indented_line_and_keeps_closing_aligned() {
     let mut exec = CommandExecutor::new("{}", 80);
-    exec.execute(Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 }))
-        .unwrap();
-    exec.execute(Command::Edit(EditCommand::InsertNewline { auto_indent: true }))
-        .unwrap();
+    exec.execute(Command::Cursor(CursorCommand::MoveTo {
+        line: 0,
+        column: 1,
+    }))
+    .unwrap();
+    exec.execute(Command::Edit(EditCommand::InsertNewline {
+        auto_indent: true,
+    }))
+    .unwrap();
     assert_eq!(exec.editor().get_text(), "{\n    \n}");
-    assert_eq!(exec.editor().cursor_position(), editor_core::Position::new(1, 4));
+    assert_eq!(
+        exec.editor().cursor_position(),
+        editor_core::Position::new(1, 4)
+    );
 }
 
 #[test]
@@ -34,12 +45,20 @@ fn indentation_config_controls_indent_unit() {
         },
     }))
     .unwrap();
-    exec.execute(Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 }))
-        .unwrap();
-    exec.execute(Command::Edit(EditCommand::InsertNewline { auto_indent: true }))
-        .unwrap();
+    exec.execute(Command::Cursor(CursorCommand::MoveTo {
+        line: 0,
+        column: 1,
+    }))
+    .unwrap();
+    exec.execute(Command::Edit(EditCommand::InsertNewline {
+        auto_indent: true,
+    }))
+    .unwrap();
     assert_eq!(exec.editor().get_text(), "{\n  \n}");
-    assert_eq!(exec.editor().cursor_position(), editor_core::Position::new(1, 2));
+    assert_eq!(
+        exec.editor().cursor_position(),
+        editor_core::Position::new(1, 2)
+    );
 }
 
 #[test]
@@ -61,10 +80,16 @@ fn indentation_config_is_view_local_in_workspace() {
     )
     .unwrap();
 
-    ws.execute(v1, Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 }))
-        .unwrap();
-    ws.execute(v1, Command::Edit(EditCommand::InsertNewline { auto_indent: true }))
-        .unwrap();
+    ws.execute(
+        v1,
+        Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 }),
+    )
+    .unwrap();
+    ws.execute(
+        v1,
+        Command::Edit(EditCommand::InsertNewline { auto_indent: true }),
+    )
+    .unwrap();
     assert_eq!(ws.buffer_text(opened.buffer_id).unwrap(), "{\n  \n}");
 
     // Undo and perform the same edit from view2 with the default (spaces=4) config.
@@ -76,10 +101,15 @@ fn indentation_config_is_view_local_in_workspace() {
         }),
     )
     .unwrap();
-    ws.execute(v2, Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 }))
-        .unwrap();
-    ws.execute(v2, Command::Edit(EditCommand::InsertNewline { auto_indent: true }))
-        .unwrap();
+    ws.execute(
+        v2,
+        Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 }),
+    )
+    .unwrap();
+    ws.execute(
+        v2,
+        Command::Edit(EditCommand::InsertNewline { auto_indent: true }),
+    )
+    .unwrap();
     assert_eq!(ws.buffer_text(opened.buffer_id).unwrap(), "{\n    \n}");
 }
-

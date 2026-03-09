@@ -7,20 +7,15 @@
 use std::ops::Range;
 
 /// Which diff algorithm to use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DiffAlgorithm {
     /// Git-like, generally human-friendly diffs (recommended default).
+    #[default]
     Histogram,
     /// Myers (fast, classic).
     Myers,
     /// Myers minimal edit script (may be less readable).
     MyersMinimal,
-}
-
-impl Default for DiffAlgorithm {
-    fn default() -> Self {
-        Self::Histogram
-    }
 }
 
 impl From<DiffAlgorithm> for imara_diff::Algorithm {
@@ -132,8 +127,12 @@ fn expand_hunk_with_context(
     let before_start = (hunk.before.start as usize).saturating_sub(context_lines);
     let after_start = (hunk.after.start as usize).saturating_sub(context_lines);
 
-    let before_end = (hunk.before.end as usize).saturating_add(context_lines).min(before_len);
-    let after_end = (hunk.after.end as usize).saturating_add(context_lines).min(after_len);
+    let before_end = (hunk.before.end as usize)
+        .saturating_add(context_lines)
+        .min(before_len);
+    let after_end = (hunk.after.end as usize)
+        .saturating_add(context_lines)
+        .min(after_len);
 
     HunkRanges {
         before: before_start..before_end,
@@ -160,7 +159,11 @@ fn op_in_hunk(op: DiffLine<'_>, before: &Range<usize>, after: &Range<usize>) -> 
 /// - are monotonically increasing in both `before` and `after`
 /// - include up to `config.context_lines` unchanged lines around each change group
 /// - contain per-line records in unified diff order (`-` before `+` for modifications)
-pub fn diff_line_hunks<'a>(before: &'a str, after: &'a str, config: LineDiffConfig) -> Vec<LineHunk<'a>> {
+pub fn diff_line_hunks<'a>(
+    before: &'a str,
+    after: &'a str,
+    config: LineDiffConfig,
+) -> Vec<LineHunk<'a>> {
     let before_lines: Vec<&'a str> = imara_diff::sources::lines(before).collect();
     let after_lines: Vec<&'a str> = imara_diff::sources::lines(after).collect();
 
@@ -177,12 +180,20 @@ pub fn diff_line_hunks<'a>(before: &'a str, after: &'a str, config: LineDiffConf
 
     let expanded: Vec<HunkRanges> = raw_hunks
         .into_iter()
-        .map(|h| expand_hunk_with_context(h, before_lines.len(), after_lines.len(), config.context_lines))
+        .map(|h| {
+            expand_hunk_with_context(
+                h,
+                before_lines.len(),
+                after_lines.len(),
+                config.context_lines,
+            )
+        })
         .collect();
     let hunks = merge_overlapping_ranges(expanded);
 
     // Build a full unified-style line op list once, then slice into hunks by line indices.
-    let mut ops: Vec<DiffLine<'a>> = Vec::with_capacity(before_lines.len() + diff.count_additions() as usize);
+    let mut ops: Vec<DiffLine<'a>> =
+        Vec::with_capacity(before_lines.len() + diff.count_additions() as usize);
     let mut i_before: u32 = 0;
     let mut i_after: u32 = 0;
     while (i_before as usize) < before_lines.len() || (i_after as usize) < after_lines.len() {

@@ -1,16 +1,16 @@
 use editor_core_ffi::{
     ECF_ABI_VERSION, EcfDocumentStats, EcfOpenBufferResult, EcfStatus, EcfWorkspaceInfo,
     EcfWorkspaceViewportState, ecf_abi_version, ecf_editor_backspace, ecf_editor_get_viewport_blob,
-    ecf_editor_insert_text_utf8, ecf_editor_move_to,
-    editor_core_ffi_editor_get_document_stats, editor_core_ffi_editor_get_viewport_blob,
-    editor_core_ffi_editor_insert_text_utf8, editor_core_ffi_editor_state_free,
-    editor_core_ffi_editor_state_new, editor_core_ffi_last_error_message,
-    editor_core_ffi_string_free, editor_core_ffi_workspace_backspace,
-    editor_core_ffi_workspace_free, editor_core_ffi_workspace_get_info,
-    editor_core_ffi_workspace_get_viewport_blob, editor_core_ffi_workspace_get_viewport_state,
-    editor_core_ffi_workspace_insert_text_utf8, editor_core_ffi_workspace_move_to,
-    editor_core_ffi_workspace_new, editor_core_ffi_workspace_open_buffer_typed,
-    editor_core_ffi_workspace_set_smooth_scroll_state, editor_core_ffi_workspace_set_viewport_height,
+    ecf_editor_insert_text_utf8, ecf_editor_move_to, editor_core_ffi_editor_get_document_stats,
+    editor_core_ffi_editor_get_viewport_blob, editor_core_ffi_editor_insert_text_utf8,
+    editor_core_ffi_editor_state_free, editor_core_ffi_editor_state_new,
+    editor_core_ffi_last_error_message, editor_core_ffi_string_free,
+    editor_core_ffi_workspace_backspace, editor_core_ffi_workspace_free,
+    editor_core_ffi_workspace_get_info, editor_core_ffi_workspace_get_viewport_blob,
+    editor_core_ffi_workspace_get_viewport_state, editor_core_ffi_workspace_insert_text_utf8,
+    editor_core_ffi_workspace_move_to, editor_core_ffi_workspace_new,
+    editor_core_ffi_workspace_open_buffer_typed, editor_core_ffi_workspace_set_smooth_scroll_state,
+    editor_core_ffi_workspace_set_viewport_height,
 };
 use std::ffi::{CStr, CString};
 
@@ -223,7 +223,9 @@ fn workspace_typed_commands_and_blob_work() {
     let st = editor_core_ffi_workspace_backspace(workspace, view_id);
     assert_eq!(st, status(EcfStatus::Ok));
 
-    assert!(editor_core_ffi_workspace_set_viewport_height(workspace, view_id, 1));
+    assert!(editor_core_ffi_workspace_set_viewport_height(
+        workspace, view_id, 1
+    ));
     assert!(editor_core_ffi_workspace_set_smooth_scroll_state(
         workspace, view_id, 0, 123, 2
     ));

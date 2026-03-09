@@ -52,7 +52,11 @@ pub struct SearchResultsModel {
 }
 
 impl SearchResultsModel {
-    pub fn build(ws: &Workspace, query: impl Into<String>, options: SearchOptions) -> Result<Self, SearchResultsError> {
+    pub fn build(
+        ws: &Workspace,
+        query: impl Into<String>,
+        options: SearchOptions,
+    ) -> Result<Self, SearchResultsError> {
         let query = query.into();
         let mut per_buffer: Vec<BufferSearchResults> = Vec::new();
 
@@ -64,7 +68,10 @@ impl SearchResultsModel {
             }
             per_buffer.push(BufferSearchResults {
                 buffer_id,
-                matches: matches.into_iter().map(AnchoredMatchRange::from_match).collect(),
+                matches: matches
+                    .into_iter()
+                    .map(AnchoredMatchRange::from_match)
+                    .collect(),
             });
         }
 
@@ -94,7 +101,10 @@ impl SearchResultsModel {
     /// Compute current match locations as `(line, column)` pairs (0-based) for each buffer.
     ///
     /// This is a convenience for UI layers that want to render “click to jump” results.
-    pub fn locations_by_buffer(&self, ws: &Workspace) -> Result<BTreeMap<BufferId, Vec<(usize, usize)>>, SearchResultsError> {
+    pub fn locations_by_buffer(
+        &self,
+        ws: &Workspace,
+    ) -> Result<BTreeMap<BufferId, Vec<(usize, usize)>>, SearchResultsError> {
         let mut out: BTreeMap<BufferId, Vec<(usize, usize)>> = BTreeMap::new();
         for r in &self.results {
             let line_index = ws.buffer_line_index(r.buffer_id)?;
@@ -120,7 +130,8 @@ mod tests {
         let mut ws = Workspace::new();
         let opened = ws.open_buffer(None, "hello world\n", 80).unwrap();
 
-        let mut results = SearchResultsModel::build(&ws, "world", SearchOptions::default()).unwrap();
+        let mut results =
+            SearchResultsModel::build(&ws, "world", SearchOptions::default()).unwrap();
         assert_eq!(results.results.len(), 1);
         let m0 = results.results[0].matches[0];
         assert_eq!(m0.start.offset, 6);
@@ -141,4 +152,3 @@ mod tests {
         assert_eq!(m0.end.offset, 12);
     }
 }
-

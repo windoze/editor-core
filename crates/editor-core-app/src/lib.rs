@@ -9,44 +9,39 @@
 //!
 //! The goal is to implement as much as possible once in Rust and reuse across platforms.
 
-mod fuzzy;
+mod command_palette;
 mod file_explorer;
 mod file_io;
 mod find_in_files;
-mod command_palette;
-mod settings;
-mod search_results;
+mod fuzzy;
 mod observability;
 mod pane_layout;
+mod search_results;
 mod session;
+mod settings;
 mod status_bar;
-mod workspace_io;
 mod workspace_index;
+mod workspace_io;
 
-pub use fuzzy::FuzzyMatcher;
-pub use file_explorer::{FileExplorer, FileExplorerEntry, FileExplorerEntryKind, FileExplorerError};
+pub use command_palette::{CommandPalette, CommandPaletteItem, CommandPaletteResult};
+pub use file_explorer::{
+    FileExplorer, FileExplorerEntry, FileExplorerEntryKind, FileExplorerError,
+};
 pub use file_io::{FileIoError, FileIoOptions, read_utf8_file, write_utf8_file_atomic};
 pub use find_in_files::{
-    FindInFilesConfig, FindInFilesError, FindInFilesFileResult, FindInFilesLineMatch,
-    find_in_files,
+    FindInFilesConfig, FindInFilesError, FindInFilesFileResult, FindInFilesLineMatch, find_in_files,
 };
-pub use command_palette::{
-    CommandPalette, CommandPaletteItem, CommandPaletteResult,
-};
-pub use settings::{
-    Settings, SettingsError, SettingsStore, apply_settings_to_view,
-};
+pub use fuzzy::FuzzyMatcher;
+pub use observability::{AppLog, LogEntry, LogLevel};
+pub use pane_layout::{PaneId, PaneLayout, SplitDirection, WindowId, WindowManager};
 pub use search_results::{
     AnchoredMatchRange, BufferSearchResults, SearchResultsError, SearchResultsModel,
 };
-pub use observability::{AppLog, LogEntry, LogLevel};
-pub use pane_layout::{PaneId, PaneLayout, SplitDirection, WindowId, WindowManager};
 pub use session::{
     AppSession, AppSessionError, BufferSnapshot, HotExitSnapshot, ViewSnapshot, load_session_json,
     save_session_json,
 };
+pub use settings::{Settings, SettingsError, SettingsStore, apply_settings_to_view};
 pub use status_bar::{StatusBarError, StatusBarInfo, status_bar_info};
-pub use workspace_io::{
-    SaveAllResult, WorkspaceIo, WorkspaceIoError, open_file_into_workspace,
-};
 pub use workspace_index::{FileIndexEntry, WorkspaceFileIndex, WorkspaceFileIndexError};
+pub use workspace_io::{SaveAllResult, WorkspaceIo, WorkspaceIoError, open_file_into_workspace};

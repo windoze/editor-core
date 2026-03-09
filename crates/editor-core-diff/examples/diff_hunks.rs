@@ -1,11 +1,13 @@
-use editor_core_diff::{diff_line_hunks, LineDiffConfig};
+use editor_core_diff::{LineDiffConfig, diff_line_hunks};
 
 fn main() {
     let before = "fn main() {\n    println!(\"hello\")\n}\n";
     let after = "fn main() {\n    println!(\"hello\");\n    println!(\"world\");\n}\n";
 
-    let mut cfg = LineDiffConfig::default();
-    cfg.context_lines = 2;
+    let cfg = LineDiffConfig {
+        context_lines: 2,
+        ..Default::default()
+    };
 
     let hunks = diff_line_hunks(before, after, cfg);
     for h in hunks {
@@ -26,4 +28,3 @@ fn main() {
         }
     }
 }
-

@@ -1,11 +1,15 @@
-use editor_core_lang::{LanguageConfig, LanguageRegistry, LanguageRegistryError, LspLanguageConfig};
+use editor_core_lang::{
+    LanguageConfig, LanguageRegistry, LanguageRegistryError, LspLanguageConfig,
+};
 use std::fs;
 use std::path::Path;
 
 #[test]
 fn default_registry_finds_rust_by_extension() {
     let reg = LanguageRegistry::default();
-    let lang = reg.language_for_path(Path::new("main.rs")).expect("rust match");
+    let lang = reg
+        .language_for_path(Path::new("main.rs"))
+        .expect("rust match");
     assert_eq!(lang.id.as_str(), "rust");
 }
 
@@ -33,8 +37,8 @@ fn register_rejects_duplicate_ids() {
 
 #[test]
 fn lsp_root_detection_finds_marker_in_ancestor_dir() {
-    let temp_root = std::env::temp_dir()
-        .join(format!("editor-core-lang-root-detect-{}", uuid_like()));
+    let temp_root =
+        std::env::temp_dir().join(format!("editor-core-lang-root-detect-{}", uuid_like()));
     fs::create_dir_all(&temp_root).unwrap();
     let _cleanup = CleanupDir(temp_root.clone());
 
@@ -74,4 +78,3 @@ impl Drop for CleanupDir {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
-

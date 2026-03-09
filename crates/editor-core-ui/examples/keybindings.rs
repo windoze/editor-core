@@ -1,6 +1,6 @@
 use editor_core_ui::{
-    dispatch_command_to_editor_ui, EditorUi, Key, KeyStroke, KeybindingContext, KeybindingResolver,
-    KeybindingResolverResult, Keymap, Modifiers, Platform,
+    EditorUi, Key, KeyStroke, KeybindingContext, KeybindingResolver, KeybindingResolverResult,
+    Keymap, Modifiers, Platform, dispatch_command_to_editor_ui,
 };
 
 fn main() {
@@ -35,8 +35,20 @@ fn main() {
     );
 
     // 模拟 chord：Ctrl+K Ctrl+C（这里示例映射到 selectAll）
-    press(&mut resolver, &ctx, &mut ui, Key::Char('k'), Modifiers::CTRL);
-    press(&mut resolver, &ctx, &mut ui, Key::Char('c'), Modifiers::CTRL);
+    press(
+        &mut resolver,
+        &ctx,
+        &mut ui,
+        Key::Char('k'),
+        Modifiers::CTRL,
+    );
+    press(
+        &mut resolver,
+        &ctx,
+        &mut ui,
+        Key::Char('c'),
+        Modifiers::CTRL,
+    );
 
     println!("最终文本：\n{}", ui.text());
     let (sels, primary) = ui.selections_offsets();
@@ -64,4 +76,3 @@ fn press(
         }
     }
 }
-

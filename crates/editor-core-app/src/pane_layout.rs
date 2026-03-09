@@ -72,7 +72,7 @@ impl PaneLayout {
         self.next_pane_id = self.next_pane_id.saturating_add(1);
 
         let replaced = self.root.replace_leaf_with_split(pane, direction, new_id);
-        replaced.then(|| (pane, new_id))
+        replaced.then_some((pane, new_id))
     }
 
     pub fn focus_next(&self, current: PaneId) -> PaneId {

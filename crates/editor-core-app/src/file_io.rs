@@ -45,7 +45,8 @@ pub fn read_utf8_file(path: &Path) -> Result<String, FileIoError> {
         bytes.drain(0..3);
     }
 
-    String::from_utf8(bytes).map_err(|_| FileIoError::InvalidUtf8(path.to_string_lossy().to_string()))
+    String::from_utf8(bytes)
+        .map_err(|_| FileIoError::InvalidUtf8(path.to_string_lossy().to_string()))
 }
 
 fn unique_temp_path_for(target: &Path) -> Result<PathBuf, FileIoError> {
@@ -126,7 +127,14 @@ mod tests {
     fn read_utf8_strips_bom() {
         let temp = tempdir().unwrap();
         let path = temp.path().join("bom.txt");
-        fs::write(&path, [0xEFu8, 0xBB, 0xBF].into_iter().chain(b"abc".iter().copied()).collect::<Vec<_>>()).unwrap();
+        fs::write(
+            &path,
+            [0xEFu8, 0xBB, 0xBF]
+                .into_iter()
+                .chain(b"abc".iter().copied())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
         assert_eq!(read_utf8_file(&path).unwrap(), "abc");
     }
 
@@ -164,4 +172,3 @@ mod tests {
         assert_eq!(mode, original_mode);
     }
 }
-

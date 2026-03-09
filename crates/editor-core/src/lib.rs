@@ -131,22 +131,23 @@ pub mod commands;
 pub mod decorations;
 pub mod delta;
 pub mod diagnostics;
-pub mod intervals;
 pub mod intelligence;
+pub mod intervals;
 pub mod layout;
 pub mod line_ending;
 pub mod line_index;
 pub mod processing;
 pub mod search;
-pub mod snippets;
 mod selection_set;
 pub mod snapshot;
+pub mod snippets;
 pub mod state;
 pub mod storage;
 pub mod symbols;
 mod text;
 pub mod workspace;
 
+pub use anchors::{AnchorBias, TextAnchor};
 pub use commands::{
     AutoPair, AutoPairsConfig, Command, CommandError, CommandExecutor, CommandResult,
     CursorCommand, EditCommand, EditorCore, ExpandSelectionDirection, ExpandSelectionUnit,
@@ -154,34 +155,33 @@ pub use commands::{
     UndoHistoryRestoreError, UndoHistorySelectionSet, UndoHistorySnapshot, UndoHistoryStep,
     UndoHistoryTextEdit, ViewCommand,
 };
-pub use anchors::{AnchorBias, TextAnchor};
 pub use decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
 };
 pub use delta::{TextDelta, TextDeltaEdit};
 pub use diagnostics::{Diagnostic, DiagnosticRange, DiagnosticSeverity};
 pub use editor_core_lang::{CommentConfig, IndentStyle, IndentationConfig};
+pub use intelligence::{
+    CallHierarchyIncomingCall, CallHierarchyOutgoingCall, CallHierarchyResultSet, HierarchyItem,
+    IntelligenceResultSet, ReferencesResultSet, ResultSetId, ResultSetKind, TypeHierarchyResultSet,
+    WorkspaceIntelligence,
+};
 pub use intervals::{
     CODE_LENS_STYLE_ID, DOCUMENT_HIGHLIGHT_READ_STYLE_ID, DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
     DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, DOCUMENT_LINK_STYLE_ID, FOLD_PLACEHOLDER_STYLE_ID,
     FoldRegion, FoldingManager, IME_MARKED_TEXT_STYLE_ID, INLAY_HINT_STYLE_ID, IntervalTree,
     MATCH_HIGHLIGHT_STYLE_ID, StyleLayerId,
 };
-pub use intelligence::{
-    CallHierarchyIncomingCall, CallHierarchyOutgoingCall, CallHierarchyResultSet, HierarchyItem,
-    IntelligenceResultSet, ReferencesResultSet, ResultSetId, ResultSetKind, TypeHierarchyResultSet,
-    WorkspaceIntelligence,
-};
 pub use layout::{LayoutEngine, WrapIndent, WrapMode};
 pub use line_ending::LineEnding;
 pub use line_index::LineIndex;
 pub use processing::{DocumentProcessor, ProcessingEdit};
 pub use search::{SearchError, SearchMatch, SearchOptions};
-pub use snippets::{SnippetRange, SnippetSession, SnippetTabstop, SnippetTemplate, parse_snippet};
 pub use snapshot::{
     Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
     HeadlessGrid, HeadlessLine, MinimapGrid, MinimapLine, SnapshotGenerator,
 };
+pub use snippets::{SnippetRange, SnippetSession, SnippetTabstop, SnippetTemplate, parse_snippet};
 pub use state::{
     CursorState, DecorationsState, DiagnosticsState, DocumentState, EditorState,
     EditorStateManager, FoldingState, SmoothScrollState, StateChange, StateChangeCallback,

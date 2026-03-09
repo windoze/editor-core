@@ -6,10 +6,10 @@
 //! `editor_core::EditorStateManager` to an LSP server.
 
 pub mod editor;
-pub mod lsp_client;
 pub mod lsp_call_hierarchy;
-pub mod lsp_completion;
+pub mod lsp_client;
 pub mod lsp_code_actions;
+pub mod lsp_completion;
 pub mod lsp_decorations;
 pub mod lsp_events;
 pub mod lsp_highlights;
@@ -28,17 +28,17 @@ pub use editor::{
     LspContentChange, LspDocument, LspServerInfo, LspSession, LspSessionStartOptions,
     SemanticTokensLegend, clear_lsp_state, lsp_clear_edits, lsp_diagnostics_to_processing_edits,
 };
-pub use lsp_client::{LspClient, LspInbound, LspOutbound};
 pub use lsp_call_hierarchy::{
     call_hierarchy_incoming_calls_from_value, call_hierarchy_item_from_value,
     call_hierarchy_items_from_value, call_hierarchy_outgoing_calls_from_value,
 };
-pub use lsp_completion::{
-    CompletionTextEditMode, apply_completion_item, completion_item_to_text_edit_specs,
-};
+pub use lsp_client::{LspClient, LspInbound, LspOutbound};
 pub use lsp_code_actions::{
     ApplyCodeActionPlan, LspCodeAction, LspCodeActionItem, LspCommand,
     apply_plan_for_code_action_item, code_action_items_from_value,
+};
+pub use lsp_completion::{
+    CompletionTextEditMode, apply_completion_item, completion_item_to_text_edit_specs,
 };
 pub use lsp_decorations::{
     lsp_code_lens_to_decorations, lsp_code_lens_to_processing_edit,
@@ -72,9 +72,9 @@ pub use lsp_sync::{
     encode_semantic_style_id, semantic_tokens_to_intervals,
 };
 pub use lsp_text_edits::{
-    LspTextEdit, apply_text_edits, char_offsets_for_lsp_range, text_edits_from_value,
-    summarize_workspace_edit, workspace_edit_text_edits, workspace_edit_text_edits_for_uri,
-    WorkspaceEditDocumentSummary, WorkspaceEditSummary,
+    LspTextEdit, WorkspaceEditDocumentSummary, WorkspaceEditSummary, apply_text_edits,
+    char_offsets_for_lsp_range, summarize_workspace_edit, text_edits_from_value,
+    workspace_edit_text_edits, workspace_edit_text_edits_for_uri,
 };
 pub use lsp_transport::{read_lsp_message, write_lsp_message};
 pub use lsp_type_hierarchy::{type_hierarchy_item_from_value, type_hierarchy_items_from_value};

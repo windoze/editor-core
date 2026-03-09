@@ -97,44 +97,56 @@ pub fn apply_settings_to_view(
     if let Some(base) = settings.editor.as_ref() {
         apply_editor_settings(ws, view_id, base)?;
     }
-    if let (Some(lang_id), Some(map)) = (language_id, settings.languages.as_ref()) {
-        if let Some(over) = map.get(&lang_id) {
-            apply_editor_settings(ws, view_id, over)?;
-        }
+    if let (Some(lang_id), Some(map)) = (language_id, settings.languages.as_ref())
+        && let Some(over) = map.get(&lang_id)
+    {
+        apply_editor_settings(ws, view_id, over)?;
     }
 
     Ok(())
 }
 
-fn apply_editor_settings(ws: &mut Workspace, view_id: ViewId, s: &EditorSettings) -> Result<(), SettingsError> {
+fn apply_editor_settings(
+    ws: &mut Workspace,
+    view_id: ViewId,
+    s: &EditorSettings,
+) -> Result<(), SettingsError> {
     if let Some(width) = s.tab_width {
         if width == 0 {
-            return Err(SettingsError::InvalidSetting("tab_width must be > 0".to_string()));
+            return Err(SettingsError::InvalidSetting(
+                "tab_width must be > 0".to_string(),
+            ));
         }
         ws.execute(view_id, Command::View(ViewCommand::SetTabWidth { width }))?;
     }
 
     if let Some(mode) = s.wrap_mode.as_deref() {
-        let mode = parse_wrap_mode(mode).ok_or_else(|| {
-            SettingsError::InvalidSetting(format!("invalid wrap_mode: {mode}"))
-        })?;
+        let mode = parse_wrap_mode(mode)
+            .ok_or_else(|| SettingsError::InvalidSetting(format!("invalid wrap_mode: {mode}")))?;
         ws.execute(view_id, Command::View(ViewCommand::SetWrapMode { mode }))?;
     }
 
     if let Some(indent) = s.wrap_indent.as_ref() {
-        let indent = parse_wrap_indent(indent).ok_or_else(|| {
-            SettingsError::InvalidSetting("invalid wrap_indent".to_string())
-        })?;
-        ws.execute(view_id, Command::View(ViewCommand::SetWrapIndent { indent }))?;
+        let indent = parse_wrap_indent(indent)
+            .ok_or_else(|| SettingsError::InvalidSetting("invalid wrap_indent".to_string()))?;
+        ws.execute(
+            view_id,
+            Command::View(ViewCommand::SetWrapIndent { indent }),
+        )?;
     }
 
     if let Some(style) = s.indent_style.as_deref() {
         let style = parse_indent_style(style, s.indent_width).ok_or_else(|| {
             SettingsError::InvalidSetting(format!("invalid indent_style: {style}"))
         })?;
-        let mut cfg = IndentationConfig::default();
-        cfg.style = style;
-        ws.execute(view_id, Command::View(ViewCommand::SetIndentationConfig { config: cfg }))?;
+        let cfg = IndentationConfig {
+            style,
+            ..Default::default()
+        };
+        ws.execute(
+            view_id,
+            Command::View(ViewCommand::SetIndentationConfig { config: cfg }),
+        )?;
     }
 
     Ok(())
@@ -165,7 +177,9 @@ impl SettingsStore {
     }
 
     pub fn reload_if_changed(&mut self) -> Result<bool, SettingsError> {
-        let modified = std::fs::metadata(&self.path).and_then(|m| m.modified()).ok();
+        let modified = std::fs::metadata(&self.path)
+            .and_then(|m| m.modified())
+            .ok();
         if modified.is_none() || modified == self.last_modified {
             return Ok(false);
         }
@@ -212,7 +226,10 @@ tab_width = 4
         apply_settings_to_view(&mut ws, opened.view_id, &settings, &reg).unwrap();
 
         assert_eq!(ws.tab_width_for_view(opened.view_id).unwrap(), 4);
-        assert_eq!(ws.wrap_mode_for_view(opened.view_id).unwrap(), WrapMode::Word);
+        assert_eq!(
+            ws.wrap_mode_for_view(opened.view_id).unwrap(),
+            WrapMode::Word
+        );
         assert_eq!(
             ws.wrap_indent_for_view(opened.view_id).unwrap(),
             WrapIndent::SameAsLineIndent
@@ -222,4 +239,3 @@ tab_width = 4
         assert_eq!(indent.style, IndentStyle::Spaces(2));
     }
 }
-

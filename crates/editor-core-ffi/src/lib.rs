@@ -2535,25 +2535,17 @@ pub extern "C" fn editor_core_ffi_workspace_open_buffer_typed(
         let workspace = require_mut(workspace, "workspace")
             .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
         if out_result.is_null() {
-            return Err((
-                EcfStatus::InvalidArgument,
-                "out_result is null".to_string(),
-            ));
+            return Err((EcfStatus::InvalidArgument, "out_result is null".to_string()));
         }
-        let uri = optional_string(uri, "uri")
-            .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        let uri =
+            optional_string(uri, "uri").map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
         let text = require_string(text, "text")
             .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
 
         let opened = workspace
             .inner
             .open_buffer(uri, &text, viewport_width.max(1))
-            .map_err(|err| {
-                (
-                    EcfStatus::Internal,
-                    format!("open_buffer failed: {err:?}"),
-                )
-            })?;
+            .map_err(|err| (EcfStatus::Internal, format!("open_buffer failed: {err:?}")))?;
 
         let result = EcfOpenBufferResult {
             abi_version: ECF_ABI_VERSION,
@@ -2636,21 +2628,13 @@ pub extern "C" fn editor_core_ffi_workspace_create_view_typed(
         let workspace = require_mut(workspace, "workspace")
             .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
         if out_result.is_null() {
-            return Err((
-                EcfStatus::InvalidArgument,
-                "out_result is null".to_string(),
-            ));
+            return Err((EcfStatus::InvalidArgument, "out_result is null".to_string()));
         }
 
         let view_id = workspace
             .inner
             .create_view(BufferId::from_raw(buffer_id), viewport_width.max(1))
-            .map_err(|err| {
-                (
-                    EcfStatus::Internal,
-                    format!("create_view failed: {err:?}"),
-                )
-            })?;
+            .map_err(|err| (EcfStatus::Internal, format!("create_view failed: {err:?}")))?;
 
         let result = EcfCreateViewResult {
             abi_version: ECF_ABI_VERSION,
@@ -2832,10 +2816,7 @@ pub extern "C" fn editor_core_ffi_workspace_get_viewport_state(
         let workspace = require_mut(workspace, "workspace")
             .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
         if out_state.is_null() {
-            return Err((
-                EcfStatus::InvalidArgument,
-                "out_state is null".to_string(),
-            ));
+            return Err((EcfStatus::InvalidArgument, "out_state is null".to_string()));
         }
 
         let state = workspace

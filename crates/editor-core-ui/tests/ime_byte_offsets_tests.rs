@@ -27,4 +27,3 @@ fn utf8_byte_range_to_char_range_converts_cursor_ranges() {
     let (start, len) = utf8_byte_range_to_char_range(s, 5, 1);
     assert_eq!((start, len), (1, 1));
 }
-

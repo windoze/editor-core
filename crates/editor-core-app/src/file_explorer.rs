@@ -115,8 +115,12 @@ impl FileExplorer {
         out.sort_by(|a, b| {
             if a.kind != b.kind {
                 return match (a.kind, b.kind) {
-                    (FileExplorerEntryKind::Directory, FileExplorerEntryKind::File) => std::cmp::Ordering::Less,
-                    (FileExplorerEntryKind::File, FileExplorerEntryKind::Directory) => std::cmp::Ordering::Greater,
+                    (FileExplorerEntryKind::Directory, FileExplorerEntryKind::File) => {
+                        std::cmp::Ordering::Less
+                    }
+                    (FileExplorerEntryKind::File, FileExplorerEntryKind::Directory) => {
+                        std::cmp::Ordering::Greater
+                    }
                     _ => std::cmp::Ordering::Equal,
                 };
             }
@@ -141,8 +145,13 @@ impl FileExplorer {
             ));
         }
 
-        let root = self.root.canonicalize().unwrap_or_else(|_| self.root.clone());
-        let target = target.canonicalize().unwrap_or_else(|_| target.to_path_buf());
+        let root = self
+            .root
+            .canonicalize()
+            .unwrap_or_else(|_| self.root.clone());
+        let target = target
+            .canonicalize()
+            .unwrap_or_else(|_| target.to_path_buf());
 
         let rel = target.strip_prefix(&root).unwrap_or(&target);
         let mut parts: Vec<String> = Vec::new();
@@ -193,4 +202,3 @@ mod tests {
         assert_eq!(segs, vec!["src", "src/main.rs"]);
     }
 }
-

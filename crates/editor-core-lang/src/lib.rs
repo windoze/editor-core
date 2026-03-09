@@ -335,10 +335,10 @@ impl LanguageConfig {
 
     /// Returns `true` if this language config matches the given path (file name or extension).
     pub fn matches_path(&self, path: &Path) -> bool {
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if self.file_names.iter().any(|x| x == name) {
-                return true;
-            }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && self.file_names.iter().any(|x| x == name)
+        {
+            return true;
         }
 
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {

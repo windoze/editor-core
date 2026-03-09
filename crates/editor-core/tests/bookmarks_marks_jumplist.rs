@@ -80,8 +80,13 @@ fn workspace_jump_list_back_forward_and_shifts() {
         Command::Cursor(CursorCommand::MoveTo { line: 0, column: 0 }),
     )
     .unwrap();
-    ws.execute(view, Command::Edit(EditCommand::InsertText { text: "x\n".to_string() }))
-        .unwrap();
+    ws.execute(
+        view,
+        Command::Edit(EditCommand::InsertText {
+            text: "x\n".to_string(),
+        }),
+    )
+    .unwrap();
 
     // Move to delta (which is now line 4) and jump back to the shifted beta.
     ws.execute(
@@ -100,8 +105,13 @@ fn workspace_jump_list_back_forward_and_shifts() {
         Command::Cursor(CursorCommand::MoveTo { line: 0, column: 0 }),
     )
     .unwrap();
-    ws.execute(view, Command::Edit(EditCommand::InsertText { text: "y\n".to_string() }))
-        .unwrap();
+    ws.execute(
+        view,
+        Command::Edit(EditCommand::InsertText {
+            text: "y\n".to_string(),
+        }),
+    )
+    .unwrap();
 
     let forward = ws.jump_forward(view).unwrap().expect("has forward");
     assert_eq!(forward.buffer_id, opened.buffer_id);
@@ -114,14 +124,20 @@ fn state_manager_bookmarks_and_jump_list_smoke() {
     let mut manager = EditorStateManager::new(&text, 80);
 
     manager
-        .execute(Command::Cursor(CursorCommand::MoveTo { line: 1, column: 0 }))
+        .execute(Command::Cursor(CursorCommand::MoveTo {
+            line: 1,
+            column: 0,
+        }))
         .unwrap();
     assert!(manager.toggle_bookmark_at_cursor_line());
     assert_eq!(manager.bookmark_lines(), vec![1]);
 
     manager.push_jump_location();
     manager
-        .execute(Command::Cursor(CursorCommand::MoveTo { line: 3, column: 0 }))
+        .execute(Command::Cursor(CursorCommand::MoveTo {
+            line: 3,
+            column: 0,
+        }))
         .unwrap();
     let back = manager.jump_back().unwrap().expect("has back");
     assert_eq!(back.line, 1);

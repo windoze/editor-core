@@ -12,8 +12,8 @@ use skia_safe::Shaper;
 use skia_safe::shaper::run_handler::{Buffer, RunInfo};
 use skia_safe::shaper::{Feature, RunHandler};
 use skia_safe::{
-    AlphaType, Color, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle,
-    FourByteTag, GlyphId, ImageInfo, Paint, Path, PathBuilder, Point, Rect, surfaces,
+    AlphaType, Color, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle, FourByteTag,
+    GlyphId, ImageInfo, Paint, Path, PathBuilder, Point, Rect, surfaces,
 };
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ffi::c_void;
@@ -1367,7 +1367,8 @@ impl SkiaRenderer {
                         if glyphs.is_empty() || glyphs.len() != positions.len() {
                             return;
                         }
-                        let font = renderer.font_for_variant_index(run.font_variant, run.font_index);
+                        let font =
+                            renderer.font_for_variant_index(run.font_variant, run.font_index);
                         canvas.draw_glyphs_at(
                             glyphs.as_slice(),
                             positions.as_slice(),
@@ -1982,7 +1983,8 @@ impl SkiaRenderer {
                         if glyphs.is_empty() || glyphs.len() != positions.len() {
                             return;
                         }
-                        let font = renderer.font_for_variant_index(run.font_variant, run.font_index);
+                        let font =
+                            renderer.font_for_variant_index(run.font_variant, run.font_index);
                         canvas.draw_glyphs_at(
                             glyphs.as_slice(),
                             positions.as_slice(),

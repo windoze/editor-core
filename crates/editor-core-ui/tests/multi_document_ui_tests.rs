@@ -51,14 +51,20 @@ fn multi_document_ui_supports_splits_via_clone_view() {
     assert_eq!(new_view_idx, 1);
 
     // Edit in the split view.
-    ui.active_editor_mut().unwrap().set_selections_offsets(&[(0, 0)], 0).unwrap();
+    ui.active_editor_mut()
+        .unwrap()
+        .set_selections_offsets(&[(0, 0)], 0)
+        .unwrap();
     ui.active_editor_mut().unwrap().insert_text("X").unwrap();
     assert_eq!(ui.active_editor().unwrap().text(), "Xabc\n");
 
     // Switch back to the original view; text is shared, but view state is independent.
     ui.set_active_view_index(tab, 0).unwrap();
     assert_eq!(ui.active_editor().unwrap().text(), "Xabc\n");
-    assert_eq!(ui.active_editor().unwrap().primary_selection_offsets(), (5, 5));
+    assert_eq!(
+        ui.active_editor().unwrap().primary_selection_offsets(),
+        (5, 5)
+    );
 }
 
 #[test]

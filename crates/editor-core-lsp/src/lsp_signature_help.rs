@@ -54,7 +54,10 @@ fn markup_kind_from_str(s: &str) -> Option<LspMarkupKind> {
 }
 
 fn markup_content_from_value(v: &Value) -> Option<LspMarkupContent> {
-    let kind = v.get("kind").and_then(Value::as_str).and_then(markup_kind_from_str)?;
+    let kind = v
+        .get("kind")
+        .and_then(Value::as_str)
+        .and_then(markup_kind_from_str)?;
     let value = v.get("value").and_then(Value::as_str)?.to_string();
     Some(LspMarkupContent { kind, value })
 }
@@ -83,7 +86,10 @@ fn parameter_label_from_value(v: &Value) -> Option<LspParameterLabel> {
 fn parameter_from_value(v: &Value) -> Option<LspParameterInformation> {
     let label = v.get("label").and_then(parameter_label_from_value);
     let documentation = v.get("documentation").and_then(documentation_from_value);
-    Some(LspParameterInformation { label, documentation })
+    Some(LspParameterInformation {
+        label,
+        documentation,
+    })
 }
 
 fn signature_from_value(v: &Value) -> Option<LspSignatureInformation> {
@@ -92,7 +98,11 @@ fn signature_from_value(v: &Value) -> Option<LspSignatureInformation> {
     let parameters = v
         .get("parameters")
         .and_then(Value::as_array)
-        .map(|arr| arr.iter().filter_map(parameter_from_value).collect::<Vec<_>>())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(parameter_from_value)
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
     Some(LspSignatureInformation {
         label,
@@ -156,7 +166,10 @@ mod tests {
         let sh = signature_help_from_value(&v).expect("signature help");
         assert_eq!(sh.signatures.len(), 1);
         assert_eq!(sh.active_parameter, Some(1));
-        assert_eq!(sh.to_compact_string().unwrap(), "add(a: i32, b: i32) -> i32");
+        assert_eq!(
+            sh.to_compact_string().unwrap(),
+            "add(a: i32, b: i32) -> i32"
+        );
     }
 
     #[test]
@@ -180,4 +193,3 @@ mod tests {
         );
     }
 }
-

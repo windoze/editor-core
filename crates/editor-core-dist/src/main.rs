@@ -43,17 +43,27 @@ fn try_main() -> Result<(), String> {
             while let Some(arg) = args.next() {
                 match arg.as_str() {
                     "--out" => {
-                        let v = args.next().ok_or_else(|| "--out requires a value".to_string())?;
+                        let v = args
+                            .next()
+                            .ok_or_else(|| "--out requires a value".to_string())?;
                         out_dir = Some(PathBuf::from(v));
                     }
                     "--profile" => {
-                        profile = Some(args.next().ok_or_else(|| "--profile requires a value".to_string())?);
+                        profile = Some(
+                            args.next()
+                                .ok_or_else(|| "--profile requires a value".to_string())?,
+                        );
                     }
                     "--target" => {
-                        target = Some(args.next().ok_or_else(|| "--target requires a value".to_string())?);
+                        target = Some(
+                            args.next()
+                                .ok_or_else(|| "--target requires a value".to_string())?,
+                        );
                     }
                     "--mode" => {
-                        let v = args.next().ok_or_else(|| "--mode requires a value".to_string())?;
+                        let v = args
+                            .next()
+                            .ok_or_else(|| "--mode requires a value".to_string())?;
                         mode = Some(LinkMode::parse(&v).map_err(|e| e.to_string())?);
                     }
                     "--core-only" => {
@@ -68,7 +78,9 @@ fn try_main() -> Result<(), String> {
                         overwrite = false;
                     }
                     "--repo" => {
-                        let v = args.next().ok_or_else(|| "--repo requires a value".to_string())?;
+                        let v = args
+                            .next()
+                            .ok_or_else(|| "--repo requires a value".to_string())?;
                         repo_root = Some(PathBuf::from(v));
                     }
                     "--help" | "-h" => {
@@ -81,7 +93,8 @@ fn try_main() -> Result<(), String> {
                 }
             }
 
-            let repo_root = repo_root.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            let repo_root = repo_root
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
             let mut opts = FfiDistOptions::for_repo_root(repo_root);
             if let Some(out) = out_dir {
                 opts.out_dir = out;
@@ -112,4 +125,3 @@ fn try_main() -> Result<(), String> {
         other => Err(format!("unknown subcommand: {other}")),
     }
 }
-

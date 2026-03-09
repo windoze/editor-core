@@ -996,7 +996,10 @@ impl Workspace {
     }
 
     /// Get the current auto-pairs configuration for a view.
-    pub fn auto_pairs_config_for_view(&self, id: ViewId) -> Result<AutoPairsConfig, WorkspaceError> {
+    pub fn auto_pairs_config_for_view(
+        &self,
+        id: ViewId,
+    ) -> Result<AutoPairsConfig, WorkspaceError> {
         self.views
             .get(&id)
             .map(|v| v.core.auto_pairs.clone())
@@ -1371,9 +1374,7 @@ impl Workspace {
                 Self::notify_view(other, change_type, delta.clone());
             }
 
-            if buffer_text_changed
-                && let Some(uri) = buffer.meta.uri.as_deref()
-            {
+            if buffer_text_changed && let Some(uri) = buffer.meta.uri.as_deref() {
                 self.intelligence.mark_stale_for_uri(uri);
             }
 
@@ -1441,7 +1442,9 @@ impl Workspace {
         let Some(buffer) = self.buffers.get(&buffer_id) else {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
-        Ok(buffer.bookmarks.line_numbers(&buffer.executor.editor().line_index))
+        Ok(buffer
+            .bookmarks
+            .line_numbers(&buffer.executor.editor().line_index))
     }
 
     /// Clear all bookmarks for a buffer.
@@ -1465,7 +1468,11 @@ impl Workspace {
         buffer: &BufferEntry,
         anchor: TextAnchor,
     ) -> Position {
-        let (line, column) = buffer.executor.editor().line_index.char_offset_to_position(anchor.offset);
+        let (line, column) = buffer
+            .executor
+            .editor()
+            .line_index
+            .char_offset_to_position(anchor.offset);
         view.core.cursor_position = Position::new(line, column);
         view.core.preferred_x_cells = buffer
             .executor
@@ -1491,19 +1498,15 @@ impl Workspace {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
 
-        let current_line_start = buffer
-            .executor
-            .editor()
-            .line_index
-            .position_to_char_offset(
-                self.views
-                    .get(&view_id)
-                    .ok_or(WorkspaceError::ViewNotFound(view_id))?
-                    .core
-                    .cursor_position
-                    .line,
-                0,
-            );
+        let current_line_start = buffer.executor.editor().line_index.position_to_char_offset(
+            self.views
+                .get(&view_id)
+                .ok_or(WorkspaceError::ViewNotFound(view_id))?
+                .core
+                .cursor_position
+                .line,
+            0,
+        );
 
         let Some(target) = buffer.bookmarks.next_after_line_start(current_line_start) else {
             return Ok(None);
@@ -1531,24 +1534,17 @@ impl Workspace {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
 
-        let current_line_start = buffer
-            .executor
-            .editor()
-            .line_index
-            .position_to_char_offset(
-                self.views
-                    .get(&view_id)
-                    .ok_or(WorkspaceError::ViewNotFound(view_id))?
-                    .core
-                    .cursor_position
-                    .line,
-                0,
-            );
+        let current_line_start = buffer.executor.editor().line_index.position_to_char_offset(
+            self.views
+                .get(&view_id)
+                .ok_or(WorkspaceError::ViewNotFound(view_id))?
+                .core
+                .cursor_position
+                .line,
+            0,
+        );
 
-        let Some(target) = buffer
-            .bookmarks
-            .prev_before_line_start(current_line_start)
-        else {
+        let Some(target) = buffer.bookmarks.prev_before_line_start(current_line_start) else {
             return Ok(None);
         };
 
@@ -1630,11 +1626,7 @@ impl Workspace {
     /// Remove a named mark from a buffer.
     ///
     /// Returns `true` if the mark existed.
-    pub fn clear_mark(
-        &mut self,
-        buffer_id: BufferId,
-        name: &str,
-    ) -> Result<bool, WorkspaceError> {
+    pub fn clear_mark(&mut self, buffer_id: BufferId, name: &str) -> Result<bool, WorkspaceError> {
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };

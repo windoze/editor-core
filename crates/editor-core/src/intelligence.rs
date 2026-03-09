@@ -316,4 +316,3 @@ mod tests {
         assert!(!intel.mark_stale_for_uri("file:///a.rs"));
     }
 }
-

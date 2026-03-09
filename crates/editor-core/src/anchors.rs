@@ -9,18 +9,13 @@
 use crate::TextDelta;
 
 /// Bias controls how an anchor behaves when text is inserted **exactly at** the anchor offset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum AnchorBias {
     /// Keep the anchor at the original offset (anchor stays **before** inserted text).
     Left,
     /// Move the anchor to the end of inserted text (anchor stays **after** inserted text).
+    #[default]
     Right,
-}
-
-impl Default for AnchorBias {
-    fn default() -> Self {
-        Self::Right
-    }
 }
 
 /// A character-offset anchor that shifts through edits.
@@ -115,4 +110,3 @@ mod tests {
         assert_eq!(a.offset, 3);
     }
 }
-

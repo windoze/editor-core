@@ -177,7 +177,10 @@ impl MultiDocumentEditorUi {
     /// Returns the number of tabs closed.
     pub fn close_other_tabs(&mut self, tab_id: TabId) -> Result<usize, UiError> {
         if !self.tabs.contains_key(&tab_id) {
-            return Err(UiError::Processor(format!("unknown tab id {}", tab_id.get())));
+            return Err(UiError::Processor(format!(
+                "unknown tab id {}",
+                tab_id.get()
+            )));
         }
 
         let ids: Vec<TabId> = self.tab_ids();
@@ -201,7 +204,10 @@ impl MultiDocumentEditorUi {
     pub fn close_tabs_to_right(&mut self, tab_id: TabId) -> Result<usize, UiError> {
         let ids = self.tab_ids();
         let Some(pos) = ids.iter().position(|id| *id == tab_id) else {
-            return Err(UiError::Processor(format!("unknown tab id {}", tab_id.get())));
+            return Err(UiError::Processor(format!(
+                "unknown tab id {}",
+                tab_id.get()
+            )));
         };
 
         let mut closed = 0usize;
@@ -216,7 +222,10 @@ impl MultiDocumentEditorUi {
     /// Set the active tab.
     pub fn set_active_tab(&mut self, tab_id: TabId) -> Result<(), UiError> {
         if !self.tabs.contains_key(&tab_id) {
-            return Err(UiError::Processor(format!("unknown tab id {}", tab_id.get())));
+            return Err(UiError::Processor(format!(
+                "unknown tab id {}",
+                tab_id.get()
+            )));
         }
         self.active_tab = Some(tab_id);
         Ok(())
@@ -263,7 +272,11 @@ impl MultiDocumentEditorUi {
     /// Create a split pane within a tab by cloning the active view.
     ///
     /// Returns the new view index within the tab.
-    pub fn split_tab(&mut self, tab_id: TabId, viewport_width_cells: usize) -> Result<usize, UiError> {
+    pub fn split_tab(
+        &mut self,
+        tab_id: TabId,
+        viewport_width_cells: usize,
+    ) -> Result<usize, UiError> {
         let tab = self
             .tabs
             .get_mut(&tab_id)
@@ -281,7 +294,11 @@ impl MultiDocumentEditorUi {
     }
 
     /// Set the active view index for a tab.
-    pub fn set_active_view_index(&mut self, tab_id: TabId, view_index: usize) -> Result<(), UiError> {
+    pub fn set_active_view_index(
+        &mut self,
+        tab_id: TabId,
+        view_index: usize,
+    ) -> Result<(), UiError> {
         let tab = self
             .tabs
             .get_mut(&tab_id)

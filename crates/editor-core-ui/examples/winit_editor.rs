@@ -11,7 +11,7 @@
 
 use editor_core_render_skia::RenderConfig;
 use editor_core_ui::{
-    rgba8_to_argb_u32, utf8_byte_range_to_char_range, DamageRect, EditorUi, Modifiers,
+    DamageRect, EditorUi, Modifiers, rgba8_to_argb_u32, utf8_byte_range_to_char_range,
 };
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -30,9 +30,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
     let window = Rc::new(
         WindowBuilder::new()
-        .with_title("editor-core-ui (winit demo)")
-        .with_inner_size(LogicalSize::new(900.0, 600.0))
-        .build(&event_loop)?,
+            .with_title("editor-core-ui (winit demo)")
+            .with_inner_size(LogicalSize::new(900.0, 600.0))
+            .build(&event_loop)?,
     );
 
     window.set_ime_allowed(true);
@@ -79,12 +79,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let (_written, damage) = ui
                         .render_rgba_visible_into_with_damage(&mut rgba)
-                        .unwrap_or((0, vec![DamageRect {
-                            x: 0,
-                            y: 0,
-                            width: physical_size.width.max(1),
-                            height: physical_size.height.max(1),
-                        }]));
+                        .unwrap_or((
+                            0,
+                            vec![DamageRect {
+                                x: 0,
+                                y: 0,
+                                width: physical_size.width.max(1),
+                                height: physical_size.height.max(1),
+                            }],
+                        ));
                     if damage.is_empty() {
                         return;
                     }
@@ -101,7 +104,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if full_damage {
                         let _ = rgba8_to_argb_u32(&rgba, &mut argb);
                     } else {
-                        rgba8_to_argb_u32_damage(&rgba, &mut argb, physical_size.width.max(1), physical_size.height.max(1), &damage);
+                        rgba8_to_argb_u32_damage(
+                            &rgba,
+                            &mut argb,
+                            physical_size.width.max(1),
+                            physical_size.height.max(1),
+                            &damage,
+                        );
                     }
 
                     if let Ok(mut buffer) = surface.buffer_mut() {
@@ -167,7 +176,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // Best-effort caret area update (candidate window may still move
                                 // due to arrow keys / view scrolling).
                                 if ui.marked_range().is_some() {
-                                    update_ime_cursor_area(&window, &mut ui, cell_width_px, line_height_px);
+                                    update_ime_cursor_area(
+                                        &window,
+                                        &mut ui,
+                                        cell_width_px,
+                                        line_height_px,
+                                    );
                                 }
                                 return;
                             }
@@ -176,19 +190,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .map(|(a, b)| utf8_byte_range_to_char_range(&text, a, b))
                                 .unwrap_or((text.chars().count(), 0));
 
-                            let _ = ui.set_marked_text_with_selection(
-                                &text,
-                                sel_start,
-                                sel_len,
-                                None,
-                            );
+                            let _ =
+                                ui.set_marked_text_with_selection(&text, sel_start, sel_len, None);
                             update_ime_cursor_area(&window, &mut ui, cell_width_px, line_height_px);
                             needs_redraw = true;
                         }
                         winit::event::Ime::Commit(text) => {
                             if !text.is_empty() {
                                 let _ = ui.commit_text(&text);
-                                update_ime_cursor_area(&window, &mut ui, cell_width_px, line_height_px);
+                                update_ime_cursor_area(
+                                    &window,
+                                    &mut ui,
+                                    cell_width_px,
+                                    line_height_px,
+                                );
                                 needs_redraw = true;
                             }
                         }
@@ -206,17 +221,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     // Text input on some platforms can arrive via `event.text`.
-                    if let Some(text) = event.text.as_ref().map(|s| s.as_str()) {
-                        let text = text;
-                        if !text.is_empty()
-                            && !current_mods.contains(Modifiers::CTRL)
-                            && !current_mods.contains(Modifiers::META)
-                            && !current_mods.contains(Modifiers::ALT)
-                        {
-                            let _ = ui.commit_text(text);
-                            needs_redraw = true;
-                            return;
-                        }
+                    if let Some(text) = event.text.as_ref().map(|s| s.as_str())
+                        && !text.is_empty()
+                        && !current_mods.contains(Modifiers::CTRL)
+                        && !current_mods.contains(Modifiers::META)
+                        && !current_mods.contains(Modifiers::ALT)
+                    {
+                        let _ = ui.commit_text(text);
+                        needs_redraw = true;
+                        return;
                     }
 
                     // Key-based commands (navigation/editing).
@@ -241,7 +254,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match state {
                         ElementState::Pressed => {
                             mouse_down_left = true;
-                            let click_count = click_tracker.register_click(cursor_pos_px, Instant::now());
+                            let click_count =
+                                click_tracker.register_click(cursor_pos_px, Instant::now());
                             let _ = ui.mouse_down_with_modifiers_and_click_count(
                                 cursor_pos_px.x as f32,
                                 cursor_pos_px.y as f32,
@@ -260,7 +274,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 WindowEvent::MouseWheel { delta, .. } => {
                     let delta_y_px = match delta {
-                        MouseScrollDelta::LineDelta(_x, y) => -(y as f32) * line_height_px.max(1.0),
+                        MouseScrollDelta::LineDelta(_x, y) => -y * line_height_px.max(1.0),
                         MouseScrollDelta::PixelDelta(pos) => -(pos.y as f32),
                     };
                     ui.scroll_by_pixels(delta_y_px);
@@ -294,7 +308,9 @@ fn rgba8_to_argb_u32_damage(
 ) {
     let w = width_px.max(1) as usize;
     let h = height_px.max(1) as usize;
-    if src_rgba.len() < w.saturating_mul(h).saturating_mul(4) || dst_argb.len() < w.saturating_mul(h) {
+    if src_rgba.len() < w.saturating_mul(h).saturating_mul(4)
+        || dst_argb.len() < w.saturating_mul(h)
+    {
         return;
     }
 
@@ -361,8 +377,12 @@ fn copy_damage_rects_to_buffer(
 fn to_softbuffer_damage(damage: &[DamageRect]) -> Vec<softbuffer::Rect> {
     let mut out: Vec<softbuffer::Rect> = Vec::new();
     for r in damage {
-        let Some(w) = NonZeroU32::new(r.width) else { continue };
-        let Some(h) = NonZeroU32::new(r.height) else { continue };
+        let Some(w) = NonZeroU32::new(r.width) else {
+            continue;
+        };
+        let Some(h) = NonZeroU32::new(r.height) else {
+            continue;
+        };
         out.push(softbuffer::Rect {
             x: r.x,
             y: r.y,
@@ -378,7 +398,11 @@ fn resize_ui(
     size: PhysicalSize<u32>,
     scale: f32,
 ) -> Result<(f32, f32), editor_core_ui::UiError> {
-    let scale = if scale.is_finite() { scale.max(1.0) } else { 1.0 };
+    let scale = if scale.is_finite() {
+        scale.max(1.0)
+    } else {
+        1.0
+    };
 
     // Small, readable defaults (logical sizes scaled to backing pixels).
     let font_size_px = 14.0 * scale;

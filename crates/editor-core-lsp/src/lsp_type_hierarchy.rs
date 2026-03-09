@@ -36,7 +36,10 @@ pub fn type_hierarchy_item_from_value(value: &Value) -> Option<HierarchyItem> {
         .and_then(utf16_range_from_value)
         .unwrap_or(range);
 
-    let detail = value.get("detail").and_then(Value::as_str).map(|s| s.to_string());
+    let detail = value
+        .get("detail")
+        .and_then(Value::as_str)
+        .map(|s| s.to_string());
     let data_json = value.get("data").map(|v| v.to_string());
 
     Some(HierarchyItem {
@@ -88,4 +91,3 @@ mod tests {
         assert_eq!(item.data_json.as_deref(), Some("{\"id\":\"abc\"}"));
     }
 }
-

@@ -67,7 +67,10 @@ fn markup_kind_from_str(s: &str) -> Option<LspMarkupKind> {
 }
 
 fn markup_content_from_value(v: &Value) -> Option<LspMarkupContent> {
-    let kind = v.get("kind").and_then(Value::as_str).and_then(markup_kind_from_str)?;
+    let kind = v
+        .get("kind")
+        .and_then(Value::as_str)
+        .and_then(markup_kind_from_str)?;
     let value = v.get("value").and_then(Value::as_str)?.to_string();
     Some(LspMarkupContent { kind, value })
 }
@@ -103,7 +106,10 @@ fn hover_contents_from_value(v: &Value) -> Option<LspHoverContents> {
 
     // Array
     if let Some(arr) = v.as_array() {
-        let items = arr.iter().filter_map(hover_contents_from_value).collect::<Vec<_>>();
+        let items = arr
+            .iter()
+            .filter_map(hover_contents_from_value)
+            .collect::<Vec<_>>();
         return Some(LspHoverContents::Many(items));
     }
 
@@ -179,4 +185,3 @@ mod tests {
         assert_eq!(h.contents.to_markdown_string(), "a\n\nb");
     }
 }
-

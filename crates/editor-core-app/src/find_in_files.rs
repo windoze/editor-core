@@ -96,10 +96,7 @@ pub fn find_in_files(
             let Some(name) = entry.file_name().to_str() else {
                 return true;
             };
-            match name {
-                ".git" | "target" | ".build" => false,
-                _ => true,
-            }
+            !matches!(name, ".git" | "target" | ".build")
         })
         .build();
 
@@ -113,10 +110,10 @@ pub fn find_in_files(
         }
 
         let path = dent.into_path();
-        if let Ok(meta) = std::fs::metadata(&path) {
-            if meta.len() > config.max_file_size_bytes {
-                continue;
-            }
+        if let Ok(meta) = std::fs::metadata(&path)
+            && meta.len() > config.max_file_size_bytes
+        {
+            continue;
         }
 
         let raw = read_utf8_file(&path).map_err(|e| FindInFilesError::ReadFile {
@@ -202,10 +199,15 @@ mod tests {
         let root = temp.path();
         std::fs::write(root.join("a.txt"), "A\r\nTODO\r\n").unwrap();
 
-        let results = find_in_files(root, "TODO", SearchOptions::default(), FindInFilesConfig::default()).unwrap();
+        let results = find_in_files(
+            root,
+            "TODO",
+            SearchOptions::default(),
+            FindInFilesConfig::default(),
+        )
+        .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].matches[0].line, 1);
         assert_eq!(results[0].matches[0].text, "TODO");
     }
 }
-

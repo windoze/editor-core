@@ -35,4 +35,3 @@ fn main() {
     println!("=== After filling placeholders ===");
     println!("{}", exec.editor().get_text());
 }
-

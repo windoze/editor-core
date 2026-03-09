@@ -98,10 +98,10 @@ impl SnippetParts {
             self.tabstops.entry(idx).or_default().extend(ranges);
         }
 
-        if self.final_offset.is_none() {
-            if let Some(off) = other.final_offset {
-                self.final_offset = Some(base.saturating_add(off));
-            }
+        if self.final_offset.is_none()
+            && let Some(off) = other.final_offset
+        {
+            self.final_offset = Some(base.saturating_add(off));
         }
     }
 
@@ -160,7 +160,7 @@ where
     if depth > MAX_SNIPPET_PARSE_DEPTH {
         // Best-effort: treat remaining content as literal text.
         let mut parts = SnippetParts::default();
-        while let Some(ch) = chars.next() {
+        for ch in chars.by_ref() {
             if terminator == Some(ch) {
                 break;
             }
@@ -250,8 +250,7 @@ fn parse_braced_expression<I>(
     chars: &mut std::iter::Peekable<I>,
     depth: usize,
     ctx: &mut ParseCtx,
-)
-where
+) where
     I: Iterator<Item = char>,
 {
     // `${...}` form: either a numeric tabstop (`${1:foo}`) or a variable (`${TM_FILENAME:foo.rs}`).
@@ -267,11 +266,11 @@ where
             }
             Some(':') => {
                 chars.next();
-                let _ = parse_tabstop_default(parts, chars, depth, idx, ctx);
+                parse_tabstop_default(parts, chars, depth, idx, ctx);
             }
             Some('|') => {
                 chars.next();
-                let _ = parse_tabstop_choice(parts, chars, idx, ctx);
+                parse_tabstop_choice(parts, chars, idx, ctx);
             }
             _ => {
                 // Unknown / malformed; consume until matching `}`.
@@ -326,8 +325,8 @@ fn parse_tabstop_default<I>(
     }
 
     let placeholder_start = parts.text_char_len;
-    if !ctx.tabstop_defaults.contains_key(&idx) {
-        ctx.tabstop_defaults.insert(idx, inner.text.clone());
+    if let std::collections::hash_map::Entry::Vacant(e) = ctx.tabstop_defaults.entry(idx) {
+        e.insert(inner.text.clone());
     }
     parts.merge_with_offset(inner, placeholder_start);
     let placeholder_end = parts.text_char_len;
@@ -345,8 +344,7 @@ fn parse_tabstop_choice<I>(
     chars: &mut std::iter::Peekable<I>,
     idx: u32,
     ctx: &mut ParseCtx,
-)
-where
+) where
     I: Iterator<Item = char>,
 {
     // `${1|a,b,c|}`: pick the first option as inserted text.
@@ -385,10 +383,9 @@ where
     }
 
     let insert_text = options.first().map(String::as_str).unwrap_or("");
-    if !ctx.tabstop_defaults.contains_key(&idx) {
-        ctx.tabstop_defaults
-            .insert(idx, insert_text.to_string());
-    }
+    ctx.tabstop_defaults
+        .entry(idx)
+        .or_insert_with(|| insert_text.to_string());
     let start = parts.text_char_len;
     parts.push_str(insert_text);
     let end = parts.text_char_len;
