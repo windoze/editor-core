@@ -2484,6 +2484,7 @@ version = "0.3.0"
 dependencies = [
  "crossterm",
  "editor-core",
+ "editor-core-app",
  "editor-core-highlight-simple",
  "editor-core-lsp",
  "editor-core-sublime",
