@@ -11,6 +11,13 @@ final class WorkspaceTests: XCTestCase {
         let bufferId = opened.bufferId
         let viewId = opened.viewId
 
+        let typedInfo1 = try ws.info()
+        XCTAssertEqual(typedInfo1.bufferCount, 1)
+        XCTAssertEqual(typedInfo1.viewCount, 1)
+        XCTAssertEqual(typedInfo1.isEmpty, false)
+        XCTAssertEqual(typedInfo1.activeViewId, viewId)
+        XCTAssertEqual(typedInfo1.activeBufferId, bufferId)
+
         let info1 = try JSONTestHelpers.object(try ws.infoJSON())
         XCTAssertEqual(info1["buffer_count"] as? Int, 1)
         XCTAssertEqual(info1["is_empty"] as? Bool, false)
@@ -20,6 +27,15 @@ final class WorkspaceTests: XCTestCase {
 
         try ws.setViewportHeight(viewId: viewId, height: 12)
         try ws.setSmoothScrollState(viewId: viewId, topVisualRow: 0, subRowOffset: 0, overscanRows: 2)
+
+        let typedViewport = try ws.viewportState(viewId: viewId)
+        XCTAssertEqual(typedViewport.widthCells, 20)
+        XCTAssertEqual(typedViewport.heightRows, UInt32(12))
+        XCTAssertEqual(typedViewport.scrollTop, 0)
+        XCTAssertEqual(typedViewport.subRowOffset, 0)
+        XCTAssertEqual(typedViewport.overscanRows, 2)
+        XCTAssertEqual(typedViewport.visibleStart, 0)
+        XCTAssertEqual(typedViewport.visibleEnd, min(typedViewport.totalVisualLines, UInt32(12)))
 
         // typed operations
         try ws.moveTo(viewId: viewId, line: 0, column: 2)
@@ -92,4 +108,3 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertEqual(info2["is_empty"] as? Bool, true)
     }
 }
-

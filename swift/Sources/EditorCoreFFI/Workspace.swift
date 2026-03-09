@@ -6,10 +6,6 @@ public struct OpenBufferResult: Equatable, Sendable, Decodable {
     public let viewId: UInt64
 }
 
-public struct CreateViewResult: Equatable, Sendable, Decodable {
-    public let viewId: UInt64
-}
-
 public final class Workspace {
     public let ffi: EditorCoreFFILibrary
     let handle: OpaquePointer
@@ -28,23 +24,24 @@ public final class Workspace {
     }
 
     public func openBuffer(uri: String?, text: String, viewportWidth: UInt) throws -> OpenBufferResult {
-        let ptr: UnsafeMutablePointer<CChar>? = text.withCString { textPtr in
+        var raw = EcfOpenBufferResult()
+        let status: Int32 = text.withCString { textPtr in
             if let uri {
                 return uri.withCString { uriPtr in
-                    editor_core_ffi_workspace_open_buffer(handle, uriPtr, textPtr, Int(clamping: max(1, viewportWidth)))
+                    editor_core_ffi_workspace_open_buffer_typed(handle, uriPtr, textPtr, Int(clamping: max(1, viewportWidth)), &raw)
                 }
             }
-            return editor_core_ffi_workspace_open_buffer(handle, nil, textPtr, Int(clamping: max(1, viewportWidth)))
+            return editor_core_ffi_workspace_open_buffer_typed(handle, nil, textPtr, Int(clamping: max(1, viewportWidth)), &raw)
         }
-        let json = try ffi.takeOwnedCString(ptr, context: "workspace_open_buffer")
-        return try JSON.decode(OpenBufferResult.self, from: json, context: "open_buffer_result")
+        try ffi.ensureStatus(status, context: "workspace_open_buffer_typed")
+        return OpenBufferResult(bufferId: raw.buffer_id, viewId: raw.view_id)
     }
 
     public func createView(bufferId: UInt64, viewportWidth: UInt) throws -> UInt64 {
-        let ptr = editor_core_ffi_workspace_create_view(handle, bufferId, Int(clamping: max(1, viewportWidth)))
-        let json = try ffi.takeOwnedCString(ptr, context: "workspace_create_view")
-        let decoded = try JSON.decode(CreateViewResult.self, from: json, context: "create_view_result")
-        return decoded.viewId
+        var raw = EcfCreateViewResult()
+        let status = editor_core_ffi_workspace_create_view_typed(handle, bufferId, Int(clamping: max(1, viewportWidth)), &raw)
+        try ffi.ensureStatus(status, context: "workspace_create_view_typed")
+        return raw.view_id
     }
 
     public func executeJSON(viewId: UInt64, commandJSON: String) throws -> String {
@@ -64,6 +61,13 @@ public final class Workspace {
 
     public func setActiveView(viewId: UInt64) -> Bool {
         editor_core_ffi_workspace_set_active_view(handle, viewId)
+    }
+
+    public func info() throws -> WorkspaceInfo {
+        var raw = EcfWorkspaceInfo()
+        let status = editor_core_ffi_workspace_get_info(handle, &raw)
+        try ffi.ensureStatus(status, context: "workspace_get_info")
+        return WorkspaceInfo(raw: raw)
     }
 
     public func infoJSON() throws -> String {
@@ -86,6 +90,13 @@ public final class Workspace {
 
     public func viewportStateJSON(viewId: UInt64) throws -> String {
         try ffi.takeOwnedCString(editor_core_ffi_workspace_viewport_state_json(handle, viewId), context: "workspace_viewport_state_json")
+    }
+
+    public func viewportState(viewId: UInt64) throws -> WorkspaceViewportState {
+        var raw = EcfWorkspaceViewportState()
+        let status = editor_core_ffi_workspace_get_viewport_state(handle, viewId, &raw)
+        try ffi.ensureStatus(status, context: "workspace_get_viewport_state")
+        return WorkspaceViewportState(raw: raw)
     }
 
     public func setViewportHeight(viewId: UInt64, height: UInt) throws {

@@ -1,13 +1,16 @@
 use editor_core_ffi::{
-    ECF_ABI_VERSION, EcfDocumentStats, EcfStatus, ecf_abi_version, ecf_editor_backspace,
-    ecf_editor_get_viewport_blob, ecf_editor_insert_text_utf8, ecf_editor_move_to,
+    ECF_ABI_VERSION, EcfDocumentStats, EcfOpenBufferResult, EcfStatus, EcfWorkspaceInfo,
+    EcfWorkspaceViewportState, ecf_abi_version, ecf_editor_backspace, ecf_editor_get_viewport_blob,
+    ecf_editor_insert_text_utf8, ecf_editor_move_to,
     editor_core_ffi_editor_get_document_stats, editor_core_ffi_editor_get_viewport_blob,
     editor_core_ffi_editor_insert_text_utf8, editor_core_ffi_editor_state_free,
     editor_core_ffi_editor_state_new, editor_core_ffi_last_error_message,
     editor_core_ffi_string_free, editor_core_ffi_workspace_backspace,
-    editor_core_ffi_workspace_free, editor_core_ffi_workspace_get_viewport_blob,
+    editor_core_ffi_workspace_free, editor_core_ffi_workspace_get_info,
+    editor_core_ffi_workspace_get_viewport_blob, editor_core_ffi_workspace_get_viewport_state,
     editor_core_ffi_workspace_insert_text_utf8, editor_core_ffi_workspace_move_to,
-    editor_core_ffi_workspace_new, editor_core_ffi_workspace_open_buffer,
+    editor_core_ffi_workspace_new, editor_core_ffi_workspace_open_buffer_typed,
+    editor_core_ffi_workspace_set_smooth_scroll_state, editor_core_ffi_workspace_set_viewport_height,
 };
 use std::ffi::{CStr, CString};
 
@@ -159,11 +162,51 @@ fn workspace_typed_commands_and_blob_work() {
     assert!(!workspace.is_null());
 
     let text = CString::new("abc\n").expect("cstring");
-    let opened_json_ptr =
-        editor_core_ffi_workspace_open_buffer(workspace, std::ptr::null(), text.as_ptr(), 80);
-    let opened_json = take_string(opened_json_ptr);
-    let opened: serde_json::Value = serde_json::from_str(&opened_json).expect("open json");
-    let view_id = opened["view_id"].as_u64().expect("view_id");
+    let mut opened = EcfOpenBufferResult {
+        abi_version: 0,
+        struct_size: 0,
+        buffer_id: 0,
+        view_id: 0,
+    };
+    let st = editor_core_ffi_workspace_open_buffer_typed(
+        workspace,
+        std::ptr::null(),
+        text.as_ptr(),
+        80,
+        &mut opened,
+    );
+    assert_eq!(st, status(EcfStatus::Ok));
+    assert_eq!(opened.abi_version, ECF_ABI_VERSION);
+    assert_eq!(
+        opened.struct_size as usize,
+        std::mem::size_of::<EcfOpenBufferResult>()
+    );
+
+    let buffer_id = opened.buffer_id;
+    let view_id = opened.view_id;
+
+    let mut info = EcfWorkspaceInfo {
+        abi_version: 0,
+        struct_size: 0,
+        buffer_count: 0,
+        view_count: 0,
+        is_empty: 0,
+        has_active_view_id: 0,
+        has_active_buffer_id: 0,
+        reserved0: 0,
+        active_view_id: 0,
+        active_buffer_id: 0,
+    };
+    let st = editor_core_ffi_workspace_get_info(workspace, &mut info);
+    assert_eq!(st, status(EcfStatus::Ok));
+    assert_eq!(info.abi_version, ECF_ABI_VERSION);
+    assert_eq!(info.buffer_count, 1);
+    assert_eq!(info.view_count, 1);
+    assert_eq!(info.is_empty, 0);
+    assert_eq!(info.has_active_view_id, 1);
+    assert_eq!(info.has_active_buffer_id, 1);
+    assert_eq!(info.active_view_id, view_id);
+    assert_eq!(info.active_buffer_id, buffer_id);
 
     let insert = b"123";
     let st = editor_core_ffi_workspace_insert_text_utf8(
@@ -179,6 +222,44 @@ fn workspace_typed_commands_and_blob_work() {
 
     let st = editor_core_ffi_workspace_backspace(workspace, view_id);
     assert_eq!(st, status(EcfStatus::Ok));
+
+    assert!(editor_core_ffi_workspace_set_viewport_height(workspace, view_id, 1));
+    assert!(editor_core_ffi_workspace_set_smooth_scroll_state(
+        workspace, view_id, 0, 123, 2
+    ));
+    let mut viewport = EcfWorkspaceViewportState {
+        abi_version: 0,
+        struct_size: 0,
+        width_cells: 0,
+        height_rows: 0,
+        has_height: 0,
+        scroll_top: 0,
+        sub_row_offset: 0,
+        overscan_rows: 0,
+        visible_start: 0,
+        visible_end: 0,
+        prefetch_start: 0,
+        prefetch_end: 0,
+        total_visual_lines: 0,
+    };
+    let st = editor_core_ffi_workspace_get_viewport_state(workspace, view_id, &mut viewport);
+    assert_eq!(st, status(EcfStatus::Ok));
+    assert_eq!(viewport.abi_version, ECF_ABI_VERSION);
+    assert_eq!(
+        viewport.struct_size as usize,
+        std::mem::size_of::<EcfWorkspaceViewportState>()
+    );
+    assert_eq!(viewport.width_cells, 80);
+    assert_eq!(viewport.has_height, 1);
+    assert_eq!(viewport.height_rows, 1);
+    assert_eq!(viewport.scroll_top, 0);
+    assert_eq!(viewport.sub_row_offset, 123);
+    assert_eq!(viewport.overscan_rows, 2);
+    assert!(viewport.total_visual_lines >= 2);
+    assert_eq!(viewport.visible_start, 0);
+    assert_eq!(viewport.visible_end, 1);
+    assert_eq!(viewport.prefetch_start, 0);
+    assert_eq!(viewport.prefetch_end, 2);
 
     let mut out_len = 0u32;
     let st = editor_core_ffi_workspace_get_viewport_blob(

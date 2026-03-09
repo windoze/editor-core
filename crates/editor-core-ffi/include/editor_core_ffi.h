@@ -71,6 +71,48 @@ typedef struct EcfDocumentStats {
     uint64_t version;
 } EcfDocumentStats;
 
+typedef struct EcfOpenBufferResult {
+    uint32_t abi_version;
+    uint32_t struct_size;
+    uint64_t buffer_id;
+    uint64_t view_id;
+} EcfOpenBufferResult;
+
+typedef struct EcfCreateViewResult {
+    uint32_t abi_version;
+    uint32_t struct_size;
+    uint64_t view_id;
+} EcfCreateViewResult;
+
+typedef struct EcfWorkspaceInfo {
+    uint32_t abi_version;
+    uint32_t struct_size;
+    uint64_t buffer_count;
+    uint64_t view_count;
+    uint8_t is_empty;
+    uint8_t has_active_view_id;
+    uint8_t has_active_buffer_id;
+    uint8_t reserved0;
+    uint64_t active_view_id;
+    uint64_t active_buffer_id;
+} EcfWorkspaceInfo;
+
+typedef struct EcfWorkspaceViewportState {
+    uint32_t abi_version;
+    uint32_t struct_size;
+    uint32_t width_cells;
+    uint32_t height_rows;
+    uint32_t has_height;
+    uint32_t scroll_top;
+    uint32_t sub_row_offset;
+    uint32_t overscan_rows;
+    uint32_t visible_start;
+    uint32_t visible_end;
+    uint32_t prefetch_start;
+    uint32_t prefetch_end;
+    uint32_t total_visual_lines;
+} EcfWorkspaceViewportState;
+
 uint32_t editor_core_ffi_abi_version(void);
 char* editor_core_ffi_version(void);
 char* editor_core_ffi_last_error_message(void);
@@ -120,15 +162,31 @@ int32_t editor_core_ffi_editor_get_viewport_blob(
 EcfWorkspace* editor_core_ffi_workspace_new(void);
 void editor_core_ffi_workspace_free(EcfWorkspace* workspace);
 char* editor_core_ffi_workspace_open_buffer(EcfWorkspace* workspace, const char* uri, const char* text, size_t viewport_width);
+int32_t editor_core_ffi_workspace_open_buffer_typed(
+    EcfWorkspace* workspace,
+    const char* uri,
+    const char* text,
+    size_t viewport_width,
+    EcfOpenBufferResult* out_result);
 bool editor_core_ffi_workspace_close_buffer(EcfWorkspace* workspace, uint64_t buffer_id);
 bool editor_core_ffi_workspace_close_view(EcfWorkspace* workspace, uint64_t view_id);
 char* editor_core_ffi_workspace_create_view(EcfWorkspace* workspace, uint64_t buffer_id, size_t viewport_width);
+int32_t editor_core_ffi_workspace_create_view_typed(
+    EcfWorkspace* workspace,
+    uint64_t buffer_id,
+    size_t viewport_width,
+    EcfCreateViewResult* out_result);
 bool editor_core_ffi_workspace_set_active_view(EcfWorkspace* workspace, uint64_t view_id);
 char* editor_core_ffi_workspace_info_json(const EcfWorkspace* workspace);
+int32_t editor_core_ffi_workspace_get_info(const EcfWorkspace* workspace, EcfWorkspaceInfo* out_info);
 char* editor_core_ffi_workspace_execute_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
 bool editor_core_ffi_workspace_apply_processing_edits_json(EcfWorkspace* workspace, uint64_t buffer_id, const char* edits_json);
 char* editor_core_ffi_workspace_buffer_text_json(const EcfWorkspace* workspace, uint64_t buffer_id);
 char* editor_core_ffi_workspace_viewport_state_json(EcfWorkspace* workspace, uint64_t view_id);
+int32_t editor_core_ffi_workspace_get_viewport_state(
+    EcfWorkspace* workspace,
+    uint64_t view_id,
+    EcfWorkspaceViewportState* out_state);
 bool editor_core_ffi_workspace_set_viewport_height(EcfWorkspace* workspace, uint64_t view_id, size_t height);
 bool editor_core_ffi_workspace_set_smooth_scroll_state(EcfWorkspace* workspace, uint64_t view_id, size_t top_visual_row, uint16_t sub_row_offset, size_t overscan_rows);
 char* editor_core_ffi_workspace_viewport_styled_json(EcfWorkspace* workspace, uint64_t view_id, size_t start_visual_row, size_t count);

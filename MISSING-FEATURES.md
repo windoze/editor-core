@@ -400,10 +400,26 @@ this workspace (per your request).
 
 ## FFI / embedding gaps (`editor-core-ffi`, `editor-core-ui-ffi`)
 
-- [ ] **[ui] Expand the typed ABI surface to cover more than the hot path**
+- [x] **[ui] Expand the typed ABI surface to cover more than the hot path**
   - The typed ABI is great for per-keystroke and per-frame operations, but some non-hot-path
     surfaces are still easier to use via JSON control-plane APIs.
-  - A production embedding typically wants more “typed” coverage over time (to reduce JSON churn).
+  - Implemented a first “beyond hot path” expansion for `editor-core-ffi` workspace lifecycle + state:
+    - Typed structs:
+      - `EcfOpenBufferResult`, `EcfCreateViewResult`
+      - `EcfWorkspaceInfo`, `EcfWorkspaceViewportState`
+    - Typed APIs:
+      - `editor_core_ffi_workspace_open_buffer_typed(...)`
+      - `editor_core_ffi_workspace_create_view_typed(...)`
+      - `editor_core_ffi_workspace_get_info(...)`
+      - `editor_core_ffi_workspace_get_viewport_state(...)`
+    - Swift wrappers default to typed APIs (no JSON decode) for:
+      - `Workspace.openBuffer(...)`, `Workspace.createView(...)`
+      - `Workspace.info()`, `Workspace.viewportState(...)`
+    - SwiftPM rebuild trigger:
+      - Bumped `swift/Sources/CEditorCoreFFI/stamp.c` revision (2 → 3) to pick up ABI/header changes.
+  - Tests:
+    - Rust: `crates/editor-core-ffi/tests/abi_v1.rs`
+    - Swift: `swift/Tests/EditorCoreFFITests/WorkspaceTests.swift`
 
 - [ ] **[host] Packaging + distribution story for each target platform**
   - Building and shipping Skia + Rust + headers for:
