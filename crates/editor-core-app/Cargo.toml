@@ -13,7 +13,7 @@ keywords = ["editor", "workspace", "tabs", "search"]
 categories = ["text-editors", "text-processing"]
 
 [dependencies]
-editor-core = { version = "0.3.0", path = "../editor-core" }
+editor-core = { version = "0.3.0", path = "../editor-core", features = ["serde"] }
 editor-core-lang = { version = "0.3.0", path = "../editor-core-lang" }
 editor-core-lsp = { version = "0.3.0", path = "../editor-core-lsp" }
 
