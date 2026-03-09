@@ -17,6 +17,7 @@ mod command_palette;
 mod settings;
 mod search_results;
 mod observability;
+mod pane_layout;
 mod session;
 mod status_bar;
 mod workspace_io;
@@ -39,6 +40,7 @@ pub use search_results::{
     AnchoredMatchRange, BufferSearchResults, SearchResultsError, SearchResultsModel,
 };
 pub use observability::{AppLog, LogEntry, LogLevel};
+pub use pane_layout::{PaneId, PaneLayout, SplitDirection, WindowId, WindowManager};
 pub use session::{
     AppSession, AppSessionError, BufferSnapshot, HotExitSnapshot, ViewSnapshot, load_session_json,
     save_session_json,
