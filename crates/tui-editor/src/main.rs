@@ -176,6 +176,10 @@ struct App {
     state_manager: EditorStateManager,
     /// 文件路径
     file_path: PathBuf,
+    /// 打开时从磁盘读取到的原始内容（用于 `--wait` 的退出码语义：0=未变更，1=已变更）
+    opened_disk_text: String,
+    /// 打开时文件是否存在
+    opened_disk_exists: bool,
     /// 是否需要退出
     should_quit: bool,
     /// 确认退出模式（如果有未保存修改）
@@ -214,11 +218,8 @@ impl App {
     /// 创建新的应用实例
     fn new(file_path: PathBuf) -> io::Result<Self> {
         // 读取文件内容（如果存在）
-        let content = if file_path.exists() {
-            fs::read_to_string(&file_path)?
-        } else {
-            String::new()
-        };
+        let opened_disk_exists = file_path.exists();
+        let content = if opened_disk_exists { fs::read_to_string(&file_path)? } else { String::new() };
 
         let mut state_manager = EditorStateManager::new(&content, 80);
 
@@ -230,6 +231,8 @@ impl App {
         let mut app = Self {
             state_manager,
             file_path,
+            opened_disk_text: content,
+            opened_disk_exists,
             should_quit: false,
             confirm_quit: false,
             status_message: String::new(),
@@ -2147,17 +2150,216 @@ fn style_for_sublime_scope(scope: &str) -> (Option<Color>, Modifier) {
     (None, mods)
 }
 
-fn main() -> io::Result<()> {
-    // 获取命令行参数
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("用法: {} <file_path>", args[0]);
-        eprintln!("\n示例:");
-        eprintln!("  {} example.txt", args[0]);
-        process::exit(1);
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CliTarget {
+    path: PathBuf,
+    /// 1-based line (optional)
+    line: Option<usize>,
+    /// 1-based column (optional)
+    column: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CliRunConfig {
+    targets: Vec<CliTarget>,
+    wait: bool,
+}
+
+#[derive(Debug, Clone)]
+enum CliParseError {
+    Help(String),
+    Error(String),
+}
+
+impl std::fmt::Display for CliParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Help(s) | Self::Error(s) => write!(f, "{s}"),
+        }
+    }
+}
+
+fn usage(bin: &str) -> String {
+    format!(
+        r#"用法:
+  {bin} [--wait] [--line N] [--column N] <path>...
+
+位置参数（可选）:
+  也支持 `<path>:<line>` 或 `<path>:<line>:<col>`（1-based）
+
+示例:
+  {bin} foo.rs
+  {bin} --line 10 --column 5 foo.rs
+  {bin} foo.rs:10:5
+"#
+    )
+}
+
+fn parse_path_with_location(arg: &str) -> (String, Option<(usize, Option<usize>)>) {
+    // Parse from the right so Windows drive letters (`C:\...`) remain intact.
+    let parts: Vec<&str> = arg.split(':').collect();
+    if parts.len() < 2 {
+        return (arg.to_string(), None);
     }
 
-    let file_path = PathBuf::from(&args[1]);
+    let last = parts[parts.len() - 1];
+    let second_last = parts[parts.len() - 2];
+
+    // Try `path:line:col`.
+    if let (Ok(line), Ok(col)) = (second_last.parse::<usize>(), last.parse::<usize>()) {
+        let path = parts[..parts.len() - 2].join(":");
+        return (path, Some((line, Some(col))));
+    }
+
+    // Try `path:line`.
+    if let Ok(line) = last.parse::<usize>() {
+        let path = parts[..parts.len() - 1].join(":");
+        return (path, Some((line, None)));
+    }
+
+    (arg.to_string(), None)
+}
+
+fn parse_cli_args(args: &[String]) -> Result<CliRunConfig, CliParseError> {
+    let bin = args.get(0).cloned().unwrap_or_else(|| "tui-editor".to_string());
+
+    // TUI 形态本身就是前台阻塞运行，所以默认等价于 `--wait`。
+    let mut wait = true;
+    let mut global_line: Option<usize> = None;
+    let mut global_col: Option<usize> = None;
+    let mut targets: Vec<CliTarget> = Vec::new();
+
+    let mut i = 1usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--help" | "-h" => return Err(CliParseError::Help(usage(&bin))),
+            "--wait" => {
+                wait = true;
+                i += 1;
+            }
+            "--line" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| CliParseError::Error("--line 需要一个数字参数".to_string()))?;
+                global_line = Some(
+                    v.parse::<usize>()
+                        .map_err(|_| CliParseError::Error("--line 必须是数字".to_string()))?,
+                );
+                i += 1;
+            }
+            "--column" | "--col" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| CliParseError::Error("--column 需要一个数字参数".to_string()))?;
+                global_col = Some(
+                    v.parse::<usize>()
+                        .map_err(|_| CliParseError::Error("--column 必须是数字".to_string()))?,
+                );
+                i += 1;
+            }
+            other => {
+                let (path_s, loc) = parse_path_with_location(other);
+                let (line, column) = match loc {
+                    Some((line, col)) => (Some(line), col),
+                    None => (None, None),
+                };
+                let target = CliTarget {
+                    path: PathBuf::from(path_s),
+                    line,
+                    column,
+                };
+                targets.push(target);
+                i += 1;
+            }
+        }
+    }
+
+    if targets.is_empty() {
+        return Err(CliParseError::Error(usage(&bin)));
+    }
+
+    if global_line.is_some() || global_col.is_some() {
+        let first = targets
+            .get_mut(0)
+            .ok_or_else(|| CliParseError::Error("缺少 path 参数".to_string()))?;
+        if let Some(line) = global_line {
+            first.line = Some(line);
+        }
+        if let Some(col) = global_col {
+            first.column = Some(col);
+        }
+    }
+
+    Ok(CliRunConfig { targets, wait })
+}
+
+fn disk_changed_since_open(path: &Path, existed: bool, opened_text: &str) -> io::Result<bool> {
+    if path.exists() {
+        let now = fs::read_to_string(path)?;
+        Ok(now != opened_text)
+    } else {
+        Ok(existed)
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn parse_path_with_location_supports_line_and_column() {
+        let (path, loc) = parse_path_with_location("foo.rs:10:5");
+        assert_eq!(path, "foo.rs");
+        assert_eq!(loc, Some((10, Some(5))));
+    }
+
+    #[test]
+    fn parse_path_with_location_supports_windows_drive_like_paths() {
+        let (path, loc) = parse_path_with_location(r#"C:\src\main.rs:3:2"#);
+        assert_eq!(path, r#"C:\src\main.rs"#);
+        assert_eq!(loc, Some((3, Some(2))));
+    }
+
+    #[test]
+    fn parse_cli_args_applies_global_line_column_to_first_target() {
+        let args = vec![
+            "editor".to_string(),
+            "--line".to_string(),
+            "7".to_string(),
+            "--column".to_string(),
+            "9".to_string(),
+            "a.rs".to_string(),
+            "b.rs".to_string(),
+        ];
+        let cfg = parse_cli_args(&args).unwrap();
+        assert_eq!(cfg.wait, true);
+        assert_eq!(cfg.targets.len(), 2);
+        assert_eq!(cfg.targets[0].path, PathBuf::from("a.rs"));
+        assert_eq!(cfg.targets[0].line, Some(7));
+        assert_eq!(cfg.targets[0].column, Some(9));
+        assert_eq!(cfg.targets[1].path, PathBuf::from("b.rs"));
+        assert_eq!(cfg.targets[1].line, None);
+        assert_eq!(cfg.targets[1].column, None);
+    }
+}
+
+fn main() -> io::Result<()> {
+    let args: Vec<String> = env::args().collect();
+    let run = match parse_cli_args(&args) {
+        Ok(v) => v,
+        Err(err) => match err {
+            CliParseError::Help(msg) => {
+                eprintln!("{msg}");
+                process::exit(0);
+            }
+            CliParseError::Error(msg) => {
+                eprintln!("{msg}");
+                process::exit(2);
+            }
+        }
+    };
 
     // 设置终端
     enable_raw_mode()?;
@@ -2167,19 +2369,60 @@ fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // 创建应用
-    let mut app = App::new(file_path)?;
+    let mut any_changed = false;
+    let mut last_error: Option<String> = None;
 
-    // 主循环
-    let result = run_app(&mut terminal, &mut app);
+    for target in run.targets {
+        if target.path.is_dir() {
+            last_error = Some(format!("暂不支持打开目录: {}", target.path.to_string_lossy()));
+            break;
+        }
+
+        let mut app = match App::new(target.path.clone()) {
+            Ok(v) => v,
+            Err(e) => {
+                last_error = Some(format!("打开失败: {e}"));
+                break;
+            }
+        };
+
+        if let Some(line_1) = target.line {
+            let col_1 = target.column.unwrap_or(1);
+            let line0 = line_1.saturating_sub(1);
+            let col0 = col_1.saturating_sub(1);
+            let _ = app.execute(Command::Cursor(CursorCommand::MoveTo { line: line0, column: col0 }));
+        }
+
+        let result = run_app(&mut terminal, &mut app);
+        if let Err(e) = &result {
+            last_error = Some(format!("错误: {e}"));
+            break;
+        }
+
+        // `--wait` 语义：以磁盘文件是否发生变更作为退出码依据。
+        if run.wait {
+            match disk_changed_since_open(&app.file_path, app.opened_disk_exists, &app.opened_disk_text) {
+                Ok(changed) => any_changed |= changed,
+                Err(e) => {
+                    last_error = Some(format!("读取文件用于比较失败: {e}"));
+                    break;
+                }
+            }
+        }
+    }
 
     // 恢复终端
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
-    if let Err(err) = result {
-        eprintln!("错误: {}", err);
+    if let Some(err) = last_error {
+        eprintln!("{err}");
+        process::exit(2);
+    }
+
+    if run.wait {
+        process::exit(if any_changed { 1 } else { 0 });
     }
 
     Ok(())
