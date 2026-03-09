@@ -74,3 +74,46 @@ fn multi_document_ui_can_search_across_tabs() {
     assert_eq!(results[0].tab_id, a);
     assert_eq!(results[0].matches.len(), 1);
 }
+
+#[test]
+fn multi_document_ui_preview_tabs_are_reused_until_pinned_or_modified() {
+    let mut ui = MultiDocumentEditorUi::new();
+
+    let pinned = ui.open_tab("pinned", 80);
+    ui.set_active_tab(pinned).unwrap();
+
+    let p1 = ui.open_preview_tab("preview-1", 80);
+    assert_eq!(ui.is_preview_tab(p1), Some(true));
+
+    // Opening another preview should reuse the same tab id (replace content).
+    let p1_again = ui.open_preview_tab("preview-2", 80);
+    assert_eq!(p1_again, p1);
+
+    ui.set_active_tab(p1).unwrap();
+    assert_eq!(ui.active_editor().unwrap().text(), "preview-2");
+
+    // Pinning turns it into a normal tab and forces a new preview tab next time.
+    ui.pin_tab(p1).unwrap();
+    assert_eq!(ui.is_preview_tab(p1), Some(false));
+    let p2 = ui.open_preview_tab("preview-3", 80);
+    assert_ne!(p2, p1);
+}
+
+#[test]
+fn multi_document_ui_can_close_other_tabs_and_tabs_to_right() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let a = ui.open_tab("a", 80);
+    let b = ui.open_tab("b", 80);
+    let _c = ui.open_tab("c", 80);
+
+    // Close to the right of b should remove c.
+    let closed = ui.close_tabs_to_right(b).unwrap();
+    assert_eq!(closed, 1);
+    assert_eq!(ui.tab_ids(), vec![a, b]);
+
+    // Close others for b should leave only b.
+    let closed = ui.close_other_tabs(b).unwrap();
+    assert_eq!(closed, 1);
+    assert_eq!(ui.tab_ids(), vec![b]);
+    assert_eq!(ui.active_tab_id(), Some(b));
+}

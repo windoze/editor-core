@@ -26,6 +26,7 @@ struct TabEntry {
     title: Option<String>,
     views: Vec<EditorUi>,
     active_view: usize,
+    is_preview: bool,
 }
 
 impl TabEntry {
@@ -48,6 +49,7 @@ pub struct MultiDocumentEditorUi {
     next_tab_id: u64,
     tabs: BTreeMap<TabId, TabEntry>,
     active_tab: Option<TabId>,
+    preview_tab: Option<TabId>,
 }
 
 impl MultiDocumentEditorUi {
@@ -70,6 +72,42 @@ impl MultiDocumentEditorUi {
     ///
     /// Returns the created tab id.
     pub fn open_tab(&mut self, text: &str, viewport_width_cells: usize) -> TabId {
+        self.open_tab_impl(text, viewport_width_cells, false)
+    }
+
+    /// Open a preview tab (transient) with initial text.
+    ///
+    /// Notes:
+    /// - If a preview tab already exists and is still unmodified, it is **reused** (replaced).
+    /// - If the current preview tab is modified, it is treated as pinned and a new preview is opened.
+    pub fn open_preview_tab(&mut self, text: &str, viewport_width_cells: usize) -> TabId {
+        if let Some(prev) = self.preview_tab
+            && let Some(tab) = self.tabs.get(&prev)
+            && tab.is_preview
+            && tab.active_view().is_some_and(|v| !v.is_modified())
+        {
+            // Replace the preview tab in-place (keep `TabId` stable for UI layers).
+            let ui = EditorUi::new(text, viewport_width_cells.max(1));
+            if let Some(entry) = self.tabs.get_mut(&prev) {
+                entry.views = vec![ui];
+                entry.active_view = 0;
+                entry.title = None;
+                entry.is_preview = true;
+            }
+            return prev;
+        }
+
+        let tab_id = self.open_tab_impl(text, viewport_width_cells, true);
+        self.preview_tab = Some(tab_id);
+        tab_id
+    }
+
+    fn open_tab_impl(
+        &mut self,
+        text: &str,
+        viewport_width_cells: usize,
+        is_preview: bool,
+    ) -> TabId {
         let tab_id = TabId(self.next_tab_id);
         self.next_tab_id = self.next_tab_id.saturating_add(1);
 
@@ -81,6 +119,7 @@ impl MultiDocumentEditorUi {
                 title: None,
                 views: vec![ui],
                 active_view: 0,
+                is_preview,
             },
         );
 
@@ -89,6 +128,24 @@ impl MultiDocumentEditorUi {
         }
 
         tab_id
+    }
+
+    /// Return whether a tab is currently a preview tab.
+    pub fn is_preview_tab(&self, tab_id: TabId) -> Option<bool> {
+        self.tabs.get(&tab_id).map(|t| t.is_preview)
+    }
+
+    /// Pin a preview tab, converting it into a normal tab.
+    pub fn pin_tab(&mut self, tab_id: TabId) -> Result<(), UiError> {
+        let tab = self
+            .tabs
+            .get_mut(&tab_id)
+            .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
+        tab.is_preview = false;
+        if self.preview_tab == Some(tab_id) {
+            self.preview_tab = None;
+        }
+        Ok(())
     }
 
     /// Close a tab.
@@ -101,6 +158,10 @@ impl MultiDocumentEditorUi {
             self.active_tab = self.tabs.keys().next().cloned();
         }
 
+        if existed && self.preview_tab == Some(tab_id) {
+            self.preview_tab = None;
+        }
+
         existed
     }
 
@@ -108,6 +169,48 @@ impl MultiDocumentEditorUi {
     pub fn close_all_tabs(&mut self) {
         self.tabs.clear();
         self.active_tab = None;
+        self.preview_tab = None;
+    }
+
+    /// Close all tabs except `tab_id`.
+    ///
+    /// Returns the number of tabs closed.
+    pub fn close_other_tabs(&mut self, tab_id: TabId) -> Result<usize, UiError> {
+        if !self.tabs.contains_key(&tab_id) {
+            return Err(UiError::Processor(format!("unknown tab id {}", tab_id.get())));
+        }
+
+        let ids: Vec<TabId> = self.tab_ids();
+        let mut closed = 0usize;
+        for id in ids {
+            if id == tab_id {
+                continue;
+            }
+            if self.close_tab(id) {
+                closed = closed.saturating_add(1);
+            }
+        }
+
+        self.active_tab = Some(tab_id);
+        Ok(closed)
+    }
+
+    /// Close tabs to the right of `tab_id`, based on current tab order.
+    ///
+    /// Returns the number of tabs closed.
+    pub fn close_tabs_to_right(&mut self, tab_id: TabId) -> Result<usize, UiError> {
+        let ids = self.tab_ids();
+        let Some(pos) = ids.iter().position(|id| *id == tab_id) else {
+            return Err(UiError::Processor(format!("unknown tab id {}", tab_id.get())));
+        };
+
+        let mut closed = 0usize;
+        for id in ids.into_iter().skip(pos.saturating_add(1)) {
+            if self.close_tab(id) {
+                closed = closed.saturating_add(1);
+            }
+        }
+        Ok(closed)
     }
 
     /// Set the active tab.
