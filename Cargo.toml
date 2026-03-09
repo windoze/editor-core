@@ -4,6 +4,7 @@ members = [
     "crates/editor-core",
     "crates/editor-core-diff",
     "crates/editor-core-ffi",
+    "crates/editor-core-dist",
     "crates/editor-core-lang",
     "crates/editor-core-lsp",
     "crates/editor-core-highlight-simple",

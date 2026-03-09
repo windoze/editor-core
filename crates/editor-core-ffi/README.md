@@ -153,6 +153,11 @@ Public C declarations are available at:
 
 - `crates/editor-core-ffi/include/editor_core_ffi.h`
 
+Packaging/distribution notes (headers + libs layout, platform link deps):
+
+- `docs/FFI-PACKAGING.md`
+- `cargo run -p editor-core-dist -- ffi --out dist/ffi --profile release --mode static`
+
 ABI draft/design notes:
 
 - `docs/abi-v1-draft.md`

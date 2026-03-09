@@ -421,12 +421,18 @@ this workspace (per your request).
     - Rust: `crates/editor-core-ffi/tests/abi_v1.rs`
     - Swift: `swift/Tests/EditorCoreFFITests/WorkspaceTests.swift`
 
-- [ ] **[host] Packaging + distribution story for each target platform**
+- [x] **[host] Packaging + distribution story for each target platform**
   - Building and shipping Skia + Rust + headers for:
     - macOS app bundles / Swift packages
     - Windows (MSVC, .dll + .lib, C#/C++)
     - Linux (so/distro portability)
-  - This is typically solved in the host build system, not inside the kernel crates.
+  - Implemented as “docs + repo-local helper tool” (still host-driven, but with a repeatable layout):
+    - New doc: `docs/FFI-PACKAGING.md` (build + packaging workflow, platform link/runtime notes).
+    - New packaging helper: `editor-core-dist` (`cargo run -p editor-core-dist -- ffi ...`)
+      - Copies headers + libs into a stable output tree and writes `manifest.json`.
+    - `crates/editor-core-ffi/README.md` links to the packaging doc/tool.
+  - Tests:
+    - Rust: `crates/editor-core-dist/tests/ffi_dist_tests.rs` (stable output layout + manifest round-trip).
 
 ---
 

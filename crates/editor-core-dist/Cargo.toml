@@ -1,0 +1,20 @@
+[package]
+name = "editor-core-dist"
+version.workspace = true
+description = "Small packaging helper for distributing editor-core FFI artifacts (headers + libs)."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3"
+
