@@ -452,14 +452,18 @@ impl ShapedRunCache {
             return;
         }
 
-        if self.entries.contains_key(&key) {
-            // Keep insertion idempotent; do not grow `order` with duplicates.
-            self.entries.insert(key, run);
-            return;
+        match self.entries.entry(key) {
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                // Keep insertion idempotent; do not grow `order` with duplicates.
+                e.insert(run);
+                return;
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                let key = e.key().clone();
+                e.insert(run);
+                self.order.push_back(key);
+            }
         }
-
-        self.entries.insert(key.clone(), run);
-        self.order.push_back(key);
 
         while self.order.len() > self.capacity {
             if let Some(old) = self.order.pop_front() {

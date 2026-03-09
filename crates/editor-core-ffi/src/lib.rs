@@ -2524,7 +2524,7 @@ pub extern "C" fn editor_core_ffi_workspace_open_buffer(
 /// - `text` must be a valid NUL-terminated UTF-8 string pointer.
 /// - `out_result` must be a valid writable pointer to an `EcfOpenBufferResult`.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_workspace_open_buffer_typed(
+pub unsafe extern "C" fn editor_core_ffi_workspace_open_buffer_typed(
     workspace: *mut EcfWorkspace,
     uri: *const c_char,
     text: *const c_char,
@@ -2618,7 +2618,7 @@ pub extern "C" fn editor_core_ffi_workspace_create_view(
 /// - `workspace` must be a valid `EcfWorkspace*` returned by this crate.
 /// - `out_result` must be a valid writable pointer to an `EcfCreateViewResult`.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_workspace_create_view_typed(
+pub unsafe extern "C" fn editor_core_ffi_workspace_create_view_typed(
     workspace: *mut EcfWorkspace,
     buffer_id: u64,
     viewport_width: usize,
@@ -2690,7 +2690,7 @@ pub extern "C" fn editor_core_ffi_workspace_info_json(
 /// - `workspace` must be a valid `EcfWorkspace*` returned by this crate.
 /// - `out_info` must be a valid writable pointer to an `EcfWorkspaceInfo`.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_workspace_get_info(
+pub unsafe extern "C" fn editor_core_ffi_workspace_get_info(
     workspace: *const EcfWorkspace,
     out_info: *mut EcfWorkspaceInfo,
 ) -> i32 {
@@ -2803,7 +2803,7 @@ pub extern "C" fn editor_core_ffi_workspace_viewport_state_json(
 /// - `workspace` must be a valid `EcfWorkspace*` returned by this crate.
 /// - `out_state` must be a valid writable pointer to an `EcfWorkspaceViewportState`.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_workspace_get_viewport_state(
+pub unsafe extern "C" fn editor_core_ffi_workspace_get_viewport_state(
     workspace: *mut EcfWorkspace,
     view_id: u64,
     out_state: *mut EcfWorkspaceViewportState,

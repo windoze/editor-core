@@ -2865,14 +2865,14 @@ impl CommandExecutor {
             )
         ) {
             // keep session
-        } else if matches!(&command, Command::Cursor(_)) {
-            self.snippet_session = None;
-        } else if matches!(
-            &command,
-            Command::Edit(
-                EditCommand::Undo | EditCommand::Redo | EditCommand::ApplyTextEdits { .. }
+        } else if matches!(&command, Command::Cursor(_))
+            || matches!(
+                &command,
+                Command::Edit(
+                    EditCommand::Undo | EditCommand::Redo | EditCommand::ApplyTextEdits { .. }
+                )
             )
-        ) {
+        {
             self.snippet_session = None;
         }
 

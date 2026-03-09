@@ -168,13 +168,15 @@ fn workspace_typed_commands_and_blob_work() {
         buffer_id: 0,
         view_id: 0,
     };
-    let st = editor_core_ffi_workspace_open_buffer_typed(
-        workspace,
-        std::ptr::null(),
-        text.as_ptr(),
-        80,
-        &mut opened,
-    );
+    let st = unsafe {
+        editor_core_ffi_workspace_open_buffer_typed(
+            workspace,
+            std::ptr::null(),
+            text.as_ptr(),
+            80,
+            &mut opened,
+        )
+    };
     assert_eq!(st, status(EcfStatus::Ok));
     assert_eq!(opened.abi_version, ECF_ABI_VERSION);
     assert_eq!(
@@ -197,7 +199,7 @@ fn workspace_typed_commands_and_blob_work() {
         active_view_id: 0,
         active_buffer_id: 0,
     };
-    let st = editor_core_ffi_workspace_get_info(workspace, &mut info);
+    let st = unsafe { editor_core_ffi_workspace_get_info(workspace, &mut info) };
     assert_eq!(st, status(EcfStatus::Ok));
     assert_eq!(info.abi_version, ECF_ABI_VERSION);
     assert_eq!(info.buffer_count, 1);
@@ -244,7 +246,8 @@ fn workspace_typed_commands_and_blob_work() {
         prefetch_end: 0,
         total_visual_lines: 0,
     };
-    let st = editor_core_ffi_workspace_get_viewport_state(workspace, view_id, &mut viewport);
+    let st =
+        unsafe { editor_core_ffi_workspace_get_viewport_state(workspace, view_id, &mut viewport) };
     assert_eq!(st, status(EcfStatus::Ok));
     assert_eq!(viewport.abi_version, ECF_ABI_VERSION);
     assert_eq!(
