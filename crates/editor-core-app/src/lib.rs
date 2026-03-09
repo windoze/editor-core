@@ -14,6 +14,7 @@ mod file_explorer;
 mod file_io;
 mod find_in_files;
 mod command_palette;
+mod settings;
 mod session;
 mod status_bar;
 mod workspace_io;
@@ -28,6 +29,9 @@ pub use find_in_files::{
 };
 pub use command_palette::{
     CommandPalette, CommandPaletteItem, CommandPaletteResult,
+};
+pub use settings::{
+    Settings, SettingsError, SettingsStore, apply_settings_to_view,
 };
 pub use session::{
     AppSession, AppSessionError, BufferSnapshot, HotExitSnapshot, ViewSnapshot, load_session_json,
