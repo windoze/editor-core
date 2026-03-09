@@ -15,6 +15,7 @@ mod file_io;
 mod find_in_files;
 mod command_palette;
 mod settings;
+mod search_results;
 mod session;
 mod status_bar;
 mod workspace_io;
@@ -32,6 +33,9 @@ pub use command_palette::{
 };
 pub use settings::{
     Settings, SettingsError, SettingsStore, apply_settings_to_view,
+};
+pub use search_results::{
+    AnchoredMatchRange, BufferSearchResults, SearchResultsError, SearchResultsModel,
 };
 pub use session::{
     AppSession, AppSessionError, BufferSnapshot, HotExitSnapshot, ViewSnapshot, load_session_json,
