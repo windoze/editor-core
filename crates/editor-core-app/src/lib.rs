@@ -10,8 +10,9 @@
 //! The goal is to implement as much as possible once in Rust and reuse across platforms.
 
 mod fuzzy;
+mod file_explorer;
 mod workspace_index;
 
 pub use fuzzy::FuzzyMatcher;
+pub use file_explorer::{FileExplorer, FileExplorerEntry, FileExplorerEntryKind, FileExplorerError};
 pub use workspace_index::{FileIndexEntry, WorkspaceFileIndex, WorkspaceFileIndexError};
-
