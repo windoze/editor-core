@@ -12,9 +12,13 @@
 mod fuzzy;
 mod file_explorer;
 mod file_io;
+mod workspace_io;
 mod workspace_index;
 
 pub use fuzzy::FuzzyMatcher;
 pub use file_explorer::{FileExplorer, FileExplorerEntry, FileExplorerEntryKind, FileExplorerError};
 pub use file_io::{FileIoError, FileIoOptions, read_utf8_file, write_utf8_file_atomic};
+pub use workspace_io::{
+    SaveAllResult, WorkspaceIo, WorkspaceIoError, open_file_into_workspace,
+};
 pub use workspace_index::{FileIndexEntry, WorkspaceFileIndex, WorkspaceFileIndexError};
