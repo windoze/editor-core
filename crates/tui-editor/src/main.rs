@@ -68,6 +68,7 @@ use editor_core_highlight_simple::{
     SIMPLE_STYLE_NULL, SIMPLE_STYLE_NUMBER, SIMPLE_STYLE_SECTION, SIMPLE_STYLE_STRING,
     SimpleIniStyles, SimpleJsonStyles,
 };
+use editor_core_app::WorkspaceFileIndex;
 use editor_core_lsp::{
     DeltaCalculator, LspContentChange, LspDocument, LspSession, LspSessionStartOptions,
     clear_lsp_state, decode_semantic_style_id, path_to_file_uri,
@@ -2304,6 +2305,32 @@ fn disk_changed_since_open(path: &Path, existed: bool, opened_text: &str) -> io:
     }
 }
 
+fn resolve_open_path(path: &Path) -> io::Result<PathBuf> {
+    if !path.is_dir() {
+        return Ok(path.to_path_buf());
+    }
+
+    // Heuristic for `editor .`-style workflows: open a “reasonable” default file.
+    //
+    // This keeps the CLI behavior useful even before the TUI grows a full file explorer.
+    for name in ["Cargo.toml", "README.md", "README.txt"] {
+        let candidate = path.join(name);
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+
+    let mut index = WorkspaceFileIndex::new(path);
+    let first = index
+        .search("", 1)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?
+        .into_iter()
+        .next()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "目录下没有可打开的文件"))?;
+
+    Ok(first.path)
+}
+
 #[cfg(test)]
 mod cli_tests {
     use super::*;
@@ -2373,12 +2400,15 @@ fn main() -> io::Result<()> {
     let mut last_error: Option<String> = None;
 
     for target in run.targets {
-        if target.path.is_dir() {
-            last_error = Some(format!("暂不支持打开目录: {}", target.path.to_string_lossy()));
-            break;
-        }
+        let open_path = match resolve_open_path(&target.path) {
+            Ok(p) => p,
+            Err(e) => {
+                last_error = Some(format!("解析打开路径失败: {e}"));
+                break;
+            }
+        };
 
-        let mut app = match App::new(target.path.clone()) {
+        let mut app = match App::new(open_path) {
             Ok(v) => v,
             Err(e) => {
                 last_error = Some(format!("打开失败: {e}"));

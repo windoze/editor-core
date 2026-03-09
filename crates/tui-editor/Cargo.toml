@@ -21,6 +21,7 @@ editor-core = { version = "0.3.0", path = "../editor-core" }
 editor-core-lsp = { version = "0.3.0", path = "../editor-core-lsp" }
 editor-core-highlight-simple = { version = "0.3.0", path = "../editor-core-highlight-simple" }
 editor-core-sublime = { version = "0.3.0", path = "../editor-core-sublime" }
+editor-core-app = { version = "0.3.0", path = "../editor-core-app" }
 
 [[bin]]
 name = "tui-editor"
