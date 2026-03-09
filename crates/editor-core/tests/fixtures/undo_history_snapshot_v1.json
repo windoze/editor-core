@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "undo_stack": [],
+  "redo_stack": [
+    {
+      "group_id": 0,
+      "edits": [
+        {
+          "start_before": 0,
+          "start_after": 0,
+          "deleted_text": "",
+          "inserted_text": "X"
+        }
+      ],
+      "before_selection": {
+        "selections": [
+          {
+            "start": { "line": 0, "column": 0 },
+            "end": { "line": 0, "column": 0 },
+            "direction": "Forward"
+          }
+        ],
+        "primary_index": 0
+      },
+      "after_selection": {
+        "selections": [
+          {
+            "start": { "line": 0, "column": 1 },
+            "end": { "line": 0, "column": 1 },
+            "direction": "Forward"
+          }
+        ],
+        "primary_index": 0
+      }
+    }
+  ],
+  "max_undo": 1000,
+  "clean_index": 0,
+  "next_group_id": 1,
+  "open_group_id": null
+}
+

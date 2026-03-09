@@ -52,5 +52,5 @@ fn main() {
         abi_version, line_count, cell_count
     );
 
-    editor_core_ffi_editor_state_free(state);
+    unsafe { editor_core_ffi_editor_state_free(state) };
 }

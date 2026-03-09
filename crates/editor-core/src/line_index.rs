@@ -233,6 +233,17 @@ impl LineIndex {
         self.rope.len_chars()
     }
 
+    /// Get the character at the specified character offset (Unicode scalar index).
+    ///
+    /// Returns `None` if `char_offset` is out of bounds.
+    pub fn char_at(&self, char_offset: usize) -> Option<char> {
+        if char_offset >= self.rope.len_chars() {
+            None
+        } else {
+            Some(self.rope.char(char_offset))
+        }
+    }
+
     /// Convert a character offset (Unicode scalar values) to a UTF-8 byte offset.
     ///
     /// The returned byte offset is clamped to the document length.

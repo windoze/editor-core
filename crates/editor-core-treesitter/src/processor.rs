@@ -124,8 +124,10 @@ pub struct TreeSitterProcessor {
     highlight_capture_styles: Vec<Option<StyleId>>,
     fold_query: Option<Query>,
     tree: Option<Tree>,
+    needs_parse: bool,
     text: String,
     line_index: LineIndex,
+    last_synced_version: Option<u64>,
     last_processed_version: Option<u64>,
     last_update_mode: TreeSitterUpdateMode,
 }
@@ -161,8 +163,10 @@ impl TreeSitterProcessor {
             highlight_capture_styles,
             fold_query,
             tree: None,
+            needs_parse: false,
             text: String::new(),
             line_index: LineIndex::new(),
+            last_synced_version: None,
             last_processed_version: None,
             last_update_mode: TreeSitterUpdateMode::FullReparse,
         })
@@ -173,8 +177,45 @@ impl TreeSitterProcessor {
         self.last_update_mode
     }
 
-    fn sync_from_state_full(&mut self, state: &EditorStateManager) {
-        self.text = state.editor().get_text();
+    /// Expand a `(start, end)` selection to the next enclosing syntax node.
+    ///
+    /// Returns `None` if the processor has no parsed tree yet (call `process()`/`sync_to()` first),
+    /// or if the selection is already at the root node.
+    ///
+    /// Notes:
+    /// - Offsets are Unicode scalar indices (Rust `char` offsets), matching editor-core APIs.
+    /// - The returned range is best-effort and is based on Tree-sitter node byte ranges mapped
+    ///   through the processor's internal `LineIndex`.
+    pub fn expand_selection_syntax(&self, start: usize, end: usize) -> Option<(usize, usize)> {
+        let tree = self.tree.as_ref()?;
+        let root = tree.root_node();
+
+        let (sel_start, sel_end) = if start <= end { (start, end) } else { (end, start) };
+        let start_byte = self.line_index.char_offset_to_byte_offset(sel_start);
+        let end_byte = self.line_index.char_offset_to_byte_offset(sel_end);
+
+        let mut node = root.descendant_for_byte_range(start_byte, end_byte)?;
+
+        loop {
+            let node_start = self.line_index.byte_offset_to_char_offset(node.start_byte());
+            let node_end = self.line_index.byte_offset_to_char_offset(node.end_byte());
+
+            // If the selection already matches this node exactly, expand to its parent (if any).
+            if node_start == sel_start && node_end == sel_end {
+                if let Some(parent) = node.parent() {
+                    node = parent;
+                    continue;
+                }
+                return None;
+            }
+
+            return Some((node_start, node_end));
+        }
+    }
+
+    fn sync_from_text_full(&mut self, text: &str) {
+        self.text.clear();
+        self.text.push_str(text);
         self.line_index = LineIndex::from_text(&self.text);
     }
 
@@ -253,8 +294,19 @@ impl TreeSitterProcessor {
         self.parser.parse(&self.text, self.tree.as_ref())
     }
 
-    fn collect_highlight_intervals(&self, tree: &Tree) -> Vec<Interval> {
+    fn collect_highlight_intervals_in_byte_range(
+        &self,
+        tree: &Tree,
+        byte_range: Option<(usize, usize)>,
+    ) -> Vec<Interval> {
         let mut cursor = QueryCursor::new();
+        if let Some((start, end)) = byte_range {
+            let start = start.min(self.text.len());
+            let end = end.min(self.text.len());
+            if end > start {
+                cursor.set_byte_range(start..end);
+            }
+        }
         let root = tree.root_node();
         let mut out = Vec::<Interval>::new();
 
@@ -288,12 +340,23 @@ impl TreeSitterProcessor {
         out
     }
 
-    fn collect_fold_regions(&self, tree: &Tree) -> Vec<FoldRegion> {
+    fn collect_fold_regions_in_byte_range(
+        &self,
+        tree: &Tree,
+        byte_range: Option<(usize, usize)>,
+    ) -> Vec<FoldRegion> {
         let Some(query) = self.fold_query.as_ref() else {
             return Vec::new();
         };
 
         let mut cursor = QueryCursor::new();
+        if let Some((start, end)) = byte_range {
+            let start = start.min(self.text.len());
+            let end = end.min(self.text.len());
+            if end > start {
+                cursor.set_byte_range(start..end);
+            }
+        }
         let root = tree.root_node();
         let mut regions = Vec::<FoldRegion>::new();
 
@@ -325,36 +388,134 @@ impl DocumentProcessor for TreeSitterProcessor {
             return Ok(Vec::new());
         }
 
+        if self.tree.is_none() {
+            // Initial parse always needs a full sync from the editor.
+            let full = state.editor().get_text();
+            return self.process_text(version, None, Some(&full));
+        }
+
+        if let Some(delta) = state.last_text_delta() {
+            match self.process_text(version, Some(delta), None) {
+                Ok(edits) => Ok(edits),
+                Err(TreeSitterError::DeltaMismatch) => {
+                    // Fall back to a full resync from the current editor text.
+                    let full = state.editor().get_text();
+                    self.process_text(version, Some(delta), Some(&full))
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            // No structured delta available; re-sync from the full current text.
+            let full = state.editor().get_text();
+            self.process_text(version, None, Some(&full))
+        }
+    }
+}
+
+impl TreeSitterProcessor {
+    /// Synchronize the processor's internal text/tree to the given `version`.
+    ///
+    /// This updates the parse tree (incrementally when possible), but does **not** run any
+    /// Tree-sitter queries. Call [`Self::compute_processing_edits`] afterwards to produce
+    /// `editor-core` derived-state edits (highlighting + folding).
+    ///
+    /// Notes:
+    /// - If `full_text` is `None` and a full resync is required, this returns
+    ///   [`TreeSitterError::DeltaMismatch`].
+    pub fn sync_to(
+        &mut self,
+        version: u64,
+        delta: Option<&TextDelta>,
+        full_text: Option<&str>,
+    ) -> Result<TreeSitterUpdateMode, TreeSitterError> {
+        if self.last_synced_version == Some(version) {
+            self.last_update_mode = TreeSitterUpdateMode::Skipped;
+            return Ok(TreeSitterUpdateMode::Skipped);
+        }
+
         let update_mode = if self.tree.is_none() {
-            self.sync_from_state_full(state);
+            let Some(text) = full_text else {
+                return Err(TreeSitterError::DeltaMismatch);
+            };
+            self.sync_from_text_full(text);
             self.tree = self.parse();
+            self.needs_parse = false;
             TreeSitterUpdateMode::Initial
-        } else if let Some(delta) = state.last_text_delta() {
+        } else if let Some(delta) = delta {
             match self.apply_text_delta_incremental(delta) {
                 Ok(()) => {
-                    self.tree = self.parse();
+                    // Defer parsing until we actually need to run queries. This allows callers
+                    // to coalesce bursts of edits (debounce) without re-parsing on every keystroke.
+                    self.needs_parse = true;
                     TreeSitterUpdateMode::Incremental
                 }
                 Err(_) => {
-                    self.sync_from_state_full(state);
+                    let Some(text) = full_text else {
+                        return Err(TreeSitterError::DeltaMismatch);
+                    };
+                    self.sync_from_text_full(text);
                     self.tree = self.parser.parse(&self.text, None);
+                    self.needs_parse = false;
                     TreeSitterUpdateMode::FullReparse
                 }
             }
         } else {
-            self.sync_from_state_full(state);
+            let Some(text) = full_text else {
+                return Err(TreeSitterError::DeltaMismatch);
+            };
+            self.sync_from_text_full(text);
             self.tree = self.parser.parse(&self.text, None);
+            self.needs_parse = false;
             TreeSitterUpdateMode::FullReparse
         };
 
+        self.last_synced_version = Some(version);
+        self.last_update_mode = update_mode;
+        Ok(update_mode)
+    }
+
+    /// Compute highlighting/folding edits from the current synchronized parse tree.
+    ///
+    /// - `char_range` can be used to limit Tree-sitter query execution to a subset of the
+    ///   document (useful as a performance degradation mode for huge files).
+    ///
+    /// Notes:
+    /// - When `char_range` is specified, the returned style intervals and fold regions will be
+    ///   **partial** (only within the range). Consumers that replace whole layers/regions should
+    ///   treat this as a "best effort visible range" optimization.
+    pub fn compute_processing_edits(
+        &mut self,
+        char_range: Option<(usize, usize)>,
+    ) -> Result<Vec<ProcessingEdit>, TreeSitterError> {
+        let Some(version) = self.last_synced_version else {
+            return Ok(Vec::new());
+        };
+        if self.last_processed_version == Some(version) {
+            return Ok(Vec::new());
+        }
+
+        if self.needs_parse {
+            self.tree = self.parse();
+            self.needs_parse = false;
+        }
+
         let Some(tree) = self.tree.as_ref() else {
             self.last_processed_version = Some(version);
-            self.last_update_mode = update_mode;
             return Ok(Vec::new());
         };
 
-        let intervals = self.collect_highlight_intervals(tree);
-        let fold_regions = self.collect_fold_regions(tree);
+        let byte_range = char_range.and_then(|(start_char, end_char)| {
+            let start = self.line_index.char_offset_to_byte_offset(start_char);
+            let end = self.line_index.char_offset_to_byte_offset(end_char);
+            if end > start {
+                Some((start, end))
+            } else {
+                None
+            }
+        });
+
+        let intervals = self.collect_highlight_intervals_in_byte_range(tree, byte_range);
+        let fold_regions = self.collect_fold_regions_in_byte_range(tree, byte_range);
 
         let mut edits = vec![ProcessingEdit::ReplaceStyleLayer {
             layer: self.config.style_layer,
@@ -369,7 +530,29 @@ impl DocumentProcessor for TreeSitterProcessor {
         }
 
         self.last_processed_version = Some(version);
-        self.last_update_mode = update_mode;
         Ok(edits)
+    }
+
+    /// Process a document snapshot represented as:
+    /// - a monotonically increasing `version`,
+    /// - an optional `TextDelta` describing the change from the previous version,
+    /// - an optional `full_text` for (re-)synchronization.
+    ///
+    /// This method is useful for running Tree-sitter processing on a background thread where
+    /// a full `EditorStateManager` is not available. Callers can pass `full_text` only when
+    /// performing an initial parse or when a delta mismatch requires a full re-sync.
+    ///
+    /// Notes:
+    /// - If `full_text` is `None` and a full sync is required, this returns
+    ///   [`TreeSitterError::DeltaMismatch`].
+    pub fn process_text(
+        &mut self,
+        version: u64,
+        delta: Option<&TextDelta>,
+        full_text: Option<&str>,
+    ) -> Result<Vec<ProcessingEdit>, TreeSitterError> {
+        // Keep backwards-compatible semantics: `process_text` syncs + queries.
+        let _ = self.sync_to(version, delta, full_text)?;
+        self.compute_processing_edits(None)
     }
 }

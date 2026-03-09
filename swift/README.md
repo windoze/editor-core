@@ -1,163 +1,80 @@
-# EditorComponentKit (AppKit + TextKit)
+# EditorCoreFFI (Swift wrapper)
 
-`EditorComponentKit` is a Swift AppKit UI layer for `editor-core` and related capabilities (LSP/syntax/tree-sitter metadata via adapter APIs). It is transport-agnostic and can be wired to:
+这是一个从零重写的 Swift 包装层，目标是用 **SwiftPM** 以最小表面积、可靠的方式调用本仓库的 Rust C ABI：`crates/editor-core-ffi`。
 
-- direct Rust/C ABI calls (`editor-core-ffi`)
-- IPC/service processes
-- in-memory mock engines for tests/demo
+当前策略是 **静态链接** Rust `staticlib` 到 Swift 可执行文件/测试里（不再 `dlopen/dlsym`）。
 
-## Features
+这带来的变化：
 
-- TextKit-based text rendering and input (`NSTextView`) with ligatures and emoji/grapheme-safe behavior.
-- Styling pipeline (`styleID -> temporary attributes`) without mutating source text.
-- Inlay text overlays (`before`, `after`, `aboveLine`) rendered non-destructively.
-- Gutter with line numbers and fold markers.
-- Indent guides + structure guides.
-- Optional minimap with visible viewport highlight.
-- Keybinding registry + command dispatching.
-- Host extension points:
-  - hover tooltips (`EditorHoverProvider`)
-  - context menus (`EditorContextMenuProvider`)
-  - custom command handling (`EditorCommand.custom`)
+- 运行时不再依赖 `libeditor_core_ffi.dylib` / `libeditor_core_ui_ffi.dylib` 的查找路径；
+- 需要在构建 SwiftPM 包之前，先用 Cargo 生成对应的 `.a` 产物（或在 CI 里缓存它们）。
 
-## Quick Start
+## 目录结构
 
-```swift
-import AppKit
-import EditorComponentKit
+- `Sources/CEditorCoreFFI/`：C header module（转发到 `crates/editor-core-ffi/include/editor_core_ffi.h`）
+- `Sources/CEditorCoreUIFFI/`：C header module（转发到 `crates/editor-core-ui-ffi/include/editor_core_ui_ffi.h`）
+- `Sources/EditorCoreFFI/`：Swift 封装（`EditorState`/`Workspace` 包装 + viewport blob 解析）。
+- `Sources/EditorCoreFFIDemo/`：最小 CLI demo（验证加载与基础编辑）。
+- `Sources/EditorCoreUI/`：AppKit 组件（自绘 + IME + 事件映射）。
+- `Sources/EditCoreUIDemo/`：AppKit demo（使用 `EditCoreUI` 组合 editor + minimap + scrollbar）。
+- `Tests/EditorCoreFFITests/`：Swift 侧集成测试。
+- `Tests/EditorCoreUITests/`：AppKit 组件测试。
 
-let component = EditorComponentView(
-    frame: NSRect(x: 0, y: 0, width: 900, height: 640),
-    configuration: .init(
-        features: .init(showsMinimap: true),
-        visualStyle: .init(fontName: "SF Mono", fontSize: 14)
-    )
-)
+## 构建 Rust staticlib
 
-let engine = MockEditorEngine(text: "fn main() {\\n    println!(\\\"hello\\\")\\n}\\n")
-component.engine = engine
+### 自动构建（推荐）
+
+`swift build` / `swift test` / `swift run` 会通过 SwiftPM build plugin 自动触发：
+
+- `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
+- 产物输出到 SwiftPM 的 plugin 输出目录（位于 `swift/.build/plugins/outputs/` 下）
+
+注意：SwiftPM 的 build tool plugin 默认运行在 sandbox 中（禁网）。而 `editor-core-ui-ffi` 依赖 `skia-bindings`，
+首次构建时可能需要下载 Skia 相关依赖。
+
+在本仓库的日常开发里，通常你已经在仓库根目录构建过 Rust（会生成 `target/debug/libeditor_core_ui_ffi.a`），
+plugin 会优先复用该产物来避免在 sandbox 中联网下载。
+
+如果你是全新 clone / `target/` 不存在，建议二选一：
+
+- 先在仓库根目录执行一次：`cargo build -p editor-core-ui-ffi`（生成静态库供 plugin 复用）
+- 或在首次构建时直接使用（允许 plugin 联网下载 Skia 依赖）：
+
+```bash
+swift build --disable-sandbox
 ```
 
-### Feature Flags
+或：
 
-```swift
-component.configuration.features = .init(
-    showsGutter: true,
-    showsLineNumbers: true,
-    showsMinimap: true,
-    showsIndentGuides: true,
-    showsStructureGuides: true
-)
+```bash
+swift test --disable-sandbox
 ```
 
-### Configure Keybindings
+### 排错（必要时）
 
-```swift
-component.bindKey(
-    EditorKeyChord(key: "p", modifiers: [.command, .shift]),
-    to: .custom(name: "showCommandPalette", payload: [:])
-)
+- 如果提示 `cargo: command not found`，请确认：
+  - `cargo` 可用（例如 `which cargo` 能找到）
+  - 以及 `~/.cargo/bin` 在 PATH 中
+- 如果需要确认静态库是否生成，可在 `swift/` 下运行：
+  - `find .build/plugins/outputs -name 'libeditor_core_*.a'`
 
-component.customCommandHandler = { name, payload in
-    if name == "showCommandPalette" {
-        // open host command palette
-        return .success
-    }
-    return nil
-}
-```
-
-### Hover and Context Menu Hooks
-
-```swift
-final class HoverProvider: EditorHoverProvider {
-    func editorComponent(_ component: EditorComponentView, hoverAt position: EditorPosition) -> EditorHoverTooltip? {
-        EditorHoverTooltip(title: "Symbol", message: "Line \\(position.line + 1)")
-    }
-}
-
-final class MenuProvider: EditorContextMenuProvider {
-    func editorComponent(
-        _ component: EditorComponentView,
-        contextMenuItemsAt position: EditorPosition
-    ) -> [EditorContextMenuItem] {
-        [
-            EditorContextMenuItem(title: "Insert TODO", command: .insertText("// TODO")),
-            .separator
-        ]
-    }
-}
-```
-
-`hoverProvider` and `contextMenuProvider` are weak references; keep strong references in your host controller/window owner.
-
-## Demo
-
-Run the AppKit demo window:
+## 运行 demo
 
 ```bash
 cd swift
-swift run EditorComponentDemo
+swift run EditorCoreFFIDemo
 ```
 
-## Test
+自绘 AppKit demo（Skia）：
+
+```bash
+cd swift
+swift run EditCoreUIDemo
+```
+
+## 运行测试
 
 ```bash
 cd swift
 swift test
 ```
-
-## Engine Adapter Contract
-
-`EditorEngineProtocol` is the integration boundary. A production adapter can map these calls to `editor-core-ffi`:
-
-- text + document/cursor state
-- command execution
-- style spans/inlays/folds/diagnostics
-- viewport/minimap snapshots
-
-This keeps AppKit rendering and host UX fully native while editor semantics stay in Rust.
-
-## Production FFI Adapter
-
-`EditorCoreFFIEngine` is included and calls `editor-core-ffi` directly through the C ABI:
-
-```swift
-import EditorComponentKit
-
-let engine = try EditorCoreFFIEngine(
-    initialText: "fn main() {}\\n",
-    viewportWidth: 120
-)
-component.engine = engine
-```
-
-By default it tries to load the dynamic library from:
-
-1. `EDITOR_CORE_FFI_DYLIB_PATH`
-2. `EDITOR_CORE_REPO_ROOT/target/debug/<libeditor_core_ffi.*>`
-3. `../target/debug/<libeditor_core_ffi.*>` relative to current working directory
-
-You can also pass an explicit path via `libraryPath`.
-
-### LSP / Sublime / Tree-sitter Bridges
-
-- `EditorCoreFFILSPBridge`: URI and UTF-16 conversion helpers.
-- `EditorCoreFFIEngine.applyLSP*` methods: convert LSP JSON payloads to processing edits and apply them.
-- `EditorCoreFFISublimeProcessor`: apply Sublime syntax processing to the engine.
-- `EditorCoreFFITreeSitterProcessor`: apply Tree-sitter processing to the engine.
-
-### Build FFI Library
-
-```bash
-cargo build -p editor-core-ffi
-```
-
-## Current Implementation Status
-
-- AppKit container + TextKit rendering/input: implemented.
-- Styles, inlays, diagnostics rendering: implemented.
-- Gutter (line numbers/folding), minimap, indent/structure guides: implemented.
-- Custom keybindings, command dispatch, custom commands: implemented.
-- Hover/context menu provider interfaces: implemented.
-- Test suite and runnable demo target: implemented.

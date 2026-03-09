@@ -4,8 +4,9 @@
 //! Complex payloads use UTF-8 JSON strings for forward-compatible schema evolution.
 
 use editor_core::commands::{
-    Command, CommandResult, CursorCommand, EditCommand, Position, Selection, SelectionDirection,
-    StyleCommand, TabKeyBehavior, TextEditSpec, ViewCommand,
+    Command, CommandResult, CursorCommand, EditCommand, ExpandSelectionDirection,
+    ExpandSelectionUnit, Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior,
+    TextEditSpec, ViewCommand,
 };
 use editor_core::decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
@@ -592,6 +593,90 @@ pub struct EcfDocumentStats {
     pub version: u64,
 }
 
+/// Workspace open-buffer output for typed ABI calls.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EcfOpenBufferResult {
+    /// ABI version.
+    pub abi_version: u32,
+    /// Struct byte size.
+    pub struct_size: u32,
+    /// Opened buffer id.
+    pub buffer_id: u64,
+    /// Initial view id for the buffer.
+    pub view_id: u64,
+}
+
+/// Workspace create-view output for typed ABI calls.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EcfCreateViewResult {
+    /// ABI version.
+    pub abi_version: u32,
+    /// Struct byte size.
+    pub struct_size: u32,
+    /// Newly created view id.
+    pub view_id: u64,
+}
+
+/// Workspace basic stats output for typed ABI calls.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EcfWorkspaceInfo {
+    /// ABI version.
+    pub abi_version: u32,
+    /// Struct byte size.
+    pub struct_size: u32,
+    /// Number of open buffers.
+    pub buffer_count: u64,
+    /// Number of views across all buffers.
+    pub view_count: u64,
+    /// 1 if empty, otherwise 0.
+    pub is_empty: u8,
+    /// 1 if `active_view_id` is present, otherwise 0.
+    pub has_active_view_id: u8,
+    /// 1 if `active_buffer_id` is present, otherwise 0.
+    pub has_active_buffer_id: u8,
+    /// Reserved padding.
+    pub reserved0: u8,
+    /// Active view id (valid when `has_active_view_id=1`).
+    pub active_view_id: u64,
+    /// Active buffer id (valid when `has_active_buffer_id=1`).
+    pub active_buffer_id: u64,
+}
+
+/// Workspace viewport state snapshot for typed ABI calls.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EcfWorkspaceViewportState {
+    /// ABI version.
+    pub abi_version: u32,
+    /// Struct byte size.
+    pub struct_size: u32,
+    /// Viewport width (in cells).
+    pub width_cells: u32,
+    /// Viewport height (in rows). Valid only when `has_height=1`.
+    pub height_rows: u32,
+    /// 1 if height is set, otherwise 0.
+    pub has_height: u32,
+    /// Current top visual row.
+    pub scroll_top: u32,
+    /// Sub-row offset within `scroll_top` (0..=65535, normalized).
+    pub sub_row_offset: u32,
+    /// Overscan rows for prefetching.
+    pub overscan_rows: u32,
+    /// Visible range start (visual row).
+    pub visible_start: u32,
+    /// Visible range end (visual row).
+    pub visible_end: u32,
+    /// Prefetch range start (visual row).
+    pub prefetch_start: u32,
+    /// Prefetch range end (visual row).
+    pub prefetch_end: u32,
+    /// Total visual line count under current view config (wrap + folding aware).
+    pub total_visual_lines: u32,
+}
+
 fn line_ending_from_str(s: &str) -> Result<LineEnding, String> {
     match s.trim().to_ascii_lowercase().as_str() {
         "lf" => Ok(LineEnding::Lf),
@@ -938,6 +1023,40 @@ impl FfiEditCommandInput {
     }
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FfiExpandSelectionUnit {
+    Character,
+    Word,
+    Line,
+}
+
+impl From<FfiExpandSelectionUnit> for ExpandSelectionUnit {
+    fn from(value: FfiExpandSelectionUnit) -> Self {
+        match value {
+            FfiExpandSelectionUnit::Character => ExpandSelectionUnit::Character,
+            FfiExpandSelectionUnit::Word => ExpandSelectionUnit::Word,
+            FfiExpandSelectionUnit::Line => ExpandSelectionUnit::Line,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FfiExpandSelectionDirection {
+    Backward,
+    Forward,
+}
+
+impl From<FfiExpandSelectionDirection> for ExpandSelectionDirection {
+    fn from(value: FfiExpandSelectionDirection) -> Self {
+        match value {
+            FfiExpandSelectionDirection::Backward => ExpandSelectionDirection::Backward,
+            FfiExpandSelectionDirection::Forward => ExpandSelectionDirection::Forward,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum FfiCursorCommandInput {
@@ -984,6 +1103,11 @@ enum FfiCursorCommandInput {
     SelectLine,
     SelectWord,
     ExpandSelection,
+    ExpandSelectionBy {
+        unit: FfiExpandSelectionUnit,
+        count: usize,
+        direction: FfiExpandSelectionDirection,
+    },
     AddCursorAbove,
     AddCursorBelow,
     AddNextOccurrence {
@@ -1048,6 +1172,15 @@ impl FfiCursorCommandInput {
             Self::SelectLine => CursorCommand::SelectLine,
             Self::SelectWord => CursorCommand::SelectWord,
             Self::ExpandSelection => CursorCommand::ExpandSelection,
+            Self::ExpandSelectionBy {
+                unit,
+                count,
+                direction,
+            } => CursorCommand::ExpandSelectionBy {
+                unit: unit.into(),
+                count,
+                direction: direction.into(),
+            },
             Self::AddCursorAbove => CursorCommand::AddCursorAbove,
             Self::AddCursorBelow => CursorCommand::AddCursorBelow,
             Self::AddNextOccurrence { options } => CursorCommand::AddNextOccurrence {
@@ -1076,6 +1209,8 @@ enum FfiViewCommandInput {
     SetWrapIndent { indent: FfiWrapIndent },
     SetTabWidth { width: usize },
     SetTabKeyBehavior { behavior: FfiTabKeyBehavior },
+    SetWordBoundaryAsciiBoundaryChars { boundary_chars: String },
+    ResetWordBoundaryDefaults,
     ScrollTo { line: usize },
     GetViewport { start_row: usize, count: usize },
 }
@@ -1092,6 +1227,10 @@ impl FfiViewCommandInput {
             Self::SetTabKeyBehavior { behavior } => ViewCommand::SetTabKeyBehavior {
                 behavior: behavior.into(),
             },
+            Self::SetWordBoundaryAsciiBoundaryChars { boundary_chars } => {
+                ViewCommand::SetWordBoundaryAsciiBoundaryChars { boundary_chars }
+            }
+            Self::ResetWordBoundaryDefaults => ViewCommand::ResetWordBoundaryDefaults,
             Self::ScrollTo { line } => ViewCommand::ScrollTo { line },
             Self::GetViewport { start_row, count } => ViewCommand::GetViewport { start_row, count },
         }
@@ -2026,8 +2165,13 @@ fn parse_processing_edits(json_text: &str) -> Result<Vec<ProcessingEdit>, String
 }
 
 /// Free a C string allocated by this crate.
+///
+/// # Safety
+///
+/// `ptr` must be a valid pointer returned by a function in this crate that allocates C strings,
+/// or null. The pointer must not be used after this call.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_string_free(ptr: *mut c_char) {
+pub unsafe extern "C" fn editor_core_ffi_string_free(ptr: *mut c_char) {
     if ptr.is_null() {
         return;
     }
@@ -2040,8 +2184,13 @@ pub extern "C" fn editor_core_ffi_string_free(ptr: *mut c_char) {
 /// Retrieve the latest thread-local error message.
 ///
 /// Returns an allocated C string. Caller must free with [`editor_core_ffi_string_free`].
+///
+/// # Safety
+///
+/// This function is safe to call. The returned pointer must be freed with
+/// [`editor_core_ffi_string_free`].
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_last_error_message() -> *mut c_char {
+pub unsafe extern "C" fn editor_core_ffi_last_error_message() -> *mut c_char {
     let message = LAST_ERROR.with(|slot| {
         slot.borrow()
             .clone()
@@ -2074,8 +2223,13 @@ pub extern "C" fn editor_core_ffi_editor_state_new(
 }
 
 /// Destroy an editor state handle.
+///
+/// # Safety
+///
+/// `state` must be a valid pointer returned by `editor_core_ffi_editor_state_new`, or null.
+/// The pointer must not be used after this call.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_editor_state_free(state: *mut EcfEditorState) {
+pub unsafe extern "C" fn editor_core_ffi_editor_state_free(state: *mut EcfEditorState) {
     if state.is_null() {
         return;
     }
@@ -2151,6 +2305,66 @@ pub extern "C" fn editor_core_ffi_editor_state_text_for_saving(
             "text": state.inner.get_text_for_saving(),
             "line_ending": line_ending_to_str(state.inner.line_ending()),
         }))
+    })
+}
+
+/// Return current document symbols / outline as JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_document_symbols_json(
+    state: *const EcfEditorState,
+) -> *mut c_char {
+    result_json_ptr(ptr::null_mut(), || {
+        let state = require_ref(state, "state")?;
+        let symbols = &state.inner.editor().document_symbols;
+        Ok(json!({
+            "symbols": symbols
+                .symbols
+                .iter()
+                .map(value_document_symbol)
+                .collect::<Vec<_>>()
+        }))
+    })
+}
+
+/// Return current diagnostics list as JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_diagnostics_json(
+    state: *const EcfEditorState,
+) -> *mut c_char {
+    result_json_ptr(ptr::null_mut(), || {
+        let state = require_ref(state, "state")?;
+        Ok(json!({
+            "diagnostics": state
+                .inner
+                .editor()
+                .diagnostics
+                .iter()
+                .map(value_diagnostic)
+                .collect::<Vec<_>>()
+        }))
+    })
+}
+
+/// Return current decorations list as JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_decorations_json(
+    state: *const EcfEditorState,
+) -> *mut c_char {
+    result_json_ptr(ptr::null_mut(), || {
+        let state = require_ref(state, "state")?;
+        let layers = state
+            .inner
+            .editor()
+            .decorations
+            .iter()
+            .map(|(layer, decorations)| {
+                json!({
+                    "layer": layer.0,
+                    "decorations": decorations.iter().map(value_decoration).collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({ "layers": layers }))
     })
 }
 
@@ -2266,8 +2480,13 @@ pub extern "C" fn editor_core_ffi_workspace_new() -> *mut EcfWorkspace {
 }
 
 /// Destroy a workspace handle.
+///
+/// # Safety
+///
+/// `workspace` must be a valid pointer returned by `editor_core_ffi_workspace_new`, or null.
+/// The pointer must not be used after this call.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_workspace_free(workspace: *mut EcfWorkspace) {
+pub unsafe extern "C" fn editor_core_ffi_workspace_free(workspace: *mut EcfWorkspace) {
     if workspace.is_null() {
         return;
     }
@@ -2294,6 +2513,60 @@ pub extern "C" fn editor_core_ffi_workspace_open_buffer(
             .open_buffer(uri, &text, viewport_width.max(1))
             .map_err(|err| format!("open_buffer failed: {err:?}"))?;
         Ok(value_open_buffer_result(opened))
+    })
+}
+
+/// Typed ABI variant: open a buffer and create its initial view.
+///
+/// # Safety
+///
+/// - `workspace` must be a valid `EcfWorkspace*` returned by this crate.
+/// - `text` must be a valid NUL-terminated UTF-8 string pointer.
+/// - `out_result` must be a valid writable pointer to an `EcfOpenBufferResult`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_open_buffer_typed(
+    workspace: *mut EcfWorkspace,
+    uri: *const c_char,
+    text: *const c_char,
+    viewport_width: usize,
+    out_result: *mut EcfOpenBufferResult,
+) -> i32 {
+    status_result(|| {
+        let workspace = require_mut(workspace, "workspace")
+            .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        if out_result.is_null() {
+            return Err((
+                EcfStatus::InvalidArgument,
+                "out_result is null".to_string(),
+            ));
+        }
+        let uri = optional_string(uri, "uri")
+            .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        let text = require_string(text, "text")
+            .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+
+        let opened = workspace
+            .inner
+            .open_buffer(uri, &text, viewport_width.max(1))
+            .map_err(|err| {
+                (
+                    EcfStatus::Internal,
+                    format!("open_buffer failed: {err:?}"),
+                )
+            })?;
+
+        let result = EcfOpenBufferResult {
+            abi_version: ECF_ABI_VERSION,
+            struct_size: size_of::<EcfOpenBufferResult>() as u32,
+            buffer_id: opened.buffer_id.get(),
+            view_id: opened.view_id.get(),
+        };
+
+        // SAFETY: non-null checked; caller provides writable memory.
+        unsafe {
+            *out_result = result;
+        }
+        Ok(())
     })
 }
 
@@ -2346,6 +2619,53 @@ pub extern "C" fn editor_core_ffi_workspace_create_view(
     })
 }
 
+/// Typed ABI variant: create a new view for an existing buffer.
+///
+/// # Safety
+///
+/// - `workspace` must be a valid `EcfWorkspace*` returned by this crate.
+/// - `out_result` must be a valid writable pointer to an `EcfCreateViewResult`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_create_view_typed(
+    workspace: *mut EcfWorkspace,
+    buffer_id: u64,
+    viewport_width: usize,
+    out_result: *mut EcfCreateViewResult,
+) -> i32 {
+    status_result(|| {
+        let workspace = require_mut(workspace, "workspace")
+            .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        if out_result.is_null() {
+            return Err((
+                EcfStatus::InvalidArgument,
+                "out_result is null".to_string(),
+            ));
+        }
+
+        let view_id = workspace
+            .inner
+            .create_view(BufferId::from_raw(buffer_id), viewport_width.max(1))
+            .map_err(|err| {
+                (
+                    EcfStatus::Internal,
+                    format!("create_view failed: {err:?}"),
+                )
+            })?;
+
+        let result = EcfCreateViewResult {
+            abi_version: ECF_ABI_VERSION,
+            struct_size: size_of::<EcfCreateViewResult>() as u32,
+            view_id: view_id.get(),
+        };
+
+        // SAFETY: non-null checked; caller provides writable memory.
+        unsafe {
+            *out_result = result;
+        }
+        Ok(())
+    })
+}
+
 /// Set active view.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_workspace_set_active_view(
@@ -2376,6 +2696,49 @@ pub extern "C" fn editor_core_ffi_workspace_info_json(
             "active_view_id": workspace.inner.active_view_id().map(|id| id.get()),
             "active_buffer_id": workspace.inner.active_buffer_id().map(|id| id.get()),
         }))
+    })
+}
+
+/// Typed ABI variant: return workspace basic stats and active ids.
+///
+/// # Safety
+///
+/// - `workspace` must be a valid `EcfWorkspace*` returned by this crate.
+/// - `out_info` must be a valid writable pointer to an `EcfWorkspaceInfo`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_get_info(
+    workspace: *const EcfWorkspace,
+    out_info: *mut EcfWorkspaceInfo,
+) -> i32 {
+    status_result(|| {
+        let workspace = require_ref(workspace, "workspace")
+            .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        if out_info.is_null() {
+            return Err((EcfStatus::InvalidArgument, "out_info is null".to_string()));
+        }
+
+        let active_view_id = workspace.inner.active_view_id().map(|id| id.get());
+        let active_buffer_id = workspace.inner.active_buffer_id().map(|id| id.get());
+
+        let info = EcfWorkspaceInfo {
+            abi_version: ECF_ABI_VERSION,
+            struct_size: size_of::<EcfWorkspaceInfo>() as u32,
+            buffer_count: workspace.inner.len() as u64,
+            view_count: workspace.inner.view_count() as u64,
+            is_empty: if workspace.inner.is_empty() { 1 } else { 0 },
+            has_active_view_id: if active_view_id.is_some() { 1 } else { 0 },
+            has_active_buffer_id: if active_buffer_id.is_some() { 1 } else { 0 },
+            reserved0: 0,
+            active_view_id: active_view_id.unwrap_or(0),
+            active_buffer_id: active_buffer_id.unwrap_or(0),
+        };
+
+        // SAFETY: non-null checked; caller provides writable memory.
+        unsafe {
+            *out_info = info;
+        }
+
+        Ok(())
     })
 }
 
@@ -2446,6 +2809,69 @@ pub extern "C" fn editor_core_ffi_workspace_viewport_state_json(
             .viewport_state_for_view(ViewId::from_raw(view_id))
             .map_err(|err| format!("viewport_state_for_view failed: {err:?}"))?;
         Ok(value_workspace_viewport_state(&state))
+    })
+}
+
+/// Typed ABI variant: return workspace viewport state for a view.
+///
+/// # Safety
+///
+/// - `workspace` must be a valid `EcfWorkspace*` returned by this crate.
+/// - `out_state` must be a valid writable pointer to an `EcfWorkspaceViewportState`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_get_viewport_state(
+    workspace: *mut EcfWorkspace,
+    view_id: u64,
+    out_state: *mut EcfWorkspaceViewportState,
+) -> i32 {
+    fn saturating_u32(value: usize) -> u32 {
+        value.try_into().unwrap_or(u32::MAX)
+    }
+
+    status_result(|| {
+        let workspace = require_mut(workspace, "workspace")
+            .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        if out_state.is_null() {
+            return Err((
+                EcfStatus::InvalidArgument,
+                "out_state is null".to_string(),
+            ));
+        }
+
+        let state = workspace
+            .inner
+            .viewport_state_for_view(ViewId::from_raw(view_id))
+            .map_err(|err| {
+                (
+                    EcfStatus::Internal,
+                    format!("viewport_state_for_view failed: {err:?}"),
+                )
+            })?;
+
+        let height_rows = state.height.map(saturating_u32).unwrap_or(0);
+        let has_height = if state.height.is_some() { 1 } else { 0 };
+
+        let out = EcfWorkspaceViewportState {
+            abi_version: ECF_ABI_VERSION,
+            struct_size: size_of::<EcfWorkspaceViewportState>() as u32,
+            width_cells: saturating_u32(state.width),
+            height_rows,
+            has_height,
+            scroll_top: saturating_u32(state.scroll_top),
+            sub_row_offset: state.smooth_scroll.sub_row_offset as u32,
+            overscan_rows: saturating_u32(state.smooth_scroll.overscan_rows),
+            visible_start: saturating_u32(state.visible_lines.start),
+            visible_end: saturating_u32(state.visible_lines.end),
+            prefetch_start: saturating_u32(state.prefetch_lines.start),
+            prefetch_end: saturating_u32(state.prefetch_lines.end),
+            total_visual_lines: saturating_u32(state.total_visual_lines),
+        };
+
+        // SAFETY: non-null checked; caller provides writable memory.
+        unsafe {
+            *out_state = out;
+        }
+        Ok(())
     })
 }
 
@@ -3014,8 +3440,15 @@ pub extern "C" fn editor_core_ffi_sublime_processor_new_from_path(
 }
 
 /// Destroy a Sublime processor.
+///
+/// # Safety
+///
+/// `processor` must be a valid pointer returned by a constructor in this crate, or null.
+/// The pointer must not be used after this call.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_sublime_processor_free(processor: *mut EcfSublimeProcessor) {
+pub unsafe extern "C" fn editor_core_ffi_sublime_processor_free(
+    processor: *mut EcfSublimeProcessor,
+) {
     if processor.is_null() {
         return;
     }
@@ -3040,8 +3473,13 @@ pub extern "C" fn editor_core_ffi_sublime_processor_add_search_path(
 }
 
 /// Load syntax YAML into processor's syntax set.
+///
+/// # Safety
+///
+/// `processor` must be a valid pointer returned by a constructor in this crate.
+/// `yaml` must be a valid null-terminated UTF-8 C string pointer.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_sublime_processor_load_syntax_from_yaml(
+pub unsafe extern "C" fn editor_core_ffi_sublime_processor_load_syntax_from_yaml(
     processor: *mut EcfSublimeProcessor,
     yaml: *const c_char,
 ) -> bool {
@@ -3168,6 +3606,21 @@ pub extern "C" fn editor_core_ffi_sublime_processor_scope_for_style_id(
 /// Tree-sitter language function pointer type expected by this FFI.
 pub type EcfTreeSitterLanguageFn = unsafe extern "C" fn() -> *const ();
 
+/// Built-in Tree-sitter Rust language function.
+///
+/// This is provided so FFI consumers (including Swift tests/wrappers) can use Tree-sitter
+/// without separately linking a language grammar.
+///
+/// # Safety
+///
+/// This function returns a raw pointer to the Tree-sitter language function.
+/// The returned pointer is valid for the lifetime of the program.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ffi_treesitter_language_rust() -> *const () {
+    let language_fn = tree_sitter_rust::LANGUAGE.into_raw();
+    unsafe { language_fn() }
+}
+
 /// Create a Tree-sitter processor.
 ///
 /// `capture_styles_json` is optional object JSON: `{ "capture.name": 123, ... }`.
@@ -3189,10 +3642,10 @@ pub extern "C" fn editor_core_ffi_treesitter_processor_new(
         });
 
         let mut config = TreeSitterProcessorConfig::new(language, highlights_query);
-        if let Some(folds_query) = optional_string(folds_query, "folds_query")? {
-            if !folds_query.trim().is_empty() {
-                config = config.with_folds_query(folds_query);
-            }
+        if let Some(folds_query) = optional_string(folds_query, "folds_query")?
+            && !folds_query.trim().is_empty()
+        {
+            config = config.with_folds_query(folds_query);
         }
 
         if let Some(capture_styles_json) =
@@ -3216,8 +3669,13 @@ pub extern "C" fn editor_core_ffi_treesitter_processor_new(
 }
 
 /// Destroy a Tree-sitter processor.
+///
+/// # Safety
+///
+/// `processor` must be a valid pointer returned by a constructor in this crate, or null.
+/// The pointer must not be used after this call.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_treesitter_processor_free(
+pub unsafe extern "C" fn editor_core_ffi_treesitter_processor_free(
     processor: *mut EcfTreeSitterProcessor,
 ) {
     if processor.is_null() {
@@ -3307,8 +3765,13 @@ pub extern "C" fn editor_core_ffi_abi_version() -> u32 {
 }
 
 /// Fill basic document stats.
+///
+/// # Safety
+///
+/// `state` must be a valid pointer to an `EcfEditorState`.
+/// `out_stats` must be a valid pointer to an `EcfDocumentStats` struct.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_editor_get_document_stats(
+pub unsafe extern "C" fn editor_core_ffi_editor_get_document_stats(
     state: *const EcfEditorState,
     out_stats: *mut EcfDocumentStats,
 ) -> i32 {
@@ -3378,8 +3841,12 @@ pub extern "C" fn editor_core_ffi_editor_backspace(state: *mut EcfEditorState) -
 }
 
 /// Delete forward at current selection/cursor(s).
+///
+/// # Safety
+///
+/// `state` must be a valid pointer to an `EcfEditorState`.
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ffi_editor_delete_forward(state: *mut EcfEditorState) -> i32 {
+pub unsafe extern "C" fn editor_core_ffi_editor_delete_forward(state: *mut EcfEditorState) -> i32 {
     status_result(|| {
         let state =
             require_mut(state, "state").map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;

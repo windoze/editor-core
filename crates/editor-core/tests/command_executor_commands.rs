@@ -212,6 +212,12 @@ fn test_set_tab_width_affects_visual_position() {
 }
 
 #[test]
+fn test_default_tab_key_behavior_is_spaces() {
+    let executor = CommandExecutor::empty(80);
+    assert_eq!(executor.tab_key_behavior(), TabKeyBehavior::Spaces);
+}
+
+#[test]
 fn test_insert_tab_spaces_mode_inserts_to_next_stop() {
     let mut executor = CommandExecutor::new("abc", 80);
     executor
@@ -253,6 +259,113 @@ fn test_insert_tab_tab_mode_inserts_literal_tab() {
         .execute(Command::Edit(EditCommand::InsertTab))
         .unwrap();
     assert_eq!(executor.editor().get_text(), "\t");
+}
+
+#[test]
+fn test_insert_tab_indents_multi_line_selection_spaces_mode() {
+    let mut executor = CommandExecutor::new("a\nb\nc\n", 80);
+    executor
+        .execute(Command::View(ViewCommand::SetTabKeyBehavior {
+            behavior: TabKeyBehavior::Spaces,
+        }))
+        .unwrap();
+
+    executor
+        .execute(Command::Cursor(CursorCommand::SetSelection {
+            start: Position::new(0, 0),
+            end: Position::new(1, 1),
+        }))
+        .unwrap();
+
+    executor
+        .execute(Command::Edit(EditCommand::InsertTab))
+        .unwrap();
+
+    assert_eq!(executor.editor().get_text(), "    a\n    b\nc\n");
+}
+
+#[test]
+fn test_insert_tab_indents_multi_line_selection_tab_mode() {
+    let mut executor = CommandExecutor::new("a\nb\nc\n", 80);
+    executor
+        .execute(Command::View(ViewCommand::SetTabKeyBehavior {
+            behavior: TabKeyBehavior::Tab,
+        }))
+        .unwrap();
+
+    executor
+        .execute(Command::Cursor(CursorCommand::SetSelection {
+            start: Position::new(0, 0),
+            end: Position::new(1, 1),
+        }))
+        .unwrap();
+
+    executor
+        .execute(Command::Edit(EditCommand::InsertTab))
+        .unwrap();
+
+    assert_eq!(executor.editor().get_text(), "\ta\n\tb\nc\n");
+}
+
+#[test]
+fn test_insert_tab_indents_line_selection_excludes_trailing_line() {
+    let mut executor = CommandExecutor::new("a\nb\n", 80);
+
+    // Select the first line including its trailing newline ("Select Line" style selection),
+    // represented as a half-open range from (0,0) to (1,0).
+    executor
+        .execute(Command::Cursor(CursorCommand::SetSelection {
+            start: Position::new(0, 0),
+            end: Position::new(1, 0),
+        }))
+        .unwrap();
+
+    executor
+        .execute(Command::Edit(EditCommand::InsertTab))
+        .unwrap();
+
+    assert_eq!(executor.editor().get_text(), "    a\nb\n");
+}
+
+#[test]
+fn test_insert_tab_indents_full_line_single_line_selection() {
+    let mut executor = CommandExecutor::new("a\nb\n", 80);
+
+    // A full-line selection within a single line should indent that line.
+    executor
+        .execute(Command::Cursor(CursorCommand::SetSelection {
+            start: Position::new(0, 0),
+            end: Position::new(0, 1),
+        }))
+        .unwrap();
+
+    executor
+        .execute(Command::Edit(EditCommand::InsertTab))
+        .unwrap();
+
+    assert_eq!(executor.editor().get_text(), "    a\nb\n");
+}
+
+#[test]
+fn test_insert_tab_single_line_selection_replaces_range() {
+    let mut executor = CommandExecutor::new("abcd", 80);
+    executor
+        .execute(Command::View(ViewCommand::SetTabKeyBehavior {
+            behavior: TabKeyBehavior::Spaces,
+        }))
+        .unwrap();
+
+    // Replace 'b' (col=1) with spaces to the next tab stop (tab_width=4 => 3 spaces).
+    executor
+        .execute(Command::Cursor(CursorCommand::SetSelection {
+            start: Position::new(0, 1),
+            end: Position::new(0, 2),
+        }))
+        .unwrap();
+    executor
+        .execute(Command::Edit(EditCommand::InsertTab))
+        .unwrap();
+    assert_eq!(executor.editor().get_text(), "a   cd");
 }
 
 #[test]

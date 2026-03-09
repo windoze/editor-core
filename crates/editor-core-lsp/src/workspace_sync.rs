@@ -9,12 +9,14 @@
 //! - `WorkspaceEdit` payloads can be applied across multiple open documents
 
 use crate::editor::{LspContentChange, LspDocument, LspSession, LspSessionStartOptions};
-use crate::lsp_events::LspNotification;
+use crate::lsp_events::{LspEvent, LspNotification, LspServerRequestMode, LspServerRequestPolicy};
 use crate::lsp_sync::{DeltaCalculator, TextChange};
 use crate::lsp_text_edits::{LspTextEdit, char_offsets_for_lsp_range, workspace_edit_text_edits};
 use editor_core::{BufferId, LineIndex, TextDelta, TextEditSpec, Workspace};
 use serde_json::Value;
 use std::collections::HashMap;
+
+const WORKSPACE_APPLY_EDIT_METHOD: &str = "workspace/applyEdit";
 
 /// Result of applying a `WorkspaceEdit` to a set of open documents.
 #[derive(Debug, Clone)]
@@ -40,6 +42,8 @@ pub struct AppliedWorkspaceEditDocument {
 pub struct LspWorkspaceSync {
     session: LspSession,
     calculators: HashMap<String, DeltaCalculator>,
+    queued_events: Vec<LspEvent>,
+    auto_apply_workspace_edits: bool,
 }
 
 impl LspWorkspaceSync {
@@ -47,7 +51,8 @@ impl LspWorkspaceSync {
     pub fn start(opts: LspSessionStartOptions) -> std::io::Result<Self> {
         let initial_uri = opts.document.uri.clone();
         let initial_text = opts.initial_text.clone();
-        let session = LspSession::start(opts)?;
+        let mut session = LspSession::start(opts)?;
+        ensure_workspace_apply_edit_is_deferred(&mut session);
 
         let mut calculators = HashMap::new();
         calculators.insert(initial_uri, DeltaCalculator::from_text(&initial_text));
@@ -55,6 +60,8 @@ impl LspWorkspaceSync {
         Ok(Self {
             session,
             calculators,
+            queued_events: Vec::new(),
+            auto_apply_workspace_edits: true,
         })
     }
 
@@ -64,9 +71,13 @@ impl LspWorkspaceSync {
     /// populate them via [`LspWorkspaceSync::open_workspace_document`] (or by re-creating the sync
     /// wrapper with [`LspWorkspaceSync::start`]).
     pub fn new(session: LspSession) -> Self {
+        let mut session = session;
+        ensure_workspace_apply_edit_is_deferred(&mut session);
         Self {
             session,
             calculators: HashMap::new(),
+            queued_events: Vec::new(),
+            auto_apply_workspace_edits: true,
         }
     }
 
@@ -78,6 +89,21 @@ impl LspWorkspaceSync {
     /// Get a mutable reference to the underlying session.
     pub fn session_mut(&mut self) -> &mut LspSession {
         &mut self.session
+    }
+
+    /// Drain queued LSP events that were not handled by this sync wrapper.
+    pub fn drain_events(&mut self) -> Vec<LspEvent> {
+        std::mem::take(&mut self.queued_events)
+    }
+
+    /// Enable/disable automatic application of server->client `workspace/applyEdit` requests.
+    ///
+    /// - When enabled (default), `poll_workspace()` will apply the edit into the workspace and
+    ///   respond `applied: true/false`.
+    /// - When disabled, `workspace/applyEdit` requests are forwarded into [`Self::drain_events`]
+    ///   and must be responded to by the host.
+    pub fn set_auto_apply_workspace_edits(&mut self, enabled: bool) {
+        self.auto_apply_workspace_edits = enabled;
     }
 
     fn uri_for_workspace_buffer(workspace: &Workspace, id: BufferId) -> Result<String, String> {
@@ -151,6 +177,7 @@ impl LspWorkspaceSync {
             let _ = self
                 .session
                 .poll_edits_with_line_index_and_handler(&dummy, |_| {});
+            self.drain_and_handle_session_events(workspace)?;
             return Ok(());
         };
 
@@ -202,6 +229,37 @@ impl LspWorkspaceSync {
                 .map_err(|err| format!("apply diagnostics edits 失败: {:?}", err))?;
         }
 
+        self.drain_and_handle_session_events(workspace)?;
+        Ok(())
+    }
+
+    fn drain_and_handle_session_events(&mut self, workspace: &mut Workspace) -> Result<(), String> {
+        let events = self.session.drain_events();
+        for event in events {
+            match event {
+                LspEvent::DeferredRequest(request)
+                    if request.method.as_str() == WORKSPACE_APPLY_EDIT_METHOD =>
+                {
+                    if !self.auto_apply_workspace_edits {
+                        self.queued_events.push(LspEvent::DeferredRequest(request));
+                        continue;
+                    }
+
+                    let workspace_edit = request.params.get("edit").cloned().unwrap_or(Value::Null);
+                    let response = match self.apply_workspace_edit(workspace, &workspace_edit) {
+                        Ok(result) => workspace_apply_edit_response(&result),
+                        Err(err) => serde_json::json!({
+                            "applied": false,
+                            "failureReason": err,
+                        }),
+                    };
+
+                    self.session
+                        .respond_to_server_request(request.id, response)?;
+                }
+                other => self.queued_events.push(other),
+            }
+        }
         Ok(())
     }
 
@@ -249,65 +307,124 @@ impl LspWorkspaceSync {
         workspace: &mut Workspace,
         workspace_edit: &Value,
     ) -> Result<ApplyWorkspaceEditResult, String> {
-        let by_uri = workspace_edit_text_edits(workspace_edit);
+        let result = apply_workspace_edit_to_workspace(workspace, workspace_edit)?;
 
-        let mut applied = Vec::<AppliedWorkspaceEditDocument>::new();
-        let mut skipped = Vec::<String>::new();
-
-        for (uri, edits) in by_uri {
-            let Some(id) = workspace.buffer_id_for_uri(&uri) else {
-                skipped.push(uri);
-                continue;
-            };
-            let text = workspace.buffer_text(id).map_err(|err| {
-                format!("Workspace buffer not found (id={}): {:?}", id.get(), err)
-            })?;
-            let line_index = LineIndex::from_text(&text);
-
-            let lsp_changes = lsp_changes_for_text_edits(&line_index, &edits);
-
-            let mut specs: Vec<TextEditSpec> = edits
-                .iter()
-                .map(|edit| {
-                    let (start, end) = char_offsets_for_lsp_range(&line_index, &edit.range);
-                    TextEditSpec {
-                        start,
-                        end,
-                        text: edit.new_text.clone(),
-                    }
-                })
-                .collect();
-            let mut changed_char_ranges: Vec<(usize, usize)> =
-                specs.iter().map(|e| (e.start, e.end)).collect();
-
-            // Match the application order (descending start offsets) for highlighting stability.
-            changed_char_ranges.sort_by_key(|(start, _)| std::cmp::Reverse(*start));
-            specs.sort_by_key(|e| std::cmp::Reverse(e.start));
-
-            workspace
-                .apply_text_edits(vec![(id, specs)])
-                .map_err(|err| format!("apply workspace edit 失败: {:?}", err))?;
-
-            // Keep our incremental calculator in sync with the applied edit.
-            if let Some(calc) = self.calculators.get_mut(&uri) {
-                for change in &lsp_changes {
+        // Keep our incremental calculators in sync with the applied edit.
+        for doc in &result.applied {
+            if let Some(calc) = self.calculators.get_mut(&doc.uri) {
+                for change in &doc.lsp_changes {
                     calc.apply_change(&TextChange {
                         range: change.range,
                         text: change.text.clone(),
                     });
                 }
             }
-
-            applied.push(AppliedWorkspaceEditDocument {
-                uri,
-                changed_char_ranges,
-                lsp_changes,
-            });
         }
 
-        Ok(ApplyWorkspaceEditResult {
-            applied,
-            skipped_uris: skipped,
+        Ok(result)
+    }
+}
+
+/// Apply an LSP `WorkspaceEdit` to all matching open documents in the workspace.
+///
+/// This is a best-effort helper:
+/// - text edits are applied for any `uri` that is already open in the workspace
+/// - unknown URIs are reported in [`ApplyWorkspaceEditResult::skipped_uris`]
+pub fn apply_workspace_edit_to_workspace(
+    workspace: &mut Workspace,
+    workspace_edit: &Value,
+) -> Result<ApplyWorkspaceEditResult, String> {
+    let by_uri = workspace_edit_text_edits(workspace_edit);
+    let mut entries = by_uri.into_iter().collect::<Vec<_>>();
+    entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+    let mut applied = Vec::<AppliedWorkspaceEditDocument>::new();
+    let mut skipped = Vec::<String>::new();
+
+    for (uri, edits) in entries {
+        let Some(id) = workspace.buffer_id_for_uri(&uri) else {
+            skipped.push(uri);
+            continue;
+        };
+        let text = workspace
+            .buffer_text(id)
+            .map_err(|err| format!("Workspace buffer not found (id={}): {:?}", id.get(), err))?;
+        let line_index = LineIndex::from_text(&text);
+
+        let lsp_changes = lsp_changes_for_text_edits(&line_index, &edits);
+
+        let mut specs: Vec<TextEditSpec> = edits
+            .iter()
+            .map(|edit| {
+                let (start, end) = char_offsets_for_lsp_range(&line_index, &edit.range);
+                TextEditSpec {
+                    start,
+                    end,
+                    text: edit.new_text.clone(),
+                }
+            })
+            .collect();
+        let mut changed_char_ranges: Vec<(usize, usize)> =
+            specs.iter().map(|e| (e.start, e.end)).collect();
+
+        // Match the application order (descending start offsets) for highlighting stability.
+        changed_char_ranges.sort_by_key(|(start, _)| std::cmp::Reverse(*start));
+        specs.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        workspace
+            .apply_text_edits(vec![(id, specs)])
+            .map_err(|err| format!("apply workspace edit 失败: {:?}", err))?;
+
+        applied.push(AppliedWorkspaceEditDocument {
+            uri,
+            changed_char_ranges,
+            lsp_changes,
+        });
+    }
+
+    Ok(ApplyWorkspaceEditResult {
+        applied,
+        skipped_uris: skipped,
+    })
+}
+
+fn ensure_workspace_apply_edit_is_deferred(session: &mut LspSession) {
+    let mut policy = session.server_request_policy().clone();
+
+    match policy.mode {
+        LspServerRequestMode::AutoReply => {
+            policy = LspServerRequestPolicy::defer_listed([WORKSPACE_APPLY_EDIT_METHOD]);
+        }
+        LspServerRequestMode::DeferAll => {}
+        LspServerRequestMode::DeferListed => {
+            if !policy
+                .deferred_methods
+                .iter()
+                .any(|m| m == WORKSPACE_APPLY_EDIT_METHOD)
+            {
+                policy
+                    .deferred_methods
+                    .push(WORKSPACE_APPLY_EDIT_METHOD.to_string());
+            }
+        }
+    }
+
+    session.set_server_request_policy(policy);
+}
+
+/// Build a JSON result payload for responding to server->client `workspace/applyEdit`.
+pub fn workspace_apply_edit_response(result: &ApplyWorkspaceEditResult) -> Value {
+    if result.skipped_uris.is_empty() {
+        serde_json::json!({ "applied": true })
+    } else {
+        let reason = format!(
+            "Skipped edits for {} unopened document(s): {}",
+            result.skipped_uris.len(),
+            result.skipped_uris.join(", ")
+        );
+        serde_json::json!({
+            "applied": false,
+            "failureReason": reason,
         })
     }
 }
@@ -378,8 +495,9 @@ mod tests {
     use super::*;
     use editor_core::{
         Command, CursorCommand, EditCommand, EditorStateManager, Position, Selection,
-        SelectionDirection,
+        SelectionDirection, Workspace,
     };
+    use serde_json::Value;
 
     fn calc_text(calc: &DeltaCalculator) -> String {
         let mut lines = Vec::new();
@@ -437,5 +555,59 @@ mod tests {
         assert_eq!(lines, vec![2, 1, 0]);
 
         assert_eq!(calc_text(&calc), after);
+    }
+
+    #[test]
+    fn test_apply_workspace_edit_to_workspace_and_build_apply_edit_response() {
+        let mut ws = Workspace::new();
+
+        let opened_a = ws
+            .open_buffer(Some("file:///a".to_string()), "abc\n", 80)
+            .unwrap();
+        let opened_b = ws
+            .open_buffer(Some("file:///b".to_string()), "xyz\n", 80)
+            .unwrap();
+
+        let edit_json = include_str!("../tests/fixtures/workspace_apply_edit_params_v1.json");
+        let workspace_edit: Value = serde_json::from_str(edit_json).expect("fixture parse");
+
+        let result = apply_workspace_edit_to_workspace(&mut ws, &workspace_edit).unwrap();
+
+        assert_eq!(ws.buffer_text(opened_a.buffer_id).unwrap(), "ABc\n");
+        assert_eq!(ws.buffer_text(opened_b.buffer_id).unwrap(), "xyz!\n");
+        assert_eq!(result.skipped_uris, vec!["file:///c".to_string()]);
+
+        // Changed ranges are returned in descending start-offset order for UI stability.
+        let a_doc = result
+            .applied
+            .iter()
+            .find(|d| d.uri == "file:///a")
+            .expect("a doc");
+        assert_eq!(a_doc.changed_char_ranges, vec![(1, 2), (0, 1)]);
+        assert_eq!(a_doc.lsp_changes.len(), 2);
+
+        let response = workspace_apply_edit_response(&result);
+        assert_eq!(
+            response.get("applied").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(
+            response
+                .get("failureReason")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .contains("file:///c")
+        );
+    }
+
+    #[test]
+    fn test_workspace_apply_edit_response_when_nothing_is_skipped() {
+        let result = ApplyWorkspaceEditResult {
+            applied: Vec::new(),
+            skipped_uris: Vec::new(),
+        };
+        let response = workspace_apply_edit_response(&result);
+        assert_eq!(response.get("applied").and_then(Value::as_bool), Some(true));
+        assert!(response.get("failureReason").is_none());
     }
 }

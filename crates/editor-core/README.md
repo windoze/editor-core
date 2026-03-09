@@ -13,11 +13,18 @@ snapshots and drive edits through the command/state APIs.
   (derived folds + stable user folds).
 - **Symbols/outline model** (`DocumentOutline`, `DocumentSymbol`, `WorkspaceSymbol`) for building
   outline trees and symbol search UIs (typically populated from LSP).
+- **Language intelligence result sets** (`WorkspaceIntelligence`) for storing cross-file results
+  like references, call hierarchy, and type hierarchy (with staleness tracking on buffer edits).
 - **Headless snapshots** (`SnapshotGenerator` → `HeadlessGrid`) for building “text grid” UIs.
 - **Lightweight minimap snapshots** (`MinimapGrid`) for overview rendering without per-cell payload.
 - **Decoration-aware composed snapshots** (`ComposedGrid`) that inject virtual text (inlay hints,
   code lens) so hosts can render from snapshot data without re-implementing layout rules.
 - **Command interface** (`CommandExecutor`) and **state/query layer** (`EditorStateManager`).
+- **Undo history persistence ("hot exit")** via `undo_history_snapshot` / `restore_undo_history`
+  (optional `serde` feature for easy JSON serialization).
+- **Undo tree (branching history)** (optional power feature):
+  - new edits after undo create alternate branches instead of discarding the previous redo path
+  - select which branch `Redo` follows via `CommandExecutor::{redo_branch_count, select_redo_branch}`
 - **Workspace model** (`Workspace`) for multi-buffer + multi-view (split panes):
   - open buffers: `Workspace::open_buffer` → `OpenBufferResult { buffer_id, view_id }`
   - create additional views: `Workspace::create_view`
@@ -33,6 +40,20 @@ snapshots and drive edits through the command/state APIs.
   - comment toggling: `ToggleComment` (language-config driven)
   - selection/multi-cursor ops: `SelectLine`, `SelectWord`, `ExpandSelection`, `AddCursorAbove/Below`,
     `AddNextOccurrence`, `AddAllOccurrences`
+  - language-aware auto-indent for newlines:
+    - `EditCommand::InsertNewline { auto_indent: true }` uses view-local `IndentationConfig`
+      (set via `ViewCommand::SetIndentationConfig`)
+  - auto-pairs + bracket matching:
+    - `EditCommand::TypeChar` + `AutoPairsConfig` (auto-close, wrap selection, skip over closing, delete-pair)
+    - `CursorCommand::MoveToMatchingBracket`
+    - `StyleCommand::UpdateBracketMatchHighlights` (writes `StyleLayerId::BRACKET_MATCHES` with `MATCH_HIGHLIGHT_STYLE_ID`)
+  - snippet engine (placeholders + navigation):
+    - `EditCommand::ApplySnippet` (for LSP completion snippets / template inserts)
+    - `CursorCommand::SnippetNextPlaceholder` / `SnippetPrevPlaceholder`
+- **Bookmarks / marks / jump list** (anchors stable under edits):
+  - `EditorStateManager::{toggle_bookmark_at_cursor_line, goto_next_bookmark, goto_prev_bookmark, set_mark_at_cursor, goto_mark, push_jump_location, jump_back, jump_forward}`
+  - `Workspace::{toggle_bookmark_at_cursor_line, bookmark_lines, goto_next_bookmark, goto_prev_bookmark, set_mark_at_cursor, goto_mark, push_jump_location, jump_back, jump_forward}`
+  - emits `StateChangeType::NavigationChanged` when bookmark/mark/jump-list state changes
 - **Search utilities** (`find_next`, `find_prev`, `find_all`) operating on character offsets.
 
 ## Choosing an API surface (single view vs workspace)
@@ -120,6 +141,26 @@ executor.execute(Command::Cursor(CursorCommand::MoveTo {
 })).unwrap();
 
 assert_eq!(executor.editor().cursor_position(), Position::new(1, 2));
+```
+
+### Undo history persistence ("hot exit")
+
+For "hot exit" / restore workflows, persist the document text plus a snapshot of the undo/redo
+history, then restore both on startup.
+
+```rust
+use editor_core::{Command, CommandExecutor, EditCommand};
+
+let mut executor = CommandExecutor::new("hello", 80);
+executor.execute(Command::Edit(EditCommand::InsertText { text: "!".into() })).unwrap();
+
+let snapshot = executor.undo_history_snapshot();
+
+// Persist `executor.editor().get_text()` + `snapshot` in your host application.
+let text = executor.editor().get_text().to_string();
+
+let mut restored = CommandExecutor::new(&text, 80);
+restored.restore_undo_history(snapshot).unwrap();
 ```
 
 ### State queries + change notifications

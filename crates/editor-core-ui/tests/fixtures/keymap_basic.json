@@ -1,0 +1,7 @@
+[
+  { "keys": "primary+z", "command": "editor.undo", "when": "editorFocus" },
+  { "keys": "primary+shift+z", "command": "editor.redo", "when": "editorFocus" },
+  { "keys": "ctrl+k ctrl+c", "command": "editor.commentLine", "when": "editorFocus && !inPalette" },
+  { "keys": "ctrl+k ctrl+u", "command": "editor.uncommentLine", "when": "editorFocus && !inPalette" }
+]
+

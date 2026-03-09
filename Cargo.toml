@@ -2,12 +2,19 @@
 resolver = "2"
 members = [
     "crates/editor-core",
+    "crates/editor-core-app",
+    "crates/editor-core-diff",
     "crates/editor-core-ffi",
+    "crates/editor-core-dist",
     "crates/editor-core-lang",
     "crates/editor-core-lsp",
     "crates/editor-core-highlight-simple",
+    "crates/editor-core-render-skia",
+    "crates/editor-core-ui",
+    "crates/editor-core-ui-ffi",
     "crates/editor-core-sublime",
     "crates/editor-core-treesitter",
+    "crates/editor-core-treesitter-queries",
     "crates/tui-editor",
 ]
 

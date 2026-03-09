@@ -126,16 +126,19 @@
 //! - via `editor-core-lsp` provides UTF-16 code unit coordinate conversion (for upper-layer protocols/integrations)
 //! - via `editor-core-sublime` provides `.sublime-syntax` syntax highlighting and folding (optional integration)
 
+pub mod anchors;
 pub mod commands;
 pub mod decorations;
 pub mod delta;
 pub mod diagnostics;
 pub mod intervals;
+pub mod intelligence;
 pub mod layout;
 pub mod line_ending;
 pub mod line_index;
 pub mod processing;
 pub mod search;
+pub mod snippets;
 mod selection_set;
 pub mod snapshot;
 pub mod state;
@@ -145,26 +148,36 @@ mod text;
 pub mod workspace;
 
 pub use commands::{
-    Command, CommandError, CommandExecutor, CommandResult, CursorCommand, EditCommand, EditorCore,
+    AutoPair, AutoPairsConfig, Command, CommandError, CommandExecutor, CommandResult,
+    CursorCommand, EditCommand, EditorCore, ExpandSelectionDirection, ExpandSelectionUnit,
     Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, TextEditSpec,
-    ViewCommand,
+    UndoHistoryRestoreError, UndoHistorySelectionSet, UndoHistorySnapshot, UndoHistoryStep,
+    UndoHistoryTextEdit, ViewCommand,
 };
+pub use anchors::{AnchorBias, TextAnchor};
 pub use decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
 };
 pub use delta::{TextDelta, TextDeltaEdit};
 pub use diagnostics::{Diagnostic, DiagnosticRange, DiagnosticSeverity};
-pub use editor_core_lang::CommentConfig;
+pub use editor_core_lang::{CommentConfig, IndentStyle, IndentationConfig};
 pub use intervals::{
-    DOCUMENT_HIGHLIGHT_READ_STYLE_ID, DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
-    DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, FOLD_PLACEHOLDER_STYLE_ID, FoldRegion, FoldingManager,
-    IntervalTree, StyleLayerId,
+    CODE_LENS_STYLE_ID, DOCUMENT_HIGHLIGHT_READ_STYLE_ID, DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
+    DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, DOCUMENT_LINK_STYLE_ID, FOLD_PLACEHOLDER_STYLE_ID,
+    FoldRegion, FoldingManager, IME_MARKED_TEXT_STYLE_ID, INLAY_HINT_STYLE_ID, IntervalTree,
+    MATCH_HIGHLIGHT_STYLE_ID, StyleLayerId,
+};
+pub use intelligence::{
+    CallHierarchyIncomingCall, CallHierarchyOutgoingCall, CallHierarchyResultSet, HierarchyItem,
+    IntelligenceResultSet, ReferencesResultSet, ResultSetId, ResultSetKind, TypeHierarchyResultSet,
+    WorkspaceIntelligence,
 };
 pub use layout::{LayoutEngine, WrapIndent, WrapMode};
 pub use line_ending::LineEnding;
 pub use line_index::LineIndex;
 pub use processing::{DocumentProcessor, ProcessingEdit};
 pub use search::{SearchError, SearchMatch, SearchOptions};
+pub use snippets::{SnippetRange, SnippetSession, SnippetTabstop, SnippetTemplate, parse_snippet};
 pub use snapshot::{
     Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
     HeadlessGrid, HeadlessLine, MinimapGrid, MinimapLine, SnapshotGenerator,
@@ -180,6 +193,7 @@ pub use symbols::{
     Utf16Range, WorkspaceSymbol,
 };
 pub use workspace::{
-    BufferId, BufferMetadata, OpenBufferResult, ViewId, ViewSmoothScrollState, Workspace,
-    WorkspaceError, WorkspaceSearchResult, WorkspaceViewportState,
+    BufferId, BufferMetadata, JumpTarget, OpenBufferResult, ViewId, ViewSmoothScrollState,
+    Workspace, WorkspaceError, WorkspaceSearchResult, WorkspaceUndoHistoryRestoreError,
+    WorkspaceViewportState,
 };

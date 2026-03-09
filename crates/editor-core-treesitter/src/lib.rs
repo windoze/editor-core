@@ -11,4 +11,6 @@
 
 mod processor;
 
-pub use processor::{TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterUpdateMode};
+pub use processor::{
+    TreeSitterError, TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterUpdateMode,
+};

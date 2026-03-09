@@ -18,9 +18,12 @@ drive edits through the command/state APIs.
 
 - `crates/editor-core/` — core headless editor engine (`PieceTable`, `LineIndex`, `LayoutEngine`, snapshots, commands/state).
   - See `crates/editor-core/README.md`
+- `crates/editor-core-diff/` — line-based diff + hunk primitives (useful for “modified lines” gutters and diff views).
 - `crates/editor-core-lang/` — lightweight language configs (e.g. comment tokens) for kernel features.
 - `crates/editor-core-lsp/` — LSP integration (UTF-16 conversions, semantic tokens decoding, stdio JSON-RPC client/session).
   - See `crates/editor-core-lsp/README.md`
+- `crates/editor-core-app/` — UI-agnostic “editor app shell” helpers (workspace file index, explorer helpers, sessions/recents, settings, find-in-files).
+  - See `crates/editor-core-app/README.md`
 - `crates/editor-core-ffi/` — C ABI bridge for Swift/C++/C# and other native hosts (typed hot-path + binary viewport blobs + JSON control plane).
   - See `crates/editor-core-ffi/README.md` and `docs/abi-v1-draft.md`
 - `crates/editor-core-sublime/` — `.sublime-syntax` highlighting + folding engine (headless output as style intervals + fold regions).
@@ -100,6 +103,19 @@ cargo test -p editor-core --test integration_test
 
 ```bash
 cargo run -p tui-editor -- crates/editor-core/tests/fixtures/demo_file.txt
+```
+
+The TUI demo also exports a convenience `editor` binary name (useful for `$EDITOR` workflows):
+
+```bash
+cargo run -p tui-editor --bin editor -- crates/editor-core/tests/fixtures/demo_file.txt
+```
+
+Optional open-at-location helpers:
+
+```bash
+cargo run -p tui-editor --bin editor -- --line 10 --column 5 foo.rs
+cargo run -p tui-editor --bin editor -- foo.rs:10:5
 ```
 
 The TUI demo supports:

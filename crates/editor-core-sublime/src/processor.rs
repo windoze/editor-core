@@ -3,6 +3,7 @@ use crate::sublime_syntax::{
     SublimeSyntaxSet, highlight_document,
 };
 use editor_core::EditorStateManager;
+use editor_core::LineIndex;
 use editor_core::intervals::StyleLayerId;
 use editor_core::processing::{DocumentProcessor, ProcessingEdit};
 use std::sync::Arc;
@@ -57,9 +58,8 @@ impl SublimeProcessor {
 
     fn highlight(
         &mut self,
-        state: &EditorStateManager,
+        line_index: &LineIndex,
     ) -> Result<SublimeHighlightResult, SublimeSyntaxError> {
-        let line_index = &state.editor().line_index;
         highlight_document(
             self.syntax.clone(),
             line_index,
@@ -67,13 +67,16 @@ impl SublimeProcessor {
             &mut self.scope_mapper,
         )
     }
-}
 
-impl DocumentProcessor for SublimeProcessor {
-    type Error = SublimeSyntaxError;
-
-    fn process(&mut self, state: &EditorStateManager) -> Result<Vec<ProcessingEdit>, Self::Error> {
-        let result = self.highlight(state)?;
+    /// Compute derived-state edits (style layer + folding regions) for a document snapshot.
+    ///
+    /// This is a workspace-friendly API that allows callers to integrate Sublime syntax processing
+    /// without going through [`EditorStateManager`].
+    pub fn compute_processing_edits(
+        &mut self,
+        line_index: &LineIndex,
+    ) -> Result<Vec<ProcessingEdit>, SublimeSyntaxError> {
+        let result = self.highlight(line_index)?;
         Ok(vec![
             ProcessingEdit::ReplaceStyleLayer {
                 layer: StyleLayerId::SUBLIME_SYNTAX,
@@ -84,5 +87,13 @@ impl DocumentProcessor for SublimeProcessor {
                 preserve_collapsed: self.preserve_collapsed_folds,
             },
         ])
+    }
+}
+
+impl DocumentProcessor for SublimeProcessor {
+    type Error = SublimeSyntaxError;
+
+    fn process(&mut self, state: &EditorStateManager) -> Result<Vec<ProcessingEdit>, Self::Error> {
+        self.compute_processing_edits(&state.editor().line_index)
     }
 }

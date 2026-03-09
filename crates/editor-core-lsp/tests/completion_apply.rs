@@ -35,6 +35,23 @@ fn test_apply_completion_item_groups_edits_into_single_undo_step() {
         state.editor().get_text(),
         "use std::io;\nfn main() {\n    println!(msg)\n}\n"
     );
+    assert!(state.has_active_snippet_session());
+
+    let text = state.editor().get_text();
+    let expected_start = text.find("msg").expect("msg placeholder inserted");
+    let expected_end = expected_start + "msg".len();
+
+    let sel = state.editor().selection().expect("placeholder should be selected");
+    let a = state
+        .editor()
+        .line_index
+        .position_to_char_offset(sel.start.line, sel.start.column);
+    let b = state
+        .editor()
+        .line_index
+        .position_to_char_offset(sel.end.line, sel.end.column);
+    assert_eq!((a.min(b), a.max(b)), (expected_start, expected_end));
+    assert!(state.editor().secondary_selections().is_empty());
 
     // One undo should revert both the main edit and additionalTextEdits.
     state.execute(Command::Edit(EditCommand::Undo)).unwrap();

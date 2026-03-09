@@ -47,11 +47,14 @@ use crate::snapshot::{
     Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
     HeadlessGrid, HeadlessLine, MinimapGrid, MinimapLine,
 };
+use crate::snippets::{SnippetNavigation, SnippetSession, parse_snippet};
 use crate::{
     FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex, PieceTable,
 };
-use editor_core_lang::CommentConfig;
+use editor_core_lang::{CommentConfig, IndentStyle, IndentationConfig};
 use regex::RegexBuilder;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
@@ -59,6 +62,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 /// Position coordinates (line and column numbers)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Position {
     /// Zero-based logical line index.
     pub line: usize,
@@ -89,6 +93,7 @@ impl PartialOrd for Position {
 
 /// Selection range
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Selection {
     /// Selection start position
     pub start: Position,
@@ -100,11 +105,32 @@ pub struct Selection {
 
 /// Selection direction
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum SelectionDirection {
     /// Forward selection (from start to end)
     Forward,
     /// Backward selection (from end to start)
     Backward,
+}
+
+/// Selection expansion unit for [`CursorCommand::ExpandSelectionBy`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpandSelectionUnit {
+    /// Expand by Unicode scalar values (Rust `char` indices).
+    Character,
+    /// Expand by "word" units (configured word boundary rules).
+    Word,
+    /// Expand by logical lines.
+    Line,
+}
+
+/// Selection expansion direction for [`CursorCommand::ExpandSelectionBy`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpandSelectionDirection {
+    /// Expand towards the beginning of the document.
+    Backward,
+    /// Expand towards the end of the document.
+    Forward,
 }
 
 /// Controls how a Tab key press is handled by the editor when using [`EditCommand::InsertTab`].
@@ -114,6 +140,75 @@ pub enum TabKeyBehavior {
     Tab,
     /// Insert spaces up to the next tab stop (based on the current `tab_width` setting).
     Spaces,
+}
+
+/// A single auto-pair entry (opening + closing delimiter).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct AutoPair {
+    /// Opening delimiter.
+    pub open: char,
+    /// Closing delimiter.
+    pub close: char,
+}
+
+impl AutoPair {
+    /// Create a new auto-pair entry.
+    pub const fn new(open: char, close: char) -> Self {
+        Self { open, close }
+    }
+}
+
+/// Auto-pairs configuration used by [`EditCommand::TypeChar`], and optionally by delete-like
+/// commands (pair deletion).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct AutoPairsConfig {
+    /// Master enable switch for auto-pairs behaviors.
+    pub enabled: bool,
+    /// Configured delimiter pairs (order matters when overlapping; first match wins).
+    pub pairs: Vec<AutoPair>,
+    /// When typing an opening delimiter over a non-empty selection, wrap the selection.
+    pub wrap_selection: bool,
+    /// When typing a closing delimiter and the next character matches, skip over it instead of inserting.
+    pub skip_over_closing: bool,
+    /// When backspacing/deleting adjacent matching delimiters, delete both.
+    pub delete_pair: bool,
+}
+
+impl Default for AutoPairsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            pairs: vec![
+                AutoPair::new('(', ')'),
+                AutoPair::new('[', ']'),
+                AutoPair::new('{', '}'),
+                AutoPair::new('"', '"'),
+                AutoPair::new('\'', '\''),
+                AutoPair::new('`', '`'),
+            ],
+            wrap_selection: true,
+            skip_over_closing: true,
+            delete_pair: true,
+        }
+    }
+}
+
+impl AutoPairsConfig {
+    fn close_for_open(&self, open: char) -> Option<char> {
+        self.pairs.iter().find(|p| p.open == open).map(|p| p.close)
+    }
+
+    fn open_for_close(&self, close: char) -> Option<char> {
+        self.pairs.iter().find(|p| p.close == close).map(|p| p.open)
+    }
+
+    fn is_matching_pair(&self, open: char, close: char) -> bool {
+        self.pairs
+            .iter()
+            .any(|p| p.open == open && p.close == close)
+    }
 }
 
 /// A simple document text edit (character offsets, half-open).
@@ -156,10 +251,59 @@ pub enum EditCommand {
         /// Replacement text.
         text: String,
     },
+    /// Replace text in specified range, but coalesce undo with the currently open undo group.
+    ///
+    /// This is primarily useful for UI layers that need to apply a rapid sequence of small
+    /// replacements that should undo as a single step (for example IME composition updates).
+    ///
+    /// Notes:
+    /// - The caller is expected to explicitly delimit boundaries via [`EditCommand::EndUndoGroup`]
+    ///   so IME edits do not merge with normal typing groups.
+    ReplaceCoalescingUndo {
+        /// Character offset of the replacement start.
+        start: usize,
+        /// Length of the replaced range in characters.
+        length: usize,
+        /// Replacement text.
+        text: String,
+    },
+    /// Like [`EditCommand::ReplaceCoalescingUndo`], but also sets the primary selection/caret.
+    ///
+    /// This is primarily useful for IME composition updates where the host provides a
+    /// selection range inside the marked (preedit) string, and we want to keep the entire
+    /// composition (updates + final commit) undoable as a single step.
+    ///
+    /// Notes:
+    /// - `selection_start/selection_end` are **post-edit** character offsets (Unicode scalar indices)
+    ///   in the resulting document.
+    /// - If `selection_start == selection_end`, the selection is cleared and the caret is moved
+    ///   to `selection_end`.
+    ReplaceCoalescingUndoWithSelection {
+        /// Character offset of the replacement start.
+        start: usize,
+        /// Length of the replaced range in characters.
+        length: usize,
+        /// Replacement text.
+        text: String,
+        /// Selection start (post-edit) in character offsets.
+        selection_start: usize,
+        /// Selection end (post-edit) in character offsets.
+        selection_end: usize,
+    },
     /// VSCode-like typing/paste: apply to all carets/selections (primary + secondary)
     InsertText {
         /// Text to insert/replace at each selection/caret.
         text: String,
+    },
+    /// Type a single character using auto-pairs rules (if enabled).
+    ///
+    /// This is intended for UI "typing" paths (not paste). It supports:
+    /// - auto-close pairs (`()`, `{}`, `[]`, quotes)
+    /// - skip over existing closing delimiters
+    /// - wrap selection with pairs (optional)
+    TypeChar {
+        /// The typed character.
+        ch: char,
     },
     /// Insert a tab at each caret (or replace each selection), using the current tab settings.
     ///
@@ -219,6 +363,25 @@ pub enum EditCommand {
     ApplyTextEdits {
         /// The edit list (character offsets, half-open).
         edits: Vec<TextEditSpec>,
+    },
+    /// Apply a snippet-shaped insert as a single undoable step.
+    ///
+    /// This is primarily intended for LSP completion items with `insertTextFormat == 2`.
+    ///
+    /// - `start`/`end` are interpreted in **pre-edit** character offsets (half-open).
+    /// - `additional_edits` are applied in the same undo step (also in pre-edit coordinates).
+    /// - The snippet is expanded (placeholders removed / defaults inserted), and the first
+    ///   placeholder (lowest index) is selected for navigation via
+    ///   [`CursorCommand::SnippetNextPlaceholder`] / [`CursorCommand::SnippetPrevPlaceholder`].
+    ApplySnippet {
+        /// Inclusive start character offset.
+        start: usize,
+        /// Exclusive end character offset.
+        end: usize,
+        /// Snippet text in TextMate / VS Code snippet syntax.
+        snippet: String,
+        /// Additional text edits (LSP `additionalTextEdits`), in pre-edit coordinates.
+        additional_edits: Vec<TextEditSpec>,
     },
     /// Smart backspace: if the caret is in leading whitespace, delete back to the previous tab stop.
     ///
@@ -316,6 +479,18 @@ pub enum CursorCommand {
     MoveWordLeft,
     /// Move cursor right to the next Unicode word boundary (UAX #29).
     MoveWordRight,
+    /// Move each caret to its matching bracket (if the caret is on or adjacent to a bracket).
+    ///
+    /// Matching is performed for the configured bracket pairs (typically `()`, `[]`, `{}`).
+    MoveToMatchingBracket,
+    /// If a snippet session is active, jump to the **next** snippet tabstop (placeholder).
+    ///
+    /// This is typically bound to the Tab key while a completion snippet is active.
+    SnippetNextPlaceholder,
+    /// If a snippet session is active, jump to the **previous** snippet tabstop (placeholder).
+    ///
+    /// This is typically bound to Shift-Tab while a completion snippet is active.
+    SnippetPrevPlaceholder,
     /// Set selection range
     SetSelection {
         /// Selection start position.
@@ -355,6 +530,20 @@ pub enum CursorCommand {
     /// - If the selection is empty, expands to the word under the caret.
     /// - If the selection is non-empty, expands to full line(s).
     ExpandSelection,
+    /// Expand selection by a configurable unit and direction.
+    ///
+    /// Notes:
+    /// - This is an **expand-only** operation: it never shrinks the current selection.
+    /// - The expansion direction is absolute (backward/forward in document order). If you call
+    ///   it with different directions over time, the selection can expand on both ends.
+    ExpandSelectionBy {
+        /// Expansion unit.
+        unit: ExpandSelectionUnit,
+        /// Number of units to expand by. `0` is a no-op.
+        count: usize,
+        /// Expansion direction in document order.
+        direction: ExpandSelectionDirection,
+    },
     /// Add a new caret above each existing caret/selection (at the same column, clamped to line length).
     AddCursorAbove,
     /// Add a new caret below each existing caret/selection (at the same column, clamped to line length).
@@ -413,6 +602,38 @@ pub enum ViewCommand {
         /// Tab key behavior.
         behavior: TabKeyBehavior,
     },
+    /// Configure language-aware auto-indentation behavior used by [`EditCommand::InsertNewline`]
+    /// when `auto_indent=true`.
+    ///
+    /// Notes:
+    /// - This is view-local (each view can have different indentation rules).
+    SetIndentationConfig {
+        /// Indentation configuration.
+        config: IndentationConfig,
+    },
+    /// Configure auto-pairs behavior used by [`EditCommand::TypeChar`].
+    SetAutoPairsConfig {
+        /// Auto-pairs config.
+        config: AutoPairsConfig,
+    },
+    /// Enable/disable auto-pairs behavior (convenience wrapper over [`ViewCommand::SetAutoPairsConfig`]).
+    SetAutoPairsEnabled {
+        /// Whether auto-pairs are enabled.
+        enabled: bool,
+    },
+    /// Override the ASCII word-boundary character set used by editor-friendly "word" operations.
+    ///
+    /// This is similar in spirit to VSCode's `wordSeparators`.
+    ///
+    /// Notes:
+    /// - Only ASCII characters are configurable here; non-ASCII characters are always treated as boundaries.
+    /// - ASCII whitespace is always treated as a boundary.
+    SetWordBoundaryAsciiBoundaryChars {
+        /// ASCII word-boundary characters (as a string of separators).
+        boundary_chars: String,
+    },
+    /// Reset word-boundary configuration to the default (ASCII identifier-like words).
+    ResetWordBoundaryDefaults,
     /// Scroll to specified line
     ScrollTo {
         /// Logical line index to scroll to.
@@ -462,6 +683,12 @@ pub enum StyleCommand {
     },
     /// Unfold all folds
     UnfoldAll,
+    /// Recompute bracket-match highlights for the current cursor/selections.
+    ///
+    /// This updates the derived style layer [`StyleLayerId::BRACKET_MATCHES`].
+    UpdateBracketMatchHighlights,
+    /// Clear bracket-match highlights (removes [`StyleLayerId::BRACKET_MATCHES`]).
+    ClearBracketMatchHighlights,
 }
 
 /// Unified command enum
@@ -567,6 +794,78 @@ enum TextBoundary {
     Word,
 }
 
+/// Word boundary configuration used by editor-friendly "word" operations (selection expansion,
+/// double-click selection, etc.).
+///
+/// This intentionally follows a **code-editor** notion of "word":
+/// - By default, **ASCII identifier-like runs** are treated as words.
+/// - Non-ASCII characters are treated as word boundaries (so they form single-character "word units").
+/// - Whitespace always separates words.
+#[derive(Debug, Clone)]
+pub struct WordBoundaryConfig {
+    ascii_is_boundary: [bool; 128],
+}
+
+impl Default for WordBoundaryConfig {
+    fn default() -> Self {
+        let mut ascii_is_boundary = [true; 128];
+        for b in 0u8..=127 {
+            let ch = b as char;
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ascii_is_boundary[b as usize] = false;
+            }
+        }
+        // Always treat ASCII whitespace as boundary.
+        ascii_is_boundary[b' ' as usize] = true;
+        ascii_is_boundary[b'\t' as usize] = true;
+        ascii_is_boundary[b'\n' as usize] = true;
+        ascii_is_boundary[b'\r' as usize] = true;
+        Self { ascii_is_boundary }
+    }
+}
+
+impl WordBoundaryConfig {
+    /// Override the ASCII "word boundary" character set.
+    ///
+    /// - Non-ASCII characters are always treated as boundaries (and therefore form single-character word units).
+    /// - ASCII whitespace is always treated as boundary.
+    ///
+    /// This is similar in spirit to VSCode's `wordSeparators`.
+    pub fn set_ascii_boundary_chars(&mut self, boundary_chars: &str) {
+        self.ascii_is_boundary = [false; 128];
+        // Always treat ASCII whitespace as boundary.
+        self.ascii_is_boundary[b' ' as usize] = true;
+        self.ascii_is_boundary[b'\t' as usize] = true;
+        self.ascii_is_boundary[b'\n' as usize] = true;
+        self.ascii_is_boundary[b'\r' as usize] = true;
+
+        for ch in boundary_chars.chars() {
+            if ch.is_ascii() {
+                self.ascii_is_boundary[ch as usize] = true;
+            }
+        }
+    }
+
+    fn is_ascii_word_char(&self, ch: char) -> bool {
+        if !ch.is_ascii() {
+            return false;
+        }
+        !self.ascii_is_boundary[ch as usize]
+    }
+
+    fn is_word_token_char(&self, ch: char) -> bool {
+        if ch.is_whitespace() {
+            return false;
+        }
+        if ch.is_ascii() {
+            self.is_ascii_word_char(ch)
+        } else {
+            // Treat non-ASCII as "word units" of length 1.
+            true
+        }
+    }
+}
+
 fn byte_offset_for_char_column(text: &str, column: usize) -> usize {
     if column == 0 {
         return 0;
@@ -662,42 +961,79 @@ struct UndoStep {
 
 #[derive(Debug)]
 struct UndoRedoManager {
-    undo_stack: Vec<UndoStep>,
-    redo_stack: Vec<UndoStep>,
+    /// All nodes in the undo tree (stable indices).
+    ///
+    /// - Node `0` is the root ("base" state) and has no step.
+    /// - Other nodes contain one [`UndoStep`] representing an edit from `parent → node`.
+    nodes: Vec<UndoNode>,
+    /// Current node id in the undo tree.
+    current: UndoNodeId,
+    /// Count of nodes that currently hold a step (excludes root and pruned tombstones).
+    step_count: usize,
     max_undo: usize,
-    /// Clean point tracking. Uses `undo_stack.len()` as the saved position in the linear history.
-    /// When `redo_stack` is non-empty, `clean_index` may be greater than `undo_stack.len()`.
-    clean_index: Option<usize>,
+    /// Clean point tracking (node id in the undo tree).
+    clean_node: Option<UndoNodeId>,
     next_group_id: usize,
     open_group_id: Option<usize>,
 }
 
+type UndoNodeId = usize;
+
+#[derive(Debug)]
+struct UndoNode {
+    parent: Option<UndoNodeId>,
+    children: Vec<UndoNodeId>,
+    /// The selected child branch to use for `Redo` when multiple exist.
+    preferred_child: Option<UndoNodeId>,
+    /// The step that produced this node (none for root and pruned tombstones).
+    step: Option<UndoStep>,
+}
+
 impl UndoRedoManager {
     fn new(max_undo: usize) -> Self {
+        let max_undo = max_undo.max(1);
         Self {
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
+            nodes: vec![UndoNode {
+                parent: None,
+                children: Vec::new(),
+                preferred_child: None,
+                step: None,
+            }],
+            current: 0,
+            step_count: 0,
             max_undo,
-            clean_index: Some(0),
+            clean_node: Some(0),
             next_group_id: 0,
             open_group_id: None,
         }
     }
 
     fn can_undo(&self) -> bool {
-        !self.undo_stack.is_empty()
+        self.current != 0
     }
 
     fn can_redo(&self) -> bool {
-        !self.redo_stack.is_empty()
+        !self.nodes[self.current].children.is_empty()
     }
 
     fn undo_depth(&self) -> usize {
-        self.undo_stack.len()
+        let mut depth = 0usize;
+        let mut node = self.current;
+        while node != 0 {
+            depth = depth.saturating_add(1);
+            node = self.nodes[node].parent.unwrap_or(0);
+        }
+        depth
     }
 
     fn redo_depth(&self) -> usize {
-        self.redo_stack.len()
+        let mut depth = 0usize;
+        let mut node = self.current;
+        while let Some(child) = self.selected_child(node) {
+            depth = depth.saturating_add(1);
+            node = child;
+        }
+        depth
     }
 
     fn current_group_id(&self) -> Option<usize> {
@@ -705,11 +1041,11 @@ impl UndoRedoManager {
     }
 
     fn is_clean(&self) -> bool {
-        self.clean_index == Some(self.undo_stack.len())
+        self.clean_node == Some(self.current)
     }
 
     fn mark_clean(&mut self) {
-        self.clean_index = Some(self.undo_stack.len());
+        self.clean_node = Some(self.current);
         self.end_group();
     }
 
@@ -717,38 +1053,10 @@ impl UndoRedoManager {
         self.open_group_id = None;
     }
 
-    fn clear_redo_and_adjust_clean(&mut self) {
-        if self.redo_stack.is_empty() {
-            return;
-        }
-
-        // If clean point is in redo area, it becomes unreachable after clearing redo.
-        if let Some(clean_index) = self.clean_index
-            && clean_index > self.undo_stack.len()
-        {
-            self.clean_index = None;
-        }
-
-        self.redo_stack.clear();
-    }
-
     fn push_step(&mut self, mut step: UndoStep, coalescible_insert: bool) -> usize {
-        self.clear_redo_and_adjust_clean();
-
-        if self.undo_stack.len() >= self.max_undo {
-            self.undo_stack.remove(0);
-            if let Some(clean_index) = self.clean_index {
-                if clean_index == 0 {
-                    self.clean_index = None;
-                } else {
-                    self.clean_index = Some(clean_index - 1);
-                }
-            }
-        }
-
         let reuse_open_group = coalescible_insert
             && self.open_group_id.is_some()
-            && self.clean_index != Some(self.undo_stack.len());
+            && self.clean_node != Some(self.current);
 
         if reuse_open_group {
             step.group_id = self.open_group_id.expect("checked");
@@ -764,36 +1072,556 @@ impl UndoRedoManager {
         }
 
         let group_id = step.group_id;
-        self.undo_stack.push(step);
+        let parent = self.current;
+        let new_id = self.nodes.len();
+        self.nodes.push(UndoNode {
+            parent: Some(parent),
+            children: Vec::new(),
+            preferred_child: None,
+            step: Some(step),
+        });
+
+        self.nodes[parent].children.push(new_id);
+        self.nodes[parent].preferred_child = Some(new_id);
+        self.current = new_id;
+        self.step_count = self.step_count.saturating_add(1);
+
+        self.prune_if_needed();
         group_id
     }
 
     fn pop_undo_group(&mut self) -> Option<Vec<UndoStep>> {
-        let last_group_id = self.undo_stack.last().map(|s| s.group_id)?;
-        let mut steps: Vec<UndoStep> = Vec::new();
+        let mut node = self.current;
+        let group_id = self.nodes[node].step.as_ref().map(|s| s.group_id)?;
 
-        while let Some(step) = self.undo_stack.last() {
-            if step.group_id != last_group_id {
+        let mut steps: Vec<UndoStep> = Vec::new();
+        while node != 0 {
+            let current_step_group = self.nodes[node].step.as_ref().map(|s| s.group_id);
+            if current_step_group != Some(group_id) {
                 break;
             }
-            steps.push(self.undo_stack.pop().expect("checked"));
+
+            let step = self.nodes[node].step.as_ref()?.clone();
+            steps.push(step);
+
+            let parent = self.nodes[node].parent.unwrap_or(0);
+            // Remember which branch we came from so redo follows it.
+            if parent != 0 || node != 0 {
+                self.nodes[parent].preferred_child = Some(node);
+            }
+
+            node = parent;
         }
 
+        if steps.is_empty() {
+            return None;
+        }
+
+        self.current = node;
         Some(steps)
     }
 
     fn pop_redo_group(&mut self) -> Option<Vec<UndoStep>> {
-        let last_group_id = self.redo_stack.last().map(|s| s.group_id)?;
-        let mut steps: Vec<UndoStep> = Vec::new();
+        let first = self.selected_child(self.current)?;
+        let group_id = self.nodes[first].step.as_ref().map(|s| s.group_id)?;
 
-        while let Some(step) = self.redo_stack.last() {
-            if step.group_id != last_group_id {
+        let mut node = self.current;
+        let mut steps: Vec<UndoStep> = Vec::new();
+        while let Some(child) = self.selected_child(node) {
+            let child_group = self.nodes[child].step.as_ref().map(|s| s.group_id);
+            if child_group != Some(group_id) {
                 break;
             }
-            steps.push(self.redo_stack.pop().expect("checked"));
+
+            // Ensure this branch remains the selected redo path.
+            self.nodes[node].preferred_child = Some(child);
+
+            steps.push(self.nodes[child].step.as_ref()?.clone());
+            node = child;
         }
 
+        if steps.is_empty() {
+            return None;
+        }
+
+        self.current = node;
         Some(steps)
+    }
+
+    fn redo_branch_count(&self) -> usize {
+        self.nodes[self.current].children.len()
+    }
+
+    fn selected_redo_branch_index(&self) -> Option<usize> {
+        let node = &self.nodes[self.current];
+        let selected = self.selected_child(self.current)?;
+        node.children.iter().position(|c| *c == selected)
+    }
+
+    fn select_redo_branch(&mut self, index: usize) -> Result<(), CommandError> {
+        let children = self.nodes[self.current].children.clone();
+        if index >= children.len() {
+            return Err(CommandError::Other(format!(
+                "Invalid redo branch index {} (count={})",
+                index,
+                children.len()
+            )));
+        }
+        self.nodes[self.current].preferred_child = Some(children[index]);
+        Ok(())
+    }
+
+    fn selected_child(&self, node: UndoNodeId) -> Option<UndoNodeId> {
+        let n = &self.nodes[node];
+        if n.children.is_empty() {
+            return None;
+        }
+        if let Some(pref) = n.preferred_child {
+            if n.children.iter().any(|c| *c == pref) {
+                return Some(pref);
+            }
+        }
+        n.children.last().copied()
+    }
+
+    fn prune_if_needed(&mut self) {
+        while self.step_count > self.max_undo {
+            if let Some(leaf) = self.find_prunable_leaf() {
+                self.remove_leaf_node(leaf);
+                continue;
+            }
+
+            if self.prune_root_child() {
+                continue;
+            }
+
+            // No safe pruning candidate found; give up.
+            break;
+        }
+    }
+
+    fn find_prunable_leaf(&self) -> Option<UndoNodeId> {
+        (1..self.nodes.len())
+            .filter(|id| *id != self.current)
+            .filter(|id| self.nodes[*id].step.is_some())
+            .filter(|id| self.nodes[*id].children.is_empty())
+            .min()
+    }
+
+    fn remove_leaf_node(&mut self, id: UndoNodeId) {
+        let parent = self.nodes[id].parent.unwrap_or(0);
+        self.nodes[parent].children.retain(|c| *c != id);
+        if self.nodes[parent].preferred_child == Some(id) {
+            self.nodes[parent].preferred_child = self.nodes[parent].children.last().copied();
+        }
+
+        if self.clean_node == Some(id) {
+            self.clean_node = None;
+        }
+
+        self.nodes[id].parent = None;
+        self.nodes[id].children.clear();
+        self.nodes[id].preferred_child = None;
+        self.nodes[id].step = None;
+
+        self.step_count = self.step_count.saturating_sub(1);
+    }
+
+    fn prune_root_child(&mut self) -> bool {
+        let children = self.nodes[0].children.clone();
+        if children.len() != 1 {
+            return false;
+        }
+        let doomed = children[0];
+        if doomed == self.current {
+            return false;
+        }
+        if self.nodes[doomed].step.is_none() {
+            return false;
+        }
+
+        // Re-parent all of `doomed`'s children directly under root (root now represents the state
+        // *after* `doomed`).
+        let adopted = std::mem::take(&mut self.nodes[doomed].children);
+        for child in &adopted {
+            self.nodes[*child].parent = Some(0);
+        }
+
+        self.nodes[0].children = adopted;
+        self.nodes[0].preferred_child = self.nodes[0].children.last().copied();
+
+        if self.clean_node == Some(doomed) {
+            self.clean_node = Some(0);
+        }
+
+        self.nodes[doomed].parent = None;
+        self.nodes[doomed].children.clear();
+        self.nodes[doomed].preferred_child = None;
+        self.nodes[doomed].step = None;
+
+        self.step_count = self.step_count.saturating_sub(1);
+        true
+    }
+}
+
+/// A persistable snapshot of the undo/redo history for a single document.
+///
+/// This is intended for "hot exit" workflows: persist the editor text plus this snapshot, then
+/// restore both on startup so undo/redo keeps working across restarts.
+///
+/// Notes:
+/// - This snapshot does **not** include the current document text; callers are responsible for
+///   persisting/restoring the text separately.
+/// - Restoring a snapshot into a different document text will produce undefined undo behavior.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct UndoHistorySnapshot {
+    /// Snapshot format version for forward compatibility.
+    pub format_version: u32,
+    /// Undo steps (oldest → newest).
+    pub undo_stack: Vec<UndoHistoryStep>,
+    /// Redo steps (oldest → newest).
+    pub redo_stack: Vec<UndoHistoryStep>,
+    /// Configured maximum undo history depth.
+    pub max_undo: usize,
+    /// Clean point tracking in the linearized history (index into `undo_stack + redo_stack`).
+    pub clean_index: Option<usize>,
+    /// The next group id to allocate.
+    pub next_group_id: usize,
+    /// Currently open coalescing group id, if any.
+    pub open_group_id: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+/// A single undo/redo step in a persisted history snapshot.
+pub struct UndoHistoryStep {
+    /// Undo group id. Grouped undo pops all adjacent steps with the same id.
+    pub group_id: usize,
+    /// Text edits captured by this step.
+    pub edits: Vec<UndoHistoryTextEdit>,
+    /// Selection set snapshot before applying this step.
+    pub before_selection: UndoHistorySelectionSet,
+    /// Selection set snapshot after applying this step.
+    pub after_selection: UndoHistorySelectionSet,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+/// A single persisted text edit in an undo/redo step.
+pub struct UndoHistoryTextEdit {
+    /// Start offset in the document *before* applying the edit.
+    pub start_before: usize,
+    /// Start offset in the document *after* applying the edit.
+    pub start_after: usize,
+    /// Deleted text (from the pre-edit document).
+    pub deleted_text: String,
+    /// Inserted text (from the post-edit document).
+    pub inserted_text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+/// Persisted selection set state captured alongside undo/redo steps.
+pub struct UndoHistorySelectionSet {
+    /// All selections (primary + secondary); may include empty selections (carets).
+    pub selections: Vec<Selection>,
+    /// Index of the primary selection in `selections`.
+    pub primary_index: usize,
+}
+
+/// Errors produced when restoring undo history snapshots.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UndoHistoryRestoreError {
+    /// The snapshot uses a newer/unknown format version.
+    UnsupportedFormatVersion(u32),
+    /// The snapshot contains an invalid clean point index.
+    InvalidCleanIndex {
+        /// The invalid clean index value found in the snapshot.
+        clean_index: usize,
+        /// The maximum valid clean index (`undo_stack.len() + redo_stack.len()`).
+        max_index: usize,
+    },
+}
+
+impl std::fmt::Display for UndoHistoryRestoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedFormatVersion(v) => {
+                write!(f, "Unsupported undo history snapshot format_version={}", v)
+            }
+            Self::InvalidCleanIndex {
+                clean_index,
+                max_index,
+            } => write!(
+                f,
+                "Invalid undo history snapshot clean_index={} (max={})",
+                clean_index, max_index
+            ),
+        }
+    }
+}
+
+impl std::error::Error for UndoHistoryRestoreError {}
+
+const UNDO_HISTORY_SNAPSHOT_FORMAT_VERSION: u32 = 1;
+
+impl UndoRedoManager {
+    fn snapshot(&self) -> UndoHistorySnapshot {
+        let undo_nodes = self.undo_path_nodes_oldest_first();
+        let redo_nodes_nearest_first = self.redo_path_nodes_nearest_first();
+
+        let clean_index = self.clean_node.and_then(|clean| {
+            if clean == 0 {
+                return Some(0);
+            }
+            if let Some(pos) = undo_nodes.iter().position(|id| *id == clean) {
+                return Some(pos + 1);
+            }
+            if let Some(pos) = redo_nodes_nearest_first.iter().position(|id| *id == clean) {
+                return Some(undo_nodes.len() + pos + 1);
+            }
+            None
+        });
+
+        UndoHistorySnapshot {
+            format_version: UNDO_HISTORY_SNAPSHOT_FORMAT_VERSION,
+            undo_stack: self
+                .undo_path_steps_oldest_first()
+                .iter()
+                .map(|step| UndoHistoryStep {
+                    group_id: step.group_id,
+                    edits: step
+                        .edits
+                        .iter()
+                        .map(|edit| UndoHistoryTextEdit {
+                            start_before: edit.start_before,
+                            start_after: edit.start_after,
+                            deleted_text: edit.deleted_text.clone(),
+                            inserted_text: edit.inserted_text.clone(),
+                        })
+                        .collect(),
+                    before_selection: UndoHistorySelectionSet {
+                        selections: step.before_selection.selections.clone(),
+                        primary_index: step.before_selection.primary_index,
+                    },
+                    after_selection: UndoHistorySelectionSet {
+                        selections: step.after_selection.selections.clone(),
+                        primary_index: step.after_selection.primary_index,
+                    },
+                })
+                .collect(),
+            redo_stack: self
+                .redo_path_steps_newest_first()
+                .iter()
+                .map(|step| UndoHistoryStep {
+                    group_id: step.group_id,
+                    edits: step
+                        .edits
+                        .iter()
+                        .map(|edit| UndoHistoryTextEdit {
+                            start_before: edit.start_before,
+                            start_after: edit.start_after,
+                            deleted_text: edit.deleted_text.clone(),
+                            inserted_text: edit.inserted_text.clone(),
+                        })
+                        .collect(),
+                    before_selection: UndoHistorySelectionSet {
+                        selections: step.before_selection.selections.clone(),
+                        primary_index: step.before_selection.primary_index,
+                    },
+                    after_selection: UndoHistorySelectionSet {
+                        selections: step.after_selection.selections.clone(),
+                        primary_index: step.after_selection.primary_index,
+                    },
+                })
+                .collect(),
+            max_undo: self.max_undo,
+            clean_index,
+            next_group_id: self.next_group_id,
+            open_group_id: self.open_group_id,
+        }
+    }
+
+    fn restore_from_snapshot(
+        &mut self,
+        snapshot: UndoHistorySnapshot,
+    ) -> Result<(), UndoHistoryRestoreError> {
+        if snapshot.format_version != UNDO_HISTORY_SNAPSHOT_FORMAT_VERSION {
+            return Err(UndoHistoryRestoreError::UnsupportedFormatVersion(
+                snapshot.format_version,
+            ));
+        }
+
+        let undo_steps = snapshot
+            .undo_stack
+            .into_iter()
+            .map(|step| UndoStep {
+                group_id: step.group_id,
+                edits: step
+                    .edits
+                    .into_iter()
+                    .map(|edit| TextEdit {
+                        start_before: edit.start_before,
+                        start_after: edit.start_after,
+                        deleted_text: edit.deleted_text,
+                        inserted_text: edit.inserted_text,
+                    })
+                    .collect(),
+                before_selection: SelectionSetSnapshot {
+                    selections: step.before_selection.selections,
+                    primary_index: step.before_selection.primary_index,
+                },
+                after_selection: SelectionSetSnapshot {
+                    selections: step.after_selection.selections,
+                    primary_index: step.after_selection.primary_index,
+                },
+            })
+            .collect::<Vec<_>>();
+
+        let redo_steps = snapshot
+            .redo_stack
+            .into_iter()
+            .map(|step| UndoStep {
+                group_id: step.group_id,
+                edits: step
+                    .edits
+                    .into_iter()
+                    .map(|edit| TextEdit {
+                        start_before: edit.start_before,
+                        start_after: edit.start_after,
+                        deleted_text: edit.deleted_text,
+                        inserted_text: edit.inserted_text,
+                    })
+                    .collect(),
+                before_selection: SelectionSetSnapshot {
+                    selections: step.before_selection.selections,
+                    primary_index: step.before_selection.primary_index,
+                },
+                after_selection: SelectionSetSnapshot {
+                    selections: step.after_selection.selections,
+                    primary_index: step.after_selection.primary_index,
+                },
+            })
+            .collect::<Vec<_>>();
+
+        let total_steps = undo_steps.len() + redo_steps.len();
+        let max_undo = snapshot.max_undo.max(total_steps).max(1);
+        if let Some(clean_index) = snapshot.clean_index
+            && clean_index > total_steps
+        {
+            return Err(UndoHistoryRestoreError::InvalidCleanIndex {
+                clean_index,
+                max_index: total_steps,
+            });
+        }
+
+        // Rebuild as a linear chain (snapshots do not persist alternative branches).
+        self.nodes = vec![UndoNode {
+            parent: None,
+            children: Vec::new(),
+            preferred_child: None,
+            step: None,
+        }];
+        self.current = 0;
+        self.step_count = 0;
+
+        let mut node = 0usize;
+        let mut undo_node_ids: Vec<UndoNodeId> = Vec::new();
+        for step in undo_steps {
+            let new_id = self.nodes.len();
+            self.nodes.push(UndoNode {
+                parent: Some(node),
+                children: Vec::new(),
+                preferred_child: None,
+                step: Some(step),
+            });
+            self.nodes[node].children.push(new_id);
+            self.nodes[node].preferred_child = Some(new_id);
+            node = new_id;
+            undo_node_ids.push(new_id);
+            self.step_count = self.step_count.saturating_add(1);
+        }
+
+        let current_node = node;
+
+        // `redo_steps` in the v1 snapshot format is stored in "stack order" (newest → oldest).
+        // We recreate the redo path in redo order (oldest → newest) as a simple child chain.
+        let mut redo_node_ids_nearest_first: Vec<UndoNodeId> = Vec::new();
+        let mut redo_parent = current_node;
+        for step in redo_steps.into_iter().rev() {
+            let new_id = self.nodes.len();
+            self.nodes.push(UndoNode {
+                parent: Some(redo_parent),
+                children: Vec::new(),
+                preferred_child: None,
+                step: Some(step),
+            });
+            self.nodes[redo_parent].children.push(new_id);
+            self.nodes[redo_parent].preferred_child = Some(new_id);
+            redo_parent = new_id;
+            redo_node_ids_nearest_first.push(new_id);
+            self.step_count = self.step_count.saturating_add(1);
+        }
+
+        self.current = current_node;
+        self.max_undo = max_undo;
+        self.next_group_id = snapshot.next_group_id;
+        self.open_group_id = snapshot.open_group_id;
+
+        self.clean_node = snapshot.clean_index.and_then(|idx| {
+            if idx == 0 {
+                return Some(0);
+            }
+            let undo_len = undo_node_ids.len();
+            if idx <= undo_len {
+                return undo_node_ids.get(idx - 1).copied();
+            }
+            let redo_pos = idx.saturating_sub(undo_len + 1);
+            redo_node_ids_nearest_first.get(redo_pos).copied()
+        });
+
+        Ok(())
+    }
+
+    fn undo_path_nodes_oldest_first(&self) -> Vec<UndoNodeId> {
+        let mut nodes: Vec<UndoNodeId> = Vec::new();
+        let mut node = self.current;
+        while node != 0 {
+            nodes.push(node);
+            node = self.nodes[node].parent.unwrap_or(0);
+        }
+        nodes.reverse();
+        nodes
+    }
+
+    fn redo_path_nodes_nearest_first(&self) -> Vec<UndoNodeId> {
+        let mut out: Vec<UndoNodeId> = Vec::new();
+        let mut node = self.current;
+        while let Some(child) = self.selected_child(node) {
+            out.push(child);
+            node = child;
+        }
+        out
+    }
+
+    fn undo_path_steps_oldest_first(&self) -> Vec<UndoStep> {
+        self.undo_path_nodes_oldest_first()
+            .into_iter()
+            .filter_map(|id| self.nodes[id].step.as_ref().cloned())
+            .collect()
+    }
+
+    /// Redo path steps in the legacy "redo stack order" (newest → oldest), matching the v1
+    /// `UndoHistorySnapshot` semantics.
+    fn redo_path_steps_newest_first(&self) -> Vec<UndoStep> {
+        let mut steps: Vec<UndoStep> = self
+            .redo_path_nodes_nearest_first()
+            .into_iter()
+            .filter_map(|id| self.nodes[id].step.as_ref().cloned())
+            .collect();
+        steps.reverse();
+        steps
     }
 }
 
@@ -884,6 +1712,7 @@ pub struct EditorCore {
     pub secondary_selections: Vec<Selection>,
     /// Viewport width
     pub viewport_width: usize,
+    word_boundary: WordBoundaryConfig,
     visual_row_index_cache: RefCell<Option<VisualRowIndex>>,
 }
 
@@ -916,6 +1745,7 @@ impl EditorCore {
             selection: None,
             secondary_selections: Vec::new(),
             viewport_width,
+            word_boundary: WordBoundaryConfig::default(),
             visual_row_index_cache: RefCell::new(None),
         }
     }
@@ -938,6 +1768,18 @@ impl EditorCore {
     /// Get total character count
     pub fn char_count(&self) -> usize {
         self.piece_table.char_count()
+    }
+
+    /// Override the ASCII word-boundary character set used by editor-friendly "word" operations.
+    ///
+    /// See [`WordBoundaryConfig::set_ascii_boundary_chars`].
+    pub fn set_word_boundary_ascii_boundary_chars(&mut self, boundary_chars: &str) {
+        self.word_boundary.set_ascii_boundary_chars(boundary_chars);
+    }
+
+    /// Reset word-boundary configuration to the default (ASCII identifier-like words).
+    pub fn reset_word_boundary_defaults(&mut self) {
+        self.word_boundary = WordBoundaryConfig::default();
     }
 
     /// Get cursor position
@@ -1437,6 +2279,8 @@ impl EditorCore {
 
                         grid.lines.push(ComposedLine {
                             kind: ComposedLineKind::VirtualAboveLine { logical_line },
+                            char_offset_start: vt.anchor,
+                            char_offset_end: vt.anchor,
                             cells,
                         });
                     }
@@ -1604,6 +2448,8 @@ impl EditorCore {
                         logical_line,
                         visual_in_logical: visual_in_line,
                     },
+                    char_offset_start: segment_start_offset,
+                    char_offset_end: line_start_offset + segment_end_col,
                     cells,
                 });
 
@@ -1969,6 +2815,12 @@ pub struct CommandExecutor {
     undo_redo: UndoRedoManager,
     /// Controls how [`EditCommand::InsertTab`] behaves.
     tab_key_behavior: TabKeyBehavior,
+    /// Language-aware indentation config used by [`EditCommand::InsertNewline`] when `auto_indent=true`.
+    indentation_config: IndentationConfig,
+    /// Auto-pairs configuration used by [`EditCommand::TypeChar`] and delete-pair behavior.
+    auto_pairs: AutoPairsConfig,
+    /// Active snippet session (placeholders + navigation), if any.
+    snippet_session: Option<SnippetSession>,
     /// Preferred line ending for saving (internal storage is always LF).
     line_ending: LineEnding,
     /// Sticky x position for visual-row cursor movement (in cells).
@@ -1984,7 +2836,10 @@ impl CommandExecutor {
             editor: EditorCore::new(text, viewport_width),
             command_history: Vec::new(),
             undo_redo: UndoRedoManager::new(1000),
-            tab_key_behavior: TabKeyBehavior::Tab,
+            tab_key_behavior: TabKeyBehavior::Spaces,
+            indentation_config: IndentationConfig::default(),
+            auto_pairs: AutoPairsConfig::default(),
+            snippet_session: None,
             line_ending: LineEnding::detect_in_text(text),
             preferred_x_cells: None,
             last_text_delta: None,
@@ -2000,8 +2855,34 @@ impl CommandExecutor {
     pub fn execute(&mut self, command: Command) -> Result<CommandResult, CommandError> {
         self.last_text_delta = None;
 
+        // Snippet sessions are view-local and should generally end when the user performs an
+        // explicit navigation outside snippet tabstop traversal, or when history/programmatic
+        // edits occur (undo/redo, bulk apply edits, ...).
+        if matches!(
+            &command,
+            Command::Cursor(
+                CursorCommand::SnippetNextPlaceholder | CursorCommand::SnippetPrevPlaceholder
+            )
+        ) {
+            // keep session
+        } else if matches!(&command, Command::Cursor(_)) {
+            self.snippet_session = None;
+        } else if matches!(
+            &command,
+            Command::Edit(
+                EditCommand::Undo | EditCommand::Redo | EditCommand::ApplyTextEdits { .. }
+            )
+        ) {
+            self.snippet_session = None;
+        }
+
         // Save command to history
         self.command_history.push(command.clone());
+
+        let skip_snippet_delta = matches!(
+            &command,
+            Command::Edit(EditCommand::ApplySnippet { .. })
+        );
 
         let affects_visual_rows = matches!(
             &command,
@@ -2022,18 +2903,40 @@ impl CommandExecutor {
             self.editor.invalidate_visual_row_index_cache();
         }
 
-        // Undo grouping: any non-edit command ends the current coalescing group.
-        if !matches!(command, Command::Edit(_)) {
+        // Undo grouping:
+        //
+        // Coalescing groups are meant to represent a "continuous editing" session (typing / IME
+        // composition updates). UI frameworks may issue non-edit commands during editing (e.g.
+        // viewport width updates every frame for soft-wrapping), and those should *not* break
+        // the current coalescing group.
+        //
+        // We only end the group on cursor/selection/navigation commands, because those indicate
+        // the user changed the insertion point and subsequent typing should start a new group.
+        if matches!(command, Command::Cursor(_)) {
             self.undo_redo.end_group();
         }
 
         // Execute command
-        match command {
+        let result = match command {
             Command::Edit(edit_cmd) => self.execute_edit(edit_cmd),
             Command::Cursor(cursor_cmd) => self.execute_cursor(cursor_cmd),
             Command::View(view_cmd) => self.execute_view(view_cmd),
             Command::Style(style_cmd) => self.execute_style(style_cmd),
+        }?;
+
+        // Keep snippet placeholder ranges stable under subsequent edits.
+        //
+        // Note: snippet insertion itself (`ApplySnippet`) creates anchors in **post-edit**
+        // coordinates, so we must not apply the delta again for that command.
+        if !skip_snippet_delta {
+            if let (Some(delta), Some(session)) =
+                (self.last_text_delta.as_ref(), self.snippet_session.as_mut())
+            {
+                session.apply_delta(delta);
+            }
         }
+
+        Ok(result)
     }
 
     /// Get the structured text delta produced by the last successful `execute()` call, if any.
@@ -2086,6 +2989,26 @@ impl CommandExecutor {
         self.undo_redo.redo_depth()
     }
 
+    /// Number of redo branches available at the current history node.
+    ///
+    /// - In a purely linear history, this is `0` or `1`.
+    /// - When you undo and then make a new edit, the previous redo path becomes an **alternate
+    ///   branch** (undo tree).
+    pub fn redo_branch_count(&self) -> usize {
+        self.undo_redo.redo_branch_count()
+    }
+
+    /// Index of the currently selected redo branch at the current node, if any.
+    pub fn selected_redo_branch_index(&self) -> Option<usize> {
+        self.undo_redo.selected_redo_branch_index()
+    }
+
+    /// Select which redo branch `EditCommand::Redo` will follow from the current node.
+    pub fn select_redo_branch(&mut self, index: usize) -> Result<(), CommandError> {
+        self.undo_redo.end_group();
+        self.undo_redo.select_redo_branch(index)
+    }
+
     /// Currently open undo group ID (for insert coalescing only)
     pub fn current_change_group(&self) -> Option<usize> {
         self.undo_redo.current_group_id()
@@ -2099,6 +3022,26 @@ impl CommandExecutor {
     /// Mark current state as clean point (call after saving file)
     pub fn mark_clean(&mut self) {
         self.undo_redo.mark_clean();
+    }
+
+    /// Capture a persistable snapshot of the undo/redo history for this document.
+    ///
+    /// Callers are expected to persist the current document text separately.
+    pub fn undo_history_snapshot(&self) -> UndoHistorySnapshot {
+        self.undo_redo.snapshot()
+    }
+
+    /// Restore a previously captured [`UndoHistorySnapshot`].
+    ///
+    /// Notes:
+    /// - This does **not** modify the current document text.
+    /// - Callers should only restore a snapshot into the **same text** it was captured from.
+    pub fn restore_undo_history(
+        &mut self,
+        snapshot: UndoHistorySnapshot,
+    ) -> Result<(), UndoHistoryRestoreError> {
+        self.last_text_delta = None;
+        self.undo_redo.restore_from_snapshot(snapshot)
     }
 
     /// Get a reference to the Editor Core
@@ -2119,6 +3062,51 @@ impl CommandExecutor {
     /// Set tab key behavior used by [`EditCommand::InsertTab`].
     pub fn set_tab_key_behavior(&mut self, behavior: TabKeyBehavior) {
         self.tab_key_behavior = behavior;
+    }
+
+    /// Get the current indentation configuration used by [`EditCommand::InsertNewline`] when
+    /// `auto_indent=true`.
+    pub fn indentation_config(&self) -> &IndentationConfig {
+        &self.indentation_config
+    }
+
+    /// Replace the indentation configuration used by [`EditCommand::InsertNewline`] when
+    /// `auto_indent=true`.
+    pub fn set_indentation_config(&mut self, config: IndentationConfig) {
+        self.indentation_config = config;
+    }
+
+    /// Get the current auto-pairs configuration.
+    pub fn auto_pairs_config(&self) -> &AutoPairsConfig {
+        &self.auto_pairs
+    }
+
+    /// Replace the auto-pairs configuration.
+    pub fn set_auto_pairs_config(&mut self, config: AutoPairsConfig) {
+        self.auto_pairs = config;
+    }
+
+    /// Enable/disable auto-pairs behavior (convenience wrapper).
+    pub fn set_auto_pairs_enabled(&mut self, enabled: bool) {
+        self.auto_pairs.enabled = enabled;
+    }
+
+    /// Return `true` if a snippet session is currently active for this view.
+    pub fn has_active_snippet_session(&self) -> bool {
+        self.snippet_session
+            .as_ref()
+            .map(|s| s.is_active())
+            .unwrap_or(false)
+    }
+
+    /// Get the current snippet session (placeholders + navigation), if any.
+    pub fn snippet_session(&self) -> Option<&SnippetSession> {
+        self.snippet_session.as_ref()
+    }
+
+    /// Replace the current snippet session.
+    pub fn set_snippet_session(&mut self, session: Option<SnippetSession>) {
+        self.snippet_session = session;
     }
 
     /// Get the sticky x position (in cells) used by visual-row cursor movement.
@@ -2176,6 +3164,7 @@ impl CommandExecutor {
             EditCommand::Backspace => self.execute_backspace_command(),
             EditCommand::DeleteForward => self.execute_delete_forward_command(),
             EditCommand::InsertText { text } => self.execute_insert_text_command(text),
+            EditCommand::TypeChar { ch } => self.execute_type_char_command(ch),
             EditCommand::InsertTab => self.execute_insert_tab_command(),
             EditCommand::InsertNewline { auto_indent } => {
                 self.execute_insert_newline_command(auto_indent)
@@ -2190,13 +3179,37 @@ impl CommandExecutor {
             EditCommand::SplitLine => self.execute_insert_newline_command(false),
             EditCommand::ToggleComment { config } => self.execute_toggle_comment_command(config),
             EditCommand::ApplyTextEdits { edits } => self.execute_apply_text_edits_command(edits),
+            EditCommand::ApplySnippet {
+                start,
+                end,
+                snippet,
+                additional_edits,
+            } => self.execute_apply_snippet_command(start, end, snippet, additional_edits),
             EditCommand::Insert { offset, text } => self.execute_insert_command(offset, text),
             EditCommand::Delete { start, length } => self.execute_delete_command(start, length),
             EditCommand::Replace {
                 start,
                 length,
                 text,
-            } => self.execute_replace_command(start, length, text),
+            } => self.execute_replace_command(start, length, text, false, None),
+            EditCommand::ReplaceCoalescingUndo {
+                start,
+                length,
+                text,
+            } => self.execute_replace_command(start, length, text, true, None),
+            EditCommand::ReplaceCoalescingUndoWithSelection {
+                start,
+                length,
+                text,
+                selection_start,
+                selection_end,
+            } => self.execute_replace_command(
+                start,
+                length,
+                text,
+                true,
+                Some((selection_start, selection_end)),
+            ),
         }
     }
 
@@ -2230,11 +3243,6 @@ impl CommandExecutor {
 
             self.apply_undo_edits(&step.edits)?;
             self.restore_selection_set(step.before_selection.clone());
-        }
-
-        // Move steps to redo stack in the same pop order (newest->oldest) so redo pops oldest first.
-        for step in steps {
-            self.undo_redo.redo_stack.push(step);
         }
 
         self.last_text_delta = Some(TextDelta {
@@ -2279,11 +3287,6 @@ impl CommandExecutor {
             self.restore_selection_set(step.after_selection.clone());
         }
 
-        // Reapplied steps return to undo stack in the same order (oldest->newest).
-        for step in steps {
-            self.undo_redo.undo_stack.push(step);
-        }
-
         self.last_text_delta = Some(TextDelta {
             before_char_count,
             after_char_count: self.editor.piece_table.char_count(),
@@ -2295,8 +3298,27 @@ impl CommandExecutor {
     }
 
     fn execute_insert_text_command(&mut self, text: String) -> Result<CommandResult, CommandError> {
+        // `InsertText` 的语义是“对每个 caret/selection 执行一次 replace(selection, text)”。
+        //
+        // 以前我们把空字符串当成完全 no-op（直接返回），但这会让“用空字符串替换选区”
+        // 这种合法操作无法表达，也导致 UI 层（cut）不得不走自定义的 ApplyTextEdits 路径，
+        // 并且很难保证 undo/redo 的 selection 快照一致。
+        //
+        // 这里保留优化：如果 text 为空，且所有 selection 都为空（仅 caret），才视为 no-op。
         if text.is_empty() {
-            return Ok(CommandResult::Success);
+            let primary_non_empty = self
+                .editor
+                .selection
+                .as_ref()
+                .is_some_and(|s| s.start != s.end);
+            let secondary_non_empty = self
+                .editor
+                .secondary_selections
+                .iter()
+                .any(|s| s.start != s.end);
+            if !primary_non_empty && !secondary_non_empty {
+                return Ok(CommandResult::Success);
+            }
         }
 
         let text = crate::text::normalize_crlf_to_lf_string(text);
@@ -2527,6 +3549,670 @@ impl CommandExecutor {
         Ok(CommandResult::Success)
     }
 
+    fn execute_type_char_command(&mut self, ch: char) -> Result<CommandResult, CommandError> {
+        if !self.auto_pairs.enabled {
+            return self.execute_insert_text_command(ch.to_string());
+        }
+
+        // Treat CR as LF (internal model uses LF).
+        let ch = if ch == '\r' { '\n' } else { ch };
+
+        // Most typing paths won't call TypeChar for newline/tab, but handle it gracefully.
+        if ch == '\n' {
+            return self.execute_insert_newline_command(true);
+        }
+        if ch == '\t' {
+            return self.execute_insert_tab_command();
+        }
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+        let primary_index = before_selection.primary_index;
+
+        #[derive(Debug, Clone)]
+        enum AfterSel {
+            Caret {
+                delta_from_start: usize,
+            },
+            Range {
+                start_delta: usize,
+                end_delta: usize,
+            },
+        }
+
+        #[derive(Debug)]
+        struct Op {
+            selection_index: usize,
+            start_offset: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            insert_text: String,
+            insert_char_len: usize,
+            apply: bool,
+            after: AfterSel,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(selections.len());
+
+        let doc_char_count = self.editor.piece_table.char_count();
+
+        let next_char_matches = |this: &Self, offset: usize, ch: char| -> bool {
+            this.editor.line_index.char_at(offset) == Some(ch)
+        };
+
+        for (selection_index, selection) in selections.iter().enumerate() {
+            let (range_start_pos, range_end_pos) = if selection.start <= selection.end {
+                (selection.start, selection.end)
+            } else {
+                (selection.end, selection.start)
+            };
+
+            let (start_offset, start_pad) =
+                self.position_to_char_offset_and_virtual_pad(range_start_pos);
+            let end_offset = self.position_to_char_offset_clamped(range_end_pos);
+
+            let delete_len = end_offset.saturating_sub(start_offset);
+            let deleted_text = if delete_len == 0 {
+                String::new()
+            } else {
+                self.editor.piece_table.get_range(start_offset, delete_len)
+            };
+
+            // Skip-over closing delimiter: only for empty selections/carets.
+            if self.auto_pairs.skip_over_closing
+                && delete_len == 0
+                && start_pad == 0
+                && self.auto_pairs.open_for_close(ch).is_some()
+                && next_char_matches(self, start_offset, ch)
+            {
+                ops.push(Op {
+                    selection_index,
+                    start_offset,
+                    start_after: start_offset,
+                    delete_len: 0,
+                    deleted_text: String::new(),
+                    insert_text: String::new(),
+                    insert_char_len: 0,
+                    apply: false,
+                    after: AfterSel::Caret {
+                        delta_from_start: 1,
+                    },
+                });
+                continue;
+            }
+
+            let mut insert_text = String::new();
+            for _ in 0..start_pad {
+                insert_text.push(' ');
+            }
+
+            let mut apply = true;
+            let after = if let Some(close) = self.auto_pairs.close_for_open(ch) {
+                if delete_len > 0 && self.auto_pairs.wrap_selection {
+                    // Wrap selection: open + (selected) + close; keep selection on inner text.
+                    insert_text.push(ch);
+                    insert_text.push_str(&deleted_text);
+                    insert_text.push(close);
+                    AfterSel::Range {
+                        start_delta: start_pad + 1,
+                        end_delta: start_pad + 1 + delete_len,
+                    }
+                } else if delete_len == 0 {
+                    // Auto-close pair and place caret between.
+                    insert_text.push(ch);
+                    insert_text.push(close);
+                    AfterSel::Caret {
+                        delta_from_start: start_pad + 1,
+                    }
+                } else {
+                    // Replace selection with the typed opening delimiter.
+                    insert_text.push(ch);
+                    AfterSel::Caret {
+                        delta_from_start: start_pad + 1,
+                    }
+                }
+            } else {
+                // Normal typing.
+                insert_text.push(ch);
+                AfterSel::Caret {
+                    delta_from_start: start_pad + 1,
+                }
+            };
+
+            let insert_char_len = insert_text.chars().count();
+            if insert_char_len == 0 && delete_len == 0 {
+                apply = false;
+            }
+
+            ops.push(Op {
+                selection_index,
+                start_offset,
+                start_after: start_offset,
+                delete_len,
+                deleted_text,
+                insert_text,
+                insert_char_len,
+                apply,
+                after,
+            });
+        }
+
+        // If no text edits will be applied, we still need to update the cursor/selection state
+        // (e.g. skip-over closing delimiters).
+        if !ops
+            .iter()
+            .any(|op| op.apply && (op.delete_len > 0 || !op.insert_text.is_empty()))
+        {
+            let mut new_selections: Vec<Selection> = Vec::with_capacity(ops.len());
+            for op in &ops {
+                let offset = match op.after {
+                    AfterSel::Caret { delta_from_start } => op.start_offset + delta_from_start,
+                    AfterSel::Range { .. } => op.start_offset,
+                }
+                .min(doc_char_count);
+
+                let (line, column) = self.editor.line_index.char_offset_to_position(offset);
+                let pos = Position::new(line, column);
+                new_selections.push(Selection {
+                    start: pos,
+                    end: pos,
+                    direction: SelectionDirection::Forward,
+                });
+            }
+
+            let (new_selections, new_primary_index) =
+                crate::selection_set::normalize_selections(new_selections, primary_index);
+            let primary = new_selections
+                .get(new_primary_index)
+                .cloned()
+                .ok_or_else(|| CommandError::Other("Invalid primary caret".to_string()))?;
+
+            self.editor.cursor_position = primary.end;
+            self.editor.selection = None;
+            self.editor.secondary_selections = new_selections
+                .into_iter()
+                .enumerate()
+                .filter_map(|(idx, sel)| (idx != new_primary_index).then_some(sel))
+                .collect();
+
+            return Ok(CommandResult::Success);
+        }
+
+        // Compute per-op post-edit start offsets (ascending by start_offset with delta).
+        let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
+        asc_indices.sort_by_key(|&idx| ops[idx].start_offset);
+
+        let mut delta: i64 = 0;
+        for &idx in &asc_indices {
+            let op = &mut ops[idx];
+            let effective_start = (op.start_offset as i64 + delta) as usize;
+            op.start_after = effective_start;
+
+            if op.apply {
+                delta += op.insert_char_len as i64 - op.delete_len as i64;
+            }
+        }
+
+        // Apply edits safely (descending offsets).
+        let mut desc_indices = asc_indices;
+        desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+
+        for &idx in &desc_indices {
+            let op = &ops[idx];
+            if !op.apply {
+                continue;
+            }
+
+            let edit_line = self
+                .editor
+                .line_index
+                .char_offset_to_position(op.start_offset)
+                .0;
+            let deleted_newlines = op
+                .deleted_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let inserted_newlines = op
+                .insert_text
+                .as_bytes()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count();
+            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+            if line_delta != 0 {
+                self.editor
+                    .folding_manager
+                    .apply_line_delta(edit_line, line_delta);
+            }
+
+            if op.delete_len > 0 {
+                self.editor
+                    .piece_table
+                    .delete(op.start_offset, op.delete_len);
+                self.editor
+                    .interval_tree
+                    .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+                for layer_tree in self.editor.style_layers.values_mut() {
+                    layer_tree
+                        .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
+                }
+            }
+
+            if !op.insert_text.is_empty() {
+                self.editor
+                    .piece_table
+                    .insert(op.start_offset, &op.insert_text);
+                self.editor
+                    .interval_tree
+                    .update_for_insertion(op.start_offset, op.insert_char_len);
+                for layer_tree in self.editor.style_layers.values_mut() {
+                    layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
+                }
+            }
+
+            self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                &op.insert_text,
+            );
+        }
+
+        self.editor
+            .folding_manager
+            .clamp_to_line_count(self.editor.line_index.line_count());
+
+        // Build post-edit selection set (one entry per original selection index).
+        let mut new_selections: Vec<Selection> = vec![
+            Selection {
+                start: Position::new(0, 0),
+                end: Position::new(0, 0),
+                direction: SelectionDirection::Forward,
+            };
+            ops.len()
+        ];
+
+        for op in &ops {
+            let base = op.start_after;
+            let (start_offset, end_offset, is_range) = match op.after {
+                AfterSel::Caret { delta_from_start } => {
+                    let caret = base.saturating_add(delta_from_start);
+                    (caret, caret, false)
+                }
+                AfterSel::Range {
+                    start_delta,
+                    end_delta,
+                } => (
+                    base.saturating_add(start_delta),
+                    base.saturating_add(end_delta),
+                    true,
+                ),
+            };
+
+            let (start_line, start_col) = self
+                .editor
+                .line_index
+                .char_offset_to_position(start_offset.min(self.editor.piece_table.char_count()));
+            let (end_line, end_col) = self
+                .editor
+                .line_index
+                .char_offset_to_position(end_offset.min(self.editor.piece_table.char_count()));
+
+            let start_pos = Position::new(start_line, start_col);
+            let end_pos = Position::new(end_line, end_col);
+
+            new_selections[op.selection_index] = Selection {
+                start: start_pos,
+                end: end_pos,
+                direction: if is_range && start_pos > end_pos {
+                    SelectionDirection::Backward
+                } else {
+                    SelectionDirection::Forward
+                },
+            };
+        }
+
+        let (new_selections, new_primary_index) =
+            crate::selection_set::normalize_selections(new_selections, primary_index);
+        let primary = new_selections
+            .get(new_primary_index)
+            .cloned()
+            .ok_or_else(|| CommandError::Other("Invalid primary selection".to_string()))?;
+
+        self.editor.cursor_position = primary.end;
+        self.editor.selection = if primary.start == primary.end {
+            None
+        } else {
+            Some(primary.clone())
+        };
+        self.editor.secondary_selections = new_selections
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, sel)| (idx != new_primary_index).then_some(sel))
+            .collect();
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .filter(|op| op.apply)
+            .map(|op| TextEdit {
+                start_before: op.start_offset,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.insert_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let is_pure_insert = edits.iter().all(|e| e.deleted_text.is_empty());
+        let coalescible_insert = is_pure_insert && ch != '\n';
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, coalescible_insert);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
+    fn bracket_pair_for_char(bracket: char) -> Option<(char, char, bool)> {
+        match bracket {
+            '(' => Some(('(', ')', true)),
+            ')' => Some(('(', ')', false)),
+            '[' => Some(('[', ']', true)),
+            ']' => Some(('[', ']', false)),
+            '{' => Some(('{', '}', true)),
+            '}' => Some(('{', '}', false)),
+            _ => None,
+        }
+    }
+
+    /// Returns `(bracket_offset, open, close, is_open)` for a bracket adjacent to the caret.
+    ///
+    /// This follows a common editor convention:
+    /// - prefer the character *before* the caret (caret is "after" a bracket)
+    /// - otherwise fall back to the character *at* the caret
+    fn bracket_at_caret(&self, caret_offset: usize) -> Option<(usize, char, char, bool)> {
+        let doc_char_count = self.editor.line_index.char_count();
+
+        if caret_offset > 0 {
+            if let Some(ch) = self.editor.line_index.char_at(caret_offset - 1) {
+                if let Some((open, close, is_open)) = Self::bracket_pair_for_char(ch) {
+                    return Some((caret_offset - 1, open, close, is_open));
+                }
+            }
+        }
+
+        if caret_offset < doc_char_count {
+            if let Some(ch) = self.editor.line_index.char_at(caret_offset) {
+                if let Some((open, close, is_open)) = Self::bracket_pair_for_char(ch) {
+                    return Some((caret_offset, open, close, is_open));
+                }
+            }
+        }
+
+        None
+    }
+
+    fn matching_bracket_offset(
+        &self,
+        bracket_offset: usize,
+        open: char,
+        close: char,
+        is_open: bool,
+    ) -> Option<usize> {
+        let doc_char_count = self.editor.line_index.char_count();
+        if doc_char_count == 0 {
+            return None;
+        }
+
+        if is_open {
+            // Scan forward.
+            let mut nesting = 0usize;
+            let mut offset = bracket_offset.saturating_add(1);
+            while offset < doc_char_count {
+                let ch = self.editor.line_index.char_at(offset)?;
+                if ch == open {
+                    nesting = nesting.saturating_add(1);
+                } else if ch == close {
+                    if nesting == 0 {
+                        return Some(offset);
+                    }
+                    nesting = nesting.saturating_sub(1);
+                }
+                offset = offset.saturating_add(1);
+            }
+            None
+        } else {
+            // Scan backward.
+            if bracket_offset == 0 {
+                return None;
+            }
+
+            let mut nesting = 0usize;
+            let mut offset = bracket_offset;
+            while offset > 0 {
+                offset = offset.saturating_sub(1);
+                let ch = self.editor.line_index.char_at(offset)?;
+                if ch == close {
+                    nesting = nesting.saturating_add(1);
+                } else if ch == open {
+                    if nesting == 0 {
+                        return Some(offset);
+                    }
+                    nesting = nesting.saturating_sub(1);
+                }
+            }
+            None
+        }
+    }
+
+    fn execute_move_to_matching_bracket_command(&mut self) -> Result<CommandResult, CommandError> {
+        let before_selection = self.snapshot_selection_set();
+        let selections = before_selection.selections.clone();
+        let primary_index = before_selection.primary_index;
+        let doc_char_count = self.editor.piece_table.char_count();
+
+        let mut new_carets: Vec<Selection> = Vec::with_capacity(selections.len());
+        for selection in &selections {
+            let caret_offset = self.position_to_char_offset_clamped(selection.end);
+            let target_offset = self
+                .bracket_at_caret(caret_offset)
+                .and_then(|(bracket_offset, open, close, is_open)| {
+                    self.matching_bracket_offset(bracket_offset, open, close, is_open)
+                })
+                .unwrap_or(caret_offset)
+                .min(doc_char_count);
+
+            let (line, column) = self
+                .editor
+                .line_index
+                .char_offset_to_position(target_offset);
+            let pos = Position::new(line, column);
+            new_carets.push(Selection {
+                start: pos,
+                end: pos,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        let (new_carets, new_primary_index) =
+            crate::selection_set::normalize_selections(new_carets, primary_index);
+        let primary = new_carets
+            .get(new_primary_index)
+            .cloned()
+            .ok_or_else(|| CommandError::Other("Invalid primary caret".to_string()))?;
+
+        self.editor.cursor_position = primary.end;
+        self.preferred_x_cells = self
+            .editor
+            .logical_position_to_visual(primary.end.line, primary.end.column)
+            .map(|(_, x)| x);
+        self.editor.selection = None;
+        self.editor.secondary_selections = new_carets
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, sel)| (idx != new_primary_index).then_some(sel))
+            .collect();
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_snippet_navigation_command(
+        &mut self,
+        forward: bool,
+    ) -> Result<CommandResult, CommandError> {
+        let Some(session) = self.snippet_session.as_mut() else {
+            return Ok(CommandResult::Success);
+        };
+
+        let action = if forward { session.next() } else { session.prev() };
+        match action {
+            SnippetNavigation::Noop => Ok(CommandResult::Success),
+            SnippetNavigation::Finish(offset) => {
+                let doc_char_count = self.editor.piece_table.char_count();
+                let target = offset.min(doc_char_count);
+                let (line, column) = self.editor.line_index.char_offset_to_position(target);
+                let pos = Position::new(line, column);
+
+                self.editor.cursor_position = pos;
+                self.editor.selection = None;
+                self.editor.secondary_selections.clear();
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(pos.line, pos.column)
+                    .map(|(_, x)| x);
+
+                self.snippet_session = None;
+                Ok(CommandResult::Success)
+            }
+            SnippetNavigation::SelectRanges(ranges) => {
+                if ranges.is_empty() {
+                    return Ok(CommandResult::Success);
+                }
+
+                let doc_char_count = self.editor.piece_table.char_count();
+                let mut selections: Vec<Selection> = Vec::with_capacity(ranges.len());
+                for (start, end) in ranges {
+                    let a = start.min(doc_char_count);
+                    let b = end.min(doc_char_count);
+                    let (s_line, s_col) = self.editor.line_index.char_offset_to_position(a);
+                    let (e_line, e_col) = self.editor.line_index.char_offset_to_position(b);
+                    selections.push(Selection {
+                        start: Position::new(s_line, s_col),
+                        end: Position::new(e_line, e_col),
+                        direction: SelectionDirection::Forward,
+                    });
+                }
+
+                let (selections, primary_index) =
+                    crate::selection_set::normalize_selections(selections, 0);
+                self.restore_selection_set(SelectionSetSnapshot {
+                    selections,
+                    primary_index,
+                });
+
+                let pos = self.editor.cursor_position;
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(pos.line, pos.column)
+                    .map(|(_, x)| x);
+
+                Ok(CommandResult::Success)
+            }
+        }
+    }
+
+    fn execute_update_bracket_match_highlights_command(
+        &mut self,
+    ) -> Result<CommandResult, CommandError> {
+        let snapshot = self.snapshot_selection_set();
+        let selections = snapshot.selections;
+
+        let mut intervals: Vec<(usize, usize, StyleId)> =
+            Vec::with_capacity(selections.len().saturating_mul(2));
+
+        for selection in &selections {
+            let caret_offset = self.position_to_char_offset_clamped(selection.end);
+            let Some((bracket_offset, open, close, is_open)) = self.bracket_at_caret(caret_offset)
+            else {
+                continue;
+            };
+            let Some(other_offset) =
+                self.matching_bracket_offset(bracket_offset, open, close, is_open)
+            else {
+                continue;
+            };
+
+            intervals.push((
+                bracket_offset,
+                bracket_offset.saturating_add(1),
+                crate::MATCH_HIGHLIGHT_STYLE_ID,
+            ));
+            intervals.push((
+                other_offset,
+                other_offset.saturating_add(1),
+                crate::MATCH_HIGHLIGHT_STYLE_ID,
+            ));
+        }
+
+        intervals.sort_unstable();
+        intervals.dedup();
+
+        if intervals.is_empty() {
+            self.editor
+                .style_layers
+                .remove(&StyleLayerId::BRACKET_MATCHES);
+            return Ok(CommandResult::Success);
+        }
+
+        let tree = self
+            .editor
+            .style_layers
+            .entry(StyleLayerId::BRACKET_MATCHES)
+            .or_default();
+        tree.clear();
+        for (start, end, style_id) in intervals {
+            if start < end {
+                tree.insert(crate::intervals::Interval::new(start, end, style_id));
+            }
+        }
+
+        Ok(CommandResult::Success)
+    }
+
+    fn execute_clear_bracket_match_highlights_command(
+        &mut self,
+    ) -> Result<CommandResult, CommandError> {
+        self.editor
+            .style_layers
+            .remove(&StyleLayerId::BRACKET_MATCHES);
+        Ok(CommandResult::Success)
+    }
+
     fn execute_insert_tab_command(&mut self) -> Result<CommandResult, CommandError> {
         let before_char_count = self.editor.piece_table.char_count();
         let before_selection = self.snapshot_selection_set();
@@ -2542,6 +4228,38 @@ impl CommandExecutor {
         selections.extend(self.editor.secondary_selections.iter().cloned());
 
         let (selections, primary_index) = crate::selection_set::normalize_selections(selections, 0);
+
+        // If the selection spans multiple lines (including "Select Line" style selections) or
+        // covers a whole logical line, Tab should indent the selected lines.
+        //
+        // This mirrors common code editor behavior (VS Code, etc) and avoids the surprising
+        // "replace selection with whitespace" behavior for multi-line selections.
+        let should_indent_lines = selections.iter().any(|selection| {
+            if selection.start == selection.end {
+                return false;
+            }
+
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(selection);
+            if min_pos.line != max_pos.line {
+                return true;
+            }
+
+            if min_pos.column != 0 {
+                return false;
+            }
+
+            let line_text = self
+                .editor
+                .line_index
+                .get_line_text(min_pos.line)
+                .unwrap_or_default();
+            let line_len = line_text.chars().count();
+            max_pos.column >= line_len
+        });
+
+        if should_indent_lines {
+            return self.execute_indent_command(false);
+        }
 
         let tab_width = self.editor.layout_engine.tab_width();
 
@@ -2791,6 +4509,39 @@ impl CommandExecutor {
             .collect()
     }
 
+    fn split_at_char<'a>(s: &'a str, char_idx: usize) -> (&'a str, &'a str) {
+        let byte_idx = s
+            .char_indices()
+            .nth(char_idx)
+            .map(|(b, _)| b)
+            .unwrap_or_else(|| s.len());
+        s.split_at(byte_idx)
+    }
+
+    fn last_non_space_or_tab(s: &str) -> Option<char> {
+        s.chars().rev().find(|ch| *ch != ' ' && *ch != '\t')
+    }
+
+    fn first_non_space_or_tab(s: &str) -> Option<char> {
+        s.chars().find(|ch| *ch != ' ' && *ch != '\t')
+    }
+
+    fn matching_closer_for(open: char) -> Option<char> {
+        match open {
+            '{' => Some('}'),
+            '[' => Some(']'),
+            '(' => Some(')'),
+            _ => None,
+        }
+    }
+
+    fn indent_unit_for_newline(&self) -> String {
+        match self.indentation_config.style {
+            IndentStyle::Tabs => "\t".to_string(),
+            IndentStyle::Spaces(width) => " ".repeat(width.max(1) as usize),
+        }
+    }
+
     fn indent_unit(&self) -> String {
         match self.tab_key_behavior {
             TabKeyBehavior::Tab => "\t".to_string(),
@@ -2829,6 +4580,7 @@ impl CommandExecutor {
             deleted_text: String,
             insert_text: String,
             insert_char_len: usize,
+            caret_offset_in_insert: usize,
         }
 
         let mut ops: Vec<Op> = Vec::with_capacity(selections.len());
@@ -2847,18 +4599,46 @@ impl CommandExecutor {
                 self.editor.piece_table.get_range(start_offset, delete_len)
             };
 
-            let indent = if auto_indent {
+            let (insert_text, caret_offset_in_insert) = if auto_indent {
                 let line_text = self
                     .editor
                     .line_index
                     .get_line_text(range_start_pos.line)
                     .unwrap_or_default();
-                Self::leading_whitespace_prefix(&line_text)
+                let base_indent = Self::leading_whitespace_prefix(&line_text);
+                let indent_unit = self.indent_unit_for_newline();
+
+                let (before_cursor, after_cursor) =
+                    Self::split_at_char(&line_text, range_start_pos.column);
+                let before_last = Self::last_non_space_or_tab(before_cursor);
+                let after_first = Self::first_non_space_or_tab(after_cursor);
+
+                // Special-case: between a matching pair like `{|}` → insert a blank indented line
+                // and keep the closing delimiter aligned.
+                if let Some(open) = before_last
+                    && self.indentation_config.indent_triggers.contains(&open)
+                    && Self::matching_closer_for(open).is_some_and(|close| after_first == Some(close))
+                {
+                    let inner_indent = format!("{base_indent}{indent_unit}");
+                    let insert = format!("\n{inner_indent}\n{base_indent}");
+                    let caret = 1 + inner_indent.chars().count();
+                    (insert, caret)
+                } else {
+                    let mut indent = base_indent;
+                    if let Some(last) = before_last
+                        && self.indentation_config.indent_triggers.contains(&last)
+                    {
+                        indent.push_str(&indent_unit);
+                    }
+
+                    let insert = format!("\n{indent}");
+                    let caret = insert.chars().count();
+                    (insert, caret)
+                }
             } else {
-                String::new()
+                ("\n".to_string(), 1)
             };
 
-            let insert_text = format!("\n{}", indent);
             let insert_char_len = insert_text.chars().count();
 
             ops.push(Op {
@@ -2869,6 +4649,7 @@ impl CommandExecutor {
                 deleted_text,
                 insert_text,
                 insert_char_len,
+                caret_offset_in_insert,
             });
         }
 
@@ -2883,7 +4664,7 @@ impl CommandExecutor {
             let op = &mut ops[idx];
             let effective_start = (op.start_offset as i64 + delta) as usize;
             op.start_after = effective_start;
-            caret_offsets[op.selection_index] = effective_start + op.insert_char_len;
+            caret_offsets[op.selection_index] = effective_start + op.caret_offset_in_insert;
             delta += op.insert_char_len as i64 - op.delete_len as i64;
         }
 
@@ -3009,7 +4790,17 @@ impl CommandExecutor {
         let mut lines: Vec<usize> = Vec::new();
         for sel in &selections {
             let (min_pos, max_pos) = crate::selection_set::selection_min_max(sel);
-            for line in min_pos.line..=max_pos.line {
+            // Selections are treated as half-open ranges at the text-edit boundary (`end` is
+            // exclusive). For line-based operations like indent/outdent, do not include the
+            // trailing line when the selection ends at column 0 of the next line (common for
+            // "Select Line" style selections).
+            let end_line = if min_pos.line < max_pos.line && max_pos.column == 0 {
+                max_pos.line.saturating_sub(1)
+            } else {
+                max_pos.line
+            };
+
+            for line in min_pos.line..=end_line {
                 lines.push(line);
             }
         }
@@ -4252,6 +6043,219 @@ impl CommandExecutor {
         Ok(CommandResult::Success)
     }
 
+    fn execute_apply_snippet_command(
+        &mut self,
+        start: usize,
+        end: usize,
+        snippet: String,
+        additional_edits: Vec<TextEditSpec>,
+    ) -> Result<CommandResult, CommandError> {
+        self.undo_redo.end_group();
+
+        // A new snippet insert replaces any existing snippet session.
+        self.snippet_session = None;
+
+        let before_char_count = self.editor.piece_table.char_count();
+        let before_selection = self.snapshot_selection_set();
+
+        if start > end {
+            return Err(CommandError::InvalidRange { start, end });
+        }
+        if end > before_char_count {
+            return Err(CommandError::InvalidRange { start, end });
+        }
+
+        let template = parse_snippet(&snippet);
+
+        let mut edits: Vec<TextEditSpec> = Vec::with_capacity(1 + additional_edits.len());
+        edits.push(TextEditSpec {
+            start,
+            end,
+            text: template.text.clone(),
+        });
+        edits.extend(additional_edits);
+
+        let max_offset = before_char_count;
+        for edit in &mut edits {
+            if edit.start > edit.end {
+                return Err(CommandError::InvalidRange {
+                    start: edit.start,
+                    end: edit.end,
+                });
+            }
+            if edit.end > max_offset {
+                return Err(CommandError::InvalidRange {
+                    start: edit.start,
+                    end: edit.end,
+                });
+            }
+            edit.text = crate::text::normalize_crlf_to_lf_string(edit.text.clone());
+        }
+
+        edits.sort_by_key(|e| (e.start, e.end));
+
+        // Validate non-overlap (pre-edit coordinates).
+        let mut prev_end = 0usize;
+        for (idx, edit) in edits.iter().enumerate() {
+            if idx > 0 && edit.start < prev_end {
+                return Err(CommandError::Other(
+                    "ApplySnippet requires non-overlapping edits".to_string(),
+                ));
+            }
+            prev_end = prev_end.max(edit.end);
+        }
+
+        struct Op {
+            start_before: usize,
+            start_after: usize,
+            delete_len: usize,
+            deleted_text: String,
+            inserted_text: String,
+            inserted_len: usize,
+            is_main: bool,
+        }
+
+        let mut ops: Vec<Op> = Vec::with_capacity(edits.len());
+        for edit in edits {
+            let delete_len = edit.end.saturating_sub(edit.start);
+            let deleted_text = if delete_len == 0 {
+                String::new()
+            } else {
+                self.editor.piece_table.get_range(edit.start, delete_len)
+            };
+
+            let inserted_text = edit.text;
+            let inserted_len = inserted_text.chars().count();
+
+            ops.push(Op {
+                start_before: edit.start,
+                start_after: edit.start,
+                delete_len,
+                deleted_text,
+                inserted_text,
+                inserted_len,
+                is_main: edit.start == start && edit.end == end,
+            });
+        }
+
+        // Compute start_after using ascending order and delta accumulation.
+        let mut delta: i64 = 0;
+        for op in &mut ops {
+            let effective_start = op.start_before as i64 + delta;
+            if effective_start < 0 {
+                return Err(CommandError::Other(
+                    "ApplySnippet produced an invalid intermediate offset".to_string(),
+                ));
+            }
+            op.start_after = effective_start as usize;
+            delta += op.inserted_len as i64 - op.delete_len as i64;
+        }
+
+        let apply_ops: Vec<(usize, usize, &str)> = ops
+            .iter()
+            .map(|op| (op.start_before, op.delete_len, op.inserted_text.as_str()))
+            .collect();
+        self.apply_text_ops(apply_ops)?;
+
+        // Figure out where the expanded snippet text begins in the post-edit document.
+        let main_start_after = ops
+            .iter()
+            .find(|op| op.is_main)
+            .map(|op| op.start_after)
+            .unwrap_or(start);
+
+        // Activate snippet session + select first tabstop (or jump to `$0` when there are none).
+        if let Some(session) = SnippetSession::new(main_start_after, &template) {
+            let ranges = session.current_ranges();
+            if ranges.is_empty() {
+                // Defensive fallback: treat as "no tabstops".
+                self.snippet_session = None;
+            } else {
+                let doc_char_count = self.editor.piece_table.char_count();
+                let mut selections: Vec<Selection> = Vec::with_capacity(ranges.len());
+                for (a, b) in ranges {
+                    let start = a.min(doc_char_count);
+                    let end = b.min(doc_char_count);
+                    let (s_line, s_col) = self.editor.line_index.char_offset_to_position(start);
+                    let (e_line, e_col) = self.editor.line_index.char_offset_to_position(end);
+                    selections.push(Selection {
+                        start: Position::new(s_line, s_col),
+                        end: Position::new(e_line, e_col),
+                        direction: SelectionDirection::Forward,
+                    });
+                }
+
+                let (selections, primary_index) =
+                    crate::selection_set::normalize_selections(selections, 0);
+                self.restore_selection_set(SelectionSetSnapshot {
+                    selections,
+                    primary_index,
+                });
+
+                let pos = self.editor.cursor_position;
+                self.preferred_x_cells = self
+                    .editor
+                    .logical_position_to_visual(pos.line, pos.column)
+                    .map(|(_, x)| x);
+
+                self.snippet_session = Some(session);
+            }
+        } else {
+            let doc_char_count = self.editor.piece_table.char_count();
+            let target = main_start_after
+                .saturating_add(template.final_offset)
+                .min(doc_char_count);
+            let (line, column) = self.editor.line_index.char_offset_to_position(target);
+            let pos = Position::new(line, column);
+            self.editor.cursor_position = pos;
+            self.editor.selection = None;
+            self.editor.secondary_selections.clear();
+            self.preferred_x_cells = self
+                .editor
+                .logical_position_to_visual(pos.line, pos.column)
+                .map(|(_, x)| x);
+        }
+
+        let after_selection = self.snapshot_selection_set();
+
+        let edits: Vec<TextEdit> = ops
+            .into_iter()
+            .map(|op| TextEdit {
+                start_before: op.start_before,
+                start_after: op.start_after,
+                deleted_text: op.deleted_text,
+                inserted_text: op.inserted_text,
+            })
+            .collect();
+
+        let mut delta_edits: Vec<TextDeltaEdit> = edits
+            .iter()
+            .map(|e| TextDeltaEdit {
+                start: e.start_before,
+                deleted_text: e.deleted_text.clone(),
+                inserted_text: e.inserted_text.clone(),
+            })
+            .collect();
+        delta_edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+
+        let step = UndoStep {
+            group_id: 0,
+            edits,
+            before_selection,
+            after_selection,
+        };
+        let group_id = self.undo_redo.push_step(step, false);
+
+        self.last_text_delta = Some(TextDelta {
+            before_char_count,
+            after_char_count: self.editor.piece_table.char_count(),
+            edits: delta_edits,
+            undo_group_id: Some(group_id),
+        });
+
+        Ok(CommandResult::Success)
+    }
+
     fn execute_toggle_line_comment(
         &mut self,
         token: &str,
@@ -4893,68 +6897,74 @@ impl CommandExecutor {
         Ok(CommandResult::Success)
     }
 
-    fn is_word_char(ch: char) -> bool {
-        ch == '_' || ch.is_alphanumeric()
-    }
-
-    fn word_range_in_line(line_text: &str, column: usize) -> Option<(usize, usize)> {
+    fn word_token_range_in_line(&self, line_text: &str, column: usize) -> Option<(usize, usize)> {
         if line_text.is_empty() {
             return None;
         }
 
-        let mut parts: Vec<(usize, usize, &str)> = Vec::new();
-        for (start, part) in line_text.split_word_bound_indices() {
-            let end = start + part.len();
-            parts.push((start, end, part));
-        }
-        if parts.is_empty() {
+        let chars: Vec<char> = line_text.chars().collect();
+        if chars.is_empty() {
             return None;
         }
 
-        let byte_pos =
-            byte_offset_for_char_column(line_text, column.min(line_text.chars().count()));
+        let len = chars.len();
+        let col = column.min(len);
+        let idx = if col < len {
+            col
+        } else {
+            len.saturating_sub(1)
+        };
 
-        let mut part_idx = parts
-            .iter()
-            .position(|(s, e, _)| *s <= byte_pos && byte_pos < *e)
-            .or_else(|| parts.iter().position(|(s, _, _)| *s == byte_pos))
-            .unwrap_or_else(|| parts.len().saturating_sub(1));
+        let classify = |ch: char| self.editor.word_boundary.is_word_token_char(ch);
 
-        let pick_part = |idx: usize, parts: &[(usize, usize, &str)]| -> Option<(usize, usize)> {
-            let (s, e, text) = parts.get(idx)?;
-            if text.chars().any(Self::is_word_char) {
-                Some((*s, *e))
+        let token_span_at = |i: usize| -> (usize, usize) {
+            let is_token = classify(chars[i]);
+            if !is_token {
+                return (i, i + 1);
+            }
+            if chars[i].is_ascii() && self.editor.word_boundary.is_ascii_word_char(chars[i]) {
+                let mut start = i;
+                while start > 0
+                    && chars[start - 1].is_ascii()
+                    && self
+                        .editor
+                        .word_boundary
+                        .is_ascii_word_char(chars[start - 1])
+                {
+                    start -= 1;
+                }
+                let mut end = i + 1;
+                while end < len
+                    && chars[end].is_ascii()
+                    && self.editor.word_boundary.is_ascii_word_char(chars[end])
+                {
+                    end += 1;
+                }
+                (start, end)
             } else {
-                None
+                (i, i + 1)
             }
         };
 
-        // Prefer the part under the caret.
-        if let Some((s, e)) = pick_part(part_idx, &parts) {
-            return Some((
-                char_column_for_byte_offset(line_text, s),
-                char_column_for_byte_offset(line_text, e),
-            ));
+        // Prefer the token under the caret (or the last char if at EOL).
+        if classify(chars[idx]) {
+            return Some(token_span_at(idx));
         }
 
         // Search to the right.
-        for idx in part_idx + 1..parts.len() {
-            if let Some((s, e)) = pick_part(idx, &parts) {
-                return Some((
-                    char_column_for_byte_offset(line_text, s),
-                    char_column_for_byte_offset(line_text, e),
-                ));
+        #[allow(clippy::needless_range_loop)]
+        for i in (idx + 1)..len {
+            if classify(chars[i]) {
+                return Some(token_span_at(i));
             }
         }
 
         // Search to the left.
-        while part_idx > 0 {
-            part_idx -= 1;
-            if let Some((s, e)) = pick_part(part_idx, &parts) {
-                return Some((
-                    char_column_for_byte_offset(line_text, s),
-                    char_column_for_byte_offset(line_text, e),
-                ));
+        let mut i = idx;
+        while i > 0 {
+            i -= 1;
+            if classify(chars[i]) {
+                return Some(token_span_at(i));
             }
         }
 
@@ -5031,7 +7041,7 @@ impl CommandExecutor {
                 .unwrap_or_default();
             let col = caret.column.min(line_text.chars().count());
 
-            let Some((start_col, end_col)) = Self::word_range_in_line(&line_text, col) else {
+            let Some((start_col, end_col)) = self.word_token_range_in_line(&line_text, col) else {
                 next.push(sel);
                 continue;
             };
@@ -5062,6 +7072,237 @@ impl CommandExecutor {
             self.execute_select_line_command()
         } else {
             self.execute_select_word_command()
+        }
+    }
+
+    fn execute_expand_selection_by_command(
+        &mut self,
+        unit: ExpandSelectionUnit,
+        count: usize,
+        direction: ExpandSelectionDirection,
+    ) -> Result<CommandResult, CommandError> {
+        if count == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let snapshot = self.snapshot_selection_set();
+        let selections = snapshot.selections;
+        let primary_index = snapshot.primary_index;
+
+        let line_count = self.editor.line_index.line_count();
+        if line_count == 0 {
+            return Ok(CommandResult::Success);
+        }
+
+        let mut next: Vec<Selection> = Vec::with_capacity(selections.len());
+        for sel in selections {
+            let (min_pos, max_pos) = crate::selection_set::selection_min_max(&sel);
+            let mut start = min_pos;
+            let mut end = max_pos;
+
+            match direction {
+                ExpandSelectionDirection::Backward => {
+                    start = self.expand_position_by_unit(start, unit, count, direction);
+                }
+                ExpandSelectionDirection::Forward => {
+                    end = self.expand_position_by_unit(end, unit, count, direction);
+                }
+            }
+
+            next.push(Selection {
+                start,
+                end,
+                direction: SelectionDirection::Forward,
+            });
+        }
+
+        // Delegate to SetSelections so normalization rules are shared.
+        self.execute_cursor(CursorCommand::SetSelections {
+            selections: next,
+            primary_index,
+        })?;
+        Ok(CommandResult::Success)
+    }
+
+    fn expand_position_by_unit(
+        &self,
+        pos: Position,
+        unit: ExpandSelectionUnit,
+        count: usize,
+        direction: ExpandSelectionDirection,
+    ) -> Position {
+        match unit {
+            ExpandSelectionUnit::Character => self.expand_position_by_char(pos, count, direction),
+            ExpandSelectionUnit::Word => self.expand_position_by_word(pos, count, direction),
+            ExpandSelectionUnit::Line => self.expand_position_by_line(pos, count, direction),
+        }
+    }
+
+    fn expand_position_by_char(
+        &self,
+        pos: Position,
+        count: usize,
+        direction: ExpandSelectionDirection,
+    ) -> Position {
+        let line_index = &self.editor.line_index;
+        let mut offset = line_index.position_to_char_offset(pos.line, pos.column);
+        let char_count = self.editor.char_count();
+
+        offset = match direction {
+            ExpandSelectionDirection::Backward => offset.saturating_sub(count),
+            ExpandSelectionDirection::Forward => offset.saturating_add(count).min(char_count),
+        };
+
+        let (line, col) = line_index.char_offset_to_position(offset);
+        Position::new(line, col)
+    }
+
+    fn expand_position_by_line(
+        &self,
+        pos: Position,
+        count: usize,
+        direction: ExpandSelectionDirection,
+    ) -> Position {
+        let line_index = &self.editor.line_index;
+        let line_count = line_index.line_count();
+        if line_count == 0 {
+            return Position::new(0, 0);
+        }
+
+        let mut line = pos.line.min(line_count.saturating_sub(1));
+        line = match direction {
+            ExpandSelectionDirection::Backward => line.saturating_sub(count),
+            ExpandSelectionDirection::Forward => line.saturating_add(count),
+        };
+
+        if line >= line_count {
+            let line_text = line_index
+                .get_line_text(line_count.saturating_sub(1))
+                .unwrap_or_default();
+            return Position::new(line_count.saturating_sub(1), line_text.chars().count());
+        }
+
+        Position::new(line, 0)
+    }
+
+    fn expand_position_by_word(
+        &self,
+        mut pos: Position,
+        count: usize,
+        direction: ExpandSelectionDirection,
+    ) -> Position {
+        for _ in 0..count {
+            let next = match direction {
+                ExpandSelectionDirection::Backward => self.prev_word_boundary_position(pos),
+                ExpandSelectionDirection::Forward => self.next_word_boundary_position(pos),
+            };
+            if next == pos {
+                break;
+            }
+            pos = next;
+        }
+        pos
+    }
+
+    fn next_word_boundary_position(&self, pos: Position) -> Position {
+        let line_index = &self.editor.line_index;
+        let line_count = line_index.line_count();
+        if line_count == 0 {
+            return Position::new(0, 0);
+        }
+
+        let mut line = pos.line.min(line_count.saturating_sub(1));
+        let mut col = pos.column;
+
+        loop {
+            let line_text = line_index.get_line_text(line).unwrap_or_default();
+            let chars: Vec<char> = line_text.chars().collect();
+            let len = chars.len();
+            col = col.min(len);
+
+            // Find next token start (a "word unit") in this line.
+            let mut i = col;
+            while i < len && !self.editor.word_boundary.is_word_token_char(chars[i]) {
+                i += 1;
+            }
+
+            if i < len {
+                // Consume one token.
+                if chars[i].is_ascii() && self.editor.word_boundary.is_ascii_word_char(chars[i]) {
+                    let mut end = i + 1;
+                    while end < len
+                        && chars[end].is_ascii()
+                        && self.editor.word_boundary.is_ascii_word_char(chars[end])
+                    {
+                        end += 1;
+                    }
+                    return Position::new(line, end);
+                }
+                return Position::new(line, i + 1);
+            }
+
+            // No token on this line - move to next line.
+            if line + 1 >= line_count {
+                return Position::new(line, len);
+            }
+            line += 1;
+            col = 0;
+        }
+    }
+
+    fn prev_word_boundary_position(&self, pos: Position) -> Position {
+        let line_index = &self.editor.line_index;
+        let line_count = line_index.line_count();
+        if line_count == 0 {
+            return Position::new(0, 0);
+        }
+
+        let mut line = pos.line.min(line_count.saturating_sub(1));
+        let mut col = pos.column;
+
+        loop {
+            let line_text = line_index.get_line_text(line).unwrap_or_default();
+            let chars: Vec<char> = line_text.chars().collect();
+            let len = chars.len();
+            col = col.min(len);
+
+            if col == 0 {
+                if line == 0 {
+                    return Position::new(0, 0);
+                }
+                line -= 1;
+                col = usize::MAX;
+                continue;
+            }
+
+            let mut i = col.saturating_sub(1).min(len.saturating_sub(1));
+            while i < len && !self.editor.word_boundary.is_word_token_char(chars[i]) {
+                if i == 0 {
+                    break;
+                }
+                i -= 1;
+            }
+
+            if self.editor.word_boundary.is_word_token_char(chars[i]) {
+                // If ASCII word token, walk to token start.
+                if chars[i].is_ascii() && self.editor.word_boundary.is_ascii_word_char(chars[i]) {
+                    while i > 0
+                        && chars[i - 1].is_ascii()
+                        && self.editor.word_boundary.is_ascii_word_char(chars[i - 1])
+                    {
+                        i -= 1;
+                    }
+                    return Position::new(line, i);
+                }
+                return Position::new(line, i);
+            }
+
+            // No token found on this line - move to previous line.
+            if line == 0 {
+                return Position::new(0, 0);
+            }
+            line -= 1;
+            col = usize::MAX;
         }
     }
 
@@ -5139,7 +7380,7 @@ impl CommandExecutor {
             .get_line_text(caret.line)
             .unwrap_or_default();
         let col = caret.column.min(line_text.chars().count());
-        let (start_col, end_col) = Self::word_range_in_line(&line_text, col)?;
+        let (start_col, end_col) = self.word_token_range_in_line(&line_text, col)?;
         if start_col == end_col {
             return None;
         }
@@ -5508,6 +7749,8 @@ impl CommandExecutor {
         start: usize,
         length: usize,
         text: String,
+        coalesce_undo: bool,
+        selection_after: Option<(usize, usize)>,
     ) -> Result<CommandResult, CommandError> {
         let before_char_count = self.editor.piece_table.char_count();
         let max_offset = self.editor.piece_table.char_count();
@@ -5582,6 +7825,40 @@ impl CommandExecutor {
         // Ensure cursor/selection still valid.
         self.normalize_cursor_and_selection();
 
+        // Optional: set selection/caret as part of this edit command (so hosts can update IME
+        // preedit selection without breaking the undo group via a separate cursor command).
+        if let Some((mut sel_start_off, mut sel_end_off)) = selection_after {
+            let doc_char_count = self.editor.piece_table.char_count();
+            sel_start_off = sel_start_off.min(doc_char_count);
+            sel_end_off = sel_end_off.min(doc_char_count);
+
+            let (a_line, a_col) = self
+                .editor
+                .line_index
+                .char_offset_to_position(sel_start_off);
+            let (b_line, b_col) = self.editor.line_index.char_offset_to_position(sel_end_off);
+
+            let start_pos = Position::new(a_line, a_col);
+            let end_pos = Position::new(b_line, b_col);
+
+            self.editor.cursor_position = end_pos;
+            self.editor.secondary_selections.clear();
+            if sel_start_off == sel_end_off {
+                self.editor.selection = None;
+            } else {
+                self.editor.selection = Some(Selection {
+                    start: start_pos,
+                    end: end_pos,
+                    direction: crate::selection_set::selection_direction(start_pos, end_pos),
+                });
+            }
+
+            self.preferred_x_cells = self
+                .editor
+                .logical_position_to_visual(end_pos.line, end_pos.column)
+                .map(|(_, x)| x);
+        }
+
         let after_selection = self.snapshot_selection_set();
 
         let step = UndoStep {
@@ -5595,7 +7872,7 @@ impl CommandExecutor {
             before_selection,
             after_selection,
         };
-        let group_id = self.undo_redo.push_step(step, false);
+        let group_id = self.undo_redo.push_step(step, coalesce_undo);
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
@@ -6473,7 +8750,23 @@ impl CommandExecutor {
                 }
             } else {
                 let caret_offset = self.position_to_char_offset_clamped(selection.end);
-                if forward {
+                let maybe_pair_delete = (self.auto_pairs.enabled && self.auto_pairs.delete_pair)
+                    .then(|| {
+                        if caret_offset == 0 || caret_offset >= doc_char_count {
+                            return None;
+                        }
+
+                        let open = self.editor.line_index.char_at(caret_offset - 1)?;
+                        let close = self.editor.line_index.char_at(caret_offset)?;
+                        self.auto_pairs
+                            .is_matching_pair(open, close)
+                            .then_some((caret_offset - 1, (caret_offset + 1).min(doc_char_count)))
+                    })
+                    .flatten();
+
+                if let Some(range) = maybe_pair_delete {
+                    range
+                } else if forward {
                     if caret_offset >= doc_char_count {
                         (caret_offset, caret_offset)
                     } else {
@@ -7259,6 +9552,11 @@ impl CommandExecutor {
             CursorCommand::SelectLine => self.execute_select_line_command(),
             CursorCommand::SelectWord => self.execute_select_word_command(),
             CursorCommand::ExpandSelection => self.execute_expand_selection_command(),
+            CursorCommand::ExpandSelectionBy {
+                unit,
+                count,
+                direction,
+            } => self.execute_expand_selection_by_command(unit, count, direction),
             CursorCommand::AddCursorAbove => self.execute_add_cursor_vertical_command(true),
             CursorCommand::AddCursorBelow => self.execute_add_cursor_vertical_command(false),
             CursorCommand::AddNextOccurrence { options } => {
@@ -7266,6 +9564,13 @@ impl CommandExecutor {
             }
             CursorCommand::AddAllOccurrences { options } => {
                 self.execute_add_all_occurrences_command(options)
+            }
+            CursorCommand::MoveToMatchingBracket => self.execute_move_to_matching_bracket_command(),
+            CursorCommand::SnippetNextPlaceholder => {
+                self.execute_snippet_navigation_command(true)
+            }
+            CursorCommand::SnippetPrevPlaceholder => {
+                self.execute_snippet_navigation_command(false)
             }
             CursorCommand::FindNext { query, options } => {
                 self.execute_find_command(query, options, true)
@@ -7310,6 +9615,27 @@ impl CommandExecutor {
             }
             ViewCommand::SetTabKeyBehavior { behavior } => {
                 self.tab_key_behavior = behavior;
+                Ok(CommandResult::Success)
+            }
+            ViewCommand::SetIndentationConfig { config } => {
+                self.indentation_config = config;
+                Ok(CommandResult::Success)
+            }
+            ViewCommand::SetAutoPairsConfig { config } => {
+                self.set_auto_pairs_config(config);
+                Ok(CommandResult::Success)
+            }
+            ViewCommand::SetAutoPairsEnabled { enabled } => {
+                self.set_auto_pairs_enabled(enabled);
+                Ok(CommandResult::Success)
+            }
+            ViewCommand::SetWordBoundaryAsciiBoundaryChars { boundary_chars } => {
+                self.editor
+                    .set_word_boundary_ascii_boundary_chars(&boundary_chars);
+                Ok(CommandResult::Success)
+            }
+            ViewCommand::ResetWordBoundaryDefaults => {
+                self.editor.reset_word_boundary_defaults();
                 Ok(CommandResult::Success)
             }
             ViewCommand::ScrollTo { line } => {
@@ -7375,6 +9701,12 @@ impl CommandExecutor {
             StyleCommand::UnfoldAll => {
                 self.editor.folding_manager.expand_all();
                 Ok(CommandResult::Success)
+            }
+            StyleCommand::UpdateBracketMatchHighlights => {
+                self.execute_update_bracket_match_highlights_command()
+            }
+            StyleCommand::ClearBracketMatchHighlights => {
+                self.execute_clear_bracket_match_highlights_command()
             }
         }
     }

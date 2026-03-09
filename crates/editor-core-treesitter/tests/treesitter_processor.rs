@@ -90,3 +90,185 @@ fn test_processor_uses_text_delta_incrementally() {
     );
     assert!(!edits.is_empty());
 }
+
+#[test]
+fn test_process_text_api_supports_incremental_and_full_resync() {
+    let initial = "fn main() {\n  let x = 1;\n}\n";
+
+    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
+        .with_folds_query(rust_test_folds_query())
+        .with_simple_capture_styles([("comment", 1), ("string", 2), ("type", 3), ("function", 4)]);
+
+    let mut processor = TreeSitterProcessor::new(config).unwrap();
+
+    let edits1 = processor.process_text(1, None, Some(initial)).unwrap();
+    assert_eq!(processor.last_update_mode(), TreeSitterUpdateMode::Initial);
+    assert!(!edits1.is_empty());
+
+    let insert = "// header\n";
+    let delta = editor_core::delta::TextDelta {
+        before_char_count: initial.chars().count(),
+        after_char_count: initial.chars().count() + insert.chars().count(),
+        edits: vec![editor_core::delta::TextDeltaEdit {
+            start: 0,
+            deleted_text: String::new(),
+            inserted_text: insert.to_string(),
+        }],
+        undo_group_id: None,
+    };
+
+    let edits2 = processor.process_text(2, Some(&delta), None).unwrap();
+    assert_eq!(
+        processor.last_update_mode(),
+        TreeSitterUpdateMode::Incremental
+    );
+    assert!(!edits2.is_empty());
+
+    // Corrupt delta should surface as a mismatch unless the caller provides a full resync text.
+    let bad_delta = editor_core::delta::TextDelta {
+        before_char_count: delta.after_char_count,
+        after_char_count: delta.after_char_count,
+        edits: vec![editor_core::delta::TextDeltaEdit {
+            start: 0,
+            deleted_text: "not-a-match".to_string(),
+            inserted_text: String::new(),
+        }],
+        undo_group_id: None,
+    };
+    assert!(matches!(
+        processor.process_text(3, Some(&bad_delta), None),
+        Err(editor_core_treesitter::TreeSitterError::DeltaMismatch)
+    ));
+
+    let full = format!("{insert}{initial}");
+    let edits3 = processor
+        .process_text(3, Some(&bad_delta), Some(&full))
+        .unwrap();
+    assert_eq!(
+        processor.last_update_mode(),
+        TreeSitterUpdateMode::FullReparse
+    );
+    assert!(!edits3.is_empty());
+}
+
+#[test]
+fn test_sync_to_and_compute_edits_supports_debounced_query_and_char_range() {
+    let text = "// a\nfn main() {\n  let x = 1;\n}\n// b\n";
+
+    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
+        .with_folds_query(rust_test_folds_query())
+        .with_simple_capture_styles([
+            ("comment", 10),
+            ("string", 11),
+            ("type", 12),
+            ("function", 13),
+        ]);
+
+    let mut processor = TreeSitterProcessor::new(config).unwrap();
+
+    let mode0 = processor.sync_to(1, None, Some(text)).unwrap();
+    assert_eq!(mode0, TreeSitterUpdateMode::Initial);
+    assert_eq!(processor.last_update_mode(), TreeSitterUpdateMode::Initial);
+
+    // Debounced model: sync first, query later. Use a range-limited query (first line only).
+    let end_first_line = text.find('\n').unwrap_or(0) + 1;
+    let edits = processor
+        .compute_processing_edits(Some((0, end_first_line)))
+        .unwrap();
+    let style_edits = edits
+        .iter()
+        .filter_map(|e| match e {
+            ProcessingEdit::ReplaceStyleLayer { intervals, .. } => Some(intervals.as_slice()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(style_edits.len(), 1);
+    for interval in style_edits[0] {
+        assert!(interval.end <= end_first_line);
+    }
+
+    // Already processed version 1, so compute again should yield empty edits.
+    assert!(processor.compute_processing_edits(None).unwrap().is_empty());
+
+    // Make a tiny edit to bump to version 2 and re-run query within a range.
+    let delta = editor_core::delta::TextDelta {
+        before_char_count: text.chars().count(),
+        after_char_count: text.chars().count() + 1,
+        edits: vec![editor_core::delta::TextDeltaEdit {
+            start: 0,
+            deleted_text: String::new(),
+            inserted_text: " ".to_string(),
+        }],
+        undo_group_id: None,
+    };
+    let mode1 = processor.sync_to(2, Some(&delta), None).unwrap();
+    assert_eq!(mode1, TreeSitterUpdateMode::Incremental);
+
+    let edits2 = processor
+        .compute_processing_edits(Some((0, end_first_line + 1)))
+        .unwrap();
+    let style_edits2 = edits2
+        .iter()
+        .filter_map(|e| match e {
+            ProcessingEdit::ReplaceStyleLayer { intervals, .. } => Some(intervals.as_slice()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(style_edits2.len(), 1);
+    for interval in style_edits2[0] {
+        assert!(interval.end <= end_first_line + 1);
+    }
+}
+
+#[test]
+fn test_expand_selection_syntax_expands_identifier_then_function_item() {
+    let text = include_str!("fixtures/rust_sample.rs");
+    let state = EditorStateManager::new(text, 80);
+
+    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
+        .with_folds_query(rust_test_folds_query())
+        .with_simple_capture_styles([("comment", 1), ("string", 2), ("type", 3), ("function", 4)]);
+
+    let mut processor = TreeSitterProcessor::new(config).unwrap();
+    let _ = processor.process(&state).unwrap();
+
+    let add_start = char_offset_of(text, "add");
+    let caret = add_start + 1; // inside identifier
+
+    let (s1, e1) = processor
+        .expand_selection_syntax(caret, caret)
+        .expect("should expand");
+    assert_eq!(slice_chars(text, s1, e1), "add");
+
+    let (s2, e2) = processor
+        .expand_selection_syntax(s1, e1)
+        .expect("should expand again");
+    let expanded = slice_chars(text, s2, e2);
+    assert!(expanded.contains("fn add("));
+    assert!(expanded.contains("a + b"));
+}
+
+#[test]
+fn test_expand_selection_syntax_returns_none_when_already_at_root() {
+    let text = include_str!("fixtures/rust_sample.rs");
+    let state = EditorStateManager::new(text, 80);
+
+    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
+        .with_folds_query(rust_test_folds_query())
+        .with_simple_capture_styles([("comment", 1)]);
+
+    let mut processor = TreeSitterProcessor::new(config).unwrap();
+    let _ = processor.process(&state).unwrap();
+
+    let len = text.chars().count();
+    assert!(processor.expand_selection_syntax(0, len).is_none());
+}
+
+fn char_offset_of(text: &str, needle: &str) -> usize {
+    let byte = text.find(needle).expect("needle not found");
+    text[..byte].chars().count()
+}
+
+fn slice_chars(text: &str, start: usize, end: usize) -> String {
+    text.chars().skip(start).take(end.saturating_sub(start)).collect()
+}

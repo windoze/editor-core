@@ -1,7 +1,11 @@
-use editor_core::{DecorationKind, DecorationLayerId, DecorationPlacement, LineIndex};
+use editor_core::{
+    CODE_LENS_STYLE_ID, DOCUMENT_LINK_STYLE_ID, DecorationKind, DecorationLayerId,
+    DecorationPlacement, LineIndex, StyleLayerId,
+};
 use editor_core_lsp::{
     lsp_code_lens_to_decorations, lsp_code_lens_to_processing_edit,
     lsp_document_links_to_decorations, lsp_document_links_to_processing_edit,
+    lsp_document_links_to_processing_edits, lsp_document_links_to_style_intervals,
 };
 use serde_json::json;
 
@@ -36,6 +40,29 @@ fn test_document_links_convert_utf16_ranges_to_char_offsets() {
         }
         other => panic!("unexpected edit: {:?}", other),
     }
+
+    let intervals = lsp_document_links_to_style_intervals(&line_index, &result);
+    assert_eq!(intervals.len(), 1);
+    assert_eq!(intervals[0].start, 2);
+    assert_eq!(intervals[0].end, 3);
+    assert_eq!(intervals[0].style_id, DOCUMENT_LINK_STYLE_ID);
+
+    let edits = lsp_document_links_to_processing_edits(&line_index, &result);
+    assert_eq!(edits.len(), 2);
+    assert!(edits.iter().any(|e| matches!(
+        e,
+        editor_core::ProcessingEdit::ReplaceDecorations {
+            layer: DecorationLayerId::DOCUMENT_LINKS,
+            ..
+        }
+    )));
+    assert!(edits.iter().any(|e| matches!(
+        e,
+        editor_core::ProcessingEdit::ReplaceStyleLayer {
+            layer: StyleLayerId::DOCUMENT_LINKS,
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -56,6 +83,7 @@ fn test_code_lens_maps_to_above_line_decorations() {
     assert_eq!(deco.kind, DecorationKind::CodeLens);
     assert_eq!(deco.placement, DecorationPlacement::AboveLine);
     assert_eq!(deco.text.as_deref(), Some("Run tests"));
+    assert_eq!(deco.styles, vec![CODE_LENS_STYLE_ID]);
 
     let expected_offset = line_index.position_to_char_offset(1, 0);
     assert_eq!(deco.range.start, expected_offset);

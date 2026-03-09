@@ -4,9 +4,11 @@
 //! to bridge common LSP "virtual text" features into `editor-core`'s decoration model.
 
 use crate::lsp_sync::{LspCoordinateConverter, LspPosition};
+use editor_core::intervals::Interval;
 use editor_core::processing::ProcessingEdit;
 use editor_core::{
-    Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange, LineIndex,
+    CODE_LENS_STYLE_ID, DOCUMENT_LINK_STYLE_ID, Decoration, DecorationKind, DecorationLayerId,
+    DecorationPlacement, DecorationRange, INLAY_HINT_STYLE_ID, LineIndex, StyleLayerId,
 };
 use serde_json::Value;
 
@@ -110,7 +112,7 @@ pub fn lsp_inlay_hints_to_decorations(line_index: &LineIndex, result: &Value) ->
             placement: DecorationPlacement::After,
             kind: DecorationKind::InlayHint,
             text: if label.is_empty() { None } else { Some(label) },
-            styles: Vec::new(),
+            styles: vec![INLAY_HINT_STYLE_ID],
             tooltip,
             data_json: Some(hint.to_string()),
         });
@@ -167,6 +169,33 @@ pub fn lsp_document_links_to_decorations(
     out
 }
 
+/// Convert an LSP `textDocument/documentLink` result payload into style intervals.
+///
+/// This is used for rendering (e.g. underline) in `StyleLayerId::DOCUMENT_LINKS`.
+pub fn lsp_document_links_to_style_intervals(
+    line_index: &LineIndex,
+    result: &Value,
+) -> Vec<Interval> {
+    let Some(links) = result.as_array() else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::<Interval>::with_capacity(links.len());
+    for link in links {
+        let Some(range_value) = link.get("range") else {
+            continue;
+        };
+        let Some((start, end)) = char_offsets_for_lsp_range(line_index, range_value) else {
+            continue;
+        };
+        if start == end {
+            continue;
+        }
+        out.push(Interval::new(start, end, DOCUMENT_LINK_STYLE_ID));
+    }
+    out
+}
+
 /// Convert document links into a single processing edit that replaces the `DOCUMENT_LINKS` layer.
 pub fn lsp_document_links_to_processing_edit(
     line_index: &LineIndex,
@@ -176,6 +205,25 @@ pub fn lsp_document_links_to_processing_edit(
         layer: DecorationLayerId::DOCUMENT_LINKS,
         decorations: lsp_document_links_to_decorations(line_index, result),
     }
+}
+
+/// Convert document links into processing edits for both:
+/// - decorations (payload / click targets)
+/// - style intervals (rendering underline)
+pub fn lsp_document_links_to_processing_edits(
+    line_index: &LineIndex,
+    result: &Value,
+) -> Vec<ProcessingEdit> {
+    vec![
+        ProcessingEdit::ReplaceDecorations {
+            layer: DecorationLayerId::DOCUMENT_LINKS,
+            decorations: lsp_document_links_to_decorations(line_index, result),
+        },
+        ProcessingEdit::ReplaceStyleLayer {
+            layer: StyleLayerId::DOCUMENT_LINKS,
+            intervals: lsp_document_links_to_style_intervals(line_index, result),
+        },
+    ]
 }
 
 /// Convert an LSP `textDocument/codeLens` result payload (`CodeLens[] | null`) into decorations.
@@ -212,7 +260,7 @@ pub fn lsp_code_lens_to_decorations(line_index: &LineIndex, result: &Value) -> V
             placement: DecorationPlacement::AboveLine,
             kind: DecorationKind::CodeLens,
             text: Some(title),
-            styles: Vec::new(),
+            styles: vec![CODE_LENS_STYLE_ID],
             tooltip: None,
             data_json: Some(lens.to_string()),
         });

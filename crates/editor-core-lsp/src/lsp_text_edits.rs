@@ -196,6 +196,72 @@ pub fn workspace_edit_text_edits(workspace_edit: &Value) -> HashMap<String, Vec<
     out
 }
 
+/// Summary of a `WorkspaceEdit` payload for UI previews.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceEditSummary {
+    /// Per-document summaries, sorted by URI.
+    pub documents: Vec<WorkspaceEditDocumentSummary>,
+}
+
+/// Summary of edits for a single document URI within a `WorkspaceEdit`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceEditDocumentSummary {
+    /// Document URI.
+    pub uri: String,
+    /// Number of text edits targeting this URI.
+    pub edit_count: usize,
+    /// Whether any edits overlap in (line,character) space.
+    ///
+    /// Overlapping edits are not expected in well-formed LSP `WorkspaceEdit` payloads, but some
+    /// servers can emit them. UIs can treat this as a "potential conflict" signal.
+    pub has_overlapping_edits: bool,
+}
+
+fn pos_key(pos: LspPosition) -> (u32, u32) {
+    (pos.line, pos.character)
+}
+
+fn range_overlaps(a: &LspRange, b: &LspRange) -> bool {
+    let a0 = pos_key(a.start);
+    let a1 = pos_key(a.end);
+    let b0 = pos_key(b.start);
+    let b1 = pos_key(b.end);
+
+    // Treat ranges as half-open [start,end).
+    a0 < b1 && b0 < a1
+}
+
+fn has_overlapping_edits(edits: &[LspTextEdit]) -> bool {
+    if edits.len() < 2 {
+        return false;
+    }
+
+    let mut sorted = edits.to_vec();
+    sorted.sort_by_key(|e| pos_key(e.range.start));
+
+    for i in 1..sorted.len() {
+        if range_overlaps(&sorted[i - 1].range, &sorted[i].range) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Summarize a `WorkspaceEdit` payload (`WorkspaceEdit | null`) for previewing.
+pub fn summarize_workspace_edit(workspace_edit: &Value) -> WorkspaceEditSummary {
+    let by_uri = workspace_edit_text_edits(workspace_edit);
+    let mut documents = by_uri
+        .into_iter()
+        .map(|(uri, edits)| WorkspaceEditDocumentSummary {
+            uri,
+            edit_count: edits.len(),
+            has_overlapping_edits: has_overlapping_edits(&edits),
+        })
+        .collect::<Vec<_>>();
+    documents.sort_by(|a, b| a.uri.cmp(&b.uri));
+    WorkspaceEditSummary { documents }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,5 +289,22 @@ mod tests {
         assert_eq!(by_uri.len(), 2);
         assert_eq!(by_uri.get("file:///a").unwrap().len(), 1);
         assert_eq!(by_uri.get("file:///b").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_summarize_workspace_edit_flags_overlapping_ranges() {
+        let edit = json!({
+            "changes": {
+                "file:///a": [
+                    { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } }, "newText": "X" },
+                    { "range": { "start": { "line": 0, "character": 1 }, "end": { "line": 0, "character": 3 } }, "newText": "Y" }
+                ]
+            }
+        });
+
+        let summary = summarize_workspace_edit(&edit);
+        assert_eq!(summary.documents.len(), 1);
+        assert_eq!(summary.documents[0].uri, "file:///a");
+        assert!(summary.documents[0].has_overlapping_edits);
     }
 }

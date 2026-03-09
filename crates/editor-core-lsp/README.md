@@ -14,17 +14,28 @@ requirements, and a small dependency surface.
   - stable style id encoding/decoding helpers
   - `SemanticTokensManager` for relative→absolute conversion
 - **Workspace edit helpers**: parse/apply `TextEdit` / `WorkspaceEdit` shapes using `serde_json::Value`.
+- **Typed payload parsers** (still `serde_json::Value` input, no `lsp-types`):
+  - hover (`textDocument/hover`) → `LspHover` (markdown-ish rendering helper)
+  - signature help (`textDocument/signatureHelp`) → `LspSignatureHelp`
+  - code actions (`textDocument/codeAction`) → `LspCodeActionItem` / apply plan extraction
+  - call hierarchy (`textDocument/prepareCallHierarchy`, `callHierarchy/*`) → `editor_core::HierarchyItem` + call edge models
+  - type hierarchy (`textDocument/prepareTypeHierarchy`, `typeHierarchy/*`) → `editor_core::HierarchyItem`
+- **Workspace edit preview helpers**:
+  - `summarize_workspace_edit(...)` for basic preview/conflict signals (overlapping edits)
 - **Common UX bridges** (LSP → kernel derived state):
   - document highlights → `ProcessingEdit::ReplaceStyleLayer` (`StyleLayerId::DOCUMENT_HIGHLIGHTS`)
   - document links → `ProcessingEdit::ReplaceDecorations` (`DecorationLayerId::DOCUMENT_LINKS`)
   - code lens → `ProcessingEdit::ReplaceDecorations` (`DecorationLayerId::CODE_LENS`)
-  - completion apply helpers: batch `additionalTextEdits` and best-effort snippet downgrade
+  - completion apply helpers: batch `additionalTextEdits` and apply snippet inserts
+    (`insertTextFormat == 2`) via `editor-core`’s snippet engine (placeholders + tabstop navigation)
 - **Symbols/outline helpers**:
   - document symbols (`textDocument/documentSymbol`) → `DocumentOutline` / `ProcessingEdit::ReplaceDocumentSymbols`
   - workspace symbols (`workspace/symbol`) → `Vec<WorkspaceSymbol>`
 - **Stdio JSON-RPC client** (`LspClient`) for driving an LSP server process.
 - **High-level session wrapper** (`LspSession`) that polls messages, emits typed events, and produces
   derived-state edits (`ProcessingEdit`) for the editor.
+  - Includes a small blocking helper `LspSession::wait_for_response(...)` for explicit user actions
+    (formatting/rename/code actions), when appropriate.
 
 ## Design overview
 
@@ -154,6 +165,11 @@ with `LspWorkspaceSync` (from `crates/editor-core-lsp/src/workspace_sync.rs`):
   - route `publishDiagnostics` into the correct buffer by URI
 - For server-driven multi-file edits, call
   `LspWorkspaceSync::apply_workspace_edit(&mut workspace, &workspace_edit_value)`.
+  - Note: `poll_workspace()` also automatically handles server->client `workspace/applyEdit`
+    requests by applying their `WorkspaceEdit` payload into the workspace and responding with
+    `{ applied: true/false }` (best-effort; unknown URIs are reported as skipped).
+    - Disable this behavior via `LspWorkspaceSync::set_auto_apply_workspace_edits(false)` and
+      handle deferred requests from `LspWorkspaceSync::drain_events()`.
 
 ## Notes
 

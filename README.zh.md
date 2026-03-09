@@ -17,9 +17,12 @@
 
 - `crates/editor-core/` — 核心无头编辑器引擎（`PieceTable`、`LineIndex`、`LayoutEngine`、快照、命令/状态）。
   - 参见 `crates/editor-core/README.md`
+- `crates/editor-core-diff/` — 基于行的 diff + hunk 原语（可用于“修改行”侧边栏标记和 diff 视图）。
 - `crates/editor-core-lang/` — 轻量级语言配置（例如注释 token），用于驱动内核功能。
 - `crates/editor-core-lsp/` — LSP 集成（UTF-16 转换、语义 token 解码、stdio JSON-RPC 客户端/会话）。
   - 参见 `crates/editor-core-lsp/README.md`
+- `crates/editor-core-app/` — UI 无关的“编辑器应用壳层”辅助模块（工作区文件索引、文件浏览器辅助、会话/最近文件、设置系统、Find-in-Files）。
+  - 参见 `crates/editor-core-app/README.md`
 - `crates/editor-core-ffi/` — 面向 Swift/C++/C# 等原生宿主的 C ABI 桥接层（高频 typed API + 二进制视口快照 + JSON 控制平面）。
   - 参见 `crates/editor-core-ffi/README.md` 与 `docs/abi-v1-draft.md`
 - `crates/editor-core-sublime/` — `.sublime-syntax` 高亮 + 折叠引擎（以样式区间 + 折叠区域形式输出无头数据）。
@@ -93,6 +96,19 @@ cargo test -p editor-core --test integration_test
 
 ```bash
 cargo run -p tui-editor -- crates/editor-core/tests/fixtures/demo_file.txt
+```
+
+TUI 演示同时导出一个便于 `$EDITOR` 工作流的 `editor` 二进制名：
+
+```bash
+cargo run -p tui-editor --bin editor -- crates/editor-core/tests/fixtures/demo_file.txt
+```
+
+可选的“打开到指定位置”参数：
+
+```bash
+cargo run -p tui-editor --bin editor -- --line 10 --column 5 foo.rs
+cargo run -p tui-editor --bin editor -- foo.rs:10:5
 ```
 
 TUI 演示支持：

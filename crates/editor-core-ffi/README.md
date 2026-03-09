@@ -56,6 +56,26 @@ int32_t editor_core_ffi_editor_move_to(EcfEditorState* s, uint32_t line, uint32_
 int32_t editor_core_ffi_editor_backspace(EcfEditorState* s);
 ```
 
+Workspace typed helpers (beyond the per-keystroke hot path):
+
+```c
+int32_t editor_core_ffi_workspace_open_buffer_typed(
+    EcfWorkspace* w,
+    const char* uri,  /* nullable */
+    const char* text,
+    size_t viewport_width,
+    EcfOpenBufferResult* out_result);
+
+int32_t editor_core_ffi_workspace_get_info(
+    const EcfWorkspace* w,
+    EcfWorkspaceInfo* out_info);
+
+int32_t editor_core_ffi_workspace_get_viewport_state(
+    EcfWorkspace* w,
+    uint64_t view_id,
+    EcfWorkspaceViewportState* out_state);
+```
+
 Binary viewport snapshot (two-call pattern):
 
 ```c
@@ -132,6 +152,11 @@ Artifacts are emitted as `cdylib` + `staticlib` + `rlib`.
 Public C declarations are available at:
 
 - `crates/editor-core-ffi/include/editor_core_ffi.h`
+
+Packaging/distribution notes (headers + libs layout, platform link deps):
+
+- `docs/FFI-PACKAGING.md`
+- `cargo run -p editor-core-dist -- ffi --out dist/ffi --profile release --mode static`
 
 ABI draft/design notes:
 

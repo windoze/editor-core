@@ -1,4 +1,4 @@
-use editor_core::{Command, EditCommand, EditorStateManager, LineEnding};
+use editor_core::{Command, EditCommand, EditorStateManager, LineEnding, Workspace};
 
 #[test]
 fn test_crlf_is_normalized_on_load_and_preserved_for_saving() {
@@ -36,4 +36,52 @@ fn test_cr_is_normalized_to_lf() {
     assert_eq!(manager.editor().get_text(), "a\nb");
     assert_eq!(manager.editor().line_index.get_line_text(0).unwrap(), "a");
     assert_eq!(manager.editor().line_index.get_line_text(1).unwrap(), "b");
+}
+
+#[test]
+fn workspace_crlf_is_normalized_on_load_and_preserved_for_saving() {
+    let mut ws = Workspace::new();
+    let opened = ws.open_buffer(None, "a\r\nb\r\n", 80).unwrap();
+
+    // Internal storage is LF-only.
+    assert_eq!(ws.buffer_text(opened.buffer_id).unwrap(), "a\nb\n");
+
+    // Preferred line ending is detected from the original input.
+    assert_eq!(
+        ws.line_ending_for_buffer(opened.buffer_id).unwrap(),
+        LineEnding::Crlf
+    );
+
+    // Saving should round-trip to CRLF.
+    assert_eq!(
+        ws.buffer_text_for_saving(opened.buffer_id).unwrap(),
+        "a\r\nb\r\n"
+    );
+
+    // View-based helpers should match.
+    assert_eq!(
+        ws.line_ending_for_view(opened.view_id).unwrap(),
+        LineEnding::Crlf
+    );
+    assert_eq!(
+        ws.text_for_saving_for_view(opened.view_id).unwrap(),
+        "a\r\nb\r\n"
+    );
+}
+
+#[test]
+fn workspace_can_override_line_ending_for_saving() {
+    let mut ws = Workspace::new();
+    let opened = ws.open_buffer(None, "a\nb\n", 80).unwrap();
+    assert_eq!(
+        ws.line_ending_for_buffer(opened.buffer_id).unwrap(),
+        LineEnding::Lf
+    );
+
+    ws.set_line_ending_for_buffer(opened.buffer_id, LineEnding::Crlf)
+        .unwrap();
+    assert_eq!(
+        ws.buffer_text_for_saving(opened.buffer_id).unwrap(),
+        "a\r\nb\r\n"
+    );
 }
