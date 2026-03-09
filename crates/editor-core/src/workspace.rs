@@ -684,6 +684,20 @@ impl Workspace {
         Ok(())
     }
 
+    /// Return all open buffer ids in deterministic order.
+    pub fn buffer_ids(&self) -> Vec<BufferId> {
+        let mut ids: Vec<BufferId> = self.buffers.keys().copied().collect();
+        ids.sort_by_key(|id| id.get());
+        ids
+    }
+
+    /// Return all open view ids in deterministic order.
+    pub fn view_ids(&self) -> Vec<ViewId> {
+        let mut ids: Vec<ViewId> = self.views.keys().copied().collect();
+        ids.sort_by_key(|id| id.get());
+        ids
+    }
+
     /// Create a new view into an existing buffer.
     pub fn create_view(
         &mut self,

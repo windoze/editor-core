@@ -119,6 +119,23 @@ fn test_workspace_dirty_tracking_and_mark_saved() {
 }
 
 #[test]
+fn test_workspace_buffer_ids_and_view_ids_are_deterministic() {
+    let mut ws = Workspace::new();
+    let a = ws.open_buffer(Some("file:///a.txt".to_string()), "a", 80).unwrap();
+    let b = ws.open_buffer(Some("file:///b.txt".to_string()), "b", 80).unwrap();
+
+    // Deterministic ordering (by raw id).
+    assert_eq!(ws.buffer_ids(), vec![a.buffer_id, b.buffer_id]);
+    assert_eq!(ws.view_ids(), vec![a.view_id, b.view_id]);
+
+    // Creating another view should extend view ids.
+    let v2 = ws.create_view(a.buffer_id, 80).unwrap();
+    let mut view_ids = ws.view_ids();
+    view_ids.sort_by_key(|id| id.get());
+    assert!(view_ids.contains(&v2));
+}
+
+#[test]
 fn test_workspace_cursor_state_for_view_matches_editor_state_manager_semantics() {
     let mut ws = Workspace::new();
     let OpenBufferResult { view_id, .. } = ws.open_buffer(None, "abc\ndef", 80).unwrap();
