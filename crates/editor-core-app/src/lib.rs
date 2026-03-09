@@ -14,6 +14,7 @@ mod file_explorer;
 mod file_io;
 mod find_in_files;
 mod session;
+mod status_bar;
 mod workspace_io;
 mod workspace_index;
 
@@ -28,6 +29,7 @@ pub use session::{
     AppSession, AppSessionError, BufferSnapshot, HotExitSnapshot, ViewSnapshot, load_session_json,
     save_session_json,
 };
+pub use status_bar::{StatusBarError, StatusBarInfo, status_bar_info};
 pub use workspace_io::{
     SaveAllResult, WorkspaceIo, WorkspaceIoError, open_file_into_workspace,
 };
