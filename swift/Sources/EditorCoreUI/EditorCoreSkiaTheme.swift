@@ -77,7 +77,7 @@ public struct EditorCoreSkiaTheme: Equatable {
 
     /// Demo/默认：浅色主题。
     public static func defaultLight() -> Self {
-        Self(
+        var theme = Self(
             editorBackground: EcuRgba8(r: 0xFF, g: 0xFF, b: 0xFF, a: 0xFF),
             editorForeground: EcuRgba8(r: 0x11, g: 0x11, b: 0x11, a: 0xFF),
             selectionBackground: EcuRgba8(r: 0xC7, g: 0xDD, b: 0xFF, a: 0xFF),
@@ -88,6 +88,11 @@ public struct EditorCoreSkiaTheme: Equatable {
             foldMarkerCollapsed: EcuRgba8(r: 0x77, g: 0x77, b: 0x77, a: 0xFF),
             foldMarkerExpanded: EcuRgba8(r: 0xAA, g: 0xAA, b: 0xAA, a: 0xFF)
         )
+        // Cmd-hover clickable symbol affordance (underline only; color follows the resolved cell foreground).
+        theme.styleOverrides = [
+            .init(styleId: EditorCoreSkiaBuiltinStyleId.commandHoverLink, underline: .single)
+        ]
+        return theme
     }
 
     /// Demo：适合 Rust + LSP（semantic tokens / inlay hints / diagnostics）的深色主题。
@@ -134,6 +139,11 @@ public struct EditorCoreSkiaTheme: Equatable {
                 styleId: EditorCoreSkiaBuiltinStyleId.documentLink,
                 foreground: EcuRgba8(r: 0x4F, g: 0xC1, b: 0xFF, a: 0xFF),
                 underline: .double
+            ),
+            // Cmd-hover / clickable symbol affordance: underline only (do not force link-blue).
+            .init(
+                styleId: EditorCoreSkiaBuiltinStyleId.commandHoverLink,
+                underline: .single
             ),
             // Search match highlights.
             .init(
@@ -490,6 +500,8 @@ public enum EditorCoreSkiaBuiltinStyleId {
     public static let codeLens: UInt32 = 0x0800_0002
     public static let documentLink: UInt32 = 0x0800_0003
     public static let matchHighlight: UInt32 = 0x0800_0004
+    /// Host-only ephemeral underline used for Cmd-hover / “clickable symbol” affordances.
+    public static let commandHoverLink: UInt32 = 0x0800_0005
 
     /// LSP diagnostics style id encoding: `0x0400_0100 | severity(1..=4)`.
     public static func lspDiagnostic(severity: UInt32) -> UInt32 {

@@ -501,6 +501,13 @@ final class AttoEditorAreaViewController: NSViewController {
         editCore.editorView.onCommandClick = { [weak self] ctx in
             self?.handleCommandClick(ctx: ctx, tabID: tabId) ?? false
         }
+        editCore.editorView.onCommandHover = { [weak self] _ in
+            guard let self else { return false }
+            guard activeTab?.id == tabId else { return false }
+            guard let tab = activeTab else { return false }
+            // Only show Cmd-hover "clickable" affordance when Cmd-click is expected to resolve via LSP.
+            return (try? tab.editCore.editor.lspIsEnabled()) == true
+        }
         return tab
     }
 
@@ -591,6 +598,9 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         do {
+            // Ensure the new editor view has a real viewport height before calling `revealPrimaryCaret`.
+            // `EditorUI.revealPrimaryCaret()` is a no-op when viewport height is unknown.
+            tab.editCore.layoutSubtreeIfNeeded()
             let text = try tab.editCore.editor.text()
             let offset = AttoLspDefinitionParser.charOffsetForLspPosition(
                 inText: text,

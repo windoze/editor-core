@@ -132,6 +132,21 @@ public final class EditorCoreSkiaView: MTKView {
     /// - Return `true` to indicate the click was handled and should not fall back to normal caret/selection.
     public var onCommandClick: ((EditorCoreSkiaContextMenuContext) -> Bool)?
 
+    /// Cmd-hover hook (e.g. VSCode-like "Go to Definition" underline + pointer affordance).
+    ///
+    /// This hook must be **side-effect free** and should return whether the host considers the point
+    /// "clickable" under Cmd-click.
+    ///
+    /// Notes:
+    /// - This is called only for Cmd-hover *without* Option (Cmd+Option is reserved for multi-cursor).
+    /// - When not provided, the view falls back to a conservative default (`onCommandClick != nil`).
+    public var onCommandHover: ((EditorCoreSkiaContextMenuContext) -> Bool)?
+
+    /// Enable/disable Cmd-hover visual feedback (underline + pointing-hand cursor).
+    ///
+    /// This is enabled by default because it is an important discoverability affordance.
+    public var commandHoverLinkFeedbackEnabled: Bool = true
+
     /// Called when async derived-state processing (e.g. Tree-sitter) applied new edits.
     ///
     /// This is primarily useful for tests and for hosts that want explicit "derived state updated" signals.
@@ -379,6 +394,7 @@ public final class EditorCoreSkiaView: MTKView {
     private var docContentEpoch: UInt64 = 1
     private var docTextCacheEpoch: UInt64 = 0
     private var docTextCache: String?
+    private var docTextCacheScalarCount: Int = 0
     private var cachedSelectedRange: (epoch: UInt64, start: UInt32, end: UInt32, value: NSRange)?
     private var cachedMarkedRange: (epoch: UInt64, start: UInt32, len: UInt32, value: NSRange)?
 
@@ -401,6 +417,14 @@ public final class EditorCoreSkiaView: MTKView {
 
     private var hoverTrackingArea: NSTrackingArea?
     private var lastHoverCharOffset: UInt32?
+    private var lastHoverModifierFlags: NSEvent.ModifierFlags = []
+    private var lastHoverContextForCommandHover: EditorCoreSkiaContextMenuContext?
+    private var lastHoverDocumentLinkJSONForCommandHover: String?
+
+    private var commandHoverActiveRange: EcuSelectionRange?
+    private var commandHoverCursorIsPointing: Bool = false
+
+    private var lastHoverScalarIndex: (epoch: UInt64, offset: Int, index: String.UnicodeScalarView.Index)?
 
     private lazy var textInputContext = NSTextInputContext(client: self)
 
@@ -422,8 +446,11 @@ public final class EditorCoreSkiaView: MTKView {
         docContentEpoch &+= 1
         docTextCacheEpoch = 0
         docTextCache = nil
+        docTextCacheScalarCount = 0
         cachedSelectedRange = nil
         cachedMarkedRange = nil
+        lastHoverScalarIndex = nil
+        clearCommandHoverFeedback()
         updateGutterWidthIfNeeded()
         startProcessingPoll()
         onDidMutateDocumentText?()
@@ -469,6 +496,7 @@ public final class EditorCoreSkiaView: MTKView {
             let text = try editor.text()
             docTextCache = text
             docTextCacheEpoch = docContentEpoch
+            docTextCacheScalarCount = text.unicodeScalars.count
 
             if textCacheDebugEnabled {
                 let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
@@ -913,8 +941,265 @@ public final class EditorCoreSkiaView: MTKView {
         )
     }
 
+    private func clearCommandHoverFeedback() {
+        if let range = commandHoverActiveRange {
+            do {
+                try editor.removeStyle(
+                    start: range.start,
+                    end: range.end,
+                    styleId: EditorCoreSkiaBuiltinStyleId.commandHoverLink
+                )
+            } catch {
+                // Hover feedback is best-effort; ignore failures.
+            }
+            commandHoverActiveRange = nil
+        }
+
+        if commandHoverCursorIsPointing {
+            NSCursor.iBeam.set()
+            commandHoverCursorIsPointing = false
+        }
+    }
+
+    private func updateCommandHoverFeedbackIfNeeded(
+        eventFlags: NSEvent.ModifierFlags,
+        hoverContext: EditorCoreSkiaContextMenuContext,
+        documentLinkJSON: String?
+    ) {
+        guard commandHoverLinkFeedbackEnabled else {
+            clearCommandHoverFeedback()
+            return
+        }
+
+        // Cmd+Option is reserved for multi-cursor; do not show "clickable symbol" affordance.
+        let isCmdHover = eventFlags.contains(.command) && eventFlags.contains(.option) == false
+        guard isCmdHover else {
+            clearCommandHoverFeedback()
+            return
+        }
+
+        var wantsPointer = false
+        var wantsUnderlineRange: EcuSelectionRange?
+
+        // Document links are always Cmd-clickable.
+        if documentLinkJSON != nil {
+            wantsPointer = true
+        }
+
+        let hostAllows = onCommandHover?(hoverContext) ?? (onCommandClick != nil)
+        if hostAllows {
+            if let text = documentTextForInputQueries() {
+                wantsUnderlineRange = tokenRangeForCommandHover(
+                    in: text,
+                    atCharOffset: hoverContext.charOffset
+                )
+                if wantsUnderlineRange != nil {
+                    wantsPointer = true
+                }
+            }
+        }
+
+        if wantsUnderlineRange != commandHoverActiveRange {
+            if let old = commandHoverActiveRange {
+                do {
+                    try editor.removeStyle(
+                        start: old.start,
+                        end: old.end,
+                        styleId: EditorCoreSkiaBuiltinStyleId.commandHoverLink
+                    )
+                } catch {
+                    // Best-effort.
+                }
+                commandHoverActiveRange = nil
+            }
+
+            if let next = wantsUnderlineRange {
+                do {
+                    try editor.addStyle(
+                        start: next.start,
+                        end: next.end,
+                        styleId: EditorCoreSkiaBuiltinStyleId.commandHoverLink
+                    )
+                    commandHoverActiveRange = next
+                } catch {
+                    commandHoverActiveRange = nil
+                }
+            }
+
+            requestRedraw()
+        }
+
+        if wantsPointer {
+            if commandHoverCursorIsPointing == false {
+                NSCursor.pointingHand.set()
+                commandHoverCursorIsPointing = true
+            } else {
+                // Keep pointer cursor stable across moves.
+                NSCursor.pointingHand.set()
+            }
+        } else {
+            if commandHoverCursorIsPointing {
+                NSCursor.iBeam.set()
+                commandHoverCursorIsPointing = false
+            }
+        }
+    }
+
+    private static func isNewlineScalar(_ s: UnicodeScalar) -> Bool {
+        s.value == 10 /* \n */ || s.value == 13 /* \r */
+    }
+
+    private static func isAsciiWordScalar(_ s: UnicodeScalar) -> Bool {
+        guard s.isASCII else { return false }
+        switch s.value {
+        case 48...57: // 0-9
+            return true
+        case 65...90: // A-Z
+            return true
+        case 97...122: // a-z
+            return true
+        case 95: // _
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isWordTokenScalar(_ s: UnicodeScalar) -> Bool {
+        if s.properties.isWhitespace {
+            return false
+        }
+        if s.isASCII {
+            return isAsciiWordScalar(s)
+        }
+        // Match the kernel's editor-friendly word model: treat non-ASCII as a single "word unit".
+        return true
+    }
+
+    private func scalarIndexForCachedText(
+        scalars: String.UnicodeScalarView,
+        targetOffset: Int
+    ) -> String.UnicodeScalarView.Index? {
+        guard targetOffset >= 0 else { return nil }
+        guard docTextCacheScalarCount > 0 else { return nil }
+        guard targetOffset < docTextCacheScalarCount else { return nil }
+
+        let epoch = docContentEpoch
+        if let cached = lastHoverScalarIndex, cached.epoch == epoch {
+            if cached.offset == targetOffset {
+                return cached.index
+            }
+
+            var idx = cached.index
+            var off = cached.offset
+            if targetOffset > off {
+                while off < targetOffset, idx != scalars.endIndex {
+                    idx = scalars.index(after: idx)
+                    off += 1
+                }
+            } else {
+                while off > targetOffset, idx != scalars.startIndex {
+                    idx = scalars.index(before: idx)
+                    off -= 1
+                }
+            }
+
+            lastHoverScalarIndex = (epoch: epoch, offset: off, index: idx)
+            return idx
+        }
+
+        let idx = scalars.index(scalars.startIndex, offsetBy: targetOffset)
+        lastHoverScalarIndex = (epoch: epoch, offset: targetOffset, index: idx)
+        return idx
+    }
+
+    private func tokenRangeForCommandHover(in text: String, atCharOffset offset: UInt32) -> EcuSelectionRange? {
+        let scalarCount = docTextCacheScalarCount
+        guard scalarCount > 0 else { return nil }
+
+        let requested = Int(offset)
+        let clamped = min(max(0, requested), scalarCount - 1)
+        let scalars = text.unicodeScalars
+        guard let anchorIndex = scalarIndexForCachedText(scalars: scalars, targetOffset: clamped) else {
+            return nil
+        }
+
+        func tokenSpanAt(foundOffset: Int, foundIndex: String.UnicodeScalarView.Index) -> (start: Int, end: Int)? {
+            let s = scalars[foundIndex]
+            guard Self.isWordTokenScalar(s) else { return nil }
+
+            // ASCII word runs expand; non-ASCII token chars are single-char units.
+            if Self.isAsciiWordScalar(s) {
+                var startOffset = foundOffset
+                var startIndex = foundIndex
+                while startOffset > 0 {
+                    let prev = scalars.index(before: startIndex)
+                    let ps = scalars[prev]
+                    if Self.isNewlineScalar(ps) { break }
+                    if Self.isAsciiWordScalar(ps) {
+                        startOffset -= 1
+                        startIndex = prev
+                    } else {
+                        break
+                    }
+                }
+
+                var endOffset = foundOffset + 1
+                var endIndex = scalars.index(after: foundIndex)
+                while endOffset < scalarCount, endIndex != scalars.endIndex {
+                    let ns = scalars[endIndex]
+                    if Self.isNewlineScalar(ns) { break }
+                    if Self.isAsciiWordScalar(ns) {
+                        endOffset += 1
+                        endIndex = scalars.index(after: endIndex)
+                    } else {
+                        break
+                    }
+                }
+                return (startOffset, endOffset)
+            }
+
+            return (foundOffset, foundOffset + 1)
+        }
+
+        // Prefer token under the cursor; if not a token, search within the same logical line.
+        if let span = tokenSpanAt(foundOffset: clamped, foundIndex: anchorIndex) {
+            return EcuSelectionRange(start: UInt32(span.start), end: UInt32(span.end))
+        }
+
+        // Search right.
+        var rightOffset = clamped
+        var rightIndex = anchorIndex
+        while rightOffset + 1 < scalarCount {
+            rightOffset += 1
+            rightIndex = scalars.index(after: rightIndex)
+            if rightIndex == scalars.endIndex { break }
+            let s = scalars[rightIndex]
+            if Self.isNewlineScalar(s) { break }
+            if let span = tokenSpanAt(foundOffset: rightOffset, foundIndex: rightIndex) {
+                return EcuSelectionRange(start: UInt32(span.start), end: UInt32(span.end))
+            }
+        }
+
+        // Search left.
+        if clamped > 0 {
+            var leftOffset = clamped
+            var leftIndex = anchorIndex
+            while leftOffset > 0 {
+                leftOffset -= 1
+                leftIndex = scalars.index(before: leftIndex)
+                let s = scalars[leftIndex]
+                if Self.isNewlineScalar(s) { break }
+                if let span = tokenSpanAt(foundOffset: leftOffset, foundIndex: leftIndex) {
+                    return EcuSelectionRange(start: UInt32(span.start), end: UInt32(span.end))
+                }
+            }
+        }
+
+        return nil
+    }
+
     public override func mouseMoved(with event: NSEvent) {
-        guard onHover != nil else { return }
         updateViewportIfNeeded()
 
         let windowPoint = event.locationInWindow
@@ -926,30 +1211,85 @@ public final class EditorCoreSkiaView: MTKView {
 
         do {
             let offset = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-            if offset == lastHoverCharOffset { return }
-            lastHoverCharOffset = offset
-
             let pos = try editor.charOffsetToLogicalPosition(offset: offset)
-            let linkJSON = try? editor.documentLinkJSONAtViewPoint(xPx: xPx, yPx: yPx)
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let shouldQueryLink = (onHover != nil) || (flags.contains(.command) && flags.contains(.option) == false)
+            let linkJSON = shouldQueryLink ? (try? editor.documentLinkJSONAtViewPoint(xPx: xPx, yPx: yPx)) : nil
 
-            onHover?(
-                EditorCoreSkiaHoverInfo(
-                    charOffset: offset,
-                    logicalLine: pos.line,
-                    logicalColumn: pos.column,
-                    windowPoint: windowPoint,
-                    viewPoint: viewPoint,
-                    viewBackingXPx: xPx,
-                    viewBackingYPx: yPx,
-                    documentLinkJSON: linkJSON ?? nil
+            let ctx = EditorCoreSkiaContextMenuContext(
+                charOffset: offset,
+                logicalLine: pos.line,
+                logicalColumn: pos.column,
+                windowPoint: windowPoint,
+                viewPoint: viewPoint,
+                viewBackingXPx: xPx,
+                viewBackingYPx: yPx
+            )
+            lastHoverContextForCommandHover = ctx
+            lastHoverDocumentLinkJSONForCommandHover = linkJSON ?? nil
+
+            let didChangeOffset = (offset != lastHoverCharOffset)
+            if didChangeOffset {
+                lastHoverCharOffset = offset
+            }
+
+            if didChangeOffset, onHover != nil {
+                onHover?(
+                    EditorCoreSkiaHoverInfo(
+                        charOffset: offset,
+                        logicalLine: pos.line,
+                        logicalColumn: pos.column,
+                        windowPoint: windowPoint,
+                        viewPoint: viewPoint,
+                        viewBackingXPx: xPx,
+                        viewBackingYPx: yPx,
+                        documentLinkJSON: linkJSON ?? nil
+                    )
                 )
+            }
+
+            lastHoverModifierFlags = flags
+            updateCommandHoverFeedbackIfNeeded(
+                eventFlags: flags,
+                hoverContext: ctx,
+                documentLinkJSON: linkJSON ?? nil
             )
         } catch {
             // Hover is best-effort: never beep or disrupt input.
         }
     }
 
+    public override func flagsChanged(with event: NSEvent) {
+        super.flagsChanged(with: event)
+
+        guard commandHoverLinkFeedbackEnabled else { return }
+        guard let ctx = lastHoverContextForCommandHover else { return }
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let isCmdHover = flags.contains(.command) && flags.contains(.option) == false
+
+        let linkJSON: String?
+        if isCmdHover {
+            // If the user toggles Cmd without moving the mouse, re-query link hit-test using the
+            // last known hover point so cursor feedback stays responsive.
+            linkJSON = (try? editor.documentLinkJSONAtViewPoint(xPx: ctx.viewBackingXPx, yPx: ctx.viewBackingYPx))
+                ?? lastHoverDocumentLinkJSONForCommandHover
+        } else {
+            linkJSON = nil
+        }
+
+        updateCommandHoverFeedbackIfNeeded(
+            eventFlags: flags,
+            hoverContext: ctx,
+            documentLinkJSON: linkJSON
+        )
+    }
+
     public override func mouseExited(with event: NSEvent) {
+        clearCommandHoverFeedback()
+        lastHoverModifierFlags = []
+        lastHoverContextForCommandHover = nil
+        lastHoverDocumentLinkJSONForCommandHover = nil
         if lastHoverCharOffset != nil {
             lastHoverCharOffset = nil
             onHoverExit?()
