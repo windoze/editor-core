@@ -13,6 +13,7 @@ mod fuzzy;
 mod file_explorer;
 mod file_io;
 mod find_in_files;
+mod command_palette;
 mod session;
 mod status_bar;
 mod workspace_io;
@@ -24,6 +25,9 @@ pub use file_io::{FileIoError, FileIoOptions, read_utf8_file, write_utf8_file_at
 pub use find_in_files::{
     FindInFilesConfig, FindInFilesError, FindInFilesFileResult, FindInFilesLineMatch,
     find_in_files,
+};
+pub use command_palette::{
+    CommandPalette, CommandPaletteItem, CommandPaletteResult,
 };
 pub use session::{
     AppSession, AppSessionError, BufferSnapshot, HotExitSnapshot, ViewSnapshot, load_session_json,
