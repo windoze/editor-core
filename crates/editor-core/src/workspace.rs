@@ -952,6 +952,57 @@ impl Workspace {
             .ok_or(WorkspaceError::ViewNotFound(id))
     }
 
+    /// Get the current viewport width setting for a view (in monospace cells).
+    pub fn viewport_width_for_view(&self, id: ViewId) -> Result<usize, WorkspaceError> {
+        self.views
+            .get(&id)
+            .map(|v| v.core.viewport_width)
+            .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
+    /// Get the current soft wrap mode for a view.
+    pub fn wrap_mode_for_view(&self, id: ViewId) -> Result<WrapMode, WorkspaceError> {
+        self.views
+            .get(&id)
+            .map(|v| v.core.wrap_mode)
+            .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
+    /// Get the current wrapped-line indentation policy for a view.
+    pub fn wrap_indent_for_view(&self, id: ViewId) -> Result<WrapIndent, WorkspaceError> {
+        self.views
+            .get(&id)
+            .map(|v| v.core.wrap_indent)
+            .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
+    /// Get the current tab key behavior for a view.
+    pub fn tab_key_behavior_for_view(&self, id: ViewId) -> Result<TabKeyBehavior, WorkspaceError> {
+        self.views
+            .get(&id)
+            .map(|v| v.core.tab_key_behavior)
+            .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
+    /// Get the current indentation configuration for a view.
+    pub fn indentation_config_for_view(
+        &self,
+        id: ViewId,
+    ) -> Result<IndentationConfig, WorkspaceError> {
+        self.views
+            .get(&id)
+            .map(|v| v.core.indentation_config.clone())
+            .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
+    /// Get the current auto-pairs configuration for a view.
+    pub fn auto_pairs_config_for_view(&self, id: ViewId) -> Result<AutoPairsConfig, WorkspaceError> {
+        self.views
+            .get(&id)
+            .map(|v| v.core.auto_pairs.clone())
+            .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
     /// Get a view's normalized cursor/selection snapshot.
     ///
     /// This matches the semantics of `EditorStateManager::get_cursor_state`, but for workspace views.
