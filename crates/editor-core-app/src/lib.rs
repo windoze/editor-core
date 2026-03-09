@@ -16,6 +16,7 @@ mod find_in_files;
 mod command_palette;
 mod settings;
 mod search_results;
+mod observability;
 mod session;
 mod status_bar;
 mod workspace_io;
@@ -37,6 +38,7 @@ pub use settings::{
 pub use search_results::{
     AnchoredMatchRange, BufferSearchResults, SearchResultsError, SearchResultsModel,
 };
+pub use observability::{AppLog, LogEntry, LogLevel};
 pub use session::{
     AppSession, AppSessionError, BufferSnapshot, HotExitSnapshot, ViewSnapshot, load_session_json,
     save_session_json,
