@@ -28,8 +28,8 @@ use crate::snippets::SnippetSession;
 use crate::state::CursorState;
 use crate::{AnchorBias, TextAnchor};
 use crate::{
-    IndentationConfig, LineIndex, Position, Selection, SelectionDirection, TabKeyBehavior,
-    ViewCommand,
+    IndentationConfig, LineEnding, LineIndex, Position, Selection, SelectionDirection,
+    TabKeyBehavior, ViewCommand,
 };
 use crate::{StateChange, StateChangeCallback, StateChangeType, WrapIndent, WrapMode};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -797,10 +797,50 @@ impl Workspace {
         Ok(!buffer.executor.is_clean())
     }
 
+    /// Return the preferred line ending for saving this buffer.
+    pub fn line_ending_for_buffer(
+        &self,
+        buffer_id: BufferId,
+    ) -> Result<LineEnding, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(buffer.executor.line_ending())
+    }
+
+    /// Override the preferred line ending for saving this buffer.
+    pub fn set_line_ending_for_buffer(
+        &mut self,
+        buffer_id: BufferId,
+        line_ending: LineEnding,
+    ) -> Result<(), WorkspaceError> {
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        buffer.executor.set_line_ending(line_ending);
+        Ok(())
+    }
+
     /// Returns whether the view's underlying buffer has unsaved text edits.
     pub fn is_modified_for_view(&self, view_id: ViewId) -> Result<bool, WorkspaceError> {
         let buffer_id = self.buffer_id_for_view(view_id)?;
         self.buffer_is_modified(buffer_id)
+    }
+
+    /// Return the preferred line ending for saving this view's underlying buffer.
+    pub fn line_ending_for_view(&self, view_id: ViewId) -> Result<LineEnding, WorkspaceError> {
+        let buffer_id = self.buffer_id_for_view(view_id)?;
+        self.line_ending_for_buffer(buffer_id)
+    }
+
+    /// Override the preferred line ending for saving this view's underlying buffer.
+    pub fn set_line_ending_for_view(
+        &mut self,
+        view_id: ViewId,
+        line_ending: LineEnding,
+    ) -> Result<(), WorkspaceError> {
+        let buffer_id = self.buffer_id_for_view(view_id)?;
+        self.set_line_ending_for_buffer(buffer_id, line_ending)
     }
 
     /// Mark the current state of a buffer as saved (clean point).
@@ -1968,6 +2008,21 @@ impl Workspace {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
         Ok(buffer.executor.editor().get_text())
+    }
+
+    /// Get the full document text converted to the buffer's preferred line ending for saving.
+    pub fn buffer_text_for_saving(&self, buffer_id: BufferId) -> Result<String, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        let text = buffer.executor.editor().get_text();
+        Ok(buffer.executor.line_ending().apply_to_text(&text))
+    }
+
+    /// Get the full document text converted to the view's preferred line ending for saving.
+    pub fn text_for_saving_for_view(&self, view_id: ViewId) -> Result<String, WorkspaceError> {
+        let buffer_id = self.buffer_id_for_view(view_id)?;
+        self.buffer_text_for_saving(buffer_id)
     }
 
     /// Get styled viewport content for a view (by visual line).
