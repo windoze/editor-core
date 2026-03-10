@@ -17,14 +17,6 @@ public final class EditorCoreFFILibrary {
         self.abiVersion = editor_core_ffi_abi_version()
     }
 
-    /// Built-in Tree-sitter Rust language function pointer.
-    ///
-    /// Rust 侧通过 `editor_core_ffi_treesitter_language_rust()` 导出 language pointer，
-    /// C ABI 里把它抽象成 `EcfTreeSitterLanguageFn`，便于传入 processor 构造函数。
-    public var treeSitterRustLanguageFn: EcfTreeSitterLanguageFn {
-        editor_core_ffi_treesitter_language_rust
-    }
-
     public func versionString() throws -> String {
         return try takeOwnedCString(editor_core_ffi_version(), context: "editor_core_ffi_version")
     }

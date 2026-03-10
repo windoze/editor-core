@@ -130,24 +130,33 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    public func treeSitterSetRegistryJSON(_ registryJSON: String) throws {
+        let status = registryJSON.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_treesitter_set_registry_json(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_treesitter_set_registry_json")
+    }
+
+    public func treeSitterEnableLanguage(_ languageId: String) throws {
+        let status: Int32 = languageId.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_treesitter_enable_language(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_treesitter_enable_language")
+    }
+
+    public func treeSitterEnableForPath(_ path: String) throws {
+        let status: Int32 = path.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_treesitter_enable_for_path(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_treesitter_enable_for_path")
+    }
+
     public func treeSitterRustEnableDefault() throws {
         let status = editor_core_ui_ffi_editor_ui_treesitter_rust_enable_default(handle)
         try library.ensureStatus(status, context: "editor_ui_treesitter_rust_enable_default")
     }
 
-    public func treeSitterRustEnable(highlightsQuery: String, foldsQuery: String? = nil) throws {
-        let status: Int32 = highlightsQuery.withCString { highlightsCStr in
-            if let foldsQuery {
-                return foldsQuery.withCString { foldsCStr in
-                    editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queries(handle, highlightsCStr, foldsCStr)
-                }
-            }
-            return editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queries(handle, highlightsCStr, nil)
-        }
-        try library.ensureStatus(status, context: "editor_ui_treesitter_rust_enable_with_queries")
-    }
-
-    /// Enable Tree-sitter highlighting/folding using a built-in query pack id (e.g. `"rust"`).
+    /// Backwards-compatible alias: treat `packId` as Tree-sitter `languageId`.
     public func treeSitterEnableQueryPack(_ packId: String) throws {
         let status: Int32 = packId.withCString { cstr in
             editor_core_ui_ffi_editor_ui_treesitter_enable_query_pack(handle, cstr)

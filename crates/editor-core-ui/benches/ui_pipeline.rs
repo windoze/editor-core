@@ -1,6 +1,8 @@
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 use editor_core::{Command, CommandExecutor, EditCommand, EditorStateManager};
-use editor_core_treesitter::{TreeSitterProcessor, TreeSitterProcessorConfig};
+use editor_core_treesitter::{
+    TreeSitterConfig, TreeSitterProcessor, load_processor_config_from_config,
+};
 use editor_core_ui::EditorUi;
 use std::collections::BTreeMap;
 
@@ -34,6 +36,11 @@ fn demo_rust_text(func_count: usize) -> String {
     out
 }
 
+fn treesitter_fixture_root() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../editor-core-treesitter/tests/fixtures/treesitter")
+}
+
 fn setup_editor_ui(text: &str, enable_treesitter: bool, viewport_width_cells: usize) -> EditorUi {
     let mut ui = EditorUi::new(text, viewport_width_cells);
     // 与 demo 类似的渲染参数；用于 render benchmark 时得到一致的像素工作量。
@@ -42,27 +49,41 @@ fn setup_editor_ui(text: &str, enable_treesitter: bool, viewport_width_cells: us
     ui.set_gutter_width_cells(4).unwrap();
 
     if enable_treesitter {
-        ui.set_treesitter_rust_default().unwrap();
+        let root = treesitter_fixture_root();
+        let registry_json = serde_json::json!({
+            "schema_version": 1,
+            "root_dir": root.to_string_lossy(),
+            "extension_map": { "rs": "rust" },
+            "languages": {
+                "rust": {
+                    "wasm": "rust/language.wasm",
+                    "highlights": "rust/highlights.scm",
+                    "folds": "rust/folds.scm",
+                }
+            }
+        })
+        .to_string();
+        ui.set_treesitter_registry_json(&registry_json).unwrap();
+        ui.set_treesitter_language("rust").unwrap();
     }
 
     ui
 }
 
 fn setup_treesitter_processor_for_rust() -> TreeSitterProcessor {
-    let language: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-    let highlights = tree_sitter_rust::HIGHLIGHTS_QUERY;
-
-    // 为了更贴近 `editor-core-ui` 的真实路径，我们需要给每个 capture 分配一个 style id，
-    // 否则 processor 会跳过 interval 生成（从而低估 char-offset 转换 + interval 排序等成本）。
-    let query = tree_sitter::Query::new(&language, highlights).unwrap();
-    let mut capture_styles = BTreeMap::<String, u32>::new();
-    for (idx, name) in query.capture_names().iter().enumerate() {
-        capture_styles.insert(name.to_string(), 0x0200_0000u32 + idx as u32);
-    }
-
+    let language_dir = treesitter_fixture_root().join("rust");
+    let cfg = TreeSitterConfig::from_language_dir(&language_dir).expect("treesitter fixture rust/");
     let mut config =
-        TreeSitterProcessorConfig::new(language, highlights.to_string()).with_default_rust_folds();
+        load_processor_config_from_config("rust", &cfg).expect("load processor config");
+
+    // For realistic cost, allocate a style id for every capture in the highlights query.
+    let capture_names = config.highlights_capture_names().unwrap();
+    let mut capture_styles = BTreeMap::<String, u32>::new();
+    for (idx, name) in capture_names.into_iter().enumerate() {
+        capture_styles.insert(name, 0x0200_0000u32 + idx as u32);
+    }
     config.capture_styles = capture_styles;
+
     TreeSitterProcessor::new(config).unwrap()
 }
 

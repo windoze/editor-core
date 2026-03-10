@@ -2,6 +2,20 @@ import Foundation
 import XCTest
 @testable import EditorCoreFFI
 
+private func editorCoreRepoRootURL() -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent() // TreeSitterProcessorErrorTests.swift
+        .deletingLastPathComponent() // EditorCoreFFITests
+        .deletingLastPathComponent() // Tests
+        .deletingLastPathComponent() // swift
+}
+
+private func rustTreeSitterWasmPath() -> String {
+    editorCoreRepoRootURL()
+        .appendingPathComponent("crates/editor-core-treesitter/tests/fixtures/treesitter/rust/language.wasm", isDirectory: false)
+        .path
+}
+
 final class TreeSitterProcessorErrorTests: XCTestCase {
     private func assertThrowsAndSetsLastError(
         _ library: EditorCoreFFILibrary,
@@ -23,7 +37,8 @@ final class TreeSitterProcessorErrorTests: XCTestCase {
         assertThrowsAndSetsLastError(library) {
             _ = try TreeSitterProcessor(
                 library: library,
-                languageFn: library.treeSitterRustLanguageFn,
+                languageId: "rust",
+                wasmPath: rustTreeSitterWasmPath(),
                 highlightsQuery: "(",
                 foldsQuery: nil,
                 captureStylesJSON: nil,
@@ -39,7 +54,8 @@ final class TreeSitterProcessorErrorTests: XCTestCase {
         assertThrowsAndSetsLastError(library) {
             _ = try TreeSitterProcessor(
                 library: library,
-                languageFn: library.treeSitterRustLanguageFn,
+                languageId: "rust",
+                wasmPath: rustTreeSitterWasmPath(),
                 highlightsQuery: "(identifier) @id",
                 foldsQuery: "(",
                 captureStylesJSON: nil,
@@ -55,7 +71,8 @@ final class TreeSitterProcessorErrorTests: XCTestCase {
         assertThrowsAndSetsLastError(library) {
             _ = try TreeSitterProcessor(
                 library: library,
-                languageFn: library.treeSitterRustLanguageFn,
+                languageId: "rust",
+                wasmPath: rustTreeSitterWasmPath(),
                 highlightsQuery: "(identifier) @id",
                 foldsQuery: nil,
                 captureStylesJSON: "[]",
@@ -65,4 +82,3 @@ final class TreeSitterProcessorErrorTests: XCTestCase {
         }
     }
 }
-

@@ -11,6 +11,59 @@ public final class TreeSitterProcessor {
 
     public init(
         library: EditorCoreFFILibrary,
+        languageId: String,
+        wasmPath: String,
+        highlightsQuery: String,
+        foldsQuery: String? = nil,
+        captureStylesJSON: String? = nil,
+        styleLayer: UInt32,
+        preserveCollapsedFolds: Bool
+    ) throws {
+        self.ffi = library
+
+        let handle: OpaquePointer? = languageId.withCString { languageIdPtr in
+            wasmPath.withCString { wasmPathPtr in
+                highlightsQuery.withCString { highlightsPtr in
+                    let foldsPtrThunk: (UnsafePointer<CChar>?) -> OpaquePointer? = { foldsPtr in
+                        let capturePtrThunk: (UnsafePointer<CChar>?) -> OpaquePointer? = { capturePtr in
+                            editor_core_ffi_treesitter_processor_new_wasm_from_path(
+                                languageIdPtr,
+                                wasmPathPtr,
+                                highlightsPtr,
+                                foldsPtr,
+                                capturePtr,
+                                styleLayer,
+                                preserveCollapsedFolds
+                            )
+                        }
+
+                        if let captureStylesJSON {
+                            return captureStylesJSON.withCString { capturePtr in
+                                capturePtrThunk(capturePtr)
+                            }
+                        }
+                        return capturePtrThunk(nil)
+                    }
+
+                    if let foldsQuery {
+                        return foldsQuery.withCString { foldsPtr in
+                            foldsPtrThunk(foldsPtr)
+                        }
+                    }
+                    return foldsPtrThunk(nil)
+                }
+            }
+        }
+
+        guard let handle else {
+            let message = library.lastErrorMessage()
+            throw EditorCoreFFIError.ffiReturnedNull(context: "treesitter_processor_new_wasm_from_path", message: message.isEmpty ? "no last_error_message" : message)
+        }
+        self.handle = handle
+    }
+
+    public init(
+        library: EditorCoreFFILibrary,
         languageFn: EcfTreeSitterLanguageFn,
         highlightsQuery: String,
         foldsQuery: String? = nil,

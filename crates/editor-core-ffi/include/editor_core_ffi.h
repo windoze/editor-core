@@ -247,8 +247,14 @@ EcfTreeSitterProcessor* editor_core_ffi_treesitter_processor_new(
     uint32_t style_layer,
     bool preserve_collapsed_folds);
 
-/* Built-in Tree-sitter Rust language */
-const void* editor_core_ffi_treesitter_language_rust(void);
+EcfTreeSitterProcessor* editor_core_ffi_treesitter_processor_new_wasm_from_path(
+    const char* language_id_utf8,
+    const char* wasm_path_utf8,
+    const char* highlights_query,
+    const char* folds_query,
+    const char* capture_styles_json,
+    uint32_t style_layer,
+    bool preserve_collapsed_folds);
 
 void editor_core_ffi_treesitter_processor_free(EcfTreeSitterProcessor* processor);
 char* editor_core_ffi_treesitter_processor_process_json(EcfTreeSitterProcessor* processor, const EcfEditorState* state);

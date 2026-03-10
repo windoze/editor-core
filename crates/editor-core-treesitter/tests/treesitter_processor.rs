@@ -1,27 +1,23 @@
 use editor_core::intervals::StyleLayerId;
 use editor_core::{Command, DocumentProcessor, EditCommand, EditorStateManager, ProcessingEdit};
 use editor_core_treesitter::{
-    TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterUpdateMode,
+    TreeSitterConfig, TreeSitterProcessor, TreeSitterUpdateMode, load_processor_config_from_config,
 };
-use tree_sitter_rust::LANGUAGE;
+use std::collections::BTreeMap;
 
-fn rust_test_highlights_query() -> &'static str {
-    r#"
-    (line_comment) @comment
-    (block_comment) @comment
-    (string_literal) @string
-    (primitive_type) @type
-    (type_identifier) @type
-    (identifier) @ident
-    (function_item name: (identifier) @function)
-    "#
+fn rust_fixture_config() -> TreeSitterConfig {
+    let dir =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/treesitter/rust");
+    TreeSitterConfig::from_language_dir(&dir).expect("rust treesitter fixture directory")
 }
 
-fn rust_test_folds_query() -> &'static str {
-    r#"
-    (function_item) @fold
-    (block) @fold
-    "#
+fn rust_fixture_processor_config() -> editor_core_treesitter::TreeSitterProcessorConfig {
+    let cfg = rust_fixture_config();
+    let mut config =
+        load_processor_config_from_config("rust", &cfg).expect("load processor config");
+    config.capture_styles =
+        BTreeMap::from([("comment".to_string(), 10), ("string".to_string(), 11)]);
+    config
 }
 
 #[test]
@@ -29,15 +25,7 @@ fn test_processor_produces_highlights_and_folds_from_fixture() {
     let text = include_str!("fixtures/rust_sample.rs");
     let state = EditorStateManager::new(text, 80);
 
-    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
-        .with_folds_query(rust_test_folds_query())
-        .with_simple_capture_styles([
-            ("comment", 10),
-            ("string", 11),
-            ("type", 12),
-            ("ident", 13),
-            ("function", 14),
-        ]);
+    let config = rust_fixture_processor_config();
 
     let mut processor = TreeSitterProcessor::new(config).unwrap();
     let edits = processor.process(&state).unwrap();
@@ -68,9 +56,8 @@ fn test_processor_uses_text_delta_incrementally() {
     let text = include_str!("fixtures/rust_sample.rs");
     let mut state = EditorStateManager::new(text, 80);
 
-    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
-        .with_folds_query(rust_test_folds_query())
-        .with_simple_capture_styles([("comment", 1), ("string", 2), ("type", 3), ("function", 4)]);
+    let mut config = rust_fixture_processor_config();
+    config.capture_styles = BTreeMap::from([("comment".to_string(), 1), ("string".to_string(), 2)]);
 
     let mut processor = TreeSitterProcessor::new(config).unwrap();
     state.apply_processor(&mut processor).unwrap();
@@ -95,9 +82,8 @@ fn test_processor_uses_text_delta_incrementally() {
 fn test_process_text_api_supports_incremental_and_full_resync() {
     let initial = "fn main() {\n  let x = 1;\n}\n";
 
-    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
-        .with_folds_query(rust_test_folds_query())
-        .with_simple_capture_styles([("comment", 1), ("string", 2), ("type", 3), ("function", 4)]);
+    let mut config = rust_fixture_processor_config();
+    config.capture_styles = BTreeMap::from([("comment".to_string(), 1), ("string".to_string(), 2)]);
 
     let mut processor = TreeSitterProcessor::new(config).unwrap();
 
@@ -155,14 +141,7 @@ fn test_process_text_api_supports_incremental_and_full_resync() {
 fn test_sync_to_and_compute_edits_supports_debounced_query_and_char_range() {
     let text = "// a\nfn main() {\n  let x = 1;\n}\n// b\n";
 
-    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
-        .with_folds_query(rust_test_folds_query())
-        .with_simple_capture_styles([
-            ("comment", 10),
-            ("string", 11),
-            ("type", 12),
-            ("function", 13),
-        ]);
+    let config = rust_fixture_processor_config();
 
     let mut processor = TreeSitterProcessor::new(config).unwrap();
 
@@ -225,9 +204,8 @@ fn test_expand_selection_syntax_expands_identifier_then_function_item() {
     let text = include_str!("fixtures/rust_sample.rs");
     let state = EditorStateManager::new(text, 80);
 
-    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
-        .with_folds_query(rust_test_folds_query())
-        .with_simple_capture_styles([("comment", 1), ("string", 2), ("type", 3), ("function", 4)]);
+    let mut config = rust_fixture_processor_config();
+    config.capture_styles = BTreeMap::from([("comment".to_string(), 1), ("string".to_string(), 2)]);
 
     let mut processor = TreeSitterProcessor::new(config).unwrap();
     let _ = processor.process(&state).unwrap();
@@ -253,9 +231,8 @@ fn test_expand_selection_syntax_returns_none_when_already_at_root() {
     let text = include_str!("fixtures/rust_sample.rs");
     let state = EditorStateManager::new(text, 80);
 
-    let config = TreeSitterProcessorConfig::new(LANGUAGE.into(), rust_test_highlights_query())
-        .with_folds_query(rust_test_folds_query())
-        .with_simple_capture_styles([("comment", 1)]);
+    let mut config = rust_fixture_processor_config();
+    config.capture_styles = BTreeMap::from([("comment".to_string(), 1)]);
 
     let mut processor = TreeSitterProcessor::new(config).unwrap();
     let _ = processor.process(&state).unwrap();

@@ -451,6 +451,15 @@ final class AttoEditorAreaViewController: NSViewController {
         try editCore.editor.setAutoPairsEnabled(true)
         try editCore.editor.setBracketMatchHighlightsEnabled(true)
 
+        // Tree-sitter registry (best-effort).
+        do {
+            let paths = try AttoTreeSitterRegistry.defaultPaths()
+            let registryJSON = try AttoTreeSitterRegistry.buildRegistryJSON(treesitterRoot: paths.treesitterRoot)
+            try editCore.editor.treeSitterSetRegistryJSON(registryJSON)
+        } catch {
+            // Best-effort: Tree-sitter is optional and requires on-disk assets.
+        }
+
         // LSP for Rust (best-effort).
         if url.pathExtension.lowercased() == "rs" {
             let disableLSP = ProcessInfo.processInfo.environment["ATTO_EDITOR_DISABLE_LSP"] == "1"
@@ -474,11 +483,14 @@ final class AttoEditorAreaViewController: NSViewController {
                     editCore.editor.treeSitterDisable()
                 } catch {
                     // Fall back to Tree-sitter highlighting if LSP is unavailable.
-                    try? editCore.editor.treeSitterEnableQueryPack("rust")
+                    try? editCore.editor.treeSitterEnableForPath(url.path)
                 }
             } else {
-                try? editCore.editor.treeSitterEnableQueryPack("rust")
+                try? editCore.editor.treeSitterEnableForPath(url.path)
             }
+        } else {
+            // Non-Rust languages: best-effort Tree-sitter only (no LSP yet).
+            try? editCore.editor.treeSitterEnableForPath(url.path)
         }
 
         let tabId = UUID()

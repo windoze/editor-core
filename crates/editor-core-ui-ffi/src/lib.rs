@@ -756,28 +756,61 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_rust_enable_default(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queries(
+pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_set_registry_json(
     ui: *mut EditorUi,
-    highlights_query_utf8: *const c_char,
-    folds_query_utf8: *const c_char,
+    registry_json_utf8: *const c_char,
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        let highlights = require_cstr(highlights_query_utf8, "highlights_query_utf8")?
+        let registry_json = require_cstr(registry_json_utf8, "registry_json_utf8")?
             .to_str()
-            .map_err(|_| "highlights_query_utf8 is not valid UTF-8".to_string())?;
+            .map_err(|_| "registry_json_utf8 is not valid UTF-8".to_string())?;
 
-        let folds = if folds_query_utf8.is_null() {
-            None
-        } else {
-            Some(
-                require_cstr(folds_query_utf8, "folds_query_utf8")?
-                    .to_str()
-                    .map_err(|_| "folds_query_utf8 is not valid UTF-8".to_string())?,
-            )
-        };
+        ui.set_treesitter_registry_json(registry_json)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
 
-        ui.set_treesitter_rust_with_queries(highlights, folds)
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_enable_language(
+    ui: *mut EditorUi,
+    language_id_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let language_id = require_cstr(language_id_utf8, "language_id_utf8")?
+            .to_str()
+            .map_err(|_| "language_id_utf8 is not valid UTF-8".to_string())?;
+        ui.set_treesitter_language(language_id)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_enable_for_path(
+    ui: *mut EditorUi,
+    path_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let path = require_cstr(path_utf8, "path_utf8")?
+            .to_str()
+            .map_err(|_| "path_utf8 is not valid UTF-8".to_string())?;
+        ui.set_treesitter_for_path(std::path::Path::new(path))
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
     }) {
@@ -794,21 +827,8 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_enable_query_pack(
     ui: *mut EditorUi,
     pack_id_utf8: *const c_char,
 ) -> c_int {
-    match ffi_catch(|| {
-        let ui = require_mut(ui, "ui")?;
-        let pack_id = require_cstr(pack_id_utf8, "pack_id_utf8")?
-            .to_str()
-            .map_err(|_| "pack_id_utf8 is not valid UTF-8".to_string())?;
-        ui.set_treesitter_query_pack(pack_id)
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
-    }) {
-        Ok(code) => {
-            clear_last_error();
-            code
-        }
-        Err(err) => status_from_error(err),
-    }
+    // Backwards-compatible alias: treat pack id as language id.
+    editor_core_ui_ffi_editor_ui_treesitter_enable_language(ui, pack_id_utf8)
 }
 
 /// # Safety
@@ -3970,6 +3990,29 @@ mod tests {
         }
     }
 
+    fn set_test_treesitter_registry(ui: *mut EditorUi) {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../editor-core-treesitter/tests/fixtures/treesitter");
+        let json = serde_json::json!({
+            "schema_version": 1,
+            "root_dir": root.to_string_lossy(),
+            "extension_map": { "rs": "rust" },
+            "languages": {
+                "rust": {
+                    "wasm": "rust/language.wasm",
+                    "highlights": "rust/highlights.scm",
+                    "folds": "rust/folds.scm"
+                }
+            }
+        })
+        .to_string();
+        let json = CString::new(json).unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_treesitter_set_registry_json(ui, json.as_ptr()),
+            ECU_OK
+        );
+    }
+
     #[test]
     fn ffi_smoke_create_insert_render_get_text() {
         let initial = CString::new("abc").unwrap();
@@ -4573,13 +4616,10 @@ contexts:
             ECU_OK
         );
 
-        let highlights = CString::new("(line_comment) @comment").unwrap();
+        set_test_treesitter_registry(ui);
+        let language_id = CString::new("rust").unwrap();
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_treesitter_rust_enable_with_queries(
-                ui,
-                highlights.as_ptr(),
-                ptr::null()
-            ),
+            editor_core_ui_ffi_editor_ui_treesitter_enable_language(ui, language_id.as_ptr()),
             ECU_OK
         );
         wait_for_processing(ui);
@@ -5144,6 +5184,7 @@ contexts:
             editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 60, 1.0),
             ECU_OK
         );
+        set_test_treesitter_registry(ui);
         assert_eq!(
             editor_core_ui_ffi_editor_ui_treesitter_rust_enable_default(ui),
             ECU_OK

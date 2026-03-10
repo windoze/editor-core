@@ -3,6 +3,57 @@ import EditorCoreUI
 import EditorCoreUIFFI
 import Foundation
 
+private func editorCoreDefaultTreeSitterRootURL(fileManager: FileManager = .default) throws -> URL {
+    let appSupport = try fileManager.url(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask,
+        appropriateFor: nil,
+        create: true
+    )
+    let root = appSupport
+        .appendingPathComponent("codes.unwritten.attoeditor", isDirectory: true)
+        .appendingPathComponent("treesitter", isDirectory: true)
+    try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+    return root
+}
+
+private func demoConfigureTreeSitterRegistryAndEnableIfAvailable(
+    editor: EditorUI,
+    fileURL: URL,
+    fileManager: FileManager = .default
+) throws {
+    let root = try editorCoreDefaultTreeSitterRootURL(fileManager: fileManager)
+
+    // Minimal MVP: only enable when a Rust install exists on disk.
+    let rustDir = root.appendingPathComponent("rust", isDirectory: true)
+    let wasm = rustDir.appendingPathComponent("language.wasm", isDirectory: false)
+    let highlights = rustDir.appendingPathComponent("highlights.scm", isDirectory: false)
+    guard fileManager.fileExists(atPath: wasm.path),
+          fileManager.fileExists(atPath: highlights.path)
+    else { return }
+
+    var rustEntry: [String: String] = [
+        "wasm": "rust/language.wasm",
+        "highlights": "rust/highlights.scm",
+    ]
+    let folds = rustDir.appendingPathComponent("folds.scm", isDirectory: false)
+    if fileManager.fileExists(atPath: folds.path) {
+        rustEntry["folds"] = "rust/folds.scm"
+    }
+
+    let registry: [String: Any] = [
+        "schema_version": 1,
+        "root_dir": root.path,
+        "extension_map": ["rs": "rust"],
+        "languages": ["rust": rustEntry],
+    ]
+
+    let data = try JSONSerialization.data(withJSONObject: registry, options: [])
+    guard let json = String(data: data, encoding: .utf8) else { return }
+    try editor.treeSitterSetRegistryJSON(json)
+    try editor.treeSitterEnableForPath(fileURL.path)
+}
+
 @MainActor
 private final class DemoSearchPanelController: NSObject, NSTextFieldDelegate, NSSearchFieldDelegate {
     private unowned let editCore: EditCoreUI
@@ -222,7 +273,10 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
                 //
                 // 性能排查时可通过 `EDITOR_CORE_APPKIT_DISABLE_TREESITTER=1` 关闭，帮助定位“输入变更很慢”是否来自 processor。
                 if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DISABLE_TREESITTER"] != "1" {
-                    try editCore.editor.treeSitterRustEnableDefault()
+                    try demoConfigureTreeSitterRegistryAndEnableIfAvailable(
+                        editor: editCore.editor,
+                        fileURL: demoFileURL
+                    )
                 } else {
                     NSLog("EditCoreUIDemo: Tree-sitter disabled by EDITOR_CORE_APPKIT_DISABLE_TREESITTER=1")
                 }

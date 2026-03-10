@@ -9,6 +9,10 @@ use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, Tree};
 /// Errors produced by [`TreeSitterProcessor`].
 #[derive(Debug)]
 pub enum TreeSitterError {
+    /// Loading Tree-sitter WASM failed.
+    Wasm(String),
+    /// I/O failed (reading WASM or query files).
+    Io(String),
     /// Setting the Tree-sitter language failed.
     Language(String),
     /// Compiling a Tree-sitter query failed.
@@ -20,6 +24,8 @@ pub enum TreeSitterError {
 impl std::fmt::Display for TreeSitterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Wasm(msg) => write!(f, "tree-sitter wasm error: {msg}"),
+            Self::Io(msg) => write!(f, "tree-sitter io error: {msg}"),
             Self::Language(msg) => write!(f, "tree-sitter language error: {msg}"),
             Self::Query(msg) => write!(f, "tree-sitter query error: {msg}"),
             Self::DeltaMismatch => write!(f, "tree-sitter delta mismatch"),
@@ -42,11 +48,40 @@ pub enum TreeSitterUpdateMode {
     Skipped,
 }
 
+/// Language source for a Tree-sitter processor.
+#[derive(Debug, Clone)]
+pub enum TreeSitterLanguage {
+    /// A native (in-process) Tree-sitter grammar.
+    Native(tree_sitter::Language),
+    /// A WASM Tree-sitter grammar module to be loaded at runtime.
+    Wasm {
+        /// Stable Tree-sitter language id (e.g. `"rust"`).
+        language_id: String,
+        /// Raw WASM bytes (typically `language.wasm` on disk).
+        wasm_bytes: Vec<u8>,
+    },
+}
+
+impl TreeSitterLanguage {
+    /// Create a native language source.
+    pub fn native(language: tree_sitter::Language) -> Self {
+        Self::Native(language)
+    }
+
+    /// Create a WASM language source.
+    pub fn wasm(language_id: String, wasm_bytes: Vec<u8>) -> Self {
+        Self::Wasm {
+            language_id,
+            wasm_bytes,
+        }
+    }
+}
+
 /// Configuration for [`TreeSitterProcessor`].
 #[derive(Debug, Clone)]
 pub struct TreeSitterProcessorConfig {
     /// Tree-sitter language.
-    pub language: tree_sitter::Language,
+    pub language: TreeSitterLanguage,
     /// Syntax highlighting query (`.scm`).
     pub highlights_query: String,
     /// Optional folding query (`.scm`). Each capture becomes a fold candidate.
@@ -65,7 +100,7 @@ impl TreeSitterProcessorConfig {
     /// By default:
     /// - `style_layer` is [`StyleLayerId::TREE_SITTER`]
     /// - `preserve_collapsed_folds` is `true`
-    pub fn new(language: tree_sitter::Language, highlights_query: impl Into<String>) -> Self {
+    pub fn new(language: TreeSitterLanguage, highlights_query: impl Into<String>) -> Self {
         Self {
             language,
             highlights_query: highlights_query.into(),
@@ -82,20 +117,6 @@ impl TreeSitterProcessorConfig {
         self
     }
 
-    /// A small fold query that works well for Rust-like curly-brace languages.
-    pub fn with_default_rust_folds(self) -> Self {
-        self.with_folds_query(
-            r#"
-            (function_item) @fold
-            (impl_item) @fold
-            (struct_item) @fold
-            (enum_item) @fold
-            (mod_item) @fold
-            (block) @fold
-            "#,
-        )
-    }
-
     /// Add a set of capture name → style id mappings.
     pub fn with_simple_capture_styles<const N: usize>(
         mut self,
@@ -110,6 +131,36 @@ impl TreeSitterProcessorConfig {
     /// Control whether fold replacement preserves collapsed state.
     pub fn set_preserve_collapsed_folds(&mut self, preserve: bool) {
         self.preserve_collapsed_folds = preserve;
+    }
+
+    /// Compile `highlights_query` and return its capture names in the query's declaration order.
+    ///
+    /// Hosts can use this to pre-allocate a stable capture → `StyleId` mapping before running the
+    /// processor.
+    pub fn highlights_capture_names(&self) -> Result<Vec<String>, TreeSitterError> {
+        let query = match &self.language {
+            TreeSitterLanguage::Native(language) => Query::new(language, &self.highlights_query)
+                .map_err(|e| TreeSitterError::Query(e.to_string()))?,
+            TreeSitterLanguage::Wasm {
+                language_id,
+                wasm_bytes,
+            } => {
+                let engine = tree_sitter::wasmtime::Engine::default();
+                let mut store = tree_sitter::WasmStore::new(&engine)
+                    .map_err(|e| TreeSitterError::Wasm(e.to_string()))?;
+                let language = store
+                    .load_language(language_id, wasm_bytes)
+                    .map_err(|e| TreeSitterError::Wasm(e.to_string()))?;
+                Query::new(&language, &self.highlights_query)
+                    .map_err(|e| TreeSitterError::Query(e.to_string()))?
+            }
+        };
+
+        Ok(query
+            .capture_names()
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect())
     }
 }
 
@@ -130,17 +181,51 @@ pub struct TreeSitterProcessor {
     last_synced_version: Option<u64>,
     last_processed_version: Option<u64>,
     last_update_mode: TreeSitterUpdateMode,
+    // Keep the Wasmtime engine alive for the lifetime of the parser's Wasm store.
+    #[allow(dead_code)]
+    wasm_engine: Option<tree_sitter::wasmtime::Engine>,
 }
 
 impl TreeSitterProcessor {
     /// Create a new processor from the given config.
     pub fn new(config: TreeSitterProcessorConfig) -> Result<Self, TreeSitterError> {
         let mut parser = Parser::new();
-        parser
-            .set_language(&config.language)
-            .map_err(|e| TreeSitterError::Language(e.to_string()))?;
+        let (language, wasm_engine) = match &config.language {
+            TreeSitterLanguage::Native(language) => {
+                parser
+                    .set_language(language)
+                    .map_err(|e| TreeSitterError::Language(e.to_string()))?;
+                (language.clone(), None)
+            }
+            TreeSitterLanguage::Wasm {
+                language_id,
+                wasm_bytes,
+            } => {
+                let engine = tree_sitter::wasmtime::Engine::default();
 
-        let highlight_query = Query::new(&config.language, &config.highlights_query)
+                // Parser store (must use the same engine as the language).
+                let store = tree_sitter::WasmStore::new(&engine)
+                    .map_err(|e| TreeSitterError::Wasm(e.to_string()))?;
+                parser
+                    .set_wasm_store(store)
+                    .map_err(|e| TreeSitterError::Language(e.to_string()))?;
+
+                // Load the language (can use a separate store, but must share the same engine).
+                let mut store = tree_sitter::WasmStore::new(&engine)
+                    .map_err(|e| TreeSitterError::Wasm(e.to_string()))?;
+                let language = store
+                    .load_language(language_id, wasm_bytes)
+                    .map_err(|e| TreeSitterError::Wasm(e.to_string()))?;
+
+                parser
+                    .set_language(&language)
+                    .map_err(|e| TreeSitterError::Language(e.to_string()))?;
+
+                (language, Some(engine))
+            }
+        };
+
+        let highlight_query = Query::new(&language, &config.highlights_query)
             .map_err(|e| TreeSitterError::Query(e.to_string()))?;
         let highlight_capture_styles = highlight_query
             .capture_names()
@@ -149,10 +234,9 @@ impl TreeSitterProcessor {
             .collect::<Vec<_>>();
 
         let fold_query = match config.folds_query.as_deref() {
-            Some(q) if !q.trim().is_empty() => Some(
-                Query::new(&config.language, q)
-                    .map_err(|e| TreeSitterError::Query(e.to_string()))?,
-            ),
+            Some(q) if !q.trim().is_empty() => {
+                Some(Query::new(&language, q).map_err(|e| TreeSitterError::Query(e.to_string()))?)
+            }
             _ => None,
         };
 
@@ -169,6 +253,7 @@ impl TreeSitterProcessor {
             last_synced_version: None,
             last_processed_version: None,
             last_update_mode: TreeSitterUpdateMode::FullReparse,
+            wasm_engine,
         })
     }
 

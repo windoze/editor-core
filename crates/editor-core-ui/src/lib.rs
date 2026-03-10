@@ -33,9 +33,9 @@ use editor_core_render_skia::{
 };
 use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
 use editor_core_treesitter::{
-    TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterUpdateMode,
+    TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterRegistry, TreeSitterRegistryError,
+    TreeSitterUpdateMode, load_processor_config_from_config,
 };
-use editor_core_treesitter_queries as treesitter_queries;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
@@ -620,6 +620,7 @@ struct EditorUiDoc {
     treesitter: Option<TreeSitterAsyncWorker>,
     treesitter_capture_mapper: TreeSitterCaptureMapper,
     treesitter_processing_config: TreeSitterProcessingConfig,
+    treesitter_registry: TreeSitterRegistry,
     treesitter_doc_version: u64,
     lsp: Option<Arc<SharedLspSession>>,
     lsp_document_uri: Option<String>,
@@ -806,6 +807,7 @@ impl EditorUi {
             treesitter: None,
             treesitter_capture_mapper: TreeSitterCaptureMapper::default(),
             treesitter_processing_config: TreeSitterProcessingConfig::default(),
+            treesitter_registry: TreeSitterRegistry::default(),
             treesitter_doc_version: 0,
             lsp: None,
             lsp_document_uri: None,
@@ -2025,47 +2027,44 @@ impl EditorUi {
         Ok(proc.scope_mapper.style_id_for_scope(scope))
     }
 
-    /// Enable Tree-sitter highlighting/folding using a built-in query pack id (e.g. `"rust"`).
-    pub fn set_treesitter_query_pack(&mut self, pack_id: &str) -> Result<(), UiError> {
-        let Some(pack) = treesitter_queries::query_pack(pack_id) else {
-            return Err(UiError::Processor(format!(
-                "unknown tree-sitter query pack id: {pack_id}"
-            )));
+    /// Replace the Tree-sitter registry for this document with a schema-versioned JSON string.
+    ///
+    /// This is designed for Swift ↔ Rust FFI where passing maps directly is inconvenient.
+    pub fn set_treesitter_registry_json(&mut self, registry_json: &str) -> Result<(), UiError> {
+        let registry = TreeSitterRegistry::from_json_str(registry_json)
+            .map_err(|e: TreeSitterRegistryError| UiError::Processor(e.to_string()))?;
+        let mut doc = self.lock_doc();
+        doc.treesitter_registry = registry;
+        Ok(())
+    }
+
+    /// Enable Tree-sitter highlighting/folding using the current registry and a Tree-sitter
+    /// `language_id` (e.g. `"rust"`).
+    pub fn set_treesitter_language(&mut self, language_id: &str) -> Result<(), UiError> {
+        let language_config = {
+            let doc = self.lock_doc();
+            doc.treesitter_registry
+                .languages
+                .get(language_id)
+                .cloned()
+                .ok_or_else(|| {
+                    UiError::Processor(format!(
+                        "unknown tree-sitter language_id (not in registry): {language_id}"
+                    ))
+                })?
         };
-        self.set_treesitter_with_language_and_queries(
-            (pack.language)(),
-            pack.highlights_query,
-            pack.folds_query,
-        )
-    }
 
-    pub fn set_treesitter_rust_default(&mut self) -> Result<(), UiError> {
-        self.set_treesitter_query_pack("rust")
-    }
-
-    pub fn set_treesitter_rust_with_queries(
-        &mut self,
-        highlights_query: &str,
-        folds_query: Option<&str>,
-    ) -> Result<(), UiError> {
-        let language: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-        self.set_treesitter_with_language_and_queries(language, highlights_query, folds_query)
-    }
-
-    fn set_treesitter_with_language_and_queries(
-        &mut self,
-        language: tree_sitter::Language,
-        highlights_query: &str,
-        folds_query: Option<&str>,
-    ) -> Result<(), UiError> {
-        let query = tree_sitter::Query::new(&language, highlights_query)
+        let mut config = load_processor_config_from_config(language_id, &language_config)
+            .map_err(|e| UiError::Processor(e.to_string()))?;
+        let capture_names = config
+            .highlights_capture_names()
             .map_err(|e| UiError::Processor(e.to_string()))?;
 
         let prefetch_char_range = self.treesitter_prefetch_char_range();
         let (capture_styles, runtime, text, version) = {
             let mut doc = self.lock_doc();
             let mut capture_styles = BTreeMap::<String, u32>::new();
-            for name in query.capture_names() {
+            for name in &capture_names {
                 let style_id = doc.treesitter_capture_mapper.style_id_for_capture(name);
                 capture_styles.insert(name.to_string(), style_id);
             }
@@ -2089,10 +2088,6 @@ impl EditorUi {
             (capture_styles, runtime, text, version)
         };
 
-        let mut config = TreeSitterProcessorConfig::new(language, highlights_query.to_string());
-        if let Some(folds_query) = folds_query {
-            config = config.with_folds_query(folds_query.to_string());
-        }
         config.capture_styles = capture_styles;
 
         let mut worker = TreeSitterAsyncWorker::spawn();
@@ -2112,6 +2107,35 @@ impl EditorUi {
             doc.treesitter = Some(worker);
         }
         Ok(())
+    }
+
+    /// Enable Tree-sitter highlighting/folding for a file path by resolving the extension via
+    /// the current registry.
+    pub fn set_treesitter_for_path(&mut self, path: &std::path::Path) -> Result<(), UiError> {
+        let language_id = {
+            let doc = self.lock_doc();
+            doc.treesitter_registry
+                .language_id_for_path(path)
+                .map(|s| s.to_string())
+        }
+        .ok_or_else(|| {
+            UiError::Processor(format!(
+                "no tree-sitter language_id mapped for path: {}",
+                path.display()
+            ))
+        })?;
+
+        self.set_treesitter_language(language_id.as_str())
+    }
+
+    /// Backwards-compatible alias: treat `pack_id` as `language_id`.
+    pub fn set_treesitter_query_pack(&mut self, pack_id: &str) -> Result<(), UiError> {
+        self.set_treesitter_language(pack_id)
+    }
+
+    /// Backwards-compatible alias: `rust` language id.
+    pub fn set_treesitter_rust_default(&mut self) -> Result<(), UiError> {
+        self.set_treesitter_language("rust")
     }
 
     pub fn disable_treesitter(&mut self) {
@@ -5832,6 +5856,29 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }
+
+    fn set_test_treesitter_registry(ui: &mut EditorUi) {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../editor-core-treesitter/tests/fixtures/treesitter");
+
+        let json = serde_json::json!({
+            "schema_version": 1,
+            "root_dir": root.to_string_lossy(),
+            "extension_map": {
+                "rs": "rust"
+            },
+            "languages": {
+                "rust": {
+                    "wasm": "rust/language.wasm",
+                    "highlights": "rust/highlights.scm",
+                    "folds": "rust/folds.scm"
+                }
+            }
+        })
+        .to_string();
+
+        ui.set_treesitter_registry_json(&json).unwrap();
+    }
     use editor_core::CursorCommand;
     use editor_core_treesitter::TreeSitterUpdateMode;
 
@@ -6912,6 +6959,7 @@ mod tests {
     fn ui_gutter_click_toggles_fold_state() {
         let text = "fn main() {\n  let x = 1;\n}\n";
         let mut ui = EditorUi::new(text, 80);
+        set_test_treesitter_registry(&mut ui);
         ui.set_treesitter_rust_default().unwrap();
         wait_for_async_processing(&mut ui);
         ui.set_render_config(RenderConfig {
@@ -6963,6 +7011,7 @@ mod tests {
         let text =
             "fn main() {\n  if true {\n    if true {\n      println!(\"hi\");\n    }\n  }\n}\n";
         let mut ui = EditorUi::new(text, 80);
+        set_test_treesitter_registry(&mut ui);
         ui.set_treesitter_rust_default().unwrap();
         wait_for_async_processing(&mut ui);
         ui.set_render_config(RenderConfig {
@@ -7244,14 +7293,6 @@ world
 
     #[test]
     fn ui_treesitter_highlight_and_folding_roundtrip() {
-        let highlights = r#"
-        (line_comment) @comment
-        (string_literal) @string
-        "#;
-        let folds = r#"
-        (function_item) @fold
-        "#;
-
         let text = r#"// hi
 fn main() {
   let s = "x";
@@ -7259,8 +7300,8 @@ fn main() {
 "#;
 
         let mut ui = EditorUi::new(text, 80);
-        ui.set_treesitter_rust_with_queries(highlights, Some(folds))
-            .unwrap();
+        set_test_treesitter_registry(&mut ui);
+        ui.set_treesitter_language("rust").unwrap();
         wait_for_async_processing(&mut ui);
 
         let comment_style = ui.treesitter_style_id_for_capture("comment");
@@ -7307,10 +7348,9 @@ fn main() {
 
     #[test]
     fn ui_treesitter_uses_incremental_updates_when_deltas_available() {
-        let highlights = r#"(line_comment) @comment"#;
         let mut ui = EditorUi::new("// a\n", 80);
-        ui.set_treesitter_rust_with_queries(highlights, None)
-            .unwrap();
+        set_test_treesitter_registry(&mut ui);
+        ui.set_treesitter_language("rust").unwrap();
         wait_for_async_processing(&mut ui);
         assert_eq!(
             ui.treesitter_last_update_mode(),
@@ -7327,7 +7367,6 @@ fn main() {
 
     #[test]
     fn ui_treesitter_runtime_config_can_be_updated_while_running() {
-        let highlights = r#"(line_comment) @comment"#;
         let mut ui = EditorUi::new("// a\n", 80);
 
         // Use a zero-debounce config to keep the test fast and deterministic.
@@ -7337,8 +7376,8 @@ fn main() {
         })
         .unwrap();
 
-        ui.set_treesitter_rust_with_queries(highlights, None)
-            .unwrap();
+        set_test_treesitter_registry(&mut ui);
+        ui.set_treesitter_language("rust").unwrap();
         wait_for_async_processing(&mut ui);
 
         // Updating the config should send a message to the worker and not break processing.

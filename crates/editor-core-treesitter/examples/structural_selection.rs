@@ -1,20 +1,29 @@
 use editor_core::{DocumentProcessor, EditorStateManager};
-use editor_core_treesitter::{TreeSitterProcessor, TreeSitterProcessorConfig};
-use tree_sitter_rust::LANGUAGE;
+use editor_core_treesitter::{
+    TreeSitterConfig, TreeSitterProcessor, load_processor_config_from_config,
+};
+use std::collections::BTreeMap;
 
 fn main() {
     let text = include_str!("../tests/fixtures/rust_sample.rs");
     let state = EditorStateManager::new(text, 80);
 
-    let config =
-        TreeSitterProcessorConfig::new(LANGUAGE.into(), tree_sitter_rust::HIGHLIGHTS_QUERY)
-            .with_default_rust_folds()
-            .with_simple_capture_styles([
-                ("comment", 1),
-                ("string", 2),
-                ("type", 3),
-                ("function", 4),
-            ]);
+    let treesitter_root = std::env::var("EDITOR_CORE_TREESITTER_ROOT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/treesitter")
+        });
+    let language_dir = treesitter_root.join("rust");
+    let cfg = TreeSitterConfig::from_language_dir(&language_dir)
+        .expect("missing rust fixtures; set EDITOR_CORE_TREESITTER_ROOT to your treesitter/ dir");
+
+    let mut config = load_processor_config_from_config("rust", &cfg).expect("load rust config");
+    config.capture_styles = BTreeMap::from([
+        ("comment".to_string(), 1),
+        ("string".to_string(), 2),
+        ("type".to_string(), 3),
+        ("function".to_string(), 4),
+    ]);
     let mut processor = TreeSitterProcessor::new(config).expect("init tree-sitter");
     let _ = processor.process(&state).expect("parse");
 

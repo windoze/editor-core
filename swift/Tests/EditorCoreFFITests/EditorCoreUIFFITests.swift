@@ -1,4 +1,5 @@
 import EditorCoreUIFFI
+import Foundation
 import XCTest
 
 final class EditorCoreUIFFITests: XCTestCase {
@@ -15,6 +16,40 @@ final class EditorCoreUIFFITests: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 0.001)
         }
+    }
+
+    private func setTestTreeSitterRegistry(_ ui: EditorUI) throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // EditorCoreUIFFITests.swift
+            .deletingLastPathComponent() // EditorCoreFFITests
+            .deletingLastPathComponent() // Tests
+            .deletingLastPathComponent() // swift
+
+        let root = repoRoot.appendingPathComponent(
+            "crates/editor-core-treesitter/tests/fixtures/treesitter",
+            isDirectory: true
+        )
+
+        let registry: [String: Any] = [
+            "schema_version": 1,
+            "root_dir": root.path,
+            "extension_map": ["rs": "rust"],
+            "languages": [
+                "rust": [
+                    "wasm": "rust/language.wasm",
+                    "highlights": "rust/highlights.scm",
+                    "folds": "rust/folds.scm",
+                ],
+            ],
+        ]
+
+        let data = try JSONSerialization.data(withJSONObject: registry, options: [])
+        guard let json = String(data: data, encoding: .utf8) else {
+            XCTFail("failed to encode registry json")
+            return
+        }
+
+        try ui.treeSitterSetRegistryJSON(json)
     }
 
     func testLoadsLibraryAndVersion() throws {
@@ -463,7 +498,8 @@ final class EditorCoreUIFFITests: XCTestCase {
         try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
         try ui.setViewportPx(widthPx: 200, heightPx: 40, scale: 1)
 
-        try ui.treeSitterRustEnable(highlightsQuery: "(line_comment) @comment")
+        try setTestTreeSitterRegistry(ui)
+        try ui.treeSitterEnableLanguage("rust")
         try waitForAsyncProcessing(ui)
         let styleId = try ui.treeSitterStyleId(forCapture: "comment")
         XCTAssertEqual(try ui.treeSitterCapture(forStyleId: styleId), "comment")
@@ -934,7 +970,8 @@ final class EditorCoreUIFFITests: XCTestCase {
         )
         try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
         try ui.setViewportPx(widthPx: 200, heightPx: 60, scale: 1)
-        try ui.treeSitterRustEnableDefault()
+        try setTestTreeSitterRegistry(ui)
+        try ui.treeSitterEnableLanguage("rust")
         try waitForAsyncProcessing(ui)
         try ui.setGutterWidthCells(2)
 

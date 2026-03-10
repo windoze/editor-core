@@ -43,7 +43,7 @@ use editor_core_lsp::{
 };
 use editor_core_sublime::{SublimeProcessor, SublimeScopeMapper, SublimeSyntaxSet};
 use editor_core_treesitter::{
-    TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterUpdateMode,
+    TreeSitterLanguage, TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterUpdateMode,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -3587,21 +3587,6 @@ pub extern "C" fn editor_core_ffi_sublime_processor_scope_for_style_id(
 /// Tree-sitter language function pointer type expected by this FFI.
 pub type EcfTreeSitterLanguageFn = unsafe extern "C" fn() -> *const ();
 
-/// Built-in Tree-sitter Rust language function.
-///
-/// This is provided so FFI consumers (including Swift tests/wrappers) can use Tree-sitter
-/// without separately linking a language grammar.
-///
-/// # Safety
-///
-/// This function returns a raw pointer to the Tree-sitter language function.
-/// The returned pointer is valid for the lifetime of the program.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn editor_core_ffi_treesitter_language_rust() -> *const () {
-    let language_fn = tree_sitter_rust::LANGUAGE.into_raw();
-    unsafe { language_fn() }
-}
-
 /// Create a Tree-sitter processor.
 ///
 /// `capture_styles_json` is optional object JSON: `{ "capture.name": 123, ... }`.
@@ -3622,7 +3607,63 @@ pub extern "C" fn editor_core_ffi_treesitter_processor_new(
             tree_sitter_language::LanguageFn::from_raw(language_fn)
         });
 
-        let mut config = TreeSitterProcessorConfig::new(language, highlights_query);
+        let mut config =
+            TreeSitterProcessorConfig::new(TreeSitterLanguage::native(language), highlights_query);
+        if let Some(folds_query) = optional_string(folds_query, "folds_query")?
+            && !folds_query.trim().is_empty()
+        {
+            config = config.with_folds_query(folds_query);
+        }
+
+        if let Some(capture_styles_json) =
+            optional_string(capture_styles_json, "capture_styles_json")?
+        {
+            let capture_styles: BTreeMap<String, u32> =
+                parse_json(&capture_styles_json, "capture styles")?;
+            config.capture_styles = capture_styles;
+        }
+
+        config.style_layer = StyleLayerId::new(style_layer);
+        config.set_preserve_collapsed_folds(preserve_collapsed_folds);
+
+        let processor = TreeSitterProcessor::new(config)
+            .map_err(|err| format!("failed to create tree-sitter processor: {err}"))?;
+
+        Ok(Box::into_raw(Box::new(EcfTreeSitterProcessor {
+            inner: processor,
+        })))
+    })
+}
+
+/// Create a Tree-sitter WASM processor from a grammar file path.
+///
+/// This is useful for FFI consumers that want to avoid shipping native Tree-sitter grammars as
+/// compiled-in dependencies.
+///
+/// `capture_styles_json` is optional object JSON: `{ "capture.name": 123, ... }`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_treesitter_processor_new_wasm_from_path(
+    language_id_utf8: *const c_char,
+    wasm_path_utf8: *const c_char,
+    highlights_query: *const c_char,
+    folds_query: *const c_char,
+    capture_styles_json: *const c_char,
+    style_layer: u32,
+    preserve_collapsed_folds: bool,
+) -> *mut EcfTreeSitterProcessor {
+    result_ptr(ptr::null_mut(), || {
+        let language_id = require_string(language_id_utf8, "language_id_utf8")?;
+        let wasm_path = require_string(wasm_path_utf8, "wasm_path_utf8")?;
+        let highlights_query = require_string(highlights_query, "highlights_query")?;
+
+        let wasm_bytes = std::fs::read(&wasm_path)
+            .map_err(|e| format!("failed to read wasm file '{}': {e}", wasm_path))?;
+
+        let mut config = TreeSitterProcessorConfig::new(
+            TreeSitterLanguage::wasm(language_id, wasm_bytes),
+            highlights_query,
+        );
+
         if let Some(folds_query) = optional_string(folds_query, "folds_query")?
             && !folds_query.trim().is_empty()
         {

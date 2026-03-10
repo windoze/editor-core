@@ -2,6 +2,25 @@ import Foundation
 import XCTest
 @testable import EditorCoreFFI
 
+private func editorCoreRepoRootURL() -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent() // TreeSitterProcessorTests.swift
+        .deletingLastPathComponent() // EditorCoreFFITests
+        .deletingLastPathComponent() // Tests
+        .deletingLastPathComponent() // swift
+}
+
+private func rustTreeSitterFixtureDirURL() -> URL {
+    editorCoreRepoRootURL()
+        .appendingPathComponent("crates/editor-core-treesitter/tests/fixtures/treesitter/rust", isDirectory: true)
+}
+
+private func rustTreeSitterWasmPath() -> String {
+    rustTreeSitterFixtureDirURL()
+        .appendingPathComponent("language.wasm", isDirectory: false)
+        .path
+}
+
 final class TreeSitterProcessorTests: XCTestCase {
     func testTreeSitterHighlightsFoldsAndUpdateMode() throws {
         let library = try EditorCoreFFITestSupport.shared.loadLibrary()
@@ -28,7 +47,8 @@ final class TreeSitterProcessorTests: XCTestCase {
         // process_json API: compute edits without mutating state
         let processOnly = try TreeSitterProcessor(
             library: library,
-            languageFn: library.treeSitterRustLanguageFn,
+            languageId: "rust",
+            wasmPath: rustTreeSitterWasmPath(),
             highlightsQuery: highlightsQuery,
             foldsQuery: foldsQuery,
             captureStylesJSON: captureStylesJSON,
@@ -46,7 +66,8 @@ final class TreeSitterProcessorTests: XCTestCase {
         // apply API: actually mutates derived state inside editor
         let processor = try TreeSitterProcessor(
             library: library,
-            languageFn: library.treeSitterRustLanguageFn,
+            languageId: "rust",
+            wasmPath: rustTreeSitterWasmPath(),
             highlightsQuery: highlightsQuery,
             foldsQuery: foldsQuery,
             captureStylesJSON: captureStylesJSON,
@@ -91,7 +112,8 @@ final class TreeSitterProcessorTests: XCTestCase {
 
         let preserveProcessor = try TreeSitterProcessor(
             library: library,
-            languageFn: library.treeSitterRustLanguageFn,
+            languageId: "rust",
+            wasmPath: rustTreeSitterWasmPath(),
             highlightsQuery: highlightsQuery,
             foldsQuery: foldsQuery,
             captureStylesJSON: captureStylesJSON,
@@ -121,7 +143,8 @@ final class TreeSitterProcessorTests: XCTestCase {
         // new processor with preserve=false should reset collapsed back to false
         let resetProcessor = try TreeSitterProcessor(
             library: library,
-            languageFn: library.treeSitterRustLanguageFn,
+            languageId: "rust",
+            wasmPath: rustTreeSitterWasmPath(),
             highlightsQuery: highlightsQuery,
             foldsQuery: foldsQuery,
             captureStylesJSON: captureStylesJSON,

@@ -13,7 +13,34 @@ final class EditorCoreSkiaViewAsyncProcessingTests: XCTestCase {
             viewportWidthCells: 80
         )
 
-        try view.editor.treeSitterRustEnableDefault()
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // EditorCoreSkiaViewAsyncProcessingTests.swift
+            .deletingLastPathComponent() // EditorCoreUITests
+            .deletingLastPathComponent() // Tests
+            .deletingLastPathComponent() // swift
+        let treesitterRoot = repoRoot.appendingPathComponent(
+            "crates/editor-core-treesitter/tests/fixtures/treesitter",
+            isDirectory: true
+        )
+        let registry: [String: Any] = [
+            "schema_version": 1,
+            "root_dir": treesitterRoot.path,
+            "extension_map": ["rs": "rust"],
+            "languages": [
+                "rust": [
+                    "wasm": "rust/language.wasm",
+                    "highlights": "rust/highlights.scm",
+                    "folds": "rust/folds.scm",
+                ],
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: registry, options: [])
+        guard let json = String(data: data, encoding: .utf8) else {
+            XCTFail("failed to encode registry json")
+            return
+        }
+        try view.editor.treeSitterSetRegistryJSON(json)
+        try view.editor.treeSitterEnableLanguage("rust")
 
         let applied = expectation(description: "applied async processing")
         view.onDidApplyAsyncProcessing = {

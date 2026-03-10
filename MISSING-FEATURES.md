@@ -208,11 +208,18 @@ this workspace (per your request).
     - shipping and selecting highlight/fold queries per language
     - mapping captures to `StyleId`s in a consistent themeable way
   - Today this is mostly “bring your own query string”.
-  - Implemented as a small built-in registry crate:
-    - `crates/editor-core-treesitter-queries` provides `TreeSitterQueryPack` (id → language + queries)
-    - `editor-core-ui::EditorUi::set_treesitter_query_pack(pack_id)` selects a pack (Rust: `"rust"`)
-    - Swift/AppKit: `EditorUI.treeSitterEnableQueryPack(_:)` and AttoEditor uses it for Rust fallback
-  - Tests: `crates/editor-core-treesitter-queries/src/lib.rs` (unit tests)
+  - Implemented as a **file-based registry** + **WASM grammars**:
+    - `editor-core-treesitter` loads `language.wasm` + `.scm` query files from disk.
+    - FFI-friendly JSON registry:
+      - `extension_map`: extension → `language_id`
+      - `languages`: `language_id` → `{ wasm, highlights, folds?, tags?, injections? }`
+    - `editor-core-ui::EditorUi`:
+      - `set_treesitter_registry_json(registry_json)`
+      - `set_treesitter_language(language_id)` / `set_treesitter_for_path(path)`
+    - Swift/AppKit:
+      - `EditorUI.treeSitterSetRegistryJSON(_:)`
+      - `EditorUI.treeSitterEnableLanguage(_:)` / `EditorUI.treeSitterEnableForPath(_:)`
+  - Tests: `crates/editor-core-treesitter/tests/treesitter_registry.rs`
 
 - [x] **[integration] LSP feature coverage beyond the current bridges**
   - `editor-core-lsp` covers a useful subset (semantic tokens, folding, diagnostics, inlay hints,
