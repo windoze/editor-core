@@ -82,8 +82,12 @@ pub struct CompiledMatchPattern {
     pub origin_scope: String,
     /// Original regex source string (after variable substitution).
     pub regex_source: String,
-    /// Compiled Oniguruma regex.
-    pub regex: Arc<Regex>,
+    /// Compiled Oniguruma regex (when the pattern is fully static).
+    ///
+    /// Some Sublime syntaxes use `\1`-style backreferences that refer to captures from the
+    /// match that pushed the current context. Those must be compiled at runtime after
+    /// substitution, so `regex` is `None` for such patterns.
+    pub regex: Option<Arc<Regex>>,
 
     /// Scopes applied to the matched region.
     pub scope: Vec<String>,
@@ -103,6 +107,24 @@ pub enum MatchAction {
     Pop {
         /// Number of contexts to pop.
         count: usize,
+    },
+    /// Create a branch point and push one of several alternative contexts.
+    ///
+    /// This is an advanced Sublime feature used for backtracking-based disambiguation
+    /// (e.g. Markdown setext heading vs paragraph).
+    Branch {
+        /// Name of the branch point.
+        branch_point: String,
+        /// The alternative contexts to try, in order.
+        ///
+        /// On first match, the highlighter will enter `branches[0]`. If a later `Fail` is
+        /// triggered for the same branch point name, it will roll back and try the next one.
+        branches: Vec<ContextSpec>,
+    },
+    /// Fail back to a named branch point (try the next branch).
+    Fail {
+        /// Name of the branch point to roll back to.
+        branch_point: String,
     },
     /// Push one or more contexts onto the stack.
     Push {
@@ -132,8 +154,11 @@ pub enum MatchAction {
         embed_scope: Vec<String>,
         /// Original escape regex source string.
         escape_source: String,
-        /// Compiled escape regex.
-        escape: Arc<Regex>,
+        /// Compiled escape regex (when static).
+        ///
+        /// Some syntaxes use `\1`-style placeholders here, which must be substituted
+        /// from the match that started the embed, then compiled at runtime.
+        escape: Option<Arc<Regex>>,
         /// Per-capture scopes for the escape match.
         escape_captures: HashMap<u32, Vec<String>>,
         /// Prototype patterns applied while embedded.
@@ -294,15 +319,17 @@ fn compile_match(
     variables: &HashMap<String, String>,
     origin_scope: &str,
 ) -> Result<CompiledMatchPattern, SublimeSyntaxError> {
-    if pattern.branch.is_some() || pattern.fail.is_some() || pattern.branch_point.is_some() {
-        return Err(SublimeSyntaxError::Unsupported("branch/fail"));
-    }
-
     let regex_source = substitute_variables(&pattern.regex, variables)?;
-    let regex = Regex::new(&regex_source).map_err(|e| SublimeSyntaxError::RegexCompile {
-        pattern: regex_source.clone(),
-        message: e.to_string(),
-    })?;
+    let regex = if contains_context_backrefs(&regex_source) {
+        None
+    } else {
+        Some(Arc::new(
+            Regex::new(&regex_source).map_err(|e| SublimeSyntaxError::RegexCompile {
+                pattern: regex_source.clone(),
+                message: e.to_string(),
+            })?,
+        ))
+    };
 
     let mut captures = HashMap::new();
     for (idx, spec) in &pattern.captures {
@@ -312,6 +339,27 @@ fn compile_match(
     let mut escape_captures = HashMap::new();
     for (idx, spec) in &pattern.escape_captures {
         escape_captures.insert(*idx, flatten_capture_spec(spec));
+    }
+
+    if pattern.branch_point.is_some() && pattern.branch.is_none() {
+        return Err(SublimeSyntaxError::MissingField(
+            "branch (required by branch_point)",
+        ));
+    }
+    if pattern.branch.is_some() && pattern.branch_point.is_none() {
+        return Err(SublimeSyntaxError::MissingField(
+            "branch_point (required by branch)",
+        ));
+    }
+
+    let has_branching =
+        pattern.branch.is_some() || pattern.branch_point.is_some() || pattern.fail.is_some();
+    if has_branching && !pattern.with_prototype.as_deref().unwrap_or_default().is_empty() {
+        // Keep the surface area smaller until we implement the exact semantics for
+        // `with_prototype` in conjunction with branch rollback.
+        return Err(SublimeSyntaxError::Unsupported(
+            "with_prototype with branch/fail",
+        ));
     }
 
     let with_prototype = pattern
@@ -329,7 +377,52 @@ fn compile_match(
         Some(PopAction::Count(n)) => *n,
     };
 
-    let action = if let Some(embed) = &pattern.embed {
+    let action = if let Some(fail_target) = &pattern.fail {
+        if pop_before > 0
+            || pattern.push.is_some()
+            || pattern.set.is_some()
+            || pattern.embed.is_some()
+            || pattern.branch.is_some()
+            || pattern.branch_point.is_some()
+        {
+            return Err(SublimeSyntaxError::Unsupported(
+                "fail with push/set/pop/embed/branch",
+            ));
+        }
+        MatchAction::Fail {
+            branch_point: fail_target.clone(),
+        }
+    } else if let Some(branches) = &pattern.branch {
+        if pop_before > 0 || pattern.push.is_some() || pattern.set.is_some() || pattern.embed.is_some() {
+            return Err(SublimeSyntaxError::Unsupported(
+                "branch with push/set/pop/embed",
+            ));
+        }
+
+        let Some(branch_point) = &pattern.branch_point else {
+            // Covered by the `MissingField` check above, but keep this defensive for clarity.
+            return Err(SublimeSyntaxError::MissingField(
+                "branch_point (required by branch)",
+            ));
+        };
+
+        if branches.is_empty() {
+            return Err(SublimeSyntaxError::Unsupported("empty branch list"));
+        }
+
+        let compiled_branches = branches
+            .iter()
+            .map(|name| ContextSpec::Named {
+                origin_scope: origin_scope.to_string(),
+                name: name.clone(),
+            })
+            .collect::<Vec<_>>();
+
+        MatchAction::Branch {
+            branch_point: branch_point.clone(),
+            branches: compiled_branches,
+        }
+    } else if let Some(embed) = &pattern.embed {
         let Some(escape) = &pattern.escape else {
             return Err(SublimeSyntaxError::MissingField(
                 "escape (required by embed)",
@@ -337,18 +430,23 @@ fn compile_match(
         };
 
         let escape_source = substitute_variables(escape, variables)?;
-        let escape_regex =
-            Regex::new(&escape_source).map_err(|e| SublimeSyntaxError::RegexCompile {
-                pattern: escape_source.clone(),
-                message: e.to_string(),
-            })?;
+        let escape_regex = if contains_context_backrefs(&escape_source) {
+            None
+        } else {
+            Some(Arc::new(
+                Regex::new(&escape_source).map_err(|e| SublimeSyntaxError::RegexCompile {
+                    pattern: escape_source.clone(),
+                    message: e.to_string(),
+                })?,
+            ))
+        };
 
         MatchAction::Embed {
             pop_before,
             embed: embed.clone(),
             embed_scope: split_scopes(pattern.embed_scope.as_deref()),
             escape_source,
-            escape: Arc::new(escape_regex),
+            escape: escape_regex,
             escape_captures,
             with_prototype,
         }
@@ -378,11 +476,25 @@ fn compile_match(
     Ok(CompiledMatchPattern {
         origin_scope: origin_scope.to_string(),
         regex_source,
-        regex: Arc::new(regex),
+        regex,
         scope: split_scopes(pattern.scope.as_deref()),
         captures,
         action,
     })
+}
+
+fn contains_context_backrefs(text: &str) -> bool {
+    // Sublime syntaxes frequently use `\1`-style placeholders that refer to captures from the
+    // match that pushed the current context (not regex backrefs within the same pattern).
+    //
+    // For compatibility, treat any `\d` appearance as requiring runtime substitution.
+    let bytes = text.as_bytes();
+    for i in 0..bytes.len().saturating_sub(1) {
+        if bytes[i] == b'\\' && bytes[i + 1].is_ascii_digit() && bytes[i + 1] != b'0' {
+            return true;
+        }
+    }
+    false
 }
 
 fn compile_context_push(

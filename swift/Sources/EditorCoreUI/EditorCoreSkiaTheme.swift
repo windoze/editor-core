@@ -92,6 +92,35 @@ public struct EditorCoreSkiaTheme: Equatable {
         theme.styleOverrides = [
             .init(styleId: EditorCoreSkiaBuiltinStyleId.commandHoverLink, underline: .single)
         ]
+        // 基础 Tree-sitter capture 配色（用于没有 LSP 的语言：例如 Markdown / 自定义语言）。
+        theme.treeSitterCaptureOverrides = [
+            .init(capture: "comment", foreground: EcuRgba8(r: 0x00, g: 0x80, b: 0x00, a: 0xFF), italic: true),
+            .init(capture: "keyword", foreground: EcuRgba8(r: 0xAF, g: 0x00, b: 0xDB, a: 0xFF)),
+            .init(capture: "string", foreground: EcuRgba8(r: 0xA3, g: 0x15, b: 0x15, a: 0xFF)),
+            .init(capture: "string.escape", foreground: EcuRgba8(r: 0x81, g: 0x6B, b: 0x00, a: 0xFF)),
+            .init(capture: "string.special", foreground: EcuRgba8(r: 0x81, g: 0x6B, b: 0x00, a: 0xFF)),
+            .init(capture: "number", foreground: EcuRgba8(r: 0x09, g: 0x86, b: 0x58, a: 0xFF)),
+            .init(capture: "number.float", foreground: EcuRgba8(r: 0x09, g: 0x86, b: 0x58, a: 0xFF)),
+            .init(capture: "type", foreground: EcuRgba8(r: 0x26, g: 0x7F, b: 0x99, a: 0xFF)),
+            .init(capture: "type.builtin", foreground: EcuRgba8(r: 0x26, g: 0x7F, b: 0x99, a: 0xFF)),
+            .init(capture: "function", foreground: EcuRgba8(r: 0x79, g: 0x5E, b: 0x26, a: 0xFF)),
+            .init(capture: "function.method", foreground: EcuRgba8(r: 0x79, g: 0x5E, b: 0x26, a: 0xFF)),
+            .init(capture: "property", foreground: EcuRgba8(r: 0x00, g: 0x10, b: 0x80, a: 0xFF)),
+            .init(capture: "variable.builtin", foreground: EcuRgba8(r: 0x00, g: 0x10, b: 0x80, a: 0xFF)),
+            // Markdown / text-ish captures
+            .init(capture: "text.title", foreground: EcuRgba8(r: 0x00, g: 0x00, b: 0x80, a: 0xFF), bold: true),
+            .init(capture: "text.literal", foreground: EcuRgba8(r: 0xA3, g: 0x15, b: 0x15, a: 0xFF)),
+            .init(
+                capture: "text.uri",
+                foreground: EcuRgba8(r: 0x00, g: 0x66, b: 0xBF, a: 0xFF),
+                underline: .single,
+                underlineColor: EcuRgba8(r: 0x00, g: 0x66, b: 0xBF, a: 0xFF)
+            ),
+            .init(capture: "text.reference", foreground: EcuRgba8(r: 0x00, g: 0x66, b: 0xBF, a: 0xFF)),
+            .init(capture: "punctuation.special", foreground: EcuRgba8(r: 0x81, g: 0x6B, b: 0x00, a: 0xFF)),
+            .init(capture: "punctuation.delimiter", foreground: EcuRgba8(r: 0x11, g: 0x11, b: 0x11, a: 0xFF)),
+            .init(capture: "operator", foreground: EcuRgba8(r: 0x11, g: 0x11, b: 0x11, a: 0xFF)),
+        ]
         return theme
     }
 
@@ -182,6 +211,38 @@ public struct EditorCoreSkiaTheme: Equatable {
                 underline: .squiggly,
                 underlineColor: EcuRgba8(r: 0x9A, g: 0xA0, b: 0xA6, a: 0xFF)
             ),
+        ]
+
+        // 基础 Tree-sitter capture 配色（用于没有 LSP 的语言：例如 Rusk / Markdown）。
+        theme.treeSitterCaptureOverrides = [
+            // Core captures
+            .init(capture: "comment", foreground: EcuRgba8(r: 0x6A, g: 0x99, b: 0x55, a: 0xFF), italic: true),
+            .init(capture: "keyword", foreground: EcuRgba8(r: 0xC5, g: 0x86, b: 0xC0, a: 0xFF), bold: true),
+            .init(capture: "string", foreground: EcuRgba8(r: 0xCE, g: 0x91, b: 0x78, a: 0xFF)),
+            .init(capture: "string.escape", foreground: EcuRgba8(r: 0xD7, g: 0xBA, b: 0x7D, a: 0xFF)),
+            .init(capture: "string.special", foreground: EcuRgba8(r: 0xD7, g: 0xBA, b: 0x7D, a: 0xFF)),
+            .init(capture: "number", foreground: EcuRgba8(r: 0xB5, g: 0xCE, b: 0xA8, a: 0xFF)),
+            .init(capture: "number.float", foreground: EcuRgba8(r: 0xB5, g: 0xCE, b: 0xA8, a: 0xFF)),
+            .init(capture: "type", foreground: EcuRgba8(r: 0x4E, g: 0xC9, b: 0xB0, a: 0xFF)),
+            .init(capture: "type.builtin", foreground: EcuRgba8(r: 0x4E, g: 0xC9, b: 0xB0, a: 0xFF), italic: true),
+            .init(capture: "function", foreground: EcuRgba8(r: 0xDC, g: 0xDC, b: 0xAA, a: 0xFF)),
+            .init(capture: "function.method", foreground: EcuRgba8(r: 0xDC, g: 0xDC, b: 0xAA, a: 0xFF)),
+            .init(capture: "property", foreground: EcuRgba8(r: 0x9C, g: 0xDC, b: 0xFE, a: 0xFF)),
+            .init(capture: "variable.builtin", foreground: EcuRgba8(r: 0x56, g: 0x9C, b: 0xD6, a: 0xFF), italic: true),
+            // Operators / punctuation
+            .init(capture: "punctuation.delimiter", foreground: EcuRgba8(r: 0xD4, g: 0xD4, b: 0xD4, a: 0xFF)),
+            .init(capture: "punctuation.special", foreground: EcuRgba8(r: 0xD7, g: 0xBA, b: 0x7D, a: 0xFF)),
+            .init(capture: "operator", foreground: EcuRgba8(r: 0xD4, g: 0xD4, b: 0xD4, a: 0xFF)),
+            // Markdown / text-ish captures (common in nvim-treesitter query packs)
+            .init(capture: "text.title", foreground: EcuRgba8(r: 0x56, g: 0x9C, b: 0xD6, a: 0xFF), bold: true),
+            .init(capture: "text.literal", foreground: EcuRgba8(r: 0xCE, g: 0x91, b: 0x78, a: 0xFF)),
+            .init(
+                capture: "text.uri",
+                foreground: EcuRgba8(r: 0x4F, g: 0xC1, b: 0xFF, a: 0xFF),
+                underline: .single,
+                underlineColor: EcuRgba8(r: 0x4F, g: 0xC1, b: 0xFF, a: 0xFF)
+            ),
+            .init(capture: "text.reference", foreground: EcuRgba8(r: 0x9C, g: 0xDC, b: 0xFE, a: 0xFF)),
         ]
 
         // Semantic token colors (Rust Analyzer / LSP).

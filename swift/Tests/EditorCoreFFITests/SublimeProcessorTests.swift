@@ -130,5 +130,37 @@ final class SublimeProcessorTests: XCTestCase {
         // new_from_path constructor smoke
         _ = try SublimeProcessor(library: library, path: syntaxPath.path)
     }
-}
 
+    func testOfficialMarkdownSublimeSyntaxLoadsAndHighlightsCodeFences() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+
+        let testFile = URL(fileURLWithPath: #filePath)
+        let swiftRoot = testFile
+            .deletingLastPathComponent() // EditorCoreFFITests
+            .deletingLastPathComponent() // Tests
+            .deletingLastPathComponent() // swift
+        let repoRoot = swiftRoot.deletingLastPathComponent()
+        let syntaxPath = repoRoot
+            .appendingPathComponent("crates/editor-core-sublime/tests/fixtures/Markdown.sublime-syntax")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: syntaxPath.path))
+
+        let processor = try SublimeProcessor(library: library, path: syntaxPath.path)
+
+        let markdown = """
+        # Title
+
+        ```rust
+        fn main() {}
+        ````
+
+        Paragraph after.
+        """
+
+        let state = try EditorState(library: library, initialText: markdown, viewportWidth: 80)
+        try processor.apply(state: state)
+
+        let blob = try state.viewportBlob(startVisualRow: 0, rowCount: 40)
+        XCTAssertGreaterThan(blob.styleIds.count, 0)
+    }
+}

@@ -535,6 +535,14 @@ public final class EditorCoreSkiaView: MTKView {
         timer.resume()
     }
 
+    /// Best-effort: start a short-lived async processing poll window.
+    ///
+    /// This is useful when a host enables Tree-sitter (or other async processors) on a fresh
+    /// document without any edits yet, so the initial highlight/folding pass can be applied.
+    public func kickProcessingPoll() {
+        startProcessingPoll()
+    }
+
     private func stopProcessingPoll() {
         processingPollTimer?.cancel()
         processingPollTimer = nil

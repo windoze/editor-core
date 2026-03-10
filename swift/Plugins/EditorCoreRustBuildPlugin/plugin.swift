@@ -72,19 +72,32 @@ private func cargoBuildCommand(targetName: String, rustTargetDir: String) -> Str
         mkdir -p "\(destDir)"
 
         src_mtime=0
-        src_files=(
+        src_paths=(
           "Cargo.lock"
-          "crates/editor-core-ui-ffi/src/lib.rs"
-          "crates/editor-core-ui/src/lib.rs"
-          "crates/editor-core-render-skia/src/lib.rs"
           "crates/editor-core-ui-ffi/include/editor_core_ui_ffi.h"
+          "crates/editor-core-ui-ffi/src"
+          "crates/editor-core-ui/src"
+          "crates/editor-core-render-skia/src"
+          "crates/editor-core-sublime/src"
+          "crates/editor-core-treesitter/src"
+          "crates/editor-core-lsp/src"
+          "crates/editor-core/src"
         )
-        for f in "${src_files[@]}"; do
-          if [ -f "$f" ]; then
-            t=$(stat -f %m "$f" || echo 0)
+        for p in "${src_paths[@]}"; do
+          if [ -f "$p" ]; then
+            t=$(stat -f %m "$p" || echo 0)
             if [ "$t" -gt "$src_mtime" ]; then
               src_mtime="$t"
             fi
+            continue
+          fi
+          if [ -d "$p" ]; then
+            while IFS= read -r -d '' f; do
+              t=$(stat -f %m "$f" || echo 0)
+              if [ "$t" -gt "$src_mtime" ]; then
+                src_mtime="$t"
+              fi
+            done < <(find "$p" -type f -name '*.rs' -print0)
           fi
         done
 

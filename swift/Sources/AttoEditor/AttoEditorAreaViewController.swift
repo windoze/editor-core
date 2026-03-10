@@ -452,46 +452,26 @@ final class AttoEditorAreaViewController: NSViewController {
         try editCore.editor.setBracketMatchHighlightsEnabled(true)
 
         // Tree-sitter registry (best-effort).
+        var treesitterRootPath: String?
         do {
             let paths = try AttoTreeSitterRegistry.defaultPaths()
+            treesitterRootPath = paths.treesitterRoot.path
             let registryJSON = try AttoTreeSitterRegistry.buildRegistryJSON(treesitterRoot: paths.treesitterRoot)
             try editCore.editor.treeSitterSetRegistryJSON(registryJSON)
         } catch {
-            // Best-effort: Tree-sitter is optional and requires on-disk assets.
-        }
-
-        // LSP for Rust (best-effort).
-        if url.pathExtension.lowercased() == "rs" {
-            let disableLSP = ProcessInfo.processInfo.environment["ATTO_EDITOR_DISABLE_LSP"] == "1"
-                || ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DISABLE_LSP"] == "1"
-
-            if disableLSP == false {
-                do {
-                    let cmd = ProcessInfo.processInfo.environment["ATTO_EDITOR_LSP_CMD"]
-                        ?? ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_LSP_CMD"]
-                        ?? "rust-analyzer"
-                    let args = ProcessInfo.processInfo.environment["ATTO_EDITOR_LSP_ARGS"]
-                        ?? ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_LSP_ARGS"]
-
-                    try editCore.editor.lspEnable(
-                        command: cmd,
-                        args: args,
-                        rootURI: workspaceRootURL.absoluteString,
-                        documentURI: url.absoluteString,
-                        languageId: "rust"
-                    )
-                    editCore.editor.treeSitterDisable()
-                } catch {
-                    // Fall back to Tree-sitter highlighting if LSP is unavailable.
-                    try? editCore.editor.treeSitterEnableForPath(url.path)
-                }
+            if let treesitterRootPath {
+                NSLog(
+                    "AttoEditor: Tree-sitter registry init failed (root=%@): %@",
+                    treesitterRootPath,
+                    String(describing: error)
+                )
             } else {
-                try? editCore.editor.treeSitterEnableForPath(url.path)
+                NSLog("AttoEditor: Tree-sitter registry init failed: %@", String(describing: error))
             }
-        } else {
-            // Non-Rust languages: best-effort Tree-sitter only (no LSP yet).
-            try? editCore.editor.treeSitterEnableForPath(url.path)
         }
+
+        // Syntax support (best-effort): LSP -> Tree-sitter -> Sublime `.sublime-syntax`.
+        configureSyntaxSupport(for: url, editCore: editCore)
 
         let tabId = UUID()
         let tab = AttoEditorTab(
@@ -521,6 +501,77 @@ final class AttoEditorAreaViewController: NSViewController {
             return (try? tab.editCore.editor.lspIsEnabled()) == true
         }
         return tab
+    }
+
+    private func configureSyntaxSupport(for url: URL, editCore: EditCoreUI) {
+        // Start from a clean slate (best-effort). This avoids stacking style layers when a host
+        // switches engines (e.g. LSP becomes available later).
+        editCore.editor.treeSitterDisable()
+        editCore.editor.sublimeDisable()
+
+        // 1) LSP (currently Rust-only).
+        if url.pathExtension.lowercased() == "rs" {
+            let disableLSP = ProcessInfo.processInfo.environment["ATTO_EDITOR_DISABLE_LSP"] == "1"
+                || ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DISABLE_LSP"] == "1"
+
+            if disableLSP == false {
+                do {
+                    let cmd = ProcessInfo.processInfo.environment["ATTO_EDITOR_LSP_CMD"]
+                        ?? ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_LSP_CMD"]
+                        ?? "rust-analyzer"
+                    let args = ProcessInfo.processInfo.environment["ATTO_EDITOR_LSP_ARGS"]
+                        ?? ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_LSP_ARGS"]
+
+                    try editCore.editor.lspEnable(
+                        command: cmd,
+                        args: args,
+                        rootURI: workspaceRootURL.absoluteString,
+                        documentURI: url.absoluteString,
+                        languageId: "rust"
+                    )
+
+                    // Prefer LSP semantic tokens; keep other engines off.
+                    editCore.editor.treeSitterDisable()
+                    editCore.editor.sublimeDisable()
+                    return
+                } catch {
+                    NSLog("AttoEditor: LSP enable failed for %@: %@", url.path, String(describing: error))
+                }
+            }
+        }
+
+        // 2) Tree-sitter.
+        do {
+            try editCore.editor.treeSitterEnableForPath(url.path)
+            editCore.editor.sublimeDisable()
+            // Kick a short poll window so the initial Tree-sitter parse applies even without edits.
+            editCore.editorView.kickProcessingPoll()
+            return
+        } catch {
+            NSLog("AttoEditor: Tree-sitter enable failed for %@: %@", url.path, String(describing: error))
+        }
+
+        // 3) Sublime `.sublime-syntax` (optional fallback).
+        guard let syntaxPath = AttoSublimeSyntax.findSyntaxPath(
+            for: url,
+            workspaceRootURL: workspaceRootURL
+        ) else {
+            NSLog("AttoEditor: no Sublime syntax found for %@ (ext=%@)", url.path, url.pathExtension)
+            return
+        }
+
+        do {
+            try editCore.editor.sublimeSetSyntaxPath(syntaxPath)
+            editCore.editor.treeSitterDisable()
+            editCore.editorView.needsDisplay = true
+        } catch {
+            NSLog(
+                "AttoEditor: Sublime syntax enable failed (path=%@) for %@: %@",
+                syntaxPath,
+                url.path,
+                String(describing: error)
+            )
+        }
     }
 
     // MARK: - LSP go to definition (Cmd-click)
