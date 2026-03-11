@@ -362,18 +362,44 @@ final class AttoEditorAreaViewController: NSViewController {
     // MARK: - Find / Replace
 
     func showFindBar() {
-        showFindReplaceBar(mode: .find)
+        if findReplaceBarView.isHidden {
+            guard activeTab != nil else {
+                NSSound.beep()
+                return
+            }
+            ensureFindReplaceBar(mode: .find)
+            return
+        }
+
+        if findReplaceBarView.currentMode() == .find {
+            hideFindBar()
+            return
+        }
+
+        ensureFindReplaceBar(mode: .find)
     }
 
     func showReplaceBar() {
-        showFindReplaceBar(mode: .replace)
-    }
-
-    private func showFindReplaceBar(mode: AttoFindReplaceBarView.Mode) {
-        guard activeTab != nil else {
-            NSSound.beep()
+        if findReplaceBarView.isHidden {
+            guard activeTab != nil else {
+                NSSound.beep()
+                return
+            }
+            ensureFindReplaceBar(mode: .replace)
             return
         }
+
+        if findReplaceBarView.currentMode() == .replace {
+            hideFindBar()
+            return
+        }
+
+        ensureFindReplaceBar(mode: .replace)
+    }
+
+    private func ensureFindReplaceBar(mode: AttoFindReplaceBarView.Mode) {
+        let wasHidden = findReplaceBarView.isHidden
+        let oldMode = findReplaceBarView.currentMode()
 
         findReplaceBarView.setMode(mode)
         findReplaceBarView.isHidden = false
@@ -381,7 +407,14 @@ final class AttoEditorAreaViewController: NSViewController {
 
         view.layoutSubtreeIfNeeded()
         view.window?.makeFirstResponder(findReplaceBarView.searchField)
-        applyFindStateToActiveTab()
+        findReplaceBarView.searchField.selectText(nil)
+
+        // Always re-apply highlights on show/switch; `activeTab == nil` is fine (no-op).
+        if wasHidden || oldMode != mode {
+            applyFindStateToActiveTab()
+        } else {
+            refreshSearchHighlights()
+        }
     }
 
     func hideFindBar() {
@@ -389,6 +422,7 @@ final class AttoEditorAreaViewController: NSViewController {
         clearSearchHighlightsForAllTabs()
         findReplaceBarView.isHidden = true
         findReplaceBarHeightConstraint?.constant = 0
+        activeTab?.editCore.focusEditor()
     }
 
     private func currentSearchOptions() -> EcuSearchOptions {
@@ -448,6 +482,7 @@ final class AttoEditorAreaViewController: NSViewController {
     @objc private func clearFindClicked(_ sender: Any?) {
         findReplaceBarView.searchField.stringValue = ""
         refreshSearchHighlights()
+        view.window?.makeFirstResponder(findReplaceBarView.searchField)
     }
 
     @objc private func findNextClicked(_ sender: Any?) {
@@ -464,7 +499,11 @@ final class AttoEditorAreaViewController: NSViewController {
             }
             let ok = try tab.editCore.editor.findNext(query, options: currentSearchOptions())
             if ok == false { NSSound.beep() }
+            tab.editCore.layoutSubtreeIfNeeded()
+            try tab.editCore.editor.revealPrimaryCaret()
             tab.editCore.editorView.needsDisplay = true
+            updateStatusBar()
+            view.window?.makeFirstResponder(findReplaceBarView.searchField)
         } catch {
             NSSound.beep()
         }
@@ -484,7 +523,11 @@ final class AttoEditorAreaViewController: NSViewController {
             }
             let ok = try tab.editCore.editor.findPrev(query, options: currentSearchOptions())
             if ok == false { NSSound.beep() }
+            tab.editCore.layoutSubtreeIfNeeded()
+            try tab.editCore.editor.revealPrimaryCaret()
             tab.editCore.editorView.needsDisplay = true
+            updateStatusBar()
+            view.window?.makeFirstResponder(findReplaceBarView.searchField)
         } catch {
             NSSound.beep()
         }
@@ -504,7 +547,11 @@ final class AttoEditorAreaViewController: NSViewController {
             }
             let replacement = findReplaceBarView.replaceField.stringValue
             _ = try tab.editCore.editor.replaceCurrent(query: query, replacement: replacement, options: currentSearchOptions())
+            tab.editCore.layoutSubtreeIfNeeded()
+            try tab.editCore.editor.revealPrimaryCaret()
             refreshSearchHighlights()
+            updateStatusBar()
+            view.window?.makeFirstResponder(findReplaceBarView.searchField)
         } catch {
             NSSound.beep()
         }
@@ -524,7 +571,11 @@ final class AttoEditorAreaViewController: NSViewController {
             }
             let replacement = findReplaceBarView.replaceField.stringValue
             _ = try tab.editCore.editor.replaceAll(query: query, replacement: replacement, options: currentSearchOptions())
+            tab.editCore.layoutSubtreeIfNeeded()
+            try tab.editCore.editor.revealPrimaryCaret()
             refreshSearchHighlights()
+            updateStatusBar()
+            view.window?.makeFirstResponder(findReplaceBarView.searchField)
         } catch {
             NSSound.beep()
         }
@@ -1199,6 +1250,14 @@ private extension NSColor {
 }
 
 extension AttoEditorAreaViewController: NSSearchFieldDelegate, NSTextFieldDelegate {
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            hideFindBar()
+            return true
+        }
+        return false
+    }
+
     func controlTextDidChange(_ obj: Notification) {
         guard let field = obj.object as? NSTextField else { return }
         if field == findReplaceBarView.searchField {
