@@ -64,7 +64,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Menu actions
 
     @objc func openFolderMenuClicked(_ sender: Any?) {
-        guard let ctx = activeWindow() else { return }
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -78,7 +78,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func openFileMenuClicked(_ sender: Any?) {
-        guard let ctx = activeWindow() else { return }
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -91,6 +91,18 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         ctx.rememberRecentFile(url)
         ctx.editorAreaController.openFile(url: url)
         ctx.fileExplorerController.revealFile(url)
+    }
+
+    private func ensureActiveWindowForMenuActions() -> AttoWindowContext? {
+        if let ctx = activeWindow() { return ctx }
+
+        let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+            ?? CGRect(origin: .zero, size: AttoWindowSizing.preferredContentSize)
+        let contentSize = AttoWindowSizing.defaultContentSize(forVisibleFrame: visibleFrame)
+
+        let ctx = createWindow(workspaceRootURL: AttoAppDelegate.defaultRepoRootURL(), contentSize: contentSize)
+        focusWindow(ctx)
+        return ctx
     }
 
     @objc func closeTabMenuClicked(_ sender: Any?) {
@@ -266,8 +278,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             contentSize: contentSize
         )
 
+        let windowID = ctx.id
         ctx.editorAreaController.onDidCloseFile = { [weak self] url in
-            self?.handleFileClosedByUser(url)
+            self?.ipcServer?.notifyFileInstanceClosed(windowID: windowID, url: url)
         }
 
         ctx.onWindowBecameKey = { [weak self] ctx in
@@ -324,104 +337,95 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             return .empty
         }
 
-        // 目录：总是新窗口（支持多个目录 => 多个窗口）。
+        var errors: [String] = []
+        var pendingTokens: [AttoIpcWaitToken] = []
+
+        // 目录：总是新窗口（支持多个目录 => 多个窗口）。并记录这次请求创建的“first window”。
+        var dirWindows: [AttoWindowContext] = []
         for dirPath in req.directories {
             let url = URL(fileURLWithPath: dirPath).standardizedFileURL
-            _ = createWindow(workspaceRootURL: url, contentSize: contentSize)
+            let ctx = createWindow(workspaceRootURL: url, contentSize: contentSize)
+            dirWindows.append(ctx)
+        }
+        let firstDirWindow: AttoWindowContext? = dirWindows.first
+
+        func locFrom(_ f: AttoIpcFileRequest) -> AttoCommandLine.FileLocation? {
+            guard let line1 = f.line1 else { return nil }
+            return .init(line1: max(1, line1), column1: f.column1)
         }
 
-        var errors: [String] = []
-        var pendingFiles: [URL] = []
-
-        // 文件：默认“已打开则复用窗口，否则新窗口”。`-n/--new-window` 强制新窗口打开。
-        if req.newWindow, req.files.isEmpty == false {
-            let root = URL(fileURLWithPath: req.files[0].path).standardizedFileURL.deletingLastPathComponent()
-            let ctx = createWindow(workspaceRootURL: root, contentSize: contentSize)
-            focusWindow(ctx)
-
-            for f in req.files {
-                let url = URL(fileURLWithPath: f.path).standardizedFileURL
-                ctx.rememberRecentFile(url)
-                let loc: AttoCommandLine.FileLocation? = {
-                    guard let line1 = f.line1 else { return nil }
-                    return .init(line1: max(1, line1), column1: f.column1)
-                }()
-                let ok = ctx.editorAreaController.openFile(url: url, mode: .pinned, location: loc)
-                if ok {
-                    pendingFiles.append(url)
-                    ctx.fileExplorerController.revealFile(url)
-                } else {
-                    errors.append("failed to open file: \(url.path)")
-                }
-            }
-
-            return .init(pendingFiles: pendingFiles, errors: errors)
-        }
-
-        for f in req.files {
-            let url = URL(fileURLWithPath: f.path).standardizedFileURL
-            let loc: AttoCommandLine.FileLocation? = {
-                guard let line1 = f.line1 else { return nil }
-                return .init(line1: max(1, line1), column1: f.column1)
-            }()
-
-            if let existing = findWindow(containingFile: url) {
-                focusWindow(existing)
-                existing.rememberRecentFile(url)
-                let ok = existing.editorAreaController.openFile(url: url, mode: .pinned, location: loc)
-                if ok {
-                    pendingFiles.append(url)
-                    existing.fileExplorerController.revealFile(url)
-                } else {
-                    errors.append("failed to open file: \(url.path)")
-                }
-                continue
-            }
-
-            // 不在任何窗口里：按规范新开一个窗口。
-            let root = url.deletingLastPathComponent()
-            let ctx = createWindow(workspaceRootURL: root, contentSize: contentSize)
-            focusWindow(ctx)
-            ctx.rememberRecentFile(url)
-            let ok = ctx.editorAreaController.openFile(url: url, mode: .pinned, location: loc)
+        func openFileInWindow(_ url: URL, loc: AttoCommandLine.FileLocation?, window: AttoWindowContext) {
+            focusWindow(window)
+            window.rememberRecentFile(url)
+            let ok = window.editorAreaController.openFile(url: url, mode: .pinned, location: loc)
             if ok {
-                pendingFiles.append(url)
-                ctx.fileExplorerController.revealFile(url)
+                pendingTokens.append(.init(windowID: window.id, fileURL: url))
+                window.fileExplorerController.revealFile(url)
             } else {
                 errors.append("failed to open file: \(url.path)")
             }
         }
 
-        return .init(pendingFiles: pendingFiles, errors: errors)
+        func openFileInNewWindow(_ url: URL, loc: AttoCommandLine.FileLocation?) {
+            let root = url.deletingLastPathComponent()
+            let ctx = createWindow(workspaceRootURL: root, contentSize: contentSize)
+            openFileInWindow(url, loc: loc, window: ctx)
+        }
+
+        // 仅目录：打开完窗口后，把第一个目录窗口置前。
+        if req.files.isEmpty, let firstDirWindow {
+            focusWindow(firstDirWindow)
+            return .init(pendingTokens: [], errors: [])
+        }
+
+        // `-n/--new-window`：文件总是新窗口打开（每个 file arg 一次）。
+        if req.newWindow {
+            for f in req.files {
+                let url = URL(fileURLWithPath: f.path).standardizedFileURL
+                openFileInNewWindow(url, loc: locFrom(f))
+            }
+            return .init(pendingTokens: pendingTokens, errors: errors)
+        }
+
+        // Special-case：同时指定了目录和文件。
+        //
+        // 规则：
+        // - 目录：每个目录一个新窗口（已在上面创建）
+        // - 文件：如果“first window”里已经打开该文件，则复用 first window；否则每个文件新窗口
+        if req.directories.isEmpty == false, req.files.isEmpty == false {
+            for f in req.files {
+                let url = URL(fileURLWithPath: f.path).standardizedFileURL
+                let loc = locFrom(f)
+                if let firstDirWindow, firstDirWindow.editorAreaController.containsFile(url: url) {
+                    openFileInWindow(url, loc: loc, window: firstDirWindow)
+                } else {
+                    openFileInNewWindow(url, loc: loc)
+                }
+            }
+            return .init(pendingTokens: pendingTokens, errors: errors)
+        }
+
+        // 常规：只有文件参数（或只有目录参数已被上面提前 return）。
+        // 文件：若已在某个窗口打开，则复用该窗口；否则新开窗口。
+        for f in req.files {
+            let url = URL(fileURLWithPath: f.path).standardizedFileURL
+            let loc = locFrom(f)
+            if let existing = findWindow(containingFile: url) {
+                openFileInWindow(url, loc: loc, window: existing)
+            } else {
+                openFileInNewWindow(url, loc: loc)
+            }
+        }
+
+        return .init(pendingTokens: pendingTokens, errors: errors)
     }
 
     // MARK: - Wait notifications (IPC)
 
-    private func isFileOpenAnywhere(_ url: URL, excluding excludedID: UUID? = nil) -> Bool {
-        let u = url.standardizedFileURL
-        for w in windows {
-            if let excludedID, w.id == excludedID { continue }
-            if w.editorAreaController.containsFile(url: u) {
-                return true
-            }
-        }
-        return false
-    }
-
-    private func handleFileClosedByUser(_ url: URL) {
-        let u = url.standardizedFileURL
-        if isFileOpenAnywhere(u) {
-            return
-        }
-        ipcServer?.notifyFileFullyClosed(u)
-    }
-
     private func handleWindowWillCloseForWait(_ ctx: AttoWindowContext) {
+        let windowID = ctx.id
         for url in ctx.editorAreaController.openFileURLs() {
-            let u = url.standardizedFileURL
-            if isFileOpenAnywhere(u, excluding: ctx.id) == false {
-                ipcServer?.notifyFileFullyClosed(u)
-            }
+            ipcServer?.notifyFileInstanceClosed(windowID: windowID, url: url)
         }
     }
 }

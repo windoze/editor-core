@@ -17,6 +17,14 @@ enum AttoIPC {
     static func spoolDirPath() -> String {
         "/tmp/codes.unwritten.attoeditor.\(getuid()).spool"
     }
+
+    /// 防止 socket 写入触发 SIGPIPE 导致进程被杀（表现为 exit code 141）。
+    /// 这在 `--wait`/IPC 场景下属于“正常可恢复错误”，不应让 CLI 或主进程直接崩溃。
+    static func ignoreSIGPIPE() {
+#if canImport(Darwin)
+        _ = signal(SIGPIPE, SIG_IGN)
+#endif
+    }
 }
 
 struct AttoIpcFileRequest: Codable, Equatable {
@@ -46,11 +54,24 @@ struct AttoIpcResponse: Codable, Equatable {
     var pendingFileCount: Int
 }
 
+/// `--wait` 需要跟踪“这次请求打开/聚焦的文件实例”，不能用纯 URL：
+/// - `--new-window` 会刻意打开重复文件（不同窗口）
+/// - 其它窗口里同一路径的 tab 不应影响当前 CLI 的 wait 生命周期
+struct AttoIpcWaitToken: Hashable, Sendable {
+    var windowID: UUID
+    var standardizedPath: String
+
+    init(windowID: UUID, fileURL: URL) {
+        self.windowID = windowID
+        self.standardizedPath = fileURL.standardizedFileURL.path
+    }
+}
+
 struct AttoIpcOpenResult: Equatable {
-    var pendingFiles: [URL]
+    var pendingTokens: [AttoIpcWaitToken]
     var errors: [String]
 
-    static var empty: AttoIpcOpenResult { .init(pendingFiles: [], errors: []) }
+    static var empty: AttoIpcOpenResult { .init(pendingTokens: [], errors: []) }
 }
 
 // MARK: - Client
@@ -59,12 +80,15 @@ enum AttoIpcClient {
     static func sendOpenRequest(
         _ request: AttoIpcOpenRequest,
         executablePath: String,
-        connectTimeoutMs: Int = 1500
+        connectTimeoutMs: Int = 8000
     ) -> Int32 {
         let socketPath = AttoIPC.socketPath()
 
         if let fd = connect(socketPath: socketPath) {
-            _ = writeJSONLine(fd: fd, encodable: request)
+            guard writeJSONLine(fd: fd, encodable: request) else {
+                close(fd)
+                return 1
+            }
             if request.wait {
                 let code = waitForDone(fd: fd, requestID: request.requestID)
                 close(fd)
@@ -111,7 +135,10 @@ enum AttoIpcClient {
             return 1
         }
 
-        _ = writeJSONLine(fd: fd, encodable: request)
+        guard writeJSONLine(fd: fd, encodable: request) else {
+            close(fd)
+            return 1
+        }
         if request.wait {
             let code = waitForDone(fd: fd, requestID: request.requestID)
             close(fd)
@@ -127,8 +154,15 @@ enum AttoIpcClient {
         proc.executableURL = URL(fileURLWithPath: executablePath)
         proc.arguments = [AttoIPC.internalServerFlag, AttoIPC.internalNoDefaultWindowFlag]
         proc.standardInput = FileHandle.nullDevice
+        // detached 进程不应把日志写回到 CLI 的 stdout/stderr（否则会污染 CLI 输出）。
+        // 主进程会在启动后自行把 stdout/stderr 重定向到 log 文件（见 AttoLogging）。
         proc.standardOutput = FileHandle.nullDevice
         proc.standardError = FileHandle.nullDevice
+
+        // 标记为 detached：主进程将强制把日志写入文件，忽略 `ATTOEDITOR_LOG_STDIO=1`。
+        var env = ProcessInfo.processInfo.environment
+        env[AttoLogging.envDetached] = "1"
+        proc.environment = env
         try proc.run()
     }
 
@@ -173,6 +207,12 @@ enum AttoIpcClient {
     static func connect(socketPath: String) -> Int32? {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
+
+        // Avoid SIGPIPE on write() to a dead peer.
+#if canImport(Darwin)
+        var yes: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size))
+#endif
 
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
@@ -219,7 +259,7 @@ final class AttoIpcServer {
     private struct WaitSession {
         var requestID: String
         var fd: Int32
-        var pending: Set<URL>
+        var pending: Set<AttoIpcWaitToken>
         var errors: [String]
     }
 
@@ -339,6 +379,16 @@ final class AttoIpcServer {
     }
 
     func stop() {
+        // 进程退出时，尽量让所有 `--wait` 的 CLI 正常返回（把“app 退出”视作文件关闭）。
+        let toClose: [WaitSession] = sessionsQueue.sync {
+            let out = Array(sessions.values)
+            sessions.removeAll()
+            return out
+        }
+        for s in toClose {
+            sendDoneAndClose(session: s)
+        }
+
         listenerSource?.cancel()
         listenerSource = nil
 
@@ -346,27 +396,34 @@ final class AttoIpcServer {
         spoolSource = nil
     }
 
-    /// 当某个文件在“所有窗口里都不再打开”时调用（由 AppDelegate 负责判断）。
-    func notifyFileFullyClosed(_ url: URL) {
-        let u = url.standardizedFileURL
-        sessionsQueue.async { [weak self] in
-            guard let self else { return }
+    /// 当某个“文件实例”（某个窗口里的某个路径）关闭时调用。
+    func notifyFileInstanceClosed(windowID: UUID, url: URL) {
+        let token = AttoIpcWaitToken(windowID: windowID, fileURL: url)
+        // `--wait` 场景更关注“可靠性”而不是吞吐量：
+        // - sync 可以减少 “最后一个窗口关闭导致 app 退出” 时的竞态（done 来不及发）
+        // - 每次写入的数据非常小（JSON 一行），阻塞风险可接受
+        let finished: [WaitSession] = sessionsQueue.sync { [weak self] in
+            guard let self else { return [] }
 
-            var finished: [WaitSession] = []
+            var out: [WaitSession] = []
             for (id, var s) in self.sessions {
-                if s.pending.contains(u) {
-                    s.pending.remove(u)
+                if s.pending.contains(token) {
+                    s.pending.remove(token)
                     self.sessions[id] = s
                 }
                 if s.pending.isEmpty {
-                    finished.append(s)
+                    out.append(s)
                 }
             }
 
-            for s in finished {
+            for s in out {
                 self.sessions.removeValue(forKey: s.requestID)
-                self.sendDoneAndClose(session: s)
             }
+            return out
+        }
+
+        for s in finished {
+            sendDoneAndClose(session: s)
         }
     }
 
@@ -381,6 +438,23 @@ final class AttoIpcServer {
                 }
                 break
             }
+
+#if canImport(Darwin)
+            // listenerFD 被设置为 O_NONBLOCK 以便 acceptLoop 不阻塞在事件回调里；
+            // 但 macOS 上 accept() 返回的 client socket 可能继承 O_NONBLOCK，
+            // 这会导致我们在 handleClient 里第一次 read() 立刻拿到 EAGAIN，
+            // 从而误判 “对端没发数据” 并提前 close，造成 `--wait`/open 请求丢失。
+            //
+            // 这里显式把 clientFD 设回 blocking。
+            let fl = fcntl(clientFD, F_GETFL, 0)
+            if fl >= 0 {
+                _ = fcntl(clientFD, F_SETFL, fl & ~O_NONBLOCK)
+            }
+
+            // Avoid server crash on write() if client disappears early.
+            var yes: Int32 = 1
+            _ = setsockopt(clientFD, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size))
+#endif
 
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 self?.handleClient(fd: clientFD)
@@ -402,13 +476,31 @@ final class AttoIpcServer {
             return
         }
 
+        NSLog(
+            "AttoEditor: ipc open request (id=%@ wait=%d newWindow=%d dirs=%d files=%d)",
+            req.requestID,
+            req.wait ? 1 : 0,
+            req.newWindow ? 1 : 0,
+            req.directories.count,
+            req.files.count
+        )
+
         // 同步切到主线程执行 UI 操作，确保 request handler 的行为与 AppKit 一致。
         let handler = onOpenRequest
         let result: AttoIpcOpenResult = runOnMainSync {
             handler(req)
         }
 
-        let pendingSet = Set(result.pendingFiles.map(\.standardizedFileURL))
+        let pendingSet = Set(result.pendingTokens)
+
+        if result.errors.isEmpty == false {
+            NSLog("AttoEditor: ipc open request errors (id=%@): %@", req.requestID, result.errors.joined(separator: " | "))
+        }
+        NSLog(
+            "AttoEditor: ipc open request handled (id=%@ pending=%d)",
+            req.requestID,
+            pendingSet.count
+        )
 
         let ack = AttoIpcResponse(
             kind: .ack,
@@ -417,14 +509,15 @@ final class AttoIpcServer {
             errors: result.errors,
             pendingFileCount: pendingSet.count
         )
-        _ = writeJSONLine(fd: fd, encodable: ack)
 
         if req.wait == false {
+            _ = writeJSONLine(fd: fd, encodable: ack)
             close(fd)
             return
         }
 
         if pendingSet.isEmpty {
+            _ = writeJSONLine(fd: fd, encodable: ack)
             let done = AttoIpcResponse(
                 kind: .done,
                 requestID: req.requestID,
@@ -437,11 +530,9 @@ final class AttoIpcServer {
             return
         }
 
-        sessionsQueue.async { [weak self] in
-            guard let self else {
-                close(fd)
-                return
-            }
+        // `--wait` 语义必须无竞态：先注册 session，再发 ack。
+        sessionsQueue.sync { [weak self] in
+            guard let self else { return }
             self.sessions[req.requestID] = WaitSession(
                 requestID: req.requestID,
                 fd: fd,
@@ -449,6 +540,7 @@ final class AttoIpcServer {
                 errors: result.errors
             )
         }
+        _ = writeJSONLine(fd: fd, encodable: ack)
     }
 
     private func sendDoneAndClose(session: WaitSession) {
@@ -564,16 +656,25 @@ private func writeAll(fd: Int32, data: Data) -> Bool {
 }
 
 private func readLine(fd: Int32, maxBytes: Int = 1_000_000) -> String? {
-    var buf = [UInt8](repeating: 0, count: 4096)
-    var data = Data()
-    while data.count < maxBytes {
-        let n = Darwin.read(fd, &buf, buf.count)
-        if n > 0 {
-            data.append(buf, count: n)
-            if let idx = data.firstIndex(of: 0x0A) {
-                let line = data.prefix(upTo: idx)
-                return String(data: line, encoding: .utf8)
+    // 注意：不能用“大块 read + 找 '\n' 后直接 return”的方式，
+    // 因为同一个 read() 可能读到多行数据（例如 ack+done），后续内容会被丢掉，
+    // 导致 `--wait` 永远等不到 done 或异常退出。
+    //
+    // 这里用 byte-wise read，确保不会 over-read。
+    var bytes: [UInt8] = []
+    bytes.reserveCapacity(min(256, maxBytes))
+
+    var sawNewline = false
+
+    while bytes.count < maxBytes {
+        var c: UInt8 = 0
+        let n = Darwin.read(fd, &c, 1)
+        if n == 1 {
+            if c == 0x0A {
+                sawNewline = true
+                break
             }
+            bytes.append(c)
             continue
         }
         if n == 0 {
@@ -584,8 +685,12 @@ private func readLine(fd: Int32, maxBytes: Int = 1_000_000) -> String? {
         }
         return nil
     }
-    if data.isEmpty { return nil }
-    return String(data: data, encoding: .utf8)
+
+    if bytes.isEmpty {
+        return sawNewline ? "" : nil
+    }
+
+    return String(bytes: bytes, encoding: .utf8)
 }
 
 private func runOnMainSync<T: Sendable>(_ operation: @MainActor () -> T) -> T {

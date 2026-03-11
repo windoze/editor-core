@@ -1,14 +1,61 @@
 import AppKit
 import Foundation
+import MachO
 
 @MainActor
 private enum AttoEditorMain {
     private static func resolvedExecutablePath() -> String {
-        // `argv[0]` 可能是相对路径；用 cwd 兜底转成绝对路径。
+        // 需要一个“真实可执行文件路径”用于 CLI 拉起 GUI/server 子进程。
+        //
+        // 注意：在 `swift run` 下，argv[0] 可能只是 "AttoEditor"（不带路径），
+        // 用 cwd 拼接会得到一个不存在的路径，导致 `-w/--wait` 触发的 detached 启动失败。
         let argv0 = ProcessInfo.processInfo.arguments.first ?? "AttoEditor"
-        if argv0.hasPrefix("/") { return argv0 }
-        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-        return URL(fileURLWithPath: argv0, relativeTo: cwd).standardizedFileURL.path
+        let fm = FileManager.default
+
+        func isExecutable(_ p: String) -> Bool {
+            fm.isExecutableFile(atPath: p)
+        }
+
+        if argv0.hasPrefix("/") {
+            let p = URL(fileURLWithPath: argv0).standardizedFileURL.path
+            if isExecutable(p) { return p }
+        }
+
+        // 相对路径（包含 '/'）时按 cwd 解析。
+        if argv0.contains("/") {
+            let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+            let p = URL(fileURLWithPath: argv0, relativeTo: cwd).standardizedFileURL.path
+            if isExecutable(p) { return p }
+        }
+
+        // 在 PATH 里查找（`swift run` 可能通过 PATH 注入 build 产物目录）。
+        if let pathEnv = ProcessInfo.processInfo.environment["PATH"] {
+            for part in pathEnv.split(separator: ":") {
+                if part.isEmpty { continue }
+                let candidate = URL(fileURLWithPath: String(part), isDirectory: true)
+                    .appendingPathComponent(argv0, isDirectory: false)
+                    .standardizedFileURL
+                    .path
+                if isExecutable(candidate) { return candidate }
+            }
+        }
+
+        // 兜底：从 dyld 获取当前进程真实路径。
+        var size: UInt32 = 0
+        _ = _NSGetExecutablePath(nil, &size)
+        if size > 0 {
+            var buf = [CChar](repeating: 0, count: Int(size))
+            if _NSGetExecutablePath(&buf, &size) == 0 {
+                let bytes = buf.map { UInt8(bitPattern: $0) }
+                let nul = bytes.firstIndex(of: 0) ?? bytes.count
+                let path = String(decoding: bytes.prefix(nul), as: UTF8.self)
+                let p = URL(fileURLWithPath: path).standardizedFileURL.path
+                if isExecutable(p) { return p }
+            }
+        }
+
+        // 最差情况：返回 argv0（可能不可执行，但避免 crash）。
+        return argv0
     }
 
     private static func runCLI() -> Never {
@@ -153,9 +200,14 @@ private enum AttoEditorMain {
     }
 
     static func run() {
+        AttoIPC.ignoreSIGPIPE()
+
         if ProcessInfo.processInfo.arguments.contains(AttoIPC.internalServerFlag) == false {
             runCLI()
         }
+
+        // GUI/server 模式：尽早安装文件日志（避免 detached 启动时日志泄露到 CLI console）。
+        AttoLogging.installIfNeeded()
 
         let noDefaultWindow = ProcessInfo.processInfo.arguments.contains(AttoIPC.internalNoDefaultWindowFlag)
 
@@ -182,6 +234,13 @@ private enum AttoEditorMain {
             // 已有实例在运行；当前进程不应再启动 GUI。
             exit(0)
         }
+
+        NSLog(
+            "AttoEditor: primary instance started (pid=%d) socket=%@ spool=%@",
+            ProcessInfo.processInfo.processIdentifier,
+            AttoIPC.socketPath(),
+            AttoIPC.spoolDirPath()
+        )
 
         app.delegate = delegate
         app.mainMenu = buildMainMenu(appDelegate: delegate)
