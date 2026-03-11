@@ -10,6 +10,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
 
     private let library = EditorCoreUIFFILibrary()
     private let theme = EditorCoreSkiaTheme.demoRustLspDark()
+    private let sessionManager = AttoSessionManager()
 
     private var windows: [AttoWindowContext] = []
     private var activeWindowID: UUID?
@@ -22,9 +23,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             ?? CGRect(origin: .zero, size: AttoWindowSizing.preferredContentSize)
         let contentSize = AttoWindowSizing.defaultContentSize(forVisibleFrame: visibleFrame)
 
+        let windowsWereEmptyAtLaunch = windows.isEmpty
+        var didRestoreSession = false
+
         if createDefaultWindowOnLaunch {
-            _ = createWindow(workspaceRootURL: AttoAppDelegate.defaultRepoRootURL(), contentSize: contentSize)
-            NSApplication.shared.activate(ignoringOtherApps: true)
+            if windowsWereEmptyAtLaunch {
+                didRestoreSession = restoreSessionIfEligible(contentSize: contentSize)
+                if didRestoreSession == false {
+                    _ = createWindow(workspaceRootURL: AttoAppDelegate.defaultRepoRootURL(), contentSize: contentSize)
+                }
+            }
+
+            if windows.isEmpty == false {
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
         }
 
         commandPaletteController = AttoCommandPaletteController(
@@ -39,14 +51,29 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
-        // Demo: 仅在“手动启动 GUI”时打开一个真实 Rust 文件，确保 LSP/theme 可见。
-        if createDefaultWindowOnLaunch, let first = windows.first {
+        // Demo: 仅在开发态启动 GUI 时打开一个真实 Rust 文件，确保 LSP/theme 可见。
+        //
+        // 规则：
+        // - `.app` bundle 启动：不做 demo 行为（避免对最终用户造成困扰）
+        // - session restore 成功：不做 demo 行为
+        // - IPC spool 已经创建了窗口：不做 demo 行为
+        let isBundledApp = (Bundle.main.bundleURL.pathExtension == "app")
+        if createDefaultWindowOnLaunch,
+           isBundledApp == false,
+           windowsWereEmptyAtLaunch,
+           didRestoreSession == false,
+           let first = windows.first
+        {
             let initial = first.workspaceRootURL.appendingPathComponent("crates/tui-editor/src/main.rs")
             if FileManager.default.fileExists(atPath: initial.path) {
                 first.rememberRecentFile(initial)
                 first.editorAreaController.openFile(url: initial)
                 first.fileExplorerController.revealFile(initial)
             }
+        }
+
+        if windows.isEmpty == false {
+            scheduleSessionSave(reason: "did_finish_launching")
         }
 
         // Remove system window-tabbing menu items (e.g. "Show Tab Bar") from standard menus.
@@ -58,23 +85,33 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if windows.isEmpty == false {
+            sessionManager.saveNow(reason: "will_terminate", capture: { [weak self] in
+                self?.makeSessionSnapshot()
+            })
+        }
         ipcServer?.stop()
     }
 
     // MARK: - Menu actions
 
     @objc func openFolderMenuClicked(_ sender: Any?) {
-        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        let defaultDir = activeWindow()?.workspaceRootURL ?? AttoAppDelegate.defaultRepoRootURL()
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Open"
         panel.message = "Choose a folder to open."
-        panel.directoryURL = ctx.workspaceRootURL
+        panel.directoryURL = defaultDir
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        ctx.setWorkspaceRootURL(url)
+
+        let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+            ?? CGRect(origin: .zero, size: AttoWindowSizing.preferredContentSize)
+        let contentSize = AttoWindowSizing.defaultContentSize(forVisibleFrame: visibleFrame)
+        let ctx = createWindow(workspaceRootURL: url.standardizedFileURL, contentSize: contentSize)
+        focusWindow(ctx)
     }
 
     @objc func openFileMenuClicked(_ sender: Any?) {
@@ -310,9 +347,103 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         return FileManager.default.homeDirectoryForCurrentUser
     }
 
+    // MARK: - Session (restore/save)
+
+    private func makeSessionSnapshot() -> AttoSessionSnapshot? {
+        guard windows.isEmpty == false else { return nil }
+
+        let activeIndex: Int? = {
+            guard let id = activeWindowID else { return nil }
+            return windows.firstIndex(where: { $0.id == id })
+        }()
+
+        let windowSnaps = windows.map { $0.makeSessionSnapshot() }
+        return AttoSessionSnapshot(
+            schemaVersion: AttoSessionSnapshot.currentSchemaVersion,
+            savedAt: Date(),
+            activeWindowIndex: activeIndex,
+            windows: windowSnaps
+        )
+    }
+
+    private func scheduleSessionSave(reason: String) {
+        sessionManager.scheduleSave(reason: reason, capture: { [weak self] in
+            self?.makeSessionSnapshot()
+        })
+    }
+
+    private func restoreSessionIfEligible(contentSize: CGSize) -> Bool {
+        // 仅 `.app` bundle 启动时恢复；CLI 冷启动不恢复。
+        let args = ProcessInfo.processInfo.arguments
+        guard let snapshot = sessionManager.loadSnapshotForRestore(arguments: args) else { return false }
+        guard snapshot.windows.isEmpty == false else { return false }
+
+        sessionManager.beginRestoring()
+        defer {
+            sessionManager.endRestoring(capture: { [weak self] in
+                self?.makeSessionSnapshot()
+            })
+        }
+
+        let fm = FileManager.default
+
+        func validatedWorkspaceRoot(_ path: String) -> URL? {
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else { return nil }
+            return url
+        }
+
+        func rectIfVisible(_ frame: AttoWindowFrameSnapshot?) -> CGRect? {
+            guard let frame else { return nil }
+            let rect = CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+            guard rect.width >= 200, rect.height >= 200 else { return nil }
+            let visible = NSScreen.screens.contains { $0.visibleFrame.intersects(rect) }
+            return visible ? rect : nil
+        }
+
+        for win in snapshot.windows {
+            let root = validatedWorkspaceRoot(win.workspaceRootPath) ?? fm.homeDirectoryForCurrentUser
+            let frameRect = rectIfVisible(win.frame)
+            let ctx = createWindow(
+                workspaceRootURL: root,
+                contentSize: contentSize,
+                initialFrame: frameRect,
+                centerOnShow: (frameRect == nil)
+            )
+
+            ctx.sidebarSplitItem.isCollapsed = win.sidebarCollapsed
+            ctx.restoreRecentFiles(filePaths: win.recentFilePaths)
+            ctx.editorAreaController.restoreSession(
+                tabs: win.tabs,
+                selectedTabIndex: win.selectedTabIndex
+            )
+        }
+
+        if windows.isEmpty {
+            return false
+        }
+
+        if let idx = snapshot.activeWindowIndex, (0..<windows.count).contains(idx) {
+            focusWindow(windows[idx])
+        } else if let first = windows.first {
+            focusWindow(first)
+        }
+
+        // restore 结束后写回一次“清理后的快照”（比如跳过了不存在的文件）。
+        scheduleSessionSave(reason: "restore_completed")
+
+        return true
+    }
+
     // MARK: - Windows
 
-    private func createWindow(workspaceRootURL: URL, contentSize: CGSize) -> AttoWindowContext {
+    private func createWindow(
+        workspaceRootURL: URL,
+        contentSize: CGSize,
+        initialFrame: CGRect? = nil,
+        centerOnShow: Bool = true
+    ) -> AttoWindowContext {
         let ctx = AttoWindowContext(
             library: library,
             theme: theme,
@@ -326,21 +457,45 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         ctx.onWindowBecameKey = { [weak self] ctx in
-            self?.activeWindowID = ctx.id
+            guard let self else { return }
+            self.activeWindowID = ctx.id
+            self.scheduleSessionSave(reason: "window_became_key")
         }
         ctx.onWindowWillClose = { [weak self] ctx in
-            self?.windows.removeAll { $0.id == ctx.id }
-            if self?.activeWindowID == ctx.id {
-                self?.activeWindowID = self?.windows.first?.id
+            guard let self else { return }
+
+            // 先保存一次“仍包含该窗口”的 session，避免关闭最后一个窗口导致 session 变空而丢失状态。
+            self.sessionManager.saveNow(reason: "window_will_close", capture: { [weak self] in
+                self?.makeSessionSnapshot()
+            })
+
+            self.windows.removeAll { $0.id == ctx.id }
+            if self.activeWindowID == ctx.id {
+                self.activeWindowID = self.windows.first?.id
             }
-            self?.handleWindowWillCloseForWait(ctx)
+            self.handleWindowWillCloseForWait(ctx)
+
+            // 再保存一次“移除该窗口后的 session”（如果没有窗口则跳过写盘）。
+            self.scheduleSessionSave(reason: "window_closed")
+        }
+
+        ctx.onSessionStateChanged = { [weak self] in
+            self?.scheduleSessionSave(reason: "window_state_changed")
+        }
+        ctx.editorAreaController.onSessionStateChanged = { [weak self] in
+            self?.scheduleSessionSave(reason: "tabs_changed")
         }
 
         windows.append(ctx)
         if activeWindowID == nil {
             activeWindowID = ctx.id
         }
-        ctx.show()
+
+        if let initialFrame {
+            ctx.window.setFrame(initialFrame, display: false)
+        }
+
+        ctx.show(center: centerOnShow)
         return ctx
     }
 

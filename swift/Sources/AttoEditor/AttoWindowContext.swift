@@ -22,6 +22,7 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
 
     var onWindowBecameKey: ((AttoWindowContext) -> Void)?
     var onWindowWillClose: ((AttoWindowContext) -> Void)?
+    var onSessionStateChanged: (() -> Void)?
 
     init(
         library: EditorCoreUIFFILibrary,
@@ -125,8 +126,10 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         setWorkspaceRootURL(workspaceRootURL)
     }
 
-    func show() {
-        window.center()
+    func show(center: Bool = true) {
+        if center {
+            window.center()
+        }
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -139,6 +142,7 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         fileIndex.setRootURL(url)
         recentFiles = []
         window.title = "AttoEditor — \(url.lastPathComponent)"
+        onSessionStateChanged?()
     }
 
     func rememberRecentFile(_ url: URL) {
@@ -148,6 +152,7 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         if recentFiles.count > 20 {
             recentFiles.removeLast(recentFiles.count - 20)
         }
+        onSessionStateChanged?()
     }
 
     func relativePathForDisplay(_ url: URL) -> String {
@@ -164,6 +169,7 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
 
     func toggleSidebar() {
         sidebarSplitItem.isCollapsed.toggle()
+        onSessionStateChanged?()
     }
 
     func showFindInFilesSidebar() {
@@ -171,9 +177,37 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
             sidebarSplitItem.isCollapsed = false
         }
         sidebarController.selectTab(.findInFiles)
+        onSessionStateChanged?()
+    }
+
+    // MARK: - Session snapshot
+
+    func makeSessionSnapshot() -> AttoWindowSnapshot {
+        let frame = window.frame
+        let frameSnap = AttoWindowFrameSnapshot(
+            x: Double(frame.origin.x),
+            y: Double(frame.origin.y),
+            width: Double(frame.size.width),
+            height: Double(frame.size.height)
+        )
+
+        let editorSnap = editorAreaController.makeSessionSnapshot()
+
+        return AttoWindowSnapshot(
+            workspaceRootPath: workspaceRootURL.standardizedFileURL.path,
+            frame: frameSnap,
+            sidebarCollapsed: sidebarSplitItem.isCollapsed,
+            selectedTabIndex: editorSnap.selectedTabIndex,
+            tabs: editorSnap.tabs,
+            recentFilePaths: recentFiles.map { $0.standardizedFileURL.path }
+        )
     }
 
     // MARK: - NSWindowDelegate
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        editorAreaController.confirmClosingDirtyTabsIfNeeded()
+    }
 
     func windowDidBecomeKey(_ notification: Notification) {
         onWindowBecameKey?(self)
@@ -181,5 +215,33 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         onWindowWillClose?(self)
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        onSessionStateChanged?()
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        onSessionStateChanged?()
+    }
+
+    // MARK: - Session restore helpers
+
+    func restoreRecentFiles(filePaths: [String], fileManager: FileManager = .default) {
+        var out: [URL] = []
+        var seen: Set<String> = Set()
+
+        for p in filePaths {
+            let url = URL(fileURLWithPath: p).standardizedFileURL
+            let key = url.path
+            if seen.contains(key) { continue }
+            seen.insert(key)
+            if fileManager.fileExists(atPath: url.path) == false { continue }
+            out.append(url)
+            if out.count >= 20 { break }
+        }
+
+        recentFiles = out
+        onSessionStateChanged?()
     }
 }

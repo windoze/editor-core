@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class AttoStatusBarView: NSView {
     private let leftLabel = NSTextField(labelWithString: "")
+    private let lspLabel = NSTextField(labelWithString: "")
     private let positionLabel = NSTextField(labelWithString: "")
     private let selectionLabel = NSTextField(labelWithString: "")
     private let fileSizeLabel = NSTextField(labelWithString: "")
@@ -32,10 +33,15 @@ final class AttoStatusBarView: NSView {
             l.translatesAutoresizingMaskIntoConstraints = false
         }
 
+        lspLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        lspLabel.textColor = NSColor(attoHex: 0xB5B5B5)
+        lspLabel.translatesAutoresizingMaskIntoConstraints = false
+
         rightStack.orientation = .horizontal
         rightStack.alignment = .centerY
         rightStack.spacing = 12
         rightStack.translatesAutoresizingMaskIntoConstraints = false
+        rightStack.addArrangedSubview(lspLabel)
         rightStack.addArrangedSubview(positionLabel)
         rightStack.addArrangedSubview(selectionLabel)
         rightStack.addArrangedSubview(fileSizeLabel)
@@ -52,7 +58,7 @@ final class AttoStatusBarView: NSView {
             rightStack.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
 
-        update(leftText: nil, positionText: "Ln -, Col -", selectionText: nil, fileSizeText: nil)
+        update(leftText: nil, lspText: nil, positionText: "Ln -, Col -", selectionText: nil, fileSizeText: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -65,8 +71,10 @@ final class AttoStatusBarView: NSView {
         topBorderLayer.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
     }
 
-    func update(leftText: String?, positionText: String, selectionText: String?, fileSizeText: String?) {
+    func update(leftText: String?, lspText: String?, positionText: String, selectionText: String?, fileSizeText: String?) {
         leftLabel.stringValue = leftText ?? ""
+        lspLabel.stringValue = lspText ?? ""
+        lspLabel.isHidden = (lspText?.isEmpty != false)
         positionLabel.stringValue = positionText
         selectionLabel.stringValue = selectionText ?? ""
         fileSizeLabel.stringValue = fileSizeText ?? ""

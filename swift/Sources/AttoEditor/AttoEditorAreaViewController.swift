@@ -36,6 +36,9 @@ final class AttoEditorAreaViewController: NSViewController {
 
     var onDidCloseFile: ((URL) -> Void)?
     var onOpenFilesChanged: (([OpenFileItem], UUID?) -> Void)?
+    var onSessionStateChanged: (() -> Void)?
+
+    private var isRestoringSession: Bool = false
 
     private struct HoverRequestContext {
         let tabID: UUID
@@ -163,6 +166,77 @@ final class AttoEditorAreaViewController: NSViewController {
 
     // MARK: - Tabs
 
+    func makeSessionSnapshot() -> (tabs: [AttoTabSnapshot], selectedTabIndex: Int?) {
+        let selectedIndex: Int? = {
+            guard let selectedTabID else { return nil }
+            return tabs.firstIndex(where: { $0.id == selectedTabID })
+        }()
+
+        let tabSnaps: [AttoTabSnapshot] = tabs.map { tab in
+            AttoTabSnapshot(
+                filePath: tab.fileURL.standardizedFileURL.path,
+                isPreview: tab.isPreview,
+                showsMinimap: tab.editCore.showsMinimap
+            )
+        }
+
+        return (tabs: tabSnaps, selectedTabIndex: selectedIndex)
+    }
+
+    func restoreSession(tabs tabSnapshots: [AttoTabSnapshot], selectedTabIndex: Int?) {
+        isRestoringSession = true
+        defer { isRestoringSession = false }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+
+        tabs = []
+        selectedTabID = nil
+
+        var didUsePreview = false
+        var newTabs: [AttoEditorTab] = []
+        newTabs.reserveCapacity(tabSnapshots.count)
+
+        for snap in tabSnapshots {
+            let url = URL(fileURLWithPath: snap.filePath).standardizedFileURL
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+
+            let wantsPreview = snap.isPreview && (didUsePreview == false)
+            if wantsPreview { didUsePreview = true }
+
+            do {
+                let tab = try makeTab(
+                    for: url,
+                    isPreview: wantsPreview,
+                    showsMinimap: snap.showsMinimap ?? true
+                )
+                newTabs.append(tab)
+            } catch {
+                NSLog("AttoEditor: session restore failed to open file %@: %@", url.path, String(describing: error))
+            }
+        }
+
+        tabs = newTabs
+
+        if newTabs.isEmpty {
+            showEmptyState()
+            refreshTabBar()
+            updateStatusBar()
+            updateWindowTitle()
+            onOpenFilesChanged?(openFileItems(), selectedTabID)
+            return
+        }
+
+        let idx = selectedTabIndex ?? 0
+        let safeIdx = (0..<newTabs.count).contains(idx) ? idx : 0
+        selectTab(id: newTabs[safeIdx].id)
+    }
+
+    private func notifySessionStateChanged() {
+        guard isRestoringSession == false else { return }
+        onSessionStateChanged?()
+    }
+
     func openFile(url: URL) {
         openFile(url: url, mode: .pinned)
     }
@@ -176,6 +250,7 @@ final class AttoEditorAreaViewController: NSViewController {
             selectTab(id: existing.id)
             refreshTabBar()
             updateWindowTitle()
+            notifySessionStateChanged()
             return true
         }
 
@@ -192,6 +267,7 @@ final class AttoEditorAreaViewController: NSViewController {
                         tabs[previewIdx] = tab
                         selectTab(id: tab.id)
                         onDidCloseFile?(oldURL)
+                        notifySessionStateChanged()
                         return true
                     }
                 }
@@ -199,11 +275,13 @@ final class AttoEditorAreaViewController: NSViewController {
                 let tab = try makeTab(for: url, isPreview: true)
                 tabs.append(tab)
                 selectTab(id: tab.id)
+                notifySessionStateChanged()
 
             case .pinned:
                 let tab = try makeTab(for: url, isPreview: false)
                 tabs.append(tab)
                 selectTab(id: tab.id)
+                notifySessionStateChanged()
             }
             return true
         } catch {
@@ -258,7 +336,59 @@ final class AttoEditorAreaViewController: NSViewController {
             NSSound.beep()
             return
         }
+        _ = saveTab(tab)
+    }
 
+    func confirmClosingDirtyTabsIfNeeded() -> Bool {
+        let dirtyTabs = tabs.filter { $0.isDirty }
+        guard dirtyTabs.isEmpty == false else { return true }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "You have unsaved changes."
+        alert.informativeText = "Do you want to save your changes before closing?"
+        alert.addButton(withTitle: "Save All")
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Don't Save")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return saveAllDirtyTabs()
+        case .alertSecondButtonReturn:
+            return false
+        default:
+            return true
+        }
+    }
+
+    private enum DirtyCloseDecision {
+        case save
+        case dontSave
+        case cancel
+    }
+
+    private func confirmCloseDirtyTab(_ tab: AttoEditorTab) -> DirtyCloseDecision {
+        let name = tab.fileURL.lastPathComponent
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Do you want to save changes to \"\(name)\" before closing?"
+        alert.informativeText = "Your changes will be lost if you don't save them."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Don't Save")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .save
+        case .alertSecondButtonReturn:
+            return .cancel
+        default:
+            return .dontSave
+        }
+    }
+
+    @discardableResult
+    private func saveTab(_ tab: AttoEditorTab) -> Bool {
         do {
             let text = try tab.editCore.editor.text()
             try text.write(to: tab.fileURL, atomically: true, encoding: .utf8)
@@ -268,18 +398,45 @@ final class AttoEditorAreaViewController: NSViewController {
             refreshTabBar()
             updateWindowTitle()
             updateStatusBar()
+            notifySessionStateChanged()
+            return true
         } catch {
             NSSound.beep()
             NSLog("AttoEditor: failed to save file %@: %@", tab.fileURL.path, String(describing: error))
+            return false
         }
+    }
+
+    private func saveAllDirtyTabs() -> Bool {
+        for tab in tabs {
+            if tab.isDirty {
+                if saveTab(tab) == false {
+                    return false
+                }
+            }
+        }
+        return true
     }
 
     private func closeTab(id: UUID) {
         guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let url = tabs[idx].fileURL
+        let tab = tabs[idx]
+        if tab.isDirty {
+            switch confirmCloseDirtyTab(tab) {
+            case .cancel:
+                return
+            case .save:
+                guard saveTab(tab) else { return }
+            case .dontSave:
+                break
+            }
+        }
+
+        let url = tab.fileURL
         let wasSelected = (selectedTabID == id)
         tabs.remove(at: idx)
         onDidCloseFile?(url)
+        notifySessionStateChanged()
 
         if wasSelected {
             if let next = tabs.indices.last {
@@ -311,6 +468,7 @@ final class AttoEditorAreaViewController: NSViewController {
         tab.editCore.focusEditor()
 
         applyFindStateToActiveTab()
+        notifySessionStateChanged()
     }
 
     private func refreshTabBar() {
@@ -326,6 +484,7 @@ final class AttoEditorAreaViewController: NSViewController {
         guard tab.isPreview else { return }
         tab.isPreview = false
         refreshTabBar()
+        notifySessionStateChanged()
     }
 
     // MARK: - Minimap
@@ -335,6 +494,7 @@ final class AttoEditorAreaViewController: NSViewController {
         tab.editCore.showsMinimap.toggle()
         tab.editCore.needsLayout = true
         tab.editCore.needsDisplay = true
+        notifySessionStateChanged()
     }
 
     // MARK: - Editor commands
@@ -610,6 +770,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private func handleTabDidMutateDocumentText(tabID: UUID) {
         guard let tab = tabs.first(where: { $0.id == tabID }) else { return }
 
+        let didUnpreview = tab.isPreview
         if tab.isPreview {
             tab.isPreview = false
         }
@@ -618,6 +779,9 @@ final class AttoEditorAreaViewController: NSViewController {
 
         refreshTabBar()
         updateWindowTitle()
+        if didUnpreview {
+            notifySessionStateChanged()
+        }
     }
 
     private func attachStatusObserver(to editorView: EditorCoreSkiaView) {
@@ -641,6 +805,7 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let tab = activeTab else {
             statusBarView.update(
                 leftText: nil,
+                lspText: nil,
                 positionText: "Ln -, Col -",
                 selectionText: nil,
                 fileSizeText: nil
@@ -702,8 +867,14 @@ final class AttoEditorAreaViewController: NSViewController {
             }
         }()
 
+        let lspText: String? = {
+            guard (try? editor.lspIsEnabled()) == true else { return nil }
+            return "LSP"
+        }()
+
         statusBarView.update(
-            leftText: tab.fileURL.path,
+            leftText: nil,
+            lspText: lspText,
             positionText: "Ln \(line1), Col \(col1)",
             selectionText: selectionText,
             fileSizeText: fileSizeText
@@ -776,7 +947,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
     // MARK: - Tab creation
 
-    private func makeTab(for url: URL, isPreview: Bool) throws -> AttoEditorTab {
+    private func makeTab(for url: URL, isPreview: Bool, showsMinimap: Bool = true) throws -> AttoEditorTab {
         let initialText = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
 
         let fontFamiliesCSV = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_FONT_FAMILIES"]
@@ -787,7 +958,7 @@ final class AttoEditorAreaViewController: NSViewController {
             initialText: initialText,
             viewportWidthCells: 120,
             fontFamiliesCSV: fontFamiliesCSV,
-            showsMinimap: true,
+            showsMinimap: showsMinimap,
             minimapPlacement: .rightOfScrollbar
         )
 
