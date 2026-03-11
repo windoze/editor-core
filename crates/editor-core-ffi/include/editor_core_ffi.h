@@ -13,6 +13,7 @@ typedef struct EcfEditorState EcfEditorState;
 typedef struct EcfWorkspace EcfWorkspace;
 typedef struct EcfSublimeProcessor EcfSublimeProcessor;
 typedef struct EcfTreeSitterProcessor EcfTreeSitterProcessor;
+typedef struct EcfTreeSitterIndenter EcfTreeSitterIndenter;
 
 typedef const void* (*EcfTreeSitterLanguageFn)(void);
 
@@ -212,6 +213,9 @@ char* editor_core_ffi_lsp_percent_encode_path(const char* path);
 char* editor_core_ffi_lsp_percent_decode_path(const char* path);
 size_t editor_core_ffi_lsp_char_offset_to_utf16(const char* line_text, size_t char_offset);
 size_t editor_core_ffi_lsp_utf16_to_char_offset(const char* line_text, size_t utf16_offset);
+char* editor_core_ffi_lsp_formatting_options_json(size_t tab_size, bool insert_spaces);
+char* editor_core_ffi_lsp_formatting_options_for_indentation_config_json(const char* indentation_config_json, size_t tab_width);
+char* editor_core_ffi_lsp_on_type_formatting_params_json(const EcfEditorState* state, const char* uri, const char* ch, const char* options_json);
 char* editor_core_ffi_lsp_apply_text_edits_json(EcfEditorState* state, const char* edits_json);
 char* editor_core_ffi_lsp_semantic_tokens_to_intervals_json(const EcfEditorState* state, const char* data_json);
 char* editor_core_ffi_lsp_decode_semantic_style_id(uint32_t style_id);
@@ -260,6 +264,22 @@ void editor_core_ffi_treesitter_processor_free(EcfTreeSitterProcessor* processor
 char* editor_core_ffi_treesitter_processor_process_json(EcfTreeSitterProcessor* processor, const EcfEditorState* state);
 bool editor_core_ffi_treesitter_processor_apply(EcfTreeSitterProcessor* processor, EcfEditorState* state);
 char* editor_core_ffi_treesitter_processor_last_update_mode_json(const EcfTreeSitterProcessor* processor);
+
+EcfTreeSitterIndenter* editor_core_ffi_treesitter_indenter_new(
+    EcfTreeSitterLanguageFn language_fn,
+    const char* indents_query);
+
+EcfTreeSitterIndenter* editor_core_ffi_treesitter_indenter_new_wasm_from_path(
+    const char* language_id_utf8,
+    const char* wasm_path_utf8,
+    const char* indents_query);
+
+void editor_core_ffi_treesitter_indenter_free(EcfTreeSitterIndenter* indenter);
+char* editor_core_ffi_treesitter_indenter_reindent_line_json(
+    EcfTreeSitterIndenter* indenter,
+    const EcfEditorState* state,
+    size_t line,
+    const char* indentation_config_json);
 
 /* ABI-v1 short aliases */
 uint32_t ecf_abi_version(void);

@@ -33,8 +33,9 @@ use editor_core_render_skia::{
 };
 use editor_core_sublime::{SublimeProcessor, SublimeSyntaxSet};
 use editor_core_treesitter::{
-    TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterRegistry, TreeSitterRegistryError,
-    TreeSitterUpdateMode, load_processor_config_from_config,
+    TreeSitterIndenter, TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterRegistry,
+    TreeSitterRegistryError, TreeSitterUpdateMode, load_indenter_config_from_config,
+    load_processor_config_from_config,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};
@@ -611,6 +612,7 @@ fn get_or_start_shared_lsp_session(
 enum LspClientRequest {
     Hover { view: ViewId },
     Definition { view: ViewId },
+    OnTypeFormatting { view: ViewId, version: u64 },
 }
 
 struct EditorUiDoc {
@@ -618,6 +620,7 @@ struct EditorUiDoc {
     buffer_id: BufferId,
     sublime: Option<SublimeProcessor>,
     treesitter: Option<TreeSitterAsyncWorker>,
+    treesitter_indenter: Option<TreeSitterIndenter>,
     treesitter_capture_mapper: TreeSitterCaptureMapper,
     treesitter_processing_config: TreeSitterProcessingConfig,
     treesitter_registry: TreeSitterRegistry,
@@ -632,8 +635,10 @@ struct EditorUiDoc {
     lsp_client_requests: HashMap<u64, LspClientRequest>,
     lsp_latest_hover_request_id: HashMap<ViewId, u64>,
     lsp_latest_definition_request_id: HashMap<ViewId, u64>,
+    lsp_latest_on_type_formatting_request_id: HashMap<ViewId, u64>,
     lsp_last_hover_result_json: HashMap<ViewId, String>,
     lsp_last_definition_result_json: HashMap<ViewId, String>,
+    text_version: u64,
 }
 
 impl EditorUiDoc {
@@ -684,6 +689,7 @@ impl EditorUiDoc {
         self.lsp_client_requests.clear();
         self.lsp_latest_hover_request_id.clear();
         self.lsp_latest_definition_request_id.clear();
+        self.lsp_latest_on_type_formatting_request_id.clear();
         self.lsp_last_hover_result_json.clear();
         self.lsp_last_definition_result_json.clear();
 
@@ -742,6 +748,8 @@ impl Drop for EditorUi {
         } else {
             doc.lsp_latest_hover_request_id.remove(&self.view_id);
             doc.lsp_latest_definition_request_id.remove(&self.view_id);
+            doc.lsp_latest_on_type_formatting_request_id
+                .remove(&self.view_id);
             doc.lsp_last_hover_result_json.remove(&self.view_id);
             doc.lsp_last_definition_result_json.remove(&self.view_id);
         }
@@ -805,6 +813,7 @@ impl EditorUi {
             buffer_id,
             sublime: None,
             treesitter: None,
+            treesitter_indenter: None,
             treesitter_capture_mapper: TreeSitterCaptureMapper::default(),
             treesitter_processing_config: TreeSitterProcessingConfig::default(),
             treesitter_registry: TreeSitterRegistry::default(),
@@ -819,8 +828,10 @@ impl EditorUi {
             lsp_client_requests: HashMap::new(),
             lsp_latest_hover_request_id: HashMap::new(),
             lsp_latest_definition_request_id: HashMap::new(),
+            lsp_latest_on_type_formatting_request_id: HashMap::new(),
             lsp_last_hover_result_json: HashMap::new(),
             lsp_last_definition_result_json: HashMap::new(),
+            text_version: 0,
         }));
         Self {
             doc,
@@ -2054,6 +2065,17 @@ impl EditorUi {
                 })?
         };
 
+        let indenter = load_indenter_config_from_config(language_id, &language_config)
+            .ok()
+            .flatten()
+            .and_then(|cfg| {
+                if cfg.indents_query.trim().is_empty() {
+                    None
+                } else {
+                    TreeSitterIndenter::new(cfg).ok()
+                }
+            });
+
         let mut config = load_processor_config_from_config(language_id, &language_config)
             .map_err(|e| UiError::Processor(e.to_string()))?;
         let capture_names = config
@@ -2070,6 +2092,7 @@ impl EditorUi {
             }
 
             doc.treesitter = None;
+            doc.treesitter_indenter = None;
             doc.apply_processing_edits([
                 ProcessingEdit::ClearStyleLayer {
                     layer: StyleLayerId::TREE_SITTER,
@@ -2105,6 +2128,7 @@ impl EditorUi {
         {
             let mut doc = self.lock_doc();
             doc.treesitter = Some(worker);
+            doc.treesitter_indenter = indenter;
         }
         Ok(())
     }
@@ -2141,6 +2165,7 @@ impl EditorUi {
     pub fn disable_treesitter(&mut self) {
         let mut doc = self.lock_doc();
         doc.treesitter = None;
+        doc.treesitter_indenter = None;
     }
 
     /// Enable an LSP session (stdio) for the current document.
@@ -2304,6 +2329,7 @@ impl EditorUi {
             doc.lsp_client_requests.clear();
             doc.lsp_latest_hover_request_id.clear();
             doc.lsp_latest_definition_request_id.clear();
+            doc.lsp_latest_on_type_formatting_request_id.clear();
             doc.lsp_last_hover_result_json.clear();
             doc.lsp_last_definition_result_json.clear();
         }
@@ -2395,6 +2421,137 @@ impl EditorUi {
     pub fn lsp_take_last_definition_result_json(&mut self) -> Option<String> {
         let mut doc = self.lock_doc();
         doc.lsp_last_definition_result_json.remove(&self.view_id)
+    }
+
+    fn maybe_request_lsp_on_type_formatting(&mut self, ch: &str) -> Result<bool, UiError> {
+        self.flush_lsp_did_change_from_delta();
+
+        let (shared, doc_uri, line_index, line, column, options, request_version) = {
+            let mut doc = self.lock_doc();
+            let Some(shared) = doc.lsp.clone() else {
+                return Ok(false);
+            };
+            let Some(doc_uri) = doc.lsp_document_uri.clone() else {
+                doc.lsp_disable();
+                return Ok(false);
+            };
+
+            let line_index = doc
+                .ws
+                .buffer_line_index(doc.buffer_id)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?
+                .clone();
+
+            let pos = doc
+                .ws
+                .cursor_position_for_view(self.view_id)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+
+            let indent_config = doc
+                .ws
+                .indentation_config_for_view(self.view_id)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+            let tab_width = doc.ws.tab_width_for_view(self.view_id).unwrap_or(4);
+            let options = editor_core_lsp::lsp_formatting_options_for_indentation_config(
+                &indent_config,
+                tab_width,
+            );
+
+            (
+                shared,
+                doc_uri,
+                line_index,
+                pos.line,
+                pos.column,
+                options,
+                doc.text_version,
+            )
+        };
+
+        let supports = match shared.with_session_mut(|lsp| {
+            Ok(lsp.supports_on_type_formatting_trigger(ch))
+        }) {
+            Ok(v) => v,
+            Err(_reason) => {
+                self.lsp_disable();
+                return Ok(false);
+            }
+        };
+        if !supports {
+            return Ok(false);
+        }
+
+        let request_id = match shared.with_session_mut(|lsp| {
+            lsp.set_active_document(doc_uri.as_str())?;
+            lsp.request_on_type_formatting(&line_index, line, column, ch.to_string(), options)
+        }) {
+            Ok(id) => id,
+            Err(_reason) => {
+                self.lsp_disable();
+                return Ok(false);
+            }
+        };
+
+        let mut doc = self.lock_doc();
+        doc.lsp_client_requests.insert(
+            request_id,
+            LspClientRequest::OnTypeFormatting {
+                view: self.view_id,
+                version: request_version,
+            },
+        );
+        doc.lsp_latest_on_type_formatting_request_id
+            .insert(self.view_id, request_id);
+
+        Ok(true)
+    }
+
+    fn maybe_apply_treesitter_indent_for_primary_caret_line(&mut self) -> Result<bool, UiError> {
+        let applied = {
+            let mut doc = self.lock_doc();
+            if doc.treesitter_indenter.is_none() {
+                return Ok(false);
+            }
+
+            let buffer_id = doc.buffer_id;
+            let version = doc.text_version;
+            let text = doc
+                .ws
+                .buffer_text(buffer_id)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+
+            let pos = doc
+                .ws
+                .cursor_position_for_view(self.view_id)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+            let indent_config = doc
+                .ws
+                .indentation_config_for_view(self.view_id)
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+            let indent_style = indent_config.style;
+
+            let Some(indenter) = doc.treesitter_indenter.as_mut() else {
+                return Ok(false);
+            };
+
+            indenter
+                .sync_to_text(version, text.as_str())
+                .map_err(|e| UiError::Processor(e.to_string()))?;
+
+            let Some(edit) = indenter.reindent_text_edit_for_line(pos.line, indent_style) else {
+                return Ok(false);
+            };
+
+            doc.ws
+                .apply_text_edits(vec![(buffer_id, vec![edit])])
+                .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+            true
+        };
+
+        if applied {
+            self.refresh_processing()?;
+        }
+        Ok(applied)
     }
 
     /// Format the active document via LSP (`textDocument/formatting`) and apply edits locally.
@@ -3197,15 +3354,30 @@ impl EditorUi {
         // - For multi-character commits (IME commits, etc), keep the bulk `InsertText` path.
         //
         // Notes:
-        // - Keep `'\n'` out of the `TypeChar` path so enabling auto-pairs does not implicitly
-        //   change newline indentation behavior in hosts.
+        // - Keep `'\n'` out of the `TypeChar` path; newline indentation is handled explicitly
+        //   via `EditCommand::InsertNewline` (with optional auto-indent).
         // - For clipboard paste (including single-character paste), prefer `paste_text` which
         //   always uses `InsertText` and does not trigger auto-pairs rules.
+        if text == "\n" || text == "\r" {
+            // Treat newline as a dedicated editor command so core auto-indent can run.
+            self.exec_core(Command::Edit(EditCommand::InsertNewline {
+                auto_indent: true,
+            }))?;
+            self.refresh_processing()?;
+            // Best-effort: if the LSP server advertises `documentOnTypeFormattingProvider` on
+            // newline, request it (async) to improve indentation.
+            let requested_lsp = self.maybe_request_lsp_on_type_formatting("\n").unwrap_or(false);
+            if !requested_lsp {
+                // Best-effort fallback: if a Tree-sitter `indents.scm` is available for the
+                // current language, use it to compute the desired indentation.
+                let _ = self.maybe_apply_treesitter_indent_for_primary_caret_line();
+            }
+            self.ensure_primary_caret_visible_after_edit();
+            return Ok(());
+        }
         if let Some(ch) = (text.chars().count() == 1)
             .then(|| text.chars().next())
             .flatten()
-            && ch != '\n'
-            && ch != '\r'
             && ch != '\t'
         {
             self.exec_core(Command::Edit(EditCommand::TypeChar { ch }))?;
@@ -4780,6 +4952,9 @@ impl EditorUi {
             return Ok(());
         }
 
+        // Monotonic version for "text has changed" events (used to drop stale async results).
+        doc.text_version = doc.text_version.saturating_add(1);
+
         if doc.treesitter.is_some() {
             doc.treesitter_doc_version = doc.treesitter_doc_version.saturating_add(1);
             let version = doc.treesitter_doc_version;
@@ -4849,6 +5024,9 @@ impl EditorUi {
         if delta.is_empty() {
             return;
         }
+
+        // Keep the UI-side monotonic text version consistent with `refresh_processing`.
+        doc.text_version = doc.text_version.saturating_add(1);
 
         let Some(shared) = doc.lsp.clone() else {
             return;
@@ -4978,6 +5156,10 @@ impl EditorUi {
             return applied;
         }
 
+        // Avoid re-entrant locking: collect text edits while holding the doc lock and apply
+        // them after releasing it.
+        let mut on_type_formatting_results: Vec<serde_json::Value> = Vec::new();
+
         let mut doc = self.lock_doc();
         for ev in events {
             let LspEvent::Response(resp) = ev else {
@@ -5072,7 +5254,43 @@ impl EditorUi {
                         }
                     }
                 }
+                "textDocument/onTypeFormatting" => {
+                    if let Some(LspClientRequest::OnTypeFormatting { view, version }) =
+                        doc.lsp_client_requests.remove(&resp.id)
+                    {
+                        if doc.lsp_latest_on_type_formatting_request_id.get(&view) != Some(&resp.id)
+                        {
+                            continue;
+                        }
+                        if doc.text_version != version {
+                            continue;
+                        }
+                        if resp.error.is_some() {
+                            continue;
+                        }
+
+                        let result = resp.result.unwrap_or(serde_json::Value::Null);
+                        if !result.is_null() {
+                            on_type_formatting_results.push(result);
+                        }
+                    }
+                }
                 _ => {}
+            }
+        }
+
+        drop(doc);
+        for result in on_type_formatting_results {
+            match self.lsp_apply_text_edits_value(self.buffer_id, &result) {
+                Ok(did_apply) => {
+                    if did_apply {
+                        applied = true;
+                    }
+                }
+                Err(_err) => {
+                    self.lsp_disable();
+                    return true;
+                }
             }
         }
 

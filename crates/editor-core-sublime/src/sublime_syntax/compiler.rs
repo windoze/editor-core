@@ -323,12 +323,12 @@ fn compile_match(
     let regex = if contains_context_backrefs(&regex_source) {
         None
     } else {
-        Some(Arc::new(
-            Regex::new(&regex_source).map_err(|e| SublimeSyntaxError::RegexCompile {
+        Some(Arc::new(Regex::new(&regex_source).map_err(|e| {
+            SublimeSyntaxError::RegexCompile {
                 pattern: regex_source.clone(),
                 message: e.to_string(),
-            })?,
-        ))
+            }
+        })?))
     };
 
     let mut captures = HashMap::new();
@@ -354,7 +354,13 @@ fn compile_match(
 
     let has_branching =
         pattern.branch.is_some() || pattern.branch_point.is_some() || pattern.fail.is_some();
-    if has_branching && !pattern.with_prototype.as_deref().unwrap_or_default().is_empty() {
+    if has_branching
+        && !pattern
+            .with_prototype
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty()
+    {
         // Keep the surface area smaller until we implement the exact semantics for
         // `with_prototype` in conjunction with branch rollback.
         return Err(SublimeSyntaxError::Unsupported(
@@ -393,7 +399,11 @@ fn compile_match(
             branch_point: fail_target.clone(),
         }
     } else if let Some(branches) = &pattern.branch {
-        if pop_before > 0 || pattern.push.is_some() || pattern.set.is_some() || pattern.embed.is_some() {
+        if pop_before > 0
+            || pattern.push.is_some()
+            || pattern.set.is_some()
+            || pattern.embed.is_some()
+        {
             return Err(SublimeSyntaxError::Unsupported(
                 "branch with push/set/pop/embed",
             ));
@@ -433,12 +443,12 @@ fn compile_match(
         let escape_regex = if contains_context_backrefs(&escape_source) {
             None
         } else {
-            Some(Arc::new(
-                Regex::new(&escape_source).map_err(|e| SublimeSyntaxError::RegexCompile {
+            Some(Arc::new(Regex::new(&escape_source).map_err(|e| {
+                SublimeSyntaxError::RegexCompile {
                     pattern: escape_source.clone(),
                     message: e.to_string(),
-                })?,
-            ))
+                }
+            })?))
         };
 
         MatchAction::Embed {

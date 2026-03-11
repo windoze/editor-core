@@ -30,7 +30,9 @@ contexts:
     let line_index = LineIndex::from_text(text);
 
     let mut syntax_set = SublimeSyntaxSet::new();
-    let syntax = syntax_set.load_from_str(yaml).expect("compile embed syntax");
+    let syntax = syntax_set
+        .load_from_str(yaml)
+        .expect("compile embed syntax");
 
     let mut mapper = SublimeScopeMapper::new();
     let result = highlight_document(syntax, &line_index, Some(&mut syntax_set), &mut mapper)
@@ -53,4 +55,3 @@ contexts:
         "expected meta.after intervals after escaping the embed"
     );
 }
-

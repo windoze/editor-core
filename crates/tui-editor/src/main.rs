@@ -1132,7 +1132,20 @@ impl App {
 
     /// 插入换行
     fn insert_newline(&mut self) {
-        self.insert_text("\n");
+        let before_version = self.state_manager.get_document_state().version;
+        if !self.execute(Command::Edit(EditCommand::InsertNewline {
+            auto_indent: true,
+        })) {
+            return;
+        }
+        let after_version = self.state_manager.get_document_state().version;
+        if after_version == before_version {
+            return;
+        }
+
+        self.rect_selection_anchor = None;
+        self.last_insert_time = Some(Instant::now());
+        self.refresh_syntax_highlighting();
     }
 
     /// 插入 Tab（由 editor-core 根据 tab 设置决定插入 `\\t` 或空格）

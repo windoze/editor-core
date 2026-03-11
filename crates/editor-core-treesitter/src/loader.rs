@@ -1,4 +1,6 @@
-use crate::{TreeSitterConfig, TreeSitterLanguage, TreeSitterProcessorConfig};
+use crate::{
+    TreeSitterConfig, TreeSitterIndenterConfig, TreeSitterLanguage, TreeSitterProcessorConfig,
+};
 
 /// Errors produced when loading Tree-sitter WASM and query files from disk.
 #[derive(Debug)]
@@ -60,4 +62,34 @@ pub fn load_processor_config_from_config(
     }
 
     Ok(out)
+}
+
+/// Load a [`TreeSitterIndenterConfig`] from a file-based [`TreeSitterConfig`], if available.
+///
+/// This reads:
+/// - the WASM grammar bytes
+/// - `indents.scm` (optional; returns `Ok(None)` when missing)
+pub fn load_indenter_config_from_config(
+    language_id: &str,
+    config: &TreeSitterConfig,
+) -> Result<Option<TreeSitterIndenterConfig>, TreeSitterLoadError> {
+    let Some(indents_path) = &config.indents_path else {
+        return Ok(None);
+    };
+
+    let wasm_bytes = std::fs::read(&config.wasm_path)
+        .map_err(|e| TreeSitterLoadError::Io(format!("{}: {e}", config.wasm_path.display())))?;
+
+    let indents_query = std::fs::read_to_string(indents_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::InvalidData {
+            TreeSitterLoadError::InvalidUtf8(format!("{}: {e}", indents_path.display()))
+        } else {
+            TreeSitterLoadError::Io(format!("{}: {e}", indents_path.display()))
+        }
+    })?;
+
+    Ok(Some(TreeSitterIndenterConfig::new(
+        TreeSitterLanguage::wasm(language_id.to_string(), wasm_bytes),
+        indents_query,
+    )))
 }

@@ -22,6 +22,8 @@ pub struct TreeSitterConfig {
     pub highlights_path: PathBuf,
     /// Optional folding query (`folds.scm`).
     pub folds_path: Option<PathBuf>,
+    /// Optional indentation query (`indents.scm`).
+    pub indents_path: Option<PathBuf>,
     /// Optional tags query (`tags.scm`).
     pub tags_path: Option<PathBuf>,
     /// Optional injections query (`injections.scm`).
@@ -35,6 +37,7 @@ impl TreeSitterConfig {
             wasm_path,
             highlights_path,
             folds_path: None,
+            indents_path: None,
             tags_path: None,
             injections_path: None,
         }
@@ -48,6 +51,7 @@ impl TreeSitterConfig {
     ///
     /// Optional:
     /// - `folds.scm`
+    /// - `indents.scm`
     /// - `tags.scm`
     /// - `injections.scm`
     pub fn from_language_dir(dir: &Path) -> Option<Self> {
@@ -59,6 +63,10 @@ impl TreeSitterConfig {
 
         let folds_path = {
             let p = dir.join("folds.scm");
+            p.is_file().then_some(p)
+        };
+        let indents_path = {
+            let p = dir.join("indents.scm");
             p.is_file().then_some(p)
         };
         let tags_path = {
@@ -74,6 +82,7 @@ impl TreeSitterConfig {
             wasm_path,
             highlights_path,
             folds_path,
+            indents_path,
             tags_path,
             injections_path,
         })
@@ -81,21 +90,12 @@ impl TreeSitterConfig {
 }
 
 /// Combined Tree-sitter registry used by the UI layer and FFI boundary.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct TreeSitterRegistry {
     /// Mapping from extension → language id.
     pub extension_map: TreeSitterExtensionMap,
     /// Mapping from language id → file-based config.
     pub languages: TreeSitterConfigMap,
-}
-
-impl Default for TreeSitterRegistry {
-    fn default() -> Self {
-        Self {
-            extension_map: BTreeMap::new(),
-            languages: BTreeMap::new(),
-        }
-    }
 }
 
 /// Errors produced when parsing/validating a Tree-sitter registry.
@@ -144,6 +144,8 @@ struct LanguageJson {
     #[serde(default)]
     folds: Option<String>,
     #[serde(default)]
+    indents: Option<String>,
+    #[serde(default)]
     tags: Option<String>,
     #[serde(default)]
     injections: Option<String>,
@@ -185,6 +187,12 @@ impl TreeSitterRegistry {
                 }
                 _ => None,
             };
+            let indents_path = match lang.indents.as_deref() {
+                Some(p) if !p.trim().is_empty() => {
+                    Some(resolve_path(root_dir, p).map_err(TreeSitterRegistryError::InvalidValue)?)
+                }
+                _ => None,
+            };
             let tags_path = match lang.tags.as_deref() {
                 Some(p) if !p.trim().is_empty() => {
                     Some(resolve_path(root_dir, p).map_err(TreeSitterRegistryError::InvalidValue)?)
@@ -204,6 +212,7 @@ impl TreeSitterRegistry {
                     wasm_path,
                     highlights_path,
                     folds_path,
+                    indents_path,
                     tags_path,
                     injections_path,
                 },

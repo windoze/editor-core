@@ -118,6 +118,20 @@ Commands use tagged JSON:
 }
 ```
 
+Auto-indent / indentation config:
+
+```json
+{
+  "kind": "view",
+  "op": "set_indentation_config",
+  "config": {
+    "style": { "kind": "spaces", "width": 4 },
+    "indent_triggers": ["{", "[", "(", ":"],
+    "outdent_triggers": ["}", "]", ")"]
+  }
+}
+```
+
 ```json
 {
   "kind": "style",

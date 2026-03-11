@@ -359,6 +359,28 @@ impl LspSession {
         self.supports_folding_range
     }
 
+    /// Parse `documentOnTypeFormattingProvider` from the server capabilities.
+    ///
+    /// This is commonly used for "auto-indent" behavior (e.g. requesting formatting on `"\n"`).
+    pub fn on_type_formatting_options(
+        &self,
+    ) -> Option<crate::lsp_indentation::LspOnTypeFormattingOptions> {
+        crate::lsp_indentation::on_type_formatting_options_from_capabilities(
+            &self.server_capabilities,
+        )
+    }
+
+    /// Returns `true` if the server advertises `documentOnTypeFormattingProvider`.
+    pub fn supports_on_type_formatting(&self) -> bool {
+        self.on_type_formatting_options().is_some()
+    }
+
+    /// Returns `true` if `ch` is a trigger character for on-type formatting.
+    pub fn supports_on_type_formatting_trigger(&self, ch: &str) -> bool {
+        self.on_type_formatting_options()
+            .is_some_and(|opts| opts.is_trigger_character(ch))
+    }
+
     /// Get the current auto-refresh options.
     pub fn auto_refresh_options(&self) -> LspAutoRefreshOptions {
         self.auto_refresh

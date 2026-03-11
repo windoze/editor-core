@@ -178,8 +178,7 @@ impl<'a> Highlighter<'a> {
 
                 // Emit match region (may be empty for lookaheads).
                 if found.end_byte > found.start_byte {
-                    let match_chars =
-                        line_text[found.start_byte..found.end_byte].chars().count();
+                    let match_chars = line_text[found.start_byte..found.end_byte].chars().count();
                     let end_char = cursor.pos_char + match_chars;
 
                     let style = self.best_style_for_match(&found.pattern);
@@ -195,8 +194,10 @@ impl<'a> Highlighter<'a> {
                 }
 
                 let stack_len_before = self.context_stack.len();
-                let match_captures =
-                    Arc::new(extract_captures(line_text.as_str(), &found.capture_positions));
+                let match_captures = Arc::new(extract_captures(
+                    line_text.as_str(),
+                    &found.capture_positions,
+                ));
                 match self.apply_action(
                     found.pattern.action.clone(),
                     match_captures,
@@ -259,13 +260,7 @@ impl<'a> Highlighter<'a> {
         })
     }
 
-    fn emit_segment(
-        &mut self,
-        start: usize,
-        end: usize,
-        style_id: StyleId,
-        base_scope: &str,
-    ) {
+    fn emit_segment(&mut self, start: usize, end: usize, style_id: StyleId, base_scope: &str) {
         let intervals = &mut self.intervals;
         if start >= end {
             return;
@@ -847,7 +842,13 @@ impl<'a> Highlighter<'a> {
             .last()
             .map(|f| f.injected_patterns.clone())
             .unwrap_or_default();
-        self.push_context_spec(next_spec, inherited, match_captures, cursor.line, syntax_set)?;
+        self.push_context_spec(
+            next_spec,
+            inherited,
+            match_captures,
+            cursor.line,
+            syntax_set,
+        )?;
 
         Ok(())
     }
@@ -1220,10 +1221,7 @@ fn extract_captures(line_text: &str, positions: &[Option<(usize, usize)>]) -> Ve
     positions
         .iter()
         .map(|pos| match pos {
-            Some((start, end)) => line_text
-                .get(*start..*end)
-                .unwrap_or_default()
-                .to_string(),
+            Some((start, end)) => line_text.get(*start..*end).unwrap_or_default().to_string(),
             None => String::new(),
         })
         .collect()

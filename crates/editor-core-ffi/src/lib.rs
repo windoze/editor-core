@@ -31,19 +31,21 @@ use editor_core::workspace::{
     BufferId, OpenBufferResult, ViewId, ViewSmoothScrollState, Workspace, WorkspaceSearchResult,
     WorkspaceViewportState,
 };
-use editor_core::{LineEnding, SearchMatch, SearchOptions};
+use editor_core::{IndentStyle, IndentationConfig, LineEnding, SearchMatch, SearchOptions};
 use editor_core_lsp::{
     CompletionTextEditMode, LspCoordinateConverter, apply_completion_item, apply_text_edits,
     completion_item_to_text_edit_specs, decode_semantic_style_id, encode_semantic_style_id,
     file_uri_to_path, locations_from_value, lsp_code_lens_to_processing_edit,
     lsp_diagnostics_to_processing_edits, lsp_document_highlights_to_processing_edit,
     lsp_document_links_to_processing_edit, lsp_document_symbols_to_processing_edit,
+    lsp_formatting_options, lsp_formatting_options_for_indentation_config,
     lsp_inlay_hints_to_processing_edit, lsp_workspace_symbols_to_results, path_to_file_uri,
     percent_decode_path, percent_encode_path, semantic_tokens_to_intervals, text_edits_from_value,
 };
 use editor_core_sublime::{SublimeProcessor, SublimeScopeMapper, SublimeSyntaxSet};
 use editor_core_treesitter::{
-    TreeSitterLanguage, TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterUpdateMode,
+    TreeSitterIndenter, TreeSitterIndenterConfig, TreeSitterLanguage, TreeSitterProcessor,
+    TreeSitterProcessorConfig, TreeSitterUpdateMode,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -474,6 +476,12 @@ pub struct EcfTreeSitterProcessor {
     inner: TreeSitterProcessor,
 }
 
+/// Opaque Tree-sitter indenter handle.
+#[repr(C)]
+pub struct EcfTreeSitterIndenter {
+    inner: TreeSitterIndenter,
+}
+
 /// ABI version for the typed/binary C contract in this crate.
 pub const ECF_ABI_VERSION: u32 = 1;
 
@@ -868,6 +876,58 @@ impl From<FfiWrapIndent> for WrapIndent {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+enum FfiIndentStyle {
+    Tabs,
+    Spaces { width: u8 },
+}
+
+impl From<FfiIndentStyle> for IndentStyle {
+    fn from(value: FfiIndentStyle) -> Self {
+        match value {
+            FfiIndentStyle::Tabs => IndentStyle::Tabs,
+            FfiIndentStyle::Spaces { width } => IndentStyle::Spaces(width.max(1)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct FfiIndentationConfig {
+    #[serde(default)]
+    style: Option<FfiIndentStyle>,
+    #[serde(default)]
+    indent_triggers: Option<Vec<String>>,
+    #[serde(default)]
+    outdent_triggers: Option<Vec<String>>,
+}
+
+impl From<FfiIndentationConfig> for IndentationConfig {
+    fn from(value: FfiIndentationConfig) -> Self {
+        let mut cfg = IndentationConfig::default();
+
+        if let Some(style) = value.style {
+            cfg.style = style.into();
+        }
+
+        if let Some(triggers) = value.indent_triggers {
+            cfg.indent_triggers = triggers
+                .into_iter()
+                .filter_map(|s| s.chars().next())
+                .collect();
+        }
+
+        if let Some(triggers) = value.outdent_triggers {
+            cfg.outdent_triggers = triggers
+                .into_iter()
+                .filter_map(|s| s.chars().next())
+                .collect();
+        }
+
+        cfg
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 enum FfiCommandInput {
     Edit {
         #[serde(flatten)]
@@ -1209,6 +1269,7 @@ enum FfiViewCommandInput {
     SetWrapIndent { indent: FfiWrapIndent },
     SetTabWidth { width: usize },
     SetTabKeyBehavior { behavior: FfiTabKeyBehavior },
+    SetIndentationConfig { config: FfiIndentationConfig },
     SetWordBoundaryAsciiBoundaryChars { boundary_chars: String },
     ResetWordBoundaryDefaults,
     ScrollTo { line: usize },
@@ -1226,6 +1287,9 @@ impl FfiViewCommandInput {
             Self::SetTabWidth { width } => ViewCommand::SetTabWidth { width },
             Self::SetTabKeyBehavior { behavior } => ViewCommand::SetTabKeyBehavior {
                 behavior: behavior.into(),
+            },
+            Self::SetIndentationConfig { config } => ViewCommand::SetIndentationConfig {
+                config: config.into(),
             },
             Self::SetWordBoundaryAsciiBoundaryChars { boundary_chars } => {
                 ViewCommand::SetWordBoundaryAsciiBoundaryChars { boundary_chars }
@@ -3113,6 +3177,84 @@ pub extern "C" fn editor_core_ffi_lsp_utf16_to_char_offset(
     }
 }
 
+/// Build minimal LSP `FormattingOptions` JSON.
+///
+/// This is primarily useful for indentation and on-type formatting requests.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_formatting_options_json(
+    tab_size: usize,
+    insert_spaces: bool,
+) -> *mut c_char {
+    result_json_ptr(ptr::null_mut(), || {
+        Ok(json!({ "options": lsp_formatting_options(tab_size, insert_spaces) }))
+    })
+}
+
+/// Build LSP `FormattingOptions` JSON from an `editor-core` indentation config JSON.
+///
+/// `indentation_config_json` uses the same shape as the JSON command bridge:
+///
+/// ```json
+/// { "style": { "kind": "spaces", "width": 4 } }
+/// ```
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_formatting_options_for_indentation_config_json(
+    indentation_config_json: *const c_char,
+    tab_width: usize,
+) -> *mut c_char {
+    result_json_ptr(ptr::null_mut(), || {
+        let json_text = require_string(indentation_config_json, "indentation_config_json")?;
+        let cfg: FfiIndentationConfig = parse_json(&json_text, "indentation config")?;
+        let cfg: IndentationConfig = cfg.into();
+        Ok(json!({
+            "options": lsp_formatting_options_for_indentation_config(&cfg, tab_width)
+        }))
+    })
+}
+
+/// Build LSP `textDocument/onTypeFormatting` params JSON for the current cursor position.
+///
+/// Notes:
+/// - `options_json` is optional (nullable). When null, `{}` is used.
+/// - The returned payload is the *params object* (not a full JSON-RPC envelope).
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_on_type_formatting_params_json(
+    state: *const EcfEditorState,
+    uri: *const c_char,
+    ch: *const c_char,
+    options_json: *const c_char,
+) -> *mut c_char {
+    result_json_ptr(ptr::null_mut(), || {
+        let state = require_ref(state, "state")?;
+        let uri = require_string(uri, "uri")?;
+        let ch = require_string(ch, "ch")?;
+
+        let options = if let Some(options_json) = optional_string(options_json, "options_json")? {
+            parse_json_value(&options_json, "formatting options")?
+        } else {
+            json!({})
+        };
+
+        let pos = state.inner.editor().cursor_position();
+        let line_text = state
+            .inner
+            .editor()
+            .line_index
+            .get_line_text(pos.line)
+            .unwrap_or_default();
+        let utf16_character = LspCoordinateConverter::char_offset_to_utf16(&line_text, pos.column);
+
+        Ok(json!({
+            "params": {
+                "textDocument": { "uri": uri },
+                "position": { "line": pos.line, "character": utf16_character },
+                "ch": ch,
+                "options": options,
+            }
+        }))
+    })
+}
+
 /// Apply LSP `TextEdit[]` JSON to an editor state.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_lsp_apply_text_edits_json(
@@ -3759,6 +3901,120 @@ pub extern "C" fn editor_core_ffi_treesitter_processor_last_update_mode_json(
             TreeSitterUpdateMode::Skipped => "skipped",
         };
         Ok(json!({ "mode": mode }))
+    })
+}
+
+/// Create a Tree-sitter indenter from a native grammar function.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_treesitter_indenter_new(
+    language_fn: Option<EcfTreeSitterLanguageFn>,
+    indents_query: *const c_char,
+) -> *mut EcfTreeSitterIndenter {
+    result_ptr(ptr::null_mut(), || {
+        let language_fn = language_fn.ok_or_else(|| "language_fn is null".to_string())?;
+        let indents_query = require_string(indents_query, "indents_query")?;
+
+        let language = tree_sitter::Language::new(unsafe {
+            tree_sitter_language::LanguageFn::from_raw(language_fn)
+        });
+
+        let config =
+            TreeSitterIndenterConfig::new(TreeSitterLanguage::native(language), indents_query);
+        let indenter = TreeSitterIndenter::new(config)
+            .map_err(|err| format!("failed to create tree-sitter indenter: {err}"))?;
+
+        Ok(Box::into_raw(Box::new(EcfTreeSitterIndenter {
+            inner: indenter,
+        })))
+    })
+}
+
+/// Create a Tree-sitter indenter from a WASM grammar file path.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_treesitter_indenter_new_wasm_from_path(
+    language_id_utf8: *const c_char,
+    wasm_path_utf8: *const c_char,
+    indents_query: *const c_char,
+) -> *mut EcfTreeSitterIndenter {
+    result_ptr(ptr::null_mut(), || {
+        let language_id = require_string(language_id_utf8, "language_id_utf8")?;
+        let wasm_path = require_string(wasm_path_utf8, "wasm_path_utf8")?;
+        let indents_query = require_string(indents_query, "indents_query")?;
+
+        let wasm_bytes = std::fs::read(&wasm_path)
+            .map_err(|e| format!("failed to read wasm file '{}': {e}", wasm_path))?;
+
+        let config = TreeSitterIndenterConfig::new(
+            TreeSitterLanguage::wasm(language_id, wasm_bytes),
+            indents_query,
+        );
+        let indenter = TreeSitterIndenter::new(config)
+            .map_err(|err| format!("failed to create tree-sitter indenter: {err}"))?;
+
+        Ok(Box::into_raw(Box::new(EcfTreeSitterIndenter {
+            inner: indenter,
+        })))
+    })
+}
+
+/// Destroy a Tree-sitter indenter.
+///
+/// # Safety
+///
+/// `indenter` must be a valid pointer returned by a constructor in this crate, or null.
+/// The pointer must not be used after this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ffi_treesitter_indenter_free(
+    indenter: *mut EcfTreeSitterIndenter,
+) {
+    if indenter.is_null() {
+        return;
+    }
+    // SAFETY: pointer must come from constructor in this crate.
+    unsafe {
+        drop(Box::from_raw(indenter));
+    }
+}
+
+/// Compute a reindent `TextEditSpec` for a given logical line using a Tree-sitter indenter.
+///
+/// - `indentation_config_json` is optional (nullable). When null, `IndentationConfig::default()` is used.
+/// - The indenter is synchronized from the full document text on each call (skipped when the
+///   editor version is unchanged).
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_treesitter_indenter_reindent_line_json(
+    indenter: *mut EcfTreeSitterIndenter,
+    state: *const EcfEditorState,
+    line: usize,
+    indentation_config_json: *const c_char,
+) -> *mut c_char {
+    result_json_ptr(ptr::null_mut(), || {
+        let indenter = require_mut(indenter, "indenter")?;
+        let state = require_ref(state, "state")?;
+
+        let cfg = if let Some(json_text) =
+            optional_string(indentation_config_json, "indentation_config_json")?
+        {
+            let parsed: FfiIndentationConfig = parse_json(&json_text, "indentation config")?;
+            IndentationConfig::from(parsed)
+        } else {
+            IndentationConfig::default()
+        };
+
+        let text = state.inner.editor().get_text();
+        indenter
+            .inner
+            .sync_to_text(state.inner.version(), &text)
+            .map_err(|err| format!("treesitter indenter sync failed: {err}"))?;
+
+        let edit = indenter
+            .inner
+            .reindent_text_edit_for_line(line, cfg.style.clone());
+
+        Ok(json!({
+            "has_edit": edit.is_some(),
+            "edit": edit.map(|e| json!({ "start": e.start, "end": e.end, "text": e.text })),
+        }))
     })
 }
 

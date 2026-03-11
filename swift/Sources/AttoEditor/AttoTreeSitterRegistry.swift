@@ -155,6 +155,12 @@ enum AttoTreeSitterRegistry {
                 entry["injections"] = injectionsRel
             }
 
+            if let indentsURL = resolveQueryURL(languageDir: url, queryFileName: "indents.scm", fileManager: fileManager),
+               let indentsRel = makeRelativeLanguagePath(languageId: languageId, languageDir: url, fileURL: indentsURL)
+            {
+                entry["indents"] = indentsRel
+            }
+
             out[languageId] = entry
         }
 

@@ -22,6 +22,7 @@ fn registry_json_resolves_relative_paths_and_extension_mapping() {
                 "wasm": "rust/language.wasm",
                 "highlights": "rust/highlights.scm",
                 "folds": "rust/folds.scm",
+                "indents": "rust/indents.scm",
                 "tags": "rust/tags.scm",
                 "injections": "rust/injections.scm",
             }
@@ -35,6 +36,11 @@ fn registry_json_resolves_relative_paths_and_extension_mapping() {
     assert_eq!(rust.highlights_path, root.join("rust/highlights.scm"));
     let expected_folds = root.join("rust/folds.scm");
     assert_eq!(rust.folds_path.as_deref(), Some(expected_folds.as_path()));
+    let expected_indents = root.join("rust/indents.scm");
+    assert_eq!(
+        rust.indents_path.as_deref(),
+        Some(expected_indents.as_path())
+    );
 
     let language_id = registry
         .language_id_for_path(std::path::Path::new("foo.RS"))

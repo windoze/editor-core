@@ -14,6 +14,7 @@ pub mod lsp_decorations;
 pub mod lsp_events;
 pub mod lsp_highlights;
 pub mod lsp_hover;
+pub mod lsp_indentation;
 pub mod lsp_locations;
 pub mod lsp_signature_help;
 pub mod lsp_symbols;
@@ -56,6 +57,10 @@ pub use lsp_highlights::{
 };
 pub use lsp_hover::{
     LspHover, LspHoverContents, LspMarkupContent, LspMarkupKind, hover_from_value,
+};
+pub use lsp_indentation::{
+    LspOnTypeFormattingOptions, lsp_formatting_options,
+    lsp_formatting_options_for_indentation_config, on_type_formatting_options_from_capabilities,
 };
 pub use lsp_locations::{LspLocation, locations_from_value};
 pub use lsp_signature_help::{

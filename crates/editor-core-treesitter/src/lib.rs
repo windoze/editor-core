@@ -9,11 +9,15 @@
 //! Output is expressed as `editor_core::ProcessingEdit` values, so it composes with other derived
 //! state producers like LSP or `.sublime-syntax`.
 
+mod indenter;
 mod loader;
 mod processor;
 mod registry;
 
-pub use loader::{TreeSitterLoadError, load_processor_config_from_config};
+pub use indenter::{TreeSitterIndenter, TreeSitterIndenterConfig};
+pub use loader::{
+    TreeSitterLoadError, load_indenter_config_from_config, load_processor_config_from_config,
+};
 pub use processor::{
     TreeSitterError, TreeSitterLanguage, TreeSitterProcessor, TreeSitterProcessorConfig,
     TreeSitterUpdateMode,

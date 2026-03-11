@@ -35,7 +35,9 @@ contexts:
     // Case 1: no fail, stick with the first branch.
     {
         let mut syntax_set = SublimeSyntaxSet::new();
-        let syntax = syntax_set.load_from_str(yaml).expect("compile branch syntax");
+        let syntax = syntax_set
+            .load_from_str(yaml)
+            .expect("compile branch syntax");
         let line_index = LineIndex::from_text("a\n");
         let mut mapper = SublimeScopeMapper::new();
         let result = highlight_document(syntax, &line_index, Some(&mut syntax_set), &mut mapper)
@@ -57,7 +59,9 @@ contexts:
     // Case 2: fail on branch-a, rewind, then highlight using branch-b.
     {
         let mut syntax_set = SublimeSyntaxSet::new();
-        let syntax = syntax_set.load_from_str(yaml).expect("compile branch syntax");
+        let syntax = syntax_set
+            .load_from_str(yaml)
+            .expect("compile branch syntax");
         let line_index = LineIndex::from_text("b\n");
         let mut mapper = SublimeScopeMapper::new();
         let result = highlight_document(syntax, &line_index, Some(&mut syntax_set), &mut mapper)
@@ -76,4 +80,3 @@ contexts:
         );
     }
 }
-

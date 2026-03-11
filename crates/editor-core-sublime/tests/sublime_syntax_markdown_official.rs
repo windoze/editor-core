@@ -42,7 +42,10 @@ console.log("x");
     // Frontmatter embed scope should be applied (even if the embedded YAML syntax isn't available).
     let frontmatter_style = mapper.style_id_for_scope("source.yaml.embedded.markdown");
     assert!(
-        result.intervals.iter().any(|i| i.style_id == frontmatter_style),
+        result
+            .intervals
+            .iter()
+            .any(|i| i.style_id == frontmatter_style),
         "expected YAML frontmatter embed scope intervals"
     );
 
@@ -73,5 +76,4 @@ console.log("x");
         result.intervals.iter().any(|i| i.style_id == rust_style),
         "expected fenced code block embed scope for rust"
     );
-
 }
