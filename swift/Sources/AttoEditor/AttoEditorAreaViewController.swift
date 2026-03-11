@@ -24,6 +24,8 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private var activeViewportObserver: EditorCoreSkiaView.ViewportStateObserverToken?
 
+    var onDidCloseFile: ((URL) -> Void)?
+
     private struct HoverRequestContext {
         let tabID: UUID
         let info: EditorCoreSkiaHoverInfo
@@ -122,7 +124,8 @@ final class AttoEditorAreaViewController: NSViewController {
         openFile(url: url, mode: .pinned)
     }
 
-    func openFile(url: URL, mode: OpenMode) {
+    @discardableResult
+    func openFile(url: URL, mode: OpenMode) -> Bool {
         if let existing = tabs.first(where: { $0.fileURL.standardizedFileURL == url.standardizedFileURL }) {
             if mode == .pinned, existing.isPreview {
                 existing.isPreview = false
@@ -130,7 +133,7 @@ final class AttoEditorAreaViewController: NSViewController {
             selectTab(id: existing.id)
             refreshTabBar()
             updateWindowTitle()
-            return
+            return true
         }
 
         do {
@@ -141,10 +144,12 @@ final class AttoEditorAreaViewController: NSViewController {
                     if tabs[previewIdx].isDirty {
                         tabs[previewIdx].isPreview = false
                     } else {
+                        let oldURL = tabs[previewIdx].fileURL
                         let tab = try makeTab(for: url, isPreview: true)
                         tabs[previewIdx] = tab
                         selectTab(id: tab.id)
-                        return
+                        onDidCloseFile?(oldURL)
+                        return true
                     }
                 }
 
@@ -157,10 +162,30 @@ final class AttoEditorAreaViewController: NSViewController {
                 tabs.append(tab)
                 selectTab(id: tab.id)
             }
+            return true
         } catch {
             NSSound.beep()
             NSLog("AttoEditor: failed to open file %@: %@", url.path, String(describing: error))
+            return false
         }
+    }
+
+    @discardableResult
+    func openFile(url: URL, mode: OpenMode, location: AttoCommandLine.FileLocation?) -> Bool {
+        let ok = openFile(url: url, mode: mode)
+        guard ok else { return false }
+        guard let location else { return true }
+        guard let tab = activeTab, tab.fileURL.standardizedFileURL == url.standardizedFileURL else { return true }
+        navigate(tab: tab, to: location)
+        return true
+    }
+
+    func containsFile(url: URL) -> Bool {
+        tabs.contains { $0.fileURL.standardizedFileURL == url.standardizedFileURL }
+    }
+
+    func openFileURLs() -> [URL] {
+        tabs.map(\.fileURL)
     }
 
     func closeActiveTab() {
@@ -191,8 +216,10 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func closeTab(id: UUID) {
         guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let url = tabs[idx].fileURL
         let wasSelected = (selectedTabID == id)
         tabs.remove(at: idx)
+        onDidCloseFile?(url)
 
         if wasSelected {
             if let next = tabs.indices.last {
@@ -392,6 +419,46 @@ final class AttoEditorAreaViewController: NSViewController {
             selectionText: selectionText,
             fileSizeText: fileSizeText
         )
+    }
+
+    // MARK: - Navigation
+
+    private func navigate(tab: AttoEditorTab, to location: AttoCommandLine.FileLocation) {
+        let line1 = max(1, location.line1)
+        let column1 = max(1, location.column1 ?? 1)
+
+        do {
+            tab.editCore.layoutSubtreeIfNeeded()
+            let text = try tab.editCore.editor.text()
+            let offset = Self.charOffsetForLineColumn1(text: text, line1: line1, column1: column1)
+            try tab.editCore.editor.setSelections([EcuSelectionRange(start: offset, end: offset)], primaryIndex: 0)
+            try tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.needsDisplay = true
+            updateStatusBar()
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    private static func charOffsetForLineColumn1(text: String, line1: Int, column1: Int) -> UInt32 {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        let targetLineIdx = max(0, line1 - 1)
+        if targetLineIdx >= lines.count {
+            return UInt32(text.count)
+        }
+
+        var offset: Int = 0
+        if targetLineIdx > 0 {
+            for i in 0..<targetLineIdx {
+                offset += lines[i].count
+                offset += 1 // '\n'
+            }
+        }
+
+        let lineText = lines[targetLineIdx]
+        let col0 = max(0, min(lineText.count, column1 - 1))
+        offset += col0
+        return UInt32(max(0, offset))
     }
 
     // MARK: - Content

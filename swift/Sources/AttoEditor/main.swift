@@ -3,6 +3,39 @@ import Foundation
 
 @MainActor
 private enum AttoEditorMain {
+    private static func resolvedExecutablePath() -> String {
+        // `argv[0]` 可能是相对路径；用 cwd 兜底转成绝对路径。
+        let argv0 = ProcessInfo.processInfo.arguments.first ?? "AttoEditor"
+        if argv0.hasPrefix("/") { return argv0 }
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        return URL(fileURLWithPath: argv0, relativeTo: cwd).standardizedFileURL.path
+    }
+
+    private static func runCLI() -> Never {
+        let parsed = AttoCommandLine.parse(arguments: ProcessInfo.processInfo.arguments)
+        let requestID = UUID().uuidString
+
+        let req = AttoIpcOpenRequest(
+            requestID: requestID,
+            newWindow: parsed.newWindow,
+            wait: parsed.wait,
+            directories: parsed.directories.map(\.path),
+            files: parsed.files.map { f in
+                AttoIpcFileRequest(
+                    path: f.url.path,
+                    line1: f.location?.line1,
+                    column1: f.location?.column1
+                )
+            }
+        )
+
+        let code = AttoIpcClient.sendOpenRequest(
+            req,
+            executablePath: resolvedExecutablePath()
+        )
+        exit(code)
+    }
+
     static func buildMainMenu(appDelegate: AttoAppDelegate) -> NSMenu {
         let mainMenu = NSMenu()
 
@@ -120,6 +153,12 @@ private enum AttoEditorMain {
     }
 
     static func run() {
+        if ProcessInfo.processInfo.arguments.contains(AttoIPC.internalServerFlag) == false {
+            runCLI()
+        }
+
+        let noDefaultWindow = ProcessInfo.processInfo.arguments.contains(AttoIPC.internalNoDefaultWindowFlag)
+
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
 
@@ -131,6 +170,19 @@ private enum AttoEditorMain {
         app.appearance = NSAppearance(named: .darkAqua)
 
         let delegate = AttoAppDelegate()
+        delegate.createDefaultWindowOnLaunch = (noDefaultWindow == false)
+
+        let ipcServer = AttoIpcServer { req in
+            delegate.handleOpenRequest(req)
+        }
+        delegate.ipcServer = ipcServer
+
+        let start = ipcServer.start()
+        if start.isPrimaryInstance == false {
+            // 已有实例在运行；当前进程不应再启动 GUI。
+            exit(0)
+        }
+
         app.delegate = delegate
         app.mainMenu = buildMainMenu(appDelegate: delegate)
 
