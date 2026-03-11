@@ -444,6 +444,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         initialFrame: CGRect? = nil,
         centerOnShow: Bool = true
     ) -> AttoWindowContext {
+        let referenceWindow: NSWindow? = activeWindow()?.window ?? windows.last?.window
         let ctx = AttoWindowContext(
             library: library,
             theme: theme,
@@ -491,12 +492,103 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             activeWindowID = ctx.id
         }
 
-        if let initialFrame {
-            ctx.window.setFrame(initialFrame, display: false)
+        var resolvedInitialFrame = initialFrame
+        var resolvedCenterOnShow = centerOnShow
+
+        // 默认行为（center）会导致新窗口与现有窗口完全重叠。
+        // 这里做一个“级联/cascade”定位：
+        // - 若已有窗口且未最大化：新窗口在现有窗口的基础上偏移一小段距离；
+        // - 若现有窗口是最大化：允许新窗口与其相同位置（甚至相同大小）。
+        if resolvedInitialFrame == nil, resolvedCenterOnShow, let referenceWindow, windows.count >= 2 {
+            if let autoFrame = Self.autoPlacedFrameForNewWindow(referenceWindow: referenceWindow) {
+                resolvedInitialFrame = autoFrame
+                resolvedCenterOnShow = false
+            }
         }
 
-        ctx.show(center: centerOnShow)
+        if let resolvedInitialFrame {
+            ctx.window.setFrame(resolvedInitialFrame, display: false)
+        }
+
+        ctx.show(center: resolvedCenterOnShow)
         return ctx
+    }
+
+    private static func autoPlacedFrameForNewWindow(referenceWindow: NSWindow) -> CGRect? {
+        let refFrame = referenceWindow.frame
+        guard let screen = referenceWindow.screen ?? NSScreen.main else { return nil }
+        let visible = screen.visibleFrame
+
+        if isWindowEffectivelyMaximized(referenceWindow) {
+            return refFrame
+        }
+
+        let delta: CGFloat = 24
+
+        // 新窗口默认继承参考窗口的大小（比“总是默认 size”更符合直觉）。
+        var size = refFrame.size
+        size.width = min(size.width, visible.width)
+        size.height = min(size.height, visible.height)
+
+        func clamp(_ origin: CGPoint) -> CGPoint {
+            let maxX = visible.maxX - size.width
+            let maxY = visible.maxY - size.height
+
+            var x = origin.x
+            var y = origin.y
+
+            if maxX < visible.minX {
+                x = visible.minX
+            } else {
+                x = min(max(x, visible.minX), maxX)
+            }
+
+            if maxY < visible.minY {
+                y = visible.minY
+            } else {
+                y = min(max(y, visible.minY), maxY)
+            }
+
+            return CGPoint(x: x, y: y)
+        }
+
+        func approxEqual(_ a: CGFloat, _ b: CGFloat) -> Bool {
+            abs(a - b) <= 0.5
+        }
+
+        var origin = clamp(CGPoint(x: refFrame.origin.x + delta, y: refFrame.origin.y - delta))
+        var out = CGRect(origin: origin, size: size)
+
+        // 尽量避免“偏移后又被 clamp 回原地”导致仍然重叠。
+        if approxEqual(out.origin.x, refFrame.origin.x), approxEqual(out.origin.y, refFrame.origin.y) {
+            origin = clamp(CGPoint(x: refFrame.origin.x - delta, y: refFrame.origin.y + delta))
+            out = CGRect(origin: origin, size: size)
+        }
+        if approxEqual(out.origin.x, refFrame.origin.x), approxEqual(out.origin.y, refFrame.origin.y) {
+            origin = clamp(CGPoint(x: refFrame.origin.x + 1, y: refFrame.origin.y - 1))
+            out = CGRect(origin: origin, size: size)
+        }
+
+        return out
+    }
+
+    private static func isWindowEffectivelyMaximized(_ window: NSWindow) -> Bool {
+        if window.styleMask.contains(.fullScreen) {
+            return true
+        }
+        if window.isZoomed {
+            return true
+        }
+        guard let screen = window.screen else { return false }
+
+        let f = window.frame
+        let v = screen.visibleFrame
+        let eps: CGFloat = 2.0
+
+        return abs(f.origin.x - v.origin.x) <= eps
+            && abs(f.origin.y - v.origin.y) <= eps
+            && abs(f.size.width - v.size.width) <= eps
+            && abs(f.size.height - v.size.height) <= eps
     }
 
     private func activeWindow() -> AttoWindowContext? {
