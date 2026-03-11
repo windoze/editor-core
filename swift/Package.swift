@@ -97,7 +97,8 @@ let package = Package(
         .executableTarget(
             name: "AttoEditor",
             dependencies: ["EditorCoreUI", "EditorCoreUIFFI"],
-            path: "Sources/AttoEditor"
+            path: "Sources/AttoEditor",
+            exclude: ["AppBundle"]
         ),
         .testTarget(
             name: "EditorCoreFFITests",

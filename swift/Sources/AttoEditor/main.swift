@@ -4,6 +4,14 @@ import MachO
 
 @MainActor
 private enum AttoEditorMain {
+    private static func isRunningInsideAppBundle() -> Bool {
+        // 当可执行文件位于 `*.app/Contents/MacOS/` 中时，Bundle.main 指向 `.app` 根目录。
+        // 这用于区分：
+        // - 终端里运行的 CLI 二进制（默认走 IPC 打开/拉起主实例）
+        // - Finder 双击启动的 `.app`（默认应直接启动 GUI/Server）
+        Bundle.main.bundleURL.pathExtension == "app"
+    }
+
     private static func resolvedExecutablePath() -> String {
         // 需要一个“真实可执行文件路径”用于 CLI 拉起 GUI/server 子进程。
         //
@@ -148,6 +156,39 @@ private enum AttoEditorMain {
         closeTab.target = appDelegate
         fileMenu.addItem(closeTab)
 
+        // Edit menu
+        let editMenuItem = NSMenuItem()
+        mainMenu.addItem(editMenuItem)
+        let editMenu = NSMenu(title: "Edit")
+        editMenuItem.submenu = editMenu
+
+        let find = NSMenuItem(
+            title: "Find…",
+            action: #selector(AttoAppDelegate.findMenuClicked(_:)),
+            keyEquivalent: "f"
+        )
+        find.keyEquivalentModifierMask = [.command]
+        find.target = appDelegate
+        editMenu.addItem(find)
+
+        let replace = NSMenuItem(
+            title: "Replace…",
+            action: #selector(AttoAppDelegate.replaceMenuClicked(_:)),
+            keyEquivalent: "f"
+        )
+        replace.keyEquivalentModifierMask = [.command, .option]
+        replace.target = appDelegate
+        editMenu.addItem(replace)
+
+        let findInFiles = NSMenuItem(
+            title: "Find in Files…",
+            action: #selector(AttoAppDelegate.findInFilesMenuClicked(_:)),
+            keyEquivalent: "f"
+        )
+        findInFiles.keyEquivalentModifierMask = [.command, .shift]
+        findInFiles.target = appDelegate
+        editMenu.addItem(findInFiles)
+
         // View menu
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)
@@ -202,7 +243,11 @@ private enum AttoEditorMain {
     static func run() {
         AttoIPC.ignoreSIGPIPE()
 
-        if ProcessInfo.processInfo.arguments.contains(AttoIPC.internalServerFlag) == false {
+        let args = ProcessInfo.processInfo.arguments
+        let isInternalServer = args.contains(AttoIPC.internalServerFlag)
+        let isBundledApp = isRunningInsideAppBundle()
+
+        if isInternalServer == false && isBundledApp == false {
             runCLI()
         }
 

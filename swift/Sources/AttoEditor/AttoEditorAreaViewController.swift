@@ -5,6 +5,14 @@ import Foundation
 
 @MainActor
 final class AttoEditorAreaViewController: NSViewController {
+    struct OpenFileItem: Hashable {
+        let id: UUID
+        let url: URL
+        let title: String
+        let isDirty: Bool
+        let isPreview: Bool
+    }
+
     enum OpenMode {
         case preview
         case pinned
@@ -18,6 +26,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var selectedTabID: UUID?
 
     private let tabBarView = AttoTabBarView()
+    private let findReplaceBarView = AttoFindReplaceBarView()
+    private var findReplaceBarHeightConstraint: NSLayoutConstraint?
     private let contentHostView = NSView(frame: .zero)
     private let statusBarView = AttoStatusBarView()
     private let emptyStateLabel = NSTextField(labelWithString: "Open a file to start editing")
@@ -25,6 +35,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private var activeViewportObserver: EditorCoreSkiaView.ViewportStateObserverToken?
 
     var onDidCloseFile: ((URL) -> Void)?
+    var onOpenFilesChanged: (([OpenFileItem], UUID?) -> Void)?
 
     private struct HoverRequestContext {
         let tabID: UUID
@@ -77,6 +88,30 @@ final class AttoEditorAreaViewController: NSViewController {
         }
         tabBarView.translatesAutoresizingMaskIntoConstraints = false
 
+        findReplaceBarView.translatesAutoresizingMaskIntoConstraints = false
+        findReplaceBarView.isHidden = true
+        findReplaceBarView.searchField.delegate = self
+        findReplaceBarView.searchField.target = self
+        findReplaceBarView.searchField.action = #selector(findNextClicked(_:))
+        findReplaceBarView.replaceField.delegate = self
+
+        for b in [findReplaceBarView.caseSensitiveButton, findReplaceBarView.wholeWordButton, findReplaceBarView.regexButton] {
+            b.target = self
+            b.action = #selector(findOptionsChanged(_:))
+        }
+        findReplaceBarView.findPrevButton.target = self
+        findReplaceBarView.findPrevButton.action = #selector(findPrevClicked(_:))
+        findReplaceBarView.findNextButton.target = self
+        findReplaceBarView.findNextButton.action = #selector(findNextClicked(_:))
+        findReplaceBarView.clearButton.target = self
+        findReplaceBarView.clearButton.action = #selector(clearFindClicked(_:))
+        findReplaceBarView.replaceCurrentButton.target = self
+        findReplaceBarView.replaceCurrentButton.action = #selector(replaceCurrentClicked(_:))
+        findReplaceBarView.replaceAllButton.target = self
+        findReplaceBarView.replaceAllButton.action = #selector(replaceAllClicked(_:))
+        findReplaceBarView.closeButton.target = self
+        findReplaceBarView.closeButton.action = #selector(closeFindBarClicked(_:))
+
         contentHostView.translatesAutoresizingMaskIntoConstraints = false
         contentHostView.wantsLayer = true
         contentHostView.layer?.backgroundColor = NSColor(attoHex: 0x1E1E1E).cgColor
@@ -89,14 +124,22 @@ final class AttoEditorAreaViewController: NSViewController {
         statusBarView.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(tabBarView)
+        view.addSubview(findReplaceBarView)
         view.addSubview(contentHostView)
         view.addSubview(statusBarView)
+
+        findReplaceBarHeightConstraint = findReplaceBarView.heightAnchor.constraint(equalToConstant: 0)
+        findReplaceBarHeightConstraint?.isActive = true
 
         NSLayoutConstraint.activate([
             tabBarView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tabBarView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tabBarView.topAnchor.constraint(equalTo: view.topAnchor),
             tabBarView.heightAnchor.constraint(equalToConstant: 30),
+
+            findReplaceBarView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            findReplaceBarView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            findReplaceBarView.topAnchor.constraint(equalTo: tabBarView.bottomAnchor),
 
             statusBarView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             statusBarView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -105,7 +148,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
             contentHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             contentHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            contentHostView.topAnchor.constraint(equalTo: tabBarView.bottomAnchor),
+            contentHostView.topAnchor.constraint(equalTo: findReplaceBarView.bottomAnchor),
             contentHostView.bottomAnchor.constraint(equalTo: statusBarView.topAnchor),
         ])
 
@@ -188,6 +231,23 @@ final class AttoEditorAreaViewController: NSViewController {
         tabs.map(\.fileURL)
     }
 
+    func openFileItems() -> [OpenFileItem] {
+        tabs.map { tab in
+            OpenFileItem(
+                id: tab.id,
+                url: tab.fileURL,
+                title: tab.displayTitle,
+                isDirty: tab.isDirty,
+                isPreview: tab.isPreview
+            )
+        }
+    }
+
+    func selectFile(url: URL) {
+        guard let tab = tabs.first(where: { $0.fileURL.standardizedFileURL == url.standardizedFileURL }) else { return }
+        selectTab(id: tab.id)
+    }
+
     func closeActiveTab() {
         guard let selectedTabID else { return }
         closeTab(id: selectedTabID)
@@ -249,6 +309,8 @@ final class AttoEditorAreaViewController: NSViewController {
         updateStatusBar()
         updateWindowTitle()
         tab.editCore.focusEditor()
+
+        applyFindStateToActiveTab()
     }
 
     private func refreshTabBar() {
@@ -256,6 +318,7 @@ final class AttoEditorAreaViewController: NSViewController {
             tabs: tabs.map { .init(id: $0.id, title: $0.displayTitle, toolTip: $0.fileURL.path, isPreview: $0.isPreview) },
             selectedID: selectedTabID
         )
+        onOpenFilesChanged?(openFileItems(), selectedTabID)
     }
 
     private func pinTabIfPreview(id: UUID) {
@@ -294,6 +357,181 @@ final class AttoEditorAreaViewController: NSViewController {
     func formatDocumentWithLspInActiveTab() {
         guard let tab = activeTab else { return }
         tab.editCore.editorView.formatDocumentWithLSP()
+    }
+
+    // MARK: - Find / Replace
+
+    func showFindBar() {
+        showFindReplaceBar(mode: .find)
+    }
+
+    func showReplaceBar() {
+        showFindReplaceBar(mode: .replace)
+    }
+
+    private func showFindReplaceBar(mode: AttoFindReplaceBarView.Mode) {
+        guard activeTab != nil else {
+            NSSound.beep()
+            return
+        }
+
+        findReplaceBarView.setMode(mode)
+        findReplaceBarView.isHidden = false
+        findReplaceBarHeightConstraint?.constant = (mode == .find) ? 42 : 76
+
+        view.layoutSubtreeIfNeeded()
+        view.window?.makeFirstResponder(findReplaceBarView.searchField)
+        applyFindStateToActiveTab()
+    }
+
+    func hideFindBar() {
+        guard findReplaceBarView.isHidden == false else { return }
+        clearSearchHighlightsForAllTabs()
+        findReplaceBarView.isHidden = true
+        findReplaceBarHeightConstraint?.constant = 0
+    }
+
+    private func currentSearchOptions() -> EcuSearchOptions {
+        EcuSearchOptions(
+            caseSensitive: findReplaceBarView.caseSensitiveButton.state == .on,
+            wholeWord: findReplaceBarView.wholeWordButton.state == .on,
+            regex: findReplaceBarView.regexButton.state == .on
+        )
+    }
+
+    private func setMatchCountLabel(_ count: UInt32) {
+        findReplaceBarView.matchCountLabel.stringValue = "\(count) matches"
+    }
+
+    private func applyFindStateToActiveTab() {
+        guard findReplaceBarView.isHidden == false else { return }
+        refreshSearchHighlights()
+    }
+
+    private func clearSearchHighlightsForAllTabs() {
+        for tab in tabs {
+            do {
+                try tab.editCore.editor.clearSearchQuery()
+                tab.editCore.editorView.needsDisplay = true
+            } catch {
+                // Ignore best-effort cleanup errors.
+            }
+        }
+        setMatchCountLabel(0)
+    }
+
+    private func refreshSearchHighlights() {
+        guard let tab = activeTab else {
+            setMatchCountLabel(0)
+            return
+        }
+
+        do {
+            let query = findReplaceBarView.searchField.stringValue
+            if query.isEmpty {
+                try tab.editCore.editor.clearSearchQuery()
+                setMatchCountLabel(0)
+            } else {
+                let count = try tab.editCore.editor.setSearchQuery(query, options: currentSearchOptions())
+                setMatchCountLabel(count)
+            }
+            tab.editCore.editorView.needsDisplay = true
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    @objc private func findOptionsChanged(_ sender: Any?) {
+        refreshSearchHighlights()
+    }
+
+    @objc private func clearFindClicked(_ sender: Any?) {
+        findReplaceBarView.searchField.stringValue = ""
+        refreshSearchHighlights()
+    }
+
+    @objc private func findNextClicked(_ sender: Any?) {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return
+        }
+
+        do {
+            let query = findReplaceBarView.searchField.stringValue
+            guard query.isEmpty == false else {
+                NSSound.beep()
+                return
+            }
+            let ok = try tab.editCore.editor.findNext(query, options: currentSearchOptions())
+            if ok == false { NSSound.beep() }
+            tab.editCore.editorView.needsDisplay = true
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    @objc private func findPrevClicked(_ sender: Any?) {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return
+        }
+
+        do {
+            let query = findReplaceBarView.searchField.stringValue
+            guard query.isEmpty == false else {
+                NSSound.beep()
+                return
+            }
+            let ok = try tab.editCore.editor.findPrev(query, options: currentSearchOptions())
+            if ok == false { NSSound.beep() }
+            tab.editCore.editorView.needsDisplay = true
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    @objc private func replaceCurrentClicked(_ sender: Any?) {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return
+        }
+
+        do {
+            let query = findReplaceBarView.searchField.stringValue
+            guard query.isEmpty == false else {
+                NSSound.beep()
+                return
+            }
+            let replacement = findReplaceBarView.replaceField.stringValue
+            _ = try tab.editCore.editor.replaceCurrent(query: query, replacement: replacement, options: currentSearchOptions())
+            refreshSearchHighlights()
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    @objc private func replaceAllClicked(_ sender: Any?) {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return
+        }
+
+        do {
+            let query = findReplaceBarView.searchField.stringValue
+            guard query.isEmpty == false else {
+                NSSound.beep()
+                return
+            }
+            let replacement = findReplaceBarView.replaceField.stringValue
+            _ = try tab.editCore.editor.replaceAll(query: query, replacement: replacement, options: currentSearchOptions())
+            refreshSearchHighlights()
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    @objc private func closeFindBarClicked(_ sender: Any?) {
+        hideFindBar()
     }
 
     // MARK: - Status bar
@@ -957,5 +1195,14 @@ private extension NSColor {
         let g = CGFloat((attoHex >> 8) & 0xFF) / 255.0
         let b = CGFloat(attoHex & 0xFF) / 255.0
         self.init(red: r, green: g, blue: b, alpha: alpha)
+    }
+}
+
+extension AttoEditorAreaViewController: NSSearchFieldDelegate, NSTextFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField else { return }
+        if field == findReplaceBarView.searchField {
+            refreshSearchHighlights()
+        }
     }
 }

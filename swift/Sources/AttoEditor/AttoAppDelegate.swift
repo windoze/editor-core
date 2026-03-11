@@ -129,6 +129,18 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         showQuickOpen()
     }
 
+    @objc func findMenuClicked(_ sender: Any?) {
+        activeWindow()?.editorAreaController.showFindBar()
+    }
+
+    @objc func replaceMenuClicked(_ sender: Any?) {
+        activeWindow()?.editorAreaController.showReplaceBar()
+    }
+
+    @objc func findInFilesMenuClicked(_ sender: Any?) {
+        activeWindow()?.showFindInFilesSidebar()
+    }
+
     // MARK: - Command palette integration
 
     private func showCommandPalette() {
@@ -155,6 +167,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(title: "Edit: Format Document") { [weak self] in
                 self?.activeWindow()?.editorAreaController.formatDocumentWithLspInActiveTab()
             },
+            .init(title: "Edit: Find") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showFindBar()
+            },
+            .init(title: "Edit: Replace") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showReplaceBar()
+            },
             .init(title: "View: Toggle Sidebar") { [weak self] in
                 self?.activeWindow()?.toggleSidebar()
             },
@@ -166,6 +184,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             },
             .init(title: "Go: Go to File…") { [weak self] in
                 self?.showQuickOpen()
+            },
+            .init(title: "Search: Find in Files") { [weak self] in
+                self?.activeWindow()?.showFindInFilesSidebar()
             },
             .init(title: "Go: Back") { [weak self] in
                 self?.activeWindow()?.editorAreaController.jumpBackInActiveTab()
@@ -261,11 +282,32 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Helpers
 
     private static func defaultRepoRootURL() -> URL {
-        URL(fileURLWithPath: #file)
+        // Finder 双击启动 `.app` 时，进程 cwd 往往是 `/`，用它作为默认 workspace root 很奇怪。
+        // 这里把 bundle 启动的默认目录设为用户 Home。
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            return FileManager.default.homeDirectoryForCurrentUser
+        }
+
+        // 开发态：尝试从源码路径推导 repo root（只在本仓库内构建/运行时成立）。
+        let candidate = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // AttoEditor
             .deletingLastPathComponent() // Sources
             .deletingLastPathComponent() // swift
             .deletingLastPathComponent() // repo root
+            .standardizedFileURL
+
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDir), isDir.boolValue {
+            return candidate
+        }
+
+        // 兜底：如果 binary 被移动（例如打包后的裸可执行文件），则用 cwd；若 cwd 不存在则用 Home。
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true).standardizedFileURL
+        if FileManager.default.fileExists(atPath: cwd.path, isDirectory: &isDir), isDir.boolValue {
+            return cwd
+        }
+
+        return FileManager.default.homeDirectoryForCurrentUser
     }
 
     // MARK: - Windows

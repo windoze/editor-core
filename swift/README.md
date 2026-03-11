@@ -72,6 +72,20 @@ cd swift
 swift run EditCoreUIDemo
 ```
 
+## 构建 AttoEditor.app（macOS）
+
+AttoEditor 是一个 AppKit 应用（带 IPC/CLI 启动逻辑），默认的 SwiftPM `executable` 产物是一个裸二进制。
+如果你需要一个可双击运行的 `.app` bundle，可以用脚本打包：
+
+```bash
+cd swift
+scripts/build-attoeditor-app.sh
+open .build/app-dist/AttoEditor.app
+```
+
+占位图标位于 `Sources/AttoEditor/AppBundle/AppIcon.icns`（可直接替换）。
+`CFBundleIdentifier` 固定为 `codes.unwritten.attoeditor`（见 `Sources/AttoEditor/AppBundle/Info.plist`）。
+
 ## 运行测试
 
 ```bash

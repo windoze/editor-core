@@ -14,7 +14,10 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
     let window: NSWindow
     let splitViewController: NSSplitViewController
     let sidebarSplitItem: NSSplitViewItem
+    let sidebarController: AttoSidebarViewController
     let fileExplorerController: AttoFileExplorerViewController
+    let openedFilesController: AttoOpenedFilesViewController
+    let findInFilesController: AttoFindInFilesViewController
     let editorAreaController: AttoEditorAreaViewController
 
     var onWindowBecameKey: ((AttoWindowContext) -> Void)?
@@ -29,6 +32,13 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         self.workspaceRootURL = workspaceRootURL
 
         let fileExplorer = AttoFileExplorerViewController(rootURL: workspaceRootURL)
+        let openedFiles = AttoOpenedFilesViewController(rootURL: workspaceRootURL)
+        let findInFiles = AttoFindInFilesViewController(rootURL: workspaceRootURL)
+        let sidebar = AttoSidebarViewController(
+            fileExplorerController: fileExplorer,
+            openedFilesController: openedFiles,
+            findInFilesController: findInFiles
+        )
         let editorArea = AttoEditorAreaViewController(
             library: library,
             theme: theme,
@@ -39,7 +49,7 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         splitVC.splitView.isVertical = true
         splitVC.splitView.dividerStyle = .thin
 
-        let sidebarItem = NSSplitViewItem(sidebarWithViewController: fileExplorer)
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 420
         sidebarItem.canCollapse = true
@@ -66,7 +76,10 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         self.window = win
         self.splitViewController = splitVC
         self.sidebarSplitItem = sidebarItem
+        self.sidebarController = sidebar
         self.fileExplorerController = fileExplorer
+        self.openedFilesController = openedFiles
+        self.findInFilesController = findInFiles
         self.editorAreaController = editorArea
 
         self.fileIndex = AttoWorkspaceFileIndex(rootURL: workspaceRootURL)
@@ -86,6 +99,29 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
             self.editorAreaController.openFile(url: url, mode: .preview)
         }
 
+        openedFilesController.onSelectFile = { [weak self] url in
+            guard let self else { return }
+            self.editorAreaController.selectFile(url: url)
+            self.fileExplorerController.revealFile(url)
+        }
+
+        editorAreaController.onOpenFilesChanged = { [weak self] items, selectedID in
+            self?.openedFilesController.updateOpenFiles(items, selectedID: selectedID)
+        }
+
+        findInFilesController.openedFilesProvider = { [weak self] in
+            self?.editorAreaController.openFileURLs() ?? []
+        }
+        findInFilesController.workspaceFilesProvider = { [weak self] in
+            self?.fileIndex.entries().map(\.url) ?? []
+        }
+        findInFilesController.onOpenResult = { [weak self] url, loc in
+            guard let self else { return }
+            self.rememberRecentFile(url)
+            _ = self.editorAreaController.openFile(url: url, mode: .pinned, location: loc)
+            self.fileExplorerController.revealFile(url)
+        }
+
         setWorkspaceRootURL(workspaceRootURL)
     }
 
@@ -97,6 +133,8 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
     func setWorkspaceRootURL(_ url: URL) {
         workspaceRootURL = url
         fileExplorerController.setRootURL(url)
+        openedFilesController.setRootURL(url)
+        findInFilesController.setRootURL(url)
         editorAreaController.setWorkspaceRootURL(url)
         fileIndex.setRootURL(url)
         recentFiles = []
@@ -126,6 +164,13 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
 
     func toggleSidebar() {
         sidebarSplitItem.isCollapsed.toggle()
+    }
+
+    func showFindInFilesSidebar() {
+        if sidebarSplitItem.isCollapsed {
+            sidebarSplitItem.isCollapsed = false
+        }
+        sidebarController.selectTab(.findInFiles)
     }
 
     // MARK: - NSWindowDelegate
