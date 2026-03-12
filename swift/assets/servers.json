@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "extension_map": {
+    "rs": { "command": "rust-analyzer", "language_id": "rust" },
+    "py": { "command": "pylsp", "language_id": "python" },
+    "go": { "command": "gopls", "language_id": "go" },
+    "ts": { "command": "typescript-language-server", "args": "--stdio", "language_id": "typescript" },
+    "tsx": { "command": "typescript-language-server", "args": "--stdio", "language_id": "typescriptreact" }
+  }
+}
+

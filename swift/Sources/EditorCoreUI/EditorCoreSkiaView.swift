@@ -1037,6 +1037,25 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
+    /// Dismiss host hover UI (e.g. LSP hover popovers) on any explicit user action.
+    ///
+    /// Rationale:
+    /// - Hover is triggered by mouse movement, but should not "stick" when the user starts typing,
+    ///   moves the caret, clicks, scrolls, etc.
+    /// - Cmd-hover feedback (underline + pointing cursor) can also become stale when the document
+    ///   changes without further mouse movement.
+    private func dismissHoverUIForUserAction() {
+        clearCommandHoverFeedback()
+        lastHoverModifierFlags = []
+        lastHoverContextForCommandHover = nil
+        lastHoverDocumentLinkJSONForCommandHover = nil
+
+        if lastHoverCharOffset != nil {
+            lastHoverCharOffset = nil
+            onHoverExit?()
+        }
+    }
+
     private func updateCommandHoverFeedbackIfNeeded(
         eventFlags: NSEvent.ModifierFlags,
         hoverContext: EditorCoreSkiaContextMenuContext,
@@ -1382,6 +1401,8 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public override func rightMouseDown(with event: NSEvent) {
+        dismissHoverUIForUserAction()
+
         // Ensure we become first responder so standard actions (copy/cut/paste) go through our overrides.
         window?.makeFirstResponder(self)
 
@@ -1458,6 +1479,8 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public override func mouseDown(with event: NSEvent) {
+        dismissHoverUIForUserAction()
+
         window?.makeFirstResponder(self)
         let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
             windowPoint: event.locationInWindow,
@@ -1542,6 +1565,8 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public override func mouseDragged(with event: NSEvent) {
+        dismissHoverUIForUserAction()
+
         let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
             windowPoint: event.locationInWindow,
             view: self
@@ -1558,6 +1583,8 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public override func mouseUp(with event: NSEvent) {
+        dismissHoverUIForUserAction()
+
         editor.mouseUp()
         requestRedraw()
         invalidateIMECharacterCoordinates()
@@ -1594,6 +1621,8 @@ public final class EditorCoreSkiaView: MTKView {
         deltaYPoints: CGFloat,
         hasPreciseScrollingDeltas: Bool
     ) {
+        dismissHoverUIForUserAction()
+
         // 平滑滚动：
         // - trackpad（hasPreciseScrollingDeltas == true）给出的是 point 级连续 delta
         // - 传统鼠标滚轮（hasPreciseScrollingDeltas == false）更接近“行数”delta
@@ -1630,6 +1659,8 @@ public final class EditorCoreSkiaView: MTKView {
     // MARK: - Keyboard / Text input
 
     public override func keyDown(with event: NSEvent) {
+        dismissHoverUIForUserAction()
+
         // 说明：
         // - `interpretKeyEvents` 主要处理“文本系统 key binding”（比如方向键、delete、Option+Left 等），
         //   最终回调到 `insertText` / `setMarkedText` / `doCommand(by:)`。
@@ -1687,6 +1718,8 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public func insertText(_ string: Any, replacementRange: NSRange) {
+        dismissHoverUIForUserAction()
+
         updateViewportIfNeeded()
         let text: String
         if let s = string as? String {
@@ -1722,6 +1755,8 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        dismissHoverUIForUserAction()
+
         updateViewportIfNeeded()
         let text: String
         if let s = string as? String {
@@ -1787,6 +1822,8 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public func unmarkText() {
+        dismissHoverUIForUserAction()
+
         editor.unmarkText()
         requestRedraw()
         invalidateIMECharacterCoordinates()
@@ -1794,6 +1831,8 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     public override func doCommand(by selector: Selector) {
+        dismissHoverUIForUserAction()
+
         updateViewportIfNeeded()
         let t0 = perfDebugEnabled ? CFAbsoluteTimeGetCurrent() : 0
         var didEditText = false
@@ -1960,6 +1999,8 @@ public final class EditorCoreSkiaView: MTKView {
     /// This is a convenience wrapper that also triggers redraw + viewport observer callbacks,
     /// so hosts can wire it into command palettes / menus without re-implementing bookkeeping.
     public func moveToMatchingBracket() {
+        dismissHoverUIForUserAction()
+
         updateViewportIfNeeded()
         do {
             try editor.moveToMatchingBracket()
@@ -1974,6 +2015,8 @@ public final class EditorCoreSkiaView: MTKView {
 
     /// Jump back in the editor jump list (no-op when empty).
     public func jumpBack() {
+        dismissHoverUIForUserAction()
+
         updateViewportIfNeeded()
         do {
             try editor.jumpBack()
@@ -1988,6 +2031,8 @@ public final class EditorCoreSkiaView: MTKView {
 
     /// Jump forward in the editor jump list (no-op when empty).
     public func jumpForward() {
+        dismissHoverUIForUserAction()
+
         updateViewportIfNeeded()
         do {
             try editor.jumpForward()
@@ -2004,6 +2049,8 @@ public final class EditorCoreSkiaView: MTKView {
     ///
     /// This is intended for explicit user actions (command palette / menu item).
     public func formatDocumentWithLSP(timeoutMs: UInt32 = 2000) {
+        dismissHoverUIForUserAction()
+
         updateViewportIfNeeded()
         do {
             guard try editor.lspIsEnabled() else {
@@ -2032,6 +2079,8 @@ public final class EditorCoreSkiaView: MTKView {
     // MARK: - Clipboard
 
     public override func selectAll(_ sender: Any?) {
+        dismissHoverUIForUserAction()
+
         do {
             // EditorCoreUI 使用 Unicode scalar offset（与 Rust `char` 索引一致），这里用 unicodeScalars 计数。
             let text: String
@@ -2052,6 +2101,8 @@ public final class EditorCoreSkiaView: MTKView {
 
     @objc(undo:)
     public func undo(_ sender: Any?) {
+        dismissHoverUIForUserAction()
+
         do {
             try editor.undo()
             didMutateDocumentText()
@@ -2065,6 +2116,8 @@ public final class EditorCoreSkiaView: MTKView {
 
     @objc(redo:)
     public func redo(_ sender: Any?) {
+        dismissHoverUIForUserAction()
+
         do {
             try editor.redo()
             didMutateDocumentText()
@@ -2078,6 +2131,8 @@ public final class EditorCoreSkiaView: MTKView {
 
     @objc(copy:)
     public func copy(_ sender: Any?) {
+        dismissHoverUIForUserAction()
+
         do {
             let text = try editor.selectedText()
             guard text.isEmpty == false else { return }
@@ -2090,6 +2145,8 @@ public final class EditorCoreSkiaView: MTKView {
 
     @objc(cut:)
     public func cut(_ sender: Any?) {
+        dismissHoverUIForUserAction()
+
         do {
             let text = try editor.selectedText()
             guard text.isEmpty == false else { return }
@@ -2107,6 +2164,8 @@ public final class EditorCoreSkiaView: MTKView {
 
     @objc(paste:)
     public func paste(_ sender: Any?) {
+        dismissHoverUIForUserAction()
+
         updateViewportIfNeeded()
         guard let text = pasteboard.string(forType: .string), text.isEmpty == false else { return }
         do {

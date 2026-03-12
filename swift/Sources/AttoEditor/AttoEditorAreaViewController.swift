@@ -959,8 +959,13 @@ final class AttoEditorAreaViewController: NSViewController {
         }()
 
         let lspText: String? = {
-            // Keep the status bar clean for non-Rust files (AttoEditor MVP only auto-enables LSP for Rust).
-            guard tab.fileURL.pathExtension.lowercased() == "rs" else { return nil }
+            // Keep the status bar clean unless LSP is likely relevant.
+            //
+            // - Historically, AttoEditor only auto-enabled LSP for Rust.
+            // - With configurable LSPs, show LSP status when it is enabled (any language), or for Rust files.
+            let isRustFile = (tab.fileURL.pathExtension.lowercased() == "rs")
+            let isEnabled = (try? editor.lspIsEnabled()) == true
+            guard isRustFile || isEnabled else { return nil }
 
             do {
                 let raw = try editor.lspStatusJSON()
@@ -1291,34 +1296,64 @@ final class AttoEditorAreaViewController: NSViewController {
     private func configureSyntaxSupport(for url: URL, editCore: EditCoreUI) -> String? {
         // Start from a clean slate (best-effort). This avoids stacking style layers when a host
         // switches engines (e.g. LSP becomes available later).
+        editCore.editor.lspDisable()
         editCore.editor.treeSitterDisable()
         editCore.editor.sublimeDisable()
 
-        // 1) LSP (currently Rust-only).
-        if url.pathExtension.lowercased() == "rs" {
-            let disableLSP = ProcessInfo.processInfo.environment["ATTO_EDITOR_DISABLE_LSP"] == "1"
-                || ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DISABLE_LSP"] == "1"
+        // 1) LSP (configurable by extension).
+        let env = ProcessInfo.processInfo.environment
+        let disableLSP = env["ATTO_EDITOR_DISABLE_LSP"] == "1"
+            || env["EDITOR_CORE_APPKIT_DISABLE_LSP"] == "1"
 
-            if disableLSP == false {
-                do {
-                    let cmd = ProcessInfo.processInfo.environment["ATTO_EDITOR_LSP_CMD"]
-                        ?? ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_LSP_CMD"]
+        if disableLSP == false {
+            let ext = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let configured = AttoLspRegistry.loadServerMap()[ext]
+
+            let cmd: String? = {
+                if let configured { return configured.command }
+
+                // Backwards-compat: preserve Rust env override + default behavior when no config exists.
+                if ext == "rs" {
+                    return env["ATTO_EDITOR_LSP_CMD"]
+                        ?? env["EDITOR_CORE_APPKIT_LSP_CMD"]
                         ?? "rust-analyzer"
-                    let args = ProcessInfo.processInfo.environment["ATTO_EDITOR_LSP_ARGS"]
-                        ?? ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_LSP_ARGS"]
+                }
 
+                return nil
+            }()
+
+            let args: String? = {
+                if let configured { return configured.args }
+
+                // Backwards-compat for Rust-only env args.
+                if ext == "rs" {
+                    return env["ATTO_EDITOR_LSP_ARGS"]
+                        ?? env["EDITOR_CORE_APPKIT_LSP_ARGS"]
+                }
+
+                return nil
+            }()
+
+            let languageId: String? = {
+                if let configured, let lang = configured.languageId { return lang }
+                if let inferred = inferredTreeSitterLanguageId(for: url) { return inferred }
+                return AttoLspLanguageId.guess(forExtension: ext)
+            }()
+
+            if let cmd, let languageId, languageId.isEmpty == false {
+                do {
                     try editCore.editor.lspEnable(
                         command: cmd,
                         args: args,
                         rootURI: workspaceRootURL.absoluteString,
                         documentURI: url.absoluteString,
-                        languageId: "rust"
+                        languageId: languageId
                     )
 
                     // Prefer LSP semantic tokens; keep other engines off.
                     editCore.editor.treeSitterDisable()
                     editCore.editor.sublimeDisable()
-                    return "rust"
+                    return languageId
                 } catch {
                     NSLog("AttoEditor: LSP enable failed for %@: %@", url.path, String(describing: error))
                 }
@@ -1637,6 +1672,35 @@ final class AttoEditorAreaViewController: NSViewController {
         definitionPollTimer?.cancel()
         definitionPollTimer = nil
         definitionContext = nil
+    }
+}
+
+private enum AttoLspLanguageId {
+    static func guess(forExtension ext: String) -> String? {
+        let k = ext.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard k.isEmpty == false else { return nil }
+
+        switch k {
+        case "rs": return "rust"
+        case "swift": return "swift"
+        case "py": return "python"
+        case "js": return "javascript"
+        case "jsx": return "javascriptreact"
+        case "ts": return "typescript"
+        case "tsx": return "typescriptreact"
+        case "go": return "go"
+        case "c": return "c"
+        case "h": return "c"
+        case "cpp", "cxx", "cc", "hpp", "hxx", "hh": return "cpp"
+        case "m": return "objective-c"
+        case "mm": return "objective-cpp"
+        case "json": return "json"
+        case "toml": return "toml"
+        case "yaml", "yml": return "yaml"
+        case "md", "markdown": return "markdown"
+        default:
+            return nil
+        }
     }
 }
 
