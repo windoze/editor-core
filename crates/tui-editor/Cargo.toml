@@ -24,9 +24,5 @@ editor-core-sublime = { version = "0.3.0", path = "../editor-core-sublime" }
 editor-core-app = { version = "0.3.0", path = "../editor-core-app" }
 
 [[bin]]
-name = "tui-editor"
-path = "src/main.rs"
-
-[[bin]]
 name = "editor"
 path = "src/main.rs"
