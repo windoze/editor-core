@@ -21,7 +21,9 @@ let package = Package(
         .library(name: "EditorCoreUI", targets: ["EditorCoreUI"]),
         .executable(name: "EditorCoreFFIDemo", targets: ["EditorCoreFFIDemo"]),
         .executable(name: "EditCoreUIDemo", targets: ["EditCoreUIDemo"]),
-        .executable(name: "AttoEditor", targets: ["AttoEditor"])
+        .executable(name: "AttoEditor", targets: ["AttoEditor"]),
+        // 独立 CLI（可打包进 AttoEditor.app 并通过 symlink 暴露到 PATH）
+        .executable(name: "atto", targets: ["AttoEditorCLI"])
     ],
     targets: [
         .plugin(
@@ -84,6 +86,15 @@ let package = Package(
             dependencies: ["EditorCoreFFI", "EditorCoreUIFFI"],
             path: "Sources/EditorCoreUI"
         ),
+        // AttoEditor 的 CLI / IPC / logging 等“可复用基础设施”模块。
+        //
+        // 说明：
+        // - 该 target 不对外作为 product 暴露，仅用于在 package 内跨 target 复用。
+        // - 类型使用 `package` 访问控制，避免泄露到外部 API。
+        .target(
+            name: "AttoEditorSupport",
+            path: "Sources/AttoEditorSupport"
+        ),
         .executableTarget(
             name: "EditorCoreFFIDemo",
             dependencies: ["EditorCoreFFI"],
@@ -96,12 +107,17 @@ let package = Package(
         ),
         .executableTarget(
             name: "AttoEditor",
-            dependencies: ["EditorCoreUI", "EditorCoreUIFFI"],
+            dependencies: ["EditorCoreUI", "EditorCoreUIFFI", "AttoEditorSupport"],
             path: "Sources/AttoEditor",
             exclude: ["AppBundle"],
             resources: [
                 .process("Resources")
             ]
+        ),
+        .executableTarget(
+            name: "AttoEditorCLI",
+            dependencies: ["AttoEditorSupport"],
+            path: "Sources/AttoEditorCLI"
         ),
         .testTarget(
             name: "EditorCoreFFITests",
@@ -115,7 +131,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AttoEditorTests",
-            dependencies: ["AttoEditor"],
+            dependencies: ["AttoEditor", "AttoEditorSupport"],
             path: "Tests/AttoEditorTests"
         ),
     ]

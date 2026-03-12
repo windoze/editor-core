@@ -2351,47 +2351,6 @@ fn resolve_open_path(path: &Path) -> io::Result<PathBuf> {
     Ok(first.path)
 }
 
-#[cfg(test)]
-mod cli_tests {
-    use super::*;
-
-    #[test]
-    fn parse_path_with_location_supports_line_and_column() {
-        let (path, loc) = parse_path_with_location("foo.rs:10:5");
-        assert_eq!(path, "foo.rs");
-        assert_eq!(loc, Some((10, Some(5))));
-    }
-
-    #[test]
-    fn parse_path_with_location_supports_windows_drive_like_paths() {
-        let (path, loc) = parse_path_with_location(r#"C:\src\main.rs:3:2"#);
-        assert_eq!(path, r#"C:\src\main.rs"#);
-        assert_eq!(loc, Some((3, Some(2))));
-    }
-
-    #[test]
-    fn parse_cli_args_applies_global_line_column_to_first_target() {
-        let args = vec![
-            "editor".to_string(),
-            "--line".to_string(),
-            "7".to_string(),
-            "--column".to_string(),
-            "9".to_string(),
-            "a.rs".to_string(),
-            "b.rs".to_string(),
-        ];
-        let cfg = parse_cli_args(&args).unwrap();
-        assert_eq!(cfg.wait, true);
-        assert_eq!(cfg.targets.len(), 2);
-        assert_eq!(cfg.targets[0].path, PathBuf::from("a.rs"));
-        assert_eq!(cfg.targets[0].line, Some(7));
-        assert_eq!(cfg.targets[0].column, Some(9));
-        assert_eq!(cfg.targets[1].path, PathBuf::from("b.rs"));
-        assert_eq!(cfg.targets[1].line, None);
-        assert_eq!(cfg.targets[1].column, None);
-    }
-}
-
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     let run = match parse_cli_args(&args) {
@@ -2517,4 +2476,45 @@ fn run_app<B: ratatui::backend::Backend>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn parse_path_with_location_supports_line_and_column() {
+        let (path, loc) = parse_path_with_location("foo.rs:10:5");
+        assert_eq!(path, "foo.rs");
+        assert_eq!(loc, Some((10, Some(5))));
+    }
+
+    #[test]
+    fn parse_path_with_location_supports_windows_drive_like_paths() {
+        let (path, loc) = parse_path_with_location(r#"C:\src\main.rs:3:2"#);
+        assert_eq!(path, r#"C:\src\main.rs"#);
+        assert_eq!(loc, Some((3, Some(2))));
+    }
+
+    #[test]
+    fn parse_cli_args_applies_global_line_column_to_first_target() {
+        let args = vec![
+            "editor".to_string(),
+            "--line".to_string(),
+            "7".to_string(),
+            "--column".to_string(),
+            "9".to_string(),
+            "a.rs".to_string(),
+            "b.rs".to_string(),
+        ];
+        let cfg = parse_cli_args(&args).unwrap();
+        assert!(cfg.wait);
+        assert_eq!(cfg.targets.len(), 2);
+        assert_eq!(cfg.targets[0].path, PathBuf::from("a.rs"));
+        assert_eq!(cfg.targets[0].line, Some(7));
+        assert_eq!(cfg.targets[0].column, Some(9));
+        assert_eq!(cfg.targets[1].path, PathBuf::from("b.rs"));
+        assert_eq!(cfg.targets[1].line, None);
+        assert_eq!(cfg.targets[1].column, None);
+    }
 }

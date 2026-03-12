@@ -10,10 +10,10 @@ import Darwin
 /// - detached 启动时不把日志泄露到 CLI 的 stdout/stderr
 /// - 主进程把 stdout/stderr 重定向到 `~/Library/Logs/AttoEditor/AttoEditor.log`
 /// - 支持简单的 log rotation（按大小）
-enum AttoLogging {
-    static let envLogFile = "ATTOEDITOR_LOG_FILE"
-    static let envLogStdio = "ATTOEDITOR_LOG_STDIO"
-    static let envDetached = "ATTOEDITOR_DETACHED"
+package enum AttoLogging {
+    package static let envLogFile = "ATTOEDITOR_LOG_FILE"
+    package static let envLogStdio = "ATTOEDITOR_LOG_STDIO"
+    package static let envDetached = "ATTOEDITOR_DETACHED"
 
     // Rotation policy: 5MB * 5 份备份（.1 ~ .5）
     private static let maxBytes: Int64 = 5 * 1024 * 1024
@@ -23,7 +23,7 @@ enum AttoLogging {
     ///
     /// - 如果是 detached（`ATTOEDITOR_DETACHED=1`）：强制写文件，不允许输出到当前 console。
     /// - 否则：当 `ATTOEDITOR_LOG_STDIO=1` 时不重定向，便于手动调试；但仍会确保日志目录存在。
-    static func installIfNeeded() {
+    package static func installIfNeeded() {
         let env = ProcessInfo.processInfo.environment
         let isDetached = (env[envDetached] == "1")
         let wantsStdio = (env[envLogStdio] == "1")
@@ -151,4 +151,3 @@ enum AttoLogging {
         fputs("----- AttoEditor log started \(ts) pid=\(pid) detached=\(isDetached) path=\(logURL.path)\n", stderr)
     }
 }
-

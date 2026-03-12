@@ -1,4 +1,5 @@
 import AppKit
+import AttoEditorSupport
 import EditorCoreUI
 import EditorCoreUIFFI
 import Foundation

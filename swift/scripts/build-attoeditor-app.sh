@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
 APP_NAME="AttoEditor"
+CLI_NAME="atto"
 OUT_DIR="${ROOT_DIR}/.build/app-dist"
 CONFIGURATION="release"
 
@@ -14,8 +15,9 @@ usage() {
   scripts/build-attoeditor-app.sh [--debug|--release] [--out <dir>]
 
 说明：
-  - 先用 SwiftPM 构建 AttoEditor（会自动触发 Rust build plugin）
+  - 先用 SwiftPM 构建 AttoEditor + atto（会自动触发 Rust build plugin）
   - 再把可执行文件打包为 macOS .app bundle（Info.plist + AppIcon.icns）
+  - 额外把 CLI `atto` 放入：AttoEditor.app/Contents/MacOS/atto
   - 默认输出到：.build/app-dist/AttoEditor.app
 
 示例：
@@ -52,11 +54,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 swift build -c "${CONFIGURATION}" --product "${APP_NAME}"
+swift build -c "${CONFIGURATION}" --product "${CLI_NAME}"
 
 BIN_DIR="$(swift build -c "${CONFIGURATION}" --show-bin-path)"
 BIN_PATH="${BIN_DIR}/${APP_NAME}"
 if [[ ! -x "${BIN_PATH}" ]]; then
   echo "error: 找不到可执行文件：${BIN_PATH}" 1>&2
+  exit 1
+fi
+CLI_PATH="${BIN_DIR}/${CLI_NAME}"
+if [[ ! -x "${CLI_PATH}" ]]; then
+  echo "error: 找不到 CLI 可执行文件：${CLI_PATH}" 1>&2
   exit 1
 fi
 
@@ -77,6 +85,9 @@ mkdir -p "${CONTENTS}/MacOS" "${CONTENTS}/Resources"
 
 cp -f "${BIN_PATH}" "${CONTENTS}/MacOS/${APP_NAME}"
 chmod +x "${CONTENTS}/MacOS/${APP_NAME}"
+
+cp -f "${CLI_PATH}" "${CONTENTS}/MacOS/${CLI_NAME}"
+chmod +x "${CONTENTS}/MacOS/${CLI_NAME}"
 
 cp -f "${PLIST_SRC}" "${CONTENTS}/Info.plist"
 

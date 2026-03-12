@@ -2791,7 +2791,7 @@ fn fold_marker_column_cells(config: &RenderConfig) -> u32 {
     //
     // Keep a safe clamp so hosts that set a very small gutter width don't push line numbers
     // outside the gutter area.
-    config.gutter_width_cells.min(2).max(1)
+    config.gutter_width_cells.clamp(1, 2)
 }
 
 fn cell_overlaps_selection_for_row(

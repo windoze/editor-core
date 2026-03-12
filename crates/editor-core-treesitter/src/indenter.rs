@@ -197,8 +197,8 @@ impl TreeSitterIndenter {
                         continue;
                     }
 
-                    let start_row = node.start_position().row as usize;
-                    let end_row = node.end_position().row as usize;
+                    let start_row = node.start_position().row;
+                    let end_row = node.end_position().row;
 
                     // Indent applies to lines *after* the node's start row, up to and including
                     // its end row (outdent capture can offset this on closing lines).
@@ -211,12 +211,12 @@ impl TreeSitterIndenter {
 
                 if Self::is_outdent_capture(name) {
                     let start_pos = node.start_position();
-                    if start_pos.row as usize != line {
+                    if start_pos.row != line {
                         continue;
                     }
 
                     // Only outdent when the token begins the line (ignoring leading whitespace).
-                    if (start_pos.column as usize) <= leading_ws_bytes {
+                    if start_pos.column <= leading_ws_bytes {
                         should_outdent = true;
                     }
                 }

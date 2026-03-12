@@ -86,6 +86,33 @@ open .build/app-dist/AttoEditor.app
 占位图标位于 `Sources/AttoEditor/AppBundle/AppIcon.icns`（可直接替换）。
 `CFBundleIdentifier` 固定为 `codes.unwritten.attoeditor`（见 `Sources/AttoEditor/AppBundle/Info.plist`）。
 
+### CLI（`atto`）
+
+AttoEditor 额外提供一个独立 CLI：`atto`，用于终端里打开文件/目录并通过 IPC 发送到主实例（支持 `-n/--new-window`、`-w/--wait`、`file:line:column`）。
+
+开发态运行：
+
+```bash
+cd swift
+swift run atto -- -n foo.rs:10:5
+```
+
+打包后的 `.app` 内也会包含该 CLI：
+
+- `AttoEditor.app/Contents/MacOS/atto`
+
+安装到 PATH（symlink 方式，要求 app 固定在该路径）：
+
+```bash
+ln -sf "/Applications/AttoEditor.app/Contents/MacOS/atto" /usr/local/bin/atto
+```
+
+如果希望 App 移动后仍可用，可安装 wrapper（会按 bundle id 定位 app）：
+
+```bash
+ln -sf "$(pwd)/scripts/atto" /usr/local/bin/atto
+```
+
 ## 主题（Themes）
 
 AttoEditor 支持通过 **JSON 主题文件**把 `StyleId` 映射为颜色与字体样式（bold/italic/underline/strikethrough）。

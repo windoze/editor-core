@@ -385,7 +385,7 @@ impl LspSession {
                 || item
                     .message
                     .as_deref()
-                    .is_some_and(|m| is_indexing_title(m));
+                    .is_some_and(is_indexing_title);
 
             match best {
                 None => {

@@ -7,25 +7,47 @@ import Foundation
 /// - 支持 `-w/--wait`：当通过命令行打开的文件全部关闭后，应用自动退出。
 /// - 支持 `--`：之后的参数一律按路径处理（不再解析成 option）。
 /// - 支持文件定位：`/path/to/file:<line>[:<column>]`（line/column 为 1-based）。
-enum AttoCommandLine {
-    struct FileLocation: Equatable {
-        let line1: Int
-        let column1: Int?
+package enum AttoCommandLine {
+    package struct FileLocation: Equatable {
+        package let line1: Int
+        package let column1: Int?
+
+        package init(line1: Int, column1: Int?) {
+            self.line1 = line1
+            self.column1 = column1
+        }
     }
 
-    struct FileOpenRequest: Equatable {
-        let url: URL
-        let location: FileLocation?
+    package struct FileOpenRequest: Equatable {
+        package let url: URL
+        package let location: FileLocation?
+
+        package init(url: URL, location: FileLocation?) {
+            self.url = url
+            self.location = location
+        }
     }
 
-    struct Parsed: Equatable {
-        var newWindow: Bool = false
-        var wait: Bool = false
-        var directories: [URL] = []
-        var files: [FileOpenRequest] = []
+    package struct Parsed: Equatable {
+        package var newWindow: Bool = false
+        package var wait: Bool = false
+        package var directories: [URL] = []
+        package var files: [FileOpenRequest] = []
+
+        package init(
+            newWindow: Bool = false,
+            wait: Bool = false,
+            directories: [URL] = [],
+            files: [FileOpenRequest] = []
+        ) {
+            self.newWindow = newWindow
+            self.wait = wait
+            self.directories = directories
+            self.files = files
+        }
     }
 
-    static func parse(
+    package static func parse(
         arguments: [String],
         fileManager: FileManager = .default,
         currentDirectoryURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -111,4 +133,3 @@ enum AttoCommandLine {
         return (path, FileLocation(line1: line1, column1: column1))
     }
 }
-

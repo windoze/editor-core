@@ -4,80 +4,113 @@ import Foundation
 import Darwin
 #endif
 
-enum AttoIPC {
+package enum AttoIPC {
     // 内部启动参数：CLI 用它来启动 GUI/Server 进程。
-    static let internalServerFlag = "--atto-editor-internal-server"
-    static let internalNoDefaultWindowFlag = "--atto-editor-internal-no-default-window"
+    package static let internalServerFlag = "--atto-editor-internal-server"
+    package static let internalNoDefaultWindowFlag = "--atto-editor-internal-no-default-window"
 
-    static func socketPath() -> String {
+    package static func socketPath() -> String {
         // Unix domain socket 路径长度有限（通常 104/108 bytes）。放到 /tmp 并带上 uid，避免冲突。
         "/tmp/codes.unwritten.attoeditor.\(getuid()).sock"
     }
 
-    static func spoolDirPath() -> String {
+    package static func spoolDirPath() -> String {
         "/tmp/codes.unwritten.attoeditor.\(getuid()).spool"
     }
 
     /// 防止 socket 写入触发 SIGPIPE 导致进程被杀（表现为 exit code 141）。
     /// 这在 `--wait`/IPC 场景下属于“正常可恢复错误”，不应让 CLI 或主进程直接崩溃。
-    static func ignoreSIGPIPE() {
+    package static func ignoreSIGPIPE() {
 #if canImport(Darwin)
         _ = signal(SIGPIPE, SIG_IGN)
 #endif
     }
 }
 
-struct AttoIpcFileRequest: Codable, Equatable {
-    var path: String
-    var line1: Int?
-    var column1: Int?
+package struct AttoIpcFileRequest: Codable, Equatable {
+    package var path: String
+    package var line1: Int?
+    package var column1: Int?
+
+    package init(path: String, line1: Int?, column1: Int?) {
+        self.path = path
+        self.line1 = line1
+        self.column1 = column1
+    }
 }
 
-struct AttoIpcOpenRequest: Codable, Equatable {
-    var requestID: String
-    var newWindow: Bool
-    var wait: Bool
-    var directories: [String]
-    var files: [AttoIpcFileRequest]
+package struct AttoIpcOpenRequest: Codable, Equatable {
+    package var requestID: String
+    package var newWindow: Bool
+    package var wait: Bool
+    package var directories: [String]
+    package var files: [AttoIpcFileRequest]
+
+    package init(
+        requestID: String,
+        newWindow: Bool,
+        wait: Bool,
+        directories: [String],
+        files: [AttoIpcFileRequest]
+    ) {
+        self.requestID = requestID
+        self.newWindow = newWindow
+        self.wait = wait
+        self.directories = directories
+        self.files = files
+    }
 }
 
-struct AttoIpcResponse: Codable, Equatable {
-    enum Kind: String, Codable {
+package struct AttoIpcResponse: Codable, Equatable {
+    package enum Kind: String, Codable {
         case ack
         case done
     }
 
-    var kind: Kind
-    var requestID: String
-    var ok: Bool
-    var errors: [String]
-    var pendingFileCount: Int
+    package var kind: Kind
+    package var requestID: String
+    package var ok: Bool
+    package var errors: [String]
+    package var pendingFileCount: Int
+
+    package init(kind: Kind, requestID: String, ok: Bool, errors: [String], pendingFileCount: Int) {
+        self.kind = kind
+        self.requestID = requestID
+        self.ok = ok
+        self.errors = errors
+        self.pendingFileCount = pendingFileCount
+    }
 }
 
 /// `--wait` 需要跟踪“这次请求打开/聚焦的文件实例”，不能用纯 URL：
 /// - `--new-window` 会刻意打开重复文件（不同窗口）
 /// - 其它窗口里同一路径的 tab 不应影响当前 CLI 的 wait 生命周期
-struct AttoIpcWaitToken: Hashable, Sendable {
-    var windowID: UUID
-    var standardizedPath: String
+package struct AttoIpcWaitToken: Hashable, Sendable {
+    package var windowID: UUID
+    package var standardizedPath: String
 
-    init(windowID: UUID, fileURL: URL) {
+    package init(windowID: UUID, fileURL: URL) {
         self.windowID = windowID
         self.standardizedPath = fileURL.standardizedFileURL.path
     }
 }
 
-struct AttoIpcOpenResult: Equatable {
-    var pendingTokens: [AttoIpcWaitToken]
-    var errors: [String]
+package struct AttoIpcOpenResult: Equatable {
+    package var pendingTokens: [AttoIpcWaitToken]
+    package var errors: [String]
 
-    static var empty: AttoIpcOpenResult { .init(pendingTokens: [], errors: []) }
+    package init(pendingTokens: [AttoIpcWaitToken], errors: [String]) {
+        self.pendingTokens = pendingTokens
+        self.errors = errors
+    }
+
+    package static var empty: AttoIpcOpenResult { .init(pendingTokens: [], errors: []) }
 }
 
 // MARK: - Client
 
-enum AttoIpcClient {
-    static func sendOpenRequest(
+package enum AttoIpcClient {
+    package static func sendOpenRequest(
         _ request: AttoIpcOpenRequest,
         executablePath: String,
         connectTimeoutMs: Int = 8000
@@ -251,9 +284,13 @@ enum AttoIpcClient {
 
 // MARK: - Server
 
-final class AttoIpcServer {
-    struct StartResult {
-        var isPrimaryInstance: Bool
+package final class AttoIpcServer {
+    package struct StartResult {
+        package var isPrimaryInstance: Bool
+
+        package init(isPrimaryInstance: Bool) {
+            self.isPrimaryInstance = isPrimaryInstance
+        }
     }
 
     private struct WaitSession {
@@ -276,7 +313,7 @@ final class AttoIpcServer {
     private var spoolFD: Int32 = -1
     private var spoolSource: DispatchSourceFileSystemObject?
 
-    init(
+    package init(
         socketPath: String = AttoIPC.socketPath(),
         onOpenRequest: @escaping @MainActor (AttoIpcOpenRequest) -> AttoIpcOpenResult
     ) {
@@ -284,7 +321,7 @@ final class AttoIpcServer {
         self.onOpenRequest = onOpenRequest
     }
 
-    func start() -> StartResult {
+    package func start() -> StartResult {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return .init(isPrimaryInstance: true) }
 
@@ -378,7 +415,7 @@ final class AttoIpcServer {
         return .init(isPrimaryInstance: true)
     }
 
-    func stop() {
+    package func stop() {
         // 进程退出时，尽量让所有 `--wait` 的 CLI 正常返回（把“app 退出”视作文件关闭）。
         let toClose: [WaitSession] = sessionsQueue.sync {
             let out = Array(sessions.values)
@@ -397,7 +434,7 @@ final class AttoIpcServer {
     }
 
     /// 当某个“文件实例”（某个窗口里的某个路径）关闭时调用。
-    func notifyFileInstanceClosed(windowID: UUID, url: URL) {
+    package func notifyFileInstanceClosed(windowID: UUID, url: URL) {
         let token = AttoIpcWaitToken(windowID: windowID, fileURL: url)
         // `--wait` 场景更关注“可靠性”而不是吞吐量：
         // - sync 可以减少 “最后一个窗口关闭导致 app 退出” 时的竞态（done 来不及发）

@@ -1,3 +1,4 @@
+import AttoEditorSupport
 import Foundation
 
 /// Session 保存/恢复的调度器（防抖保存 + 恢复期间抑制写盘）。

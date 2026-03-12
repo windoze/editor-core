@@ -1,5 +1,5 @@
+import AttoEditorSupport
 import Foundation
-@testable import AttoEditor
 import XCTest
 
 @MainActor
@@ -80,4 +80,3 @@ final class AttoCommandLineTests: XCTestCase {
         XCTAssertEqual(parsed.files.map(\.url), [file.standardizedFileURL])
     }
 }
-

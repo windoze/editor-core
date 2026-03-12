@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# PATH 里可用的 wrapper：定位 AttoEditor.app（bundle id）并执行内置 CLI。
+#
+# 典型安装：
+#   ln -sf "/Applications/AttoEditor.app/Contents/MacOS/atto" /usr/local/bin/atto
+#
+# 如果希望 App 移动/重装后仍可用，可改用本脚本：
+#   ln -sf "/path/to/repo/swift/scripts/atto" /usr/local/bin/atto
+#
+# 可选覆盖：
+#   ATTOEDITOR_APP="/path/to/AttoEditor.app" atto foo.rs
+
+BUNDLE_ID="codes.unwritten.attoeditor"
+
+if [[ "${ATTOEDITOR_APP:-}" != "" ]]; then
+  APP_PATH="${ATTOEDITOR_APP}"
+else
+  APP_PATH=""
+fi
+
+if [[ "${APP_PATH}" == "" ]]; then
+  if command -v osascript >/dev/null 2>&1; then
+    APP_PATH="$(osascript <<OSA 2>/dev/null || true
+try
+  POSIX path of (path to application id "${BUNDLE_ID}")
+on error
+  ""
+end try
+OSA
+)"
+  fi
+fi
+
+if [[ "${APP_PATH}" == "" ]]; then
+  if [[ -d "/Applications/AttoEditor.app" ]]; then
+    APP_PATH="/Applications/AttoEditor.app"
+  elif [[ -d "${HOME}/Applications/AttoEditor.app" ]]; then
+    APP_PATH="${HOME}/Applications/AttoEditor.app"
+  fi
+fi
+
+if [[ "${APP_PATH}" == "" ]]; then
+  echo "atto: 找不到 AttoEditor.app（bundle id: ${BUNDLE_ID}）" 1>&2
+  echo "提示：请先把 AttoEditor.app 放到 /Applications，或设置 ATTOEDITOR_APP=/path/to/AttoEditor.app" 1>&2
+  exit 1
+fi
+
+CLI_PATH="${APP_PATH}/Contents/MacOS/atto"
+if [[ ! -x "${CLI_PATH}" ]]; then
+  echo "atto: 找不到可执行文件：${CLI_PATH}" 1>&2
+  echo "提示：请确认你的 AttoEditor.app 是用包含 CLI 的版本构建（scripts/build-attoeditor-app.sh）。" 1>&2
+  exit 1
+fi
+
+exec "${CLI_PATH}" "$@"
+
