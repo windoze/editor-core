@@ -96,17 +96,21 @@ public final class EditorCoreSkiaMinimapView: NSView {
         let (lineHeightPx, contentHeightPx) = minimapContentMetrics(totalRows: totalRows, heightPx: heightPx)
 
         if let grid = cachedGrid, vp.totalVisualLines <= maxDetailedVisualLines {
-            // Render per-line density bars. We deliberately draw in pixel rows (1px height)
-            // so large documents collapse naturally without needing extra downsampling logic.
+            // Render per-line "length coverage" bars (line length normalized by viewport width).
+            // We deliberately draw in pixel rows (1px height) so large documents collapse
+            // naturally without needing extra downsampling logic.
             ctx.setFillColor(NSColor.labelColor.withAlphaComponent(0.25).cgColor)
+            let viewportWidthCells = max(1, vp.widthCells)
             for (idx, line) in grid.lines.enumerated() {
                 let visualRow = CGFloat(grid.startVisualRow) + CGFloat(idx)
                 let y = floor(visualRow * lineHeightPx)
                 if y < 0 || y >= contentHeightPx { continue }
 
-                let totalCells = max(1, CGFloat(line.totalCells))
-                let density = min(1, CGFloat(line.nonWhitespaceCells) / totalCells)
-                let w = max(1, floor(widthPx * density))
+                let w = Self.minimapBarWidthPx(
+                    viewportWidthCells: viewportWidthCells,
+                    lineTotalCells: line.totalCells,
+                    widthPx: widthPx
+                )
                 ctx.fill(CGRect(x: 0, y: y, width: w, height: 1))
             }
         } else {
@@ -224,9 +228,21 @@ public final class EditorCoreSkiaMinimapView: NSView {
 
     var _cachedGridForTesting: MinimapGridDTO? { cachedGrid }
 
+    static func _minimapBarWidthPxForTesting(viewportWidthCells: UInt32, lineTotalCells: UInt32, widthPx: CGFloat) -> CGFloat {
+        minimapBarWidthPx(viewportWidthCells: viewportWidthCells, lineTotalCells: lineTotalCells, widthPx: widthPx)
+    }
+
     func _refreshNowForTesting() {
         minimapDirty = true
         refreshNow()
+    }
+
+    private static func minimapBarWidthPx(viewportWidthCells: UInt32, lineTotalCells: UInt32, widthPx: CGFloat) -> CGFloat {
+        let vpCells = max(1, CGFloat(viewportWidthCells))
+        let totalCells = max(0, CGFloat(lineTotalCells))
+        let coverage = (totalCells / vpCells).clamped(to: 0...1)
+        let w = floor(max(1, widthPx) * coverage)
+        return max(1, w)
     }
 
     private func viewportIndicatorRect(vp: EcuViewportState, totalRows: CGFloat, heightPx: CGFloat) -> CGRect {

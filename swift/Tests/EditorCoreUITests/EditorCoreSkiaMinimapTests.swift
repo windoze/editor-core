@@ -152,4 +152,41 @@ final class EditorCoreSkiaMinimapTests: XCTestCase {
         let vp1 = try editorView.editor.viewportState()
         XCTAssertGreaterThan(vp1.scrollTop, vp0.scrollTop, "expected minimap dragging to scroll the editor viewport")
     }
+
+    func testMinimapBarWidthReflectsLineLengthCoverage() {
+        let widthPx: CGFloat = 100
+        let viewportWidthCells: UInt32 = 80
+
+        let short = EditorCoreSkiaMinimapView._minimapBarWidthPxForTesting(
+            viewportWidthCells: viewportWidthCells,
+            lineTotalCells: 10,
+            widthPx: widthPx
+        )
+        let long = EditorCoreSkiaMinimapView._minimapBarWidthPxForTesting(
+            viewportWidthCells: viewportWidthCells,
+            lineTotalCells: 40,
+            widthPx: widthPx
+        )
+
+        XCTAssertGreaterThan(long, short)
+    }
+
+    func testMinimapBarWidthClampsAndHasMinimum() {
+        let widthPx: CGFloat = 100
+        let viewportWidthCells: UInt32 = 80
+
+        let empty = EditorCoreSkiaMinimapView._minimapBarWidthPxForTesting(
+            viewportWidthCells: viewportWidthCells,
+            lineTotalCells: 0,
+            widthPx: widthPx
+        )
+        XCTAssertEqual(empty, 1)
+
+        let huge = EditorCoreSkiaMinimapView._minimapBarWidthPxForTesting(
+            viewportWidthCells: viewportWidthCells,
+            lineTotalCells: 10_000,
+            widthPx: widthPx
+        )
+        XCTAssertEqual(huge, 100)
+    }
 }
