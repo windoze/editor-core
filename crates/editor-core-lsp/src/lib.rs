@@ -26,7 +26,8 @@ pub mod lsp_uri;
 pub mod workspace_sync;
 
 pub use editor::{
-    LspContentChange, LspDocument, LspServerInfo, LspSession, LspSessionStartOptions,
+    LspActivity, LspContentChange, LspDocument, LspServerInfo, LspServerStatus, LspSession,
+    LspSessionCapabilities, LspSessionStartOptions, LspSessionStatus, LspWorkState,
     SemanticTokensLegend, clear_lsp_state, lsp_clear_edits, lsp_diagnostics_to_processing_edits,
 };
 pub use lsp_call_hierarchy::{

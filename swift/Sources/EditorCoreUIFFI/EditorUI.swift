@@ -202,6 +202,20 @@ public final class EditorUI {
         return out != 0
     }
 
+    /// Get a best-effort LSP status snapshot as JSON.
+    ///
+    /// This is intended for status bars and debugging overlays.
+    public func lspStatusJSON() throws -> String {
+        var ptr: UnsafeMutablePointer<CChar>?
+        let status = editor_core_ui_ffi_editor_ui_lsp_status_json(handle, &ptr)
+        try library.ensureStatus(status, context: "editor_ui_lsp_status_json")
+        guard let ptr else {
+            return "{}"
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
     /// Request an LSP hover (`textDocument/hover`) for a logical position.
     ///
     /// Notes:

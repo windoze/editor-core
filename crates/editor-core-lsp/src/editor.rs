@@ -28,6 +28,7 @@ use editor_core::{
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::io;
+use std::path::Path;
 use std::process::Command as ProcessCommand;
 use std::time::{Duration, Instant};
 
@@ -98,6 +99,71 @@ pub struct LspServerInfo {
     pub version: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A user-facing snapshot of the LSP server identity and spawn command.
+///
+/// This is intended for UI status bars and logs. It is best-effort:
+/// - `name` prefers the server-reported `initialize` response, falling back to the spawn command.
+/// - `command` / `args` reflect what the host used to spawn the process.
+pub struct LspServerStatus {
+    /// Best-effort server name (e.g. `"rust-analyzer"`).
+    pub name: String,
+    /// Optional server version string (if provided by the server).
+    pub version: Option<String>,
+    /// Program used to spawn the LSP server.
+    pub command: String,
+    /// Arguments passed to the LSP server.
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// High-level LSP session "work state" suitable for a status bar.
+pub enum LspWorkState {
+    /// Connected and currently idle (no active `$/progress` work).
+    Ready,
+    /// The server appears to be indexing (best-effort heuristic based on `$/progress` titles).
+    Indexing,
+    /// The server is busy (has active `$/progress` work), but it does not look like indexing.
+    Busy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Best-effort "what the server is doing right now" derived from `$/progress`.
+pub struct LspActivity {
+    /// A short activity title (e.g. `"Indexing"`).
+    pub title: String,
+    /// Optional activity message (server-specific).
+    pub message: Option<String>,
+    /// Optional progress percentage (0..=100).
+    pub percentage: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A compact snapshot of commonly-used server capabilities.
+pub struct LspSessionCapabilities {
+    /// Server advertises `semanticTokensProvider`.
+    pub semantic_tokens: bool,
+    /// Server supports semantic tokens delta requests.
+    pub semantic_tokens_delta: bool,
+    /// Server advertises `foldingRangeProvider`.
+    pub folding_ranges: bool,
+    /// Server advertises `documentOnTypeFormattingProvider`.
+    pub on_type_formatting: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A user-facing snapshot of the current LSP session status.
+pub struct LspSessionStatus {
+    /// Server identity and spawn command.
+    pub server: LspServerStatus,
+    /// High-level work state (ready/indexing/busy).
+    pub state: LspWorkState,
+    /// Optional active work details derived from `$/progress`.
+    pub activity: Option<LspActivity>,
+    /// A compact snapshot of feature support from server capabilities.
+    pub capabilities: LspSessionCapabilities,
+}
+
 #[derive(Debug, Clone)]
 /// A single `textDocument/didChange` content change (range + replacement text).
 pub struct LspContentChange {
@@ -152,6 +218,20 @@ enum PendingLspRequest {
     FoldingRanges { version: i32 },
 }
 
+#[derive(Debug, Clone)]
+struct WorkDoneProgressItem {
+    title: String,
+    message: Option<String>,
+    percentage: Option<u32>,
+    seq: u64,
+}
+
+#[derive(Debug, Default)]
+struct WorkDoneProgressTracker {
+    seq: u64,
+    active: HashMap<String, WorkDoneProgressItem>,
+}
+
 /// A small, runtime-agnostic LSP integration for `editor-core`.
 ///
 /// This is designed to be generic across LSP servers:
@@ -162,6 +242,8 @@ pub struct LspSession {
     document: LspDocument,
     extra_documents: HashMap<String, LspDocument>,
 
+    server_command: String,
+    server_args: Vec<String>,
     server_info: Option<LspServerInfo>,
     server_capabilities: Value,
 
@@ -169,6 +251,8 @@ pub struct LspSession {
     supports_semantic_tokens: bool,
     supports_semantic_tokens_delta: bool,
     supports_folding_range: bool,
+
+    work_done: WorkDoneProgressTracker,
 
     pending: HashMap<u64, PendingLspRequest>,
     pending_client_requests: HashMap<u64, String>,
@@ -199,6 +283,12 @@ impl LspSession {
             document,
             initial_text,
         } = opts;
+
+        let server_command = cmd.get_program().to_string_lossy().into_owned();
+        let server_args = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
 
         let mut client = LspClient::spawn(cmd, workspace_folders)?;
 
@@ -233,12 +323,15 @@ impl LspSession {
             client,
             document,
             extra_documents: HashMap::new(),
+            server_command,
+            server_args,
             server_info,
             server_capabilities,
             semantic_legend,
             supports_semantic_tokens,
             supports_semantic_tokens_delta,
             supports_folding_range,
+            work_done: WorkDoneProgressTracker::default(),
             pending: HashMap::new(),
             pending_client_requests: HashMap::new(),
             refresh_due: None,
@@ -253,6 +346,97 @@ impl LspSession {
 
         session.schedule_refresh(Duration::from_millis(0));
         Ok(session)
+    }
+
+    /// Return a user-facing snapshot of the current LSP session status.
+    ///
+    /// This is intended for simple UIs (e.g. status bars) that want to show:
+    /// - whether the server is idle vs. working (indexing/busy)
+    /// - the LSP server name/version
+    /// - a short activity title/message from `$/progress`
+    pub fn status(&self) -> LspSessionStatus {
+        fn command_basename(cmd: &str) -> String {
+            Path::new(cmd)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| cmd.to_string())
+        }
+
+        fn is_indexing_title(title: &str) -> bool {
+            let lower = title.to_ascii_lowercase();
+            lower.contains("index")
+                || lower.contains("indexing")
+                || lower.contains("crate graph")
+                || lower.contains("building crate graph")
+        }
+
+        let server_name = self
+            .server_info
+            .as_ref()
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| command_basename(self.server_command.as_str()));
+        let server_version = self.server_info.as_ref().and_then(|s| s.version.clone());
+
+        let mut best: Option<&WorkDoneProgressItem> = None;
+        let mut best_is_indexing = false;
+        for item in self.work_done.active.values() {
+            let item_is_indexing = is_indexing_title(item.title.as_str())
+                || item
+                    .message
+                    .as_deref()
+                    .is_some_and(|m| is_indexing_title(m));
+
+            match best {
+                None => {
+                    best = Some(item);
+                    best_is_indexing = item_is_indexing;
+                }
+                Some(prev) => {
+                    // Prefer "indexing" items. Otherwise pick the most recently updated one.
+                    if item_is_indexing && !best_is_indexing {
+                        best = Some(item);
+                        best_is_indexing = true;
+                    } else if item_is_indexing == best_is_indexing && item.seq > prev.seq {
+                        best = Some(item);
+                        best_is_indexing = item_is_indexing;
+                    }
+                }
+            }
+        }
+
+        let activity = best.map(|item| LspActivity {
+            title: item.title.clone(),
+            message: item.message.clone(),
+            percentage: item.percentage,
+        });
+
+        let state = if best.is_some() {
+            if best_is_indexing {
+                LspWorkState::Indexing
+            } else {
+                LspWorkState::Busy
+            }
+        } else {
+            LspWorkState::Ready
+        };
+
+        LspSessionStatus {
+            server: LspServerStatus {
+                name: server_name,
+                version: server_version,
+                command: self.server_command.clone(),
+                args: self.server_args.clone(),
+            },
+            state,
+            activity,
+            capabilities: LspSessionCapabilities {
+                semantic_tokens: self.supports_semantic_tokens,
+                semantic_tokens_delta: self.supports_semantic_tokens_delta,
+                folding_ranges: self.supports_folding_range,
+                on_type_formatting: self.supports_on_type_formatting(),
+            },
+        }
     }
 
     /// Get a reference to the underlying stdio JSON-RPC client.
@@ -1442,6 +1626,7 @@ impl LspSession {
                         if let Some(notification) =
                             LspNotification::from_method_and_params(method, params)
                         {
+                            self.observe_notification(&notification);
                             on_notification(&notification);
 
                             if let LspNotification::PublishDiagnostics(diags) = &notification
@@ -1461,6 +1646,103 @@ impl LspSession {
 
         self.maybe_refresh(&mut edits)?;
         Ok(edits)
+    }
+
+    fn observe_notification(&mut self, notification: &LspNotification) {
+        let LspNotification::Progress(params) = notification else {
+            return;
+        };
+
+        fn token_key(token: &Value) -> String {
+            match token {
+                Value::String(s) => s.clone(),
+                Value::Number(n) => n.to_string(),
+                other => other.to_string(),
+            }
+        }
+
+        let key = token_key(&params.token);
+        let Some(kind) = params.value.get("kind").and_then(Value::as_str) else {
+            return;
+        };
+
+        match kind {
+            "begin" => {
+                let title = params
+                    .value
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Working")
+                    .to_string();
+                let message = params
+                    .value
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(|s| s.to_string());
+                let percentage = params
+                    .value
+                    .get("percentage")
+                    .and_then(Value::as_u64)
+                    .and_then(|p| u32::try_from(p).ok())
+                    .map(|p| p.min(100));
+
+                self.work_done.seq = self.work_done.seq.saturating_add(1);
+                self.work_done.active.insert(
+                    key,
+                    WorkDoneProgressItem {
+                        title,
+                        message,
+                        percentage,
+                        seq: self.work_done.seq,
+                    },
+                );
+            }
+            "report" => {
+                let title = params
+                    .value
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .map(|s| s.to_string());
+                let message = params
+                    .value
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(|s| s.to_string());
+                let percentage = params
+                    .value
+                    .get("percentage")
+                    .and_then(Value::as_u64)
+                    .and_then(|p| u32::try_from(p).ok())
+                    .map(|p| p.min(100));
+
+                self.work_done.seq = self.work_done.seq.saturating_add(1);
+                self.work_done
+                    .active
+                    .entry(key)
+                    .and_modify(|item| {
+                        if let Some(title) = title.clone() {
+                            item.title = title;
+                        }
+                        if message.is_some() {
+                            item.message = message.clone();
+                        }
+                        if percentage.is_some() {
+                            item.percentage = percentage;
+                        }
+                        item.seq = self.work_done.seq;
+                    })
+                    .or_insert_with(|| WorkDoneProgressItem {
+                        title: title.unwrap_or_else(|| "Working".to_string()),
+                        message,
+                        percentage,
+                        seq: self.work_done.seq,
+                    });
+            }
+            "end" => {
+                self.work_done.active.remove(&key);
+            }
+            _ => {}
+        }
     }
 
     fn push_event(&mut self, event: LspEvent) {

@@ -627,6 +627,8 @@ struct EditorUiDoc {
     treesitter_doc_version: u64,
     lsp: Option<Arc<SharedLspSession>>,
     lsp_document_uri: Option<String>,
+    lsp_last_cmd: Option<String>,
+    lsp_last_error: Option<String>,
     lsp_delta_calc: Option<DeltaCalculator>,
     lsp_aux_refresh_due: Option<Instant>,
     lsp_inlay_in_flight: bool,
@@ -674,6 +676,16 @@ impl EditorUiDoc {
     }
 
     fn lsp_disable(&mut self) {
+        self.lsp_last_error = None;
+        self.lsp_reset();
+    }
+
+    fn lsp_fail(&mut self, reason: impl Into<String>) {
+        self.lsp_last_error = Some(reason.into());
+        self.lsp_reset();
+    }
+
+    fn lsp_reset(&mut self) {
         if let (Some(shared), Some(uri)) = (self.lsp.as_ref(), self.lsp_document_uri.as_deref()) {
             let uri = uri.to_string();
             let _ = shared.with_session_mut(|session| session.close_document(uri.as_str()));
@@ -820,6 +832,8 @@ impl EditorUi {
             treesitter_doc_version: 0,
             lsp: None,
             lsp_document_uri: None,
+            lsp_last_cmd: None,
+            lsp_last_error: None,
             lsp_delta_calc: None,
             lsp_aux_refresh_due: None,
             lsp_inlay_in_flight: false,
@@ -2188,6 +2202,8 @@ impl EditorUi {
         // semantic tokens / diagnostics around.
         let initial_text = {
             let mut doc = self.lock_doc();
+            doc.lsp_last_cmd = Some(cmd.to_string());
+            doc.lsp_last_error = None;
             if doc.lsp.is_some() {
                 doc.lsp_disable();
             }
@@ -2287,7 +2303,14 @@ impl EditorUi {
             args: args.to_vec(),
             root_uri: root_uri.trim_end_matches('/').to_string(),
         };
-        let shared = get_or_start_shared_lsp_session(key, start)?;
+        let shared = match get_or_start_shared_lsp_session(key, start) {
+            Ok(shared) => shared,
+            Err(err) => {
+                let mut doc = self.lock_doc();
+                doc.lsp_fail(err.to_string());
+                return Err(err);
+            }
+        };
 
         // If this is not the first document in the shared session, open it explicitly.
         //
@@ -2295,21 +2318,23 @@ impl EditorUi {
         let doc_uri = doc_uri.to_string();
         let language_id = language_id.to_string();
         let initial_text_clone = initial_text.clone();
-        shared
-            .with_session_mut(|session| {
-                if session.document_for_uri(doc_uri.as_str()).is_some() {
-                    return Ok(());
-                }
-                session.open_document(
-                    LspDocument {
-                        uri: doc_uri.clone(),
-                        language_id,
-                        version: 1,
-                    },
-                    initial_text_clone,
-                )
-            })
-            .map_err(UiError::Processor)?;
+        if let Err(err) = shared.with_session_mut(|session| {
+            if session.document_for_uri(doc_uri.as_str()).is_some() {
+                return Ok(());
+            }
+            session.open_document(
+                LspDocument {
+                    uri: doc_uri.clone(),
+                    language_id,
+                    version: 1,
+                },
+                initial_text_clone,
+            )
+        }) {
+            let mut doc = self.lock_doc();
+            doc.lsp_fail(err.clone());
+            return Err(UiError::Processor(err));
+        }
 
         {
             let mut doc = self.lock_doc();
@@ -2344,6 +2369,100 @@ impl EditorUi {
     pub fn lsp_is_enabled(&self) -> bool {
         let doc = self.lock_doc();
         doc.lsp_is_enabled()
+    }
+
+    /// Return a best-effort LSP status snapshot as a JSON string.
+    ///
+    /// This is intended for UI status bars and debugging overlays. The schema is stable-ish but
+    /// not yet versioned; callers should treat unknown fields as optional.
+    pub fn lsp_status_json(&self) -> String {
+        let (shared, last_cmd, last_error) = {
+            let doc = self.lock_doc();
+            (
+                doc.lsp.clone(),
+                doc.lsp_last_cmd.clone(),
+                doc.lsp_last_error.clone(),
+            )
+        };
+
+        let mut availability = "disabled";
+        let mut state = "disabled";
+        let mut detail: Option<String> = None;
+        let mut server: Option<serde_json::Value> = None;
+        let mut activity: Option<serde_json::Value> = None;
+        let mut capabilities: Option<serde_json::Value> = None;
+
+        if let Some(shared) = shared {
+            match shared.session.lock() {
+                Ok(guard) => {
+                    if let Some(session) = guard.as_ref() {
+                        let s = session.status();
+                        availability = "enabled";
+                        state = match s.state {
+                            editor_core_lsp::LspWorkState::Ready => "ready",
+                            editor_core_lsp::LspWorkState::Indexing => "indexing",
+                            editor_core_lsp::LspWorkState::Busy => "busy",
+                        };
+
+                        server = Some(serde_json::json!({
+                            "name": s.server.name,
+                            "version": s.server.version,
+                            "command": s.server.command,
+                            "args": s.server.args,
+                        }));
+
+                        activity = s.activity.map(|a| serde_json::json!({
+                            "title": a.title,
+                            "message": a.message,
+                            "percentage": a.percentage,
+                        }));
+
+                        capabilities = Some(serde_json::json!({
+                            "semantic_tokens": s.capabilities.semantic_tokens,
+                            "semantic_tokens_delta": s.capabilities.semantic_tokens_delta,
+                            "folding_ranges": s.capabilities.folding_ranges,
+                            "on_type_formatting": s.capabilities.on_type_formatting,
+                        }));
+                    } else {
+                        availability = "failed";
+                        state = "failed";
+                        detail = last_error
+                            .clone()
+                            .or_else(|| Some("LSP session is not available".to_string()));
+                        if let Some(cmd) = last_cmd.as_deref() {
+                            server = Some(serde_json::json!({ "command": cmd }));
+                        }
+                    }
+                }
+                Err(_) => {
+                    availability = "failed";
+                    state = "failed";
+                    detail = Some("LSP session lock poisoned".to_string());
+                    if let Some(cmd) = last_cmd.as_deref() {
+                        server = Some(serde_json::json!({ "command": cmd }));
+                    }
+                }
+            }
+        } else if let Some(err) = last_error.clone() {
+            availability = "failed";
+            state = "failed";
+            detail = Some(err);
+            if let Some(cmd) = last_cmd.as_deref() {
+                server = Some(serde_json::json!({ "command": cmd }));
+            }
+        } else if let Some(cmd) = last_cmd.as_deref() {
+            server = Some(serde_json::json!({ "command": cmd }));
+        }
+
+        serde_json::json!({
+            "availability": availability,
+            "state": state,
+            "server": server,
+            "activity": activity,
+            "detail": detail,
+            "capabilities": capabilities,
+        })
+        .to_string()
     }
 
     /// Request LSP hover information for a given logical position (0-based line/column in Unicode scalars).
@@ -2432,7 +2551,7 @@ impl EditorUi {
                 return Ok(false);
             };
             let Some(doc_uri) = doc.lsp_document_uri.clone() else {
-                doc.lsp_disable();
+                doc.lsp_fail("LSP document URI missing");
                 return Ok(false);
             };
 
@@ -2472,8 +2591,9 @@ impl EditorUi {
             Ok(lsp.supports_on_type_formatting_trigger(ch))
         }) {
             Ok(v) => v,
-            Err(_reason) => {
-                self.lsp_disable();
+            Err(reason) => {
+                let mut doc = self.lock_doc();
+                doc.lsp_fail(reason);
                 return Ok(false);
             }
         };
@@ -2486,8 +2606,9 @@ impl EditorUi {
             lsp.request_on_type_formatting(&line_index, line, column, ch.to_string(), options)
         }) {
             Ok(id) => id,
-            Err(_reason) => {
-                self.lsp_disable();
+            Err(reason) => {
+                let mut doc = self.lock_doc();
+                doc.lsp_fail(reason);
                 return Ok(false);
             }
         };
@@ -4976,7 +5097,7 @@ impl EditorUi {
         // Keep LSP (if enabled) in sync with incremental edits.
         if doc.lsp.is_some() {
             let Some(doc_uri) = doc.lsp_document_uri.clone() else {
-                doc.lsp_disable();
+                doc.lsp_fail("LSP document URI missing");
                 return Ok(());
             };
             let Some(shared) = doc.lsp.clone() else {
@@ -4985,7 +5106,7 @@ impl EditorUi {
 
             let changes = {
                 let Some(calc) = doc.lsp_delta_calc.as_mut() else {
-                    doc.lsp_disable();
+                    doc.lsp_fail("LSP incremental sync state missing");
                     return Ok(());
                 };
                 Self::lsp_changes_for_text_delta(calc, delta.as_ref())
@@ -4994,14 +5115,11 @@ impl EditorUi {
                 return Ok(());
             }
 
-            if shared
-                .with_session_mut(|session| {
-                    session.set_active_document(doc_uri.as_str())?;
-                    session.did_change_many(changes)
-                })
-                .is_err()
-            {
-                doc.lsp_disable();
+            if let Err(err) = shared.with_session_mut(|session| {
+                session.set_active_document(doc_uri.as_str())?;
+                session.did_change_many(changes)
+            }) {
+                doc.lsp_fail(err);
                 return Ok(());
             }
 
@@ -5032,12 +5150,12 @@ impl EditorUi {
             return;
         };
         let Some(doc_uri) = doc.lsp_document_uri.clone() else {
-            doc.lsp_disable();
+            doc.lsp_fail("LSP document URI missing");
             return;
         };
 
         let Some(calc) = doc.lsp_delta_calc.as_mut() else {
-            doc.lsp_disable();
+            doc.lsp_fail("LSP incremental sync state missing");
             return;
         };
 
@@ -5046,14 +5164,11 @@ impl EditorUi {
             return;
         }
 
-        if shared
-            .with_session_mut(|session| {
-                session.set_active_document(doc_uri.as_str())?;
-                session.did_change_many(changes)
-            })
-            .is_err()
-        {
-            doc.lsp_disable();
+        if let Err(err) = shared.with_session_mut(|session| {
+            session.set_active_document(doc_uri.as_str())?;
+            session.did_change_many(changes)
+        }) {
+            doc.lsp_fail(err);
             return;
         }
 
@@ -5108,7 +5223,7 @@ impl EditorUi {
                 return false;
             };
             let Some(doc_uri) = doc.lsp_document_uri.clone() else {
-                doc.lsp_disable();
+                doc.lsp_fail("LSP document URI missing");
                 return true;
             };
             (shared, doc_uri)
@@ -5120,7 +5235,7 @@ impl EditorUi {
             let line_index = match doc.ws.buffer_line_index(doc.buffer_id) {
                 Ok(idx) => idx,
                 Err(_) => {
-                    doc.lsp_disable();
+                    doc.lsp_fail("LSP buffer line index unavailable");
                     return true;
                 }
             };
@@ -5129,8 +5244,8 @@ impl EditorUi {
                 session.poll_edits_with_line_index(line_index)
             }) {
                 Ok(edits) => edits,
-                Err(_reason) => {
-                    doc.lsp_disable();
+                Err(reason) => {
+                    doc.lsp_fail(reason);
                     return true;
                 }
             };
@@ -5140,15 +5255,17 @@ impl EditorUi {
             }
         }
 
-        if self.maybe_request_lsp_aux().is_err() {
-            self.lsp_disable();
+        if let Err(err) = self.maybe_request_lsp_aux() {
+            let mut doc = self.lock_doc();
+            doc.lsp_fail(err.to_string());
             return true;
         }
 
         let events = match shared.with_session_mut(|session| Ok(session.drain_events())) {
             Ok(events) => events,
-            Err(_reason) => {
-                self.lsp_disable();
+            Err(reason) => {
+                let mut doc = self.lock_doc();
+                doc.lsp_fail(reason);
                 return true;
             }
         };
@@ -5173,7 +5290,7 @@ impl EditorUi {
                     let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
                         Ok(line_index) => lsp_inlay_hints_to_processing_edit(line_index, &result),
                         Err(_) => {
-                            doc.lsp_disable();
+                            doc.lsp_fail("LSP buffer line index unavailable");
                             return true;
                         }
                     };
@@ -5186,7 +5303,7 @@ impl EditorUi {
                     let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
                         Ok(line_index) => lsp_code_lens_to_processing_edit(line_index, &result),
                         Err(_) => {
-                            doc.lsp_disable();
+                            doc.lsp_fail("LSP buffer line index unavailable");
                             return true;
                         }
                     };
@@ -5201,7 +5318,7 @@ impl EditorUi {
                             lsp_document_links_to_processing_edits(line_index, &result)
                         }
                         Err(_) => {
-                            doc.lsp_disable();
+                            doc.lsp_fail("LSP buffer line index unavailable");
                             return true;
                         }
                     };
@@ -5288,7 +5405,8 @@ impl EditorUi {
                     }
                 }
                 Err(_err) => {
-                    self.lsp_disable();
+                    let mut doc = self.lock_doc();
+                    doc.lsp_fail(_err.to_string());
                     return true;
                 }
             }

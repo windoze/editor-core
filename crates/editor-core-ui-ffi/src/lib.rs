@@ -939,6 +939,44 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_is_enabled(
     }
 }
 
+/// Return a best-effort LSP status snapshot as JSON.
+///
+/// - `out_status_json_utf8` receives a newly allocated string that must be freed with
+///   `editor_core_ui_ffi_string_free`.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_status_json_utf8` must be a valid pointer to a `*mut c_char`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_status_json(
+    ui: *mut EditorUi,
+    out_status_json_utf8: *mut *mut c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_status_json_utf8.is_null() {
+            return Err("out_status_json_utf8 is null".to_string());
+        }
+
+        unsafe {
+            *out_status_json_utf8 = ptr::null_mut();
+        }
+
+        let json = ui.lsp_status_json();
+        unsafe {
+            *out_status_json_utf8 = make_c_string_ptr(json);
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Request LSP hover for a logical position (0-based line/column in Unicode scalars).
 ///
 /// This is non-blocking: the result arrives asynchronously and can be read via

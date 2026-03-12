@@ -195,6 +195,7 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_enable(EditorUi* ui,
                                                const char* language_id_utf8);
 void editor_core_ui_ffi_editor_ui_lsp_disable(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_lsp_is_enabled(EditorUi* ui, uint8_t* out_enabled);
+int32_t editor_core_ui_ffi_editor_ui_lsp_status_json(EditorUi* ui, char** out_status_json_utf8);
 
 // LSP interactive requests (optional; demo UX).
 //
