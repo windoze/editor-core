@@ -2213,43 +2213,8 @@ impl EditorUi {
                 .map_err(|e| UiError::Processor(format!("{e:?}")))?
         };
 
-        let token_types = vec![
-            "namespace",
-            "type",
-            "class",
-            "enum",
-            "interface",
-            "struct",
-            "typeParameter",
-            "parameter",
-            "variable",
-            "property",
-            "enumMember",
-            "event",
-            "function",
-            "method",
-            "macro",
-            "keyword",
-            "modifier",
-            "comment",
-            "string",
-            "number",
-            "regexp",
-            "operator",
-        ];
-
-        let token_modifiers = vec![
-            "declaration",
-            "definition",
-            "readonly",
-            "static",
-            "deprecated",
-            "abstract",
-            "async",
-            "modification",
-            "documentation",
-            "defaultLibrary",
-        ];
+        let token_types = editor_core_lsp::CANONICAL_SEMANTIC_TOKEN_TYPES;
+        let token_modifiers = editor_core_lsp::CANONICAL_SEMANTIC_TOKEN_MODIFIERS;
 
         // Build initialize params in the demo (caller-controlled). Consumers may override or
         // replace this entirely.

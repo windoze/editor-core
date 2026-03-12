@@ -31,21 +31,58 @@
     {
       "style": { "builtin": "matchHighlight" },
       "background": "#FFE28AFF"
-    }
+    },
+
+    { "style": { "lsp_semantic": { "token_type": "keyword" } }, "foreground": "#AF00DBFF" },
+    { "style": { "lsp_semantic": { "token_type": "modifier" } }, "foreground": "#AF00DBFF" },
+    { "style": { "lsp_semantic": { "token_type": "macro" } }, "foreground": "#AF00DBFF" },
+
+    { "style": { "lsp_semantic": { "token_type": "comment" } }, "foreground": "#008000FF", "italic": true },
+    { "style": { "lsp_semantic": { "token_type": "string" } }, "foreground": "#A31515FF" },
+    { "style": { "lsp_semantic": { "token_type": "regexp" } }, "foreground": "#A31515FF" },
+    { "style": { "lsp_semantic": { "token_type": "number" } }, "foreground": "#098658FF" },
+
+    { "style": { "lsp_semantic": { "token_type": "type" } }, "foreground": "#267F99FF" },
+    { "style": { "lsp_semantic": { "token_type": "class" } }, "foreground": "#267F99FF" },
+    { "style": { "lsp_semantic": { "token_type": "enum" } }, "foreground": "#267F99FF" },
+    { "style": { "lsp_semantic": { "token_type": "interface" } }, "foreground": "#267F99FF" },
+    { "style": { "lsp_semantic": { "token_type": "struct" } }, "foreground": "#267F99FF" },
+    { "style": { "lsp_semantic": { "token_type": "typeParameter" } }, "foreground": "#267F99FF" },
+    { "style": { "lsp_semantic": { "token_type": "namespace" } }, "foreground": "#267F99FF" },
+
+    { "style": { "lsp_semantic": { "token_type": "function" } }, "foreground": "#795E26FF" },
+    { "style": { "lsp_semantic": { "token_type": "method" } }, "foreground": "#795E26FF" },
+
+    { "style": { "lsp_semantic": { "token_type": "variable" } }, "foreground": "#001080FF" },
+    { "style": { "lsp_semantic": { "token_type": "parameter" } }, "foreground": "#001080FF" },
+    { "style": { "lsp_semantic": { "token_type": "property" } }, "foreground": "#001080FF" },
+    { "style": { "lsp_semantic": { "token_type": "enumMember" } }, "foreground": "#001080FF" },
+    { "style": { "lsp_semantic": { "token_type": "event" } }, "foreground": "#001080FF" },
+
+    { "style": { "lsp_semantic": { "token_type": "operator" } }, "foreground": "#111111FF" }
   ],
   "tree_sitter_capture_overrides": [
     { "capture": "comment", "foreground": "#008000FF", "italic": true },
+    { "capture": "comment.documentation", "foreground": "#008000FF", "italic": true },
     { "capture": "keyword", "foreground": "#AF00DBFF" },
     { "capture": "string", "foreground": "#A31515FF" },
     { "capture": "string.escape", "foreground": "#816B00FF" },
+    { "capture": "escape", "foreground": "#816B00FF" },
     { "capture": "number", "foreground": "#098658FF" },
+    { "capture": "constant.builtin", "foreground": "#098658FF" },
     { "capture": "type", "foreground": "#267F99FF" },
+    { "capture": "type.builtin", "foreground": "#267F99FF" },
     { "capture": "function", "foreground": "#795E26FF" },
+    { "capture": "function.method", "foreground": "#795E26FF" },
+    { "capture": "function.macro", "foreground": "#AF00DBFF" },
+    { "capture": "attribute", "foreground": "#AF00DBFF" },
+    { "capture": "variable.parameter", "foreground": "#001080FF" },
     { "capture": "property", "foreground": "#001080FF" },
+    { "capture": "constructor", "foreground": "#001080FF" },
+    { "capture": "constant", "foreground": "#001080FF" },
     { "capture": "operator", "foreground": "#111111FF" },
     { "capture": "punctuation.delimiter", "foreground": "#111111FF" },
     { "capture": "punctuation.special", "foreground": "#816B00FF" },
     { "capture": "text.uri", "foreground": "#0066CCFF", "underline": "single", "underline_color": "#0066CCFF" }
   ]
 }
-

@@ -449,6 +449,81 @@ pub fn encode_semantic_style_id(token_type: u32, token_modifiers: u32) -> StyleI
     ((token_type & 0xFFFF) << 16) | (token_modifiers & 0xFFFF)
 }
 
+/// Canonical semantic token type names used by `editor-core` theming.
+///
+/// Notes:
+/// - In LSP, the `tokenType` index in `semanticTokens` data is *server-legend relative*.
+/// - For stable theming across servers, callers should map server legend names to this
+///   canonical list (see [`canonical_semantic_token_type_index`]) before encoding a `StyleId`.
+///
+/// Keep this list in sync with:
+/// - `EditorUi::lsp_enable_stdio` (client semantic token capabilities)
+/// - Swift `EditorCoreSkiaLspSemanticStyleId.tokenTypes`
+pub const CANONICAL_SEMANTIC_TOKEN_TYPES: &[&str] = &[
+    "namespace",
+    "type",
+    "class",
+    "enum",
+    "interface",
+    "struct",
+    "typeParameter",
+    "parameter",
+    "variable",
+    "property",
+    "enumMember",
+    "event",
+    "function",
+    "method",
+    "macro",
+    "keyword",
+    "modifier",
+    "comment",
+    "string",
+    "number",
+    "regexp",
+    "operator",
+];
+
+/// Canonical semantic token modifier names used by `editor-core` theming.
+///
+/// Keep this list in sync with:
+/// - `EditorUi::lsp_enable_stdio` (client semantic token capabilities)
+/// - Swift `EditorCoreSkiaLspSemanticStyleId.tokenModifiers`
+pub const CANONICAL_SEMANTIC_TOKEN_MODIFIERS: &[&str] = &[
+    "declaration",
+    "definition",
+    "readonly",
+    "static",
+    "deprecated",
+    "abstract",
+    "async",
+    "modification",
+    "documentation",
+    "defaultLibrary",
+];
+
+/// Map an LSP semantic token type name to the canonical index used by `editor-core` theming.
+pub fn canonical_semantic_token_type_index(name: &str) -> Option<u32> {
+    CANONICAL_SEMANTIC_TOKEN_TYPES
+        .iter()
+        .position(|&t| t == name)
+        .and_then(|idx| u32::try_from(idx).ok())
+}
+
+/// Map an LSP semantic token modifier name to the canonical modifier bit used by `editor-core` theming.
+///
+/// Returns `0` when the name is unknown or out of the low-16-bit encodable range.
+pub fn canonical_semantic_token_modifier_bit(name: &str) -> u32 {
+    let Some(idx) = CANONICAL_SEMANTIC_TOKEN_MODIFIERS.iter().position(|&m| m == name) else {
+        return 0;
+    };
+    // Low 16 bits are reserved for modifiers in the default encoding.
+    if idx >= 16 {
+        return 0;
+    }
+    1u32 << (idx as u32)
+}
+
 /// Decode default semantic StyleId encoding, returns `(token_type, token_modifiers_low16)`.
 pub fn decode_semantic_style_id(style_id: StyleId) -> (u32, u32) {
     (style_id >> 16, style_id & 0xFFFF)

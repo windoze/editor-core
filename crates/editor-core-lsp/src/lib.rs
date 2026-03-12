@@ -73,9 +73,11 @@ pub use lsp_symbols::{
     lsp_workspace_symbols_to_results,
 };
 pub use lsp_sync::{
-    DeltaCalculator, LspCoordinateConverter, LspPosition, LspRange, SemanticToken,
-    SemanticTokensError, SemanticTokensManager, TextChange, decode_semantic_style_id,
-    encode_semantic_style_id, semantic_tokens_to_intervals,
+    CANONICAL_SEMANTIC_TOKEN_MODIFIERS, CANONICAL_SEMANTIC_TOKEN_TYPES, DeltaCalculator,
+    LspCoordinateConverter, LspPosition, LspRange, SemanticToken, SemanticTokensError,
+    SemanticTokensManager, TextChange, canonical_semantic_token_modifier_bit,
+    canonical_semantic_token_type_index, decode_semantic_style_id, encode_semantic_style_id,
+    semantic_tokens_to_intervals,
 };
 pub use lsp_text_edits::{
     LspTextEdit, WorkspaceEditDocumentSummary, WorkspaceEditSummary, apply_text_edits,

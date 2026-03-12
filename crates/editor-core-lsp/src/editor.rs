@@ -15,8 +15,8 @@ use crate::lsp_events::{
     LspServerRequestPolicy,
 };
 use crate::lsp_sync::{
-    LspCoordinateConverter, LspPosition, LspRange, encode_semantic_style_id,
-    semantic_tokens_to_intervals,
+    LspCoordinateConverter, LspPosition, LspRange, canonical_semantic_token_modifier_bit,
+    canonical_semantic_token_type_index, encode_semantic_style_id, semantic_tokens_to_intervals,
 };
 use crate::lsp_text_edits::{apply_text_edits, workspace_edit_text_edits_for_uri};
 use editor_core::intervals::{FoldRegion, Interval, StyleId};
@@ -267,6 +267,38 @@ pub struct LspSession {
     event_queue_capacity: usize,
     server_request_policy: LspServerRequestPolicy,
     deferred_requests: HashMap<u64, LspServerRequest>,
+}
+
+fn encode_semantic_style_id_from_server_legend(
+    token_type: u32,
+    token_modifiers: u32,
+    legend: Option<&SemanticTokensLegend>,
+) -> StyleId {
+    let Some(legend) = legend else {
+        return encode_semantic_style_id(token_type, token_modifiers);
+    };
+
+    let token_type_name = match legend.token_types.get(token_type as usize) {
+        Some(s) => s.as_str(),
+        None => return encode_semantic_style_id(token_type, token_modifiers),
+    };
+
+    let canonical_token_type =
+        canonical_semantic_token_type_index(token_type_name).unwrap_or(token_type);
+
+    let mut canonical_modifier_bits: u32 = 0;
+    for bit in 0..32u32 {
+        let mask = 1u32 << bit;
+        if (token_modifiers & mask) == 0 {
+            continue;
+        }
+        let Some(name) = legend.token_modifiers.get(bit as usize) else {
+            continue;
+        };
+        canonical_modifier_bits |= canonical_semantic_token_modifier_bit(name.as_str());
+    }
+
+    encode_semantic_style_id(canonical_token_type, canonical_modifier_bits)
 }
 
 impl LspSession {
@@ -1781,10 +1813,13 @@ impl LspSession {
                 .map(|s| s.to_string());
             self.semantic_tokens_data = data;
 
+            let legend = self.semantic_legend.as_ref();
             if let Ok(intervals) = semantic_tokens_to_intervals(
                 &self.semantic_tokens_data,
                 line_index,
-                encode_semantic_style_id,
+                |token_type, token_modifiers| {
+                    encode_semantic_style_id_from_server_legend(token_type, token_modifiers, legend)
+                },
             ) {
                 edits.push(ProcessingEdit::ReplaceStyleLayer {
                     layer: StyleLayerId::SEMANTIC_TOKENS,
@@ -1861,10 +1896,13 @@ impl LspSession {
             .map(|s| s.to_string());
         self.semantic_tokens_data = data;
 
+        let legend = self.semantic_legend.as_ref();
         if let Ok(intervals) = semantic_tokens_to_intervals(
             &self.semantic_tokens_data,
             line_index,
-            encode_semantic_style_id,
+            |token_type, token_modifiers| {
+                encode_semantic_style_id_from_server_legend(token_type, token_modifiers, legend)
+            },
         ) {
             edits.push(ProcessingEdit::ReplaceStyleLayer {
                 layer: StyleLayerId::SEMANTIC_TOKENS,

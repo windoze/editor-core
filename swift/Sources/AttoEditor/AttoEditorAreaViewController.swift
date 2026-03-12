@@ -1369,9 +1369,37 @@ final class AttoEditorAreaViewController: NSViewController {
                         languageId: languageId
                     )
 
-                    // Prefer LSP semantic tokens; keep other engines off.
-                    editCore.editor.treeSitterDisable()
-                    editCore.editor.sublimeDisable()
+                    let supportsSemanticTokens: Bool = {
+                        guard let statusJSON = try? editCore.editor.lspStatusJSON() else { return false }
+                        guard let data = statusJSON.data(using: .utf8) else { return false }
+                        guard let obj = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
+                            return false
+                        }
+                        guard let capabilities = obj["capabilities"] as? [String: Any] else { return false }
+                        if let v = capabilities["semantic_tokens"] as? Bool { return v }
+                        if let v = capabilities["semantic_tokens"] as? NSNumber { return v.boolValue }
+                        return false
+                    }()
+
+                    if supportsSemanticTokens {
+                        // Prefer LSP semantic tokens; keep other engines off.
+                        editCore.editor.treeSitterDisable()
+                        editCore.editor.sublimeDisable()
+                    } else {
+                        // LSP without semantic tokens: keep Tree-sitter for baseline highlighting.
+                        do {
+                            try editCore.editor.treeSitterEnableForPath(url.path)
+                            // Kick a short poll window so the initial Tree-sitter parse applies even without edits.
+                            editCore.editorView.kickProcessingPoll()
+                        } catch {
+                            NSLog(
+                                "AttoEditor: Tree-sitter enable failed for %@ (fallback after LSP without semantic tokens): %@",
+                                url.path,
+                                String(describing: error)
+                            )
+                        }
+                        editCore.editor.sublimeDisable()
+                    }
                     return languageId
                 } catch {
                     NSLog("AttoEditor: LSP enable failed for %@: %@", url.path, String(describing: error))

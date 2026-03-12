@@ -2829,26 +2829,54 @@ fn cell_overlaps_selection_for_row(
 }
 
 fn resolve_style_foreground(style_id: u32, theme: &RenderTheme, fallback: Rgba8) -> Rgba8 {
+    let semantic_base = semantic_token_base_style_id(style_id);
     theme
         .styles
         .get(&style_id)
+        .or_else(|| semantic_base.and_then(|id| theme.styles.get(&id)))
         .and_then(|c| c.foreground)
         .unwrap_or(fallback)
 }
 
 fn resolve_style_background(style_id: u32, theme: &RenderTheme, fallback: Rgba8) -> Rgba8 {
+    let semantic_base = semantic_token_base_style_id(style_id);
     theme
         .styles
         .get(&style_id)
+        .or_else(|| semantic_base.and_then(|id| theme.styles.get(&id)))
         .and_then(|c| c.background)
         .unwrap_or(fallback)
+}
+
+/// Semantic tokens encode modifiers in the low 16 bits of the style id.
+///
+/// Most themes want token modifiers (e.g. `declaration`, `definition`, `static`) to *inherit*
+/// the base token type color unless explicitly overridden. This helper enables a cheap
+/// "fallback to base token style" lookup when the exact `(token_type, modifiers)` style id
+/// is not present in the theme.
+#[inline]
+fn semantic_token_base_style_id(style_id: u32) -> Option<u32> {
+    // All currently reserved/builtin style id ranges are >= 0x0300_0000.
+    // The default LSP semantic encoding is: (token_type << 16) | (modifier_bits & 0xFFFF),
+    // which lives in a low range (token_type is small).
+    if style_id >= 0x0300_0000 {
+        return None;
+    }
+    if (style_id & 0xFFFF) == 0 {
+        return None;
+    }
+    Some(style_id & 0xFFFF_0000)
 }
 
 fn resolve_cell_colors(style_ids: &[u32], theme: &RenderTheme) -> (Rgba8, Rgba8) {
     let mut fg = theme.foreground;
     let mut bg = theme.background;
     for id in style_ids {
-        if let Some(colors) = theme.styles.get(id) {
+        let colors = theme
+            .styles
+            .get(id)
+            .or_else(|| semantic_token_base_style_id(*id).and_then(|base| theme.styles.get(&base)));
+        if let Some(colors) = colors {
             if let Some(f) = colors.foreground {
                 fg = f;
             }
@@ -2864,9 +2892,11 @@ fn resolve_cell_font_variant(style_ids: &[u32], theme: &RenderTheme) -> FontVari
     let mut bold: bool = false;
     let mut italic: bool = false;
     for id in style_ids {
-        let Some(spec) = theme.style_fonts.get(id) else {
-            continue;
-        };
+        let spec = theme
+            .style_fonts
+            .get(id)
+            .or_else(|| semantic_token_base_style_id(*id).and_then(|base| theme.style_fonts.get(&base)));
+        let Some(spec) = spec else { continue };
         if let Some(v) = spec.bold {
             bold = v;
         }
@@ -2889,7 +2919,12 @@ fn is_lsp_diagnostics_style_id(style_id: u32) -> bool {
 
 fn resolve_underline_color(style_id: u32, theme: &RenderTheme, fallback: Rgba8) -> Rgba8 {
     // Prefer explicit foreground; fall back to background; then to theme foreground.
-    if let Some(colors) = theme.styles.get(&style_id) {
+    let semantic_base = semantic_token_base_style_id(style_id);
+    if let Some(colors) = theme
+        .styles
+        .get(&style_id)
+        .or_else(|| semantic_base.and_then(|id| theme.styles.get(&id)))
+    {
         if let Some(fg) = colors.foreground {
             return fg;
         }
@@ -3046,9 +3081,10 @@ fn resolve_cell_line_decorations(
         if id == IME_MARKED_TEXT_STYLE_ID || id == DOCUMENT_LINK_STYLE_ID || diag_id == Some(id) {
             continue;
         }
-        let Some(spec) = theme.text_decorations.get(&id).copied() else {
-            continue;
-        };
+        let spec = theme.text_decorations.get(&id).copied().or_else(|| {
+            semantic_token_base_style_id(id).and_then(|base| theme.text_decorations.get(&base).copied())
+        });
+        let Some(spec) = spec else { continue };
         let Some(underline_style) = spec.underline else {
             continue;
         };
@@ -3067,9 +3103,10 @@ fn resolve_cell_line_decorations(
     let mut strike_enabled: bool = false;
     let mut strike_color: Option<Rgba8> = None;
     for &id in style_ids {
-        let Some(spec) = theme.text_decorations.get(&id).copied() else {
-            continue;
-        };
+        let spec = theme.text_decorations.get(&id).copied().or_else(|| {
+            semantic_token_base_style_id(id).and_then(|base| theme.text_decorations.get(&base).copied())
+        });
+        let Some(spec) = spec else { continue };
         if let Some(v) = spec.strikethrough {
             strike_enabled = v;
         }
