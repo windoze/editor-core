@@ -98,7 +98,10 @@ let package = Package(
             name: "AttoEditor",
             dependencies: ["EditorCoreUI", "EditorCoreUIFFI"],
             path: "Sources/AttoEditor",
-            exclude: ["AppBundle"]
+            exclude: ["AppBundle"],
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "EditorCoreFFITests",

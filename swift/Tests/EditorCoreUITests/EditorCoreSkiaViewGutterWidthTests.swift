@@ -7,9 +7,9 @@ import XCTest
 final class EditorCoreSkiaViewGutterWidthTests: XCTestCase {
     func testRequiredGutterWidthAddsPaddingForFiveAndSevenDigitLineNumbers() {
         // 10_000 lines => last visible line number has 5 digits.
-        XCTAssertEqual(EditorCoreSkiaView.requiredGutterWidthCells(lineCount: 10_000), 7)
+        XCTAssertEqual(EditorCoreSkiaView.requiredGutterWidthCells(lineCount: 10_000), 8)
         // 1_000_000 lines => 7 digits.
-        XCTAssertEqual(EditorCoreSkiaView.requiredGutterWidthCells(lineCount: 1_000_000), 9)
+        XCTAssertEqual(EditorCoreSkiaView.requiredGutterWidthCells(lineCount: 1_000_000), 10)
     }
 
     func testGutterWidthExpandsForFourDigitLineNumbers() throws {
@@ -28,7 +28,7 @@ final class EditorCoreSkiaViewGutterWidthTests: XCTestCase {
         view.layoutSubtreeIfNeeded()
 
         let gutter = try view.editor.gutterWidthCells()
-        XCTAssertEqual(gutter, 5, "expected gutter to be 1(fold) + 4(digits) cells for 1000 lines")
+        XCTAssertEqual(gutter, 6, "expected gutter to be 2(fold) + 4(digits) cells for 1000 lines")
     }
 
     func testGutterWidthExpandsForFiveDigitLineNumbers() throws {
@@ -47,7 +47,7 @@ final class EditorCoreSkiaViewGutterWidthTests: XCTestCase {
         window.makeKeyAndOrderFront(nil)
         view.layoutSubtreeIfNeeded()
 
-        XCTAssertEqual(try view.editor.gutterWidthCells(), 7)
+        XCTAssertEqual(try view.editor.gutterWidthCells(), 8)
     }
 
     func testGutterWidthUpdatesWhenLineCountCrossesThreshold() throws {
@@ -65,12 +65,12 @@ final class EditorCoreSkiaViewGutterWidthTests: XCTestCase {
         window.makeKeyAndOrderFront(nil)
         view.layoutSubtreeIfNeeded()
 
-        XCTAssertEqual(try view.editor.gutterWidthCells(), 4)
+        XCTAssertEqual(try view.editor.gutterWidthCells(), 5)
 
-        // Add a trailing newline => 1000 lines => gutter should expand to 5 cells.
+        // Add a trailing newline => 1000 lines => gutter should expand to 6 cells.
         try view.editor.moveToDocumentEnd()
         view.doCommand(by: #selector(NSResponder.insertNewline(_:)))
 
-        XCTAssertEqual(try view.editor.gutterWidthCells(), 5)
+        XCTAssertEqual(try view.editor.gutterWidthCells(), 6)
     }
 }

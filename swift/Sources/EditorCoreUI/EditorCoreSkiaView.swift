@@ -502,7 +502,8 @@ public final class EditorCoreSkiaView: MTKView {
     /// 根据逻辑行数计算需要的 gutter 宽度（cell）。
     ///
     /// 说明：
-    /// - renderer 会在 gutter 的第 1 个 cell 预留给 fold marker，因此行号至少需要 `1 + digits`。
+    /// - renderer 会在 gutter 的前 2 个 cell 预留给 fold marker（更接近 VSCode 的 glyph margin 宽度），
+    ///   因此行号至少需要 `2 + digits`。
     /// - `EditorCoreSkiaView` 当前的 `cellWidthPx` 是“固定网格”近似值（并非严格基于 font metrics），
     ///   当行号位数变大时，Skia 的字形 advance 误差会累积，导致行号靠近分隔线时出现轻微裁切/重叠。
     ///   因此从 5 位数（>= 10K 行）开始，我们额外预留 1 个 padding cell。
@@ -510,7 +511,8 @@ public final class EditorCoreSkiaView: MTKView {
         let maxLineNo = max(1, lineCount)
         let digits = UInt32(String(maxLineNo).count)
         let extraPadding: UInt32 = digits >= 5 ? 1 : 0
-        return max(4, 1 + digits + extraPadding)
+        let foldMarkerCells: UInt32 = 2
+        return max(4, foldMarkerCells + digits + extraPadding)
     }
 
     private func documentTextForInputQueries() -> String? {

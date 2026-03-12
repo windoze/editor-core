@@ -10,7 +10,6 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
     private var preferencesWindowController: AttoPreferencesWindowController?
 
     private let library = EditorCoreUIFFILibrary()
-    private let theme = EditorCoreSkiaTheme.demoRustLspDark()
     private let sessionManager = AttoSessionManager()
 
     private var windows: [AttoWindowContext] = []
@@ -303,7 +302,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyEditorPreferencesToAllWindows() {
+        let registry = AttoThemeManager.loadRegistry()
+        let effectiveThemeName = AttoPreferences.shared.effectiveThemeName
+        let resolved = AttoThemeManager.resolveSkiaTheme(themeName: effectiveThemeName, registry: registry)
+
         for ctx in windows {
+            ctx.editorAreaController.applyTheme(resolved.theme)
             ctx.editorAreaController.applyEditorPreferences()
         }
     }
@@ -516,9 +520,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         centerOnShow: Bool = true
     ) -> AttoWindowContext {
         let referenceWindow: NSWindow? = activeWindow()?.window ?? windows.last?.window
+
+        let registry = AttoThemeManager.loadRegistry()
+        let effectiveThemeName = AttoPreferences.shared.effectiveThemeName
+        let resolved = AttoThemeManager.resolveSkiaTheme(themeName: effectiveThemeName, registry: registry)
+
         let ctx = AttoWindowContext(
             library: library,
-            theme: theme,
+            theme: resolved.theme,
             workspaceRootURL: workspaceRootURL,
             contentSize: contentSize
         )

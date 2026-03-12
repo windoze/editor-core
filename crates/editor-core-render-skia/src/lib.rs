@@ -13,7 +13,7 @@ use skia_safe::shaper::run_handler::{Buffer, RunInfo};
 use skia_safe::shaper::{Feature, RunHandler};
 use skia_safe::{
     AlphaType, Color, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle, FourByteTag,
-    GlyphId, ImageInfo, Paint, Path, PathBuilder, Point, Rect, surfaces,
+    GlyphId, ImageInfo, Paint, Point, Rect, surfaces,
 };
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ffi::c_void;
@@ -80,9 +80,9 @@ pub enum FoldMarkerStyle {
     /// Do not draw fold markers (folding can still exist, but the gutter indicator is hidden).
     Hidden,
     /// Fill the whole fold-marker cell with the configured color (legacy behavior).
-    #[default]
     Block,
-    /// Draw a VSCode-like triangle indicator.
+    /// Draw a VSCode-like arrow indicator.
+    #[default]
     Triangle,
 }
 
@@ -1146,10 +1146,11 @@ impl SkiaRenderer {
                     } else {
                         FOLD_MARKER_EXPANDED_STYLE_ID
                     };
+                    let marker_cells = fold_marker_column_cells(&config);
                     let rect = Rect::from_xywh(
                         gutter_x,
                         y_top,
-                        config.cell_width_px,
+                        config.cell_width_px * marker_cells as f32,
                         config.line_height_px,
                     );
                     draw_fold_marker(
@@ -1170,7 +1171,8 @@ impl SkiaRenderer {
                 paint.set_color(rgba_to_skia_color(gutter_fg));
 
                 let line_no = (line.logical_line_index + 1).to_string();
-                let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
+                let marker_cells = fold_marker_column_cells(&config);
+                let x_px = gutter_x + config.cell_width_px * marker_cells as f32; // leave cells for fold marker
                 canvas.draw_str(
                     line_no,
                     Point::new(x_px, baseline_y),
@@ -1768,10 +1770,11 @@ impl SkiaRenderer {
                     } else {
                         FOLD_MARKER_EXPANDED_STYLE_ID
                     };
+                    let marker_cells = fold_marker_column_cells(&config);
                     let rect = Rect::from_xywh(
                         gutter_x,
                         y_top,
-                        config.cell_width_px,
+                        config.cell_width_px * marker_cells as f32,
                         config.line_height_px,
                     );
                     draw_fold_marker(
@@ -1792,7 +1795,8 @@ impl SkiaRenderer {
                 paint.set_color(rgba_to_skia_color(gutter_fg));
 
                 let line_no = (logical_line + 1).to_string();
-                let x_px = gutter_x + config.cell_width_px; // leave first cell for fold marker
+                let marker_cells = fold_marker_column_cells(&config);
+                let x_px = gutter_x + config.cell_width_px * marker_cells as f32; // leave cells for fold marker
                 canvas.draw_str(
                     line_no,
                     Point::new(x_px, baseline_y),
@@ -2724,30 +2728,70 @@ fn draw_fold_marker(
         FoldMarkerStyle::Triangle => {
             let cx = rect.left + rect.width() * 0.5;
             let cy = rect.top + rect.height() * 0.5;
-            let size = rect.width().min(rect.height()) * 0.60;
-            let half = size * 0.5;
+            let min_dim = rect.width().min(rect.height());
 
-            let mut pb = PathBuilder::new();
-            if is_collapsed {
-                // ▶
-                pb.move_to(Point::new(cx - half * 0.75, cy - half));
-                pb.line_to(Point::new(cx - half * 0.75, cy + half));
-                pb.line_to(Point::new(cx + half * 0.85, cy));
-            } else {
-                // ▼
-                pb.move_to(Point::new(cx - half, cy - half * 0.70));
-                pb.line_to(Point::new(cx + half, cy - half * 0.70));
-                pb.line_to(Point::new(cx, cy + half * 0.85));
-            }
-            pb.close();
-            let path: Path = pb.into();
-
+            // VSCode uses chevron icons (not filled triangles). We approximate them with stroked lines:
+            // collapsed:  >
+            // expanded:   v
+            //
+            // Match VSCode’s feel: relatively thin stroke + right-angle vertex (45° arms).
+            let stroke = (min_dim * 0.10).clamp(1.0, 2.0);
             let mut paint = Paint::default();
             paint.set_anti_alias(true);
             paint.set_color(rgba_to_skia_color(color));
-            canvas.draw_path(&path, &paint);
+            paint.set_style(skia_safe::paint::Style::Stroke);
+            paint.set_stroke_width(stroke);
+
+            // Keep the chevron comfortably inside the cell; VSCode icons do not touch the bounds.
+            let pad = (min_dim * 0.20).clamp(1.0, 4.0);
+            let left = rect.left + pad;
+            let right = rect.right - pad;
+            let top = rect.top + pad;
+            let bottom = rect.bottom - pad;
+
+            if right <= left || bottom <= top {
+                return;
+            }
+
+            let avail_w = right - left;
+            let avail_h = bottom - top;
+
+            if is_collapsed {
+                // Right-pointing chevron with a 90° vertex:
+                //   (x, y-Δ)  \
+                //             >  (tip)
+                //   (x, y+Δ)  /
+                let max_arm = (avail_h * 0.5).min(avail_w);
+                let arm = (max_arm * 0.92).max(2.0);
+
+                let tip = Point::new(cx + arm * 0.5, cy);
+                let start_x = tip.x - arm;
+                canvas.draw_line(Point::new(start_x, tip.y - arm), tip, &paint);
+                canvas.draw_line(Point::new(start_x, tip.y + arm), tip, &paint);
+            } else {
+                // Down-pointing chevron with a 90° vertex:
+                //   (x-Δ, y)  \
+                //             v  (tip)
+                //   (x+Δ, y)  /
+                let max_arm = (avail_w * 0.5).min(avail_h);
+                let arm = (max_arm * 0.92).max(2.0);
+
+                let tip = Point::new(cx, cy + arm * 0.5);
+                let start_y = tip.y - arm;
+                canvas.draw_line(Point::new(tip.x - arm, start_y), tip, &paint);
+                canvas.draw_line(Point::new(tip.x + arm, start_y), tip, &paint);
+            }
         }
     }
+}
+
+fn fold_marker_column_cells(config: &RenderConfig) -> u32 {
+    // VSCode has a dedicated glyph margin that is visually wider than a single text cell.
+    // Reserve up to 2 cells for fold markers so the chevron matches VSCode’s perceived size.
+    //
+    // Keep a safe clamp so hosts that set a very small gutter width don't push line numbers
+    // outside the gutter area.
+    config.gutter_width_cells.min(2).max(1)
 }
 
 fn cell_overlaps_selection_for_row(
@@ -3207,6 +3251,11 @@ mod tests {
         assert_eq!(normalize_font_family_name("Menlo"), "Menlo");
         assert_eq!(normalize_font_family_name(" \"Menlo\" "), "Menlo");
         assert_eq!(normalize_font_family_name("'Menlo'"), "Menlo");
+    }
+
+    #[test]
+    fn fold_marker_style_default_is_vscode_arrows() {
+        assert_eq!(FoldMarkerStyle::default(), FoldMarkerStyle::Triangle);
     }
 
     #[test]
@@ -4490,7 +4539,10 @@ mod tests {
             padding_x_px: 0.0,
             padding_y_px: 0.0,
             scroll_y_px: 0.0,
-            gutter_width_cells: 2,
+            // Keep space for a 2-cell fold marker column + some line numbers.
+            gutter_width_cells: 4,
+            // Keep pixel assertions deterministic (chevrons are anti-aliased).
+            fold_marker_style: FoldMarkerStyle::Block,
             enable_ligatures: false,
             caret_width_px: 2.0,
             show_caret: true,
@@ -4513,16 +4565,16 @@ mod tests {
             .render_rgba(&grid, &carets, &selections, &fold_markers, cfg, &theme)
             .unwrap();
 
-        // Fold marker fills first cell of the gutter (x in [0..10]).
+        // Fold marker fills first part of the gutter.
         assert_eq!(pixel(&rgba, cfg.width_px, 5, 10), [9, 9, 9, 255]);
-        // Gutter background fills remaining gutter area (x in [10..20]).
-        assert_eq!(pixel(&rgba, cfg.width_px, 15, 10), [1, 2, 3, 255]);
+        // Gutter background fills remaining gutter area.
+        assert_eq!(pixel(&rgba, cfg.width_px, 25, 10), [1, 2, 3, 255]);
 
-        // Selection should be offset by the gutter (text starts at x=20).
-        assert_eq!(pixel(&rgba, cfg.width_px, 25, 10), [200, 0, 0, 255]);
+        // Selection should be offset by the gutter (text starts at x=40).
+        assert_eq!(pixel(&rgba, cfg.width_px, 45, 10), [200, 0, 0, 255]);
 
-        // Caret at x_cells=2 => x = 20 + 2*10 = 40.
-        assert_eq!(pixel(&rgba, cfg.width_px, 40, 10), [0, 0, 200, 255]);
+        // Caret at x_cells=2 => x = 40 + 2*10 = 60.
+        assert_eq!(pixel(&rgba, cfg.width_px, 60, 10), [0, 0, 200, 255]);
     }
 
     #[test]

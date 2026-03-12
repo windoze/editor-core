@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "name": "Atto Dark",
+  "appearance": "dark",
+  "editor": {
+    "background": "#1E1E1EFF",
+    "foreground": "#D4D4D4FF",
+    "selection_background": "#264F78FF",
+    "caret": "#AEAFADFF"
+  },
+  "chrome": {
+    "gutter_background": "#252526FF",
+    "gutter_foreground": "#858585FF",
+    "gutter_separator": "#333333FF",
+    "fold_marker_collapsed": "#6B6B6BFF",
+    "fold_marker_expanded": "#A0A0A0FF",
+    "minimap_background": null,
+    "scrollbar_background": null,
+    "scrollbar_foreground": null
+  },
+  "style_overrides": [
+    {
+      "style": { "builtin": "inlayHint" },
+      "foreground": "#9AA0A6FF",
+      "background": "#2A2A2AFF",
+      "italic": true
+    },
+    {
+      "style": { "builtin": "codeLens" },
+      "foreground": "#8A8A8AFF",
+      "background": "#222222FF",
+      "italic": true
+    },
+    {
+      "style": { "builtin": "documentLink" },
+      "foreground": "#4FC1FFFF",
+      "underline": "double"
+    },
+    {
+      "style": { "builtin": "commandHoverLink" },
+      "underline": "single"
+    },
+    {
+      "style": { "builtin": "matchHighlight" },
+      "background": "#514400FF"
+    },
+    {
+      "style": { "builtin": "foldPlaceholder" },
+      "foreground": "#808080FF"
+    },
+    {
+      "style": { "builtin": "imeMarkedText" },
+      "underline": "single",
+      "underline_color": "#C586C0FF"
+    },
+
+    { "style": { "style_id": "0x04000101" }, "underline": "squiggly", "underline_color": "#F44747FF" },
+    { "style": { "style_id": "0x04000102" }, "underline": "squiggly", "underline_color": "#FFC107FF" },
+    { "style": { "style_id": "0x04000103" }, "underline": "squiggly", "underline_color": "#4FC1FFFF" },
+    { "style": { "style_id": "0x04000104" }, "underline": "squiggly", "underline_color": "#9AA0A6FF" },
+
+    { "style": { "lsp_semantic": { "token_type": "keyword" } }, "foreground": "#C586C0FF", "bold": true },
+    { "style": { "lsp_semantic": { "token_type": "comment" } }, "foreground": "#6A9955FF", "italic": true },
+    { "style": { "lsp_semantic": { "token_type": "string" } }, "foreground": "#CE9178FF" },
+    { "style": { "lsp_semantic": { "token_type": "number" } }, "foreground": "#B5CEA8FF" },
+    { "style": { "lsp_semantic": { "token_type": "type" } }, "foreground": "#4EC9B0FF" },
+    { "style": { "lsp_semantic": { "token_type": "function" } }, "foreground": "#DCDCAAFF" },
+    { "style": { "lsp_semantic": { "token_type": "method" } }, "foreground": "#DCDCAAFF" },
+    { "style": { "lsp_semantic": { "token_type": "macro" } }, "foreground": "#C586C0FF", "bold": true },
+    { "style": { "lsp_semantic": { "token_type": "variable" } }, "foreground": "#9CDCFEFF" },
+    { "style": { "lsp_semantic": { "token_type": "parameter" } }, "foreground": "#9CDCFEFF" },
+    { "style": { "lsp_semantic": { "token_type": "property" } }, "foreground": "#9CDCFEFF" },
+    { "style": { "lsp_semantic": { "token_type": "namespace" } }, "foreground": "#4EC9B0FF" },
+
+    { "style": { "lsp_semantic": { "token_type": "variable", "modifiers": ["readonly"] } }, "foreground": "#9CDCFEFF", "underline": "single" },
+    { "style": { "lsp_semantic": { "token_type": "variable", "modifiers": ["deprecated"] } }, "foreground": "#9CDCFEFF", "strikethrough": true, "strikethrough_color": "#F44747FF" }
+  ],
+  "tree_sitter_capture_overrides": [
+    { "capture": "comment", "foreground": "#6A9955FF", "italic": true },
+    { "capture": "keyword", "foreground": "#C586C0FF", "bold": true },
+    { "capture": "string", "foreground": "#CE9178FF" },
+    { "capture": "string.escape", "foreground": "#D7BA7DFF" },
+    { "capture": "number", "foreground": "#B5CEA8FF" },
+    { "capture": "type", "foreground": "#4EC9B0FF" },
+    { "capture": "type.builtin", "foreground": "#4EC9B0FF", "italic": true },
+    { "capture": "function", "foreground": "#DCDCAAFF" },
+    { "capture": "function.method", "foreground": "#DCDCAAFF" },
+    { "capture": "property", "foreground": "#9CDCFEFF" },
+    { "capture": "variable.builtin", "foreground": "#569CD6FF", "italic": true },
+    { "capture": "operator", "foreground": "#D4D4D4FF" },
+    { "capture": "punctuation.delimiter", "foreground": "#D4D4D4FF" },
+    { "capture": "punctuation.special", "foreground": "#D7BA7DFF" },
+    { "capture": "text.uri", "foreground": "#4FC1FFFF", "underline": "single", "underline_color": "#4FC1FFFF" }
+  ]
+}
+

@@ -71,5 +71,42 @@ final class AttoPreferencesTests: XCTestCase {
         let got = AttoPreferences.parseMultilineFontFaces(prefs.fontFacesMultilineTextForUI())
         XCTAssertEqual(got, expected)
     }
-}
 
+    func testEffectiveThemeNameUsesDefaultWhenUnset() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        let prefs = AttoPreferences(defaults: defaults, env: [:])
+        XCTAssertNil(prefs.storedThemeName)
+        XCTAssertEqual(prefs.effectiveThemeName, AttoThemeManager.defaultThemeName)
+    }
+
+    func testEffectiveThemeNameUsesEnvWhenUnset() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        let prefs = AttoPreferences(defaults: defaults, env: ["ATTO_EDITOR_THEME": "Atto Light"])
+        XCTAssertNil(prefs.storedThemeName)
+        XCTAssertEqual(prefs.effectiveThemeName, "Atto Light")
+    }
+
+    func testEffectiveThemeNameUsesStoredValueWhenPresent() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        let prefs = AttoPreferences(defaults: defaults, env: ["ATTO_EDITOR_THEME": "Atto Light"])
+        prefs.setThemeName("Atto Dark")
+
+        XCTAssertEqual(prefs.storedThemeName, "Atto Dark")
+        XCTAssertEqual(prefs.effectiveThemeName, "Atto Dark")
+    }
+
+    func testSetThemeNameNilClearsStoredValue() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        let prefs = AttoPreferences(defaults: defaults, env: [:])
+        prefs.setThemeName("Atto Light")
+        XCTAssertEqual(prefs.storedThemeName, "Atto Light")
+
+        prefs.setThemeName(nil)
+        XCTAssertNil(prefs.storedThemeName)
+        XCTAssertEqual(prefs.effectiveThemeName, AttoThemeManager.defaultThemeName)
+    }
+}

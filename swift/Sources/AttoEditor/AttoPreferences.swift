@@ -18,6 +18,7 @@ final class AttoPreferences: NSObject {
         static let fontFaces = "AttoEditor.preferences.fontFaces"
         static let fontSizePoints = "AttoEditor.preferences.fontSizePoints"
         static let ligaturesEnabled = "AttoEditor.preferences.ligaturesEnabled"
+        static let themeName = "AttoEditor.preferences.themeName"
     }
 
     private let defaults: UserDefaults
@@ -51,6 +52,18 @@ final class AttoPreferences: NSObject {
         return (env["ATTO_EDITOR_ENABLE_LIGATURES"] == "1") || (env["EDITOR_CORE_APPKIT_ENABLE_LIGATURES"] == "1")
     }
 
+    var effectiveThemeName: String {
+        if let stored = storedThemeName, stored.isEmpty == false { return stored }
+
+        if let fromEnv = env["ATTO_EDITOR_THEME"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           fromEnv.isEmpty == false
+        {
+            return fromEnv
+        }
+
+        return AttoThemeManager.defaultThemeName
+    }
+
     // MARK: - Stored (explicit user preference)
 
     var storedFontFaces: [String]? {
@@ -66,6 +79,12 @@ final class AttoPreferences: NSObject {
         defaults.object(forKey: Keys.ligaturesEnabled) as? Bool
     }
 
+    var storedThemeName: String? {
+        guard let raw = defaults.string(forKey: Keys.themeName) else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     func setFontFaces(_ faces: [String]) {
         let normalized = Self.normalizeFontFaces(faces)
         defaults.set(normalized, forKey: Keys.fontFaces)
@@ -79,6 +98,16 @@ final class AttoPreferences: NSObject {
 
     func setLigaturesEnabled(_ enabled: Bool) {
         defaults.set(enabled, forKey: Keys.ligaturesEnabled)
+        postDidChange()
+    }
+
+    func setThemeName(_ name: String?) {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmed, trimmed.isEmpty == false {
+            defaults.set(trimmed, forKey: Keys.themeName)
+        } else {
+            defaults.removeObject(forKey: Keys.themeName)
+        }
         postDidChange()
     }
 

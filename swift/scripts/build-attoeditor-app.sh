@@ -84,4 +84,20 @@ if [[ -f "${ICON_SRC}" ]]; then
   cp -f "${ICON_SRC}" "${CONTENTS}/Resources/AppIcon.icns"
 fi
 
+# SwiftPM resources: copy target resource bundles so `Bundle.module` works in the packaged .app.
+#
+# Notes:
+# - SwiftPM emits one `.bundle` per target that has resources.
+# - Bundle names are not part of a strict public API, so we copy any bundle that matches `*AttoEditor*.bundle`.
+#
+# This is required for AttoEditor built-in themes shipped as JSON resources.
+mapfile -t RESOURCE_BUNDLES < <(find "${BIN_DIR}" -maxdepth 1 -name "*AttoEditor*.bundle" -print 2>/dev/null || true)
+if [[ ${#RESOURCE_BUNDLES[@]} -gt 0 ]]; then
+  for b in "${RESOURCE_BUNDLES[@]}"; do
+    cp -R "${b}" "${CONTENTS}/Resources/"
+  done
+else
+  echo "warning: 未找到 AttoEditor 资源 bundle（*.bundle）；Bundle.module 资源可能不可用" 1>&2
+fi
+
 echo "已生成：${APP_PATH}"

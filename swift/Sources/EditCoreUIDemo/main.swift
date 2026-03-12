@@ -287,11 +287,29 @@ private final class DemoAppDelegate: NSObject, NSApplicationDelegate {
 
             // Demo: theme system (StyleId -> colors + text decorations).
             //
-            // `demoRustLspDark()` includes:
-            // - semantic token colors (LSP)
-            // - inlay hint / code lens virtual text styling
-            // - diagnostics squiggly underline
-            let theme = EditorCoreSkiaTheme.demoRustLspDark()
+            // - Default: use a built-in Swift theme (`demoRustLspDark()`).
+            // - Optional: load a JSON theme file from disk via `EDITOR_CORE_APPKIT_THEME_JSON=/path/to/theme.json`.
+            let theme: EditorCoreSkiaTheme = {
+                if let path = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_THEME_JSON"]?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                    path.isEmpty == false
+                {
+                    let url = URL(fileURLWithPath: path)
+                    do {
+                        let def = try EditorCoreThemeLoader.loadTheme(from: url)
+                        NSLog("EditCoreUIDemo: using theme %@ (from %@)", def.name, url.path)
+                        return def.skiaTheme
+                    } catch {
+                        NSLog("EditCoreUIDemo: failed to load theme JSON %@: %@", url.path, String(describing: error))
+                    }
+                }
+
+                // `demoRustLspDark()` includes:
+                // - semantic token colors (LSP)
+                // - inlay hint / code lens virtual text styling
+                // - diagnostics squiggly underline
+                return EditorCoreSkiaTheme.demoRustLspDark()
+            }()
             try editCore.applyTheme(theme)
             // Demo: show whitespace (selection-only) + indent guides by default for easier theme/renderer validation.
             try editCore.editor.setWhitespaceRenderMode(.selection)

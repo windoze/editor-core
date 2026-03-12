@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "name": "Atto Light",
+  "appearance": "light",
+  "editor": {
+    "background": "#FFFFFFFF",
+    "foreground": "#111111FF",
+    "selection_background": "#C7DDFFFF",
+    "caret": "#111111FF"
+  },
+  "chrome": {
+    "gutter_background": "#F5F5F5FF",
+    "gutter_foreground": "#888888FF",
+    "gutter_separator": "#DDDDDDFF",
+    "fold_marker_collapsed": "#777777FF",
+    "fold_marker_expanded": "#AAAAAAFF",
+    "minimap_background": null,
+    "scrollbar_background": null,
+    "scrollbar_foreground": null
+  },
+  "style_overrides": [
+    {
+      "style": { "builtin": "commandHoverLink" },
+      "underline": "single"
+    },
+    {
+      "style": { "builtin": "documentLink" },
+      "foreground": "#0066CCFF",
+      "underline": "single"
+    },
+    {
+      "style": { "builtin": "matchHighlight" },
+      "background": "#FFE28AFF"
+    }
+  ],
+  "tree_sitter_capture_overrides": [
+    { "capture": "comment", "foreground": "#008000FF", "italic": true },
+    { "capture": "keyword", "foreground": "#AF00DBFF" },
+    { "capture": "string", "foreground": "#A31515FF" },
+    { "capture": "string.escape", "foreground": "#816B00FF" },
+    { "capture": "number", "foreground": "#098658FF" },
+    { "capture": "type", "foreground": "#267F99FF" },
+    { "capture": "function", "foreground": "#795E26FF" },
+    { "capture": "property", "foreground": "#001080FF" },
+    { "capture": "operator", "foreground": "#111111FF" },
+    { "capture": "punctuation.delimiter", "foreground": "#111111FF" },
+    { "capture": "punctuation.special", "foreground": "#816B00FF" },
+    { "capture": "text.uri", "foreground": "#0066CCFF", "underline": "single", "underline_color": "#0066CCFF" }
+  ]
+}
+

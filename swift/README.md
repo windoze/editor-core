@@ -86,6 +86,35 @@ open .build/app-dist/AttoEditor.app
 占位图标位于 `Sources/AttoEditor/AppBundle/AppIcon.icns`（可直接替换）。
 `CFBundleIdentifier` 固定为 `codes.unwritten.attoeditor`（见 `Sources/AttoEditor/AppBundle/Info.plist`）。
 
+## 主题（Themes）
+
+AttoEditor 支持通过 **JSON 主题文件**把 `StyleId` 映射为颜色与字体样式（bold/italic/underline/strikethrough）。
+
+### 内置主题
+
+内置主题随 app 一起分发（SwiftPM resources）：
+
+- `Sources/AttoEditor/Resources/Themes/atto-dark.json`（`name = "Atto Dark"`）
+- `Sources/AttoEditor/Resources/Themes/atto-light.json`（`name = "Atto Light"`）
+
+### 自定义主题
+
+自定义主题放在用户的 Application Support 目录（可在 Preferences 里一键打开）：
+
+- `~/Library/Application Support/codes.unwritten.attoeditor/themes/*.json`
+
+规则：
+
+- 每个主题必须有唯一 `name`。
+- 若自定义主题与内置主题同名，则 **自定义覆盖内置**。
+
+### 当前主题设置
+
+- 偏好设置（持久化）：AttoEditor Preferences -> Editor -> Theme
+- 环境变量（可选，作为 fallback）：`ATTO_EDITOR_THEME=Atto Dark`
+
+JSON schema 与实现规划见：`swift/theme.md`
+
 ## 运行测试
 
 ```bash

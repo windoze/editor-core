@@ -19,7 +19,7 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private let library: EditorCoreUIFFILibrary
-    private let theme: EditorCoreSkiaTheme
+    private var theme: EditorCoreSkiaTheme
     private var workspaceRootURL: URL
 
     private var tabs: [AttoEditorTab] = []
@@ -81,7 +81,7 @@ final class AttoEditorAreaViewController: NSViewController {
     override func loadView() {
         view = NSView(frame: .zero)
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor(attoHex: 0x1E1E1E).cgColor
+        view.layer?.backgroundColor = NSColor(ecuRgba8: theme.editorBackground).cgColor
     }
 
     override func viewDidLoad() {
@@ -124,7 +124,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         contentHostView.translatesAutoresizingMaskIntoConstraints = false
         contentHostView.wantsLayer = true
-        contentHostView.layer?.backgroundColor = NSColor(attoHex: 0x1E1E1E).cgColor
+        contentHostView.layer?.backgroundColor = NSColor(ecuRgba8: theme.editorBackground).cgColor
 
         emptyStateLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         emptyStateLabel.textColor = NSColor(attoHex: 0x8A8A8A)
@@ -246,6 +246,24 @@ final class AttoEditorAreaViewController: NSViewController {
 
             tab.editCore.editorView.fontSizePoints = CGFloat(fontSizePoints)
             tab.editCore.editorView.needsDisplay = true
+        }
+    }
+
+    func applyTheme(_ theme: EditorCoreSkiaTheme) {
+        self.theme = theme
+
+        if isViewLoaded {
+            let bg = NSColor(ecuRgba8: theme.editorBackground).cgColor
+            view.layer?.backgroundColor = bg
+            contentHostView.layer?.backgroundColor = bg
+        }
+
+        for tab in tabs {
+            do {
+                try tab.editCore.applyTheme(theme)
+            } catch {
+                NSLog("AttoEditor: applyTheme failed: %@", String(describing: error))
+            }
         }
     }
 
@@ -1747,6 +1765,14 @@ private extension NSColor {
         let g = CGFloat((attoHex >> 8) & 0xFF) / 255.0
         let b = CGFloat(attoHex & 0xFF) / 255.0
         self.init(red: r, green: g, blue: b, alpha: alpha)
+    }
+
+    convenience init(ecuRgba8 c: EcuRgba8) {
+        let r = CGFloat(c.r) / 255.0
+        let g = CGFloat(c.g) / 255.0
+        let b = CGFloat(c.b) / 255.0
+        let a = CGFloat(c.a) / 255.0
+        self.init(red: r, green: g, blue: b, alpha: a)
     }
 }
 

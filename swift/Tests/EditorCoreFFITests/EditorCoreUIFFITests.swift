@@ -973,7 +973,10 @@ final class EditorCoreUIFFITests: XCTestCase {
         try setTestTreeSitterRegistry(ui)
         try ui.treeSitterEnableLanguage("rust")
         try waitForAsyncProcessing(ui)
-        try ui.setGutterWidthCells(2)
+        // Ensure there is space for both the fold-marker column (2 cells) and line numbers.
+        try ui.setGutterWidthCells(4)
+        // Use block style to keep pixel assertions deterministic (chevrons are anti-aliased).
+        try ui.setFoldMarkerStyle(.block)
 
         // Reserved overlay style ids (see `editor-core-render-skia`).
         let gutterBg: UInt32 = 0x0600_0001
@@ -992,7 +995,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         var rgba: [UInt8] = []
         _ = try ui.renderRGBA(into: &rgba)
         XCTAssertEqual(pixel(rgba, widthPx: 200, x: 5, y: 10), [9, 9, 9, 255])
-        XCTAssertEqual(pixel(rgba, widthPx: 200, x: 19, y: 10), [1, 2, 3, 255])
+        XCTAssertEqual(pixel(rgba, widthPx: 200, x: 25, y: 10), [1, 2, 3, 255])
 
         // Click in gutter to toggle fold.
         try ui.mouseDown(xPx: 5, yPx: 10)

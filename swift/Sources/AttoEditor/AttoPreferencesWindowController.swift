@@ -1,4 +1,5 @@
 import AppKit
+import EditorCoreUI
 import Foundation
 
 private enum AttoPreferencesPage: Int, CaseIterable {
@@ -246,6 +247,14 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
     private let fontFacesHelpLabel = NSTextField(labelWithString: "One family per line. Top to bottom is the fallback order.")
     private let fontFacesResetButton = NSButton(title: "Use System Default", target: nil, action: nil)
 
+    private let themePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let themeHelpLabel = NSTextField(labelWithString: "Builtin themes ship with the app. Custom themes are loaded from Application Support.")
+    private let themeResetButton = NSButton(title: "Use Default Theme", target: nil, action: nil)
+    private let themeReloadButton = NSButton(title: "Reload Themes", target: nil, action: nil)
+    private let themeOpenFolderButton = NSButton(title: "Open Themes Folder", target: nil, action: nil)
+
+    private var cachedThemeEntries: [EditorCoreThemeRegistry.Entry] = []
+
     private let fontSizeField = NSTextField(string: "")
     private let fontSizeStepper = NSStepper(frame: .zero)
 
@@ -278,6 +287,40 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         title.font = NSFont.systemFont(ofSize: 20, weight: .semibold)
         title.translatesAutoresizingMaskIntoConstraints = false
         stack.addArrangedSubview(title)
+
+        // Theme
+        let themeLabel = NSTextField(labelWithString: "Theme")
+        themeLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        stack.addArrangedSubview(themeLabel)
+
+        themeHelpLabel.textColor = .secondaryLabelColor
+        themeHelpLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        themeHelpLabel.maximumNumberOfLines = 2
+        stack.addArrangedSubview(themeHelpLabel)
+
+        themePopUp.translatesAutoresizingMaskIntoConstraints = false
+        themePopUp.target = self
+        themePopUp.action = #selector(themePopUpChanged(_:))
+        themePopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+        stack.addArrangedSubview(themePopUp)
+
+        themeResetButton.target = self
+        themeResetButton.action = #selector(themeResetClicked(_:))
+        themeResetButton.bezelStyle = .rounded
+
+        themeReloadButton.target = self
+        themeReloadButton.action = #selector(themeReloadClicked(_:))
+        themeReloadButton.bezelStyle = .rounded
+
+        themeOpenFolderButton.target = self
+        themeOpenFolderButton.action = #selector(themeOpenFolderClicked(_:))
+        themeOpenFolderButton.bezelStyle = .rounded
+
+        let themeButtons = NSStackView(views: [themeResetButton, themeReloadButton, themeOpenFolderButton])
+        themeButtons.orientation = .horizontal
+        themeButtons.spacing = 10
+        themeButtons.alignment = .centerY
+        stack.addArrangedSubview(themeButtons)
 
         // Font faces
         let fontFacesLabel = NSTextField(labelWithString: "Font faces")
@@ -360,6 +403,7 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
             stack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -20),
         ])
 
+        reloadThemeMenu()
         reloadFromModel()
 
         NotificationCenter.default.addObserver(
@@ -377,6 +421,8 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
     private func reloadFromModel() {
         isUpdatingFromModel = true
         defer { isUpdatingFromModel = false }
+
+        reloadThemeSelectionFromModel()
 
         // Avoid clobbering the user's selection/caret while they type: reloading `string`
         // resets selection (often to EOF) and makes `Enter` look broken because the model
@@ -396,6 +442,33 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
     @objc private func preferencesDidChange(_ notification: Notification) {
         reloadFromModel()
+    }
+
+    @objc private func themePopUpChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        let idx = themePopUp.indexOfSelectedItem
+        guard idx >= 0 else { return }
+        let name = themePopUp.item(at: idx)?.representedObject as? String
+        prefs.setThemeName(name)
+    }
+
+    @objc private func themeResetClicked(_ sender: Any?) {
+        prefs.setThemeName(nil)
+    }
+
+    @objc private func themeReloadClicked(_ sender: Any?) {
+        reloadThemeMenu()
+    }
+
+    @objc private func themeOpenFolderClicked(_ sender: Any?) {
+        let fm = FileManager.default
+        let dir = AttoThemeManager.customThemesDirectoryURL(fileManager: fm)
+        do {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            NSLog("AttoEditor: failed to create themes directory %@: %@", dir.path, String(describing: error))
+        }
+        NSWorkspace.shared.open(dir)
     }
 
     @objc private func fontFacesResetClicked(_ sender: Any?) {
@@ -430,5 +503,56 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
         let v = Double(field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) ?? prefs.effectiveFontSizePoints
         prefs.setFontSizePoints(v)
+    }
+
+    // MARK: - Theme menu
+
+    private func reloadThemeMenu() {
+        let registry = AttoThemeManager.loadRegistry()
+        cachedThemeEntries = registry.allEntriesSortedByName()
+
+        themePopUp.removeAllItems()
+
+        if cachedThemeEntries.isEmpty {
+            themePopUp.addItem(withTitle: "No themes found")
+            themePopUp.isEnabled = false
+        } else {
+            themePopUp.isEnabled = true
+            for entry in cachedThemeEntries {
+                let sourceSuffix: String = {
+                    switch entry.source {
+                    case .builtin: return " (Builtin)"
+                    case .custom: return " (Custom)"
+                    }
+                }()
+                themePopUp.addItem(withTitle: entry.theme.name + sourceSuffix)
+                themePopUp.item(at: themePopUp.numberOfItems - 1)?.representedObject = entry.theme.name
+            }
+        }
+
+        reloadThemeSelectionFromModel()
+    }
+
+    private func reloadThemeSelectionFromModel() {
+        let effectiveName = prefs.effectiveThemeName
+        guard themePopUp.isEnabled else { return }
+
+        if let idx = cachedThemeEntries.firstIndex(where: { entry in
+            EditorCoreThemeRegistry.normalizeThemeNameKey(entry.theme.name)
+                == EditorCoreThemeRegistry.normalizeThemeNameKey(effectiveName)
+        }) {
+            themePopUp.selectItem(at: idx)
+            return
+        }
+
+        // Theme not found (e.g. env var points to a missing theme). Add a temporary “missing” item.
+        if let existing = themePopUp.itemArray.first(where: { ($0.representedObject as? String) == effectiveName }) {
+            themePopUp.select(existing)
+            return
+        }
+
+        themePopUp.addItem(withTitle: "\(effectiveName) (Missing)")
+        themePopUp.item(at: themePopUp.numberOfItems - 1)?.representedObject = effectiveName
+        themePopUp.selectItem(at: themePopUp.numberOfItems - 1)
     }
 }
