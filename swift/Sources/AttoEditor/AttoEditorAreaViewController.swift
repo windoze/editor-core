@@ -327,7 +327,7 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     @discardableResult
-    func openFile(url: URL, mode: OpenMode) -> Bool {
+    func openFile(url: URL, mode: OpenMode, isUntitled: Bool = false) -> Bool {
         if let existing = tabs.first(where: { $0.fileURL.standardizedFileURL == url.standardizedFileURL }) {
             if mode == .pinned, existing.isPreview {
                 existing.isPreview = false
@@ -348,7 +348,7 @@ final class AttoEditorAreaViewController: NSViewController {
                         tabs[previewIdx].isPreview = false
                     } else {
                         let oldURL = tabs[previewIdx].fileURL
-                        let tab = try makeTab(for: url, isPreview: true)
+                        let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
                         tabs[previewIdx] = tab
                         selectTab(id: tab.id)
                         onDidCloseFile?(oldURL)
@@ -357,13 +357,13 @@ final class AttoEditorAreaViewController: NSViewController {
                     }
                 }
 
-                let tab = try makeTab(for: url, isPreview: true)
+                let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
                 tabs.append(tab)
                 selectTab(id: tab.id)
                 notifySessionStateChanged()
 
             case .pinned:
-                let tab = try makeTab(for: url, isPreview: false)
+                let tab = try makeTab(for: url, isPreview: false, isUntitled: isUntitled)
                 tabs.append(tab)
                 selectTab(id: tab.id)
                 notifySessionStateChanged()
@@ -421,7 +421,7 @@ final class AttoEditorAreaViewController: NSViewController {
             NSSound.beep()
             return
         }
-        _ = saveTab(tab)
+        _ = saveTabWithSavePanelIfNeeded(tab)
     }
 
     func confirmClosingDirtyTabsIfNeeded() -> Bool {
@@ -480,6 +480,7 @@ final class AttoEditorAreaViewController: NSViewController {
             let text = try tab.editCore.editor.text()
             try text.write(to: tab.fileURL, atomically: true, encoding: .utf8)
             try tab.editCore.editor.markSaved()
+            tab.isUntitled = false
             tab.isDirty = false
             tab.isPreview = false
             refreshTabBar()
@@ -498,7 +499,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private func saveAllDirtyTabs() -> Bool {
         for tab in tabs {
             if tab.isDirty {
-                if saveTab(tab) == false {
+                if saveTabWithSavePanelIfNeeded(tab) == false {
                     return false
                 }
             }
@@ -514,7 +515,7 @@ final class AttoEditorAreaViewController: NSViewController {
             case .cancel:
                 return
             case .save:
-                guard saveTab(tab) else { return }
+                guard saveTabWithSavePanelIfNeeded(tab) else { return }
             case .dontSave:
                 break
             }
@@ -1092,7 +1093,12 @@ final class AttoEditorAreaViewController: NSViewController {
 
     // MARK: - Tab creation
 
-    private func makeTab(for url: URL, isPreview: Bool, showsMinimap: Bool = true) throws -> AttoEditorTab {
+    private func makeTab(
+        for url: URL,
+        isPreview: Bool,
+        showsMinimap: Bool = true,
+        isUntitled: Bool = false
+    ) throws -> AttoEditorTab {
         let initialText = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
 
         let prefs = AttoPreferences.shared
@@ -1137,6 +1143,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let tab = AttoEditorTab(
             id: tabId,
             fileURL: url,
+            isUntitled: isUntitled,
             isPreview: isPreview,
             isDirty: false,
             syntaxLanguageId: syntaxLanguageId,
@@ -1162,6 +1169,52 @@ final class AttoEditorAreaViewController: NSViewController {
             return (try? tab.editCore.editor.lspIsEnabled()) == true
         }
         return tab
+    }
+
+    // MARK: - Saving helpers
+
+    @discardableResult
+    private func saveTabWithSavePanelIfNeeded(_ tab: AttoEditorTab) -> Bool {
+        guard tab.isUntitled else {
+            return saveTab(tab)
+        }
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.prompt = "Save"
+        panel.message = "Choose where to save this file."
+        panel.directoryURL = workspaceRootURL
+
+        let defaultName = tab.fileURL.lastPathComponent.isEmpty ? "untitled.txt" : tab.fileURL.lastPathComponent
+        panel.nameFieldStringValue = defaultName
+
+        guard panel.runModal() == .OK, let url = panel.url?.standardizedFileURL else {
+            return false
+        }
+
+        if tabs.contains(where: { $0.id != tab.id && $0.fileURL.standardizedFileURL == url }) {
+            NSSound.beep()
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "This file is already open."
+            alert.informativeText = "Please choose a different name or close the other tab first."
+            alert.runModal()
+            return false
+        }
+
+        let oldURL = tab.fileURL
+        tab.fileURL = url
+        if saveTab(tab) {
+            return true
+        }
+
+        // Best-effort rollback if the actual write failed.
+        tab.fileURL = oldURL
+        refreshTabBar()
+        updateWindowTitle()
+        updateStatusBar()
+        notifySessionStateChanged()
+        return false
     }
 
     private func configureSyntaxSupport(for url: URL, editCore: EditCoreUI) -> String? {
@@ -1519,7 +1572,8 @@ final class AttoEditorAreaViewController: NSViewController {
 @MainActor
 private final class AttoEditorTab {
     let id: UUID
-    let fileURL: URL
+    var fileURL: URL
+    var isUntitled: Bool
     var isPreview: Bool
     var isDirty: Bool
     var syntaxLanguageId: String?
@@ -1536,6 +1590,7 @@ private final class AttoEditorTab {
     init(
         id: UUID,
         fileURL: URL,
+        isUntitled: Bool,
         isPreview: Bool,
         isDirty: Bool,
         syntaxLanguageId: String?,
@@ -1543,6 +1598,7 @@ private final class AttoEditorTab {
     ) {
         self.id = id
         self.fileURL = fileURL
+        self.isUntitled = isUntitled
         self.isPreview = isPreview
         self.isDirty = isDirty
         self.syntaxLanguageId = syntaxLanguageId

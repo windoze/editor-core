@@ -167,7 +167,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        _ = ctx.editorAreaController.openFile(url: url, mode: .pinned)
+        _ = ctx.editorAreaController.openFile(url: url, mode: .pinned, isUntitled: true)
     }
 
     private func ensureActiveWindowForMenuActions() -> AttoWindowContext? {
