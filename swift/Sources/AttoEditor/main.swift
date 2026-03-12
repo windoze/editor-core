@@ -106,6 +106,15 @@ private enum AttoEditorMain {
             keyEquivalent: ""
         )
         appMenu.addItem(.separator())
+        let preferences = NSMenuItem(
+            title: "Preferences…",
+            action: #selector(AttoAppDelegate.preferencesMenuClicked(_:)),
+            keyEquivalent: ","
+        )
+        preferences.keyEquivalentModifierMask = [.command]
+        preferences.target = appDelegate
+        appMenu.addItem(preferences)
+        appMenu.addItem(.separator())
         appMenu.addItem(
             withTitle: "Quit AttoEditor",
             action: #selector(NSApplication.terminate(_:)),
@@ -117,6 +126,17 @@ private enum AttoEditorMain {
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
         fileMenuItem.submenu = fileMenu
+
+        let newFile = NSMenuItem(
+            title: "New File",
+            action: #selector(AttoAppDelegate.newFileMenuClicked(_:)),
+            keyEquivalent: "n"
+        )
+        newFile.keyEquivalentModifierMask = [.command]
+        newFile.target = appDelegate
+        fileMenu.addItem(newFile)
+
+        fileMenu.addItem(.separator())
 
         let openFolder = NSMenuItem(
             title: "Open Folder…",

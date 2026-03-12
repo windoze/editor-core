@@ -195,6 +195,25 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
+    // MARK: - Render metrics (font size)
+
+    /// Base font size in points (logical units).
+    ///
+    /// Notes:
+    /// - The value is converted to pixels using the view's backing scale factor.
+    /// - Other render metrics (line height, cell width, padding) scale proportionally to preserve
+    ///   the current default look.
+    public var fontSizePoints: CGFloat = 13.0 {
+        didSet {
+            let normalized = Self.normalizeFontSizePoints(fontSizePoints)
+            if fontSizePoints != normalized {
+                fontSizePoints = normalized
+                return
+            }
+            updateViewportIfNeeded()
+        }
+    }
+
     private var caretBlinkPhaseVisible: Bool = true
     // 注意：`Timer` 不是 `Sendable`，而 `deinit` 是非隔离上下文；
     // 这里用 `nonisolated(unsafe)` 允许在 `deinit` 中把 timer 转交给主线程做 invalidate。
@@ -399,6 +418,14 @@ public final class EditorCoreSkiaView: MTKView {
     private var cachedMarkedRange: (epoch: UInt64, start: UInt32, len: UInt32, value: NSRange)?
 
     private var lineHeightPx: Float = 18
+    private struct RenderMetricsSnapshot: Equatable {
+        let fontSizePx: Float
+        let lineHeightPx: Float
+        let cellWidthPx: Float
+        let paddingPx: Float
+    }
+
+    private var lastAppliedRenderMetrics: RenderMetricsSnapshot?
     /// 当前 gutter 宽度（以 cell 为单位）；用于避免频繁跨 FFI 发送重复的 set 操作。
     private var gutterWidthCells: UInt32 = 4
 
@@ -780,6 +807,54 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
+    private static let defaultFontSizePoints: CGFloat = 13.0
+    private static let defaultLineHeightMultiple: CGFloat = 18.0 / 13.0
+    private static let defaultCellWidthMultiple: CGFloat = 8.0 / 13.0
+    private static let defaultPaddingMultiple: CGFloat = 8.0 / 13.0
+
+    private static func normalizeFontSizePoints(_ v: CGFloat) -> CGFloat {
+        guard v.isFinite else { return defaultFontSizePoints }
+        return min(max(v, 6.0), 72.0)
+    }
+
+    private func applyRenderMetricsIfNeeded(force: Bool) -> Bool {
+        let fontPt = Self.normalizeFontSizePoints(fontSizePoints)
+        let scale = max(1.0, scaleFactor)
+
+        let fontSizePx: Float = Float(fontPt * scale)
+        let lineHeightPx: Float = Float(fontPt * Self.defaultLineHeightMultiple * scale)
+        let cellWidthPx: Float = Float(fontPt * Self.defaultCellWidthMultiple * scale)
+        let paddingPx: Float = Float(fontPt * Self.defaultPaddingMultiple * scale)
+
+        let snapshot = RenderMetricsSnapshot(
+            fontSizePx: fontSizePx,
+            lineHeightPx: lineHeightPx,
+            cellWidthPx: cellWidthPx,
+            paddingPx: paddingPx
+        )
+
+        if force == false, lastAppliedRenderMetrics == snapshot {
+            return false
+        }
+
+        do {
+            try editor.setRenderMetrics(
+                fontSize: fontSizePx,
+                lineHeightPx: lineHeightPx,
+                cellWidthPx: cellWidthPx,
+                paddingXPx: paddingPx,
+                paddingYPx: paddingPx
+            )
+            self.lineHeightPx = lineHeightPx
+            lastAppliedRenderMetrics = snapshot
+            applyTextVerticalAlignIfNeeded(force: false)
+            return true
+        } catch {
+            NSLog("EditorCoreSkiaView setRenderMetrics failed: %@", String(describing: error))
+            return false
+        }
+    }
+
     private func updateViewportIfNeeded() {
         let pointsSize = bounds.size
         let fallbackScale = window?.backingScaleFactor ?? (NSScreen.main?.backingScaleFactor ?? 1)
@@ -825,42 +900,30 @@ public final class EditorCoreSkiaView: MTKView {
             newScale = safeScale
         }
 
-        guard widthPx != viewportWidthPx || heightPx != viewportHeightPx || newScale != scaleFactor else {
-            return
+        let viewportChanged = (widthPx != viewportWidthPx) || (heightPx != viewportHeightPx) || (newScale != scaleFactor)
+        if viewportChanged {
+            viewportWidthPx = widthPx
+            viewportHeightPx = heightPx
+            scaleFactor = newScale
+
+            // MTKView 的 drawableSize 以“像素”为单位；这里保持与 Rust viewport 一致。
+            let newDrawableSize = CGSize(width: CGFloat(widthPx), height: CGFloat(heightPx))
+            if drawableSize != newDrawableSize {
+                drawableSize = newDrawableSize
+            }
         }
 
-        viewportWidthPx = widthPx
-        viewportHeightPx = heightPx
-        scaleFactor = newScale
+        let metricsChanged = applyRenderMetricsIfNeeded(force: false)
 
-        // MTKView 的 drawableSize 以“像素”为单位；这里保持与 Rust viewport 一致。
-        let newDrawableSize = CGSize(width: CGFloat(widthPx), height: CGFloat(heightPx))
-        if drawableSize != newDrawableSize {
-            drawableSize = newDrawableSize
+        if viewportChanged {
+            do {
+                try editor.setViewportPx(widthPx: widthPx, heightPx: heightPx, scale: Float(newScale))
+            } catch {
+                NSLog("EditorCoreSkiaView setViewportPx failed: %@", String(describing: error))
+            }
         }
 
-        // 先用固定等宽网格参数（后续可做更精确 font metrics）
-        let fontSizePx: Float = Float(13.0 * newScale)
-        let lineHeightPx: Float = Float(18.0 * newScale)
-        let cellWidthPx: Float = Float(8.0 * newScale)
-        let paddingPx: Float = Float(8.0 * newScale)
-        self.lineHeightPx = lineHeightPx
-
-        do {
-            try editor.setRenderMetrics(
-                fontSize: fontSizePx,
-                lineHeightPx: lineHeightPx,
-                cellWidthPx: cellWidthPx,
-                paddingXPx: paddingPx,
-                paddingYPx: paddingPx
-            )
-            applyTextVerticalAlignIfNeeded(force: false)
-            try editor.setViewportPx(widthPx: widthPx, heightPx: heightPx, scale: Float(newScale))
-        } catch {
-            NSLog("EditorCoreSkiaView updateViewport failed: %@", String(describing: error))
-        }
-
-        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_SCALE"] == "1" {
+        if viewportChanged, ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_SCALE"] == "1" {
             if didLogScaleDebugOnce == false {
                 didLogScaleDebugOnce = true
                 NSLog(
@@ -874,10 +937,15 @@ public final class EditorCoreSkiaView: MTKView {
             }
         }
 
-        applyCaretAppearanceIfNeeded(force: false)
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
+        if viewportChanged {
+            applyCaretAppearanceIfNeeded(force: false)
+        }
+
+        if viewportChanged || metricsChanged {
+            requestRedraw()
+            invalidateIMECharacterCoordinates()
+            notifyViewportStateDidChange()
+        }
     }
 
     deinit {

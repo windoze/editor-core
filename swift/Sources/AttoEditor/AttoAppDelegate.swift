@@ -7,6 +7,7 @@ import Foundation
 final class AttoAppDelegate: NSObject, NSApplicationDelegate {
     private var commandPaletteController: AttoCommandPaletteController?
     private var quickOpenController: AttoCommandPaletteController?
+    private var preferencesWindowController: AttoPreferencesWindowController?
 
     private let library = EditorCoreUIFFILibrary()
     private let theme = EditorCoreSkiaTheme.demoRustLspDark()
@@ -19,6 +20,13 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
     var createDefaultWindowOnLaunch: Bool = true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(preferencesDidChange(_:)),
+            name: .attoPreferencesDidChange,
+            object: nil
+        )
+
         let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
             ?? CGRect(origin: .zero, size: AttoWindowSizing.preferredContentSize)
         let contentSize = AttoWindowSizing.defaultContentSize(forVisibleFrame: visibleFrame)
@@ -78,6 +86,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
 
         // Remove system window-tabbing menu items (e.g. "Show Tab Bar") from standard menus.
         removeSystemWindowTabbingMenuItems()
+
+        // Ensure preferences are applied (also covers env-var fallbacks).
+        applyEditorPreferencesToAllWindows()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -130,6 +141,42 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         ctx.fileExplorerController.revealFile(url)
     }
 
+    @objc func newFileMenuClicked(_ sender: Any?) {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+
+        let fm = FileManager.default
+        let dir = ctx.workspaceRootURL.standardizedFileURL
+
+        var n = 1
+        var url: URL
+        while true {
+            url = dir.appendingPathComponent("untitled-\(n).txt", isDirectory: false)
+            if fm.fileExists(atPath: url.path) == false {
+                break
+            }
+            n += 1
+            if n > 9_999 {
+                NSSound.beep()
+                NSLog("AttoEditor: new file name search exhausted under %@", dir.path)
+                return
+            }
+        }
+
+        guard fm.createFile(atPath: url.path, contents: Data(), attributes: nil) else {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to create new file %@", url.path)
+            return
+        }
+
+        // Make sure the new file is discoverable by the sidebar + quick-open.
+        ctx.fileExplorerController.setRootURL(ctx.workspaceRootURL)
+        ctx.fileIndex.rebuild()
+
+        ctx.rememberRecentFile(url)
+        ctx.editorAreaController.openFile(url: url, mode: .pinned)
+        ctx.fileExplorerController.revealFile(url)
+    }
+
     private func ensureActiveWindowForMenuActions() -> AttoWindowContext? {
         if let ctx = activeWindow() { return ctx }
 
@@ -178,6 +225,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         activeWindow()?.showFindInFilesSidebar()
     }
 
+    @objc func preferencesMenuClicked(_ sender: Any?) {
+        showPreferencesWindow()
+    }
+
     // MARK: - Command palette integration
 
     private func showCommandPalette() {
@@ -192,6 +243,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
 
     private func defaultCommands() -> [AttoCommandPaletteCommand] {
         [
+            .init(title: "File: New File") { [weak self] in
+                self?.newFileMenuClicked(nil)
+            },
             .init(title: "File: Open Folder…") { [weak self] in
                 self?.openFolderMenuClicked(nil)
             },
@@ -225,6 +279,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(title: "Search: Find in Files") { [weak self] in
                 self?.activeWindow()?.showFindInFilesSidebar()
             },
+            .init(title: "AttoEditor: Preferences…") { [weak self] in
+                self?.showPreferencesWindow()
+            },
             .init(title: "Go: Back") { [weak self] in
                 self?.activeWindow()?.editorAreaController.jumpBackInActiveTab()
             },
@@ -235,6 +292,27 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
                 self?.activeWindow()?.editorAreaController.moveToMatchingBracketInActiveTab()
             },
         ]
+    }
+
+    // MARK: - Preferences
+
+    @objc private func preferencesDidChange(_ notification: Notification) {
+        applyEditorPreferencesToAllWindows()
+    }
+
+    private func showPreferencesWindow() {
+        if preferencesWindowController == nil {
+            preferencesWindowController = AttoPreferencesWindowController()
+        }
+        preferencesWindowController?.showWindow(nil)
+        preferencesWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    private func applyEditorPreferencesToAllWindows() {
+        for ctx in windows {
+            ctx.editorAreaController.applyEditorPreferences()
+        }
     }
 
     private func quickOpenCommands() -> [AttoCommandPaletteCommand] {

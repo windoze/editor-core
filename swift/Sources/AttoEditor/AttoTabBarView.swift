@@ -18,8 +18,17 @@ final class AttoTabBarView: NSView {
     private let documentContainerView = NSView()
     private let stackView = NSStackView()
     private let trailingSpacerView = NSView()
+    private let overflowButton = NSButton()
+    private var scrollTrailingToSuperviewConstraint: NSLayoutConstraint?
+    private var scrollTrailingToOverflowConstraint: NSLayoutConstraint?
 
     private let bottomBorderLayer = CALayer()
+
+    private var chipByID: [UUID: AttoTabChipView] = [:]
+    private var currentTabs: [Tab] = []
+    private var currentSelectedID: UUID?
+    private var pendingScrollToTabID: UUID?
+    private var lastHasOverflow: Bool?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -60,13 +69,38 @@ final class AttoTabBarView: NSView {
         scrollView.verticalScrollElasticity = .none
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
+        if let image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: "More Tabs")?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
+        {
+            overflowButton.image = image
+        } else {
+            overflowButton.title = "▾"
+        }
+        overflowButton.isBordered = false
+        overflowButton.contentTintColor = NSColor(attoHex: 0xB5B5B5)
+        overflowButton.target = self
+        overflowButton.action = #selector(overflowClicked(_:))
+        overflowButton.toolTip = "Tabs"
+        overflowButton.translatesAutoresizingMaskIntoConstraints = false
+        overflowButton.isHidden = true
+
         addSubview(scrollView)
+        addSubview(overflowButton)
+
         NSLayoutConstraint.activate([
+            overflowButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            overflowButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            overflowButton.widthAnchor.constraint(equalToConstant: 18),
+            overflowButton.heightAnchor.constraint(equalToConstant: 18),
+
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+
+        scrollTrailingToSuperviewConstraint = scrollView.trailingAnchor.constraint(equalTo: trailingAnchor)
+        scrollTrailingToOverflowConstraint = scrollView.trailingAnchor.constraint(equalTo: overflowButton.leadingAnchor, constant: -4)
+        scrollTrailingToSuperviewConstraint?.isActive = true
 
         // Scroll view document view Auto Layout:
         // - Pin to the clip view to establish height.
@@ -89,9 +123,14 @@ final class AttoTabBarView: NSView {
         super.layout()
         // 1px bottom divider line.
         bottomBorderLayer.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 1)
+        updateOverflowButtonVisibility()
     }
 
     func updateTabs(tabs: [Tab], selectedID: UUID?) {
+        currentTabs = tabs
+        currentSelectedID = selectedID
+        chipByID = [:]
+
         stackView.arrangedSubviews.forEach { v in
             stackView.removeArrangedSubview(v)
             v.removeFromSuperview()
@@ -102,6 +141,7 @@ final class AttoTabBarView: NSView {
             label.font = NSFont.systemFont(ofSize: 12)
             label.textColor = NSColor(attoHex: 0x8A8A8A)
             stackView.addArrangedSubview(label)
+            updateOverflowButtonVisibility()
             return
         }
 
@@ -118,10 +158,94 @@ final class AttoTabBarView: NSView {
             )
             chip.translatesAutoresizingMaskIntoConstraints = false
             stackView.addArrangedSubview(chip)
+            chipByID[tab.id] = chip
         }
 
         // Trailing flexible space to prevent the first tab from expanding to fill the whole row.
         stackView.addArrangedSubview(trailingSpacerView)
+
+        layoutSubtreeIfNeeded()
+
+        if let id = pendingScrollToTabID {
+            pendingScrollToTabID = nil
+            scrollTabIntoView(id: id)
+        }
+
+        updateOverflowButtonVisibility()
+    }
+
+    private func scrollTabIntoView(id: UUID) {
+        guard let chip = chipByID[id] else { return }
+        chip.scrollToVisible(chip.bounds)
+    }
+
+    private func updateOverflowButtonVisibility() {
+        // Note: this depends on layout having happened at least once.
+        let clipW = scrollView.contentView.bounds.width
+        let contentW = documentContainerView.bounds.width
+        let hasOverflow = contentW > (clipW + 1)
+
+        if lastHasOverflow == hasOverflow {
+            return
+        }
+        lastHasOverflow = hasOverflow
+
+        overflowButton.isHidden = hasOverflow == false
+        overflowButton.isEnabled = hasOverflow
+
+        scrollTrailingToSuperviewConstraint?.isActive = (hasOverflow == false)
+        scrollTrailingToOverflowConstraint?.isActive = hasOverflow
+    }
+
+    @objc private func overflowClicked(_ sender: Any?) {
+        let overflowed = overflowedTabsForCurrentScrollPosition()
+        let tabsForMenu = overflowed.isEmpty ? currentTabs : overflowed
+
+        guard tabsForMenu.isEmpty == false else { return }
+
+        let menu = NSMenu()
+        for tab in tabsForMenu {
+            let item = NSMenuItem(title: tab.title, action: #selector(overflowMenuItemSelected(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = tab.id
+            if tab.id == currentSelectedID {
+                item.state = .on
+            }
+            menu.addItem(item)
+        }
+
+        if let event = NSApp.currentEvent {
+            NSMenu.popUpContextMenu(menu, with: event, for: overflowButton)
+        } else {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: overflowButton.bounds.height), in: overflowButton)
+        }
+    }
+
+    private func overflowedTabsForCurrentScrollPosition() -> [Tab] {
+        let visible = scrollView.contentView.documentVisibleRect
+        var out: [Tab] = []
+        out.reserveCapacity(currentTabs.count)
+
+        for tab in currentTabs {
+            guard let chip = chipByID[tab.id] else { continue }
+            let rect = chip.convert(chip.bounds, to: documentContainerView)
+            if visible.contains(rect) == false {
+                out.append(tab)
+            }
+        }
+        return out
+    }
+
+    @objc private func overflowMenuItemSelected(_ sender: NSMenuItem) {
+        let id: UUID? = {
+            if let id = sender.representedObject as? UUID { return id }
+            if let id = sender.representedObject as? NSUUID { return id as UUID }
+            if let s = sender.representedObject as? String { return UUID(uuidString: s) }
+            return nil
+        }()
+        guard let id else { return }
+        pendingScrollToTabID = id
+        onSelectTab?(id)
     }
 }
 
@@ -139,7 +263,6 @@ private final class AttoTabChipView: NSView {
 
     // Sublime-ish sizing.
     private let minWidth: CGFloat = 96
-    private let maxWidth: CGFloat = 240
 
     init(
         id: UUID,
@@ -184,7 +307,8 @@ private final class AttoTabChipView: NSView {
             ? NSFontManager.shared.convert(baseFont, toHaveTrait: .italicFontMask)
             : baseFont
         titleLabel.textColor = selected ? NSColor(attoHex: 0xE6E6E6) : NSColor(attoHex: 0xB5B5B5)
-        titleLabel.lineBreakMode = .byTruncatingMiddle
+        // Never insert ellipses (especially not in the middle); overflow is handled by the tab bar.
+        titleLabel.lineBreakMode = .byClipping
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -224,7 +348,7 @@ private final class AttoTabChipView: NSView {
         let gap: CGFloat = closeButton.isHidden ? 0 : 8
 
         let desired = paddingLeft + labelWidth + gap + closeWidth + paddingRight
-        return NSSize(width: min(maxWidth, max(minWidth, desired)), height: 26)
+        return NSSize(width: max(minWidth, desired), height: 26)
     }
 
     override func updateTrackingAreas() {

@@ -34,6 +34,11 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private var activeViewportObserver: EditorCoreSkiaView.ViewportStateObserverToken?
 
+    private var didAttemptLoadTreeSitterRegistry: Bool = false
+    private var treeSitterRegistryJSON: String?
+    private var treeSitterLanguageIDs: [String] = []
+    private var treeSitterExtensionMap: [String: String] = [:]
+
     var onDidCloseFile: ((URL) -> Void)?
     var onOpenFilesChanged: (([OpenFileItem], UUID?) -> Void)?
     var onSessionStateChanged: (() -> Void)?
@@ -125,6 +130,10 @@ final class AttoEditorAreaViewController: NSViewController {
         emptyStateLabel.translatesAutoresizingMaskIntoConstraints = false
 
         statusBarView.translatesAutoresizingMaskIntoConstraints = false
+        statusBarView.onSelectLanguage = { [weak self] languageId in
+            self?.setSyntaxLanguageForActiveTab(languageId: languageId)
+        }
+        refreshStatusBarLanguageOptions()
 
         view.addSubview(tabBarView)
         view.addSubview(findReplaceBarView)
@@ -160,8 +169,82 @@ final class AttoEditorAreaViewController: NSViewController {
         updateStatusBar()
     }
 
+    private func loadTreeSitterRegistryCacheIfNeeded() {
+        guard didAttemptLoadTreeSitterRegistry == false else { return }
+        didAttemptLoadTreeSitterRegistry = true
+
+        do {
+            let paths = try AttoTreeSitterRegistry.defaultPaths()
+            let registryJSON = try AttoTreeSitterRegistry.buildRegistryJSON(treesitterRoot: paths.treesitterRoot)
+            treeSitterRegistryJSON = registryJSON
+
+            guard let data = registryJSON.data(using: .utf8),
+                  let obj = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
+            else {
+                return
+            }
+
+            if let extMap = obj["extension_map"] as? [String: String] {
+                treeSitterExtensionMap = extMap
+            }
+
+            if let languages = obj["languages"] as? [String: Any] {
+                treeSitterLanguageIDs = languages.keys.sorted { a, b in
+                    a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+                }
+            }
+        } catch {
+            NSLog("AttoEditor: failed to load Tree-sitter registry: %@", String(describing: error))
+        }
+    }
+
+    private func refreshStatusBarLanguageOptions() {
+        loadTreeSitterRegistryCacheIfNeeded()
+        var opts: [AttoStatusBarView.LanguageOption] = [
+            .init(id: nil, title: "Plain Tex"),
+        ]
+        for id in treeSitterLanguageIDs {
+            opts.append(.init(id: id, title: id))
+        }
+        statusBarView.setLanguageOptions(opts)
+    }
+
+    private func inferredTreeSitterLanguageId(for url: URL) -> String? {
+        loadTreeSitterRegistryCacheIfNeeded()
+        let ext = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard ext.isEmpty == false else { return nil }
+        return treeSitterExtensionMap[ext]
+    }
+
     func setWorkspaceRootURL(_ url: URL) {
         workspaceRootURL = url
+    }
+
+    // MARK: - Preferences (editor rendering)
+
+    func applyEditorPreferences() {
+        let prefs = AttoPreferences.shared
+        let fontFamiliesCSV = prefs.fontFamiliesCSVForApplying()
+        let ligaturesEnabled = prefs.effectiveLigaturesEnabled
+        let fontSizePoints = prefs.effectiveFontSizePoints
+
+        for tab in tabs {
+            // Font families: empty CSV means "reset to default" (Skia renderer falls back).
+            do {
+                try tab.editCore.editor.setFontFamiliesCSV(fontFamiliesCSV)
+            } catch {
+                NSLog("AttoEditor: setFontFamiliesCSV failed: %@", String(describing: error))
+            }
+
+            do {
+                try tab.editCore.editor.setFontLigaturesEnabled(ligaturesEnabled)
+            } catch {
+                NSLog("AttoEditor: setFontLigaturesEnabled failed: %@", String(describing: error))
+            }
+
+            tab.editCore.editorView.fontSizePoints = CGFloat(fontSizePoints)
+            tab.editCore.editorView.needsDisplay = true
+        }
     }
 
     // MARK: - Tabs
@@ -805,6 +888,8 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let tab = activeTab else {
             statusBarView.update(
                 leftText: nil,
+                languageId: nil,
+                languageIsEnabled: false,
                 lspText: nil,
                 positionText: "Ln -, Col -",
                 selectionText: nil,
@@ -874,11 +959,66 @@ final class AttoEditorAreaViewController: NSViewController {
 
         statusBarView.update(
             leftText: nil,
+            languageId: tab.syntaxLanguageId,
+            languageIsEnabled: true,
             lspText: lspText,
             positionText: "Ln \(line1), Col \(col1)",
             selectionText: selectionText,
             fileSizeText: fileSizeText
         )
+    }
+
+    private func setSyntaxLanguageForActiveTab(languageId: String?) {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return
+        }
+
+        // "Plain Tex" => disable all syntax engines.
+        if languageId == nil {
+            tab.editCore.editor.lspDisable()
+            tab.editCore.editor.treeSitterDisable()
+            tab.editCore.editor.sublimeDisable()
+            tab.syntaxLanguageId = nil
+            updateAlwaysPollProcessingForSelectedTab()
+            updateStatusBar()
+            tab.editCore.editorView.needsDisplay = true
+            return
+        }
+
+        let lang = (languageId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if lang.isEmpty {
+            NSSound.beep()
+            return
+        }
+
+        // Force Tree-sitter with an explicit language id.
+        loadTreeSitterRegistryCacheIfNeeded()
+        if let registryJSON = treeSitterRegistryJSON {
+            // Best-effort (each editor view owns its own registry state).
+            try? tab.editCore.editor.treeSitterSetRegistryJSON(registryJSON)
+        }
+
+        tab.editCore.editor.lspDisable()
+        tab.editCore.editor.sublimeDisable()
+
+        do {
+            try tab.editCore.editor.treeSitterEnableLanguage(lang)
+            tab.syntaxLanguageId = lang
+            tab.editCore.editorView.kickProcessingPoll()
+            updateAlwaysPollProcessingForSelectedTab()
+            updateStatusBar()
+            tab.editCore.editorView.needsDisplay = true
+        } catch {
+            NSSound.beep()
+            NSLog(
+                "AttoEditor: failed to set Tree-sitter language %@ for %@: %@",
+                lang,
+                tab.fileURL.path,
+                String(describing: error)
+            )
+            updateStatusBar()
+        }
     }
 
     // MARK: - Navigation
@@ -950,8 +1090,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private func makeTab(for url: URL, isPreview: Bool, showsMinimap: Bool = true) throws -> AttoEditorTab {
         let initialText = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
 
-        let fontFamiliesCSV = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_FONT_FAMILIES"]
-            ?? ProcessInfo.processInfo.environment["ATTO_EDITOR_FONT_FAMILIES"]
+        let prefs = AttoPreferences.shared
+        let fontFamiliesCSV = prefs.fontFamiliesCSVForNewViews()
 
         let editCore = try EditCoreUI(
             library: library,
@@ -968,37 +1108,25 @@ final class AttoEditorAreaViewController: NSViewController {
         // Visual aids enabled by default in AttoEditor MVP.
         try editCore.editor.setWhitespaceRenderMode(.selection)
         try editCore.editor.setIndentGuidesEnabled(true)
-        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_ENABLE_LIGATURES"] == "1"
-            || ProcessInfo.processInfo.environment["ATTO_EDITOR_ENABLE_LIGATURES"] == "1"
-        {
-            try editCore.editor.setFontLigaturesEnabled(true)
-        }
+        try editCore.editor.setFontLigaturesEnabled(prefs.effectiveLigaturesEnabled)
+        editCore.editorView.fontSizePoints = CGFloat(prefs.effectiveFontSizePoints)
         try editCore.applyTheme(theme)
         // Enable baseline editor UX by default.
         try editCore.editor.setAutoPairsEnabled(true)
         try editCore.editor.setBracketMatchHighlightsEnabled(true)
 
         // Tree-sitter registry (best-effort).
-        var treesitterRootPath: String?
-        do {
-            let paths = try AttoTreeSitterRegistry.defaultPaths()
-            treesitterRootPath = paths.treesitterRoot.path
-            let registryJSON = try AttoTreeSitterRegistry.buildRegistryJSON(treesitterRoot: paths.treesitterRoot)
-            try editCore.editor.treeSitterSetRegistryJSON(registryJSON)
-        } catch {
-            if let treesitterRootPath {
-                NSLog(
-                    "AttoEditor: Tree-sitter registry init failed (root=%@): %@",
-                    treesitterRootPath,
-                    String(describing: error)
-                )
-            } else {
+        loadTreeSitterRegistryCacheIfNeeded()
+        if let registryJSON = treeSitterRegistryJSON {
+            do {
+                try editCore.editor.treeSitterSetRegistryJSON(registryJSON)
+            } catch {
                 NSLog("AttoEditor: Tree-sitter registry init failed: %@", String(describing: error))
             }
         }
 
         // Syntax support (best-effort): LSP -> Tree-sitter -> Sublime `.sublime-syntax`.
-        configureSyntaxSupport(for: url, editCore: editCore)
+        let syntaxLanguageId = configureSyntaxSupport(for: url, editCore: editCore)
 
         let tabId = UUID()
         let tab = AttoEditorTab(
@@ -1006,6 +1134,7 @@ final class AttoEditorAreaViewController: NSViewController {
             fileURL: url,
             isPreview: isPreview,
             isDirty: false,
+            syntaxLanguageId: syntaxLanguageId,
             editCore: editCore
         )
         editCore.onDidMutateDocumentText = { [weak self] in
@@ -1030,7 +1159,7 @@ final class AttoEditorAreaViewController: NSViewController {
         return tab
     }
 
-    private func configureSyntaxSupport(for url: URL, editCore: EditCoreUI) {
+    private func configureSyntaxSupport(for url: URL, editCore: EditCoreUI) -> String? {
         // Start from a clean slate (best-effort). This avoids stacking style layers when a host
         // switches engines (e.g. LSP becomes available later).
         editCore.editor.treeSitterDisable()
@@ -1060,7 +1189,7 @@ final class AttoEditorAreaViewController: NSViewController {
                     // Prefer LSP semantic tokens; keep other engines off.
                     editCore.editor.treeSitterDisable()
                     editCore.editor.sublimeDisable()
-                    return
+                    return "rust"
                 } catch {
                     NSLog("AttoEditor: LSP enable failed for %@: %@", url.path, String(describing: error))
                 }
@@ -1073,7 +1202,7 @@ final class AttoEditorAreaViewController: NSViewController {
             editCore.editor.sublimeDisable()
             // Kick a short poll window so the initial Tree-sitter parse applies even without edits.
             editCore.editorView.kickProcessingPoll()
-            return
+            return inferredTreeSitterLanguageId(for: url)
         } catch {
             NSLog("AttoEditor: Tree-sitter enable failed for %@: %@", url.path, String(describing: error))
         }
@@ -1084,13 +1213,14 @@ final class AttoEditorAreaViewController: NSViewController {
             workspaceRootURL: workspaceRootURL
         ) else {
             NSLog("AttoEditor: no Sublime syntax found for %@ (ext=%@)", url.path, url.pathExtension)
-            return
+            return nil
         }
 
         do {
             try editCore.editor.sublimeSetSyntaxPath(syntaxPath)
             editCore.editor.treeSitterDisable()
             editCore.editorView.needsDisplay = true
+            return nil
         } catch {
             NSLog(
                 "AttoEditor: Sublime syntax enable failed (path=%@) for %@: %@",
@@ -1098,6 +1228,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 url.path,
                 String(describing: error)
             )
+            return nil
         }
     }
 
@@ -1386,6 +1517,7 @@ private final class AttoEditorTab {
     let fileURL: URL
     var isPreview: Bool
     var isDirty: Bool
+    var syntaxLanguageId: String?
     let editCore: EditCoreUI
 
     var displayTitle: String {
@@ -1401,12 +1533,14 @@ private final class AttoEditorTab {
         fileURL: URL,
         isPreview: Bool,
         isDirty: Bool,
+        syntaxLanguageId: String?,
         editCore: EditCoreUI
     ) {
         self.id = id
         self.fileURL = fileURL
         self.isPreview = isPreview
         self.isDirty = isDirty
+        self.syntaxLanguageId = syntaxLanguageId
         self.editCore = editCore
     }
 }

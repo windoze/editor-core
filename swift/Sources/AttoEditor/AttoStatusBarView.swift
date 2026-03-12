@@ -3,7 +3,16 @@ import Foundation
 
 @MainActor
 final class AttoStatusBarView: NSView {
+    struct LanguageOption: Equatable {
+        /// `nil` 表示 Plain Text（禁用语法/高亮引擎）。
+        let id: String?
+        let title: String
+    }
+
+    var onSelectLanguage: ((String?) -> Void)?
+
     private let leftLabel = NSTextField(labelWithString: "")
+    private let languagePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let lspLabel = NSTextField(labelWithString: "")
     private let positionLabel = NSTextField(labelWithString: "")
     private let selectionLabel = NSTextField(labelWithString: "")
@@ -11,6 +20,8 @@ final class AttoStatusBarView: NSView {
 
     private let rightStack = NSStackView()
     private let topBorderLayer = CALayer()
+
+    private var languageOptions: [LanguageOption] = []
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -27,6 +38,14 @@ final class AttoStatusBarView: NSView {
         leftLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         leftLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        languagePopUp.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        languagePopUp.controlSize = .small
+        languagePopUp.isBordered = false
+        languagePopUp.contentTintColor = NSColor(attoHex: 0xB5B5B5)
+        languagePopUp.target = self
+        languagePopUp.action = #selector(languageChanged(_:))
+        languagePopUp.translatesAutoresizingMaskIntoConstraints = false
+
         for l in [positionLabel, selectionLabel, fileSizeLabel] {
             l.font = NSFont.systemFont(ofSize: 11, weight: .regular)
             l.textColor = NSColor(attoHex: 0xB5B5B5)
@@ -41,6 +60,7 @@ final class AttoStatusBarView: NSView {
         rightStack.alignment = .centerY
         rightStack.spacing = 12
         rightStack.translatesAutoresizingMaskIntoConstraints = false
+        rightStack.addArrangedSubview(languagePopUp)
         rightStack.addArrangedSubview(lspLabel)
         rightStack.addArrangedSubview(positionLabel)
         rightStack.addArrangedSubview(selectionLabel)
@@ -58,7 +78,17 @@ final class AttoStatusBarView: NSView {
             rightStack.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
 
-        update(leftText: nil, lspText: nil, positionText: "Ln -, Col -", selectionText: nil, fileSizeText: nil)
+        // Default language list: always include "Plain Tex" (MVP); richer options are supplied by the host.
+        setLanguageOptions([.init(id: nil, title: "Plain Tex")])
+        update(
+            leftText: nil,
+            languageId: nil,
+            languageIsEnabled: false,
+            lspText: nil,
+            positionText: "Ln -, Col -",
+            selectionText: nil,
+            fileSizeText: nil
+        )
     }
 
     required init?(coder: NSCoder) {
@@ -71,13 +101,51 @@ final class AttoStatusBarView: NSView {
         topBorderLayer.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
     }
 
-    func update(leftText: String?, lspText: String?, positionText: String, selectionText: String?, fileSizeText: String?) {
+    func setLanguageOptions(_ options: [LanguageOption]) {
+        guard options != languageOptions else { return }
+        languageOptions = options
+
+        languagePopUp.removeAllItems()
+        for opt in options {
+            languagePopUp.addItem(withTitle: opt.title)
+            languagePopUp.lastItem?.representedObject = opt.id ?? NSNull()
+        }
+    }
+
+    func update(
+        leftText: String?,
+        languageId: String?,
+        languageIsEnabled: Bool,
+        lspText: String?,
+        positionText: String,
+        selectionText: String?,
+        fileSizeText: String?
+    ) {
         leftLabel.stringValue = leftText ?? ""
+
+        // Language selector
+        languagePopUp.isEnabled = languageIsEnabled
+        if languageOptions.isEmpty == false {
+            if let idx = languageOptions.firstIndex(where: { $0.id == languageId }) {
+                languagePopUp.selectItem(at: idx)
+            } else if let idx = languageOptions.firstIndex(where: { $0.id == nil }) {
+                languagePopUp.selectItem(at: idx)
+            } else {
+                languagePopUp.selectItem(at: 0)
+            }
+        }
+
         lspLabel.stringValue = lspText ?? ""
         lspLabel.isHidden = (lspText?.isEmpty != false)
         positionLabel.stringValue = positionText
         selectionLabel.stringValue = selectionText ?? ""
         fileSizeLabel.stringValue = fileSizeText ?? ""
+    }
+
+    @objc private func languageChanged(_ sender: Any?) {
+        let idx = languagePopUp.indexOfSelectedItem
+        guard (0..<languageOptions.count).contains(idx) else { return }
+        onSelectLanguage?(languageOptions[idx].id)
     }
 }
 
