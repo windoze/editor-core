@@ -18,6 +18,7 @@ final class AttoStatusBarView: NSView {
     private let selectionLabel = NSTextField(labelWithString: "")
     private let fileSizeLabel = NSTextField(labelWithString: "")
 
+    private let leftStack = NSStackView()
     private let rightStack = NSStackView()
     private let topBorderLayer = CALayer()
 
@@ -54,25 +55,32 @@ final class AttoStatusBarView: NSView {
 
         lspLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         lspLabel.textColor = NSColor(attoHex: 0xB5B5B5)
+        lspLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         lspLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        leftStack.orientation = .horizontal
+        leftStack.alignment = .centerY
+        leftStack.spacing = 12
+        leftStack.translatesAutoresizingMaskIntoConstraints = false
+        leftStack.addArrangedSubview(leftLabel)
+        leftStack.addArrangedSubview(lspLabel)
 
         rightStack.orientation = .horizontal
         rightStack.alignment = .centerY
         rightStack.spacing = 12
         rightStack.translatesAutoresizingMaskIntoConstraints = false
         rightStack.addArrangedSubview(languagePopUp)
-        rightStack.addArrangedSubview(lspLabel)
         rightStack.addArrangedSubview(positionLabel)
         rightStack.addArrangedSubview(selectionLabel)
         rightStack.addArrangedSubview(fileSizeLabel)
 
-        addSubview(leftLabel)
+        addSubview(leftStack)
         addSubview(rightStack)
 
         NSLayoutConstraint.activate([
-            leftLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            leftLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            leftLabel.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.leadingAnchor, constant: -10),
+            leftStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            leftStack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            leftStack.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.leadingAnchor, constant: -10),
 
             rightStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             rightStack.centerYAnchor.constraint(equalTo: centerYAnchor),
