@@ -110,6 +110,18 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
             self?.openedFilesController.updateOpenFiles(items, selectedID: selectedID)
         }
 
+        editorAreaController.onDidSaveFile = { [weak self] url, createdOnDisk in
+            guard let self else { return }
+            guard createdOnDisk else { return }
+
+            // A brand-new file was materialized by saving an “untitled” buffer.
+            // Refresh sidebar + quick-open caches so it becomes discoverable.
+            self.fileExplorerController.setRootURL(self.workspaceRootURL)
+            self.fileIndex.rebuild()
+            self.fileExplorerController.revealFile(url)
+            self.rememberRecentFile(url)
+        }
+
         findInFilesController.openedFilesProvider = { [weak self] in
             self?.editorAreaController.openFileURLs() ?? []
         }

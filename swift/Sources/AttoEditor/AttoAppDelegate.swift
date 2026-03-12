@@ -151,7 +151,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         var url: URL
         while true {
             url = dir.appendingPathComponent("untitled-\(n).txt", isDirectory: false)
-            if fm.fileExists(atPath: url.path) == false {
+            // “New File” should not touch disk; it only creates a new in-memory buffer.
+            // Still, we want a stable, human-friendly display name, so we generate a file URL
+            // under the workspace root and keep it unique across BOTH:
+            // 1) existing files on disk, and
+            // 2) currently opened (possibly unsaved) tabs.
+            if fm.fileExists(atPath: url.path) == false, ctx.editorAreaController.containsFile(url: url) == false {
                 break
             }
             n += 1
@@ -162,19 +167,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        guard fm.createFile(atPath: url.path, contents: Data(), attributes: nil) else {
-            NSSound.beep()
-            NSLog("AttoEditor: failed to create new file %@", url.path)
-            return
-        }
-
-        // Make sure the new file is discoverable by the sidebar + quick-open.
-        ctx.fileExplorerController.setRootURL(ctx.workspaceRootURL)
-        ctx.fileIndex.rebuild()
-
-        ctx.rememberRecentFile(url)
-        ctx.editorAreaController.openFile(url: url, mode: .pinned)
-        ctx.fileExplorerController.revealFile(url)
+        _ = ctx.editorAreaController.openFile(url: url, mode: .pinned)
     }
 
     private func ensureActiveWindowForMenuActions() -> AttoWindowContext? {

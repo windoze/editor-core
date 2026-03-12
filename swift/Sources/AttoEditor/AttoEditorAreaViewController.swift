@@ -40,6 +40,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var treeSitterExtensionMap: [String: String] = [:]
 
     var onDidCloseFile: ((URL) -> Void)?
+    /// (url, createdOnDisk)
+    var onDidSaveFile: ((URL, Bool) -> Void)?
     var onOpenFilesChanged: (([OpenFileItem], UUID?) -> Void)?
     var onSessionStateChanged: (() -> Void)?
 
@@ -472,6 +474,8 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     private func saveTab(_ tab: AttoEditorTab) -> Bool {
+        let fm = FileManager.default
+        let existedOnDiskBeforeSave = fm.fileExists(atPath: tab.fileURL.path)
         do {
             let text = try tab.editCore.editor.text()
             try text.write(to: tab.fileURL, atomically: true, encoding: .utf8)
@@ -482,6 +486,7 @@ final class AttoEditorAreaViewController: NSViewController {
             updateWindowTitle()
             updateStatusBar()
             notifySessionStateChanged()
+            onDidSaveFile?(tab.fileURL, existedOnDiskBeforeSave == false)
             return true
         } catch {
             NSSound.beep()
