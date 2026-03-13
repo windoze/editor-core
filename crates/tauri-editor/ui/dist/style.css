@@ -1,0 +1,80 @@
+:root {
+  --bg: #0f111a;
+  --fg: #d7dae0;
+  --muted: #7f849c;
+  --cursor: #e06c75;
+  --selection: rgba(95, 129, 157, 0.35);
+  --line-height: 20px;
+  --font-size: 13px;
+  --font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  --tab-size: 4;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+#editorRoot {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+#scrollViewport {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+  tab-size: var(--tab-size);
+  -moz-tab-size: var(--tab-size);
+}
+
+#linesLayer {
+  position: relative;
+}
+
+.line {
+  white-space: pre;
+  overflow: hidden;
+  height: var(--line-height);
+}
+
+.run.style-fold-placeholder {
+  color: var(--muted);
+}
+
+#overlayLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#cursor {
+  position: absolute;
+  width: 2px;
+  height: var(--line-height);
+  background: var(--cursor);
+  transform: translate(-9999px, -9999px);
+}
+
+#imeInput {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  resize: none;
+}
+

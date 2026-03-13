@@ -16,7 +16,7 @@
 
 use crate::commands::{
     AutoPairsConfig, Command, CommandExecutor, CommandResult, CursorCommand, EditCommand,
-    TextEditSpec, UndoHistoryRestoreError, UndoHistorySnapshot,
+    EditorCore, TextEditSpec, UndoHistoryRestoreError, UndoHistorySnapshot,
 };
 use crate::decorations::{Decoration, DecorationLayerId};
 use crate::delta::TextDelta;
@@ -750,6 +750,33 @@ impl Workspace {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
         Ok(&buffer.executor.editor().line_index)
+    }
+
+    /// Run a closure with an immutable reference to the [`EditorCore`] for a view.
+    ///
+    /// This:
+    /// - applies the view-local state (wrap/indent/tab width/cursor/selection) to the underlying buffer executor
+    /// - then calls `f(editor)`
+    ///
+    /// This helper is useful for renderers that need access to low-level editor state (e.g.
+    /// composed-row indexing) without duplicating the "clone ViewCore + apply to executor" dance.
+    pub fn with_editor_for_view<R>(
+        &mut self,
+        view_id: ViewId,
+        f: impl FnOnce(&EditorCore) -> R,
+    ) -> Result<R, WorkspaceError> {
+        let Some((buffer_id, view_core)) =
+            self.views.get(&view_id).map(|v| (v.buffer, v.core.clone()))
+        else {
+            return Err(WorkspaceError::ViewNotFound(view_id));
+        };
+
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+
+        view_core.apply_to_executor(&mut buffer.executor);
+        Ok(f(buffer.executor.editor()))
     }
 
     /// Get the document length for a buffer in Unicode scalar values (Rust `char`s).

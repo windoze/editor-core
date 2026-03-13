@@ -1,0 +1,39 @@
+[package]
+name = "tauri-editor"
+version.workspace = true
+description = "Tauri + WebView text-grid renderer demo built on editor-core."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["editor", "tauri", "webview", "text-grid"]
+categories = ["text-editors", "text-processing"]
+readme = "README.md"
+
+[features]
+default = []
+# Enable the runnable Tauri app binary and its build-time glue.
+tauri-app = ["dep:tauri", "dep:tauri-build"]
+
+[dependencies]
+editor-core = { version = "0.3.0", path = "../editor-core" }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2"
+
+# Tauri (optional; behind `tauri-app` to avoid pulling heavy deps for pure-Rust tests).
+tauri = { version = "2", optional = true }
+
+[build-dependencies]
+tauri-build = { version = "2", optional = true }
+
+[dev-dependencies]
+serde_json = "1"
+
+[[bin]]
+name = "tauri-editor"
+path = "src/bin/tauri-editor.rs"
+required-features = ["tauri-app"]
+

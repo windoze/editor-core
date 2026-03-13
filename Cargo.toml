@@ -14,6 +14,7 @@ members = [
     "crates/editor-core-ui-ffi",
     "crates/editor-core-sublime",
     "crates/editor-core-treesitter",
+    "crates/tauri-editor",
     "crates/tui-editor",
 ]
 

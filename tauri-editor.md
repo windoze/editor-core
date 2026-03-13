@@ -2,6 +2,22 @@
 
 本文档是一个“从可运行开始、逐步增强”的实现计划：用 **Tauri + WebView（HTML/CSS/JS/TS）** 来渲染 `editor-core` 的文本视图。核心原则是把编辑器当作 **文本网格（text-grid）** 而不是富文本：前端只做高性能显示与输入采集；状态与命令主要在 Rust 侧。
 
+## 实现进度（2026-03-13）
+
+已在 `crates/tauri-editor` 落地 **Milestone 0–2** 的“最小可运行版本”（text-grid / composed rows）：
+
+- ✅ Tauri v2 壳 + 静态前端（`ui/dist`，不依赖 npm 构建）
+- ✅ Rust 后端：`Workspace` + `get_viewport_content_composed` → `ViewportSnapshot`（runs 压缩 + style-set interning）
+- ✅ 前端：行级渲染（line `<div>` + run `<span>`）+ composed rows 虚拟化（`spacerTop/spacerBottom`）
+- ✅ 光标 overlay（`(row, x_cells)` → 像素定位）
+- ✅ 基础导航：方向键 / Home / End / PageUp / PageDown
+
+已验证：
+- `cargo test -p tauri-editor`
+
+运行（本机）：
+- `cargo run -p tauri-editor --features tauri-app --bin tauri-editor -- <path>`
+
 ---
 
 ## 0. 当前 `editor-core*` 能力核对（基于仓库现状）
@@ -392,7 +408,7 @@ soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；�
 
 ## 7. 里程碑（从可运行开始）
 
-### Milestone 0：Tauri 壳 + 静态渲染（第 1 天）
+### Milestone 0：Tauri 壳 + 静态渲染（已实现：`crates/tauri-editor`）
 - 建立最小 Tauri App（窗口 + 前端页面）。
 - 前端渲染固定 100 行假数据（验证 line `<div>` + span + 滚动 + CSS）。
 - 做一次**字体/行高测量**（前端测 `cellWidthPx/lineHeightPx`），把 viewport 像素尺寸转换为 `editor-core` 需要的 `viewport_width`（cells）与 `viewport_height`（rows），并把这套“测量→同步”的管线固定下来（后续 wrap/命中测试都依赖它）。
@@ -401,7 +417,7 @@ soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；�
 
 验收：启动后可看到可滚动文本行。
 
-### Milestone 1：接入 `editor-core` 的只读渲染（第 2–3 天）
+### Milestone 1：接入 `editor-core` 的只读渲染（已实现：`crates/tauri-editor`）
 - Rust 打开文件 → 从 `editor-core` 产出 viewport **`ComposedGrid`（composed visual rows）**（即使暂时没有 decorations，也保持这条主路径）。
 - 明确启用 soft wrap（`WrapMode::Char` 或 `WrapMode::Word`），并固定 `WrapIndent::SameAsLineIndent`；在窗口 resize / 字体变化时，持续同步 `viewport_width`（cells）到内核（否则 wrap 结果与 scroll 高度会立刻失真）。
 - 前端实现虚拟化（composed rows + overscan）。
@@ -409,7 +425,7 @@ soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；�
 
 验收：能打开真实文件并流畅滚动。
 
-### Milestone 2：光标与基础导航（第 4–5 天）
+### Milestone 2：光标与基础导航（已实现：`crates/tauri-editor`）
 - 前端捕获 `keydown`（方向键/翻页/Home/End）→ 发送命令给 Rust。
 - Rust 更新 caret → 推送 overlay 更新（`(row, x_cells)`；`row` 在 composed rows 空间）。
 
