@@ -50,14 +50,21 @@ pub struct LineSnapshot {
 /// - `0: style_set_id`：样式集合 intern id
 /// - `1: source_kind`：0=Document，1=Virtual
 /// - `2: source_offset`：Document=起始 `char` offset；Virtual=anchor `char` offset
-/// - `3: text`：该段文本
+/// - `3: cells`：该段文本占用的 cells 数（用于前端做严格的 grid 布局）
+/// - `4: text`：该段文本
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct RunSnapshot(pub (u32, u8, u32, String));
+pub struct RunSnapshot(pub (u32, u8, u32, u16, String));
 
 impl RunSnapshot {
-    pub fn new(style_set_id: u32, source_kind: u8, source_offset: u32, text: String) -> Self {
-        Self((style_set_id, source_kind, source_offset, text))
+    pub fn new(
+        style_set_id: u32,
+        source_kind: u8,
+        source_offset: u32,
+        cells: u16,
+        text: String,
+    ) -> Self {
+        Self((style_set_id, source_kind, source_offset, cells, text))
     }
 
     pub fn style_set_id(&self) -> u32 {
@@ -72,7 +79,11 @@ impl RunSnapshot {
         self.0.2
     }
 
+    pub fn cells(&self) -> u16 {
+        self.0.3
+    }
+
     pub fn text(&self) -> &str {
-        &self.0.3
+        &self.0.4
     }
 }

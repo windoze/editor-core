@@ -47,6 +47,12 @@ body {
   height: var(--line-height);
 }
 
+.run {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+}
+
 .run.style-fold-placeholder {
   color: var(--muted);
 }
@@ -77,4 +83,3 @@ body {
   margin: 0;
   resize: none;
 }
-

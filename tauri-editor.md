@@ -2,13 +2,13 @@
 
 本文档是一个“从可运行开始、逐步增强”的实现计划：用 **Tauri + WebView（HTML/CSS/JS/TS）** 来渲染 `editor-core` 的文本视图。核心原则是把编辑器当作 **文本网格（text-grid）** 而不是富文本：前端只做高性能显示与输入采集；状态与命令主要在 Rust 侧。
 
-## 实现进度（2026-03-13）
+## 实现进度（2026-03-14）
 
 已在 `crates/tauri-editor` 落地 **Milestone 0–2** 的“最小可运行版本”（text-grid / composed rows）：
 
 - ✅ Tauri v2 壳 + 静态前端（`ui/dist`，不依赖 npm 构建）
-- ✅ Rust 后端：`Workspace` + `get_viewport_content_composed` → `ViewportSnapshot`（runs 压缩 + style-set interning）
-- ✅ 前端：行级渲染（line `<div>` + run `<span>`）+ composed rows 虚拟化（`spacerTop/spacerBottom`）
+- ✅ Rust 后端：`Workspace` + `get_viewport_content_composed` → `ViewportSnapshot`（runs 压缩 + style-set interning + 每段携带 cells 宽度）
+- ✅ 前端：行级渲染（line `<div>` + run `<span>`）+ composed rows 虚拟化（`spacerTop/spacerBottom`）+ **按 cells 强制分配 run 宽度**（避免 CJK/emoji/font fallback 导致 caret/对齐错位）
 - ✅ 光标 overlay（`(row, x_cells)` → 像素定位）
 - ✅ 基础导航：方向键 / Home / End / PageUp / PageDown
 
@@ -20,6 +20,7 @@
 
 运行注意：
 - `crates/tauri-editor/tauri.conf.json` 未设置 `build.devUrl`，因此 `cargo run`（debug）会直接加载 `frontendDist=ui/dist`（不需要前端 dev server）。
+- `cellWidthPx` 测量使用 `100ch`（并等待 `document.fonts.ready`）以减少“viewport width 计算偏小导致右侧大块空白”的问题。
 
 ---
 

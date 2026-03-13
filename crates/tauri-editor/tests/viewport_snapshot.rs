@@ -132,16 +132,19 @@ fn runs_are_grouped_by_style_set_and_source() {
     let run_a = &line.runs[0];
     assert_eq!(run_a.source_kind(), SOURCE_KIND_DOCUMENT);
     assert_eq!(run_a.source_offset(), 0);
+    assert_eq!(run_a.cells(), 1);
     assert_eq!(run_a.text(), "a");
 
     let run_b = &line.runs[1];
     assert_eq!(run_b.source_kind(), SOURCE_KIND_DOCUMENT);
     assert_eq!(run_b.source_offset(), 1);
+    assert_eq!(run_b.cells(), 1);
     assert_eq!(run_b.text(), "b");
 
     let run_c = &line.runs[2];
     assert_eq!(run_c.source_kind(), SOURCE_KIND_DOCUMENT);
     assert_eq!(run_c.source_offset(), 2);
+    assert_eq!(run_c.cells(), 1);
     assert_eq!(run_c.text(), "c");
 
     let style_set_id = run_b.style_set_id() as usize;
@@ -181,15 +184,33 @@ fn inline_virtual_text_breaks_document_runs() {
     let r0 = &line.runs[0];
     assert_eq!(r0.source_kind(), SOURCE_KIND_DOCUMENT);
     assert_eq!(r0.source_offset(), 0);
+    assert_eq!(r0.cells(), 1);
     assert_eq!(r0.text(), "a");
 
     let r1 = &line.runs[1];
     assert_eq!(r1.source_kind(), SOURCE_KIND_VIRTUAL);
     assert_eq!(r1.source_offset(), 1);
+    assert_eq!(r1.cells(), 1);
     assert_eq!(r1.text(), "X");
 
     let r2 = &line.runs[2];
     assert_eq!(r2.source_kind(), SOURCE_KIND_DOCUMENT);
     assert_eq!(r2.source_offset(), 1);
+    assert_eq!(r2.cells(), 1);
     assert_eq!(r2.text(), "b");
+}
+
+#[test]
+fn wide_chars_are_not_merged_into_neighbors() {
+    let mut backend = EditorBackend::open_text(None, "中a", 80).unwrap();
+
+    let snapshot = backend.viewport_snapshot(0, 8).unwrap();
+    let line = &snapshot.lines[0];
+
+    // 关键：CJK（width=2）必须拆成单独的 run，否则 caret 边界会被字体 fallback 破坏。
+    assert_eq!(line.runs.len(), 2);
+    assert_eq!(line.runs[0].text(), "中");
+    assert_eq!(line.runs[0].cells(), 2);
+    assert_eq!(line.runs[1].text(), "a");
+    assert_eq!(line.runs[1].cells(), 1);
 }

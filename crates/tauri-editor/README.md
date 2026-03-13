@@ -28,12 +28,23 @@ Tauri 会回退到 `tauri://localhost/index.html` 并直接加载 `ui/dist` 的�
 
 - `src/`
   - `backend.rs`：纯 Rust 的 `EditorBackend`（Workspace + 单 view），供 Tauri 命令层调用
-  - `render_model.rs`：`ComposedGrid` → `ViewportSnapshot`（runs 压缩 + style-set interning）
+  - `render_model.rs`：`ComposedGrid` → `ViewportSnapshot`（runs 压缩 + style-set interning + 每段携带 cells 宽度）
   - `composed_row_index.rs`：composed rows 总数与 doc↔composed 映射
   - `snapshot.rs`：Rust↔JS 传输结构（serde，runs 用 tuple 形式降低 JSON 开销）
 - `src/bin/tauri-editor.rs`：Tauri v2 runnable binary（`tauri-app` feature）
 - `ui/dist/`：无构建链的静态前端（`window.__TAURI__.core.invoke`）
 - `tauri.conf.json`：Tauri 配置（`app.withGlobalTauri=true`，便于不用 npm 也能调用 `invoke`）
+
+## 字体与宽字符（CJK/emoji）
+
+该 demo 的坐标系以 **cells** 为核心（CJK 期望=2 cells）。不同平台的字体 fallback 可能导致
+某些字符的实际像素宽度不等于 1/2 cells，从而出现 caret 落在 glyph 中间等错位问题。
+
+当前实现会在前端对每个 run **按 cells 强制分配宽度**（并对宽字符 run 做边界切分），以保证
+grid 对齐的可用性；若某些字体在 2 cells 宽度内绘制不下，可能会被裁剪。
+
+建议：安装/选择“支持 CJK 的等宽字体”（例如 Sarasa Mono / Noto Sans Mono CJK 等），以获得更
+理想的显示效果。
 
 ## 测试
 

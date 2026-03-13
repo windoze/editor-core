@@ -20,6 +20,8 @@ pub enum RenderModelError {
     TotalRowsTooLarge { total_rows: usize },
     #[error("style-set 数量超出 u32 范围（len={len}）")]
     StyleSetTableTooLarge { len: usize },
+    #[error("Run cells 超出 u16 范围（cells={cells}）")]
+    RunCellsTooLarge { cells: usize },
 }
 
 #[derive(Debug, Default)]
@@ -109,6 +111,8 @@ pub fn build_viewport_snapshot(
             source_kind: u8,
             source_offset: u32,
             doc_char_len: u32,
+            cells: usize,
+            allow_merge_base_cells: bool,
             text: String,
         }
 
@@ -118,14 +122,18 @@ pub fn build_viewport_snapshot(
         let flush = |current: Option<RunBuild>, runs: &mut Vec<RunSnapshot>| {
             if let Some(run) = current {
                 if !run.text.is_empty() {
+                    let cells_u16 = u16::try_from(run.cells)
+                        .map_err(|_| RenderModelError::RunCellsTooLarge { cells: run.cells })?;
                     runs.push(RunSnapshot::new(
                         run.style_set_id,
                         run.source_kind,
                         run.source_offset,
+                        cells_u16,
                         run.text,
                     ));
                 }
             }
+            Ok::<(), RenderModelError>(())
         };
 
         for cell in &line.cells {
@@ -147,8 +155,17 @@ pub fn build_viewport_snapshot(
                 }
             };
 
-            let can_merge = if let Some(ref run) = current {
-                if run.style_set_id != style_set_id || run.source_kind != source_kind {
+            let cell_width_cells = cell.width;
+
+            // 关键：为了保证 caret 与宽字符（例如 CJK=2 cells）的边界一致，
+            // - 宽字符（width!=1，且 width>0）必须单独成段（不能与左右邻居合并），否则 caret 可能落进 glyph 中间。
+            // - width==0（combining marks）必须跟随在其 base 字符之后，否则会破坏字形组合。
+            let can_merge = if cell_width_cells == 0 {
+                current.is_some()
+            } else if let Some(ref run) = current {
+                if !run.allow_merge_base_cells || cell_width_cells != 1 {
+                    false
+                } else if run.style_set_id != style_set_id || run.source_kind != source_kind {
                     false
                 } else if source_kind == SOURCE_KIND_VIRTUAL {
                     run.source_offset == cell_source_offset
@@ -163,24 +180,40 @@ pub fn build_viewport_snapshot(
             };
 
             if !can_merge {
-                flush(current.take(), &mut runs);
+                flush(current.take(), &mut runs)?;
                 current = Some(RunBuild {
                     style_set_id,
                     source_kind,
                     source_offset: cell_source_offset,
                     doc_char_len: 0,
+                    cells: 0,
+                    allow_merge_base_cells: cell_width_cells == 1,
                     text: String::new(),
                 });
             }
 
             let run = current.as_mut().expect("run must exist");
-            run.text.push(cell.ch);
+
+            if cell.ch == '\t' && cell_width_cells > 0 {
+                // 在 DOM text-grid 中，将 `\t` 展开为固定宽度的空格，避免不同 WebView 的 tab 渲染差异。
+                run.text.extend(std::iter::repeat_n(' ', cell_width_cells));
+            } else {
+                run.text.push(cell.ch);
+            }
+
+            // width==0（combining marks）不占用 cells，但仍是一个 document char offset。
+            run.cells = run.cells.saturating_add(cell_width_cells);
             if run.source_kind == SOURCE_KIND_DOCUMENT {
                 run.doc_char_len = run.doc_char_len.saturating_add(1);
             }
+
+            // 一旦遇到宽字符/Tab（width!=1 且 >0），该段必须锁死为“不可继续合并 base cells”。
+            if cell_width_cells > 0 && cell_width_cells != 1 {
+                run.allow_merge_base_cells = false;
+            }
         }
 
-        flush(current.take(), &mut runs);
+        flush(current.take(), &mut runs)?;
 
         lines.push(crate::snapshot::LineSnapshot {
             row: row_u32,
