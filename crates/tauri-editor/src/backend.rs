@@ -1,6 +1,8 @@
 use crate::composed_row_index::ComposedRowIndex;
-use crate::render_model::{RenderModelError, build_viewport_snapshot};
+use crate::render_model::{build_viewport_snapshot, RenderModelError};
 use crate::snapshot::ViewportSnapshot;
+use editor_core::intervals::{Interval, StyleLayerId, IME_MARKED_TEXT_STYLE_ID};
+use editor_core::ProcessingEdit;
 use editor_core::{
     BufferId, Command, CursorCommand, EditCommand, Position, Selection, ViewCommand, Workspace,
     WorkspaceError,
@@ -24,6 +26,8 @@ pub enum EditorBackendError {
     ComposedRowNotMappable,
     #[error("无法把 visual(row,x_cells) 映射到逻辑位置（row={row}, x_cells={x_cells}）")]
     VisualPositionNotMappable { row: usize, x_cells: usize },
+    #[error("IME composition 未开始")]
+    CompositionNotActive,
 }
 
 impl From<WorkspaceError> for EditorBackendError {
@@ -61,6 +65,7 @@ pub enum EditorKey {
 pub struct EditorBackend {
     workspace: Workspace,
     view_id: editor_core::ViewId,
+    composition: Option<CompositionState>,
 }
 
 impl EditorBackend {
@@ -95,6 +100,7 @@ impl EditorBackend {
         Ok(Self {
             workspace,
             view_id: open.view_id,
+            composition: None,
         })
     }
 
@@ -424,6 +430,147 @@ impl EditorBackend {
         Ok(text)
     }
 
+    /// IME composition 开始：记录替换范围与原始文本，并隔离 undo group。
+    pub fn composition_start(&mut self) -> Result<(), EditorBackendError> {
+        let buffer_id = self.buffer_id()?;
+        let line_index = self.workspace.buffer_line_index(buffer_id)?;
+
+        let (start, len, original_selection) =
+            if let Some(selection) = self.workspace.selection_for_view(self.view_id)? {
+                let (start, end) = self.selection_char_range(&selection)?;
+                (start, end.saturating_sub(start), (start, end))
+            } else {
+                let Position { line, column } =
+                    self.workspace.cursor_position_for_view(self.view_id)?;
+                let offset = line_index.position_to_char_offset(line, column);
+                (offset, 0, (offset, offset))
+            };
+
+        let original_text = if len == 0 {
+            String::new()
+        } else {
+            self.workspace.buffer_text_range(buffer_id, start, len)?
+        };
+
+        // 隔离 composition undo 分组：避免与普通输入/粘贴合并。
+        self.workspace
+            .execute(self.view_id, Command::Edit(EditCommand::EndUndoGroup))?;
+
+        // 清理上一次残留（防御式；正常情况不会有）。
+        self.workspace.apply_processing_edits(
+            buffer_id,
+            [ProcessingEdit::ClearStyleLayer {
+                layer: StyleLayerId::IME_MARKED_TEXT,
+            }],
+        )?;
+
+        self.composition = Some(CompositionState {
+            start,
+            len,
+            original_text,
+            original_selection,
+        });
+        Ok(())
+    }
+
+    /// IME composition 更新（preedit）：按 ReplaceCoalescingUndo 合并为单步 undo。
+    pub fn composition_update(&mut self, text: String) -> Result<(), EditorBackendError> {
+        let buffer_id = self.buffer_id()?;
+        let Some((start, current_len)) = self.composition.as_ref().map(|s| (s.start, s.len)) else {
+            return Err(EditorBackendError::CompositionNotActive);
+        };
+
+        let next_len = text.chars().count();
+        let caret = start.saturating_add(next_len);
+
+        self.workspace.execute(
+            self.view_id,
+            Command::Edit(EditCommand::ReplaceCoalescingUndoWithSelection {
+                start,
+                length: current_len,
+                text,
+                selection_start: caret,
+                selection_end: caret,
+            }),
+        )?;
+
+        if let Some(state) = self.composition.as_mut() {
+            state.len = next_len;
+        }
+
+        if next_len == 0 {
+            self.workspace.apply_processing_edits(
+                buffer_id,
+                [ProcessingEdit::ClearStyleLayer {
+                    layer: StyleLayerId::IME_MARKED_TEXT,
+                }],
+            )?;
+            return Ok(());
+        }
+
+        self.workspace.apply_processing_edits(
+            buffer_id,
+            [ProcessingEdit::ReplaceStyleLayer {
+                layer: StyleLayerId::IME_MARKED_TEXT,
+                intervals: vec![Interval::new(
+                    start,
+                    start.saturating_add(next_len),
+                    IME_MARKED_TEXT_STYLE_ID,
+                )],
+            }],
+        )?;
+
+        Ok(())
+    }
+
+    /// IME composition 结束（commit 或 cancel）。
+    ///
+    /// - `committed_text` 非空：提交该文本（替换当前 preedit）。
+    /// - `committed_text` 为空：视为 cancel，恢复 composition 开始时的原始文本与 selection。
+    pub fn composition_end(&mut self, committed_text: String) -> Result<(), EditorBackendError> {
+        let Some(state) = self.composition.take() else {
+            return Err(EditorBackendError::CompositionNotActive);
+        };
+
+        let buffer_id = self.buffer_id()?;
+        let (replacement, selection_start, selection_end) = if committed_text.is_empty() {
+            (
+                state.original_text,
+                state.original_selection.0,
+                state.original_selection.1,
+            )
+        } else {
+            let len = committed_text.chars().count();
+            let caret = state.start.saturating_add(len);
+            (committed_text, caret, caret)
+        };
+
+        self.workspace.execute(
+            self.view_id,
+            Command::Edit(EditCommand::ReplaceCoalescingUndoWithSelection {
+                start: state.start,
+                length: state.len,
+                text: replacement,
+                selection_start,
+                selection_end,
+            }),
+        )?;
+
+        // 清理 IME marked style layer。
+        self.workspace.apply_processing_edits(
+            buffer_id,
+            [ProcessingEdit::ClearStyleLayer {
+                layer: StyleLayerId::IME_MARKED_TEXT,
+            }],
+        )?;
+
+        // 结束 composition undo 分组，避免与后续普通输入合并。
+        self.workspace
+            .execute(self.view_id, Command::Edit(EditCommand::EndUndoGroup))?;
+
+        Ok(())
+    }
+
     /// 当前 selection 的 overlay 坐标（composed rows 空间）。
     ///
     /// 返回值语义：
@@ -471,4 +618,12 @@ impl EditorBackend {
             (end_row as u32, end_x as u32),
         )))
     }
+}
+
+#[derive(Debug, Clone)]
+struct CompositionState {
+    start: usize,
+    len: usize,
+    original_text: String,
+    original_selection: (usize, usize),
 }

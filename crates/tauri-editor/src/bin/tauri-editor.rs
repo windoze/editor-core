@@ -84,6 +84,24 @@ fn insert_text(state: tauri::State<'_, AppState>, text: String) -> Result<(), St
 }
 
 #[tauri::command]
+fn composition_start(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
+    backend.composition_start().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn composition_update(state: tauri::State<'_, AppState>, text: String) -> Result<(), String> {
+    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
+    backend.composition_update(text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn composition_end(state: tauri::State<'_, AppState>, text: String) -> Result<(), String> {
+    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
+    backend.composition_end(text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn insert_newline(state: tauri::State<'_, AppState>, auto_indent: bool) -> Result<(), String> {
     let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
     backend
@@ -171,6 +189,9 @@ fn main() {
             key_down,
             mouse_down,
             insert_text,
+            composition_start,
+            composition_update,
+            composition_end,
             insert_newline,
             insert_tab,
             backspace,

@@ -60,6 +60,7 @@ cargo test -p tauri-editor
 - 删除：Backspace / Delete（`beforeinput: deleteContentBackward/Forward`）
 - 换行 / Tab：`beforeinput: insertLineBreak/insertTab`
 - 选择：Shift+方向键、Shift+点击
+- IME：`compositionstart/update/end`（marked text 入内核；preedit 区域用 `IME_MARKED_TEXT` 下划线/背景渲染）
 - 剪贴板：Copy/Cut/Paste（Ctrl/Cmd + C/X/V）
 - Undo/Redo：Ctrl/Cmd + Z / Shift+Z（或 Ctrl+Y）
 - 全选：Ctrl/Cmd + A

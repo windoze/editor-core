@@ -34,6 +34,11 @@ const state = {
   pending: false,
   totalRows: 0,
   lastPasteAt: 0,
+  compositionActive: false,
+  compositionPendingText: "",
+  compositionFlushScheduled: false,
+  ignoreNextInsertTextAt: 0,
+  ignoreNextInsertTextText: "",
 };
 
 function measure() {
@@ -99,6 +104,11 @@ function classForStyleSet(styleSetId, styleSets) {
   const FOLD_PLACEHOLDER_STYLE_ID = 0x03000001;
   if (styleIds.includes(FOLD_PLACEHOLDER_STYLE_ID)) {
     cls += " style-fold-placeholder";
+  }
+
+  const IME_MARKED_TEXT_STYLE_ID = 0x07000001;
+  if (styleIds.includes(IME_MARKED_TEXT_STYLE_ID)) {
+    cls += " style-ime-marked";
   }
 
   return cls;
@@ -296,13 +306,28 @@ scrollViewport.addEventListener("mousedown", (e) => {
 });
 
 imeInput.addEventListener("beforeinput", (e) => {
-  // IME（composition）在 Milestone 4 处理；这里先只接普通输入。
+  // composition 期间的输入由 `composition*` 管线接管；这里处理非 IME 的普通输入。
   if (e.isComposing) return;
 
   const type = e.inputType;
   const data = e.data ?? "";
 
   if (type === "insertText") {
+    const now = performance.now();
+    if (
+      state.ignoreNextInsertTextText &&
+      now - state.ignoreNextInsertTextAt < 100 &&
+      data === state.ignoreNextInsertTextText
+    ) {
+      // 一些 WebView 会在 `compositionend` 之后再补发一次 `beforeinput(insertText)`；
+      // 我们以 composition 管线为准，避免重复插入。
+      e.preventDefault();
+      state.ignoreNextInsertTextText = "";
+      state.ignoreNextInsertTextAt = 0;
+      if (imeInput.value) imeInput.value = "";
+      return;
+    }
+
     if (!data) return;
     e.preventDefault();
     void invokeQueued("insert_text", { text: data }).then(scheduleRender);
@@ -337,6 +362,41 @@ imeInput.addEventListener("input", (e) => {
   // 在我们 `preventDefault()` 的路径上通常不会触发；这里做兜底，避免隐藏 textarea 堆积内容。
   if (e.isComposing) return;
   if (imeInput.value) imeInput.value = "";
+});
+
+function scheduleCompositionFlush() {
+  if (state.compositionFlushScheduled) return;
+  state.compositionFlushScheduled = true;
+  requestAnimationFrame(() => {
+    state.compositionFlushScheduled = false;
+    if (!state.compositionActive) return;
+    const text = state.compositionPendingText;
+    void invokeQueued("composition_update", { text }).then(scheduleRender);
+  });
+}
+
+imeInput.addEventListener("compositionstart", () => {
+  state.compositionActive = true;
+  state.compositionPendingText = "";
+  state.compositionFlushScheduled = false;
+  void invokeQueued("composition_start").then(scheduleRender);
+});
+
+imeInput.addEventListener("compositionupdate", (e) => {
+  state.compositionPendingText = e.data ?? "";
+  scheduleCompositionFlush();
+});
+
+imeInput.addEventListener("compositionend", (e) => {
+  const text = e.data ?? "";
+  state.compositionActive = false;
+  state.compositionPendingText = "";
+  state.compositionFlushScheduled = false;
+  // 见 `beforeinput(insertText)` 的去重逻辑：避免重复 commit。
+  state.ignoreNextInsertTextAt = performance.now();
+  state.ignoreNextInsertTextText = text;
+  void invokeQueued("composition_end", { text }).then(scheduleRender);
+  imeInput.value = "";
 });
 
 document.addEventListener("keydown", async (e) => {

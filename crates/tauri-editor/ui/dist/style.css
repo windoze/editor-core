@@ -58,6 +58,13 @@ body {
   color: var(--muted);
 }
 
+.run.style-ime-marked {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--cursor);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 #overlayLayer {
   position: absolute;
   inset: 0;

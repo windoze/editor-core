@@ -4,7 +4,7 @@
 
 ## 实现进度（2026-03-14）
 
-已在 `crates/tauri-editor` 落地 **Milestone 0–3** 的“最小可运行版本”（text-grid / composed rows / 输入）：
+已在 `crates/tauri-editor` 落地 **Milestone 0–4** 的“最小可运行版本”（text-grid / composed rows / 输入 / IME）：
 
 - ✅ Tauri v2 壳 + 静态前端（`ui/dist`，不依赖 npm 构建）
 - ✅ Rust 后端：`Workspace` + `get_viewport_content_composed` → `ViewportSnapshot`（runs 压缩 + style-set interning + 每段携带 cells 宽度）
@@ -14,6 +14,7 @@
 - ✅ 文本输入/删除（非 IME）：`beforeinput` → Rust `EditCommand::*`（InsertText/Backspace/DeleteForward/Newline/Tab）
 - ✅ 选择与命中测试：Shift+方向键、Shift+点击扩选；选择渲染走 overlay 矩形（禁用浏览器原生 selection）
 - ✅ 剪贴板：走 Tauri 后端（`tauri-plugin-clipboard-manager`），支持 Copy/Cut/Paste、Undo/Redo、Select All
+- ✅ IME MVP：`compositionstart/update/end` → 内核 ReplaceCoalescingUndo（marked text 入内核）+ `IME_MARKED_TEXT` style layer
 
 已验证：
 - `cargo test -p tauri-editor`
@@ -444,7 +445,7 @@ soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；�
 
 验收：英文输入、Backspace/Delete 正常。
 
-### Milestone 4：IME MVP（建议第 1 周尽早）
+### Milestone 4：IME MVP（已实现：`crates/tauri-editor`）
 - 引入 `compositionstart/update/end` 处理，采用“marked text 进入内核”的模型：
   - `ReplaceCoalescingUndoWithSelection` 做 preedit 更新（按帧节流）
   - `StyleLayerId::IME_MARKED_TEXT + IME_MARKED_TEXT_STYLE_ID` 做下划线/背景渲染
@@ -514,6 +515,7 @@ soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；�
 
 ### 10.1 需要重点观察/记录的差异点（待验证清单）
 - **IME 事件序列差异**：`composition*` 与 `beforeinput/input` 的触发顺序、频率、data 字段内容。
+  - 已观察/已规避：部分 WebView 会在 `compositionend` 之后补发一次 `beforeinput(insertText)`（data 等于 commit 文本），需要去重避免重复插入。
 - **composition 内 selection 的可用性**：`textarea.selectionStart/End` 在 composition 期间是否可靠（不同平台可能返回 0 或滞后）。
 - **候选窗定位行为**：移动 `textarea` 是否能稳定改变候选窗位置；是否要求元素可见/有 caret。
 - **键盘事件差异**：`KeyboardEvent.key`/`code` 的差异，尤其在非 US 键盘布局、Dead keys、以及 IME 打开时。
