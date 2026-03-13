@@ -110,6 +110,25 @@ function clamp(n, lo, hi) {
   return Math.min(Math.max(n, lo), hi);
 }
 
+function ensureRowVisible(row, marginRows = 2) {
+  const marginPx = Math.max(0, marginRows) * state.lineHeightPx;
+  const viewportTop = scrollViewport.scrollTop;
+  const viewportBottom = viewportTop + scrollViewport.clientHeight;
+
+  const rowTop = row * state.lineHeightPx;
+  const rowBottom = rowTop + state.lineHeightPx;
+
+  if (rowTop < viewportTop + marginPx) {
+    scrollViewport.scrollTop = Math.max(0, rowTop - marginPx);
+    return;
+  }
+
+  if (rowBottom > viewportBottom - marginPx) {
+    const nextTop = rowBottom + marginPx - scrollViewport.clientHeight;
+    scrollViewport.scrollTop = Math.max(0, nextTop);
+  }
+}
+
 function computeRequestRange(totalRowsHint = null) {
   const visibleStart = Math.floor(scrollViewport.scrollTop / state.lineHeightPx);
   const start = Math.max(0, visibleStart - state.overscan);
@@ -809,6 +828,13 @@ document.addEventListener("keydown", async (e) => {
       meta: e.metaKey,
     },
   });
+
+  // 键盘导航应尽量把 caret 保持在 viewport 内（selection 扩展同理：active end=cursor）。
+  const cursor = await invokeQueued("get_cursor");
+  if (Array.isArray(cursor) && cursor.length >= 2) {
+    ensureRowVisible(cursor[0]);
+  }
+
   scheduleRender();
 });
 

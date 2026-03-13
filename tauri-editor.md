@@ -10,7 +10,7 @@
 - ✅ Rust 后端：`Workspace` + `get_viewport_content_composed` → `ViewportSnapshot`（runs 压缩 + style-set interning + 每段携带 cells 宽度）
 - ✅ 前端：行级渲染（line `<div>` + run `<span>`）+ composed rows 虚拟化（`spacerTop/spacerBottom`）+ **按 cells 强制分配 run 宽度**（避免 CJK/emoji/font fallback 导致 caret/对齐错位）
 - ✅ 光标 overlay（`(row, x_cells)` → 像素定位）
-- ✅ 基础导航：方向键 / Home / End / PageUp / PageDown
+- ✅ 基础导航：方向键 / Home / End / PageUp / PageDown（键盘移动/扩选后自动滚动，尽量保持 caret 在 viewport 内）
 - ✅ 文本输入/删除（非 IME）：`beforeinput` → Rust `EditCommand::*`（InsertText/Backspace/DeleteForward/Newline/Tab）
 - ✅ 选择与命中测试：Shift+方向键、Shift+点击扩选；选择渲染走 overlay 矩形（禁用浏览器原生 selection）
 - ✅ Gutter：行号（按 `logicalLineCount` 动态宽度）+ 折叠标记（来自 `folding_manager.regions()`）+ 点击 toggle（Fold/Unfold）
