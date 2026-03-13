@@ -18,6 +18,12 @@ cargo run -p tauri-editor --features tauri-app --bin tauri-editor -- path/to/fil
 
 如果不传文件路径，会打开一个空文档。
 
+### 为什么不需要 `devUrl`
+
+`crates/tauri-editor/tauri.conf.json` **故意不设置** `build.devUrl`，这样 `cargo run`（debug）时
+Tauri 会回退到 `tauri://localhost/index.html` 并直接加载 `ui/dist` 的静态资源，不需要额外起
+前端 dev server。
+
 ## 目录结构
 
 - `src/`
@@ -34,4 +40,3 @@ cargo run -p tauri-editor --features tauri-app --bin tauri-editor -- path/to/fil
 ```bash
 cargo test -p tauri-editor
 ```
-

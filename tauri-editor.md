@@ -18,6 +18,9 @@
 运行（本机）：
 - `cargo run -p tauri-editor --features tauri-app --bin tauri-editor -- <path>`
 
+运行注意：
+- `crates/tauri-editor/tauri.conf.json` 未设置 `build.devUrl`，因此 `cargo run`（debug）会直接加载 `frontendDist=ui/dist`（不需要前端 dev server）。
+
 ---
 
 ## 0. 当前 `editor-core*` 能力核对（基于仓库现状）
