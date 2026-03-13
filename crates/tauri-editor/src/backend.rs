@@ -8,9 +8,16 @@ use editor_core::{
     Workspace, WorkspaceError,
 };
 use editor_core_highlight_simple::{RegexHighlighter, RegexRule};
+use editor_core_lsp::editor::{LspDocument, LspSessionStartOptions};
+use editor_core_lsp::lsp_sync::{CANONICAL_SEMANTIC_TOKEN_MODIFIERS, CANONICAL_SEMANTIC_TOKEN_TYPES};
+use editor_core_lsp::lsp_uri::path_to_file_uri;
+use editor_core_lsp::workspace_sync::LspWorkspaceSync;
 use editor_core_treesitter::{TreeSitterLanguage, TreeSitterProcessor, TreeSitterProcessorConfig};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::path::Path;
+use std::process::Command as ProcessCommand;
+use std::time::Duration;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EditorBackendError {
@@ -32,6 +39,8 @@ pub enum EditorBackendError {
     CompositionNotActive,
     #[error("Tree-sitter 处理失败：{0}")]
     TreeSitter(String),
+    #[error("LSP 错误：{0}")]
+    Lsp(String),
     #[error("minimap total_rows 超出 u32 范围（total_rows={total_rows}）")]
     MinimapTotalRowsTooLarge { total_rows: usize },
     #[error("minimap bucket_size 超出 u32 范围（bucket_size={bucket_size}）")]
@@ -75,6 +84,7 @@ pub struct EditorBackend {
     composition: Option<CompositionState>,
     highlighter: Option<RegexHighlighter>,
     treesitter: Option<TreeSitterProcessor>,
+    lsp: Option<LspWorkspaceSync>,
 }
 
 impl std::fmt::Debug for EditorBackend {
@@ -85,6 +95,7 @@ impl std::fmt::Debug for EditorBackend {
             .field("composition", &self.composition)
             .field("highlighter", &self.highlighter)
             .field("treesitter", &self.treesitter.is_some())
+            .field("lsp", &self.lsp.is_some())
             .finish()
     }
 }
@@ -153,6 +164,7 @@ impl EditorBackend {
             composition: None,
             highlighter,
             treesitter,
+            lsp: None,
         };
 
         backend.refresh_syntax_highlighting()?;
@@ -162,11 +174,10 @@ impl EditorBackend {
     /// 从磁盘打开一个文件并创建一个初始 view。
     pub fn open_file(path: &Path, viewport_width_cells: usize) -> Result<Self, EditorBackendError> {
         let text = std::fs::read_to_string(path)?;
-        Self::open_text(
-            Some(path.to_string_lossy().to_string()),
-            &text,
-            viewport_width_cells,
-        )
+        let uri = path_to_file_uri(path);
+        let mut backend = Self::open_text(Some(uri.clone()), &text, viewport_width_cells)?;
+        backend.try_start_lsp_for_file(path, &uri);
+        Ok(backend)
     }
 
     pub fn view_id(&self) -> editor_core::ViewId {
@@ -204,6 +215,7 @@ impl EditorBackend {
         count: usize,
     ) -> Result<ViewportSnapshot, EditorBackendError> {
         self.refresh_treesitter_processing()?;
+        self.refresh_lsp_processing()?;
         let width_cells = self.workspace.viewport_width_for_view(self.view_id)?;
         let tab_width = self.workspace.tab_width_for_view(self.view_id)?;
 
@@ -294,6 +306,101 @@ impl EditorBackend {
         }
 
         self.workspace.apply_processing_edits(buffer_id, edits)?;
+        Ok(())
+    }
+
+    fn try_start_lsp_for_file(&mut self, path: &Path, uri: &str) {
+        let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_ascii_lowercase())
+        else {
+            return;
+        };
+
+        let (language_id, server_cmd) = match ext.as_str() {
+            "rs" => ("rust", "rust-analyzer"),
+            _ => return,
+        };
+
+        let buffer_id = match self.buffer_id() {
+            Ok(id) => id,
+            Err(_) => return,
+        };
+
+        let initial_text = match self.workspace.buffer_text(buffer_id) {
+            Ok(text) => text,
+            Err(_) => return,
+        };
+
+        let root_uri = path
+            .parent()
+            .map(path_to_file_uri)
+            .unwrap_or_else(|| path_to_file_uri(path));
+
+        let root_uri_for_folders = root_uri.clone();
+        let workspace_folders = vec![json!({
+            "uri": root_uri_for_folders,
+            "name": "workspace",
+        })];
+
+        let initialize_params = json!({
+            "processId": null,
+            "clientInfo": { "name": "tauri-editor", "version": env!("CARGO_PKG_VERSION") },
+            "rootUri": root_uri,
+            "workspaceFolders": workspace_folders,
+            "capabilities": {
+                "workspace": { "workspaceFolders": true },
+                "textDocument": {
+                    "semanticTokens": {
+                        "requests": { "range": false, "full": { "delta": true } },
+                        "tokenTypes": CANONICAL_SEMANTIC_TOKEN_TYPES,
+                        "tokenModifiers": CANONICAL_SEMANTIC_TOKEN_MODIFIERS,
+                        "formats": ["relative"],
+                        "overlappingTokenSupport": true,
+                        "multilineTokenSupport": true
+                    },
+                    "foldingRange": { "dynamicRegistration": false, "lineFoldingOnly": true }
+                }
+            }
+        });
+
+        let opts = LspSessionStartOptions {
+            cmd: ProcessCommand::new(server_cmd),
+            workspace_folders: initialize_params["workspaceFolders"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default(),
+            initialize_params,
+            initialize_timeout: Duration::from_secs(10),
+            document: LspDocument {
+                uri: uri.to_string(),
+                language_id: language_id.to_string(),
+                version: 1,
+            },
+            initial_text,
+        };
+
+        match LspWorkspaceSync::start(opts) {
+            Ok(mut sync) => {
+                if let Ok(_) = sync.set_active_workspace_document(&self.workspace, buffer_id) {
+                    self.lsp = Some(sync);
+                }
+            }
+            Err(_) => {
+                // 不中断打开文件：没有安装语言服务器时保持可用。
+            }
+        }
+    }
+
+    fn refresh_lsp_processing(&mut self) -> Result<(), EditorBackendError> {
+        if self.lsp.is_none() {
+            return Ok(());
+        };
+
+        let buffer_id = self.buffer_id()?;
+        let sync = self.lsp.as_mut().expect("checked above");
+        sync.did_change_from_text_delta(&mut self.workspace, buffer_id)
+            .map_err(EditorBackendError::Lsp)?;
+        sync.poll_workspace(&mut self.workspace)
+            .map_err(EditorBackendError::Lsp)?;
         Ok(())
     }
 

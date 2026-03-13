@@ -353,6 +353,54 @@ function classForStyleSet(styleSetId, styleSets) {
   if (styleIds.includes(TS_STYLE_CONSTRUCTOR)) cls += " style-ts-constructor";
   if (styleIds.includes(TS_STYLE_PROPERTY)) cls += " style-ts-property";
 
+  // LSP diagnostics underline（0x0400_0100 | severity_bits）
+  const DIAG_BASE = 0x04000100;
+  for (const id of styleIds) {
+    if ((id & 0xffffff00) === DIAG_BASE) {
+      const sev = id & 0xff;
+      if (sev === 1) cls += " style-lsp-diag-error";
+      if (sev === 2) cls += " style-lsp-diag-warning";
+      if (sev === 3) cls += " style-lsp-diag-info";
+      if (sev === 4) cls += " style-lsp-diag-hint";
+    }
+  }
+
+  // LSP semantic tokens（StyleId 编码：高 16 位=canonical token type，低 16 位=modifier bits）
+  const LSP_TOKEN_TYPES = [
+    "namespace",
+    "type",
+    "class",
+    "enum",
+    "interface",
+    "struct",
+    "typeParameter",
+    "parameter",
+    "variable",
+    "property",
+    "enumMember",
+    "event",
+    "function",
+    "method",
+    "macro",
+    "keyword",
+    "modifier",
+    "comment",
+    "string",
+    "number",
+    "regexp",
+    "operator",
+  ];
+  for (const id of styleIds) {
+    // 该 demo 自定义 style ids 都在 0x0200_0000 以上；因此把小范围的 id 视为 LSP semantic。
+    if (id <= 0 || id >= 0x02000000) continue;
+    const typeIdx = id >>> 16;
+    const name = LSP_TOKEN_TYPES[typeIdx];
+    if (name) cls += ` style-lsp-${name}`;
+    const mods = id & 0xffff;
+    const MOD_DOCUMENTATION = 1 << 8;
+    if (mods & MOD_DOCUMENTATION) cls += " style-lsp-mod-doc";
+  }
+
   // editor-core 内置 decoration style id（intervals.rs）
   const INLAY_HINT_STYLE_ID = 0x08000001;
   const CODE_LENS_STYLE_ID = 0x08000002;

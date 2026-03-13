@@ -25,8 +25,10 @@ tauri-app = [
 [dependencies]
 editor-core = { version = "0.3.0", path = "../editor-core" }
 editor-core-highlight-simple = { version = "0.3.0", path = "../editor-core-highlight-simple" }
+editor-core-lsp = { version = "0.3.0", path = "../editor-core-lsp" }
 editor-core-treesitter = { version = "0.3.0", path = "../editor-core-treesitter" }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
 thiserror = "2"
 
 # Tauri (optional; behind `tauri-app` to avoid pulling heavy deps for pure-Rust tests).
@@ -37,7 +39,6 @@ tauri-plugin-clipboard-manager = { version = "2", optional = true }
 tauri-build = { version = "2", optional = true }
 
 [dev-dependencies]
-serde_json = "1"
 
 [[bin]]
 name = "tauri-editor"

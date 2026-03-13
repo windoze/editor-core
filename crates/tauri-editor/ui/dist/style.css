@@ -229,6 +229,73 @@ body {
   color: rgba(215, 218, 224, 0.95);
 }
 
+.run.style-lsp-diag-error {
+  text-decoration: underline wavy rgba(224, 108, 117, 0.95);
+  text-underline-offset: 2px;
+}
+
+.run.style-lsp-diag-warning {
+  text-decoration: underline wavy rgba(229, 192, 123, 0.95);
+  text-underline-offset: 2px;
+}
+
+.run.style-lsp-diag-info {
+  text-decoration: underline wavy rgba(86, 182, 194, 0.95);
+  text-underline-offset: 2px;
+}
+
+.run.style-lsp-diag-hint {
+  text-decoration: underline dotted rgba(127, 132, 156, 0.95);
+  text-underline-offset: 2px;
+}
+
+.run.style-lsp-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.run.style-lsp-string,
+.run.style-lsp-regexp {
+  color: #98c379;
+}
+
+.run.style-lsp-number {
+  color: #d19a66;
+}
+
+.run.style-lsp-keyword {
+  color: #c678dd;
+  font-weight: 600;
+}
+
+.run.style-lsp-function,
+.run.style-lsp-method {
+  color: #61afef;
+}
+
+.run.style-lsp-macro {
+  color: #e06c75;
+}
+
+.run.style-lsp-type,
+.run.style-lsp-class,
+.run.style-lsp-enum,
+.run.style-lsp-interface,
+.run.style-lsp-struct,
+.run.style-lsp-typeParameter {
+  color: #e5c07b;
+}
+
+.run.style-lsp-namespace,
+.run.style-lsp-property,
+.run.style-lsp-enumMember {
+  color: #56b6c2;
+}
+
+.run.style-lsp-mod-doc {
+  opacity: 0.9;
+}
+
 .run.style-inlay-hint,
 .run.style-code-lens {
   color: var(--muted);
