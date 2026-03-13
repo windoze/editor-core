@@ -61,7 +61,7 @@ cargo test -p tauri-editor
 - 换行 / Tab：`beforeinput: insertLineBreak/insertTab`
 - 选择：Shift+方向键、Shift+点击、鼠标拖拽选择
 - 键盘导航：方向键/Home/End/PageUp/PageDown，移动/扩选后自动滚动保持光标可见
-- 折叠：点击 gutter 的三角标记（基于 `folding_manager.regions()`；后续会由 treesitter/LSP 提供 regions）
+- 折叠：点击 gutter 的三角标记（基于 `folding_manager.regions()`；目前 Rust folds 来自 `editor-core-treesitter`）
 - IME：`compositionstart/update/end`（marked text 入内核；preedit 区域用 `IME_MARKED_TEXT` 下划线/背景渲染）
 - 剪贴板：Copy/Cut/Paste（Ctrl/Cmd + C/X/V）
 - Undo/Redo：Ctrl/Cmd + Z / Shift+Z（或 Ctrl+Y）
@@ -71,6 +71,7 @@ cargo test -p tauri-editor
 
 - JSON/INI：`editor-core-highlight-simple`（regex-based，style layer：`StyleLayerId::SIMPLE_SYNTAX`）
 - Markdown：tauri-editor 内置的轻量 regex 高亮（标题/行内代码/link）
+- Rust：`editor-core-treesitter`（Tree-sitter WASM + highlights/folds query，style layer：`StyleLayerId::TREE_SITTER`）
 
 ## Patch / 性能（当前实现）
 

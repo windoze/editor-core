@@ -25,6 +25,7 @@ tauri-app = [
 [dependencies]
 editor-core = { version = "0.3.0", path = "../editor-core" }
 editor-core-highlight-simple = { version = "0.3.0", path = "../editor-core-highlight-simple" }
+editor-core-treesitter = { version = "0.3.0", path = "../editor-core-treesitter" }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2"
 

@@ -165,6 +165,70 @@ body {
   text-underline-offset: 2px;
 }
 
+.run.style-ts-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.run.style-ts-comment-doc {
+  color: rgba(215, 218, 224, 0.6);
+  font-style: italic;
+}
+
+.run.style-ts-string {
+  color: #98c379;
+}
+
+.run.style-ts-escape {
+  color: #d19a66;
+}
+
+.run.style-ts-keyword {
+  color: #c678dd;
+  font-weight: 600;
+}
+
+.run.style-ts-operator,
+.run.style-ts-punct {
+  color: rgba(215, 218, 224, 0.9);
+}
+
+.run.style-ts-type,
+.run.style-ts-type-builtin {
+  color: #e5c07b;
+}
+
+.run.style-ts-function {
+  color: #61afef;
+}
+
+.run.style-ts-macro {
+  color: #e06c75;
+}
+
+.run.style-ts-variable-parameter {
+  color: rgba(215, 218, 224, 0.95);
+}
+
+.run.style-ts-variable-builtin {
+  color: #e06c75;
+}
+
+.run.style-ts-constant,
+.run.style-ts-constant-builtin {
+  color: #d19a66;
+}
+
+.run.style-ts-attribute,
+.run.style-ts-label {
+  color: #56b6c2;
+}
+
+.run.style-ts-constructor,
+.run.style-ts-property {
+  color: rgba(215, 218, 224, 0.95);
+}
+
 .run.style-inlay-hint,
 .run.style-code-lens {
   color: var(--muted);

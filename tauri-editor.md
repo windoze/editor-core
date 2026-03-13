@@ -18,7 +18,7 @@
 - ✅ Minimap：右侧 minimap（基于 doc visual rows 密度采样；点击/拖拽定位滚动）
 - ✅ 剪贴板：走 Tauri 后端（`tauri-plugin-clipboard-manager`），支持 Copy/Cut/Paste、Undo/Redo、Select All
 - ✅ IME MVP：`compositionstart/update/end` → 内核 ReplaceCoalescingUndo（marked text 入内核）+ `IME_MARKED_TEXT` style layer
-- ✅ 样式分组/高亮：接入 `editor-core-highlight-simple`（JSON/INI）+ 轻量 Markdown regex 高亮；前端把 `StyleId` 映射为 CSS class
+- ✅ 样式分组/高亮：接入 `editor-core-highlight-simple`（JSON/INI）+ 轻量 Markdown regex 高亮 + `editor-core-treesitter`（Rust：高亮 + folds）；前端把 `StyleId` 映射为 CSS class
 - ✅ Patch 与性能：前端行级 diff（只更新变更行 DOM）+ 合并 IPC（`get_frame`）+ 基础性能日志（frame/dom/输入延迟）
 
 已验证：

@@ -8,6 +8,7 @@ use editor_core::{
     Workspace, WorkspaceError,
 };
 use editor_core_highlight_simple::{RegexHighlighter, RegexRule};
+use editor_core_treesitter::{TreeSitterLanguage, TreeSitterProcessor, TreeSitterProcessorConfig};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -29,6 +30,8 @@ pub enum EditorBackendError {
     VisualPositionNotMappable { row: usize, x_cells: usize },
     #[error("IME composition 未开始")]
     CompositionNotActive,
+    #[error("Tree-sitter 处理失败：{0}")]
+    TreeSitter(String),
     #[error("minimap total_rows 超出 u32 范围（total_rows={total_rows}）")]
     MinimapTotalRowsTooLarge { total_rows: usize },
     #[error("minimap bucket_size 超出 u32 范围（bucket_size={bucket_size}）")]
@@ -66,12 +69,24 @@ pub enum EditorKey {
 /// 一个纯 Rust 的 editor 后端封装：
 /// - 管理一个 `editor_core::Workspace` + 单一 active view（MVP）
 /// - 提供 viewport snapshot 与基础光标移动
-#[derive(Debug)]
 pub struct EditorBackend {
     workspace: Workspace,
     view_id: editor_core::ViewId,
     composition: Option<CompositionState>,
     highlighter: Option<RegexHighlighter>,
+    treesitter: Option<TreeSitterProcessor>,
+}
+
+impl std::fmt::Debug for EditorBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EditorBackend")
+            .field("workspace", &self.workspace)
+            .field("view_id", &self.view_id)
+            .field("composition", &self.composition)
+            .field("highlighter", &self.highlighter)
+            .field("treesitter", &self.treesitter.is_some())
+            .finish()
+    }
 }
 
 impl EditorBackend {
@@ -114,6 +129,7 @@ impl EditorBackend {
         viewport_width_cells: usize,
     ) -> Result<Self, EditorBackendError> {
         let highlighter = choose_highlighter(uri.as_deref());
+        let treesitter = choose_treesitter(uri.as_deref())?;
 
         let mut workspace = Workspace::new();
         let open = workspace.open_buffer(uri, text, viewport_width_cells)?;
@@ -136,6 +152,7 @@ impl EditorBackend {
             view_id: open.view_id,
             composition: None,
             highlighter,
+            treesitter,
         };
 
         backend.refresh_syntax_highlighting()?;
@@ -186,6 +203,7 @@ impl EditorBackend {
         start_row: usize,
         count: usize,
     ) -> Result<ViewportSnapshot, EditorBackendError> {
+        self.refresh_treesitter_processing()?;
         let width_cells = self.workspace.viewport_width_for_view(self.view_id)?;
         let tab_width = self.workspace.tab_width_for_view(self.view_id)?;
 
@@ -241,6 +259,42 @@ impl EditorBackend {
         }
 
         Ok(snapshot)
+    }
+
+    fn refresh_treesitter_processing(&mut self) -> Result<(), EditorBackendError> {
+        let buffer_id = self.buffer_id()?;
+        let Some(version) = self.workspace.view_version(self.view_id) else {
+            return Err(EditorBackendError::NoActiveView);
+        };
+
+        let delta = self
+            .workspace
+            .last_text_delta_for_view(self.view_id)
+            .map(|d| d.as_ref());
+
+        let Some(processor) = self.treesitter.as_mut() else {
+            return Ok(());
+        };
+
+        let edits = match processor.process_text(version, delta, None) {
+            Ok(edits) => edits,
+            Err(editor_core_treesitter::TreeSitterError::DeltaMismatch) => {
+                let full = self.workspace.buffer_text(buffer_id)?;
+                processor
+                    .process_text(version, delta, Some(&full))
+                    .map_err(|e| EditorBackendError::TreeSitter(e.to_string()))?
+            }
+            Err(e) => {
+                return Err(EditorBackendError::TreeSitter(e.to_string()));
+            }
+        };
+
+        if edits.is_empty() {
+            return Ok(());
+        }
+
+        self.workspace.apply_processing_edits(buffer_id, edits)?;
+        Ok(())
     }
 
     /// 获取 minimap 密度快照（按 doc visual rows 采样）。
@@ -839,6 +893,26 @@ const MD_STYLE_HEADING: StyleId = 0x0200_0101;
 const MD_STYLE_INLINE_CODE: StyleId = 0x0200_0102;
 const MD_STYLE_LINK: StyleId = 0x0200_0103;
 
+const TS_STYLE_COMMENT: StyleId = 0x0600_0001;
+const TS_STYLE_COMMENT_DOC: StyleId = 0x0600_0002;
+const TS_STYLE_STRING: StyleId = 0x0600_0003;
+const TS_STYLE_ESCAPE: StyleId = 0x0600_0004;
+const TS_STYLE_KEYWORD: StyleId = 0x0600_0005;
+const TS_STYLE_OPERATOR: StyleId = 0x0600_0006;
+const TS_STYLE_PUNCT: StyleId = 0x0600_0007;
+const TS_STYLE_TYPE: StyleId = 0x0600_0008;
+const TS_STYLE_TYPE_BUILTIN: StyleId = 0x0600_0009;
+const TS_STYLE_FUNCTION: StyleId = 0x0600_000a;
+const TS_STYLE_FUNCTION_MACRO: StyleId = 0x0600_000b;
+const TS_STYLE_VARIABLE_PARAMETER: StyleId = 0x0600_000c;
+const TS_STYLE_VARIABLE_BUILTIN: StyleId = 0x0600_000d;
+const TS_STYLE_CONSTANT: StyleId = 0x0600_000e;
+const TS_STYLE_CONSTANT_BUILTIN: StyleId = 0x0600_000f;
+const TS_STYLE_ATTRIBUTE: StyleId = 0x0600_0010;
+const TS_STYLE_LABEL: StyleId = 0x0600_0011;
+const TS_STYLE_CONSTRUCTOR: StyleId = 0x0600_0012;
+const TS_STYLE_PROPERTY: StyleId = 0x0600_0013;
+
 fn choose_highlighter(uri: Option<&str>) -> Option<RegexHighlighter> {
     let uri = uri?;
     let ext = Path::new(uri)
@@ -862,6 +936,60 @@ fn choose_highlighter(uri: Option<&str>) -> Option<RegexHighlighter> {
         }
         _ => None,
     }
+}
+
+fn choose_treesitter(uri: Option<&str>) -> Result<Option<TreeSitterProcessor>, EditorBackendError> {
+    let Some(uri) = uri else {
+        return Ok(None);
+    };
+    let ext = Path::new(uri)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+
+    match ext.as_deref() {
+        Some("rs") => build_rust_treesitter().map(Some),
+        _ => Ok(None),
+    }
+}
+
+fn build_rust_treesitter() -> Result<TreeSitterProcessor, EditorBackendError> {
+    const RUST_LANGUAGE_WASM: &[u8] =
+        include_bytes!("../../editor-core-treesitter/tests/fixtures/treesitter/rust/language.wasm");
+    const RUST_HIGHLIGHTS: &str = include_str!(
+        "../../editor-core-treesitter/tests/fixtures/treesitter/rust/highlights.scm"
+    );
+    const RUST_FOLDS: &str =
+        include_str!("../../editor-core-treesitter/tests/fixtures/treesitter/rust/folds.scm");
+
+    let language = TreeSitterLanguage::wasm("rust".to_string(), RUST_LANGUAGE_WASM.to_vec());
+    let config = TreeSitterProcessorConfig::new(language, RUST_HIGHLIGHTS)
+        .with_folds_query(RUST_FOLDS)
+        .with_simple_capture_styles([
+            ("comment", TS_STYLE_COMMENT),
+            ("comment.documentation", TS_STYLE_COMMENT_DOC),
+            ("string", TS_STYLE_STRING),
+            ("escape", TS_STYLE_ESCAPE),
+            ("keyword", TS_STYLE_KEYWORD),
+            ("operator", TS_STYLE_OPERATOR),
+            ("punctuation.bracket", TS_STYLE_PUNCT),
+            ("punctuation.delimiter", TS_STYLE_PUNCT),
+            ("type", TS_STYLE_TYPE),
+            ("type.builtin", TS_STYLE_TYPE_BUILTIN),
+            ("function", TS_STYLE_FUNCTION),
+            ("function.method", TS_STYLE_FUNCTION),
+            ("function.macro", TS_STYLE_FUNCTION_MACRO),
+            ("variable.parameter", TS_STYLE_VARIABLE_PARAMETER),
+            ("variable.builtin", TS_STYLE_VARIABLE_BUILTIN),
+            ("constant", TS_STYLE_CONSTANT),
+            ("constant.builtin", TS_STYLE_CONSTANT_BUILTIN),
+            ("attribute", TS_STYLE_ATTRIBUTE),
+            ("label", TS_STYLE_LABEL),
+            ("constructor", TS_STYLE_CONSTRUCTOR),
+            ("property", TS_STYLE_PROPERTY),
+        ]);
+
+    TreeSitterProcessor::new(config).map_err(|e| EditorBackendError::TreeSitter(e.to_string()))
 }
 
 #[derive(Debug, Clone)]

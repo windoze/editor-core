@@ -312,6 +312,47 @@ function classForStyleSet(styleSetId, styleSets) {
   if (styleIds.includes(MD_STYLE_INLINE_CODE)) cls += " style-md-inline-code";
   if (styleIds.includes(MD_STYLE_LINK)) cls += " style-md-link";
 
+  // Tree-sitter（tauri-editor 内置映射；StyleId 由后端选择并写入 style layer：TREE_SITTER）
+  const TS_STYLE_COMMENT = 0x06000001;
+  const TS_STYLE_COMMENT_DOC = 0x06000002;
+  const TS_STYLE_STRING = 0x06000003;
+  const TS_STYLE_ESCAPE = 0x06000004;
+  const TS_STYLE_KEYWORD = 0x06000005;
+  const TS_STYLE_OPERATOR = 0x06000006;
+  const TS_STYLE_PUNCT = 0x06000007;
+  const TS_STYLE_TYPE = 0x06000008;
+  const TS_STYLE_TYPE_BUILTIN = 0x06000009;
+  const TS_STYLE_FUNCTION = 0x0600000a;
+  const TS_STYLE_FUNCTION_MACRO = 0x0600000b;
+  const TS_STYLE_VARIABLE_PARAMETER = 0x0600000c;
+  const TS_STYLE_VARIABLE_BUILTIN = 0x0600000d;
+  const TS_STYLE_CONSTANT = 0x0600000e;
+  const TS_STYLE_CONSTANT_BUILTIN = 0x0600000f;
+  const TS_STYLE_ATTRIBUTE = 0x06000010;
+  const TS_STYLE_LABEL = 0x06000011;
+  const TS_STYLE_CONSTRUCTOR = 0x06000012;
+  const TS_STYLE_PROPERTY = 0x06000013;
+
+  if (styleIds.includes(TS_STYLE_COMMENT)) cls += " style-ts-comment";
+  if (styleIds.includes(TS_STYLE_COMMENT_DOC)) cls += " style-ts-comment-doc";
+  if (styleIds.includes(TS_STYLE_STRING)) cls += " style-ts-string";
+  if (styleIds.includes(TS_STYLE_ESCAPE)) cls += " style-ts-escape";
+  if (styleIds.includes(TS_STYLE_KEYWORD)) cls += " style-ts-keyword";
+  if (styleIds.includes(TS_STYLE_OPERATOR)) cls += " style-ts-operator";
+  if (styleIds.includes(TS_STYLE_PUNCT)) cls += " style-ts-punct";
+  if (styleIds.includes(TS_STYLE_TYPE)) cls += " style-ts-type";
+  if (styleIds.includes(TS_STYLE_TYPE_BUILTIN)) cls += " style-ts-type-builtin";
+  if (styleIds.includes(TS_STYLE_FUNCTION)) cls += " style-ts-function";
+  if (styleIds.includes(TS_STYLE_FUNCTION_MACRO)) cls += " style-ts-macro";
+  if (styleIds.includes(TS_STYLE_VARIABLE_PARAMETER)) cls += " style-ts-variable-parameter";
+  if (styleIds.includes(TS_STYLE_VARIABLE_BUILTIN)) cls += " style-ts-variable-builtin";
+  if (styleIds.includes(TS_STYLE_CONSTANT)) cls += " style-ts-constant";
+  if (styleIds.includes(TS_STYLE_CONSTANT_BUILTIN)) cls += " style-ts-constant-builtin";
+  if (styleIds.includes(TS_STYLE_ATTRIBUTE)) cls += " style-ts-attribute";
+  if (styleIds.includes(TS_STYLE_LABEL)) cls += " style-ts-label";
+  if (styleIds.includes(TS_STYLE_CONSTRUCTOR)) cls += " style-ts-constructor";
+  if (styleIds.includes(TS_STYLE_PROPERTY)) cls += " style-ts-property";
+
   // editor-core 内置 decoration style id（intervals.rs）
   const INLAY_HINT_STYLE_ID = 0x08000001;
   const CODE_LENS_STYLE_ID = 0x08000002;

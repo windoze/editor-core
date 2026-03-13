@@ -5221,6 +5221,7 @@ version = "0.3.0"
 dependencies = [
  "editor-core",
  "editor-core-highlight-simple",
+ "editor-core-treesitter",
  "serde",
  "serde_json",
  "tauri",
