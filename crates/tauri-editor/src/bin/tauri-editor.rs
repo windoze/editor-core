@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use serde::Serialize;
 use tauri::Manager;
 use tauri_editor::{EditorBackend, EditorKey, KeyModifiers};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -8,6 +9,14 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 #[derive(Debug)]
 struct AppState {
     backend: Mutex<EditorBackend>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FrameSnapshot {
+    snapshot: tauri_editor::snapshot::ViewportSnapshot,
+    cursor: (u32, u32),
+    selection: Option<((u32, u32), (u32, u32))>,
 }
 
 #[tauri::command]
@@ -36,6 +45,25 @@ fn get_viewport(
     backend
         .viewport_snapshot(start_row as usize, count as usize)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_frame(
+    state: tauri::State<'_, AppState>,
+    start_row: u32,
+    count: u32,
+) -> Result<FrameSnapshot, String> {
+    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
+    let snapshot = backend
+        .viewport_snapshot(start_row as usize, count as usize)
+        .map_err(|e| e.to_string())?;
+    let cursor = backend.cursor_overlay().map_err(|e| e.to_string())?;
+    let selection = backend.selection_overlay().map_err(|e| e.to_string())?;
+    Ok(FrameSnapshot {
+        snapshot,
+        cursor,
+        selection,
+    })
 }
 
 #[tauri::command]
@@ -184,6 +212,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             set_viewport,
             get_viewport,
+            get_frame,
             get_cursor,
             get_selection,
             key_down,

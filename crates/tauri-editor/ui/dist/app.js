@@ -39,6 +39,14 @@ const state = {
   compositionFlushScheduled: false,
   ignoreNextInsertTextAt: 0,
   ignoreNextInsertTextText: "",
+  renderedStartRow: null,
+  renderedCount: 0,
+  renderedWidthCells: 0,
+  lineKeys: new Map(),
+  perfLastLogAt: 0,
+  lastInputAt: 0,
+  lastInputKind: "",
+  lastDomStats: null,
 };
 
 function measure() {
@@ -149,7 +157,46 @@ function classForStyleSet(styleSetId, styleSets) {
   return cls;
 }
 
+function lineKey(line, styleSets) {
+  // 关键：不能只用 `styleSetId` 当 key，因为 style-set interning 是“每次快照重新编号”的，
+  // viewport 切片不同会导致相同 styles 对应不同的 id。这里直接用 styles 列表做稳定 key。
+  let key = `${line.kind}`;
+  for (const run of line.runs) {
+    const [styleSetId, sourceKind, sourceOffset, cells, text] = run;
+    const styleIds = styleSets[styleSetId] || [];
+    key += `|${styleIds.join(",")}:${sourceKind}:${sourceOffset}:${cells}:${text}`;
+  }
+  return key;
+}
+
+function updateLineElement(lineEl, line, styleSets) {
+  lineEl.dataset.row = String(line.row);
+
+  const frag = document.createDocumentFragment();
+  for (const run of line.runs) {
+    const [styleSetId, _sourceKind, _sourceOffset, cells, text] = run;
+    const span = document.createElement("span");
+    span.className = classForStyleSet(styleSetId, styleSets);
+    span.textContent = text;
+    // 按 cells 强制分配宽度，避免 CJK/emoji/font fallback 破坏 2-cell 假设导致 caret 落进 glyph 中间。
+    if (cells > 0) {
+      span.style.width = `${cells * state.cellWidthPx}px`;
+    }
+    frag.appendChild(span);
+  }
+  lineEl.replaceChildren(frag);
+}
+
+function createLineElement(line, styleSets) {
+  const lineEl = document.createElement("div");
+  lineEl.className = "line";
+  updateLineElement(lineEl, line, styleSets);
+  return lineEl;
+}
+
 function renderSnapshot(snapshot) {
+  const t0 = performance.now();
+
   // 同步 tab-size（确保 `\t` 展开与内核一致）。
   document.documentElement.style.setProperty("--tab-size", String(snapshot.tabWidth));
 
@@ -164,28 +211,118 @@ function renderSnapshot(snapshot) {
   spacerTop.style.height = `${topPx}px`;
   spacerBottom.style.height = `${bottomPx}px`;
 
-  const frag = document.createDocumentFragment();
-  for (const line of snapshot.lines) {
-    const lineEl = document.createElement("div");
-    lineEl.className = "line";
-    lineEl.dataset.row = String(line.row);
+  let createdLines = 0;
+  let removedLines = 0;
+  let updatedLines = 0;
 
-    for (const run of line.runs) {
-      const [styleSetId, _sourceKind, _sourceOffset, cells, text] = run;
-      const span = document.createElement("span");
-      span.className = classForStyleSet(styleSetId, snapshot.styleSets);
-      span.textContent = text;
-      // 按 cells 强制分配宽度，避免 CJK/emoji/font fallback 破坏 2-cell 假设导致 caret 落进 glyph 中间。
-      if (cells > 0) {
-        span.style.width = `${cells * state.cellWidthPx}px`;
-      }
-      lineEl.appendChild(span);
+  const newCount = snapshot.lines.length;
+  const oldStart = state.renderedStartRow;
+  const oldCount = state.renderedCount;
+  const newStart = snapshot.startRow;
+
+  const hasOverlap =
+    oldStart != null &&
+    oldCount > 0 &&
+    Math.max(oldStart, newStart) < Math.min(oldStart + oldCount, newStart + newCount);
+
+  const canPatch = hasOverlap && state.renderedWidthCells === snapshot.widthCells;
+
+  if (!canPatch) {
+    state.lineKeys.clear();
+    const frag = document.createDocumentFragment();
+    for (const line of snapshot.lines) {
+      frag.appendChild(createLineElement(line, snapshot.styleSets));
+      state.lineKeys.set(line.row, lineKey(line, snapshot.styleSets));
+      createdLines++;
     }
-
-    frag.appendChild(lineEl);
+    linesLayer.replaceChildren(frag);
+    state.renderedStartRow = newStart;
+    state.renderedCount = newCount;
+    state.renderedWidthCells = snapshot.widthCells;
+    const domMs = performance.now() - t0;
+    return {
+      domMs,
+      createdLines,
+      removedLines,
+      updatedLines: createdLines,
+      totalLines: newCount,
+      fullRender: true,
+    };
   }
 
-  linesLayer.replaceChildren(frag);
+  const delta = newStart - oldStart;
+  if (delta > 0) {
+    for (let i = 0; i < delta && linesLayer.firstChild; i++) {
+      const row = Number(linesLayer.firstChild.dataset.row);
+      state.lineKeys.delete(row);
+      linesLayer.removeChild(linesLayer.firstChild);
+      removedLines++;
+    }
+  } else if (delta < 0) {
+    const insertCount = Math.min(-delta, newCount);
+    for (let i = insertCount - 1; i >= 0; i--) {
+      const line = snapshot.lines[i];
+      linesLayer.insertBefore(createLineElement(line, snapshot.styleSets), linesLayer.firstChild);
+      state.lineKeys.set(line.row, lineKey(line, snapshot.styleSets));
+      createdLines++;
+    }
+  }
+
+  while (linesLayer.children.length > newCount) {
+    const last = linesLayer.lastChild;
+    if (!last) break;
+    const row = Number(last.dataset.row);
+    state.lineKeys.delete(row);
+    linesLayer.removeChild(last);
+    removedLines++;
+  }
+
+  while (linesLayer.children.length < newCount) {
+    const idx = linesLayer.children.length;
+    const line = snapshot.lines[idx];
+    linesLayer.appendChild(createLineElement(line, snapshot.styleSets));
+    state.lineKeys.set(line.row, lineKey(line, snapshot.styleSets));
+    createdLines++;
+  }
+
+  // 更新内容：只重建发生变化的行（行级 diff）。
+  let mismatch = false;
+  for (let i = 0; i < newCount; i++) {
+    const line = snapshot.lines[i];
+    const el = linesLayer.children[i];
+    if (!el || Number(el.dataset.row) !== line.row) {
+      mismatch = true;
+      break;
+    }
+
+    const key = lineKey(line, snapshot.styleSets);
+    if (state.lineKeys.get(line.row) !== key) {
+      updateLineElement(el, line, snapshot.styleSets);
+      state.lineKeys.set(line.row, key);
+      updatedLines++;
+    }
+  }
+
+  if (mismatch) {
+    // 防御式回退：如果某次 patch 因为意外原因导致 row 对不上，直接全量重建。
+    state.lineKeys.clear();
+    const frag = document.createDocumentFragment();
+    for (const line of snapshot.lines) {
+      frag.appendChild(createLineElement(line, snapshot.styleSets));
+      state.lineKeys.set(line.row, lineKey(line, snapshot.styleSets));
+      createdLines++;
+    }
+    linesLayer.replaceChildren(frag);
+    updatedLines = createdLines;
+    removedLines = 0;
+  }
+
+  state.renderedStartRow = newStart;
+  state.renderedCount = newCount;
+  state.renderedWidthCells = snapshot.widthCells;
+
+  const domMs = performance.now() - t0;
+  return { domMs, createdLines, removedLines, updatedLines, totalLines: newCount, fullRender: false };
 }
 
 function positionCursor(cursor) {
@@ -265,18 +402,34 @@ async function renderOnce() {
     return;
   }
   state.rendering = true;
+  const tFrameStart = performance.now();
   try {
     await syncViewport();
 
     const { start, count } = computeRequestRange();
-    const snapshot = await invokeQueued("get_viewport", { startRow: start, count });
-    renderSnapshot(snapshot);
+    const frame = await invokeQueued("get_frame", { startRow: start, count });
+    const snapshot = frame.snapshot;
+    const domStats = renderSnapshot(snapshot);
 
-    const cursor = await invokeQueued("get_cursor");
-    positionCursor(cursor);
+    positionCursor(frame.cursor);
+    renderSelection(frame.selection, snapshot);
 
-    const selection = await invokeQueued("get_selection");
-    renderSelection(selection, snapshot);
+    state.lastDomStats = domStats;
+    const tFrameEnd = performance.now();
+    if (tFrameEnd - state.perfLastLogAt > 1000) {
+      const inputLatency =
+        state.lastInputAt > 0 ? Math.max(0, tFrameEnd - state.lastInputAt) : null;
+      const inputStr =
+        inputLatency == null ? "n/a" : `${state.lastInputKind} ${inputLatency.toFixed(1)}ms`;
+      console.debug(
+        `[perf] frame=${(tFrameEnd - tFrameStart).toFixed(1)}ms dom=${domStats.domMs.toFixed(
+          1,
+        )}ms lines(u=${domStats.updatedLines}/${domStats.totalLines}, c=${domStats.createdLines}, r=${
+          domStats.removedLines
+        }) input=${inputStr}`,
+      );
+      state.perfLastLogAt = tFrameEnd;
+    }
   } finally {
     state.rendering = false;
     if (state.pending) {
@@ -328,6 +481,8 @@ scrollViewport.addEventListener("mousedown", (e) => {
     Math.max(0, state.widthCells),
   );
 
+  state.lastInputAt = performance.now();
+  state.lastInputKind = "mouseDown";
   void invokeQueued("mouse_down", {
     row,
     xCells,
@@ -365,18 +520,28 @@ imeInput.addEventListener("beforeinput", (e) => {
 
     if (!data) return;
     e.preventDefault();
+    state.lastInputAt = performance.now();
+    state.lastInputKind = "insertText";
     void invokeQueued("insert_text", { text: data }).then(scheduleRender);
   } else if (type === "insertLineBreak" || type === "insertParagraph") {
     e.preventDefault();
+    state.lastInputAt = performance.now();
+    state.lastInputKind = type;
     void invokeQueued("insert_newline", { autoIndent: true }).then(scheduleRender);
   } else if (type === "insertTab") {
     e.preventDefault();
+    state.lastInputAt = performance.now();
+    state.lastInputKind = type;
     void invokeQueued("insert_tab").then(scheduleRender);
   } else if (type === "deleteContentBackward") {
     e.preventDefault();
+    state.lastInputAt = performance.now();
+    state.lastInputKind = type;
     void invokeQueued("backspace").then(scheduleRender);
   } else if (type === "deleteContentForward") {
     e.preventDefault();
+    state.lastInputAt = performance.now();
+    state.lastInputKind = type;
     void invokeQueued("delete_forward").then(scheduleRender);
   } else if (type === "insertFromPaste") {
     e.preventDefault();
@@ -384,6 +549,8 @@ imeInput.addEventListener("beforeinput", (e) => {
     const now = performance.now();
     if (now - state.lastPasteAt > 30) {
       state.lastPasteAt = now;
+      state.lastInputAt = now;
+      state.lastInputKind = type;
       void invokeQueued("paste").then(scheduleRender);
     }
   }
@@ -406,6 +573,8 @@ function scheduleCompositionFlush() {
     state.compositionFlushScheduled = false;
     if (!state.compositionActive) return;
     const text = state.compositionPendingText;
+    state.lastInputAt = performance.now();
+    state.lastInputKind = "compositionUpdate";
     void invokeQueued("composition_update", { text }).then(scheduleRender);
   });
 }
@@ -414,6 +583,8 @@ imeInput.addEventListener("compositionstart", () => {
   state.compositionActive = true;
   state.compositionPendingText = "";
   state.compositionFlushScheduled = false;
+  state.lastInputAt = performance.now();
+  state.lastInputKind = "compositionStart";
   void invokeQueued("composition_start").then(scheduleRender);
 });
 
@@ -430,6 +601,8 @@ imeInput.addEventListener("compositionend", (e) => {
   // 见 `beforeinput(insertText)` 的去重逻辑：避免重复 commit。
   state.ignoreNextInsertTextAt = performance.now();
   state.ignoreNextInsertTextText = text;
+  state.lastInputAt = performance.now();
+  state.lastInputKind = "compositionEnd";
   void invokeQueued("composition_end", { text }).then(scheduleRender);
   imeInput.value = "";
 });
@@ -443,6 +616,8 @@ document.addEventListener("keydown", async (e) => {
     if (k === "a") {
       e.preventDefault();
       ensureFocus();
+      state.lastInputAt = performance.now();
+      state.lastInputKind = "selectAll";
       await invokeQueued("select_all");
       scheduleRender();
       return;
@@ -450,12 +625,16 @@ document.addEventListener("keydown", async (e) => {
     if (k === "c") {
       e.preventDefault();
       ensureFocus();
+      state.lastInputAt = performance.now();
+      state.lastInputKind = "copy";
       await invokeQueued("copy");
       return;
     }
     if (k === "x") {
       e.preventDefault();
       ensureFocus();
+      state.lastInputAt = performance.now();
+      state.lastInputKind = "cut";
       await invokeQueued("cut");
       scheduleRender();
       return;
@@ -464,6 +643,8 @@ document.addEventListener("keydown", async (e) => {
       e.preventDefault();
       ensureFocus();
       state.lastPasteAt = performance.now();
+      state.lastInputAt = state.lastPasteAt;
+      state.lastInputKind = "paste";
       await invokeQueued("paste");
       scheduleRender();
       return;
@@ -472,8 +653,12 @@ document.addEventListener("keydown", async (e) => {
       e.preventDefault();
       ensureFocus();
       if (e.shiftKey) {
+        state.lastInputAt = performance.now();
+        state.lastInputKind = "redo";
         await invokeQueued("redo");
       } else {
+        state.lastInputAt = performance.now();
+        state.lastInputKind = "undo";
         await invokeQueued("undo");
       }
       scheduleRender();
@@ -482,6 +667,8 @@ document.addEventListener("keydown", async (e) => {
     if (k === "y") {
       e.preventDefault();
       ensureFocus();
+      state.lastInputAt = performance.now();
+      state.lastInputKind = "redo";
       await invokeQueued("redo");
       scheduleRender();
       return;

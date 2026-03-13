@@ -4,7 +4,7 @@
 
 ## 实现进度（2026-03-14）
 
-已在 `crates/tauri-editor` 落地 **Milestone 0–5** 的“最小可运行版本”（text-grid / composed rows / 输入 / IME / 高亮）：
+已在 `crates/tauri-editor` 落地 **Milestone 0–6** 的“最小可运行版本”（text-grid / composed rows / 输入 / IME / 高亮 / patch）：
 
 - ✅ Tauri v2 壳 + 静态前端（`ui/dist`，不依赖 npm 构建）
 - ✅ Rust 后端：`Workspace` + `get_viewport_content_composed` → `ViewportSnapshot`（runs 压缩 + style-set interning + 每段携带 cells 宽度）
@@ -16,6 +16,7 @@
 - ✅ 剪贴板：走 Tauri 后端（`tauri-plugin-clipboard-manager`），支持 Copy/Cut/Paste、Undo/Redo、Select All
 - ✅ IME MVP：`compositionstart/update/end` → 内核 ReplaceCoalescingUndo（marked text 入内核）+ `IME_MARKED_TEXT` style layer
 - ✅ 样式分组/高亮：接入 `editor-core-highlight-simple`（JSON/INI）+ 轻量 Markdown regex 高亮；前端把 `StyleId` 映射为 CSS class
+- ✅ Patch 与性能：前端行级 diff（只更新变更行 DOM）+ 合并 IPC（`get_frame`）+ 基础性能日志（frame/dom/输入延迟）
 
 已验证：
 - `cargo test -p tauri-editor`
@@ -462,9 +463,10 @@ soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；�
 
 验收：高亮可见且滚动/输入仍流畅。
 
-### Milestone 6：Patch 细化与性能治理（第 2–3 周）
-- 从“全量 viewport”升级到“`replace_rows/splice_rows` + overlay 分离”，并让 JS ViewModel 保持稳定缓存命中。
-- 引入性能指标（patch 大小、每帧 DOM 更新时间、端到端输入延迟）。
+### Milestone 6：Patch 细化与性能治理（已实现：`crates/tauri-editor`）
+- 从“每帧全量 replaceChildren(lines)”升级为“**行级 diff**（按 row 复用 DOM，仅重建变更行）”，overlay（cursor/selection）保持分离。
+- 合并 IPC：新增 `get_frame(start_row,count)` 一次性返回 `{ snapshot, cursor, selection }`，减少 invoke 次数。
+- 引入基础性能指标：console debug 输出 `frame/dom` 耗时、行更新数量、以及最近一次输入到渲染完成的延迟（节流为约 1 次/秒）。
 
 验收：大文件与连续输入下延迟稳定。
 

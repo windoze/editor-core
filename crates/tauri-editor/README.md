@@ -69,3 +69,9 @@ cargo test -p tauri-editor
 
 - JSON/INI：`editor-core-highlight-simple`（regex-based，style layer：`StyleLayerId::SIMPLE_SYNTAX`）
 - Markdown：tauri-editor 内置的轻量 regex 高亮（标题/行内代码/link）
+
+## Patch / 性能（当前实现）
+
+- 行级 diff：viewport 更新时复用行 DOM，仅重建发生变化的行
+- 合并 IPC：前端用 `get_frame` 一次拿到 `{ snapshot, cursor, selection }`
+- 性能日志：`console.debug` 输出 frame/dom 耗时、行更新数量与输入延迟（约 1 次/秒）
