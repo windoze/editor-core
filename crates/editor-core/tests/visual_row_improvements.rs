@@ -55,6 +55,23 @@ fn test_fold_placeholder_sets_metadata_flag() {
 }
 
 #[test]
+fn test_fold_placeholder_appends_right_boundary_bracket() {
+    let mut executor = CommandExecutor::new("fn main() {\n    foo();\n} // end\nafter\n", 80);
+    executor
+        .execute(Command::Style(StyleCommand::Fold {
+            start_line: 0,
+            end_line: 2,
+        }))
+        .expect("fold should succeed");
+
+    let grid = viewport(&mut executor, 0, 10);
+    assert!(grid.lines[0].is_fold_placeholder_appended);
+
+    let rendered: String = grid.lines[0].cells.iter().map(|c| c.ch).collect();
+    assert_eq!(rendered, "fn main() { [...] }");
+}
+
+#[test]
 fn test_minimap_grid_summarizes_style_density() {
     let mut executor = CommandExecutor::new("abc def\n", 80);
     executor

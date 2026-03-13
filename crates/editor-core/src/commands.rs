@@ -1985,6 +1985,22 @@ impl EditorCore {
                             vec![FOLD_PLACEHOLDER_STYLE_ID],
                         ));
                     }
+                    if let Some(right_bracket) = self.fold_right_boundary_bracket_char(region) {
+                        x_in_line = x_in_line.saturating_add(char_width(' '));
+                        headless_line.add_cell(Cell::with_styles(
+                            ' ',
+                            char_width(' '),
+                            vec![FOLD_PLACEHOLDER_STYLE_ID],
+                        ));
+
+                        let w = cell_width_at(right_bracket, x_in_line, tab_width);
+                        x_in_line = x_in_line.saturating_add(w);
+                        headless_line.add_cell(Cell::with_styles(
+                            right_bracket,
+                            w,
+                            vec![FOLD_PLACEHOLDER_STYLE_ID],
+                        ));
+                    }
                     headless_line.set_fold_placeholder_appended(true);
                 }
 
@@ -2107,6 +2123,7 @@ impl EditorCore {
                 {
                     placeholder_appended = true;
                     if total_cells > 0 {
+                        x_in_line = x_in_line.saturating_add(char_width(' '));
                         total_cells = total_cells.saturating_add(char_width(' '));
                     }
                     for ch in region.placeholder.chars() {
@@ -2116,6 +2133,23 @@ impl EditorCore {
                         if !ch.is_whitespace() {
                             non_whitespace_cells = non_whitespace_cells.saturating_add(w);
                         }
+                        let entry = dominant_style_counts
+                            .entry(FOLD_PLACEHOLDER_STYLE_ID)
+                            .or_insert(0);
+                        *entry = entry.saturating_add(w);
+                    }
+                    if let Some(right_bracket) = self.fold_right_boundary_bracket_char(region) {
+                        x_in_line = x_in_line.saturating_add(char_width(' '));
+                        total_cells = total_cells.saturating_add(char_width(' '));
+                        let entry = dominant_style_counts
+                            .entry(FOLD_PLACEHOLDER_STYLE_ID)
+                            .or_insert(0);
+                        *entry = entry.saturating_add(char_width(' '));
+
+                        let w = cell_width_at(right_bracket, x_in_line, tab_width);
+                        x_in_line = x_in_line.saturating_add(w);
+                        total_cells = total_cells.saturating_add(w);
+                        non_whitespace_cells = non_whitespace_cells.saturating_add(w);
                         let entry = dominant_style_counts
                             .entry(FOLD_PLACEHOLDER_STYLE_ID)
                             .or_insert(0);
@@ -2440,6 +2474,27 @@ impl EditorCore {
                                 },
                             });
                         }
+                        if let Some(right_bracket) = self.fold_right_boundary_bracket_char(region) {
+                            x_render = x_render.saturating_add(char_width(' '));
+                            cells.push(ComposedCell {
+                                ch: ' ',
+                                width: char_width(' '),
+                                styles: vec![FOLD_PLACEHOLDER_STYLE_ID],
+                                source: ComposedCellSource::Virtual {
+                                    anchor_offset: eol_offset,
+                                },
+                            });
+
+                            let w = cell_width_at(right_bracket, x_render, tab_width);
+                            cells.push(ComposedCell {
+                                ch: right_bracket,
+                                width: w,
+                                styles: vec![FOLD_PLACEHOLDER_STYLE_ID],
+                                source: ComposedCellSource::Virtual {
+                                    anchor_offset: eol_offset,
+                                },
+                            });
+                        }
                     }
                 }
 
@@ -2745,6 +2800,33 @@ impl EditorCore {
         } else {
             Some(line)
         }
+    }
+
+    fn fold_right_boundary_bracket_char(&self, region: &FoldRegion) -> Option<char> {
+        let end_line_text = self.line_index.get_line_text(region.end_line)?;
+
+        // Common formatting: closing brace is the first non-whitespace char on the end line.
+        if let Some(ch) = end_line_text.chars().skip_while(|c| c.is_whitespace()).next()
+            && matches!(ch, '}' | ')' | ']')
+        {
+            return Some(ch);
+        }
+
+        // Fallback: scan from the end, skipping common trailing punctuation.
+        for ch in end_line_text.chars().rev() {
+            if ch.is_whitespace() {
+                continue;
+            }
+            if matches!(ch, '}' | ')' | ']') {
+                return Some(ch);
+            }
+            if matches!(ch, ';' | ',') {
+                continue;
+            }
+            break;
+        }
+
+        None
     }
 
     fn styles_at_offset(&self, offset: usize) -> Vec<StyleId> {
