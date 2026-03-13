@@ -57,7 +57,7 @@ cargo test -p tauri-editor
 ## 输入与快捷键（当前已支持）
 
 - 文字输入：`beforeinput: insertText`
-- 删除：Backspace / Delete（`beforeinput: deleteContentBackward/Forward`）
+- 删除：Backspace / Delete（`beforeinput: deleteContentBackward/Forward`；按 grapheme cluster 删除）
 - 换行 / Tab：`beforeinput: insertLineBreak/insertTab`
 - 选择：Shift+方向键、Shift+点击、鼠标拖拽选择
 - 键盘导航：方向键/Home/End/PageUp/PageDown，移动/扩选后自动滚动保持光标可见

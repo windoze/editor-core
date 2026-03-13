@@ -391,14 +391,14 @@ impl EditorBackend {
 
     pub fn backspace(&mut self) -> Result<(), EditorBackendError> {
         self.workspace
-            .execute(self.view_id, Command::Edit(EditCommand::Backspace))?;
+            .execute(self.view_id, Command::Edit(EditCommand::DeleteGraphemeBack))?;
         self.refresh_syntax_highlighting()?;
         Ok(())
     }
 
     pub fn delete_forward(&mut self) -> Result<(), EditorBackendError> {
         self.workspace
-            .execute(self.view_id, Command::Edit(EditCommand::DeleteForward))?;
+            .execute(self.view_id, Command::Edit(EditCommand::DeleteGraphemeForward))?;
         self.refresh_syntax_highlighting()?;
         Ok(())
     }

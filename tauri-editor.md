@@ -11,7 +11,7 @@
 - ✅ 前端：行级渲染（line `<div>` + run `<span>`）+ composed rows 虚拟化（`spacerTop/spacerBottom`）+ **按 cells 强制分配 run 宽度**（避免 CJK/emoji/font fallback 导致 caret/对齐错位）
 - ✅ 光标 overlay（`(row, x_cells)` → 像素定位）
 - ✅ 基础导航：方向键 / Home / End / PageUp / PageDown（键盘移动/扩选后自动滚动，尽量保持 caret 在 viewport 内）
-- ✅ 文本输入/删除（非 IME）：`beforeinput` → Rust `EditCommand::*`（InsertText/Backspace/DeleteForward/Newline/Tab）
+- ✅ 文本输入/删除（非 IME）：`beforeinput` → Rust `EditCommand::*`（InsertText/DeleteGraphemeBack/DeleteGraphemeForward/Newline/Tab）
 - ✅ 选择与命中测试：Shift+方向键、Shift+点击、鼠标拖拽选择；选择渲染走 overlay 矩形（禁用浏览器原生 selection）
 - ✅ Gutter：行号（按 `logicalLineCount` 动态宽度）+ 折叠标记（来自 `folding_manager.regions()`）+ 点击 toggle（Fold/Unfold）
 - ✅ 剪贴板：走 Tauri 后端（`tauri-plugin-clipboard-manager`），支持 Copy/Cut/Paste、Undo/Redo、Select All
@@ -456,7 +456,7 @@ soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；�
 - 用 `imeInput` 的 `beforeinput/input` 捕获普通文本输入（与 IME 同路，避免键盘布局问题）。
 - Rust 完成插入/删除命令；前端在下一帧拉取 viewport snapshot 刷新（增量 patch/push 在 Milestone 6 再落地）。
 
-验收：英文输入、Backspace/Delete 正常。
+验收：英文输入、Backspace/Delete 正常（按 grapheme cluster 删除，避免 ZWJ emoji/组合字符把 caret 卡在中间）。
 
 ### Milestone 4：IME MVP（已实现：`crates/tauri-editor`）
 - 引入 `compositionstart/update/end` 处理，采用“marked text 进入内核”的模型：
