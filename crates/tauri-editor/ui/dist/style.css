@@ -9,6 +9,7 @@
   --font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
   --tab-size: 4;
+  --gutter-width: 48px;
 }
 
 html,
@@ -37,12 +38,56 @@ body {
   -moz-tab-size: var(--tab-size);
 }
 
-#linesLayer {
+#rowsLayer {
   position: relative;
   user-select: none;
 }
 
+.row {
+  display: flex;
+  height: var(--line-height);
+}
+
+.gutter-cell {
+  flex: 0 0 var(--gutter-width);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-right: 6px;
+  box-sizing: border-box;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.12);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.fold-toggle {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  opacity: 0.9;
+}
+
+.fold-toggle.foldable {
+  color: var(--fg);
+  opacity: 0.9;
+}
+
+.fold-toggle.foldable:hover {
+  opacity: 1;
+}
+
+.line-number {
+  min-width: 2ch;
+  text-align: right;
+}
+
 .line {
+  flex: 1 1 auto;
   white-space: pre;
   overflow: hidden;
   height: var(--line-height);

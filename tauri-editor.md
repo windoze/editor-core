@@ -13,6 +13,7 @@
 - ✅ 基础导航：方向键 / Home / End / PageUp / PageDown
 - ✅ 文本输入/删除（非 IME）：`beforeinput` → Rust `EditCommand::*`（InsertText/Backspace/DeleteForward/Newline/Tab）
 - ✅ 选择与命中测试：Shift+方向键、Shift+点击扩选；选择渲染走 overlay 矩形（禁用浏览器原生 selection）
+- ✅ Gutter：行号（按 `logicalLineCount` 动态宽度）+ 折叠标记（来自 `folding_manager.regions()`）+ 点击 toggle（Fold/Unfold）
 - ✅ 剪贴板：走 Tauri 后端（`tauri-plugin-clipboard-manager`），支持 Copy/Cut/Paste、Undo/Redo、Select All
 - ✅ IME MVP：`compositionstart/update/end` → 内核 ReplaceCoalescingUndo（marked text 入内核）+ `IME_MARKED_TEXT` style layer
 - ✅ 样式分组/高亮：接入 `editor-core-highlight-simple`（JSON/INI）+ 轻量 Markdown regex 高亮；前端把 `StyleId` 映射为 CSS class
@@ -161,24 +162,28 @@ Monaco 对我们最有价值的经验点：
 
 #### 3.2.2 Rust→JS 传输：压缩为 Web-friendly `ViewportSnapshot`
 Rust → JS 不建议把 `ComposedGrid` 原样 serde 成 JSON（对象层级深、重复字段多）；更推荐输出一个 **紧凑快照**（并可进一步二进制化，见 6.5）：
-- `ViewportSnapshot { start_row, total_rows, width_cells, tab_width, wrap_indent, lines: LineSnapshot[] }`
+- `ViewportSnapshot { start_row, total_rows, logical_line_count, width_cells, tab_width, lines: LineSnapshot[], style_sets }`
   - `start_row/total_rows` 均在 **composed visual rows** 空间
-  - `width_cells/tab_width/wrap_indent` 用于前端 viewmodel 的缓存键与 hit test（避免同一帧内“宽度不一致”）
+  - `logical_line_count` 用于 gutter（行号宽度计算/对齐）
+  - `width_cells/tab_width` 用于前端 viewmodel 的缓存键与 hit test（避免同一帧内“宽度不一致”）
 
 `LineSnapshot`（一个 composed visual row）建议包含：
 - `row`：绝对 composed row（用于调试、定位 `data-row`、overlay）
 - `kind`：`Document` / `VirtualAboveLine`（至少要区分是否可编辑/可命中到文档）
+- `logical_line` / `visual_in_logical`：用于行号 gutter 与 fold toggle（只在可映射到某个 logical line 时存在；且行号只对 `visual_in_logical==0` 显示）
+- `fold`：仅对“某个 logical line 的首段 visual 行”存在，用于渲染折叠三角与 toggle（含 `end_line/collapsed`）
 - `runs`：按连续样式段压缩后的 runs，同时保留来源（Document/Virtual），例如用 tuple 形式减少 JSON 开销：
-  - `runs: [styleSetId, sourceKind, sourceOffset, text][]`
+  - `runs: [styleSetId, sourceKind, sourceOffset, cells, text][]`
     - `styleSetId`：样式集合的 intern id（避免每段都携带 style id 数组）
     - `sourceKind`：0=Document（sourceOffset 为起始 char offset），1=Virtual（sourceOffset 为 anchor_offset）
+    - `cells`：该段文本占用的 cell 数（用于前端做严格的 grid 布局；避免 CJK/emoji/font fallback 破坏 2-cell 假设）
     - `text`：该段文本
 
 这样前端既能用 runs 渲染 `<span>`，也能在需要时（hit test/选择/IME）基于 `sourceKind/sourceOffset` 做“网格坐标→文档 offset”的映射，而无需每个 cell 都单独传输。
 
 ### 3.3 前端渲染单元：runs → `<span>`
 我们已经决定在 Rust→JS 的 `LineSnapshot` 中直接输出 runs（而不是 cells），因此前端渲染的最小单位就是“样式段 `<span>`”：
-- `runs: [styleSetId, sourceKind, sourceOffset, text][]` → 生成 `<span class="...">text</span>`
+- `runs: [styleSetId, sourceKind, sourceOffset, cells, text][]` → 生成 `<span class="...">text</span>`（并按 `cells * cellWidthPx` 强制分配宽度）
 - 若相邻 runs 映射到同一个 CSS class，可在前端再做一次合并以减少 DOM 节点数（Monaco 常见优化）
 
 > 宽度一致性说明：内核与前端都以 **cells** 为坐标单位，并且我们已确认“每个 glyph 占用整数个 cells（0/1/2/…）”的约束。
@@ -210,18 +215,24 @@ Rust → JS 不建议把 `ComposedGrid` 原样 serde 成 JSON（对象层级深�
 
 ---
 
-## 4. DOM 结构：line `<div>` + run `<span>` + overlay + IME 输入层
+## 4. DOM 结构：row（gutter + line）+ run `<span>` + overlay + IME 输入层
 
 ### 4.1 分层 DOM（建议）
 ```html
 <div id="editorRoot">
   <div id="scrollViewport">
     <div id="spacerTop"></div>
-    <div id="linesLayer">
-      <!-- composed-row line nodes -->
-      <div class="line" data-row="...">
-        <span class="tok tok-keyword">fn</span><span class="tok tok-ws"> </span>
-        <span class="tok tok-ident">main</span>
+    <div id="rowsLayer">
+      <!-- composed-row nodes -->
+      <div class="row" data-row="...">
+        <div class="gutter-cell">
+          <span class="fold-toggle">▼</span>
+          <span class="line-number">12</span>
+        </div>
+        <div class="line">
+          <span class="tok tok-keyword">fn</span><span class="tok tok-ws"> </span>
+          <span class="tok tok-ident">main</span>
+        </div>
       </div>
     </div>
     <div id="spacerBottom"></div>
@@ -260,7 +271,7 @@ Monaco 的 DOM 结构通常把内容与 overlay 分离（内容行层、选择/�
 `contenteditable` 会让 WebView 把 DOM 当“真实文档”，浏览器接管 selection/undo/composition；这与 text-grid（多光标、折行、语法高亮、结构化装饰等）模型冲突，并且跨平台行为差异大。
 
 ### 5.2 推荐方案概览
-用一个“透明/极小”的 `<textarea id="imeInput">` 捕获 IME 与文本输入，但**真正显示仍由 linesLayer 完成**。
+用一个“透明/极小”的 `<textarea id="imeInput">` 捕获 IME 与文本输入，但**真正显示仍由 rowsLayer 完成**。
 
 关键机制：
 - `imeInput` 始终保持 focus（editor 点击/激活时自动 focus）。

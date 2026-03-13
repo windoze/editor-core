@@ -4,7 +4,7 @@
 
 目标与设计原则请先读仓库根目录的 `tauri-editor.md`：
 - 禁止 `contenteditable`
-- 行级渲染（`<div class="line">` + `<span>` runs）
+- 行级渲染（`<div class="row">` = gutter + `<div class="line">`，内容仍是 `<span>` runs）
 - 从第一版开始支持 soft wrap（cells 坐标体系）
 - viewport 虚拟化（composed rows：doc rows + above-line 虚拟行）
 - 输入管线：`textarea#imeInput` 捕获 `beforeinput`（禁止 `contenteditable`）
@@ -60,6 +60,7 @@ cargo test -p tauri-editor
 - 删除：Backspace / Delete（`beforeinput: deleteContentBackward/Forward`）
 - 换行 / Tab：`beforeinput: insertLineBreak/insertTab`
 - 选择：Shift+方向键、Shift+点击
+- 折叠：点击 gutter 的三角标记（基于 `folding_manager.regions()`；后续会由 treesitter/LSP 提供 regions）
 - IME：`compositionstart/update/end`（marked text 入内核；preedit 区域用 `IME_MARKED_TEXT` 下划线/背景渲染）
 - 剪贴板：Copy/Cut/Paste（Ctrl/Cmd + C/X/V）
 - Undo/Redo：Ctrl/Cmd + Z / Shift+Z（或 Ctrl+Y）

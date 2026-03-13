@@ -12,7 +12,7 @@ const invoke = (() => {
 const scrollViewport = document.getElementById("scrollViewport");
 const spacerTop = document.getElementById("spacerTop");
 const spacerBottom = document.getElementById("spacerBottom");
-const linesLayer = document.getElementById("linesLayer");
+const rowsLayer = document.getElementById("rowsLayer");
 const selectionsLayer = document.getElementById("selections");
 const cursorEl = document.getElementById("cursor");
 const imeInput = document.getElementById("imeInput");
@@ -29,6 +29,8 @@ const state = {
   lineHeightPx: 20,
   widthCells: 80,
   heightRows: 30,
+  gutterWidthPx: 0,
+  logicalLineCount: 1,
   overscan: 30,
   rendering: false,
   pending: false,
@@ -68,12 +70,27 @@ function measure() {
 
   const cw = rect.width / 100;
   state.cellWidthPx = Number.isFinite(cw) && cw > 0 ? cw : 8;
+
+  updateGutterWidth();
+}
+
+function gutterCellsForLineCount(lineCount) {
+  const digits = String(Math.max(1, lineCount)).length;
+  // [fold icon 1 cell] + [space 1] + [digits] + [space 1]
+  return Math.max(4, 1 + 1 + digits + 1);
+}
+
+function updateGutterWidth() {
+  const gutterCells = gutterCellsForLineCount(state.logicalLineCount);
+  state.gutterWidthPx = gutterCells * state.cellWidthPx;
+  document.documentElement.style.setProperty("--gutter-width", `${state.gutterWidthPx}px`);
 }
 
 async function syncViewport() {
   const wpx = scrollViewport.clientWidth;
   const hpx = scrollViewport.clientHeight;
-  const nextWidthCells = Math.max(1, Math.floor(wpx / state.cellWidthPx));
+  const contentWpx = Math.max(0, wpx - state.gutterWidthPx);
+  const nextWidthCells = Math.max(1, Math.floor(contentWpx / state.cellWidthPx));
   const nextHeightRows = Math.max(1, Math.floor(hpx / state.lineHeightPx));
 
   if (nextWidthCells === state.widthCells && nextHeightRows === state.heightRows) {
@@ -160,7 +177,12 @@ function classForStyleSet(styleSetId, styleSets) {
 function lineKey(line, styleSets) {
   // 关键：不能只用 `styleSetId` 当 key，因为 style-set interning 是“每次快照重新编号”的，
   // viewport 切片不同会导致相同 styles 对应不同的 id。这里直接用 styles 列表做稳定 key。
-  let key = `${line.kind}`;
+  let key = `${line.kind}:${line.logicalLine ?? ""}:${line.visualInLogical ?? ""}`;
+  if (line.fold) {
+    key += `:f${line.fold.endLine}:${line.fold.collapsed ? 1 : 0}`;
+  } else {
+    key += ":f";
+  }
   for (const run of line.runs) {
     const [styleSetId, sourceKind, sourceOffset, cells, text] = run;
     const styleIds = styleSets[styleSetId] || [];
@@ -169,8 +191,47 @@ function lineKey(line, styleSets) {
   return key;
 }
 
-function updateLineElement(lineEl, line, styleSets) {
-  lineEl.dataset.row = String(line.row);
+function formatLineNumber(line) {
+  if (line.kind !== 0) return "";
+  if (line.logicalLine == null) return "";
+  const visualInLogical = line.visualInLogical ?? 0;
+  if (visualInLogical !== 0) return "";
+  return String(line.logicalLine + 1);
+}
+
+function updateRowElement(rowEl, line, styleSets) {
+  rowEl.dataset.row = String(line.row);
+  if (line.logicalLine != null) {
+    rowEl.dataset.logicalLine = String(line.logicalLine);
+  } else {
+    delete rowEl.dataset.logicalLine;
+  }
+
+  const gutterEl = document.createElement("div");
+  gutterEl.className = "gutter-cell";
+
+  const foldEl = document.createElement("span");
+  foldEl.className = "fold-toggle";
+  if (line.kind === 0 && line.visualInLogical === 0 && line.logicalLine != null && line.fold) {
+    foldEl.classList.add("foldable");
+    foldEl.textContent = line.fold.collapsed ? "▶" : "▼";
+    foldEl.dataset.action = "toggleFold";
+    foldEl.dataset.logicalLine = String(line.logicalLine);
+    foldEl.dataset.endLine = String(line.fold.endLine);
+    foldEl.dataset.collapsed = line.fold.collapsed ? "1" : "0";
+  } else {
+    foldEl.textContent = "";
+  }
+
+  const numEl = document.createElement("span");
+  numEl.className = "line-number";
+  numEl.textContent = formatLineNumber(line);
+
+  gutterEl.appendChild(foldEl);
+  gutterEl.appendChild(numEl);
+
+  const lineEl = document.createElement("div");
+  lineEl.className = "line";
 
   const frag = document.createDocumentFragment();
   for (const run of line.runs) {
@@ -185,13 +246,15 @@ function updateLineElement(lineEl, line, styleSets) {
     frag.appendChild(span);
   }
   lineEl.replaceChildren(frag);
+
+  rowEl.replaceChildren(gutterEl, lineEl);
 }
 
 function createLineElement(line, styleSets) {
-  const lineEl = document.createElement("div");
-  lineEl.className = "line";
-  updateLineElement(lineEl, line, styleSets);
-  return lineEl;
+  const rowEl = document.createElement("div");
+  rowEl.className = "row";
+  updateRowElement(rowEl, line, styleSets);
+  return rowEl;
 }
 
 function renderSnapshot(snapshot) {
@@ -235,7 +298,7 @@ function renderSnapshot(snapshot) {
       state.lineKeys.set(line.row, lineKey(line, snapshot.styleSets));
       createdLines++;
     }
-    linesLayer.replaceChildren(frag);
+    rowsLayer.replaceChildren(frag);
     state.renderedStartRow = newStart;
     state.renderedCount = newCount;
     state.renderedWidthCells = snapshot.widthCells;
@@ -252,35 +315,35 @@ function renderSnapshot(snapshot) {
 
   const delta = newStart - oldStart;
   if (delta > 0) {
-    for (let i = 0; i < delta && linesLayer.firstChild; i++) {
-      const row = Number(linesLayer.firstChild.dataset.row);
+    for (let i = 0; i < delta && rowsLayer.firstChild; i++) {
+      const row = Number(rowsLayer.firstChild.dataset.row);
       state.lineKeys.delete(row);
-      linesLayer.removeChild(linesLayer.firstChild);
+      rowsLayer.removeChild(rowsLayer.firstChild);
       removedLines++;
     }
   } else if (delta < 0) {
     const insertCount = Math.min(-delta, newCount);
     for (let i = insertCount - 1; i >= 0; i--) {
       const line = snapshot.lines[i];
-      linesLayer.insertBefore(createLineElement(line, snapshot.styleSets), linesLayer.firstChild);
+      rowsLayer.insertBefore(createLineElement(line, snapshot.styleSets), rowsLayer.firstChild);
       state.lineKeys.set(line.row, lineKey(line, snapshot.styleSets));
       createdLines++;
     }
   }
 
-  while (linesLayer.children.length > newCount) {
-    const last = linesLayer.lastChild;
+  while (rowsLayer.children.length > newCount) {
+    const last = rowsLayer.lastChild;
     if (!last) break;
     const row = Number(last.dataset.row);
     state.lineKeys.delete(row);
-    linesLayer.removeChild(last);
+    rowsLayer.removeChild(last);
     removedLines++;
   }
 
-  while (linesLayer.children.length < newCount) {
-    const idx = linesLayer.children.length;
+  while (rowsLayer.children.length < newCount) {
+    const idx = rowsLayer.children.length;
     const line = snapshot.lines[idx];
-    linesLayer.appendChild(createLineElement(line, snapshot.styleSets));
+    rowsLayer.appendChild(createLineElement(line, snapshot.styleSets));
     state.lineKeys.set(line.row, lineKey(line, snapshot.styleSets));
     createdLines++;
   }
@@ -289,7 +352,7 @@ function renderSnapshot(snapshot) {
   let mismatch = false;
   for (let i = 0; i < newCount; i++) {
     const line = snapshot.lines[i];
-    const el = linesLayer.children[i];
+    const el = rowsLayer.children[i];
     if (!el || Number(el.dataset.row) !== line.row) {
       mismatch = true;
       break;
@@ -312,7 +375,7 @@ function renderSnapshot(snapshot) {
       state.lineKeys.set(line.row, lineKey(line, snapshot.styleSets));
       createdLines++;
     }
-    linesLayer.replaceChildren(frag);
+    rowsLayer.replaceChildren(frag);
     updatedLines = createdLines;
     removedLines = 0;
   }
@@ -327,7 +390,7 @@ function renderSnapshot(snapshot) {
 
 function positionCursor(cursor) {
   const [row, xCells] = cursor;
-  const xPx = xCells * state.cellWidthPx - scrollViewport.scrollLeft;
+  const xPx = state.gutterWidthPx + xCells * state.cellWidthPx - scrollViewport.scrollLeft;
   const yPx = row * state.lineHeightPx - scrollViewport.scrollTop;
 
   cursorEl.style.transform = `translate(${xPx}px, ${yPx}px)`;
@@ -386,7 +449,7 @@ function renderSelection(selection, snapshot) {
 
     const el = document.createElement("div");
     el.className = "selection-rect";
-    const xPx = left * state.cellWidthPx - scrollViewport.scrollLeft;
+    const xPx = state.gutterWidthPx + left * state.cellWidthPx - scrollViewport.scrollLeft;
     const yPx = row * state.lineHeightPx - scrollViewport.scrollTop;
     el.style.width = `${width * state.cellWidthPx}px`;
     el.style.transform = `translate(${xPx}px, ${yPx}px)`;
@@ -406,9 +469,30 @@ async function renderOnce() {
   try {
     await syncViewport();
 
-    const { start, count } = computeRequestRange();
-    const frame = await invokeQueued("get_frame", { startRow: start, count });
-    const snapshot = frame.snapshot;
+    let { start, count } = computeRequestRange(state.totalRows || null);
+    let frame = await invokeQueued("get_frame", { startRow: start, count });
+    let snapshot = frame.snapshot;
+
+    // 依据后端返回的 logicalLineCount 计算 gutter 宽度；如果 gutter 变化导致 viewport 宽度变化，
+    // 需要再 set_viewport 一次并重取一帧，否则 wrap/cells 会有一帧不一致。
+    const prevGutterWidthPx = state.gutterWidthPx;
+    const prevWidthCells = state.widthCells;
+    if (
+      snapshot.logicalLineCount != null &&
+      snapshot.logicalLineCount !== state.logicalLineCount
+    ) {
+      state.logicalLineCount = snapshot.logicalLineCount;
+      updateGutterWidth();
+    }
+
+    if (state.gutterWidthPx !== prevGutterWidthPx) {
+      await syncViewport();
+      if (state.widthCells !== prevWidthCells) {
+        ({ start, count } = computeRequestRange(snapshot.totalRows || null));
+        frame = await invokeQueued("get_frame", { startRow: start, count });
+        snapshot = frame.snapshot;
+      }
+    }
     const domStats = renderSnapshot(snapshot);
 
     positionCursor(frame.cursor);
@@ -462,6 +546,29 @@ window.addEventListener("resize", () => {
   scheduleRender();
 });
 window.addEventListener("focus", ensureFocus);
+rowsLayer.addEventListener("mousedown", (e) => {
+  const target = e.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (e.button !== 0) return;
+  if (target.dataset.action !== "toggleFold") return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  ensureFocus();
+
+  const startLine = Number(target.dataset.logicalLine);
+  const endLine = Number(target.dataset.endLine);
+  const collapsed = target.dataset.collapsed === "1";
+  if (!Number.isFinite(startLine) || !Number.isFinite(endLine)) return;
+
+  state.lastInputAt = performance.now();
+  state.lastInputKind = "toggleFold";
+  void invokeQueued("toggle_fold", {
+    startLine,
+    endLine,
+    collapsed,
+  }).then(scheduleRender);
+});
 scrollViewport.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   ensureFocus();
@@ -469,6 +576,7 @@ scrollViewport.addEventListener("mousedown", (e) => {
   const rect = scrollViewport.getBoundingClientRect();
   const x = e.clientX - rect.left + scrollViewport.scrollLeft;
   const y = e.clientY - rect.top + scrollViewport.scrollTop;
+  const xInContent = x - state.gutterWidthPx;
 
   const row = clamp(
     Math.floor((y + state.lineHeightPx / 2) / state.lineHeightPx),
@@ -476,7 +584,7 @@ scrollViewport.addEventListener("mousedown", (e) => {
     Math.max(0, state.totalRows - 1),
   );
   const xCells = clamp(
-    Math.floor((x + state.cellWidthPx / 2) / state.cellWidthPx),
+    Math.floor((Math.max(0, xInContent) + state.cellWidthPx / 2) / state.cellWidthPx),
     0,
     Math.max(0, state.widthCells),
   );

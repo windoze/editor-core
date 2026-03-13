@@ -22,6 +22,8 @@ pub struct ViewportSnapshot {
     pub start_row: u32,
     /// composed rows 总行数（用于 scrollHeight/spacer 计算）。
     pub total_rows: u32,
+    /// 文档逻辑行总数（用于 gutter 宽度/行号显示）。
+    pub logical_line_count: u32,
     /// viewport 宽度（cells）。
     pub width_cells: u32,
     /// tab 宽度（cells），用于前端 `tab-size` 与 hit-test 对齐。
@@ -40,8 +42,27 @@ pub struct LineSnapshot {
     pub row: u32,
     /// 行类型：`LINE_KIND_*` 常量。
     pub kind: u8,
+    /// 若该行对应文档内容（或挂在某个 logical line 上方的虚拟行），则包含 logical line（0-based）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logical_line: Option<u32>,
+    /// 若该行是文档内容行，则包含其在 logical line 内的 wrap 段序号（0-based）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visual_in_logical: Option<u16>,
+    /// 可折叠信息（仅对 logical line 的首个 visual 段有效）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fold: Option<FoldSnapshot>,
     /// runs：按连续样式段压缩后的 spans。
     pub runs: Vec<RunSnapshot>,
+}
+
+/// gutter 的折叠标记（fold start line）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FoldSnapshot {
+    /// 折叠区域的结束行（inclusive，0-based logical line）。
+    pub end_line: u32,
+    /// 是否已折叠。
+    pub collapsed: bool,
 }
 
 /// 一个样式段 run（tuple 形式，减少 JSON 对象开销）。

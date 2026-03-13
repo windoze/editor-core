@@ -4,8 +4,8 @@ use crate::snapshot::ViewportSnapshot;
 use editor_core::intervals::{Interval, StyleId, StyleLayerId, IME_MARKED_TEXT_STYLE_ID};
 use editor_core::ProcessingEdit;
 use editor_core::{
-    BufferId, Command, CursorCommand, EditCommand, Position, Selection, ViewCommand, Workspace,
-    WorkspaceError,
+    BufferId, Command, CursorCommand, EditCommand, Position, Selection, StyleCommand, ViewCommand,
+    Workspace, WorkspaceError,
 };
 use editor_core_highlight_simple::{RegexHighlighter, RegexRule};
 use serde::{Deserialize, Serialize};
@@ -187,21 +187,56 @@ impl EditorBackend {
 
         // 计算 composed total_rows（用于 scrollHeight/spacerTop/spacerBottom）。
         // MVP：每次请求重建索引；后续再做增量缓存与失效策略。
-        let index = self
-            .workspace
-            .with_editor_for_view(self.view_id, |editor| ComposedRowIndex::build(editor))?;
-        let total_rows = index.total_rows();
+        let (total_rows, logical_line_count, fold_map) =
+            self.workspace.with_editor_for_view(self.view_id, |editor| {
+                let index = ComposedRowIndex::build(editor);
+                let total_rows = index.total_rows();
+                let logical_line_count = editor.line_index.line_count();
+
+                let mut fold_map = std::collections::BTreeMap::<usize, (usize, bool)>::new();
+                for region in editor.folding_manager.regions() {
+                    fold_map
+                        .entry(region.start_line)
+                        .or_insert((region.end_line, region.is_collapsed));
+                }
+
+                (total_rows, logical_line_count, fold_map)
+            })?;
 
         let grid = self
             .workspace
             .get_viewport_content_composed(self.view_id, start_row, count)?;
 
-        Ok(build_viewport_snapshot(
+        let mut snapshot = build_viewport_snapshot(
             &grid,
             total_rows,
+            logical_line_count,
             width_cells,
             tab_width,
-        )?)
+        )?;
+
+        // 仅在 logical line 的首个 visual 段上显示 fold toggle。
+        for line in &mut snapshot.lines {
+            if line.kind != crate::snapshot::LINE_KIND_DOCUMENT {
+                continue;
+            }
+            if line.visual_in_logical != Some(0) {
+                continue;
+            }
+            let Some(logical_line) = line.logical_line.map(|v| v as usize) else {
+                continue;
+            };
+            let Some((end_line, collapsed)) = fold_map.get(&logical_line).copied() else {
+                continue;
+            };
+
+            line.fold = Some(crate::snapshot::FoldSnapshot {
+                end_line: end_line as u32,
+                collapsed,
+            });
+        }
+
+        Ok(snapshot)
     }
 
     /// 当前光标的 overlay 坐标（composed rows 空间）。
@@ -432,6 +467,29 @@ impl EditorBackend {
                 column: end.column,
             }),
         )?;
+        Ok(())
+    }
+
+    pub fn toggle_fold(
+        &mut self,
+        start_line: usize,
+        end_line: usize,
+        collapsed: bool,
+    ) -> Result<(), EditorBackendError> {
+        if end_line <= start_line {
+            return Ok(());
+        }
+
+        let cmd = if collapsed {
+            Command::Style(StyleCommand::Unfold { start_line })
+        } else {
+            Command::Style(StyleCommand::Fold {
+                start_line,
+                end_line,
+            })
+        };
+
+        self.workspace.execute(self.view_id, cmd)?;
         Ok(())
     }
 

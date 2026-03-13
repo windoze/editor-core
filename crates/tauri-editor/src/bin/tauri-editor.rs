@@ -106,6 +106,19 @@ fn mouse_down(
 }
 
 #[tauri::command]
+fn toggle_fold(
+    state: tauri::State<'_, AppState>,
+    start_line: u32,
+    end_line: u32,
+    collapsed: bool,
+) -> Result<(), String> {
+    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
+    backend
+        .toggle_fold(start_line as usize, end_line as usize, collapsed)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn insert_text(state: tauri::State<'_, AppState>, text: String) -> Result<(), String> {
     let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
     backend.insert_text(text).map_err(|e| e.to_string())
@@ -217,6 +230,7 @@ fn main() {
             get_selection,
             key_down,
             mouse_down,
+            toggle_fold,
             insert_text,
             composition_start,
             composition_update,

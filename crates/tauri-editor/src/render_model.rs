@@ -1,6 +1,6 @@
 use crate::snapshot::{
-    LINE_KIND_DOCUMENT, LINE_KIND_VIRTUAL_ABOVE_LINE, RunSnapshot, SOURCE_KIND_DOCUMENT,
-    SOURCE_KIND_VIRTUAL, ViewportSnapshot,
+    LINE_KIND_DOCUMENT, LINE_KIND_VIRTUAL_ABOVE_LINE, LineSnapshot, RunSnapshot,
+    SOURCE_KIND_DOCUMENT, SOURCE_KIND_VIRTUAL, ViewportSnapshot,
 };
 use editor_core::intervals::StyleId;
 use editor_core::{ComposedCellSource, ComposedGrid, ComposedLineKind};
@@ -10,6 +10,10 @@ use std::collections::HashMap;
 pub enum RenderModelError {
     #[error("offset 超出 u32 范围（offset={offset}）")]
     OffsetTooLarge { offset: usize },
+    #[error("logical_line 超出 u32 范围（logical_line={logical_line}）")]
+    LogicalLineTooLarge { logical_line: usize },
+    #[error("visual_in_logical 超出 u16 范围（visual_in_logical={visual_in_logical}）")]
+    VisualInLogicalTooLarge { visual_in_logical: usize },
     #[error("cells count 超出 u32 范围（cells={cells}）")]
     CellsTooLarge { cells: usize },
     #[error("tab_width 超出 u16 范围（tab_width={tab_width}）")]
@@ -18,6 +22,8 @@ pub enum RenderModelError {
     StartRowTooLarge { start_row: usize },
     #[error("total_rows 超出 u32 范围（total_rows={total_rows}）")]
     TotalRowsTooLarge { total_rows: usize },
+    #[error("logical_line_count 超出 u32 范围（logical_line_count={logical_line_count}）")]
+    LogicalLineCountTooLarge { logical_line_count: usize },
     #[error("style-set 数量超出 u32 范围（len={len}）")]
     StyleSetTableTooLarge { len: usize },
     #[error("Run cells 超出 u16 范围（cells={cells}）")]
@@ -78,6 +84,7 @@ impl StyleSetInterner {
 pub fn build_viewport_snapshot(
     grid: &ComposedGrid,
     total_rows: usize,
+    logical_line_count: usize,
     width_cells: usize,
     tab_width: usize,
 ) -> Result<ViewportSnapshot, RenderModelError> {
@@ -87,6 +94,11 @@ pub fn build_viewport_snapshot(
         })?;
     let total_rows_u32 = u32::try_from(total_rows)
         .map_err(|_| RenderModelError::TotalRowsTooLarge { total_rows })?;
+    let logical_line_count_u32 = u32::try_from(logical_line_count).map_err(|_| {
+        RenderModelError::LogicalLineCountTooLarge {
+            logical_line_count,
+        }
+    })?;
     let width_cells_u32 = u32::try_from(width_cells)
         .map_err(|_| RenderModelError::CellsTooLarge { cells: width_cells })?;
     let tab_width_u16 =
@@ -100,9 +112,26 @@ pub fn build_viewport_snapshot(
         let row_u32 = u32::try_from(row)
             .map_err(|_| RenderModelError::StartRowTooLarge { start_row: row })?;
 
-        let kind = match line.kind {
-            ComposedLineKind::Document { .. } => LINE_KIND_DOCUMENT,
-            ComposedLineKind::VirtualAboveLine { .. } => LINE_KIND_VIRTUAL_ABOVE_LINE,
+        let (kind, logical_line, visual_in_logical) = match line.kind {
+            ComposedLineKind::Document {
+                logical_line,
+                visual_in_logical,
+            } => (
+                LINE_KIND_DOCUMENT,
+                Some(u32::try_from(logical_line).map_err(|_| {
+                    RenderModelError::LogicalLineTooLarge { logical_line }
+                })?),
+                Some(u16::try_from(visual_in_logical).map_err(|_| {
+                    RenderModelError::VisualInLogicalTooLarge { visual_in_logical }
+                })?),
+            ),
+            ComposedLineKind::VirtualAboveLine { logical_line } => (
+                LINE_KIND_VIRTUAL_ABOVE_LINE,
+                Some(u32::try_from(logical_line).map_err(|_| {
+                    RenderModelError::LogicalLineTooLarge { logical_line }
+                })?),
+                None,
+            ),
         };
 
         #[derive(Debug)]
@@ -215,9 +244,12 @@ pub fn build_viewport_snapshot(
 
         flush(current.take(), &mut runs)?;
 
-        lines.push(crate::snapshot::LineSnapshot {
+        lines.push(LineSnapshot {
             row: row_u32,
             kind,
+            logical_line,
+            visual_in_logical,
+            fold: None,
             runs,
         });
     }
@@ -225,6 +257,7 @@ pub fn build_viewport_snapshot(
     Ok(ViewportSnapshot {
         start_row: start_row_u32,
         total_rows: total_rows_u32,
+        logical_line_count: logical_line_count_u32,
         width_cells: width_cells_u32,
         tab_width: tab_width_u16,
         lines,
