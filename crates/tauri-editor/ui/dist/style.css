@@ -65,6 +65,60 @@ body {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.run.style-syntax-string {
+  color: #98c379;
+}
+
+.run.style-syntax-number {
+  color: #d19a66;
+}
+
+.run.style-syntax-boolean,
+.run.style-syntax-null {
+  color: #56b6c2;
+}
+
+.run.style-syntax-section {
+  color: #61afef;
+  font-weight: 600;
+}
+
+.run.style-syntax-key {
+  color: #e06c75;
+}
+
+.run.style-syntax-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.run.style-md-heading {
+  color: #61afef;
+  font-weight: 600;
+}
+
+.run.style-md-inline-code {
+  color: #e5c07b;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.run.style-md-link {
+  color: #56b6c2;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.run.style-inlay-hint,
+.run.style-code-lens {
+  color: var(--muted);
+}
+
+.run.style-document-link {
+  color: #56b6c2;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 #overlayLayer {
   position: absolute;
   inset: 0;

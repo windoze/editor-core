@@ -64,3 +64,8 @@ cargo test -p tauri-editor
 - 剪贴板：Copy/Cut/Paste（Ctrl/Cmd + C/X/V）
 - Undo/Redo：Ctrl/Cmd + Z / Shift+Z（或 Ctrl+Y）
 - 全选：Ctrl/Cmd + A
+
+## 语法高亮（当前已支持的最小集）
+
+- JSON/INI：`editor-core-highlight-simple`（regex-based，style layer：`StyleLayerId::SIMPLE_SYNTAX`）
+- Markdown：tauri-editor 内置的轻量 regex 高亮（标题/行内代码/link）

@@ -111,6 +111,41 @@ function classForStyleSet(styleSetId, styleSets) {
     cls += " style-ime-marked";
   }
 
+  // editor-core-highlight-simple（JSON/INI 等）
+  const SIMPLE_STYLE_STRING = 0x02000001;
+  const SIMPLE_STYLE_NUMBER = 0x02000002;
+  const SIMPLE_STYLE_BOOLEAN = 0x02000003;
+  const SIMPLE_STYLE_NULL = 0x02000004;
+  const SIMPLE_STYLE_SECTION = 0x02000010;
+  const SIMPLE_STYLE_KEY = 0x02000011;
+  const SIMPLE_STYLE_COMMENT = 0x02000012;
+
+  if (styleIds.includes(SIMPLE_STYLE_STRING)) cls += " style-syntax-string";
+  if (styleIds.includes(SIMPLE_STYLE_NUMBER)) cls += " style-syntax-number";
+  if (styleIds.includes(SIMPLE_STYLE_BOOLEAN)) cls += " style-syntax-boolean";
+  if (styleIds.includes(SIMPLE_STYLE_NULL)) cls += " style-syntax-null";
+  if (styleIds.includes(SIMPLE_STYLE_SECTION)) cls += " style-syntax-section";
+  if (styleIds.includes(SIMPLE_STYLE_KEY)) cls += " style-syntax-key";
+  if (styleIds.includes(SIMPLE_STYLE_COMMENT)) cls += " style-syntax-comment";
+
+  // tauri-editor 自定义（Markdown MVP）
+  const MD_STYLE_HEADING = 0x02000101;
+  const MD_STYLE_INLINE_CODE = 0x02000102;
+  const MD_STYLE_LINK = 0x02000103;
+
+  if (styleIds.includes(MD_STYLE_HEADING)) cls += " style-md-heading";
+  if (styleIds.includes(MD_STYLE_INLINE_CODE)) cls += " style-md-inline-code";
+  if (styleIds.includes(MD_STYLE_LINK)) cls += " style-md-link";
+
+  // editor-core 内置 decoration style id（intervals.rs）
+  const INLAY_HINT_STYLE_ID = 0x08000001;
+  const CODE_LENS_STYLE_ID = 0x08000002;
+  const DOCUMENT_LINK_STYLE_ID = 0x08000003;
+
+  if (styleIds.includes(INLAY_HINT_STYLE_ID)) cls += " style-inlay-hint";
+  if (styleIds.includes(CODE_LENS_STYLE_ID)) cls += " style-code-lens";
+  if (styleIds.includes(DOCUMENT_LINK_STYLE_ID)) cls += " style-document-link";
+
   return cls;
 }
 

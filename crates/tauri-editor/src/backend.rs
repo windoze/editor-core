@@ -1,12 +1,13 @@
 use crate::composed_row_index::ComposedRowIndex;
 use crate::render_model::{build_viewport_snapshot, RenderModelError};
 use crate::snapshot::ViewportSnapshot;
-use editor_core::intervals::{Interval, StyleLayerId, IME_MARKED_TEXT_STYLE_ID};
+use editor_core::intervals::{Interval, StyleId, StyleLayerId, IME_MARKED_TEXT_STYLE_ID};
 use editor_core::ProcessingEdit;
 use editor_core::{
     BufferId, Command, CursorCommand, EditCommand, Position, Selection, ViewCommand, Workspace,
     WorkspaceError,
 };
+use editor_core_highlight_simple::{RegexHighlighter, RegexRule};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -66,6 +67,7 @@ pub struct EditorBackend {
     workspace: Workspace,
     view_id: editor_core::ViewId,
     composition: Option<CompositionState>,
+    highlighter: Option<RegexHighlighter>,
 }
 
 impl EditorBackend {
@@ -75,12 +77,40 @@ impl EditorBackend {
             .map_err(EditorBackendError::from)
     }
 
+    fn refresh_syntax_highlighting(&mut self) -> Result<(), EditorBackendError> {
+        let buffer_id = self.buffer_id()?;
+
+        if let Some(highlighter) = self.highlighter.clone() {
+            let intervals = self
+                .workspace
+                .with_editor_for_view(self.view_id, |ed| highlighter.highlight(&ed.line_index))?;
+            self.workspace.apply_processing_edits(
+                buffer_id,
+                [ProcessingEdit::ReplaceStyleLayer {
+                    layer: StyleLayerId::SIMPLE_SYNTAX,
+                    intervals,
+                }],
+            )?;
+            return Ok(());
+        }
+
+        self.workspace.apply_processing_edits(
+            buffer_id,
+            [ProcessingEdit::ClearStyleLayer {
+                layer: StyleLayerId::SIMPLE_SYNTAX,
+            }],
+        )?;
+        Ok(())
+    }
+
     /// 打开一段文本（用于测试或无文件模式）。
     pub fn open_text(
         uri: Option<String>,
         text: &str,
         viewport_width_cells: usize,
     ) -> Result<Self, EditorBackendError> {
+        let highlighter = choose_highlighter(uri.as_deref());
+
         let mut workspace = Workspace::new();
         let open = workspace.open_buffer(uri, text, viewport_width_cells)?;
 
@@ -97,11 +127,15 @@ impl EditorBackend {
             }),
         )?;
 
-        Ok(Self {
+        let mut backend = Self {
             workspace,
             view_id: open.view_id,
             composition: None,
-        })
+            highlighter,
+        };
+
+        backend.refresh_syntax_highlighting()?;
+        Ok(backend)
     }
 
     /// 从磁盘打开一个文件并创建一个初始 view。
@@ -300,6 +334,7 @@ impl EditorBackend {
             self.view_id,
             Command::Edit(EditCommand::InsertText { text }),
         )?;
+        self.refresh_syntax_highlighting()?;
         Ok(())
     }
 
@@ -308,36 +343,42 @@ impl EditorBackend {
             self.view_id,
             Command::Edit(EditCommand::InsertNewline { auto_indent }),
         )?;
+        self.refresh_syntax_highlighting()?;
         Ok(())
     }
 
     pub fn insert_tab(&mut self) -> Result<(), EditorBackendError> {
         self.workspace
             .execute(self.view_id, Command::Edit(EditCommand::InsertTab))?;
+        self.refresh_syntax_highlighting()?;
         Ok(())
     }
 
     pub fn backspace(&mut self) -> Result<(), EditorBackendError> {
         self.workspace
             .execute(self.view_id, Command::Edit(EditCommand::Backspace))?;
+        self.refresh_syntax_highlighting()?;
         Ok(())
     }
 
     pub fn delete_forward(&mut self) -> Result<(), EditorBackendError> {
         self.workspace
             .execute(self.view_id, Command::Edit(EditCommand::DeleteForward))?;
+        self.refresh_syntax_highlighting()?;
         Ok(())
     }
 
     pub fn undo(&mut self) -> Result<(), EditorBackendError> {
         self.workspace
             .execute(self.view_id, Command::Edit(EditCommand::Undo))?;
+        self.refresh_syntax_highlighting()?;
         Ok(())
     }
 
     pub fn redo(&mut self) -> Result<(), EditorBackendError> {
         self.workspace
             .execute(self.view_id, Command::Edit(EditCommand::Redo))?;
+        self.refresh_syntax_highlighting()?;
         Ok(())
     }
 
@@ -568,6 +609,7 @@ impl EditorBackend {
         self.workspace
             .execute(self.view_id, Command::Edit(EditCommand::EndUndoGroup))?;
 
+        self.refresh_syntax_highlighting()?;
         Ok(())
     }
 
@@ -617,6 +659,35 @@ impl EditorBackend {
             (start_row as u32, start_x as u32),
             (end_row as u32, end_x as u32),
         )))
+    }
+}
+
+const MD_STYLE_HEADING: StyleId = 0x0200_0101;
+const MD_STYLE_INLINE_CODE: StyleId = 0x0200_0102;
+const MD_STYLE_LINK: StyleId = 0x0200_0103;
+
+fn choose_highlighter(uri: Option<&str>) -> Option<RegexHighlighter> {
+    let uri = uri?;
+    let ext = Path::new(uri)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase())?;
+
+    match ext.as_str() {
+        "json" => RegexHighlighter::json_default(Default::default()).ok(),
+        "ini" => RegexHighlighter::ini_default(Default::default()).ok(),
+        "md" | "markdown" => {
+            let rules = vec![
+                // Headings
+                RegexRule::new(r#"^#{1,6} .*$"#, MD_STYLE_HEADING).ok()?,
+                // Inline code
+                RegexRule::new(r#"`[^`]+`"#, MD_STYLE_INLINE_CODE).ok()?,
+                // Links: [text](url)
+                RegexRule::new(r#"\[[^\]]+\]\([^\)]+\)"#, MD_STYLE_LINK).ok()?,
+            ];
+            Some(RegexHighlighter::new(rules))
+        }
+        _ => None,
     }
 }
 

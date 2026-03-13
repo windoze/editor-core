@@ -4,7 +4,7 @@
 
 ## 实现进度（2026-03-14）
 
-已在 `crates/tauri-editor` 落地 **Milestone 0–4** 的“最小可运行版本”（text-grid / composed rows / 输入 / IME）：
+已在 `crates/tauri-editor` 落地 **Milestone 0–5** 的“最小可运行版本”（text-grid / composed rows / 输入 / IME / 高亮）：
 
 - ✅ Tauri v2 壳 + 静态前端（`ui/dist`，不依赖 npm 构建）
 - ✅ Rust 后端：`Workspace` + `get_viewport_content_composed` → `ViewportSnapshot`（runs 压缩 + style-set interning + 每段携带 cells 宽度）
@@ -15,6 +15,7 @@
 - ✅ 选择与命中测试：Shift+方向键、Shift+点击扩选；选择渲染走 overlay 矩形（禁用浏览器原生 selection）
 - ✅ 剪贴板：走 Tauri 后端（`tauri-plugin-clipboard-manager`），支持 Copy/Cut/Paste、Undo/Redo、Select All
 - ✅ IME MVP：`compositionstart/update/end` → 内核 ReplaceCoalescingUndo（marked text 入内核）+ `IME_MARKED_TEXT` style layer
+- ✅ 样式分组/高亮：接入 `editor-core-highlight-simple`（JSON/INI）+ 轻量 Markdown regex 高亮；前端把 `StyleId` 映射为 CSS class
 
 已验证：
 - `cargo test -p tauri-editor`
@@ -455,7 +456,7 @@ soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；�
 
 验收：中/日/韩输入可用，组合效果“嵌入底层文本”，无错位遮挡。
 
-### Milestone 5：样式分组（语法高亮/装饰）（第 2 周）
+### Milestone 5：样式分组（语法高亮/装饰）（已实现：`crates/tauri-editor`）
 - Rust 侧接入一个或多个派生状态来源（可选：`editor-core-highlight-simple` / `editor-core-sublime` / `editor-core-treesitter` / `editor-core-lsp`）产出 `ProcessingEdit::ReplaceStyleLayer`。
 - 前端把 viewport snapshot 中的 `StyleId` 映射为 CSS class / CSS variables。
 
