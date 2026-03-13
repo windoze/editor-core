@@ -13,8 +13,16 @@ const scrollViewport = document.getElementById("scrollViewport");
 const spacerTop = document.getElementById("spacerTop");
 const spacerBottom = document.getElementById("spacerBottom");
 const linesLayer = document.getElementById("linesLayer");
+const selectionsLayer = document.getElementById("selections");
 const cursorEl = document.getElementById("cursor");
 const imeInput = document.getElementById("imeInput");
+
+let invokeQueue = Promise.resolve();
+function invokeQueued(cmd, args = {}) {
+  const run = () => invoke(cmd, args);
+  invokeQueue = invokeQueue.then(run, run);
+  return invokeQueue;
+}
 
 const state = {
   cellWidthPx: 8,
@@ -24,6 +32,8 @@ const state = {
   overscan: 30,
   rendering: false,
   pending: false,
+  totalRows: 0,
+  lastPasteAt: 0,
 };
 
 function measure() {
@@ -60,7 +70,7 @@ async function syncViewport() {
   state.widthCells = nextWidthCells;
   state.heightRows = nextHeightRows;
 
-  await invoke("set_viewport", {
+  await invokeQueued("set_viewport", {
     widthCells: state.widthCells,
     heightRows: state.heightRows,
   });
@@ -100,6 +110,7 @@ function renderSnapshot(snapshot) {
 
   const startRow = snapshot.startRow;
   const totalRows = snapshot.totalRows;
+  state.totalRows = totalRows;
 
   const topPx = startRow * state.lineHeightPx;
   const bottomRows = Math.max(0, totalRows - (startRow + snapshot.lines.length));
@@ -143,6 +154,66 @@ function positionCursor(cursor) {
   imeInput.style.transform = `translate(${xPx}px, ${yPx}px)`;
 }
 
+function renderSelection(selection, snapshot) {
+  if (!selection) {
+    selectionsLayer.replaceChildren();
+    return;
+  }
+
+  const [[aRow, aX], [bRow, bX]] = selection;
+  let startRow = aRow;
+  let startX = aX;
+  let endRow = bRow;
+  let endX = bX;
+
+  if (endRow < startRow || (endRow === startRow && endX < startX)) {
+    startRow = bRow;
+    startX = bX;
+    endRow = aRow;
+    endX = aX;
+  }
+
+  const visibleStart = snapshot.startRow;
+  const visibleEnd = snapshot.startRow + snapshot.lines.length; // exclusive
+
+  const firstRow = Math.max(startRow, visibleStart);
+  const lastRow = Math.min(endRow, visibleEnd - 1);
+  if (firstRow > lastRow) {
+    selectionsLayer.replaceChildren();
+    return;
+  }
+
+  const widthCells = snapshot.widthCells;
+  const frag = document.createDocumentFragment();
+
+  for (let row = firstRow; row <= lastRow; row++) {
+    let left = 0;
+    let width = widthCells;
+    if (row === startRow && row === endRow) {
+      left = Math.min(startX, endX);
+      width = Math.max(0, Math.abs(endX - startX));
+    } else if (row === startRow) {
+      left = startX;
+      width = Math.max(0, widthCells - startX);
+    } else if (row === endRow) {
+      left = 0;
+      width = Math.max(0, endX);
+    }
+
+    if (width <= 0) continue;
+
+    const el = document.createElement("div");
+    el.className = "selection-rect";
+    const xPx = left * state.cellWidthPx - scrollViewport.scrollLeft;
+    const yPx = row * state.lineHeightPx - scrollViewport.scrollTop;
+    el.style.width = `${width * state.cellWidthPx}px`;
+    el.style.transform = `translate(${xPx}px, ${yPx}px)`;
+    frag.appendChild(el);
+  }
+
+  selectionsLayer.replaceChildren(frag);
+}
+
 async function renderOnce() {
   if (state.rendering) {
     state.pending = true;
@@ -153,11 +224,14 @@ async function renderOnce() {
     await syncViewport();
 
     const { start, count } = computeRequestRange();
-    const snapshot = await invoke("get_viewport", { startRow: start, count });
+    const snapshot = await invokeQueued("get_viewport", { startRow: start, count });
     renderSnapshot(snapshot);
 
-    const cursor = await invoke("get_cursor");
+    const cursor = await invokeQueued("get_cursor");
     positionCursor(cursor);
+
+    const selection = await invokeQueued("get_selection");
+    renderSelection(selection, snapshot);
   } finally {
     state.rendering = false;
     if (state.pending) {
@@ -190,9 +264,135 @@ window.addEventListener("resize", () => {
   scheduleRender();
 });
 window.addEventListener("focus", ensureFocus);
-scrollViewport.addEventListener("mousedown", ensureFocus);
+scrollViewport.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  ensureFocus();
+
+  const rect = scrollViewport.getBoundingClientRect();
+  const x = e.clientX - rect.left + scrollViewport.scrollLeft;
+  const y = e.clientY - rect.top + scrollViewport.scrollTop;
+
+  const row = clamp(
+    Math.floor((y + state.lineHeightPx / 2) / state.lineHeightPx),
+    0,
+    Math.max(0, state.totalRows - 1),
+  );
+  const xCells = clamp(
+    Math.floor((x + state.cellWidthPx / 2) / state.cellWidthPx),
+    0,
+    Math.max(0, state.widthCells),
+  );
+
+  void invokeQueued("mouse_down", {
+    row,
+    xCells,
+    modifiers: {
+      shift: e.shiftKey,
+      ctrl: e.ctrlKey,
+      alt: e.altKey,
+      meta: e.metaKey,
+    },
+  }).then(scheduleRender);
+});
+
+imeInput.addEventListener("beforeinput", (e) => {
+  // IME（composition）在 Milestone 4 处理；这里先只接普通输入。
+  if (e.isComposing) return;
+
+  const type = e.inputType;
+  const data = e.data ?? "";
+
+  if (type === "insertText") {
+    if (!data) return;
+    e.preventDefault();
+    void invokeQueued("insert_text", { text: data }).then(scheduleRender);
+  } else if (type === "insertLineBreak" || type === "insertParagraph") {
+    e.preventDefault();
+    void invokeQueued("insert_newline", { autoIndent: true }).then(scheduleRender);
+  } else if (type === "insertTab") {
+    e.preventDefault();
+    void invokeQueued("insert_tab").then(scheduleRender);
+  } else if (type === "deleteContentBackward") {
+    e.preventDefault();
+    void invokeQueued("backspace").then(scheduleRender);
+  } else if (type === "deleteContentForward") {
+    e.preventDefault();
+    void invokeQueued("delete_forward").then(scheduleRender);
+  } else if (type === "insertFromPaste") {
+    e.preventDefault();
+    // 避免 keydown + beforeinput 双触发导致重复粘贴。
+    const now = performance.now();
+    if (now - state.lastPasteAt > 30) {
+      state.lastPasteAt = now;
+      void invokeQueued("paste").then(scheduleRender);
+    }
+  }
+
+  if (e.defaultPrevented) {
+    imeInput.value = "";
+  }
+});
+
+imeInput.addEventListener("input", (e) => {
+  // 在我们 `preventDefault()` 的路径上通常不会触发；这里做兜底，避免隐藏 textarea 堆积内容。
+  if (e.isComposing) return;
+  if (imeInput.value) imeInput.value = "";
+});
 
 document.addEventListener("keydown", async (e) => {
+  const isMac = navigator.platform.toLowerCase().includes("mac");
+  const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
+
+  if (ctrlOrCmd) {
+    const k = e.key.toLowerCase();
+    if (k === "a") {
+      e.preventDefault();
+      ensureFocus();
+      await invokeQueued("select_all");
+      scheduleRender();
+      return;
+    }
+    if (k === "c") {
+      e.preventDefault();
+      ensureFocus();
+      await invokeQueued("copy");
+      return;
+    }
+    if (k === "x") {
+      e.preventDefault();
+      ensureFocus();
+      await invokeQueued("cut");
+      scheduleRender();
+      return;
+    }
+    if (k === "v") {
+      e.preventDefault();
+      ensureFocus();
+      state.lastPasteAt = performance.now();
+      await invokeQueued("paste");
+      scheduleRender();
+      return;
+    }
+    if (k === "z") {
+      e.preventDefault();
+      ensureFocus();
+      if (e.shiftKey) {
+        await invokeQueued("redo");
+      } else {
+        await invokeQueued("undo");
+      }
+      scheduleRender();
+      return;
+    }
+    if (k === "y") {
+      e.preventDefault();
+      ensureFocus();
+      await invokeQueued("redo");
+      scheduleRender();
+      return;
+    }
+  }
+
   const keyMap = {
     ArrowLeft: "arrowLeft",
     ArrowRight: "arrowRight",
@@ -210,7 +410,7 @@ document.addEventListener("keydown", async (e) => {
   e.preventDefault();
   ensureFocus();
 
-  await invoke("key_down", {
+  await invokeQueued("key_down", {
     key: mapped,
     modifiers: {
       shift: e.shiftKey,

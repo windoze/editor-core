@@ -1,7 +1,10 @@
 use crate::composed_row_index::ComposedRowIndex;
 use crate::render_model::{RenderModelError, build_viewport_snapshot};
 use crate::snapshot::ViewportSnapshot;
-use editor_core::{Command, CursorCommand, Position, ViewCommand, Workspace, WorkspaceError};
+use editor_core::{
+    BufferId, Command, CursorCommand, EditCommand, Position, Selection, ViewCommand, Workspace,
+    WorkspaceError,
+};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -17,6 +20,10 @@ pub enum EditorBackendError {
     NoActiveView,
     #[error("光标无法映射到 visual 坐标（可能在折叠区域内）")]
     CursorNotMappable,
+    #[error("无法把 composed row 映射到 doc row（可能点在 above-line 虚拟行上）")]
+    ComposedRowNotMappable,
+    #[error("无法把 visual(row,x_cells) 映射到逻辑位置（row={row}, x_cells={x_cells}）")]
+    VisualPositionNotMappable { row: usize, x_cells: usize },
 }
 
 impl From<WorkspaceError> for EditorBackendError {
@@ -57,6 +64,12 @@ pub struct EditorBackend {
 }
 
 impl EditorBackend {
+    fn buffer_id(&self) -> Result<BufferId, EditorBackendError> {
+        self.workspace
+            .buffer_id_for_view(self.view_id)
+            .map_err(EditorBackendError::from)
+    }
+
     /// 打开一段文本（用于测试或无文件模式）。
     pub fn open_text(
         uri: Option<String>,
@@ -171,23 +184,291 @@ impl EditorBackend {
         Ok((composed_row as u32, x_cells_u32))
     }
 
+    fn move_cursor_to(
+        &mut self,
+        new_pos: Position,
+        selecting: bool,
+    ) -> Result<(), EditorBackendError> {
+        let old_pos = self.workspace.cursor_position_for_view(self.view_id)?;
+
+        if selecting {
+            if self.workspace.selection_for_view(self.view_id)?.is_some() {
+                self.workspace.execute(
+                    self.view_id,
+                    Command::Cursor(CursorCommand::ExtendSelection { to: new_pos }),
+                )?;
+            } else {
+                self.workspace.execute(
+                    self.view_id,
+                    Command::Cursor(CursorCommand::SetSelection {
+                        start: old_pos,
+                        end: new_pos,
+                    }),
+                )?;
+            }
+        } else if self.workspace.selection_for_view(self.view_id)?.is_some() {
+            self.workspace
+                .execute(self.view_id, Command::Cursor(CursorCommand::ClearSelection))?;
+        }
+
+        self.workspace.execute(
+            self.view_id,
+            Command::Cursor(CursorCommand::MoveTo {
+                line: new_pos.line,
+                column: new_pos.column,
+            }),
+        )?;
+        Ok(())
+    }
+
+    fn move_by_command(
+        &mut self,
+        cmd: CursorCommand,
+        selecting: bool,
+    ) -> Result<(), EditorBackendError> {
+        let old_pos = self.workspace.cursor_position_for_view(self.view_id)?;
+
+        if !selecting {
+            if self.workspace.selection_for_view(self.view_id)?.is_some() {
+                self.workspace
+                    .execute(self.view_id, Command::Cursor(CursorCommand::ClearSelection))?;
+            }
+            self.workspace.execute(
+                self.view_id,
+                Command::Cursor(CursorCommand::ClearSecondarySelections),
+            )?;
+            self.workspace.execute(self.view_id, Command::Cursor(cmd))?;
+            return Ok(());
+        }
+
+        self.workspace.execute(
+            self.view_id,
+            Command::Cursor(CursorCommand::ClearSecondarySelections),
+        )?;
+        self.workspace.execute(self.view_id, Command::Cursor(cmd))?;
+        let new_pos = self.workspace.cursor_position_for_view(self.view_id)?;
+
+        if self.workspace.selection_for_view(self.view_id)?.is_some() {
+            self.workspace.execute(
+                self.view_id,
+                Command::Cursor(CursorCommand::ExtendSelection { to: new_pos }),
+            )?;
+        } else {
+            self.workspace.execute(
+                self.view_id,
+                Command::Cursor(CursorCommand::SetSelection {
+                    start: old_pos,
+                    end: new_pos,
+                }),
+            )?;
+        }
+
+        Ok(())
+    }
+
     pub fn handle_key_down(
         &mut self,
         key: EditorKey,
-        _mods: KeyModifiers,
+        mods: KeyModifiers,
     ) -> Result<(), EditorBackendError> {
+        let selecting = mods.shift;
         let cmd = match key {
-            EditorKey::ArrowLeft => Command::Cursor(CursorCommand::MoveGraphemeLeft),
-            EditorKey::ArrowRight => Command::Cursor(CursorCommand::MoveGraphemeRight),
-            EditorKey::ArrowUp => Command::Cursor(CursorCommand::MoveVisualBy { delta_rows: -1 }),
-            EditorKey::ArrowDown => Command::Cursor(CursorCommand::MoveVisualBy { delta_rows: 1 }),
-            EditorKey::Home => Command::Cursor(CursorCommand::MoveToVisualLineStart),
-            EditorKey::End => Command::Cursor(CursorCommand::MoveToVisualLineEnd),
-            EditorKey::PageUp => Command::Cursor(CursorCommand::MoveVisualBy { delta_rows: -20 }),
-            EditorKey::PageDown => Command::Cursor(CursorCommand::MoveVisualBy { delta_rows: 20 }),
+            EditorKey::ArrowLeft => CursorCommand::MoveGraphemeLeft,
+            EditorKey::ArrowRight => CursorCommand::MoveGraphemeRight,
+            EditorKey::ArrowUp => CursorCommand::MoveVisualBy { delta_rows: -1 },
+            EditorKey::ArrowDown => CursorCommand::MoveVisualBy { delta_rows: 1 },
+            EditorKey::Home => CursorCommand::MoveToVisualLineStart,
+            EditorKey::End => CursorCommand::MoveToVisualLineEnd,
+            EditorKey::PageUp => CursorCommand::MoveVisualBy { delta_rows: -20 },
+            EditorKey::PageDown => CursorCommand::MoveVisualBy { delta_rows: 20 },
         };
 
-        self.workspace.execute(self.view_id, cmd)?;
+        self.move_by_command(cmd, selecting)
+    }
+
+    pub fn insert_text(&mut self, text: String) -> Result<(), EditorBackendError> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        self.workspace.execute(
+            self.view_id,
+            Command::Edit(EditCommand::InsertText { text }),
+        )?;
         Ok(())
+    }
+
+    pub fn insert_newline(&mut self, auto_indent: bool) -> Result<(), EditorBackendError> {
+        self.workspace.execute(
+            self.view_id,
+            Command::Edit(EditCommand::InsertNewline { auto_indent }),
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_tab(&mut self) -> Result<(), EditorBackendError> {
+        self.workspace
+            .execute(self.view_id, Command::Edit(EditCommand::InsertTab))?;
+        Ok(())
+    }
+
+    pub fn backspace(&mut self) -> Result<(), EditorBackendError> {
+        self.workspace
+            .execute(self.view_id, Command::Edit(EditCommand::Backspace))?;
+        Ok(())
+    }
+
+    pub fn delete_forward(&mut self) -> Result<(), EditorBackendError> {
+        self.workspace
+            .execute(self.view_id, Command::Edit(EditCommand::DeleteForward))?;
+        Ok(())
+    }
+
+    pub fn undo(&mut self) -> Result<(), EditorBackendError> {
+        self.workspace
+            .execute(self.view_id, Command::Edit(EditCommand::Undo))?;
+        Ok(())
+    }
+
+    pub fn redo(&mut self) -> Result<(), EditorBackendError> {
+        self.workspace
+            .execute(self.view_id, Command::Edit(EditCommand::Redo))?;
+        Ok(())
+    }
+
+    pub fn move_cursor_to_composed_row(
+        &mut self,
+        composed_row: usize,
+        x_cells: usize,
+        selecting: bool,
+    ) -> Result<(), EditorBackendError> {
+        let doc_row = self
+            .workspace
+            .with_editor_for_view(self.view_id, |ed| {
+                let index = ComposedRowIndex::build(ed);
+                index.composed_row_to_doc_row(composed_row)
+            })?
+            .ok_or(EditorBackendError::ComposedRowNotMappable)?;
+
+        let Some(pos) =
+            self.workspace
+                .visual_position_to_logical_for_view(self.view_id, doc_row, x_cells)?
+        else {
+            return Err(EditorBackendError::VisualPositionNotMappable {
+                row: doc_row,
+                x_cells,
+            });
+        };
+
+        self.move_cursor_to(pos, selecting)
+    }
+
+    pub fn select_all(&mut self) -> Result<(), EditorBackendError> {
+        let buffer_id = self.buffer_id()?;
+        let line_index = self.workspace.buffer_line_index(buffer_id)?;
+        let last_line = line_index.line_count().saturating_sub(1);
+        let last_col = line_index
+            .get_line_text(last_line)
+            .unwrap_or_default()
+            .chars()
+            .count();
+        let start = Position::new(0, 0);
+        let end = Position::new(last_line, last_col);
+
+        self.workspace.execute(
+            self.view_id,
+            Command::Cursor(CursorCommand::SetSelection { start, end }),
+        )?;
+        self.workspace.execute(
+            self.view_id,
+            Command::Cursor(CursorCommand::MoveTo {
+                line: end.line,
+                column: end.column,
+            }),
+        )?;
+        Ok(())
+    }
+
+    fn selection_char_range(
+        &self,
+        selection: &Selection,
+    ) -> Result<(usize, usize), EditorBackendError> {
+        let buffer_id = self.buffer_id()?;
+        let index = self.workspace.buffer_line_index(buffer_id)?;
+
+        let a = index.position_to_char_offset(selection.start.line, selection.start.column);
+        let b = index.position_to_char_offset(selection.end.line, selection.end.column);
+        Ok(if a <= b { (a, b) } else { (b, a) })
+    }
+
+    pub fn selection_text(&self) -> Result<String, EditorBackendError> {
+        let Some(selection) = self.workspace.selection_for_view(self.view_id)? else {
+            return Ok(String::new());
+        };
+        let (start, end) = self.selection_char_range(&selection)?;
+        if start >= end {
+            return Ok(String::new());
+        }
+
+        let buffer_id = self.buffer_id()?;
+        Ok(self
+            .workspace
+            .buffer_text_range(buffer_id, start, end.saturating_sub(start))?)
+    }
+
+    pub fn cut_selection_text(&mut self) -> Result<String, EditorBackendError> {
+        let text = self.selection_text()?;
+        if text.is_empty() {
+            return Ok(text);
+        }
+        self.backspace()?;
+        Ok(text)
+    }
+
+    /// 当前 selection 的 overlay 坐标（composed rows 空间）。
+    ///
+    /// 返回值语义：
+    /// - `None`：无 selection（caret only）
+    /// - `Some(((start_row, start_x), (end_row, end_x)))`：按文档顺序排序后的 selection 边界
+    pub fn selection_overlay(
+        &mut self,
+    ) -> Result<Option<((u32, u32), (u32, u32))>, EditorBackendError> {
+        let Some(mut sel) = self.workspace.selection_for_view(self.view_id)? else {
+            return Ok(None);
+        };
+
+        // 统一成文档顺序（start <= end），便于前端渲染矩形。
+        if sel.start > sel.end {
+            std::mem::swap(&mut sel.start, &mut sel.end);
+        }
+
+        let Some((start_doc_row, start_x)) = self.workspace.logical_to_visual_for_view(
+            self.view_id,
+            sel.start.line,
+            sel.start.column,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some((end_doc_row, end_x)) = self.workspace.logical_to_visual_for_view(
+            self.view_id,
+            sel.end.line,
+            sel.end.column,
+        )?
+        else {
+            return Ok(None);
+        };
+
+        let (start_row, end_row) = self.workspace.with_editor_for_view(self.view_id, |ed| {
+            let index = ComposedRowIndex::build(ed);
+            (
+                index.doc_row_to_composed_row(ed, start_doc_row),
+                index.doc_row_to_composed_row(ed, end_doc_row),
+            )
+        })?;
+
+        Ok(Some((
+            (start_row as u32, start_x as u32),
+            (end_row as u32, end_x as u32),
+        )))
     }
 }

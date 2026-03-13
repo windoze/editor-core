@@ -7,6 +7,8 @@
 - 行级渲染（`<div class="line">` + `<span>` runs）
 - 从第一版开始支持 soft wrap（cells 坐标体系）
 - viewport 虚拟化（composed rows：doc rows + above-line 虚拟行）
+- 输入管线：`textarea#imeInput` 捕获 `beforeinput`（禁止 `contenteditable`）
+- 剪贴板：Tauri 后端（`tauri-plugin-clipboard-manager`）
 
 ## 运行（本机）
 
@@ -51,3 +53,13 @@ grid 对齐的可用性；若某些字体在 2 cells 宽度内绘制不下，可
 ```bash
 cargo test -p tauri-editor
 ```
+
+## 输入与快捷键（当前已支持）
+
+- 文字输入：`beforeinput: insertText`
+- 删除：Backspace / Delete（`beforeinput: deleteContentBackward/Forward`）
+- 换行 / Tab：`beforeinput: insertLineBreak/insertTab`
+- 选择：Shift+方向键、Shift+点击
+- 剪贴板：Copy/Cut/Paste（Ctrl/Cmd + C/X/V）
+- Undo/Redo：Ctrl/Cmd + Z / Shift+Z（或 Ctrl+Y）
+- 全选：Ctrl/Cmd + A

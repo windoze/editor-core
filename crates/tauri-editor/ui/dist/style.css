@@ -39,6 +39,7 @@ body {
 
 #linesLayer {
   position: relative;
+  user-select: none;
 }
 
 .line {
@@ -61,6 +62,17 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+#selections {
+  position: absolute;
+  inset: 0;
+}
+
+.selection-rect {
+  position: absolute;
+  height: var(--line-height);
+  background: var(--selection);
 }
 
 #cursor {

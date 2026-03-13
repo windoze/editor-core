@@ -16,7 +16,11 @@ readme = "README.md"
 [features]
 default = []
 # Enable the runnable Tauri app binary and its build-time glue.
-tauri-app = ["dep:tauri", "dep:tauri-build"]
+tauri-app = [
+  "dep:tauri",
+  "dep:tauri-build",
+  "dep:tauri-plugin-clipboard-manager",
+]
 
 [dependencies]
 editor-core = { version = "0.3.0", path = "../editor-core" }
@@ -25,6 +29,7 @@ thiserror = "2"
 
 # Tauri (optional; behind `tauri-app` to avoid pulling heavy deps for pure-Rust tests).
 tauri = { version = "2", optional = true }
+tauri-plugin-clipboard-manager = { version = "2", optional = true }
 
 [build-dependencies]
 tauri-build = { version = "2", optional = true }
@@ -36,4 +41,3 @@ serde_json = "1"
 name = "tauri-editor"
 path = "src/bin/tauri-editor.rs"
 required-features = ["tauri-app"]
-
