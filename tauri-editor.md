@@ -12,7 +12,7 @@
 - ✅ 光标 overlay（`(row, x_cells)` → 像素定位）
 - ✅ 基础导航：方向键 / Home / End / PageUp / PageDown（键盘移动/扩选后自动滚动，尽量保持 caret 在 viewport 内）
 - ✅ 文本输入/删除（非 IME）：`beforeinput` → Rust `EditCommand::*`（InsertText/Backspace/DeleteForward/Newline/Tab）
-- ✅ 选择与命中测试：Shift+方向键、Shift+点击扩选；选择渲染走 overlay 矩形（禁用浏览器原生 selection）
+- ✅ 选择与命中测试：Shift+方向键、Shift+点击、鼠标拖拽选择；选择渲染走 overlay 矩形（禁用浏览器原生 selection）
 - ✅ Gutter：行号（按 `logicalLineCount` 动态宽度）+ 折叠标记（来自 `folding_manager.regions()`）+ 点击 toggle（Fold/Unfold）
 - ✅ 剪贴板：走 Tauri 后端（`tauri-plugin-clipboard-manager`），支持 Copy/Cut/Paste、Undo/Redo、Select All
 - ✅ IME MVP：`compositionstart/update/end` → 内核 ReplaceCoalescingUndo（marked text 入内核）+ `IME_MARKED_TEXT` style layer

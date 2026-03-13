@@ -106,6 +106,25 @@ fn mouse_down(
 }
 
 #[tauri::command]
+fn mouse_drag(
+    state: tauri::State<'_, AppState>,
+    anchor_row: u32,
+    anchor_x_cells: u32,
+    row: u32,
+    x_cells: u32,
+) -> Result<(), String> {
+    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
+    backend
+        .set_selection_by_composed_points(
+            anchor_row as usize,
+            anchor_x_cells as usize,
+            row as usize,
+            x_cells as usize,
+        )
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn toggle_fold(
     state: tauri::State<'_, AppState>,
     start_line: u32,
@@ -230,6 +249,7 @@ fn main() {
             get_selection,
             key_down,
             mouse_down,
+            mouse_drag,
             toggle_fold,
             insert_text,
             composition_start,

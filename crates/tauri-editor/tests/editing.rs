@@ -134,3 +134,19 @@ fn select_all_selects_entire_document() {
     backend.select_all().unwrap();
     assert_eq!(backend.selection_text().unwrap(), "a\nbc");
 }
+
+#[test]
+fn mouse_drag_selects_text_from_anchor() {
+    let mut backend = EditorBackend::open_text(None, "abc\ndef", 80).unwrap();
+    let view_id = backend.view_id();
+
+    backend
+        .set_selection_by_composed_points(0, 1, 1, 2)
+        .expect("drag selection");
+
+    assert_eq!(backend.selection_text().unwrap(), "bc\nde");
+    assert_eq!(
+        backend.workspace().cursor_position_for_view(view_id).unwrap(),
+        Position::new(1, 2)
+    );
+}

@@ -559,6 +559,128 @@ function ensureFocus() {
   }
 }
 
+let dragSelecting = false;
+let dragAnchor = null; // { row, xCells }
+let dragLatestClient = null; // { x, y }
+let dragFlushScheduled = false;
+let dragClearAfterFlush = false;
+let dragLastSent = null; // { row, xCells }
+
+function hitTestFromClientPoint(clientX, clientY) {
+  const rect = scrollViewport.getBoundingClientRect();
+  const x = clientX - rect.left + scrollViewport.scrollLeft;
+  const y = clientY - rect.top + scrollViewport.scrollTop;
+  const xInContent = x - state.gutterWidthPx;
+
+  const row = clamp(
+    Math.floor((y + state.lineHeightPx / 2) / state.lineHeightPx),
+    0,
+    Math.max(0, state.totalRows - 1),
+  );
+  const xCells = clamp(
+    Math.floor((Math.max(0, xInContent) + state.cellWidthPx / 2) / state.cellWidthPx),
+    0,
+    Math.max(0, state.widthCells),
+  );
+
+  return { row, xCells, rect };
+}
+
+function maybeAutoScrollOnDrag(clientY, rect) {
+  const edgePx = Math.min(24, Math.max(8, state.lineHeightPx * 0.75));
+  const yInViewport = clientY - rect.top;
+  if (yInViewport < edgePx) {
+    scrollViewport.scrollTop = Math.max(0, scrollViewport.scrollTop - state.lineHeightPx);
+  } else if (yInViewport > rect.height - edgePx) {
+    scrollViewport.scrollTop = Math.max(0, scrollViewport.scrollTop + state.lineHeightPx);
+  }
+}
+
+function scheduleDragFlush() {
+  if (dragFlushScheduled) return;
+  dragFlushScheduled = true;
+  requestAnimationFrame(() => {
+    dragFlushScheduled = false;
+
+    const anchor = dragAnchor;
+    const latest = dragLatestClient;
+    if (!anchor || !latest) {
+      if (dragClearAfterFlush) {
+        dragClearAfterFlush = false;
+        dragAnchor = null;
+        dragLatestClient = null;
+        dragLastSent = null;
+      }
+      return;
+    }
+
+    // 拖拽时靠近上下边缘自动滚动（尽量不做复杂的像素级速度曲线，先保证可用）。
+    const rect = scrollViewport.getBoundingClientRect();
+    if (dragSelecting) {
+      maybeAutoScrollOnDrag(latest.y, rect);
+    }
+
+    const hit = hitTestFromClientPoint(latest.x, latest.y);
+    if (dragLastSent && dragLastSent.row === hit.row && dragLastSent.xCells === hit.xCells) {
+      if (dragClearAfterFlush) {
+        dragClearAfterFlush = false;
+        dragAnchor = null;
+        dragLatestClient = null;
+        dragLastSent = null;
+      }
+      return;
+    }
+    dragLastSent = { row: hit.row, xCells: hit.xCells };
+
+    state.lastInputAt = performance.now();
+    state.lastInputKind = "mouseDrag";
+    void invokeQueued("mouse_drag", {
+      anchorRow: anchor.row,
+      anchorXCells: anchor.xCells,
+      row: hit.row,
+      xCells: hit.xCells,
+    }).then(scheduleRender);
+
+    if (dragClearAfterFlush) {
+      dragClearAfterFlush = false;
+      dragAnchor = null;
+      dragLatestClient = null;
+      dragLastSent = null;
+    }
+  });
+}
+
+function stopDragSelecting(clientX, clientY) {
+  if (!dragSelecting) return;
+  dragSelecting = false;
+  dragLatestClient = { x: clientX, y: clientY };
+  dragClearAfterFlush = true;
+  scheduleDragFlush();
+  window.removeEventListener("mousemove", onDragMove);
+  window.removeEventListener("mouseup", onDragEnd);
+  window.removeEventListener("blur", onDragBlur);
+}
+
+function onDragMove(e) {
+  if (!dragSelecting) return;
+  if ((e.buttons & 1) === 0) {
+    stopDragSelecting(e.clientX, e.clientY);
+    return;
+  }
+  dragLatestClient = { x: e.clientX, y: e.clientY };
+  scheduleDragFlush();
+}
+
+function onDragEnd(e) {
+  stopDragSelecting(e.clientX, e.clientY);
+}
+
+function onDragBlur() {
+  // blur 时不知道最后的鼠标位置；用 viewport 顶部作为保守收口。
+  const rect = scrollViewport.getBoundingClientRect();
+  stopDragSelecting(rect.left, rect.top);
+}
+
 scrollViewport.addEventListener("scroll", scheduleRender, { passive: true });
 window.addEventListener("resize", () => {
   measure();
@@ -590,31 +712,46 @@ rowsLayer.addEventListener("mousedown", (e) => {
 });
 scrollViewport.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
+  // Shift+点击已支持：走后端 selecting=true 的扩选逻辑；暂不启用 Shift+拖拽（避免锚点语义混乱）。
+  if (e.shiftKey) {
+    ensureFocus();
+    const hit = hitTestFromClientPoint(e.clientX, e.clientY);
+    state.lastInputAt = performance.now();
+    state.lastInputKind = "mouseDownShift";
+    void invokeQueued("mouse_down", {
+      row: hit.row,
+      xCells: hit.xCells,
+      modifiers: {
+        shift: true,
+        ctrl: e.ctrlKey,
+        alt: e.altKey,
+        meta: e.metaKey,
+      },
+    }).then(scheduleRender);
+    return;
+  }
+
   ensureFocus();
+  e.preventDefault();
 
-  const rect = scrollViewport.getBoundingClientRect();
-  const x = e.clientX - rect.left + scrollViewport.scrollLeft;
-  const y = e.clientY - rect.top + scrollViewport.scrollTop;
-  const xInContent = x - state.gutterWidthPx;
+  const hit = hitTestFromClientPoint(e.clientX, e.clientY);
 
-  const row = clamp(
-    Math.floor((y + state.lineHeightPx / 2) / state.lineHeightPx),
-    0,
-    Math.max(0, state.totalRows - 1),
-  );
-  const xCells = clamp(
-    Math.floor((Math.max(0, xInContent) + state.cellWidthPx / 2) / state.cellWidthPx),
-    0,
-    Math.max(0, state.widthCells),
-  );
+  dragSelecting = true;
+  dragAnchor = { row: hit.row, xCells: hit.xCells };
+  dragLatestClient = { x: e.clientX, y: e.clientY };
+  dragLastSent = { row: hit.row, xCells: hit.xCells };
+  dragClearAfterFlush = false;
+  window.addEventListener("mousemove", onDragMove, { passive: true });
+  window.addEventListener("mouseup", onDragEnd, { passive: true });
+  window.addEventListener("blur", onDragBlur, { passive: true });
 
   state.lastInputAt = performance.now();
   state.lastInputKind = "mouseDown";
   void invokeQueued("mouse_down", {
-    row,
-    xCells,
+    row: hit.row,
+    xCells: hit.xCells,
     modifiers: {
-      shift: e.shiftKey,
+      shift: false,
       ctrl: e.ctrlKey,
       alt: e.altKey,
       meta: e.metaKey,

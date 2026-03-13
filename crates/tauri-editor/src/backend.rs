@@ -417,12 +417,11 @@ impl EditorBackend {
         Ok(())
     }
 
-    pub fn move_cursor_to_composed_row(
+    fn composed_position_to_logical(
         &mut self,
         composed_row: usize,
         x_cells: usize,
-        selecting: bool,
-    ) -> Result<(), EditorBackendError> {
+    ) -> Result<Position, EditorBackendError> {
         let doc_row = self
             .workspace
             .with_editor_for_view(self.view_id, |ed| {
@@ -441,7 +440,67 @@ impl EditorBackend {
             });
         };
 
+        Ok(pos)
+    }
+
+    pub fn move_cursor_to_composed_row(
+        &mut self,
+        composed_row: usize,
+        x_cells: usize,
+        selecting: bool,
+    ) -> Result<(), EditorBackendError> {
+        let pos = self.composed_position_to_logical(composed_row, x_cells)?;
+
         self.move_cursor_to(pos, selecting)
+    }
+
+    pub fn set_selection_by_composed_points(
+        &mut self,
+        anchor_row: usize,
+        anchor_x_cells: usize,
+        active_row: usize,
+        active_x_cells: usize,
+    ) -> Result<(), EditorBackendError> {
+        let anchor = self.composed_position_to_logical(anchor_row, anchor_x_cells)?;
+        let active = self.composed_position_to_logical(active_row, active_x_cells)?;
+
+        self.workspace.execute(
+            self.view_id,
+            Command::Cursor(CursorCommand::ClearSecondarySelections),
+        )?;
+
+        if anchor == active {
+            if self.workspace.selection_for_view(self.view_id)?.is_some() {
+                self.workspace.execute(
+                    self.view_id,
+                    Command::Cursor(CursorCommand::ClearSelection),
+                )?;
+            }
+            self.workspace.execute(
+                self.view_id,
+                Command::Cursor(CursorCommand::MoveTo {
+                    line: active.line,
+                    column: active.column,
+                }),
+            )?;
+            return Ok(());
+        }
+
+        self.workspace.execute(
+            self.view_id,
+            Command::Cursor(CursorCommand::SetSelection {
+                start: anchor,
+                end: active,
+            }),
+        )?;
+        self.workspace.execute(
+            self.view_id,
+            Command::Cursor(CursorCommand::MoveTo {
+                line: active.line,
+                column: active.column,
+            }),
+        )?;
+        Ok(())
     }
 
     pub fn select_all(&mut self) -> Result<(), EditorBackendError> {
