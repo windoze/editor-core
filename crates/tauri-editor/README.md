@@ -77,3 +77,4 @@ cargo test -p tauri-editor
 - 行级 diff：viewport 更新时复用行 DOM，仅重建发生变化的行
 - 合并 IPC：前端用 `get_frame` 一次拿到 `{ snapshot, cursor, selection }`
 - 性能日志：`console.debug` 输出 frame/dom 耗时、行更新数量与输入延迟（约 1 次/秒）
+- 右侧 UI：自绘滚动条（thumb 拖拽/点击）+ minimap（密度采样；点击/拖拽滚动定位）

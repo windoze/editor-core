@@ -16,6 +16,11 @@ const rowsLayer = document.getElementById("rowsLayer");
 const selectionsLayer = document.getElementById("selections");
 const cursorEl = document.getElementById("cursor");
 const imeInput = document.getElementById("imeInput");
+const minimapEl = document.getElementById("minimap");
+const minimapCanvas = document.getElementById("minimapCanvas");
+const minimapViewportEl = document.getElementById("minimapViewport");
+const scrollbarEl = document.getElementById("scrollbar");
+const scrollbarThumbEl = document.getElementById("scrollbarThumb");
 
 let invokeQueue = Promise.resolve();
 function invokeQueued(cmd, args = {}) {
@@ -35,6 +40,12 @@ const state = {
   rendering: false,
   pending: false,
   totalRows: 0,
+  minimapTotalRows: 0,
+  minimapBucketSize: 1,
+  minimapSamples: [],
+  minimapLastFetchedAt: 0,
+  minimapLastHeight: 0,
+  minimapLastWidthCells: 0,
   lastPasteAt: 0,
   compositionActive: false,
   compositionPendingText: "",
@@ -126,6 +137,126 @@ function ensureRowVisible(row, marginRows = 2) {
   if (rowBottom > viewportBottom - marginPx) {
     const nextTop = rowBottom + marginPx - scrollViewport.clientHeight;
     scrollViewport.scrollTop = Math.max(0, nextTop);
+  }
+}
+
+function updateScrollbarUI() {
+  const trackH = scrollbarEl.clientHeight;
+  if (!trackH) return;
+
+  const viewportH = scrollViewport.clientHeight;
+  const totalRows = state.totalRows || 0;
+  const totalH = totalRows * state.lineHeightPx;
+
+  if (totalH <= 0 || viewportH <= 0) {
+    scrollbarThumbEl.style.height = "0px";
+    scrollbarThumbEl.style.transform = "translateY(0px)";
+    return;
+  }
+
+  if (totalH <= viewportH) {
+    scrollbarThumbEl.style.height = `${trackH}px`;
+    scrollbarThumbEl.style.transform = "translateY(0px)";
+    return;
+  }
+
+  const minThumbH = 24;
+  const thumbH = clamp((viewportH / totalH) * trackH, minThumbH, trackH);
+  const maxScrollTop = Math.max(0, totalH - viewportH);
+  const maxThumbTop = Math.max(0, trackH - thumbH);
+  const top = maxScrollTop > 0 ? (scrollViewport.scrollTop / maxScrollTop) * maxThumbTop : 0;
+
+  scrollbarThumbEl.style.height = `${thumbH}px`;
+  scrollbarThumbEl.style.transform = `translateY(${top}px)`;
+}
+
+function updateMinimapViewportUI() {
+  const docTotal = state.minimapTotalRows || 0;
+  const h = minimapEl.clientHeight;
+  if (!docTotal || !h) {
+    minimapViewportEl.style.transform = "translateY(-9999px)";
+    return;
+  }
+
+  // minimap 当前基于 doc visual rows；scrollViewport 以 composed rows 为准。
+  // 首版先按“doc≈composed”做近似；未来引入大量 above-line rows 时再做精确映射。
+  const visibleStart = Math.floor(scrollViewport.scrollTop / state.lineHeightPx);
+  const visibleCount = state.heightRows;
+
+  const rawTop = (visibleStart / docTotal) * h;
+  const rawH = Math.max(16, (visibleCount / docTotal) * h);
+  const top = clamp(rawTop, 0, Math.max(0, h - rawH));
+
+  minimapViewportEl.style.height = `${rawH}px`;
+  minimapViewportEl.style.transform = `translateY(${top}px)`;
+}
+
+let minimapRefreshInFlight = false;
+async function refreshMinimap() {
+  if (minimapRefreshInFlight) return;
+  minimapRefreshInFlight = true;
+  try {
+    const height = Math.max(1, minimapEl.clientHeight);
+    const snap = await invokeQueued("get_minimap", { height });
+    state.minimapTotalRows = snap.totalRows || 0;
+    state.minimapBucketSize = snap.bucketSize || 1;
+    state.minimapSamples = Array.isArray(snap.samples) ? snap.samples : [];
+    state.minimapLastFetchedAt = performance.now();
+    state.minimapLastHeight = height;
+    state.minimapLastWidthCells = state.widthCells;
+
+    drawMinimap();
+    updateMinimapViewportUI();
+  } finally {
+    minimapRefreshInFlight = false;
+  }
+}
+
+function drawMinimap() {
+  const cssW = minimapEl.clientWidth;
+  const cssH = minimapEl.clientHeight;
+  if (!cssW || !cssH) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.floor(cssW * dpr));
+  const h = Math.max(1, Math.floor(cssH * dpr));
+
+  if (minimapCanvas.width !== w || minimapCanvas.height !== h) {
+    minimapCanvas.width = w;
+    minimapCanvas.height = h;
+  }
+
+  const ctx = minimapCanvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, w, h);
+
+  const samples = state.minimapSamples || [];
+  if (!samples.length) return;
+
+  // samples 期望长度≈CSS 高度；如果不一致，按比例映射。
+  for (let y = 0; y < cssH; y++) {
+    const idx = Math.floor((y / cssH) * samples.length);
+    const v = samples[idx] ?? 0;
+    if (!v) continue;
+    const alpha = Math.min(0.9, Math.max(0, v / 255));
+    ctx.fillStyle = `rgba(215, 218, 224, ${alpha * 0.75})`;
+    ctx.fillRect(0, Math.floor(y * dpr), w, Math.ceil(dpr));
+  }
+}
+
+function maybeRefreshMinimap(snapshot) {
+  const now = performance.now();
+  const height = minimapEl.clientHeight;
+  const needsSize = height !== state.minimapLastHeight;
+  const needsWrap = snapshot && snapshot.widthCells !== state.minimapLastWidthCells;
+  const needsFirst = !state.minimapTotalRows;
+  const needsAfterInput =
+    state.lastInputAt > 0 &&
+    state.lastInputAt > state.minimapLastFetchedAt &&
+    now - state.minimapLastFetchedAt > 300;
+
+  if (needsSize || needsWrap || needsFirst || needsAfterInput) {
+    void refreshMinimap();
   }
 }
 
@@ -516,6 +647,9 @@ async function renderOnce() {
 
     positionCursor(frame.cursor);
     renderSelection(frame.selection, snapshot);
+    updateScrollbarUI();
+    updateMinimapViewportUI();
+    maybeRefreshMinimap(snapshot);
 
     state.lastDomStats = domStats;
     const tFrameEnd = performance.now();
@@ -681,7 +815,15 @@ function onDragBlur() {
   stopDragSelecting(rect.left, rect.top);
 }
 
-scrollViewport.addEventListener("scroll", scheduleRender, { passive: true });
+scrollViewport.addEventListener(
+  "scroll",
+  () => {
+    updateScrollbarUI();
+    updateMinimapViewportUI();
+    scheduleRender();
+  },
+  { passive: true },
+);
 window.addEventListener("resize", () => {
   measure();
   scheduleRender();
@@ -709,6 +851,112 @@ rowsLayer.addEventListener("mousedown", (e) => {
     endLine,
     collapsed,
   }).then(scheduleRender);
+});
+
+let scrollbarDragging = false;
+let scrollbarDragStartY = 0;
+let scrollbarDragStartThumbTop = 0;
+
+function onScrollbarDragMove(e) {
+  if (!scrollbarDragging) return;
+  const trackRect = scrollbarEl.getBoundingClientRect();
+  const thumbRect = scrollbarThumbEl.getBoundingClientRect();
+  const thumbH = thumbRect.height;
+  const maxThumbTop = Math.max(0, trackRect.height - thumbH);
+  if (maxThumbTop <= 0) return;
+
+  const dy = e.clientY - scrollbarDragStartY;
+  const nextThumbTop = clamp(scrollbarDragStartThumbTop + dy, 0, maxThumbTop);
+
+  const totalH = state.totalRows * state.lineHeightPx;
+  const viewportH = scrollViewport.clientHeight;
+  const maxScrollTop = Math.max(0, totalH - viewportH);
+  const nextScrollTop = maxScrollTop > 0 ? (nextThumbTop / maxThumbTop) * maxScrollTop : 0;
+  scrollViewport.scrollTop = nextScrollTop;
+}
+
+function stopScrollbarDrag() {
+  if (!scrollbarDragging) return;
+  scrollbarDragging = false;
+  window.removeEventListener("mousemove", onScrollbarDragMove);
+  window.removeEventListener("mouseup", stopScrollbarDrag);
+}
+
+scrollbarThumbEl.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  ensureFocus();
+  updateScrollbarUI();
+
+  scrollbarDragging = true;
+  const trackRect = scrollbarEl.getBoundingClientRect();
+  const thumbRect = scrollbarThumbEl.getBoundingClientRect();
+  scrollbarDragStartY = e.clientY;
+  scrollbarDragStartThumbTop = thumbRect.top - trackRect.top;
+  window.addEventListener("mousemove", onScrollbarDragMove, { passive: true });
+  window.addEventListener("mouseup", stopScrollbarDrag, { passive: true });
+});
+
+scrollbarEl.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  if (e.target === scrollbarThumbEl) return;
+  e.preventDefault();
+  ensureFocus();
+  updateScrollbarUI();
+
+  const trackRect = scrollbarEl.getBoundingClientRect();
+  const thumbRect = scrollbarThumbEl.getBoundingClientRect();
+  const thumbH = thumbRect.height;
+  const maxThumbTop = Math.max(0, trackRect.height - thumbH);
+  if (maxThumbTop <= 0) return;
+
+  const clickY = e.clientY - trackRect.top;
+  const nextThumbTop = clamp(clickY - thumbH / 2, 0, maxThumbTop);
+
+  const totalH = state.totalRows * state.lineHeightPx;
+  const viewportH = scrollViewport.clientHeight;
+  const maxScrollTop = Math.max(0, totalH - viewportH);
+  const nextScrollTop = maxScrollTop > 0 ? (nextThumbTop / maxThumbTop) * maxScrollTop : 0;
+  scrollViewport.scrollTop = nextScrollTop;
+});
+
+let minimapDragging = false;
+
+function setScrollFromMinimapClientY(clientY) {
+  const rect = minimapEl.getBoundingClientRect();
+  const y = clamp(clientY - rect.top, 0, rect.height);
+  const frac = rect.height > 0 ? y / rect.height : 0;
+  const docTotal = state.minimapTotalRows || 0;
+  if (!docTotal) return;
+
+  const targetRow = frac * docTotal;
+  const topRow = Math.max(0, targetRow - state.heightRows / 2);
+  scrollViewport.scrollTop = topRow * state.lineHeightPx;
+}
+
+function onMinimapDragMove(e) {
+  if (!minimapDragging) return;
+  setScrollFromMinimapClientY(e.clientY);
+}
+
+function stopMinimapDrag(e) {
+  if (!minimapDragging) return;
+  minimapDragging = false;
+  window.removeEventListener("mousemove", onMinimapDragMove);
+  window.removeEventListener("mouseup", stopMinimapDrag);
+  if (e && typeof e.clientY === "number") {
+    setScrollFromMinimapClientY(e.clientY);
+  }
+}
+
+minimapEl.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  ensureFocus();
+  minimapDragging = true;
+  setScrollFromMinimapClientY(e.clientY);
+  window.addEventListener("mousemove", onMinimapDragMove, { passive: true });
+  window.addEventListener("mouseup", stopMinimapDrag, { passive: true });
 });
 scrollViewport.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;

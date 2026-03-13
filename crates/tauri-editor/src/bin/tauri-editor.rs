@@ -48,6 +48,17 @@ fn get_viewport(
 }
 
 #[tauri::command]
+fn get_minimap(
+    state: tauri::State<'_, AppState>,
+    height: u32,
+) -> Result<tauri_editor::snapshot::MinimapSnapshot, String> {
+    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
+    backend
+        .minimap_snapshot(height as usize)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_frame(
     state: tauri::State<'_, AppState>,
     start_row: u32,
@@ -244,6 +255,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             set_viewport,
             get_viewport,
+            get_minimap,
             get_frame,
             get_cursor,
             get_selection,

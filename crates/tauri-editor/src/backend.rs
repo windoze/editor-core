@@ -1,6 +1,6 @@
 use crate::composed_row_index::ComposedRowIndex;
 use crate::render_model::{build_viewport_snapshot, RenderModelError};
-use crate::snapshot::ViewportSnapshot;
+use crate::snapshot::{MinimapSnapshot, ViewportSnapshot};
 use editor_core::intervals::{Interval, StyleId, StyleLayerId, IME_MARKED_TEXT_STYLE_ID};
 use editor_core::ProcessingEdit;
 use editor_core::{
@@ -29,6 +29,10 @@ pub enum EditorBackendError {
     VisualPositionNotMappable { row: usize, x_cells: usize },
     #[error("IME composition 未开始")]
     CompositionNotActive,
+    #[error("minimap total_rows 超出 u32 范围（total_rows={total_rows}）")]
+    MinimapTotalRowsTooLarge { total_rows: usize },
+    #[error("minimap bucket_size 超出 u32 范围（bucket_size={bucket_size}）")]
+    MinimapBucketSizeTooLarge { bucket_size: usize },
 }
 
 impl From<WorkspaceError> for EditorBackendError {
@@ -237,6 +241,58 @@ impl EditorBackend {
         }
 
         Ok(snapshot)
+    }
+
+    /// 获取 minimap 密度快照（按 doc visual rows 采样）。
+    ///
+    /// - `height` 是前端 minimap 视图的高度（以 CSS px 计），我们会返回同长度的 samples。
+    /// - 目前 minimap 基于 doc visual rows（wrap/fold 后），不包含 composed 的 above-line 虚拟行。
+    pub fn minimap_snapshot(&mut self, height: usize) -> Result<MinimapSnapshot, EditorBackendError> {
+        let height = height.max(1);
+
+        let doc_total_rows = self.workspace.total_visual_lines_for_view(self.view_id)?;
+        let total_rows_u32 = u32::try_from(doc_total_rows)
+            .map_err(|_| EditorBackendError::MinimapTotalRowsTooLarge {
+                total_rows: doc_total_rows,
+            })?;
+
+        let bucket_size = (doc_total_rows + height - 1) / height;
+        let bucket_size = bucket_size.max(1);
+        let bucket_size_u32 =
+            u32::try_from(bucket_size).map_err(|_| EditorBackendError::MinimapBucketSizeTooLarge {
+                bucket_size,
+            })?;
+
+        let grid = if doc_total_rows == 0 {
+            editor_core::MinimapGrid::new(0, 0)
+        } else {
+            self.workspace.get_minimap_content(self.view_id, 0, doc_total_rows)?
+        };
+
+        let mut samples: Vec<u8> = Vec::with_capacity(height);
+        for i in 0..height {
+            let start = i.saturating_mul(bucket_size);
+            if start >= doc_total_rows {
+                samples.push(0);
+                continue;
+            }
+            let end = (start + bucket_size).min(doc_total_rows);
+
+            let mut best: u8 = 0;
+            for line in grid.lines.iter().skip(start).take(end.saturating_sub(start)) {
+                let total = line.total_cells.max(1);
+                let non_ws = line.non_whitespace_cells.min(total);
+                let v = ((non_ws * 255) / total) as u8;
+                best = best.max(v);
+            }
+            samples.push(best);
+        }
+
+        Ok(MinimapSnapshot {
+            total_rows: total_rows_u32,
+            bucket_size: bucket_size_u32,
+            samples,
+        })
     }
 
     /// 当前光标的 overlay 坐标（composed rows 空间）。

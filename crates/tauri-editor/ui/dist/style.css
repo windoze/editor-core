@@ -10,6 +10,9 @@
     "Courier New", monospace;
   --tab-size: 4;
   --gutter-width: 48px;
+  --minimap-width: 120px;
+  --scrollbar-width: 10px;
+  --sidebar-width: calc(var(--minimap-width) + var(--scrollbar-width));
 }
 
 html,
@@ -29,13 +32,22 @@ body {
 
 #scrollViewport {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: var(--sidebar-width);
   overflow: auto;
   font-family: var(--font-family);
   font-size: var(--font-size);
   line-height: var(--line-height);
   tab-size: var(--tab-size);
   -moz-tab-size: var(--tab-size);
+  scrollbar-width: none;
+}
+
+#scrollViewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 #rowsLayer {
@@ -166,7 +178,10 @@ body {
 
 #overlayLayer {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: var(--sidebar-width);
   pointer-events: none;
 }
 
@@ -200,4 +215,59 @@ body {
   padding: 0;
   margin: 0;
   resize: none;
+}
+
+#sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  display: flex;
+  user-select: none;
+}
+
+#minimap {
+  position: relative;
+  width: var(--minimap-width);
+  background: rgba(0, 0, 0, 0.18);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#minimapCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#minimapViewport {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  box-sizing: border-box;
+  pointer-events: none;
+  transform: translateY(-9999px);
+}
+
+#scrollbar {
+  position: relative;
+  width: var(--scrollbar-width);
+  background: rgba(0, 0, 0, 0.25);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#scrollbarThumb {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  min-height: 24px;
+  border-radius: 6px;
+  background: rgba(215, 218, 224, 0.35);
+  transform: translateY(0);
+}
+
+#scrollbarThumb:hover {
+  background: rgba(215, 218, 224, 0.55);
 }

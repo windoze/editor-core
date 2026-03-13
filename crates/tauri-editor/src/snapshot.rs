@@ -108,3 +108,17 @@ impl RunSnapshot {
         &self.0.4
     }
 }
+
+/// Web 友好的 minimap 快照（按 doc visual rows 做密度采样）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinimapSnapshot {
+    /// doc visual rows 总数（wrap/fold 后；不包含 composed above-line 虚拟行）。
+    pub total_rows: u32,
+    /// 一个 sample 代表的 doc rows 数量（>=1）。
+    pub bucket_size: u32,
+    /// 密度样本：长度等于前端请求的 minimap 高度（CSS px 行数）。
+    ///
+    /// 语义：0..=255，越大表示该 bucket 内“非空白 cells 比例”越高。
+    pub samples: Vec<u8>,
+}
