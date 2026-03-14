@@ -27,7 +27,7 @@
 
 运行（本机）：
 - `cd crates/tauri-editor && npm install`
-- `cd crates/tauri-editor && npm run tauri dev -- <path>`
+- `cd crates/tauri-editor && npm run tauri:dev -- <path>`
 
 运行注意：
 - `crates/tauri-editor/src-tauri/tauri.conf.json` 在 debug 下使用 `build.devUrl`（默认 `http://localhost:1420`），release 下使用 `build.frontendDist`（默认 `../dist`）。

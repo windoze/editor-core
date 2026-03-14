@@ -19,7 +19,7 @@
 ```bash
 cd crates/tauri-editor
 npm install
-npm run tauri dev -- path/to/file.rs
+npm run tauri:dev -- path/to/file.rs
 ```
 
 不传文件路径会打开一个空文档。
@@ -102,7 +102,7 @@ cargo test -p tauri-editor
 ### 前端排查（无 Console 也能看）
 
 前端提供一个左下角 `debugHud`（用于定位“输入事件/IPC 卡死”类问题），**默认关闭**。启用方式二选一：
-- 运行时：`TAURI_EDITOR_DEBUG_HUD=1 npm run tauri dev -- <path>`
+- 运行时：`TAURI_EDITOR_DEBUG_HUD=1 npm run tauri:dev -- <path>`
 - 编译时：`cargo run -p tauri-editor --features tauri-app,debug-hud --bin tauri-editor -- <path>`
 
 启用后显示：
