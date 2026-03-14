@@ -13,7 +13,7 @@
 - ✅ 基础导航：方向键 / Home / End / PageUp / PageDown（键盘移动/扩选后自动滚动，尽量保持 caret 在 viewport 内）
 - ✅ 文本输入/删除（非 IME）：`beforeinput` → Rust `EditCommand::*`（InsertText/DeleteGraphemeBack/DeleteGraphemeForward/Newline/Tab）
 - ✅ 选择与命中测试：Shift+方向键、Shift+点击、鼠标拖拽选择；选择渲染走 overlay 矩形（禁用浏览器原生 selection）
-- ✅ Gutter：行号（按 `logicalLineCount` 动态宽度）+ 折叠标记（来自 `folding_manager.regions()`）+ 点击 toggle（Fold/Unfold）
+- ✅ Gutter：行号 gutter（按 `logicalLineCount` 动态宽度）+ **折叠 gutter（位于行号与正文之间，VS Code 风格 chevron）**（来自 `folding_manager.regions()`）+ 点击 toggle（Fold/Unfold）
 - ✅ Scrollbar：右侧自绘滚动条（thumb 可拖拽/点击跳转；隐藏 WebView 原生 scrollbar）
 - ✅ Minimap：右侧 minimap（基于 doc visual rows 做密度采样；密度=非空白 cells / viewport_width；用 bar 宽度表达密度避免“整块纯色”；点击/拖拽定位滚动）
 - ✅ 剪贴板：走 Tauri 后端（`tauri-plugin-clipboard-manager`），支持 Copy/Cut/Paste、Undo/Redo、Select All

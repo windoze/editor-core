@@ -9,7 +9,9 @@
   --font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
   --tab-size: 4;
-  --gutter-width: 48px;
+  --line-number-gutter-width: 48px;
+  --fold-gutter-width: 18px;
+  --gutter-width: calc(var(--line-number-gutter-width) + var(--fold-gutter-width));
   --minimap-width: 120px;
   --scrollbar-width: 10px;
   --sidebar-width: calc(var(--minimap-width) + var(--scrollbar-width));
@@ -60,37 +62,64 @@ body {
   height: var(--line-height);
 }
 
-.gutter-cell {
-  flex: 0 0 var(--gutter-width);
+.gutter {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  padding-right: 6px;
   box-sizing: border-box;
   color: var(--muted);
   background: rgba(0, 0, 0, 0.12);
+  user-select: none;
+}
+
+.gutter-line-number {
+  flex: 0 0 var(--line-number-gutter-width);
+  justify-content: flex-end;
+  padding-right: 8px;
+}
+
+.gutter-folding {
+  flex: 0 0 var(--fold-gutter-width);
+  justify-content: center;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .fold-toggle {
-  width: 10px;
-  height: 10px;
-  flex: 0 0 10px;
+  width: 14px;
+  height: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--muted);
-  opacity: 0.9;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .fold-toggle.foldable {
-  color: var(--fg);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.row:hover .fold-toggle.foldable {
   opacity: 0.9;
 }
 
 .fold-toggle.foldable:hover {
   opacity: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+}
+
+.fold-toggle.foldable::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid rgba(215, 218, 224, 0.85);
+  border-bottom: 2px solid rgba(215, 218, 224, 0.85);
+  transform-origin: center;
+  transform: rotate(45deg);
+}
+
+.fold-toggle.foldable.collapsed::before {
+  transform: rotate(-45deg);
 }
 
 .line-number {

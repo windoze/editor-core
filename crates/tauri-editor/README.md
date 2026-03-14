@@ -64,7 +64,7 @@ cargo test -p tauri-editor
 - 换行 / Tab：`beforeinput: insertLineBreak/insertTab`
 - 选择：Shift+方向键、Shift+点击、鼠标拖拽选择
 - 键盘导航：方向键/Home/End/PageUp/PageDown，移动/扩选后自动滚动保持光标可见
-- 折叠：点击 gutter 的三角标记（基于 `folding_manager.regions()`；Rust 优先来自 `editor-core-lsp`，无服务器则回退 `editor-core-treesitter`）
+- 折叠：点击行号与正文之间的折叠 gutter（VS Code 风格 chevron；基于 `folding_manager.regions()`；Rust 优先来自 `editor-core-lsp`，无服务器则回退 `editor-core-treesitter`）
 - IME：`compositionstart/update/end`（marked text 入内核；preedit 区域用 `IME_MARKED_TEXT` 下划线/背景渲染）
 - 剪贴板：Copy/Cut/Paste（Ctrl/Cmd + C/X/V）
 - Undo/Redo：Ctrl/Cmd + Z / Shift+Z（或 Ctrl+Y）

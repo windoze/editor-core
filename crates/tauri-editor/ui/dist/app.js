@@ -110,6 +110,8 @@ const state = {
   widthCells: 80,
   heightRows: 30,
   gutterWidthPx: 0,
+  lineNumberGutterWidthPx: 0,
+  foldGutterWidthPx: 0,
   logicalLineCount: 1,
   overscan: 30,
   rendering: false,
@@ -184,14 +186,28 @@ function measure() {
 
 function gutterCellsForLineCount(lineCount) {
   const digits = String(Math.max(1, lineCount)).length;
-  // [fold icon 1 cell] + [space 1] + [digits] + [space 1]
-  return Math.max(4, 1 + 1 + digits + 1);
+  // VS Code 风格：行号 gutter + 折叠 gutter（折叠区在行号和正文之间）。
+  //
+  // 行号宽度：为右对齐数字预留一些 padding（避免紧贴边界）。
+  const lineNumberCells = Math.max(3, digits + 2); // [pad 1] + [digits] + [pad 1]
+  // 折叠 gutter：给 chevron + hover hit area 留足空间。
+  const foldingCells = 2;
+  return { lineNumberCells, foldingCells, totalCells: lineNumberCells + foldingCells };
 }
 
 function updateGutterWidth() {
-  const gutterCells = gutterCellsForLineCount(state.logicalLineCount);
-  state.gutterWidthPx = gutterCells * state.cellWidthPx;
+  const { lineNumberCells, foldingCells, totalCells } = gutterCellsForLineCount(
+    state.logicalLineCount,
+  );
+  state.lineNumberGutterWidthPx = lineNumberCells * state.cellWidthPx;
+  state.foldGutterWidthPx = foldingCells * state.cellWidthPx;
+  state.gutterWidthPx = totalCells * state.cellWidthPx;
   document.documentElement.style.setProperty("--gutter-width", `${state.gutterWidthPx}px`);
+  document.documentElement.style.setProperty(
+    "--line-number-gutter-width",
+    `${state.lineNumberGutterWidthPx}px`,
+  );
+  document.documentElement.style.setProperty("--fold-gutter-width", `${state.foldGutterWidthPx}px`);
 }
 
 async function syncViewport() {
@@ -556,28 +572,28 @@ function updateRowElement(rowEl, line, styleSets) {
     delete rowEl.dataset.logicalLine;
   }
 
-  const gutterEl = document.createElement("div");
-  gutterEl.className = "gutter-cell";
-
+  const lineNumberGutterEl = document.createElement("div");
+  lineNumberGutterEl.className = "gutter gutter-line-number";
   const foldEl = document.createElement("span");
   foldEl.className = "fold-toggle";
   if (line.kind === 0 && line.visualInLogical === 0 && line.logicalLine != null && line.fold) {
     foldEl.classList.add("foldable");
-    foldEl.textContent = line.fold.collapsed ? "▶" : "▼";
+    if (line.fold.collapsed) foldEl.classList.add("collapsed");
     foldEl.dataset.action = "toggleFold";
     foldEl.dataset.logicalLine = String(line.logicalLine);
     foldEl.dataset.endLine = String(line.fold.endLine);
     foldEl.dataset.collapsed = line.fold.collapsed ? "1" : "0";
-  } else {
-    foldEl.textContent = "";
   }
 
   const numEl = document.createElement("span");
   numEl.className = "line-number";
   numEl.textContent = formatLineNumber(line);
 
-  gutterEl.appendChild(foldEl);
-  gutterEl.appendChild(numEl);
+  lineNumberGutterEl.appendChild(numEl);
+
+  const foldingGutterEl = document.createElement("div");
+  foldingGutterEl.className = "gutter gutter-folding";
+  foldingGutterEl.appendChild(foldEl);
 
   const lineEl = document.createElement("div");
   lineEl.className = "line";
@@ -596,7 +612,7 @@ function updateRowElement(rowEl, line, styleSets) {
   }
   lineEl.replaceChildren(frag);
 
-  rowEl.replaceChildren(gutterEl, lineEl);
+  rowEl.replaceChildren(lineNumberGutterEl, foldingGutterEl, lineEl);
 }
 
 function createLineElement(line, styleSets) {

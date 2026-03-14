@@ -40,3 +40,27 @@ fn debug_hud_is_disabled_by_default_in_frontend_bundle() {
         "expected frontend to consult backend debug_hud_enabled flag"
     );
 }
+
+#[test]
+fn folding_gutter_is_separate_and_vscode_style() {
+    let app_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/dist/app.js");
+    let css_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/dist/style.css");
+    let app = fs::read_to_string(&app_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", app_path.display()));
+    let css = fs::read_to_string(&css_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", css_path.display()));
+
+    // 回归保护：折叠 gutter 应位于行号与正文之间（单独一列），并使用 VS Code 风格的 chevron。
+    assert!(
+        app.contains("gutter-line-number") && app.contains("gutter-folding"),
+        "expected ui/dist/app.js to render separate line-number + folding gutters"
+    );
+    assert!(
+        app.contains("rowEl.replaceChildren(lineNumberGutterEl, foldingGutterEl, lineEl)"),
+        "expected folding gutter to be inserted between line numbers and text"
+    );
+    assert!(
+        css.contains(".gutter-folding") && css.contains(".fold-toggle.foldable::before"),
+        "expected ui/dist/style.css to contain folding gutter + chevron styles"
+    );
+}
