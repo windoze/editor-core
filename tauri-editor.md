@@ -2,7 +2,7 @@
 
 本文档是一个“从可运行开始、逐步增强”的实现计划：用 **Tauri + WebView（HTML/CSS/JS/TS）** 来渲染 `editor-core` 的文本视图。核心原则是把编辑器当作 **文本网格（text-grid）** 而不是富文本：前端只做高性能显示与输入采集；状态与命令主要在 Rust 侧。
 
-## 实现进度（2026-03-14）
+## 实现进度（2026-03-15）
 
 已在 `crates/tauri-editor` 落地 **Milestone 0–6** 的“最小可运行版本”（text-grid / composed rows / 输入 / IME / 高亮 / patch）：
 
