@@ -86,7 +86,10 @@ cargo test -p tauri-editor
 
 - JSON/INI：`editor-core-highlight-simple`（regex-based，style layer：`StyleLayerId::SIMPLE_SYNTAX`）
 - Markdown：tauri-editor 内置的轻量 regex 高亮（标题/行内代码/link）
-- Rust：`editor-core-treesitter`（Tree-sitter WASM + highlights/folds query，style layer：`StyleLayerId::TREE_SITTER`）
+- Tree-sitter：`editor-core-treesitter`（Tree-sitter WASM + highlights/folds query，style layer：`StyleLayerId::TREE_SITTER`）
+  - 默认会尝试读取 `../tree-sitter-grammars/treesitter/registry.json`（用于开发环境一次性启用多语言）。
+  - 也可显式指定：`TAURI_EDITOR_TREESITTER_DIR=/path/to/treesitter`（该目录下需有 `registry.json`）。
+  - 备注：并非所有语言包都提供 `folds.scm`；Rust 的 folds 在缺失时会使用内置回退 query。
 - LSP：`editor-core-lsp`（若可启动语言服务器，例如 Rust 的 `rust-analyzer`；semantic tokens + diagnostics 等派生状态）
 
 ## Patch / 性能（当前实现）

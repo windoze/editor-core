@@ -14,7 +14,10 @@ use editor_core_lsp::lsp_sync::{
 };
 use editor_core_lsp::lsp_uri::path_to_file_uri;
 use editor_core_lsp::workspace_sync::LspWorkspaceSync;
-use editor_core_treesitter::{TreeSitterLanguage, TreeSitterProcessor, TreeSitterProcessorConfig};
+use editor_core_treesitter::{
+    TreeSitterProcessor, TreeSitterProcessorConfig, TreeSitterRegistry,
+    load_processor_config_from_config,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::Path;
@@ -1065,14 +1068,20 @@ fn choose_highlighter(uri: Option<&str>) -> Option<RegexHighlighter> {
 }
 
 fn choose_treesitter(uri: Option<&str>) -> Result<Option<TreeSitterProcessor>, EditorBackendError> {
-    let Some(uri) = uri else {
-        return Ok(None);
-    };
-    let ext = Path::new(uri)
+    let Some(uri) = uri else { return Ok(None) };
+
+    let path = Path::new(uri);
+    let ext = path
         .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_ascii_lowercase());
 
+    // 优先走“外部 treesitter registry”（支持大量语言），兼容 ../tree-sitter-grammars/treesitter。
+    if let Some(processor) = try_build_treesitter_from_registry(path) {
+        return Ok(Some(processor));
+    }
+
+    // 回退：内置 Rust fixture（保证 `cargo test` 不依赖外部目录，同时提供 folds 查询）。
     match ext.as_deref() {
         Some("rs") => build_rust_treesitter().map(Some),
         _ => Ok(None),
@@ -1087,34 +1096,107 @@ fn build_rust_treesitter() -> Result<TreeSitterProcessor, EditorBackendError> {
     const RUST_FOLDS: &str =
         include_str!("../../editor-core-treesitter/tests/fixtures/treesitter/rust/folds.scm");
 
-    let language = TreeSitterLanguage::wasm("rust".to_string(), RUST_LANGUAGE_WASM.to_vec());
-    let config = TreeSitterProcessorConfig::new(language, RUST_HIGHLIGHTS)
-        .with_folds_query(RUST_FOLDS)
-        .with_simple_capture_styles([
-            ("comment", TS_STYLE_COMMENT),
-            ("comment.documentation", TS_STYLE_COMMENT_DOC),
-            ("string", TS_STYLE_STRING),
-            ("escape", TS_STYLE_ESCAPE),
-            ("keyword", TS_STYLE_KEYWORD),
-            ("operator", TS_STYLE_OPERATOR),
-            ("punctuation.bracket", TS_STYLE_PUNCT),
-            ("punctuation.delimiter", TS_STYLE_PUNCT),
-            ("type", TS_STYLE_TYPE),
-            ("type.builtin", TS_STYLE_TYPE_BUILTIN),
-            ("function", TS_STYLE_FUNCTION),
-            ("function.method", TS_STYLE_FUNCTION),
-            ("function.macro", TS_STYLE_FUNCTION_MACRO),
-            ("variable.parameter", TS_STYLE_VARIABLE_PARAMETER),
-            ("variable.builtin", TS_STYLE_VARIABLE_BUILTIN),
-            ("constant", TS_STYLE_CONSTANT),
-            ("constant.builtin", TS_STYLE_CONSTANT_BUILTIN),
-            ("attribute", TS_STYLE_ATTRIBUTE),
-            ("label", TS_STYLE_LABEL),
-            ("constructor", TS_STYLE_CONSTRUCTOR),
-            ("property", TS_STYLE_PROPERTY),
-        ]);
+    let language = editor_core_treesitter::TreeSitterLanguage::wasm(
+        "rust".to_string(),
+        RUST_LANGUAGE_WASM.to_vec(),
+    );
+    let config = apply_default_treesitter_capture_styles(
+        TreeSitterProcessorConfig::new(language, RUST_HIGHLIGHTS).with_folds_query(RUST_FOLDS),
+    );
 
     TreeSitterProcessor::new(config).map_err(|e| EditorBackendError::TreeSitter(e.to_string()))
+}
+
+fn apply_default_treesitter_capture_styles(
+    config: TreeSitterProcessorConfig,
+) -> TreeSitterProcessorConfig {
+    config.with_simple_capture_styles([
+        // Comments
+        ("comment", TS_STYLE_COMMENT),
+        ("comment.documentation", TS_STYLE_COMMENT_DOC),
+        ("comment.block.documentation", TS_STYLE_COMMENT_DOC),
+        // Strings
+        ("string", TS_STYLE_STRING),
+        ("string.escape", TS_STYLE_ESCAPE),
+        ("string.special", TS_STYLE_ESCAPE),
+        ("string.special.symbol", TS_STYLE_ESCAPE),
+        // Keywords / operators / punctuation
+        ("keyword", TS_STYLE_KEYWORD),
+        ("operator", TS_STYLE_OPERATOR),
+        ("punctuation.bracket", TS_STYLE_PUNCT),
+        ("punctuation.delimiter", TS_STYLE_PUNCT),
+        ("punctuation.special", TS_STYLE_PUNCT),
+        // Types / functions
+        ("type", TS_STYLE_TYPE),
+        ("type.builtin", TS_STYLE_TYPE_BUILTIN),
+        ("function", TS_STYLE_FUNCTION),
+        ("function.method", TS_STYLE_FUNCTION),
+        ("function.macro", TS_STYLE_FUNCTION_MACRO),
+        ("macro", TS_STYLE_FUNCTION_MACRO),
+        // Variables / properties
+        ("variable", TS_STYLE_VARIABLE_PARAMETER),
+        ("variable.parameter", TS_STYLE_VARIABLE_PARAMETER),
+        ("variable.builtin", TS_STYLE_VARIABLE_BUILTIN),
+        ("property", TS_STYLE_PROPERTY),
+        ("field", TS_STYLE_PROPERTY),
+        // Constants / literals
+        ("constant", TS_STYLE_CONSTANT),
+        ("constant.builtin", TS_STYLE_CONSTANT_BUILTIN),
+        ("number", TS_STYLE_CONSTANT),
+        ("boolean", TS_STYLE_CONSTANT_BUILTIN),
+        // Misc
+        ("attribute", TS_STYLE_ATTRIBUTE),
+        ("label", TS_STYLE_LABEL),
+        ("constructor", TS_STYLE_CONSTRUCTOR),
+        // Common in text-ish query packs
+        ("text.title", MD_STYLE_HEADING),
+        ("text.literal", MD_STYLE_INLINE_CODE),
+        ("text.uri", MD_STYLE_LINK),
+        ("text.reference", TS_STYLE_PROPERTY),
+    ])
+}
+
+fn discover_treesitter_root_dir() -> Option<std::path::PathBuf> {
+    if let Some(v) = std::env::var_os("TAURI_EDITOR_TREESITTER_DIR") {
+        let s = v.to_string_lossy().trim().to_string();
+        if !s.is_empty() {
+            return Some(std::path::PathBuf::from(s));
+        }
+    }
+
+    let cwd = std::env::current_dir().ok()?;
+    let candidates = [
+        cwd.join("../tree-sitter-grammars/treesitter"),
+        cwd.join("tree-sitter-grammars/treesitter"),
+    ];
+    for dir in candidates {
+        if dir.join("registry.json").is_file() {
+            return Some(dir);
+        }
+    }
+    None
+}
+
+fn try_build_treesitter_from_registry(path: &Path) -> Option<TreeSitterProcessor> {
+    let root = discover_treesitter_root_dir()?;
+    let registry_path = root.join("registry.json");
+    let json = std::fs::read_to_string(&registry_path).ok()?;
+    let registry = TreeSitterRegistry::from_json_str_with_default_root_dir(&json, Some(&root)).ok()?;
+
+    let language_id = registry.language_id_for_path(path)?;
+    let cfg = registry.languages.get(language_id)?;
+    let mut config = load_processor_config_from_config(language_id, cfg).ok()?;
+
+    // 部分语言的 query pack 不提供 folds.scm；Rust 的折叠在 demo 里很常用，因此做一个内置回退。
+    if config.folds_query.is_none() && language_id == "rust" {
+        const RUST_FOLDS_FALLBACK: &str = include_str!(
+            "../../editor-core-treesitter/tests/fixtures/treesitter/rust/folds.scm"
+        );
+        config = config.with_folds_query(RUST_FOLDS_FALLBACK);
+    }
+
+    config = apply_default_treesitter_capture_styles(config);
+    TreeSitterProcessor::new(config).ok()
 }
 
 #[derive(Debug, Clone)]
