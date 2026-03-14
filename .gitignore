@@ -3,6 +3,11 @@
 debug/
 target/
 
+# Node / Vite（tauri-editor 前端）
+crates/tauri-editor/node_modules/
+crates/tauri-editor/dist/
+crates/tauri-editor/.vite/
+
 # Cargo lock 文件（库项目通常忽略，二进制项目保留）
 # Cargo.lock
 

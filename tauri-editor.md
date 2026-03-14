@@ -6,7 +6,7 @@
 
 已在 `crates/tauri-editor` 落地 **Milestone 0–6** 的“最小可运行版本”（text-grid / composed rows / 输入 / IME / 高亮 / patch）：
 
-- ✅ Tauri v2 壳 + 静态前端（`ui/dist`，不依赖 npm 构建）
+- ✅ Tauri v2 壳 + **Vite + React** 前端（标准 `src-tauri/` 布局；编辑器逻辑仍是命令式 text-grid）
 - ✅ Rust 后端：`Workspace` + `get_viewport_content_composed` → `ViewportSnapshot`（runs 压缩 + style-set interning + 每段携带 cells 宽度）
 - ✅ 前端：行级渲染（line `<div>` + run `<span>`）+ composed rows 虚拟化（`spacerTop/spacerBottom`）+ **按 cells 强制分配 run 宽度**（避免 CJK/emoji/font fallback 导致 caret/对齐错位）
 - ✅ 光标 overlay（`(row, x_cells)` → 像素定位）
@@ -26,12 +26,14 @@
 - `cargo test -p tauri-editor`
 
 运行（本机）：
-- `cargo run -p tauri-editor --features tauri-app --bin tauri-editor -- <path>`
+- `cd crates/tauri-editor && npm install`
+- `cd crates/tauri-editor && npm run tauri dev -- <path>`
 
 运行注意：
-- `crates/tauri-editor/tauri.conf.json` 未设置 `build.devUrl`，因此 `cargo run`（debug）会直接加载 `frontendDist=ui/dist`（不需要前端 dev server）。
+- `crates/tauri-editor/src-tauri/tauri.conf.json` 在 debug 下使用 `build.devUrl`（默认 `http://localhost:1420`），release 下使用 `build.frontendDist`（默认 `../dist`）。
+- 如果用 `cargo run -p tauri-editor --features tauri-app --bin tauri-editor` 直接起后端，需要同时运行 `cd crates/tauri-editor && npm run dev`，或改用 `--release` 并先 `npm run build`。
 - `cellWidthPx` 测量使用 `100ch`（并等待 `document.fonts.ready`）以减少“viewport width 计算偏小导致右侧大块空白”的问题。
-- Debug 构建会尝试打开 Web Inspector（`open_devtools()`；macOS 10.15+）。如果系统快捷键不可用，可用 `F12`、`Cmd+Opt+I`（macOS）或 `Ctrl/Cmd+Shift+I` 触发；若出现 `webview.internal_toggle_devtools not allowed`，需要在 capability 里允许 `core:webview:allow-internal-toggle-devtools`（本 demo 已在 `crates/tauri-editor/capabilities/default.json` 配置 `core:default`）。`debugHud` 默认关闭，如需启用可用 `TAURI_EDITOR_DEBUG_HUD=1` 运行，或编译时加 feature `debug-hud`。输入管线在 `beforeinput` 不可用的 WebView 上会自动回退到 `input` + keydown 兜底；minimap 刷新属于低优先级任务，使用后台 invoke + idle debounce，避免阻塞输入/点击。
+- Debug 构建会尝试打开 Web Inspector（`open_devtools()`；macOS 10.15+）。如果系统快捷键不可用，可用 `F12`、`Cmd+Opt+I`（macOS）或 `Ctrl/Cmd+Shift+I` 触发；若出现 `webview.internal_toggle_devtools not allowed`，需要在 capability 里允许 `core:webview:allow-internal-toggle-devtools`（本 demo 已在 `crates/tauri-editor/src-tauri/capabilities/default.json` 配置 `core:default`）。`debugHud` 默认关闭，如需启用可用 `TAURI_EDITOR_DEBUG_HUD=1` 运行，或编译时加 feature `debug-hud`。输入管线在 `beforeinput` 不可用的 WebView 上会自动回退到 `input` + keydown 兜底；minimap 刷新属于低优先级任务，使用后台 invoke + idle debounce，避免阻塞输入/点击。
 
 ---
 

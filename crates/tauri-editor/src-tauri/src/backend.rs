@@ -1135,11 +1135,11 @@ fn choose_treesitter(uri: Option<&str>) -> Result<Option<TreeSitterState>, Edito
 
 fn build_rust_treesitter() -> Result<TreeSitterState, EditorBackendError> {
     const RUST_LANGUAGE_WASM: &[u8] =
-        include_bytes!("../../editor-core-treesitter/tests/fixtures/treesitter/rust/language.wasm");
+        include_bytes!("../../../editor-core-treesitter/tests/fixtures/treesitter/rust/language.wasm");
     const RUST_HIGHLIGHTS: &str =
-        include_str!("../../editor-core-treesitter/tests/fixtures/treesitter/rust/highlights.scm");
+        include_str!("../../../editor-core-treesitter/tests/fixtures/treesitter/rust/highlights.scm");
     const RUST_FOLDS: &str =
-        include_str!("../../editor-core-treesitter/tests/fixtures/treesitter/rust/folds.scm");
+        include_str!("../../../editor-core-treesitter/tests/fixtures/treesitter/rust/folds.scm");
 
     let language = editor_core_treesitter::TreeSitterLanguage::wasm(
         "rust".to_string(),
@@ -1241,7 +1241,7 @@ fn try_build_treesitter_from_registry(path: &Path) -> Option<TreeSitterState> {
     // 部分语言的 query pack 不提供 folds.scm；Rust 的折叠在 demo 里很常用，因此做一个内置回退。
     if config.folds_query.is_none() && language_id == "rust" {
         const RUST_FOLDS_FALLBACK: &str = include_str!(
-            "../../editor-core-treesitter/tests/fixtures/treesitter/rust/folds.scm"
+            "../../../editor-core-treesitter/tests/fixtures/treesitter/rust/folds.scm"
         );
         config = config.with_folds_query(RUST_FOLDS_FALLBACK);
     }

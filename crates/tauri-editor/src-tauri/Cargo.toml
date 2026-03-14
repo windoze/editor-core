@@ -11,7 +11,7 @@ repository.workspace = true
 rust-version.workspace = true
 keywords = ["editor", "tauri", "webview", "text-grid"]
 categories = ["text-editors", "text-processing"]
-readme = "README.md"
+readme = "../README.md"
 
 [features]
 default = []
@@ -26,10 +26,10 @@ tauri-app = [
 debug-hud = []
 
 [dependencies]
-editor-core = { version = "0.3.0", path = "../editor-core" }
-editor-core-highlight-simple = { version = "0.3.0", path = "../editor-core-highlight-simple" }
-editor-core-lsp = { version = "0.3.0", path = "../editor-core-lsp" }
-editor-core-treesitter = { version = "0.3.0", path = "../editor-core-treesitter" }
+editor-core = { version = "0.3.0", path = "../../editor-core" }
+editor-core-highlight-simple = { version = "0.3.0", path = "../../editor-core-highlight-simple" }
+editor-core-lsp = { version = "0.3.0", path = "../../editor-core-lsp" }
+editor-core-treesitter = { version = "0.3.0", path = "../../editor-core-treesitter" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
