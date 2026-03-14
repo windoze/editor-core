@@ -20,3 +20,23 @@ fn frontend_bundle_does_not_call_missing_update_line_element() {
     }
 }
 
+#[test]
+fn debug_hud_is_disabled_by_default_in_frontend_bundle() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/dist/app.js");
+    let src = fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+
+    // 回归保护：debugHud 会遮挡 UI，默认应关闭，仅在 env/feature 显式开启时打开。
+    assert!(
+        src.contains("let debugHudEnabled = false"),
+        "expected debugHudEnabled to default to false in ui/dist/app.js"
+    );
+    assert!(
+        !src.contains("const debugHud = (() =>"),
+        "expected debugHud element not to be created unconditionally at module load"
+    );
+    assert!(
+        src.contains("debug_hud_enabled"),
+        "expected frontend to consult backend debug_hud_enabled flag"
+    );
+}

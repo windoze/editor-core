@@ -21,6 +21,9 @@ tauri-app = [
   "dep:tauri-build",
   "dep:tauri-plugin-clipboard-manager",
 ]
+# Show the in-app debug HUD by default (mainly for diagnosing WebView/input/IPC issues).
+# Can also be enabled at runtime via `TAURI_EDITOR_DEBUG_HUD=1`.
+debug-hud = []
 
 [dependencies]
 editor-core = { version = "0.3.0", path = "../editor-core" }

@@ -292,6 +292,23 @@ fn frontend_log(level: String, message: String) {
     eprintln!("[tauri-editor][frontend][{level}] {message}");
 }
 
+fn env_flag_enabled(name: &str) -> bool {
+    let Some(v) = std::env::var_os(name) else {
+        return false;
+    };
+    let s = v.to_string_lossy();
+    let s = s.trim().to_ascii_lowercase();
+    if s.is_empty() {
+        return true;
+    }
+    !matches!(s.as_str(), "0" | "false" | "no" | "off")
+}
+
+#[tauri::command]
+fn debug_hud_enabled() -> bool {
+    cfg!(feature = "debug-hud") || env_flag_enabled("TAURI_EDITOR_DEBUG_HUD")
+}
+
 #[tauri::command]
 fn open_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
     #[cfg(debug_assertions)]
@@ -329,6 +346,7 @@ fn main() {
             get_cursor,
             get_selection,
             frontend_log,
+            debug_hud_enabled,
             open_devtools,
             key_down,
             mouse_down,

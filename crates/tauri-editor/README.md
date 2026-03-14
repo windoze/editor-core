@@ -71,11 +71,15 @@ cargo test -p tauri-editor
 
 ### 前端排查（无 Console 也能看）
 
-当前前端会在左下角显示一个 `debugHud`（用于定位“输入事件/IPC 卡死”类问题）：
+前端提供一个左下角 `debugHud`（用于定位“输入事件/IPC 卡死”类问题），**默认关闭**。启用方式二选一：
+- 运行时：`TAURI_EDITOR_DEBUG_HUD=1 cargo run -p tauri-editor --features tauri-app --bin tauri-editor -- <path>`
+- 编译时：`cargo run -p tauri-editor --features tauri-app,debug-hud --bin tauri-editor -- <path>`
+
+启用后显示：
 - `focus=`：当前 `document.activeElement`
 - `beforeinput=` / `input=`：是否观测到对应事件（用于判断 WebView 是否支持 `beforeinput`）
 - `invoke=`：当前是否有后端命令调用卡住（例如 `insert_text 5000ms`）
-- JS 异常会显示在 HUD，并通过 Tauri `frontend_log` 打到启动时的终端 stdout/stderr
+- JS 异常会显示在 HUD，并通过 Tauri `frontend_log` 打到启动时的终端 stdout/stderr（即使 HUD 关闭也会打印 error 级别日志）
 - minimap 刷新属于低优先级任务：走“后台 invoke（不阻塞编辑队列）+ idle debounce”，避免大文件时阻塞输入/点击。
 
 ## 语法高亮（当前已支持的最小集）

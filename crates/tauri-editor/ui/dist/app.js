@@ -9,14 +9,29 @@ const invoke = (() => {
   return tauri.core.invoke;
 })();
 
-const debugHud = (() => {
+let debugHudEnabled = false;
+let debugHudEl = null;
+function ensureDebugHudElement() {
+  if (debugHudEl) return debugHudEl;
   const el = document.createElement("div");
   el.id = "debugHud";
   el.style.display = "block";
-  el.textContent = "debugHud: loading…";
+  el.textContent = "debugHud: enabled";
   document.body.appendChild(el);
+  debugHudEl = el;
   return el;
-})();
+}
+
+function setDebugHudEnabled(enabled) {
+  debugHudEnabled = Boolean(enabled);
+  if (!debugHudEnabled) {
+    if (debugHudEl) debugHudEl.style.display = "none";
+    return;
+  }
+  const el = ensureDebugHudElement();
+  el.style.display = "block";
+  updateDebugHudStatus();
+}
 
 const debugLines = [];
 function pushDebugLine(line, level = "info") {
@@ -25,8 +40,11 @@ function pushDebugLine(line, level = "info") {
   debugLines.push(msg);
   // 保留最多 11 条日志，最后一行留给状态栏。
   while (debugLines.length > 11) debugLines.shift();
-  debugHud.style.display = "block";
-  updateDebugHudStatus();
+  if (debugHudEnabled) {
+    const el = ensureDebugHudElement();
+    el.style.display = "block";
+    updateDebugHudStatus();
+  }
 
   // 同步到 Rust stdout（不走 invokeQueued，避免队列卡死时丢失错误信息）。
   if (level === "error") {
@@ -126,6 +144,7 @@ const state = {
 };
 
 function updateDebugHudStatus() {
+  if (!debugHudEnabled) return;
   const active =
     document.activeElement && document.activeElement instanceof HTMLElement
       ? document.activeElement.id || document.activeElement.tagName.toLowerCase()
@@ -136,9 +155,8 @@ function updateDebugHudStatus() {
   const status = `focus=${active} beforeinput=${state.beforeinputSupported ? "1" : "0"} input=${state.inputEventSeen ? "1" : "0"} composing=${
     state.compositionActive ? "1" : "0"
   } invoke=${inflight} last=${state.lastInputKind || "-"} rows=${state.totalRows}`;
-  if (debugHud.style.display !== "none") {
-    debugHud.textContent = [...debugLines, status].join("\n");
-  }
+  const el = ensureDebugHudElement();
+  if (el.style.display !== "none") el.textContent = [...debugLines, status].join("\n");
 }
 
 function measure() {
@@ -1551,6 +1569,14 @@ ro.observe(scrollViewport);
 setInterval(updateDebugHudStatus, 250);
 
 (async () => {
+  // debugHud 默认关闭；仅在 feature/env 显式开启时才显示，避免污染正常 UI。
+  try {
+    const enabled = await invoke("debug_hud_enabled", {});
+    setDebugHudEnabled(enabled);
+  } catch {
+    // ignore
+  }
+
   try {
     if (document.fonts && document.fonts.ready) {
       await document.fonts.ready;
