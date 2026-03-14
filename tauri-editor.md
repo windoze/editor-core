@@ -15,7 +15,7 @@
 - ✅ 选择与命中测试：Shift+方向键、Shift+点击、鼠标拖拽选择；选择渲染走 overlay 矩形（禁用浏览器原生 selection）
 - ✅ Gutter：行号（按 `logicalLineCount` 动态宽度）+ 折叠标记（来自 `folding_manager.regions()`）+ 点击 toggle（Fold/Unfold）
 - ✅ Scrollbar：右侧自绘滚动条（thumb 可拖拽/点击跳转；隐藏 WebView 原生 scrollbar）
-- ✅ Minimap：右侧 minimap（基于 doc visual rows 做密度采样；密度=非空白 cells / viewport_width；点击/拖拽定位滚动）
+- ✅ Minimap：右侧 minimap（基于 doc visual rows 做密度采样；密度=非空白 cells / viewport_width；用 bar 宽度表达密度避免“整块纯色”；点击/拖拽定位滚动）
 - ✅ 剪贴板：走 Tauri 后端（`tauri-plugin-clipboard-manager`），支持 Copy/Cut/Paste、Undo/Redo、Select All
 - ✅ IME MVP：`compositionstart/update/end` → 内核 ReplaceCoalescingUndo（marked text 入内核）+ `IME_MARKED_TEXT` style layer
 - ✅ 样式分组/高亮：接入 `editor-core-highlight-simple`（JSON/INI）+ 轻量 Markdown regex 高亮 + `editor-core-treesitter`（Rust：高亮 + folds）；前端把 `StyleId` 映射为 CSS class
@@ -31,7 +31,7 @@
 运行注意：
 - `crates/tauri-editor/tauri.conf.json` 未设置 `build.devUrl`，因此 `cargo run`（debug）会直接加载 `frontendDist=ui/dist`（不需要前端 dev server）。
 - `cellWidthPx` 测量使用 `100ch`（并等待 `document.fonts.ready`）以减少“viewport width 计算偏小导致右侧大块空白”的问题。
-- Debug 构建会尝试打开 Web Inspector（`open_devtools()`；macOS 10.15+）。如果系统快捷键不可用，可用 `F12` 或 `Cmd/Ctrl+Shift+I` 触发；同时前端提供左下角 `debugHud` 显示 focus / 事件支持 / IPC in-flight 与错误，便于在“打不开 Console”时排查。输入管线在 `beforeinput` 不可用的 WebView 上会自动回退到 `input` + keydown 兜底；minimap 刷新属于低优先级任务，使用后台 invoke + idle debounce，避免阻塞输入/点击。
+- Debug 构建会尝试打开 Web Inspector（`open_devtools()`；macOS 10.15+）。如果系统快捷键不可用，可用 `F12`、`Cmd+Opt+I`（macOS）或 `Ctrl/Cmd+Shift+I` 触发；同时前端提供左下角 `debugHud` 显示 focus / 事件支持 / IPC in-flight 与错误，便于在“打不开 Console”时排查。输入管线在 `beforeinput` 不可用的 WebView 上会自动回退到 `input` + keydown 兜底；minimap 刷新属于低优先级任务，使用后台 invoke + idle debounce，避免阻塞输入/点击。
 
 ---
 

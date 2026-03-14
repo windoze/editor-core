@@ -320,9 +320,10 @@ function drawMinimap() {
     const idx = Math.floor((y / cssH) * samples.length);
     const v = samples[idx] ?? 0;
     if (!v) continue;
-    const alpha = Math.min(0.9, Math.max(0, v / 255));
-    ctx.fillStyle = `rgba(215, 218, 224, ${alpha * 0.75})`;
-    ctx.fillRect(0, Math.floor(y * dpr), w, Math.ceil(dpr));
+    const frac = Math.min(1, Math.max(0, v / 255));
+    const barW = Math.max(1, Math.round(frac * w));
+    ctx.fillStyle = "rgba(215, 218, 224, 0.55)";
+    ctx.fillRect(0, Math.floor(y * dpr), barW, Math.ceil(dpr));
   }
 }
 
@@ -690,7 +691,7 @@ function renderSnapshot(snapshot) {
 
     const key = lineKey(line, snapshot.styleSets);
     if (state.lineKeys.get(line.row) !== key) {
-      updateLineElement(el, line, snapshot.styleSets);
+      updateRowElement(el, line, snapshot.styleSets);
       state.lineKeys.set(line.row, key);
       updatedLines++;
     }
@@ -1357,8 +1358,16 @@ document.addEventListener("keydown", async (e) => {
   const isMac = navigator.platform.toLowerCase().includes("mac");
   const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
 
-  // 尝试提供一个可用的 devtools 打开方式：F12 或 Cmd/Ctrl+Shift+I。
-  if (e.key === "F12" || (ctrlOrCmd && e.shiftKey && e.key.toLowerCase() === "i")) {
+  // 尝试提供一个可用的 devtools 打开方式：
+  // - F12
+  // - Windows/Linux：Ctrl+Shift+I
+  // - macOS：Cmd+Shift+I 或 Cmd+Opt+I（系统快捷键在部分 WebView 上会失效）
+  const shouldOpenDevtools =
+    e.key === "F12" ||
+    (ctrlOrCmd && e.shiftKey && e.key.toLowerCase() === "i") ||
+    (isMac && e.metaKey && e.altKey && e.key.toLowerCase() === "i");
+
+  if (shouldOpenDevtools) {
     e.preventDefault();
     try {
       await invoke("open_devtools", {});
