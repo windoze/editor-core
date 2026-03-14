@@ -49,6 +49,28 @@ fn registry_json_resolves_relative_paths_and_extension_mapping() {
 }
 
 #[test]
+fn registry_json_can_use_default_root_dir_when_missing_root_dir() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/treesitter");
+    let json = serde_json::json!({
+        "schema_version": 1,
+        "extension_map": { "rs": "rust" },
+        "languages": {
+            "rust": {
+                "wasm": "rust/language.wasm",
+                "highlights": "rust/highlights.scm",
+            }
+        }
+    })
+    .to_string();
+
+    let registry =
+        TreeSitterRegistry::from_json_str_with_default_root_dir(&json, Some(&root)).expect("registry");
+    let rust = registry.languages.get("rust").expect("rust config");
+    assert_eq!(rust.wasm_path, root.join("rust/language.wasm"));
+    assert_eq!(rust.highlights_path, root.join("rust/highlights.scm"));
+}
+
+#[test]
 fn registry_json_rejects_unknown_schema_version() {
     let json = r#"{ "schema_version": 999, "languages": {} }"#;
     let err = TreeSitterRegistry::from_json_str(json).unwrap_err();

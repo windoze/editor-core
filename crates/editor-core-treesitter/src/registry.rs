@@ -158,6 +158,18 @@ impl TreeSitterRegistry {
     /// - absolute paths
     /// - or relative paths resolved against `root_dir`
     pub fn from_json_str(json: &str) -> Result<Self, TreeSitterRegistryError> {
+        Self::from_json_str_with_default_root_dir(json, None)
+    }
+
+    /// Parse a schema-versioned Tree-sitter registry JSON string, but allow the caller to provide
+    /// a default `root_dir` to resolve relative paths when the JSON does not include one.
+    ///
+    /// This matches common on-disk conventions where a `registry.json` sits next to the
+    /// `treesitter/` directory and uses relative paths like `rust/language.wasm`.
+    pub fn from_json_str_with_default_root_dir(
+        json: &str,
+        default_root_dir: Option<&Path>,
+    ) -> Result<Self, TreeSitterRegistryError> {
         let parsed: RegistryJson =
             serde_json::from_str(json).map_err(|e| TreeSitterRegistryError::Json(e.to_string()))?;
         if parsed.schema_version != 1 {
@@ -166,8 +178,8 @@ impl TreeSitterRegistry {
             ));
         }
 
-        let root_dir = parsed.root_dir.as_deref().map(PathBuf::from);
-        let root_dir = root_dir.as_deref();
+        let json_root = parsed.root_dir.as_deref().map(PathBuf::from);
+        let root_dir = json_root.as_deref().or(default_root_dir);
 
         let mut languages = TreeSitterConfigMap::new();
         for (language_id, lang) in parsed.languages {
