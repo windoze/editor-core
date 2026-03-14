@@ -76,6 +76,7 @@ cargo test -p tauri-editor
 - `beforeinput=` / `input=`：是否观测到对应事件（用于判断 WebView 是否支持 `beforeinput`）
 - `invoke=`：当前是否有后端命令调用卡住（例如 `insert_text 5000ms`）
 - JS 异常会显示在 HUD，并通过 Tauri `frontend_log` 打到启动时的终端 stdout/stderr
+- minimap 刷新属于低优先级任务：走“后台 invoke（不阻塞编辑队列）+ idle debounce”，避免大文件时阻塞输入/点击。
 
 ## 语法高亮（当前已支持的最小集）
 

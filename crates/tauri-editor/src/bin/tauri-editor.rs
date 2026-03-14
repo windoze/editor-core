@@ -68,7 +68,69 @@ fn get_minimap(
     state: tauri::State<'_, AppState>,
     height: u32,
 ) -> Result<tauri_editor::snapshot::MinimapSnapshot, String> {
-    with_backend(&state, |backend| backend.minimap_snapshot(height as usize))
+    let height = (height as usize).max(1);
+
+    // minimap 计算可能较慢（尤其是大文件/软换行下 visual rows 很多），因此这里避免一次性持锁。
+    // 我们先获取必要的元数据，然后按 chunk 多次锁/解锁去取局部 minimap grid，尽量减少对编辑/点击的阻塞。
+    let (view_id, viewport_width_cells, doc_total_rows) = with_backend(&state, |backend| {
+        let view_id = backend.view_id();
+        let viewport_width_cells = backend
+            .workspace_mut()
+            .viewport_width_for_view(view_id)?
+            .max(1);
+        let doc_total_rows = backend
+            .workspace_mut()
+            .total_visual_lines_for_view(view_id)?;
+        Ok((view_id, viewport_width_cells, doc_total_rows))
+    })?;
+
+    let total_rows_u32 = u32::try_from(doc_total_rows)
+        .map_err(|_| format!("minimap total_rows 超出 u32 范围（total_rows={doc_total_rows}）"))?;
+
+    let bucket_size = (doc_total_rows + height - 1) / height;
+    let bucket_size = bucket_size.max(1);
+    let bucket_size_u32 = u32::try_from(bucket_size)
+        .map_err(|_| format!("minimap bucket_size 超出 u32 范围（bucket_size={bucket_size}）"))?;
+
+    let mut samples: Vec<u8> = vec![0; height];
+    if doc_total_rows == 0 {
+        return Ok(tauri_editor::snapshot::MinimapSnapshot {
+            total_rows: total_rows_u32,
+            bucket_size: bucket_size_u32,
+            samples,
+        });
+    }
+
+    const CHUNK_ROWS: usize = 512;
+    let mut start_row = 0usize;
+    while start_row < doc_total_rows {
+        let count = (doc_total_rows - start_row).min(CHUNK_ROWS);
+        let grid = with_backend(&state, |backend| {
+            backend
+                .workspace_mut()
+                .get_minimap_content(view_id, start_row, count)
+                .map_err(EditorBackendError::from)
+        })?;
+
+        for (i, line) in grid.lines.iter().enumerate() {
+            let row = start_row.saturating_add(i);
+            let bucket = row / bucket_size;
+            if bucket >= height {
+                break;
+            }
+            let non_ws = line.non_whitespace_cells.min(viewport_width_cells);
+            let v = ((non_ws * 255) / viewport_width_cells) as u8;
+            samples[bucket] = samples[bucket].max(v);
+        }
+
+        start_row = start_row.saturating_add(count);
+    }
+
+    Ok(tauri_editor::snapshot::MinimapSnapshot {
+        total_rows: total_rows_u32,
+        bucket_size: bucket_size_u32,
+        samples,
+    })
 }
 
 #[tauri::command]

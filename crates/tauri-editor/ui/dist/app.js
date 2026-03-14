@@ -103,6 +103,7 @@ const state = {
   minimapLastFetchedAt: 0,
   minimapLastHeight: 0,
   minimapLastWidthCells: 0,
+  minimapRefreshTimer: null,
   lastPasteAt: 0,
   compositionActive: false,
   compositionPendingText: "",
@@ -275,7 +276,8 @@ async function refreshMinimap() {
   minimapRefreshInFlight = true;
   try {
     const height = Math.max(1, minimapEl.clientHeight);
-    const snap = await invokeQueued("get_minimap", { height });
+    // minimap 属于“低优先级 UI”：不要走 invokeQueued（否则一次慢的 minimap 会把编辑/点击全卡死）。
+    const snap = await invoke("get_minimap", { height });
     state.minimapTotalRows = snap.totalRows || 0;
     state.minimapBucketSize = snap.bucketSize || 1;
     state.minimapSamples = Array.isArray(snap.samples) ? snap.samples : [];
@@ -285,6 +287,8 @@ async function refreshMinimap() {
 
     drawMinimap();
     updateMinimapViewportUI();
+  } catch (err) {
+    pushDebugLine(`get_minimap failed: ${String(err)}`, "error");
   } finally {
     minimapRefreshInFlight = false;
   }
@@ -322,18 +326,27 @@ function drawMinimap() {
   }
 }
 
+function scheduleMinimapRefreshAfterIdle() {
+  if (state.minimapRefreshTimer) clearTimeout(state.minimapRefreshTimer);
+  state.minimapRefreshTimer = setTimeout(() => {
+    state.minimapRefreshTimer = null;
+    const sinceLastInput = state.lastInputAt > 0 ? performance.now() - state.lastInputAt : 99999;
+    if (sinceLastInput < 700) {
+      scheduleMinimapRefreshAfterIdle();
+      return;
+    }
+    void refreshMinimap();
+  }, 800);
+}
+
 function maybeRefreshMinimap(snapshot) {
-  const now = performance.now();
   const height = minimapEl.clientHeight;
   const needsSize = height !== state.minimapLastHeight;
   const needsWrap = snapshot && snapshot.widthCells !== state.minimapLastWidthCells;
   const needsFirst = !state.minimapTotalRows;
-  const needsAfterInput =
-    state.lastInputAt > 0 &&
-    state.lastInputAt > state.minimapLastFetchedAt &&
-    now - state.minimapLastFetchedAt > 300;
 
-  if (needsSize || needsWrap || needsFirst || needsAfterInput) {
+  // 只在“尺寸/换行宽度/首次加载”时强制刷新；编辑后的刷新走 idle debounce（见 scheduleMinimapRefreshAfterIdle）。
+  if (needsSize || needsWrap || needsFirst) {
     void refreshMinimap();
   }
 }
@@ -1210,26 +1223,31 @@ imeInput.addEventListener("beforeinput", (e) => {
     state.lastInputAt = performance.now();
     state.lastInputKind = "insertText";
     void invokeQueued("insert_text", { text: data }).then(scheduleRender);
+    scheduleMinimapRefreshAfterIdle();
   } else if (type === "insertLineBreak" || type === "insertParagraph") {
     e.preventDefault();
     state.lastInputAt = performance.now();
     state.lastInputKind = type;
     void invokeQueued("insert_newline", { autoIndent: true }).then(scheduleRender);
+    scheduleMinimapRefreshAfterIdle();
   } else if (type === "insertTab") {
     e.preventDefault();
     state.lastInputAt = performance.now();
     state.lastInputKind = type;
     void invokeQueued("insert_tab").then(scheduleRender);
+    scheduleMinimapRefreshAfterIdle();
   } else if (type === "deleteContentBackward") {
     e.preventDefault();
     state.lastInputAt = performance.now();
     state.lastInputKind = type;
     void invokeQueued("backspace").then(scheduleRender);
+    scheduleMinimapRefreshAfterIdle();
   } else if (type === "deleteContentForward") {
     e.preventDefault();
     state.lastInputAt = performance.now();
     state.lastInputKind = type;
     void invokeQueued("delete_forward").then(scheduleRender);
+    scheduleMinimapRefreshAfterIdle();
   } else if (type === "insertFromPaste") {
     e.preventDefault();
     // 避免 keydown + beforeinput 双触发导致重复粘贴。
@@ -1239,6 +1257,7 @@ imeInput.addEventListener("beforeinput", (e) => {
       state.lastInputAt = now;
       state.lastInputKind = type;
       void invokeQueued("paste").then(scheduleRender);
+      scheduleMinimapRefreshAfterIdle();
     }
   }
 
@@ -1279,6 +1298,7 @@ imeInput.addEventListener("input", (e) => {
     state.lastInputAt = now;
     state.lastInputKind = "inputFallback";
     void invokeQueued("insert_text", { text: value }).then(scheduleRender);
+    scheduleMinimapRefreshAfterIdle();
   }
 
   imeInput.value = "";
@@ -1325,6 +1345,7 @@ imeInput.addEventListener("compositionend", (e) => {
   state.lastInputAt = performance.now();
   state.lastInputKind = "compositionEnd";
   void invokeQueued("composition_end", { text }).then(scheduleRender);
+  scheduleMinimapRefreshAfterIdle();
   imeInput.value = "";
 });
 
@@ -1373,6 +1394,7 @@ document.addEventListener("keydown", async (e) => {
       state.lastInputKind = "cut";
       await invokeQueued("cut");
       scheduleRender();
+      scheduleMinimapRefreshAfterIdle();
       return;
     }
     if (k === "v") {
@@ -1383,6 +1405,7 @@ document.addEventListener("keydown", async (e) => {
       state.lastInputKind = "paste";
       await invokeQueued("paste");
       scheduleRender();
+      scheduleMinimapRefreshAfterIdle();
       return;
     }
     if (k === "z") {
@@ -1398,6 +1421,7 @@ document.addEventListener("keydown", async (e) => {
         await invokeQueued("undo");
       }
       scheduleRender();
+      scheduleMinimapRefreshAfterIdle();
       return;
     }
     if (k === "y") {
@@ -1407,6 +1431,7 @@ document.addEventListener("keydown", async (e) => {
       state.lastInputKind = "redo";
       await invokeQueued("redo");
       scheduleRender();
+      scheduleMinimapRefreshAfterIdle();
       return;
     }
   }
@@ -1420,6 +1445,7 @@ document.addEventListener("keydown", async (e) => {
       state.lastInputKind = "keydownBackspace";
       await invokeQueued("backspace");
       scheduleRender();
+      scheduleMinimapRefreshAfterIdle();
       return;
     }
     if (e.key === "Delete") {
@@ -1428,6 +1454,7 @@ document.addEventListener("keydown", async (e) => {
       state.lastInputKind = "keydownDelete";
       await invokeQueued("delete_forward");
       scheduleRender();
+      scheduleMinimapRefreshAfterIdle();
       return;
     }
     if (e.key === "Enter") {
@@ -1436,6 +1463,7 @@ document.addEventListener("keydown", async (e) => {
       state.lastInputKind = "keydownEnter";
       await invokeQueued("insert_newline", { autoIndent: true });
       scheduleRender();
+      scheduleMinimapRefreshAfterIdle();
       return;
     }
     if (e.key === "Tab") {
@@ -1444,6 +1472,7 @@ document.addEventListener("keydown", async (e) => {
       state.lastInputKind = "keydownTab";
       await invokeQueued("insert_tab");
       scheduleRender();
+      scheduleMinimapRefreshAfterIdle();
       return;
     }
 
@@ -1463,6 +1492,7 @@ document.addEventListener("keydown", async (e) => {
       state.lastInputKind = "keydownChar";
       await invokeQueued("insert_text", { text: e.key });
       scheduleRender();
+      scheduleMinimapRefreshAfterIdle();
       return;
     }
   }
