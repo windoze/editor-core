@@ -50,8 +50,11 @@ const state = {
   compositionActive: false,
   compositionPendingText: "",
   compositionFlushScheduled: false,
+  beforeinputSupported: false,
   ignoreNextInsertTextAt: 0,
   ignoreNextInsertTextText: "",
+  ignoreNextInputAt: 0,
+  ignoreNextInputText: "",
   renderedStartRow: null,
   renderedCount: 0,
   renderedWidthCells: 0,
@@ -1103,6 +1106,8 @@ scrollViewport.addEventListener("mousedown", (e) => {
 });
 
 imeInput.addEventListener("beforeinput", (e) => {
+  state.beforeinputSupported = true;
+
   // composition 期间的输入由 `composition*` 管线接管；这里处理非 IME 的普通输入。
   if (e.isComposing) return;
 
@@ -1168,9 +1173,39 @@ imeInput.addEventListener("beforeinput", (e) => {
 });
 
 imeInput.addEventListener("input", (e) => {
-  // 在我们 `preventDefault()` 的路径上通常不会触发；这里做兜底，避免隐藏 textarea 堆积内容。
   if (e.isComposing) return;
-  if (imeInput.value) imeInput.value = "";
+
+  const value = imeInput.value ?? "";
+  if (!value) return;
+
+  // beforeinput 可用时，input 事件通常不应该驱动编辑（我们会 preventDefault 并自行发送命令）。
+  // 但在不支持 beforeinput 的 WebView 上，这里会是主要输入通路（比如普通打字/右键粘贴）。
+  if (!state.beforeinputSupported) {
+    const now = performance.now();
+    if (
+      state.ignoreNextInputText &&
+      now - state.ignoreNextInputAt < 120 &&
+      value === state.ignoreNextInputText
+    ) {
+      // 类似 beforeinput 的去重：避免 compositionend 后的“补发 input”导致重复插入。
+      state.ignoreNextInputText = "";
+      state.ignoreNextInputAt = 0;
+      imeInput.value = "";
+      return;
+    }
+
+    // 避免 keydown(paste) + input 双触发导致重复粘贴。
+    if (now - state.lastPasteAt < 80) {
+      imeInput.value = "";
+      return;
+    }
+
+    state.lastInputAt = now;
+    state.lastInputKind = "inputFallback";
+    void invokeQueued("insert_text", { text: value }).then(scheduleRender);
+  }
+
+  imeInput.value = "";
 });
 
 function scheduleCompositionFlush() {
@@ -1208,6 +1243,9 @@ imeInput.addEventListener("compositionend", (e) => {
   // 见 `beforeinput(insertText)` 的去重逻辑：避免重复 commit。
   state.ignoreNextInsertTextAt = performance.now();
   state.ignoreNextInsertTextText = text;
+  // 某些 WebView 不触发 beforeinput，但会触发 input；这里同样做去重。
+  state.ignoreNextInputAt = state.ignoreNextInsertTextAt;
+  state.ignoreNextInputText = text;
   state.lastInputAt = performance.now();
   state.lastInputKind = "compositionEnd";
   void invokeQueued("composition_end", { text }).then(scheduleRender);
@@ -1215,6 +1253,10 @@ imeInput.addEventListener("compositionend", (e) => {
 });
 
 document.addEventListener("keydown", async (e) => {
+  // 绝大多数输入事件（beforeinput/input/composition*）都依赖隐藏 textarea 获取焦点；
+  // 这里尽量保证任何键盘交互都能把焦点拉回来，避免“看起来完全不能输入”的状态。
+  ensureFocus();
+
   const isMac = navigator.platform.toLowerCase().includes("mac");
   const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
 
@@ -1277,6 +1319,43 @@ document.addEventListener("keydown", async (e) => {
       state.lastInputAt = performance.now();
       state.lastInputKind = "redo";
       await invokeQueued("redo");
+      scheduleRender();
+      return;
+    }
+  }
+
+  // 部分 WebView 不支持 `beforeinput`（尤其是 delete/insertLineBreak 等 inputType），
+  // 我们用 keydown 兜底处理编辑按键，避免编辑完全失效。
+  if (!state.beforeinputSupported) {
+    if (e.key === "Backspace") {
+      e.preventDefault();
+      state.lastInputAt = performance.now();
+      state.lastInputKind = "keydownBackspace";
+      await invokeQueued("backspace");
+      scheduleRender();
+      return;
+    }
+    if (e.key === "Delete") {
+      e.preventDefault();
+      state.lastInputAt = performance.now();
+      state.lastInputKind = "keydownDelete";
+      await invokeQueued("delete_forward");
+      scheduleRender();
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      state.lastInputAt = performance.now();
+      state.lastInputKind = "keydownEnter";
+      await invokeQueued("insert_newline", { autoIndent: true });
+      scheduleRender();
+      return;
+    }
+    if (e.key === "Tab") {
+      e.preventDefault();
+      state.lastInputAt = performance.now();
+      state.lastInputKind = "keydownTab";
+      await invokeQueued("insert_tab");
       scheduleRender();
       return;
     }

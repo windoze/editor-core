@@ -282,6 +282,8 @@ fn main() {
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 window.set_title("tauri-editor").ok();
+                #[cfg(debug_assertions)]
+                window.open_devtools();
             }
             Ok(())
         })
