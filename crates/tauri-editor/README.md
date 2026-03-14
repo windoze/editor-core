@@ -58,6 +58,7 @@ cargo test -p tauri-editor
 
 - 如果启动后无法直接输入，先点击编辑区域让隐藏 `textarea#imeInput` 获取焦点（部分 WebView 会限制页面加载时的程序化 focus）。
 - Debug 构建会尝试自动打开 Web Inspector（devtools），也可以按 `F12`、`Cmd+Opt+I`（macOS）或 `Ctrl/Cmd+Shift+I` 手动触发（macOS 仅 10.15+ 支持）。
+- 如果按 `Cmd+Opt+I` 报 `webview.internal_toggle_devtools not allowed`，确认 `crates/tauri-editor/capabilities/default.json` 存在并包含 `core:default`（包含 `core:webview:allow-internal-toggle-devtools`）。
 - 文字输入：`beforeinput: insertText`
 - 删除：Backspace / Delete（`beforeinput: deleteContentBackward/Forward`；按 grapheme cluster 删除）
 - 换行 / Tab：`beforeinput: insertLineBreak/insertTab`

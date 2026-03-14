@@ -1,0 +1,7 @@
+{
+  "identifier": "main",
+  "description": "Default permissions for tauri-editor demo (local only).",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
+
