@@ -32,6 +32,7 @@
 运行注意：
 - `crates/tauri-editor/src-tauri/tauri.conf.json` 在 debug 下使用 `build.devUrl`（默认 `http://localhost:1420`），release 下使用 `build.frontendDist`（默认 `../dist`）。
 - 如果用 `cargo run -p tauri-editor --features tauri-app --bin tauri-editor` 直接起后端，需要同时运行 `cd crates/tauri-editor && npm run dev`，或改用 `--release` 并先 `npm run build`。
+- 前端不启用 React StrictMode：本 demo 的编辑器运行时是命令式初始化（全局监听器 + 直接持有 DOM 引用），React 18 的 StrictMode 在 dev 下会触发 “mount → unmount → mount”，会导致运行时绑定到已卸载的 DOM，从而出现“空白/黑屏但无明显报错”。
 - `cellWidthPx` 测量使用 `100ch`（并等待 `document.fonts.ready`）以减少“viewport width 计算偏小导致右侧大块空白”的问题。
 - Debug 构建会尝试打开 Web Inspector（`open_devtools()`；macOS 10.15+）。如果系统快捷键不可用，可用 `F12`、`Cmd+Opt+I`（macOS）或 `Ctrl/Cmd+Shift+I` 触发；若出现 `webview.internal_toggle_devtools not allowed`，需要在 capability 里允许 `core:webview:allow-internal-toggle-devtools`（本 demo 已在 `crates/tauri-editor/src-tauri/capabilities/default.json` 配置 `core:default`）。`debugHud` 默认关闭，如需启用可用 `TAURI_EDITOR_DEBUG_HUD=1` 运行，或编译时加 feature `debug-hud`。输入管线在 `beforeinput` 不可用的 WebView 上会自动回退到 `input` + keydown 兜底；minimap 刷新属于低优先级任务，使用后台 invoke + idle debounce，避免阻塞输入/点击。
 
