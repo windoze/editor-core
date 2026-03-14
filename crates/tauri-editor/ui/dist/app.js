@@ -778,7 +778,13 @@ function scheduleRender() {
 
 function ensureFocus() {
   if (document.activeElement !== imeInput) {
-    imeInput.focus({ preventScroll: true });
+    // `preventScroll` 选项在部分 WebView（尤其是旧版 WKWebView）上可能不支持，会抛异常，
+    // 从而导致后续输入/快捷键完全失效。这里做兼容降级。
+    try {
+      imeInput.focus({ preventScroll: true });
+    } catch {
+      imeInput.focus();
+    }
   }
 }
 

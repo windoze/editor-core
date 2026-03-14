@@ -56,6 +56,7 @@ cargo test -p tauri-editor
 
 ## 输入与快捷键（当前已支持）
 
+- 如果启动后无法直接输入，先点击编辑区域让隐藏 `textarea#imeInput` 获取焦点（部分 WebView 会限制页面加载时的程序化 focus）。
 - 文字输入：`beforeinput: insertText`
 - 删除：Backspace / Delete（`beforeinput: deleteContentBackward/Forward`；按 grapheme cluster 删除）
 - 换行 / Tab：`beforeinput: insertLineBreak/insertTab`
@@ -79,4 +80,4 @@ cargo test -p tauri-editor
 - 行级 diff：viewport 更新时复用行 DOM，仅重建发生变化的行
 - 合并 IPC：前端用 `get_frame` 一次拿到 `{ snapshot, cursor, selection }`
 - 性能日志：`console.debug` 输出 frame/dom 耗时、行更新数量与输入延迟（约 1 次/秒）
-- 右侧 UI：自绘滚动条（thumb 拖拽/点击）+ minimap（密度采样；点击/拖拽滚动定位）
+- 右侧 UI：自绘滚动条（thumb 拖拽/点击）+ minimap（密度采样：按“非空白 cells / viewport_width”估算；点击/拖拽滚动定位）

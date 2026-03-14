@@ -1,15 +1,17 @@
 use crate::composed_row_index::ComposedRowIndex;
-use crate::render_model::{build_viewport_snapshot, RenderModelError};
+use crate::render_model::{RenderModelError, build_viewport_snapshot};
 use crate::snapshot::{MinimapSnapshot, ViewportSnapshot};
-use editor_core::intervals::{Interval, StyleId, StyleLayerId, IME_MARKED_TEXT_STYLE_ID};
 use editor_core::ProcessingEdit;
+use editor_core::intervals::{IME_MARKED_TEXT_STYLE_ID, Interval, StyleId, StyleLayerId};
 use editor_core::{
     BufferId, Command, CursorCommand, EditCommand, Position, Selection, StyleCommand, ViewCommand,
     Workspace, WorkspaceError,
 };
 use editor_core_highlight_simple::{RegexHighlighter, RegexRule};
 use editor_core_lsp::editor::{LspDocument, LspSessionStartOptions};
-use editor_core_lsp::lsp_sync::{CANONICAL_SEMANTIC_TOKEN_MODIFIERS, CANONICAL_SEMANTIC_TOKEN_TYPES};
+use editor_core_lsp::lsp_sync::{
+    CANONICAL_SEMANTIC_TOKEN_MODIFIERS, CANONICAL_SEMANTIC_TOKEN_TYPES,
+};
 use editor_core_lsp::lsp_uri::path_to_file_uri;
 use editor_core_lsp::workspace_sync::LspWorkspaceSync;
 use editor_core_treesitter::{TreeSitterLanguage, TreeSitterProcessor, TreeSitterProcessorConfig};
@@ -222,20 +224,21 @@ impl EditorBackend {
         // 计算 composed total_rows（用于 scrollHeight/spacerTop/spacerBottom）。
         // MVP：每次请求重建索引；后续再做增量缓存与失效策略。
         let (total_rows, logical_line_count, fold_map) =
-            self.workspace.with_editor_for_view(self.view_id, |editor| {
-                let index = ComposedRowIndex::build(editor);
-                let total_rows = index.total_rows();
-                let logical_line_count = editor.line_index.line_count();
+            self.workspace
+                .with_editor_for_view(self.view_id, |editor| {
+                    let index = ComposedRowIndex::build(editor);
+                    let total_rows = index.total_rows();
+                    let logical_line_count = editor.line_index.line_count();
 
-                let mut fold_map = std::collections::BTreeMap::<usize, (usize, bool)>::new();
-                for region in editor.folding_manager.regions() {
-                    fold_map
-                        .entry(region.start_line)
-                        .or_insert((region.end_line, region.is_collapsed));
-                }
+                    let mut fold_map = std::collections::BTreeMap::<usize, (usize, bool)>::new();
+                    for region in editor.folding_manager.regions() {
+                        fold_map
+                            .entry(region.start_line)
+                            .or_insert((region.end_line, region.is_collapsed));
+                    }
 
-                (total_rows, logical_line_count, fold_map)
-            })?;
+                    (total_rows, logical_line_count, fold_map)
+                })?;
 
         let grid = self
             .workspace
@@ -310,7 +313,10 @@ impl EditorBackend {
     }
 
     fn try_start_lsp_for_file(&mut self, path: &Path, uri: &str) {
-        let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_ascii_lowercase())
+        let Some(ext) = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase())
         else {
             return;
         };
@@ -408,26 +414,32 @@ impl EditorBackend {
     ///
     /// - `height` 是前端 minimap 视图的高度（以 CSS px 计），我们会返回同长度的 samples。
     /// - 目前 minimap 基于 doc visual rows（wrap/fold 后），不包含 composed 的 above-line 虚拟行。
-    pub fn minimap_snapshot(&mut self, height: usize) -> Result<MinimapSnapshot, EditorBackendError> {
+    pub fn minimap_snapshot(
+        &mut self,
+        height: usize,
+    ) -> Result<MinimapSnapshot, EditorBackendError> {
         let height = height.max(1);
 
+        let viewport_width_cells = self.workspace.viewport_width_for_view(self.view_id)?;
+        let viewport_width_cells = viewport_width_cells.max(1);
+
         let doc_total_rows = self.workspace.total_visual_lines_for_view(self.view_id)?;
-        let total_rows_u32 = u32::try_from(doc_total_rows)
-            .map_err(|_| EditorBackendError::MinimapTotalRowsTooLarge {
+        let total_rows_u32 = u32::try_from(doc_total_rows).map_err(|_| {
+            EditorBackendError::MinimapTotalRowsTooLarge {
                 total_rows: doc_total_rows,
-            })?;
+            }
+        })?;
 
         let bucket_size = (doc_total_rows + height - 1) / height;
         let bucket_size = bucket_size.max(1);
-        let bucket_size_u32 =
-            u32::try_from(bucket_size).map_err(|_| EditorBackendError::MinimapBucketSizeTooLarge {
-                bucket_size,
-            })?;
+        let bucket_size_u32 = u32::try_from(bucket_size)
+            .map_err(|_| EditorBackendError::MinimapBucketSizeTooLarge { bucket_size })?;
 
         let grid = if doc_total_rows == 0 {
             editor_core::MinimapGrid::new(0, 0)
         } else {
-            self.workspace.get_minimap_content(self.view_id, 0, doc_total_rows)?
+            self.workspace
+                .get_minimap_content(self.view_id, 0, doc_total_rows)?
         };
 
         let mut samples: Vec<u8> = Vec::with_capacity(height);
@@ -440,10 +452,17 @@ impl EditorBackend {
             let end = (start + bucket_size).min(doc_total_rows);
 
             let mut best: u8 = 0;
-            for line in grid.lines.iter().skip(start).take(end.saturating_sub(start)) {
-                let total = line.total_cells.max(1);
-                let non_ws = line.non_whitespace_cells.min(total);
-                let v = ((non_ws * 255) / total) as u8;
+            for line in grid
+                .lines
+                .iter()
+                .skip(start)
+                .take(end.saturating_sub(start))
+            {
+                // 用 viewport 宽度做归一，才能反映“行长度差异”的密度。
+                // 否则 `non_whitespace_cells / total_cells` 在无空格的行里会恒等于 1，
+                // minimap 会变成一整块纯色（见截图：x 的梯度行）。
+                let non_ws = line.non_whitespace_cells.min(viewport_width_cells);
+                let v = ((non_ws * 255) / viewport_width_cells) as u8;
                 best = best.max(v);
             }
             samples.push(best);
@@ -614,8 +633,10 @@ impl EditorBackend {
     }
 
     pub fn delete_forward(&mut self) -> Result<(), EditorBackendError> {
-        self.workspace
-            .execute(self.view_id, Command::Edit(EditCommand::DeleteGraphemeForward))?;
+        self.workspace.execute(
+            self.view_id,
+            Command::Edit(EditCommand::DeleteGraphemeForward),
+        )?;
         self.refresh_syntax_highlighting()?;
         Ok(())
     }
@@ -688,10 +709,8 @@ impl EditorBackend {
 
         if anchor == active {
             if self.workspace.selection_for_view(self.view_id)?.is_some() {
-                self.workspace.execute(
-                    self.view_id,
-                    Command::Cursor(CursorCommand::ClearSelection),
-                )?;
+                self.workspace
+                    .execute(self.view_id, Command::Cursor(CursorCommand::ClearSelection))?;
             }
             self.workspace.execute(
                 self.view_id,
@@ -1063,9 +1082,8 @@ fn choose_treesitter(uri: Option<&str>) -> Result<Option<TreeSitterProcessor>, E
 fn build_rust_treesitter() -> Result<TreeSitterProcessor, EditorBackendError> {
     const RUST_LANGUAGE_WASM: &[u8] =
         include_bytes!("../../editor-core-treesitter/tests/fixtures/treesitter/rust/language.wasm");
-    const RUST_HIGHLIGHTS: &str = include_str!(
-        "../../editor-core-treesitter/tests/fixtures/treesitter/rust/highlights.scm"
-    );
+    const RUST_HIGHLIGHTS: &str =
+        include_str!("../../editor-core-treesitter/tests/fixtures/treesitter/rust/highlights.scm");
     const RUST_FOLDS: &str =
         include_str!("../../editor-core-treesitter/tests/fixtures/treesitter/rust/folds.scm");
 

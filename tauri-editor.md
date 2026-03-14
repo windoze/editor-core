@@ -15,7 +15,7 @@
 - ✅ 选择与命中测试：Shift+方向键、Shift+点击、鼠标拖拽选择；选择渲染走 overlay 矩形（禁用浏览器原生 selection）
 - ✅ Gutter：行号（按 `logicalLineCount` 动态宽度）+ 折叠标记（来自 `folding_manager.regions()`）+ 点击 toggle（Fold/Unfold）
 - ✅ Scrollbar：右侧自绘滚动条（thumb 可拖拽/点击跳转；隐藏 WebView 原生 scrollbar）
-- ✅ Minimap：右侧 minimap（基于 doc visual rows 密度采样；点击/拖拽定位滚动）
+- ✅ Minimap：右侧 minimap（基于 doc visual rows 做密度采样；密度=非空白 cells / viewport_width；点击/拖拽定位滚动）
 - ✅ 剪贴板：走 Tauri 后端（`tauri-plugin-clipboard-manager`），支持 Copy/Cut/Paste、Undo/Redo、Select All
 - ✅ IME MVP：`compositionstart/update/end` → 内核 ReplaceCoalescingUndo（marked text 入内核）+ `IME_MARKED_TEXT` style layer
 - ✅ 样式分组/高亮：接入 `editor-core-highlight-simple`（JSON/INI）+ 轻量 Markdown regex 高亮 + `editor-core-treesitter`（Rust：高亮 + folds）；前端把 `StyleId` 映射为 CSS class
