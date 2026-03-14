@@ -2,7 +2,7 @@ use crate::composed_row_index::ComposedRowIndex;
 use crate::render_model::{RenderModelError, build_viewport_snapshot};
 use crate::snapshot::{MinimapSnapshot, ViewportSnapshot};
 use editor_core::ProcessingEdit;
-use editor_core::intervals::{IME_MARKED_TEXT_STYLE_ID, Interval, StyleId, StyleLayerId};
+use editor_core::intervals::{FoldRegion, IME_MARKED_TEXT_STYLE_ID, Interval, StyleId, StyleLayerId};
 use editor_core::{
     BufferId, Command, CursorCommand, EditCommand, Position, Selection, StyleCommand, ViewCommand,
     Workspace, WorkspaceError,
@@ -23,6 +23,11 @@ use serde_json::json;
 use std::path::Path;
 use std::process::Command as ProcessCommand;
 use std::time::Duration;
+
+struct TreeSitterState {
+    processor: TreeSitterProcessor,
+    has_folds: bool,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum EditorBackendError {
@@ -88,8 +93,9 @@ pub struct EditorBackend {
     view_id: editor_core::ViewId,
     composition: Option<CompositionState>,
     highlighter: Option<RegexHighlighter>,
-    treesitter: Option<TreeSitterProcessor>,
+    treesitter: Option<TreeSitterState>,
     lsp: Option<LspWorkspaceSync>,
+    fallback_folding_last_version: Option<u64>,
 }
 
 impl std::fmt::Debug for EditorBackend {
@@ -170,6 +176,7 @@ impl EditorBackend {
             highlighter,
             treesitter,
             lsp: None,
+            fallback_folding_last_version: None,
         };
 
         backend.refresh_syntax_highlighting()?;
@@ -221,6 +228,7 @@ impl EditorBackend {
     ) -> Result<ViewportSnapshot, EditorBackendError> {
         self.refresh_treesitter_processing()?;
         self.refresh_lsp_processing()?;
+        self.refresh_fallback_folding()?;
         let width_cells = self.workspace.viewport_width_for_view(self.view_id)?;
         let tab_width = self.workspace.tab_width_for_view(self.view_id)?;
 
@@ -290,9 +298,10 @@ impl EditorBackend {
             .last_text_delta_for_view(self.view_id)
             .map(|d| d.as_ref());
 
-        let Some(processor) = self.treesitter.as_mut() else {
+        let Some(treesitter) = self.treesitter.as_mut() else {
             return Ok(());
         };
+        let processor = &mut treesitter.processor;
 
         let edits = match processor.process_text(version, delta, None) {
             Ok(edits) => edits,
@@ -312,6 +321,40 @@ impl EditorBackend {
         }
 
         self.workspace.apply_processing_edits(buffer_id, edits)?;
+        Ok(())
+    }
+
+    fn refresh_fallback_folding(&mut self) -> Result<(), EditorBackendError> {
+        // 仅在“没有更强 folding 提供者”的情况下启用 fallback（主要用于无 folds.scm 的语言包）。
+        if self.lsp.is_some() {
+            return Ok(());
+        }
+        if let Some(ts) = self.treesitter.as_ref() {
+            if ts.has_folds {
+                return Ok(());
+            }
+        }
+
+        let Some(version) = self.workspace.view_version(self.view_id) else {
+            return Err(EditorBackendError::NoActiveView);
+        };
+        if self.fallback_folding_last_version == Some(version) {
+            return Ok(());
+        }
+
+        let buffer_id = self.buffer_id()?;
+        let text = self.workspace.buffer_text(buffer_id)?;
+
+        let regions = compute_brace_folding_regions(&text);
+        self.workspace.apply_processing_edits(
+            buffer_id,
+            [ProcessingEdit::ReplaceFoldingRegions {
+                regions,
+                preserve_collapsed: true,
+            }],
+        )?;
+
+        self.fallback_folding_last_version = Some(version);
         Ok(())
     }
 
@@ -1067,8 +1110,10 @@ fn choose_highlighter(uri: Option<&str>) -> Option<RegexHighlighter> {
     }
 }
 
-fn choose_treesitter(uri: Option<&str>) -> Result<Option<TreeSitterProcessor>, EditorBackendError> {
-    let Some(uri) = uri else { return Ok(None) };
+fn choose_treesitter(uri: Option<&str>) -> Result<Option<TreeSitterState>, EditorBackendError> {
+    let Some(uri) = uri else {
+        return Ok(None);
+    };
 
     let path = Path::new(uri);
     let ext = path
@@ -1077,8 +1122,8 @@ fn choose_treesitter(uri: Option<&str>) -> Result<Option<TreeSitterProcessor>, E
         .map(|s| s.to_ascii_lowercase());
 
     // 优先走“外部 treesitter registry”（支持大量语言），兼容 ../tree-sitter-grammars/treesitter。
-    if let Some(processor) = try_build_treesitter_from_registry(path) {
-        return Ok(Some(processor));
+    if let Some(state) = try_build_treesitter_from_registry(path) {
+        return Ok(Some(state));
     }
 
     // 回退：内置 Rust fixture（保证 `cargo test` 不依赖外部目录，同时提供 folds 查询）。
@@ -1088,7 +1133,7 @@ fn choose_treesitter(uri: Option<&str>) -> Result<Option<TreeSitterProcessor>, E
     }
 }
 
-fn build_rust_treesitter() -> Result<TreeSitterProcessor, EditorBackendError> {
+fn build_rust_treesitter() -> Result<TreeSitterState, EditorBackendError> {
     const RUST_LANGUAGE_WASM: &[u8] =
         include_bytes!("../../editor-core-treesitter/tests/fixtures/treesitter/rust/language.wasm");
     const RUST_HIGHLIGHTS: &str =
@@ -1104,7 +1149,12 @@ fn build_rust_treesitter() -> Result<TreeSitterProcessor, EditorBackendError> {
         TreeSitterProcessorConfig::new(language, RUST_HIGHLIGHTS).with_folds_query(RUST_FOLDS),
     );
 
-    TreeSitterProcessor::new(config).map_err(|e| EditorBackendError::TreeSitter(e.to_string()))
+    let processor =
+        TreeSitterProcessor::new(config).map_err(|e| EditorBackendError::TreeSitter(e.to_string()))?;
+    Ok(TreeSitterState {
+        processor,
+        has_folds: true,
+    })
 }
 
 fn apply_default_treesitter_capture_styles(
@@ -1177,11 +1227,12 @@ fn discover_treesitter_root_dir() -> Option<std::path::PathBuf> {
     None
 }
 
-fn try_build_treesitter_from_registry(path: &Path) -> Option<TreeSitterProcessor> {
+fn try_build_treesitter_from_registry(path: &Path) -> Option<TreeSitterState> {
     let root = discover_treesitter_root_dir()?;
     let registry_path = root.join("registry.json");
     let json = std::fs::read_to_string(&registry_path).ok()?;
-    let registry = TreeSitterRegistry::from_json_str_with_default_root_dir(&json, Some(&root)).ok()?;
+    let registry =
+        TreeSitterRegistry::from_json_str_with_default_root_dir(&json, Some(&root)).ok()?;
 
     let language_id = registry.language_id_for_path(path)?;
     let cfg = registry.languages.get(language_id)?;
@@ -1195,8 +1246,120 @@ fn try_build_treesitter_from_registry(path: &Path) -> Option<TreeSitterProcessor
         config = config.with_folds_query(RUST_FOLDS_FALLBACK);
     }
 
+    let has_folds = config.folds_query.is_some();
     config = apply_default_treesitter_capture_styles(config);
-    TreeSitterProcessor::new(config).ok()
+    let processor = TreeSitterProcessor::new(config).ok()?;
+    Some(TreeSitterState { processor, has_folds })
+}
+
+fn compute_brace_folding_regions(text: &str) -> Vec<FoldRegion> {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Mode {
+        Normal,
+        LineComment,
+        BlockComment,
+        SingleQuote,
+        DoubleQuote,
+        Template,
+    }
+
+    let bytes = text.as_bytes();
+    let mut mode = Mode::Normal;
+    let mut line = 0usize;
+    let mut i = 0usize;
+    let mut stack: Vec<(u8, usize)> = Vec::new();
+    let mut regions: Vec<FoldRegion> = Vec::new();
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        let next = if i + 1 < bytes.len() { bytes[i + 1] } else { 0 };
+
+        match mode {
+            Mode::Normal => {
+                match b {
+                    b'/' if next == b'/' => {
+                        mode = Mode::LineComment;
+                        i += 1;
+                    }
+                    b'/' if next == b'*' => {
+                        mode = Mode::BlockComment;
+                        i += 1;
+                    }
+                    b'\'' => mode = Mode::SingleQuote,
+                    b'"' => mode = Mode::DoubleQuote,
+                    b'`' => mode = Mode::Template,
+                    b'{' | b'[' => stack.push((b, line)),
+                    b'}' => {
+                        if let Some((open, start_line)) = stack.last().copied() {
+                            if open == b'{' {
+                                let _ = stack.pop();
+                                if line > start_line {
+                                    regions.push(FoldRegion::new(start_line, line));
+                                }
+                            }
+                        }
+                    }
+                    b']' => {
+                        if let Some((open, start_line)) = stack.last().copied() {
+                            if open == b'[' {
+                                let _ = stack.pop();
+                                if line > start_line {
+                                    regions.push(FoldRegion::new(start_line, line));
+                                }
+                            }
+                        }
+                    }
+                    b'\n' => line += 1,
+                    _ => {}
+                }
+            }
+            Mode::LineComment => {
+                if b == b'\n' {
+                    line += 1;
+                    mode = Mode::Normal;
+                }
+            }
+            Mode::BlockComment => match b {
+                b'*' if next == b'/' => {
+                    mode = Mode::Normal;
+                    i += 1;
+                }
+                b'\n' => line += 1,
+                _ => {}
+            },
+            Mode::SingleQuote => match b {
+                b'\\' => {
+                    // 跳过转义字符（避免把 `\'` 当作字符串结束）。
+                    i = i.saturating_add(1);
+                }
+                b'\'' => mode = Mode::Normal,
+                b'\n' => line += 1,
+                _ => {}
+            },
+            Mode::DoubleQuote => match b {
+                b'\\' => {
+                    i = i.saturating_add(1);
+                }
+                b'"' => mode = Mode::Normal,
+                b'\n' => line += 1,
+                _ => {}
+            },
+            Mode::Template => match b {
+                b'\\' => {
+                    i = i.saturating_add(1);
+                }
+                b'`' => mode = Mode::Normal,
+                b'\n' => line += 1,
+                _ => {}
+            },
+        }
+
+        i += 1;
+    }
+
+    regions.sort_by_key(|r| (r.start_line, r.end_line));
+    regions.dedup_by(|a, b| a.start_line == b.start_line && a.end_line == b.end_line);
+    regions
 }
 
 #[derive(Debug, Clone)]

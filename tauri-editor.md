@@ -18,7 +18,7 @@
 - ✅ Minimap：右侧 minimap（基于 doc visual rows 做密度采样；密度=非空白 cells / viewport_width；用 bar 宽度表达密度避免“整块纯色”；点击/拖拽定位滚动）
 - ✅ 剪贴板：走 Tauri 后端（`tauri-plugin-clipboard-manager`），支持 Copy/Cut/Paste、Undo/Redo、Select All
 - ✅ IME MVP：`compositionstart/update/end` → 内核 ReplaceCoalescingUndo（marked text 入内核）+ `IME_MARKED_TEXT` style layer
-- ✅ 样式分组/高亮：接入 `editor-core-highlight-simple`（JSON/INI）+ 轻量 Markdown regex 高亮 + `editor-core-treesitter`（Tree-sitter WASM：高亮 + folds；优先读取 `../tree-sitter-grammars/treesitter/registry.json`，也可用 `TAURI_EDITOR_TREESITTER_DIR=/path/to/treesitter` 指定；Rust folds 在 registry 缺失时有内置回退）；前端把 `StyleId` 映射为 CSS class
+- ✅ 样式分组/高亮：接入 `editor-core-highlight-simple`（JSON/INI）+ 轻量 Markdown regex 高亮 + `editor-core-treesitter`（Tree-sitter WASM：高亮 + folds；优先读取 `../tree-sitter-grammars/treesitter/registry.json`，也可用 `TAURI_EDITOR_TREESITTER_DIR=/path/to/treesitter` 指定；Rust folds 在 registry 缺失时有内置回退；对没有 folds 的语言（如 JS/TS）启用 `{}`/`[]` 保底折叠）；前端把 `StyleId` 映射为 CSS class
 - ✅ LSP：接入 `editor-core-lsp`（stdio；Rust 默认尝试 `rust-analyzer`），支持 semantic tokens / diagnostics / folding ranges / inlay hints / code lens / document links（无语言服务器时自动降级，不阻塞编辑）
 - ✅ Patch 与性能：前端行级 diff（只更新变更行 DOM）+ 合并 IPC（`get_frame`）+ 基础性能日志（frame/dom/输入延迟）
 
