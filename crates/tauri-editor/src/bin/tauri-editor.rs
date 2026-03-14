@@ -3,12 +3,32 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::Manager;
-use tauri_editor::{EditorBackend, EditorKey, KeyModifiers};
+use tauri_editor::{EditorBackend, EditorBackendError, EditorKey, KeyModifiers};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 #[derive(Debug)]
 struct AppState {
     backend: Mutex<EditorBackend>,
+}
+
+fn with_backend<T>(
+    state: &tauri::State<'_, AppState>,
+    f: impl FnOnce(&mut EditorBackend) -> Result<T, EditorBackendError>,
+) -> Result<T, String> {
+    let mut backend = match state.backend.lock() {
+        Ok(guard) => guard,
+        Err(poison) => {
+            eprintln!("[tauri-editor] backend mutex poisoned; recovering");
+            poison.into_inner()
+        }
+    };
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&mut backend)));
+    match result {
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(err)) => Err(err.to_string()),
+        Err(_) => Err("tauri command panicked".to_string()),
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -25,14 +45,11 @@ fn set_viewport(
     width_cells: u32,
     height_rows: u32,
 ) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend
-        .set_viewport_width(width_cells as usize)
-        .map_err(|e| e.to_string())?;
-    backend
-        .set_viewport_height(height_rows as usize)
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    with_backend(&state, |backend| {
+        backend.set_viewport_width(width_cells as usize)?;
+        backend.set_viewport_height(height_rows as usize)?;
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -41,10 +58,9 @@ fn get_viewport(
     start_row: u32,
     count: u32,
 ) -> Result<tauri_editor::snapshot::ViewportSnapshot, String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend
-        .viewport_snapshot(start_row as usize, count as usize)
-        .map_err(|e| e.to_string())
+    with_backend(&state, |backend| {
+        backend.viewport_snapshot(start_row as usize, count as usize)
+    })
 }
 
 #[tauri::command]
@@ -52,10 +68,7 @@ fn get_minimap(
     state: tauri::State<'_, AppState>,
     height: u32,
 ) -> Result<tauri_editor::snapshot::MinimapSnapshot, String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend
-        .minimap_snapshot(height as usize)
-        .map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.minimap_snapshot(height as usize))
 }
 
 #[tauri::command]
@@ -64,31 +77,28 @@ fn get_frame(
     start_row: u32,
     count: u32,
 ) -> Result<FrameSnapshot, String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    let snapshot = backend
-        .viewport_snapshot(start_row as usize, count as usize)
-        .map_err(|e| e.to_string())?;
-    let cursor = backend.cursor_overlay().map_err(|e| e.to_string())?;
-    let selection = backend.selection_overlay().map_err(|e| e.to_string())?;
-    Ok(FrameSnapshot {
-        snapshot,
-        cursor,
-        selection,
+    with_backend(&state, |backend| {
+        let snapshot = backend.viewport_snapshot(start_row as usize, count as usize)?;
+        let cursor = backend.cursor_overlay()?;
+        let selection = backend.selection_overlay()?;
+        Ok(FrameSnapshot {
+            snapshot,
+            cursor,
+            selection,
+        })
     })
 }
 
 #[tauri::command]
 fn get_cursor(state: tauri::State<'_, AppState>) -> Result<(u32, u32), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.cursor_overlay().map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.cursor_overlay())
 }
 
 #[tauri::command]
 fn get_selection(
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<((u32, u32), (u32, u32))>, String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.selection_overlay().map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.selection_overlay())
 }
 
 #[tauri::command]
@@ -97,10 +107,7 @@ fn key_down(
     key: EditorKey,
     modifiers: KeyModifiers,
 ) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend
-        .handle_key_down(key, modifiers)
-        .map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.handle_key_down(key, modifiers))
 }
 
 #[tauri::command]
@@ -110,10 +117,9 @@ fn mouse_down(
     x_cells: u32,
     modifiers: KeyModifiers,
 ) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend
-        .move_cursor_to_composed_row(row as usize, x_cells as usize, modifiers.shift)
-        .map_err(|e| e.to_string())
+    with_backend(&state, |backend| {
+        backend.move_cursor_to_composed_row(row as usize, x_cells as usize, modifiers.shift)
+    })
 }
 
 #[tauri::command]
@@ -124,15 +130,14 @@ fn mouse_drag(
     row: u32,
     x_cells: u32,
 ) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend
-        .set_selection_by_composed_points(
+    with_backend(&state, |backend| {
+        backend.set_selection_by_composed_points(
             anchor_row as usize,
             anchor_x_cells as usize,
             row as usize,
             x_cells as usize,
         )
-        .map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]
@@ -142,99 +147,101 @@ fn toggle_fold(
     end_line: u32,
     collapsed: bool,
 ) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend
-        .toggle_fold(start_line as usize, end_line as usize, collapsed)
-        .map_err(|e| e.to_string())
+    with_backend(&state, |backend| {
+        backend.toggle_fold(start_line as usize, end_line as usize, collapsed)
+    })
 }
 
 #[tauri::command]
 fn insert_text(state: tauri::State<'_, AppState>, text: String) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.insert_text(text).map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.insert_text(text))
 }
 
 #[tauri::command]
 fn composition_start(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.composition_start().map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.composition_start())
 }
 
 #[tauri::command]
 fn composition_update(state: tauri::State<'_, AppState>, text: String) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.composition_update(text).map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.composition_update(text))
 }
 
 #[tauri::command]
 fn composition_end(state: tauri::State<'_, AppState>, text: String) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.composition_end(text).map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.composition_end(text))
 }
 
 #[tauri::command]
 fn insert_newline(state: tauri::State<'_, AppState>, auto_indent: bool) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend
-        .insert_newline(auto_indent)
-        .map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.insert_newline(auto_indent))
 }
 
 #[tauri::command]
 fn insert_tab(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.insert_tab().map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.insert_tab())
 }
 
 #[tauri::command]
 fn backspace(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.backspace().map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.backspace())
 }
 
 #[tauri::command]
 fn delete_forward(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.delete_forward().map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.delete_forward())
 }
 
 #[tauri::command]
 fn undo(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.undo().map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.undo())
 }
 
 #[tauri::command]
 fn redo(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.redo().map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.redo())
 }
 
 #[tauri::command]
 fn select_all(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    backend.select_all().map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.select_all())
 }
 
 #[tauri::command]
 fn copy(state: tauri::State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
-    let backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    let text = backend.selection_text().map_err(|e| e.to_string())?;
+    let text = with_backend(&state, |backend| backend.selection_text())?;
     app.clipboard().write_text(text).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn cut(state: tauri::State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
-    let text = backend.cut_selection_text().map_err(|e| e.to_string())?;
+    let text = with_backend(&state, |backend| backend.cut_selection_text())?;
     app.clipboard().write_text(text).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn paste(state: tauri::State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
-    let mut backend = state.backend.lock().map_err(|_| "state lock poisoned")?;
     let text = app.clipboard().read_text().map_err(|e| e.to_string())?;
-    backend.insert_text(text).map_err(|e| e.to_string())
+    with_backend(&state, |backend| backend.insert_text(text))
+}
+
+#[tauri::command]
+fn frontend_log(level: String, message: String) {
+    eprintln!("[tauri-editor][frontend][{level}] {message}");
+}
+
+#[tauri::command]
+fn open_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    {
+        window.open_devtools();
+        return Ok(());
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = window;
+        Err("devtools 未启用（需要 debug 构建）".to_string())
+    }
 }
 
 fn main() {
@@ -259,6 +266,8 @@ fn main() {
             get_frame,
             get_cursor,
             get_selection,
+            frontend_log,
+            open_devtools,
             key_down,
             mouse_down,
             mouse_drag,

@@ -348,6 +348,25 @@ body {
   resize: none;
 }
 
+#debugHud {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 9999;
+  max-width: calc(100% - 16px - var(--sidebar-width));
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+  font-family: var(--font-family);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre;
+  pointer-events: none;
+  user-select: none;
+}
+
 #sidebar {
   position: absolute;
   top: 0;

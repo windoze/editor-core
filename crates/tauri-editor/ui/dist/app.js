@@ -9,6 +9,46 @@ const invoke = (() => {
   return tauri.core.invoke;
 })();
 
+const debugHud = (() => {
+  const el = document.createElement("div");
+  el.id = "debugHud";
+  el.style.display = "block";
+  el.textContent = "debugHud: loading…";
+  document.body.appendChild(el);
+  return el;
+})();
+
+const debugLines = [];
+function pushDebugLine(line, level = "info") {
+  const ts = new Date().toISOString().slice(11, 19);
+  const msg = `[${ts}] ${line}`;
+  debugLines.push(msg);
+  // 保留最多 11 条日志，最后一行留给状态栏。
+  while (debugLines.length > 11) debugLines.shift();
+  debugHud.style.display = "block";
+  updateDebugHudStatus();
+
+  // 同步到 Rust stdout（不走 invokeQueued，避免队列卡死时丢失错误信息）。
+  if (level === "error") {
+    try {
+      void invoke("frontend_log", { level, message: msg });
+    } catch {
+      // ignore
+    }
+  }
+}
+
+window.addEventListener("error", (e) => {
+  pushDebugLine(
+    `window.error: ${e.message || "unknown"} @ ${e.filename || "?"}:${e.lineno || 0}:${e.colno || 0}`,
+    "error",
+  );
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const reason = e && "reason" in e ? e.reason : null;
+  pushDebugLine(`unhandledrejection: ${String(reason)}`, "error");
+});
+
 const scrollViewport = document.getElementById("scrollViewport");
 const spacerTop = document.getElementById("spacerTop");
 const spacerBottom = document.getElementById("spacerBottom");
@@ -24,7 +64,24 @@ const scrollbarThumbEl = document.getElementById("scrollbarThumb");
 
 let invokeQueue = Promise.resolve();
 function invokeQueued(cmd, args = {}) {
-  const run = () => invoke(cmd, args);
+  const run = async () => {
+    const startedAt = performance.now();
+    state.invokeInFlight = { cmd, startedAt };
+    try {
+      return await invoke(cmd, args);
+    } catch (err) {
+      pushDebugLine(`invoke failed: ${cmd} ${String(err)}`, "error");
+      throw err;
+    } finally {
+      if (
+        state.invokeInFlight &&
+        state.invokeInFlight.cmd === cmd &&
+        state.invokeInFlight.startedAt === startedAt
+      ) {
+        state.invokeInFlight = null;
+      }
+    }
+  };
   invokeQueue = invokeQueue.then(run, run);
   return invokeQueue;
 }
@@ -51,10 +108,12 @@ const state = {
   compositionPendingText: "",
   compositionFlushScheduled: false,
   beforeinputSupported: false,
+  inputEventSeen: false,
   ignoreNextInsertTextAt: 0,
   ignoreNextInsertTextText: "",
   ignoreNextInputAt: 0,
   ignoreNextInputText: "",
+  invokeInFlight: null, // { cmd, startedAt }
   renderedStartRow: null,
   renderedCount: 0,
   renderedWidthCells: 0,
@@ -64,6 +123,22 @@ const state = {
   lastInputKind: "",
   lastDomStats: null,
 };
+
+function updateDebugHudStatus() {
+  const active =
+    document.activeElement && document.activeElement instanceof HTMLElement
+      ? document.activeElement.id || document.activeElement.tagName.toLowerCase()
+      : "none";
+  const inflight = state.invokeInFlight
+    ? `${state.invokeInFlight.cmd} ${(performance.now() - state.invokeInFlight.startedAt).toFixed(0)}ms`
+    : "idle";
+  const status = `focus=${active} beforeinput=${state.beforeinputSupported ? "1" : "0"} input=${state.inputEventSeen ? "1" : "0"} composing=${
+    state.compositionActive ? "1" : "0"
+  } invoke=${inflight} last=${state.lastInputKind || "-"} rows=${state.totalRows}`;
+  if (debugHud.style.display !== "none") {
+    debugHud.textContent = [...debugLines, status].join("\n");
+  }
+}
 
 function measure() {
   const style = getComputedStyle(scrollViewport);
@@ -1174,6 +1249,7 @@ imeInput.addEventListener("beforeinput", (e) => {
 
 imeInput.addEventListener("input", (e) => {
   if (e.isComposing) return;
+  state.inputEventSeen = true;
 
   const value = imeInput.value ?? "";
   if (!value) return;
@@ -1259,6 +1335,17 @@ document.addEventListener("keydown", async (e) => {
 
   const isMac = navigator.platform.toLowerCase().includes("mac");
   const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
+
+  // 尝试提供一个可用的 devtools 打开方式：F12 或 Cmd/Ctrl+Shift+I。
+  if (e.key === "F12" || (ctrlOrCmd && e.shiftKey && e.key.toLowerCase() === "i")) {
+    e.preventDefault();
+    try {
+      await invoke("open_devtools", {});
+    } catch (err) {
+      pushDebugLine(`open_devtools failed: ${String(err)}`, "error");
+    }
+    return;
+  }
 
   if (ctrlOrCmd) {
     const k = e.key.toLowerCase();
@@ -1359,6 +1446,25 @@ document.addEventListener("keydown", async (e) => {
       scheduleRender();
       return;
     }
+
+    // 最后的兜底：如果 `input` 事件也不触发，则用 keydown 直插入可打印字符（不覆盖 IME）。
+    // 注意：这不是完整输入模型，只是为了避免“完全不能输入”的死局。
+    if (
+      !state.inputEventSeen &&
+      !e.isComposing &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      typeof e.key === "string" &&
+      e.key.length === 1
+    ) {
+      e.preventDefault();
+      state.lastInputAt = performance.now();
+      state.lastInputKind = "keydownChar";
+      await invokeQueued("insert_text", { text: e.key });
+      scheduleRender();
+      return;
+    }
   }
 
   const keyMap = {
@@ -1402,6 +1508,8 @@ const ro = new ResizeObserver(() => {
   scheduleRender();
 });
 ro.observe(scrollViewport);
+
+setInterval(updateDebugHudStatus, 250);
 
 (async () => {
   try {

@@ -57,7 +57,7 @@ cargo test -p tauri-editor
 ## 输入与快捷键（当前已支持）
 
 - 如果启动后无法直接输入，先点击编辑区域让隐藏 `textarea#imeInput` 获取焦点（部分 WebView 会限制页面加载时的程序化 focus）。
-- Debug 构建会自动打开 Web Inspector（devtools），便于排查前端事件/IPC（macOS 仅 10.15+ 支持）。
+- Debug 构建会尝试自动打开 Web Inspector（devtools），也可以按 `F12` 或 `Cmd/Ctrl+Shift+I` 手动触发（macOS 仅 10.15+ 支持）。
 - 文字输入：`beforeinput: insertText`
 - 删除：Backspace / Delete（`beforeinput: deleteContentBackward/Forward`；按 grapheme cluster 删除）
 - 换行 / Tab：`beforeinput: insertLineBreak/insertTab`
@@ -68,6 +68,14 @@ cargo test -p tauri-editor
 - 剪贴板：Copy/Cut/Paste（Ctrl/Cmd + C/X/V）
 - Undo/Redo：Ctrl/Cmd + Z / Shift+Z（或 Ctrl+Y）
 - 全选：Ctrl/Cmd + A
+
+### 前端排查（无 Console 也能看）
+
+当前前端会在左下角显示一个 `debugHud`（用于定位“输入事件/IPC 卡死”类问题）：
+- `focus=`：当前 `document.activeElement`
+- `beforeinput=` / `input=`：是否观测到对应事件（用于判断 WebView 是否支持 `beforeinput`）
+- `invoke=`：当前是否有后端命令调用卡住（例如 `insert_text 5000ms`）
+- JS 异常会显示在 HUD，并通过 Tauri `frontend_log` 打到启动时的终端 stdout/stderr
 
 ## 语法高亮（当前已支持的最小集）
 

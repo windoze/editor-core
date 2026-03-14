@@ -16,6 +16,7 @@
         "title": "tauri-editor",
         "width": 1000,
         "height": 700,
+        "devtools": true,
         "resizable": true
       }
     ]
