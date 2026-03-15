@@ -1,5 +1,6 @@
 [package]
 name = "tauri-editor"
+default-run = "tauri-editor"
 version.workspace = true
 description = "Tauri + WebView text-grid renderer demo built on editor-core."
 authors.workspace = true
@@ -35,11 +36,11 @@ serde_json = "1"
 thiserror = "2"
 
 # Tauri (optional; behind `tauri-app` to avoid pulling heavy deps for pure-Rust tests).
-tauri = { version = "2", optional = true }
+tauri = { version = "2", optional = true , features = [] }
 tauri-plugin-clipboard-manager = { version = "2", optional = true }
 
 [build-dependencies]
-tauri-build = { version = "2", optional = true }
+tauri-build = { version = "2", optional = true , features = [] }
 
 [dev-dependencies]
 

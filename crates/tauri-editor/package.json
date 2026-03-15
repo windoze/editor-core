@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev -f tauri-app -- --",
+    "tauri:dev": "TAURI_EDITOR_TREESITTER_DIR=${TAURI_EDITOR_TREESITTER_DIR:-$(cd ../../../tree-sitter-grammars/treesitter 2>/dev/null && pwd)} tauri dev -f tauri-app -- --",
     "tauri:build": "tauri build -f tauri-app"
   },
   "dependencies": {

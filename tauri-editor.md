@@ -77,16 +77,16 @@
 ## 1. 目标与硬约束
 
 ### 1.1 必须满足的关键点（来自需求）
-- **禁止使用 `contenteditable`**：不把 DOM 当成真实文档，不依赖浏览器 selection/undo/composition 行为。
-- **行级渲染（line-based）**：每一行对应一个 DOM 节点（`<div class="line">` 或类似），行内样式分组用 `<span>`。
-- **从第一版开始支持 soft wrap**：我们不做“超长行横向无限扩展”的 DOM；wrap 宽度由 viewport 决定（`editor-core` 以 cells 表示），避免 viewport 快照/DOM 负载不受控。
-- **固定宽度 cells 模型（Monaco 风格）**：UI 坐标以 `(row, x_cells)` 为核心（`row` 处于 **composed visual rows** 空间）；每个 glyph 的占用宽度必须是 **整数 cells**（可为 0/1/2/…，例如 combining=0、ASCII=1、CJK=2、折叠标记/虚拟文本也可 >1）。允许 ligatures（它们只改变绘制形状，不改变“占用的 cells 总数”这一前提）。
-- **IME 必须正确**：
-  - 需要一个“小型输入覆盖层”捕获 composition；
-  - 组合文字必须“像是在底层文本里”，而不是覆盖在文本之上导致错位/遮挡；
-  - 组合期间底层文本排版形状要随之变化（至少在视觉上）。
-- **DOM 更新需要批量**：JS ↔ Rust 通信可能慢，不能每个字符都同步往返+全量重绘。
-- **从一开始就有可运行 App**：先做一个最小可用的编辑器壳，再逐步加能力；结构要干净可扩展。
+- ✅ **禁止使用 `contenteditable`**：不把 DOM 当成真实文档，不依赖浏览器 selection/undo/composition 行为。
+- ✅ **行级渲染（line-based）**：每一行对应一个 DOM 节点（`<div class=”line”>` 或类似），行内样式分组用 `<span>`。
+- ✅ **从第一版开始支持 soft wrap**：我们不做”超长行横向无限扩展”的 DOM；wrap 宽度由 viewport 决定（`editor-core` 以 cells 表示），避免 viewport 快照/DOM 负载不受控。
+- ✅ **固定宽度 cells 模型（Monaco 风格）**：UI 坐标以 `(row, x_cells)` 为核心（`row` 处于 **composed visual rows** 空间）；每个 glyph 的占用宽度必须是 **整数 cells**（可为 0/1/2/…，例如 combining=0、ASCII=1、CJK=2、折叠标记/虚拟文本也可 >1）。允许 ligatures（它们只改变绘制形状，不改变”占用的 cells 总数”这一前提）。
+- ✅ **IME 必须正确**：
+  - ✅ 需要一个”小型输入覆盖层”捕获 composition；
+  - ✅ 组合文字必须”像是在底层文本里”，而不是覆盖在文本之上导致错位/遮挡；
+  - ✅ 组合期间底层文本排版形状要随之变化（至少在视觉上）。
+- ✅ **DOM 更新需要批量**：JS ↔ Rust 通信可能慢，不能每个字符都同步往返+全量重绘。
+- ✅ **从一开始就有可运行 App**：先做一个最小可用的编辑器壳，再逐步加能力；结构要干净可扩展。
 
 ### 1.2 非目标（第一阶段暂不做）
 - 不追求浏览器原生文本选择/复制体验（由我们自己实现 selection/clipboard）。
@@ -98,25 +98,25 @@
 ## 2. 总体架构与职责边界
 
 ### 2.1 Rust（Tauri 后端）
-- 目标运行时：**Tauri v2**（跨平台窗口 + WebView 容器）。
-- 持有 `editor-core` 状态（buffer、布局、光标/选择、语法高亮/装饰等）。
-- 接收前端输入事件（键盘/鼠标/滚动/IME commit 等）→ 转换成 editor 命令 → 更新状态。
-- 产出“渲染模型（render model）”并生成 **render patch** 推送到前端。
-- 提供跨平台能力的后端实现（已确认：剪贴板走 Tauri 后端，而不是 WebView `navigator.clipboard`）。
+- ✅ 目标运行时：**Tauri v2**（跨平台窗口 + WebView 容器）。
+- ✅ 持有 `editor-core` 状态（buffer、布局、光标/选择、语法高亮/装饰等）。
+- ✅ 接收前端输入事件（键盘/鼠标/滚动/IME commit 等）→ 转换成 editor 命令 → 更新状态。
+- ✅ 产出”渲染模型（render model）”并生成 **render patch** 推送到前端。
+- ✅ 提供跨平台能力的后端实现（已确认：剪贴板走 Tauri 后端，而不是 WebView `navigator.clipboard`）。
 
 ### 2.2 前端（WebView：HTML/CSS/JS/TS）
-- 只渲染 viewport（虚拟化），以 **行** 为单位更新 DOM。
-- 维护渲染调度器：合并 patch，`requestAnimationFrame` 内一次性提交 DOM 变更。
-- 维护少量 UI-only state（推荐：font metrics 缓存、输入节流队列、IME `textarea` selection/定位信息）。
-- 通过调用后端命令完成剪贴板读写、文件读写等“需要稳定跨平台语义”的能力。
+- ✅ 只渲染 viewport（虚拟化），以 **行** 为单位更新 DOM。
+- ✅ 维护渲染调度器：合并 patch，`requestAnimationFrame` 内一次性提交 DOM 变更。
+- ✅ 维护少量 UI-only state（推荐：font metrics 缓存、输入节流队列、IME `textarea` selection/定位信息）。
+- ✅ 通过调用后端命令完成剪贴板读写、文件读写等”需要稳定跨平台语义”的能力。
 
 ### 2.3 推荐数据流（避免同步瓶颈）
-1. 前端收集输入事件 → 进入队列（可按帧/按时间片合并）
-2. 发送到 Rust（异步，不阻塞 UI）
-3. Rust 处理命令并推送 patch（事件/广播，不要求前端发起拉取）
-4. 前端合并 patch → raf 批量更新 DOM
+1. ✅ 前端收集输入事件 → 进入队列（可按帧/按时间片合并）
+2. ✅ 发送到 Rust（异步，不阻塞 UI）
+3. ✅ Rust 处理命令并推送 patch（事件/广播，不要求前端发起拉取）
+4. ✅ 前端合并 patch → raf 批量更新 DOM
 
-> 关键：避免“每个键都 `invoke().await` 然后立即重绘”的同步链路。
+> 关键：避免”每个键都 `invoke().await` 然后立即重绘”的同步链路。
 
 ### 2.4 参考 Monaco Editor（VS Code）的对照关系（用于设计决策）
 当我们在“正确性 / 性能 / 跨平台差异”之间做取舍时，可以把 Monaco Editor 作为一个成熟的参考系（不是照搬 API，而是借鉴其分层与策略）。
@@ -139,14 +139,14 @@ Monaco 对我们最有价值的经验点：
 ### 3.1 “行”优先对齐可视行（visual row）
 如果 `editor-core` 支持软换行/折行/折叠，那么前端 DOM 的 `.line` 最终应对应 **可视行（visual row）**，而不是原始逻辑行。否则鼠标命中测试、选择渲染、滚动定位都会变复杂。
 
-结合当前代码实现，`editor-core` 的 snapshot API 本质上是“按行（row）取 viewport 内容”。在我们已经确认“第一版就用 `ComposedGrid`”的前提下，建议：
-- **DOM 行与 `ComposedGrid` 对齐**：每个 `.line` = 一个 **composed visual row**（包含必要的 above-line 虚拟行）。
-- **从第一版起就启用 soft wrap**（`WrapMode::Char` 或 `WrapMode::Word`，不使用 `None`），并固定 `WrapIndent::SameAsLineIndent`；持续把 WebView 的可视宽度同步为 `editor-core` 的 `viewport_width`（cells）。
+结合当前代码实现，`editor-core` 的 snapshot API 本质上是”按行（row）取 viewport 内容”。在我们已经确认”第一版就用 `ComposedGrid`”的前提下，建议：
+- ✅ **DOM 行与 `ComposedGrid` 对齐**：每个 `.line` = 一个 **composed visual row**（包含必要的 above-line 虚拟行）。
+- ✅ **从第一版起就启用 soft wrap**（`WrapMode::Char` 或 `WrapMode::Word`，不使用 `None`），并固定 `WrapIndent::SameAsLineIndent`；持续把 WebView 的可视宽度同步为 `editor-core` 的 `viewport_width`（cells）。
   - 原因：`WrapMode::None` 下，一个 visual row 可能包含“整条超长逻辑行”的全部 cells，导致 viewport snapshot 体积与 DOM 更新成本不可控，也不符合我们“text-grid + viewport”的渲染目标。
   - 实践上：wrap 的“宽度边界”就是性能边界——每个 visual row 的内容规模应与 viewport 宽度同阶，而不是与文件中最长龙同阶。
 
 ### 3.2 后端输出：从第一版开始以 `ComposedGrid` 为主
-已确认：我们需要从第一版开始支持 `ComposedGrid`（否则后续引入虚拟文本/虚拟行会造成架构大改）。因此本计划把 `ComposedGrid` 视为 **唯一/主路径** 的 viewport snapshot：
+✅ 已确认：我们需要从第一版开始支持 `ComposedGrid`（否则后续引入虚拟文本/虚拟行会造成架构大改）。因此本计划把 `ComposedGrid` 视为 **唯一/主路径** 的 viewport snapshot：
 - `ComposedGrid` 的行序列可能包含：
   - 文档行段（wrap + folding aware）：`ComposedLineKind::Document { logical_line, visual_in_logical }`
   - above-line 虚拟行（例如 code lens / view zones）：`ComposedLineKind::VirtualAboveLine { logical_line }`
@@ -168,8 +168,8 @@ Monaco 对我们最有价值的经验点：
 > 因此本计划要求：滚动高度与虚拟化的 row 空间必须统一到 **composed visual rows**（详见 6.4.1/6.4.2）。
 
 #### 3.2.2 Rust→JS 传输：压缩为 Web-friendly `ViewportSnapshot`
-Rust → JS 不建议把 `ComposedGrid` 原样 serde 成 JSON（对象层级深、重复字段多）；更推荐输出一个 **紧凑快照**（并可进一步二进制化，见 6.5）：
-- `ViewportSnapshot { start_row, total_rows, logical_line_count, width_cells, tab_width, lines: LineSnapshot[], style_sets }`
+✅ Rust → JS 不建议把 `ComposedGrid` 原样 serde 成 JSON（对象层级深、重复字段多）；更推荐输出一个 **紧凑快照**（并可进一步二进制化，见 6.5）：
+- ✅ `ViewportSnapshot { start_row, total_rows, logical_line_count, width_cells, tab_width, lines: LineSnapshot[], style_sets }`
   - `start_row/total_rows` 均在 **composed visual rows** 空间
   - `logical_line_count` 用于 gutter（行号宽度计算/对齐）
   - `width_cells/tab_width` 用于前端 viewmodel 的缓存键与 hit test（避免同一帧内“宽度不一致”）
@@ -189,8 +189,8 @@ Rust → JS 不建议把 `ComposedGrid` 原样 serde 成 JSON（对象层级深�
 这样前端既能用 runs 渲染 `<span>`，也能在需要时（hit test/选择/IME）基于 `sourceKind/sourceOffset` 做“网格坐标→文档 offset”的映射，而无需每个 cell 都单独传输。
 
 ### 3.3 前端渲染单元：runs → `<span>`
-我们已经决定在 Rust→JS 的 `LineSnapshot` 中直接输出 runs（而不是 cells），因此前端渲染的最小单位就是“样式段 `<span>`”：
-- `runs: [styleSetId, sourceKind, sourceOffset, cells, text][]` → 生成 `<span class="...">text</span>`（并按 `cells * cellWidthPx` 强制分配宽度）
+✅ 我们已经决定在 Rust→JS 的 `LineSnapshot` 中直接输出 runs（而不是 cells），因此前端渲染的最小单位就是”样式段 `<span>`”：
+- ✅ `runs: [styleSetId, sourceKind, sourceOffset, cells, text][]` → 生成 `<span class=”...”>text</span>`（并按 `cells * cellWidthPx` 强制分配宽度）
 - 若相邻 runs 映射到同一个 CSS class，可在前端再做一次合并以减少 DOM 节点数（Monaco 常见优化）
 
 > 宽度一致性说明：内核与前端都以 **cells** 为坐标单位，并且我们已确认“每个 glyph 占用整数个 cells（0/1/2/…）”的约束。
@@ -198,17 +198,17 @@ Rust → JS 不建议把 `ComposedGrid` 原样 serde 成 JSON（对象层级深�
 > - 若出现某个平台字体 fallback 导致“同一字符宽度不是整数 cells”的情况，应视为**兼容性问题**：允许短期记录/绕过，但不能让坐标体系变成连续像素模型（见第 10 节留账）。
 
 ### 3.4 光标与选择：推荐做成 overlay（不进文本流）
-光标移动非常频繁，把光标/选择做成独立 overlay 层可以减少行内 DOM 重建：
-- `cursor`: `{ row, x_cells }`（推荐；`row` 位于 **composed visual rows** 空间）或 `{ x_px, y_px, height_px }`
-- `selections`: 推荐用 **文档 char-offset ranges** 表达（Rust 输出），前端基于 viewport `LineSnapshot` 拆成可视矩形渲染；这样能天然处理 wrap、fold、以及 inlay/virtual text 不可选的情况
+✅ 光标移动非常频繁，把光标/选择做成独立 overlay 层可以减少行内 DOM 重建：
+- ✅ `cursor`: `{ row, x_cells }`（推荐；`row` 位于 **composed visual rows** 空间）或 `{ x_px, y_px, height_px }`
+- ✅ `selections`: 推荐用 **文档 char-offset ranges** 表达（Rust 输出），前端基于 viewport `LineSnapshot` 拆成可视矩形渲染；这样能天然处理 wrap、fold、以及 inlay/virtual text 不可选的情况
 
-建议第一版采用：**Rust 输出 `(row, x_cells)`，前端用测量得到的 `cellWidthPx/lineHeightPx` 定位到像素**（固定宽度 cells 模型下最简单、也更接近 Monaco）。
+✅ 建议第一版采用：**Rust 输出 `(row, x_cells)`，前端用测量得到的 `cellWidthPx/lineHeightPx` 定位到像素**（固定宽度 cells 模型下最简单、也更接近 Monaco）。
 
 ### 3.5 命中测试（hit test）：grid-based + 宽字符
-已确认：命中测试可以走 grid-based，但必须处理宽字符/多 cells glyph，避免 caret 落在 glyph 中间。
+✅ 已确认：命中测试可以走 grid-based，但必须处理宽字符/多 cells glyph，避免 caret 落在 glyph 中间。
 
-推荐做法（Monaco 类似思路）：
-- **像素 → cells 坐标**：
+✅ 推荐做法（Monaco 类似思路）：
+- ✅ **像素 → cells 坐标**：
   - `row = start_row + floor((y_px + lineHeightPx/2) / lineHeightPx)`（半行四舍五入更贴近期望；也可先用 `floor(y/lineHeight)` 再迭代）
   - `x_cells = floor((x_px + cellWidthPx/2) / cellWidthPx)`（半 cell rounding：点击偏右更倾向落在字符后）
 - **cells 坐标 → 文档 offset**（基于当前 viewport 的 `LineSnapshot`）：
@@ -224,7 +224,7 @@ Rust → JS 不建议把 `ComposedGrid` 原样 serde 成 JSON（对象层级深�
 
 ## 4. DOM 结构：row（gutter + line）+ run `<span>` + overlay + IME 输入层
 
-### 4.1 分层 DOM（建议）
+### 4.1 分层 DOM（建议） ✅
 ```html
 <div id="editorRoot">
   <div id="scrollViewport">
@@ -266,18 +266,18 @@ Rust → JS 不建议把 `ComposedGrid` 原样 serde 成 JSON（对象层级深�
 ```
 
 ### 4.2 CSS/排版要点（影响命中测试与性能）
-- `.line { white-space: pre; }` 保留空格/制表符布局（配合 `tab-size`）。
-- `tab-size` 需要与 `editor-core` 的 `tab_width`（cells）一致（否则 tab 展开宽度与内核布局会漂移）。
-- 统一 `line-height`（虚拟化与滚动定位依赖它）。
-- 等宽字体（建议默认）：命中测试与光标定位更简单。
-- **支持 ligatures**：不要强制关闭 `font-variant-ligatures`；选择支持连字且仍保持等宽“cells 占用不变”的字体（例如同一段文本即使形成一个连字 glyph，也必须占用整数个 cells）。
-- 建议加 `.line { overflow: hidden; }` 作为“防抖”：当某些平台字体 fallback 导致单个 glyph 宽度略超预期时，避免溢出影响布局（差异仍需记录与后续修正）。
-- 文本渲染安全：构造 `<span>` 时用 `textContent`；若走 HTML 字符串，必须转义，避免 XSS（文件内容不可视为可信）。
+- ✅ `.line { white-space: pre; }` 保留空格/制表符布局（配合 `tab-size`）。
+- ✅ `tab-size` 需要与 `editor-core` 的 `tab_width`（cells）一致（否则 tab 展开宽度与内核布局会漂移）。
+- ✅ 统一 `line-height`（虚拟化与滚动定位依赖它）。
+- ✅ 等宽字体（建议默认）：命中测试与光标定位更简单。
+- **支持 ligatures**：不要强制关闭 `font-variant-ligatures`；选择支持连字且仍保持等宽”cells 占用不变”的字体（例如同一段文本即使形成一个连字 glyph，也必须占用整数个 cells）。
+- ✅ 建议加 `.line { overflow: hidden; }` 作为”防抖”：当某些平台字体 fallback 导致单个 glyph 宽度略超预期时，避免溢出影响布局（差异仍需记录与后续修正）。
+- ✅ 文本渲染安全：构造 `<span>` 时用 `textContent`；若走 HTML 字符串，必须转义，避免 XSS（文件内容不可视为可信）。
 
 ### 4.3 Monaco 借鉴点：图层与小部件
-Monaco 的 DOM 结构通常把内容与 overlay 分离（内容行层、选择/光标层、widgets 层、textarea 输入层）。我们建议保持同样的可扩展空间：
-- **内容层（lines）**：只承载“字符与样式 runs”，避免把选择/光标/IME 视觉塞进内容层导致频繁重排。
-- **overlay 层**：光标、选择矩形、搜索高亮、括号匹配等尽量走 overlay（或用 style layer 统一表达，再由渲染策略决定是否 overlay）。
+✅ Monaco 的 DOM 结构通常把内容与 overlay 分离（内容行层、选择/光标层、widgets 层、textarea 输入层）。我们建议保持同样的可扩展空间：
+- ✅ **内容层（lines）**：只承载”字符与样式 runs”，避免把选择/光标/IME 视觉塞进内容层导致频繁重排。
+- ✅ **overlay 层**：光标、选择矩形、搜索高亮、括号匹配等尽量走 overlay（或用 style layer 统一表达，再由渲染策略决定是否 overlay）。
 - **widgets/view zones**（后续）：对应 `ComposedGrid` 的虚拟行/虚拟 cell（inlay/code-lens），以及将来可能的悬浮提示、inline actions。
 
 ---
@@ -288,13 +288,13 @@ Monaco 的 DOM 结构通常把内容与 overlay 分离（内容行层、选择/�
 `contenteditable` 会让 WebView 把 DOM 当“真实文档”，浏览器接管 selection/undo/composition；这与 text-grid（多光标、折行、语法高亮、结构化装饰等）模型冲突，并且跨平台行为差异大。
 
 ### 5.2 推荐方案概览
-用一个“透明/极小”的 `<textarea id="imeInput">` 捕获 IME 与文本输入，但**真正显示仍由 rowsLayer 完成**。
+✅ 用一个”透明/极小”的 `<textarea id=”imeInput”>` 捕获 IME 与文本输入，但**真正显示仍由 rowsLayer 完成**。
 
 关键机制：
-- `imeInput` 始终保持 focus（editor 点击/激活时自动 focus）。
-- `imeInput` 按 caret 像素位置移动（由 `(row, x_cells)` + `cellWidthPx/lineHeightPx` 计算），让系统候选窗靠近光标出现。
-- `imeInput` 视觉透明：`opacity: 0;`，不让用户看到其内容。
-- 组合期间，**不直接显示 textarea 的内容**；组合字符串应通过“marked text”进入内核并由 snapshot 渲染（见 5.3），从而视觉上自然嵌入文本流、并真实影响 layout。
+- ✅ `imeInput` 始终保持 focus（editor 点击/激活时自动 focus）。
+- ✅ `imeInput` 按 caret 像素位置移动（由 `(row, x_cells)` + `cellWidthPx/lineHeightPx` 计算），让系统候选窗靠近光标出现。
+- ✅ `imeInput` 视觉透明：`opacity: 0;`，不让用户看到其内容。
+- ✅ 组合期间，**不直接显示 textarea 的内容**；组合字符串应通过”marked text”进入内核并由 snapshot 渲染（见 5.3），从而视觉上自然嵌入文本流、并真实影响 layout。
   - 若遇到某平台 WebView 事件能力不足（例如无法稳定拿到 replace_range/selection），可临时退化为“前端行内插入 composition span”的 UI-only 方案，但必须记录差异（见 10）。
 
 ### 5.3 事件与状态机（推荐：内核一致的“marked text”模型）
@@ -305,22 +305,22 @@ Monaco 的 DOM 结构通常把内容与 overlay 分离（内容行层、选择/�
 - 撤销/重做能把“一次完整的 IME 组合（多次 update + commit）”当成一个 undo step；
 - 样式渲染统一：直接使用 `StyleLayerId::IME_MARKED_TEXT` + `IME_MARKED_TEXT_STYLE_ID`。
 
-建议流程（与现有 `editor-core-ui` 的做法一致）：
-- `compositionstart`
-  - 记录 composition 的“替换范围”（通常是当前 selection/caret；有些平台 IME 会给出 replace_range）
-  - 后端执行：`EditCommand::EndUndoGroup`（避免与普通输入合并 undo）
-- `compositionupdate`（高频）
-  - 把当前 preedit 字符串作为一次 replace 更新发送给后端：
+✅ 建议流程（与现有 `editor-core-ui` 的做法一致）：
+- ✅ `compositionstart`
+  - ✅ 记录 composition 的”替换范围”（通常是当前 selection/caret；有些平台 IME 会给出 replace_range）
+  - ✅ 后端执行：`EditCommand::EndUndoGroup`（避免与普通输入合并 undo）
+- ✅ `compositionupdate`（高频）
+  - ✅ 把当前 preedit 字符串作为一次 replace 更新发送给后端：
     - `EditCommand::ReplaceCoalescingUndoWithSelection { start, length, text, selection_start, selection_end }`
-  - 后端同时应用/更新一个专用样式层：
+  - ✅ 后端同时应用/更新一个专用样式层：
     - `ProcessingEdit::ReplaceStyleLayer { layer: StyleLayerId::IME_MARKED_TEXT, intervals: [start..start+len => IME_MARKED_TEXT_STYLE_ID] }`
-  - 前端更新候选窗定位：把 `imeInput` 移动到“composition 内部 caret”的像素位置
+  - ✅ 前端更新候选窗定位：把 `imeInput` 移动到”composition 内部 caret”的像素位置
   - 性能策略：前端对 `compositionupdate` **按帧节流**（例如 16ms 内只发送最后一次），避免跨边界风暴
-- `compositionend`（commit）
-  - 若 WebView 提供的是最终 commit text：
+- ✅ `compositionend`（commit）
+  - ✅ 若 WebView 提供的是最终 commit text：
     - 后端执行一次 `ReplaceCoalescingUndo`（或沿用最后一次 update 的状态，仅清理样式层并 `EndUndoGroup`）
-  - 清理样式层：`ProcessingEdit::ClearStyleLayer(IME_MARKED_TEXT)`
-  - `EditCommand::EndUndoGroup` 结束 composition undo 分组
+  - ✅ 清理样式层：`ProcessingEdit::ClearStyleLayer(IME_MARKED_TEXT)`
+  - ✅ `EditCommand::EndUndoGroup` 结束 composition undo 分组
 
 取消 composition（例如 Escape / IME 清空 marked text）：
 - 约定：当 marked text 变为空串时，视为“取消/清除组合”
@@ -328,11 +328,11 @@ Monaco 的 DOM 结构通常把内容与 overlay 分离（内容行层、选择/�
 
 > 备注：如果某个平台 WebView 无法可靠提供 composition 内 selection（`selectionStart/End` 不稳定），可以退化为“caret 始终在 preedit 末尾”，但要记录差异（见“WebView 差异记录”）。
 
-### 5.4 视觉细节：让组合“看起来在底层文本里”
-- marked text 需要“行内呈现”，不能用浮层遮罩覆盖文本：
-  - 将 `IME_MARKED_TEXT_STYLE_ID` 映射为 CSS（underline / background / 波浪线等）
-  - 前端渲染时，遇到带该 style id 的 run 自动加对应 class
-- 由于 marked text 在内核模型中是“真实 replace”，因此不会出现“底层文字仍在、上面再盖一层”的遮挡问题；取消 composition 时再恢复 original_text。
+### 5.4 视觉细节：让组合”看起来在底层文本里”
+- ✅ marked text 需要”行内呈现”，不能用浮层遮罩覆盖文本：
+  - ✅ 将 `IME_MARKED_TEXT_STYLE_ID` 映射为 CSS（underline / background / 波浪线等）
+  - ✅ 前端渲染时，遇到带该 style id 的 run 自动加对应 class
+- ✅ 由于 marked text 在内核模型中是”真实 replace”，因此不会出现”底层文字仍在、上面再盖一层”的遮挡问题；取消 composition 时再恢复 original_text。
 
 ### 5.5 跨平台风险与早期验证
 不同平台 WebView 对 IME/textarea 行为不一致（尤其候选窗定位）。里程碑中应尽早做三平台 smoke test：
@@ -344,8 +344,8 @@ Monaco 的 DOM 结构通常把内容与 overlay 分离（内容行层、选择/�
 Monaco 的输入系统本质上是一个“兼容层”：同一个用户动作可能在不同浏览器/平台下走不同事件组合（`keydown`/`beforeinput`/`input`/`composition*`），Monaco 会做多路径归一化。
 
 对 Tauri WebView 来说，我们也建议把输入处理设计成：
-- **主路径**：`beforeinput/input + composition*`（与 IME/粘贴更一致）
-- **回退路径**：必要时用 `keydown` 兜底（尤其快捷键、导航键、某些平台 beforeinput 不可靠的情况）
+- ✅ **主路径**：`beforeinput/input + composition*`（与 IME/粘贴更一致）
+- ✅ **回退路径**：必要时用 `keydown` 兜底（尤其快捷键、导航键、某些平台 beforeinput 不可靠的情况）
 - **差异记录与兼容开关**：将 “平台差异 → workaround” 作为显式配置与记录（对应第 10 节）
 
 ---
@@ -353,19 +353,19 @@ Monaco 的输入系统本质上是一个“兼容层”：同一个用户动作�
 ## 6. DOM 更新与性能：Patch、合并、虚拟化
 
 ### 6.1 核心原则
-- 不做“每次全量重绘整个文件 DOM”
-- 不做“每个输入事件都同步往返 Rust”
-- 不做“收到 patch 就立即操作 DOM”（统一 raf 合并）
+- ✅ 不做”每次全量重绘整个文件 DOM”
+- ✅ 不做”每个输入事件都同步往返 Rust”
+- ✅ 不做”收到 patch 就立即操作 DOM”（统一 raf 合并）
 
 ### 6.2 Patch 形态（从简单到高性能）
 MVP（先跑通）：
-- `set_viewport { start_row, count, lines: LineSnapshot[] }`（每次给完整 viewport；`row` 在 **composed visual rows** 空间）
-- `set_overlays { cursor, selections }`
+- ✅ `set_viewport { start_row, count, lines: LineSnapshot[] }`（每次给完整 viewport；`row` 在 **composed visual rows** 空间）
+- ✅ `set_overlays { cursor, selections }`
 
 性能版（逐步升级）：
 - `replace_rows { start_row, lines: LineSnapshot[] }`（一段连续 composed rows 的替换）
 - `splice_rows { start_row, delete_count, insert: LineSnapshot[] }`（插入/删除 composed rows；注意 wrap/fold/above-line 变化可能导致大范围失效）
-- `set_overlays` 独立发送（光标移动不需要重建行 DOM）
+- ✅ `set_overlays` 独立发送（光标移动不需要重建行 DOM）
 
 建议约定一个“强制全量刷新”的场景集合（直接走 `set_viewport`）：
 - viewport 宽度（cells）变化导致 reflow（window resize / 字体变更）
@@ -373,28 +373,28 @@ MVP（先跑通）：
 - `DecorationPlacement::AboveLine` 数量变化（code lens/view zones）会改变 composed rows 的总高度与行号映射
 
 ### 6.3 前端渲染调度器（批量提交）
-前端维护 `pendingPatches`，在 `requestAnimationFrame` 中：
-1. 合并 patch（同类字段“后到覆盖先到”）
-2. 应用到 **JS ViewModel**（缓存当前 viewport 的 `LineSnapshot[]` + 度量信息），在 ViewModel 内计算“哪些行真的变了”
-3. 只对变化的行更新 DOM（推荐：固定数量 `.line` 节点按 index 循环复用，并更新其 `data-row` + runs 内容）
-4. 单独更新 overlay（cursor/selection）位置与样式
+✅ 前端维护 `pendingPatches`，在 `requestAnimationFrame` 中：
+1. ✅ 合并 patch（同类字段”后到覆盖先到”）
+2. ✅ 应用到 **JS ViewModel**（缓存当前 viewport 的 `LineSnapshot[]` + 度量信息），在 ViewModel 内计算”哪些行真的变了”
+3. ✅ 只对变化的行更新 DOM（推荐：固定数量 `.line` 节点按 index 循环复用，并更新其 `data-row` + runs 内容）
+4. ✅ 单独更新 overlay（cursor/selection）位置与样式
 
 ### 6.4 视口虚拟化（必须尽早）
 soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；同时 `ComposedGrid` 还可能插入 **above-line 虚拟行**，使得 **composed visual rows** 的总行数进一步增加。大文件会让总行数快速膨胀，同时 DOM 节点也会爆炸；因此需要 viewport 虚拟化。
 
-最小版本（等高行）：
-- 只渲染 `visibleRows + overscan`（例如上下各 30 行；这里的 rows 指 **composed rows**）
-- 用 `#spacerTop/#spacerBottom` 撑开滚动高度
-- scroll 时只触发 viewport 可视行集合更新（而不是整页重绘）
+✅ 最小版本（等高行）：
+- ✅ 只渲染 `visibleRows + overscan`（例如上下各 30 行；这里的 rows 指 **composed rows**）
+- ✅ 用 `#spacerTop/#spacerBottom` 撑开滚动高度
+- ✅ scroll 时只触发 viewport 可视行集合更新（而不是整页重绘）
 
 #### 6.4.1 `total_rows/scrollHeight`：使用 `ComposedViewportState`（推荐实现）
 为了让滚动条高度、`spacerTop/spacerBottom`、以及“滚动到某行”的语义在引入 code lens/view zones（`AboveLine` 虚拟行）后仍然稳定，我们需要一个明确的 viewport state，且它必须工作在 **composed rows 空间**（而不是 `WorkspaceViewportState` 的 doc rows 空间）。
 
-推荐约定：
-- UI 侧（JS）把 `ViewportSnapshot.total_rows` 视为**唯一真值**，并用：
-  - `scrollHeightPx = total_rows * lineHeightPx`
-  - `spacerTopPx = start_row * lineHeightPx`
-  - `spacerBottomPx = (total_rows - (start_row + lines.length)) * lineHeightPx`
+✅ 推荐约定：
+- ✅ UI 侧（JS）把 `ViewportSnapshot.total_rows` 视为**唯一真值**，并用：
+  - ✅ `scrollHeightPx = total_rows * lineHeightPx`
+  - ✅ `spacerTopPx = start_row * lineHeightPx`
+  - ✅ `spacerBottomPx = (total_rows - (start_row + lines.length)) * lineHeightPx`
   - 其中 `start_row` 是这次 `lines[]` 的起始行（通常等于 `prefetch_start`，而不一定等于用户当前“可见区”的第一行；两者差值由 overscan 决定）
 - Rust 侧维护并缓存一个 `ComposedViewportState`（或等价结构），并在每次返回 `ViewportSnapshot` 时一并填充：
   - 至少包含：`total_rows`（composed total）与 `start_row`（本次返回 `lines[]` 的起点）
@@ -434,13 +434,13 @@ soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；�
 - 引入测量缓存或分段估算；复杂度高，建议延后。
 
 ### 6.5 高效编码与 IPC（从第一版开始）
-已确认：需要从第一版就采用**高效的编码设计**，避免先做“好用但很慢的 JSON 全量”再返工。
+✅ 已确认：需要从第一版就采用**高效的编码设计**，避免先做”好用但很慢的 JSON 全量”再返工。
 
 建议策略（Monaco 思路：ViewModel 缓存 + 最小化跨边界数据）：
-- **Rust 侧先压缩**：从 `ComposedGrid` 生成 `LineSnapshot.runs`（连续样式段），并对 `style_ids[]` 做 **style-set interning**（变成 `styleSetId`）。
-- **结构尽量扁平**：优先用 tuple 数组（如 `[styleSetId, sourceKind, sourceOffset, text]`）而不是深层对象，减少 JSON 解析开销。
-- **可升级为二进制**：如果 JSON 仍成为瓶颈，预留把同一结构编码为 CBOR/MessagePack/自定义二进制的空间（前端用 `Uint8Array` 解码）。关键是“字段语义先稳定”，编码方式可替换。
-- **JS ViewModel 做 diff**：即便后端发送一整个 viewport 的 `lines[]`，前端也要在 ViewModel 层做“行级 hash/比较”，只更新变化行的 DOM；这能显著降低 layout/paint 压力。
+- ✅ **Rust 侧先压缩**：从 `ComposedGrid` 生成 `LineSnapshot.runs`（连续样式段），并对 `style_ids[]` 做 **style-set interning**（变成 `styleSetId`）。
+- ✅ **结构尽量扁平**：优先用 tuple 数组（如 `[styleSetId, sourceKind, sourceOffset, text]`）而不是深层对象，减少 JSON 解析开销。
+- **可升级为二进制**：如果 JSON 仍成为瓶颈，预留把同一结构编码为 CBOR/MessagePack/自定义二进制的空间（前端用 `Uint8Array` 解码）。关键是”字段语义先稳定”，编码方式可替换。
+- ✅ **JS ViewModel 做 diff**：即便后端发送一整个 viewport 的 `lines[]`，前端也要在 ViewModel 层做”行级 hash/比较”，只更新变化行的 DOM；这能显著降低 layout/paint 压力。
 
 ---
 
@@ -501,24 +501,26 @@ soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；�
 ---
 
 ## 8. 代码组织建议（先规划，后续落地）
-为了保持“先跑起来”与“后续可扩展”兼得，建议提前分层抽象（不在本次任务编码）：
+为了保持”先跑起来”与”后续可扩展”兼得，建议提前分层抽象（不在本次任务编码）：
 - 前端：`ViewModel.applyPatch(patch)`（缓存+diff） / `Renderer.render(viewModel)` / `Renderer.measure()` / `ImeController` / `ClipboardController`（调用后端）
+  - ✅ 功能已实现（缓存/diff/渲染/测量/IME/剪贴板均已实现），但未严格按此类结构拆分，目前集中在 `app.js` 单文件
 - Rust：`UiBridge.send_patch(patch)` / `InputRouter.handle_event(event)` / `RenderModelBuilder`（从 `ComposedGrid` 生成 `ViewportSnapshot`） / `ClipboardService`（Tauri v2）
+  - ✅ 功能已实现：`EditorBackend`（backend.rs）+ `build_viewport_snapshot`（render_model.rs）+ Tauri commands（tauri-editor.rs）
 
 ---
 
 ## 9. 决策记录与待定项（持续更新）
 
 ### 9.1 已确认（来自当前讨论的结论）
-- **运行时**：目标 **Tauri v2**。
-- **坐标与宽度模型**：采用“固定宽度 cells”模型；每个 glyph 占用整数个 cells（可为 0/1/2/…）。**支持 ligatures**（不改变占用 cells 总数）。
-- **Wrap 策略**：不使用 `WrapMode::None`；wrap 模式用 `Char` 或 `Word`（按实现便利与体验选择）；wrap indent 固定为 `WrapIndent::SameAsLineIndent`。
-- **渲染输入**：从第一版开始以 **`ComposedGrid`** 为主（必须支持虚拟文本/虚拟行；避免后续大改）。
-- **剪贴板**：走 **Tauri 后端实现**（跨平台一致性优先），而不是依赖 WebView `navigator.clipboard`。
-- **命中测试**：走 **grid-based hit test**（基于 cells），并特别处理宽字符/多 cells glyph（避免把 caret 放进 glyph “中间”）。
-- **编码/性能**：从第一版就采用**高效编码设计**（runs 压缩、style-set interning、可升级二进制）。
-- **JS ViewModel**：推荐引入（用于缓存与 diff，降低 DOM 更新与 IPC 压力；参考 Monaco 的 viewmodel 思路）。
-- **滚动/虚拟化 row 空间**：以 **composed rows** 为准；后端提供 `ViewportSnapshot.total_rows`，并用 `ComposedViewportState + ComposedRowIndex` 做计算与缓存（避免 above-line 虚拟行导致 scrollHeight 错乱）。
+- ✅ **运行时**：目标 **Tauri v2**。
+- ✅ **坐标与宽度模型**：采用”固定宽度 cells”模型；每个 glyph 占用整数个 cells（可为 0/1/2/…）。**支持 ligatures**（不改变占用 cells 总数）。
+- ✅ **Wrap 策略**：不使用 `WrapMode::None`；wrap 模式用 `Char` 或 `Word`（按实现便利与体验选择）；wrap indent 固定为 `WrapIndent::SameAsLineIndent`。
+- ✅ **渲染输入**：从第一版开始以 **`ComposedGrid`** 为主（必须支持虚拟文本/虚拟行；避免后续大改）。
+- ✅ **剪贴板**：走 **Tauri 后端实现**（跨平台一致性优先），而不是依赖 WebView `navigator.clipboard`。
+- ✅ **命中测试**：走 **grid-based hit test**（基于 cells），并特别处理宽字符/多 cells glyph（避免把 caret 放进 glyph “中间”）。
+- ✅ **编码/性能**：从第一版就采用**高效编码设计**（runs 压缩、style-set interning、可升级二进制）。
+- ✅ **JS ViewModel**：推荐引入（用于缓存与 diff，降低 DOM 更新与 IPC 压力；参考 Monaco 的 viewmodel 思路）。
+- ✅ **滚动/虚拟化 row 空间**：以 **composed rows** 为准；后端提供 `ViewportSnapshot.total_rows`，并用 `ComposedViewportState + ComposedRowIndex` 做计算与缓存（避免 above-line 虚拟行导致 scrollHeight 错乱）。
 
 ### 9.2 仍待细化（不影响方向，但需要落到具体规则）
 - **默认 wrap 模式**：首版默认 `Char` 还是 `Word`（建议默认 `Char`，`Word` 作为可切换项）。
@@ -545,8 +547,8 @@ soft wrap 开启后，一个逻辑行可能拆成多个 **doc visual rows**；�
 1) 先把主路径跑通；2) 把差异**明确记录**；3) 未来有时间再逐项收敛。
 
 ### 10.1 需要重点观察/记录的差异点（待验证清单）
-- **IME 事件序列差异**：`composition*` 与 `beforeinput/input` 的触发顺序、频率、data 字段内容。
-  - 已观察/已规避：部分 WebView 会在 `compositionend` 之后补发一次 `beforeinput(insertText)`（data 等于 commit 文本），需要去重避免重复插入。
+- ✅ **IME 事件序列差异**：`composition*` 与 `beforeinput/input` 的触发顺序、频率、data 字段内容。
+  - ✅ 已观察/已规避：部分 WebView 会在 `compositionend` 之后补发一次 `beforeinput(insertText)`（data 等于 commit 文本），需要去重避免重复插入。
 - **composition 内 selection 的可用性**：`textarea.selectionStart/End` 在 composition 期间是否可靠（不同平台可能返回 0 或滞后）。
 - **候选窗定位行为**：移动 `textarea` 是否能稳定改变候选窗位置；是否要求元素可见/有 caret。
 - **键盘事件差异**：`KeyboardEvent.key`/`code` 的差异，尤其在非 US 键盘布局、Dead keys、以及 IME 打开时。

@@ -96,6 +96,10 @@ pub struct EditorBackend {
     treesitter: Option<TreeSitterState>,
     lsp: Option<LspWorkspaceSync>,
     fallback_folding_last_version: Option<u64>,
+    /// The view version at which tree-sitter processing was last applied.
+    /// Stored as the **post-apply** version to avoid re-processing version bumps
+    /// caused by our own `apply_processing_edits`.
+    treesitter_last_applied_version: Option<u64>,
 }
 
 impl std::fmt::Debug for EditorBackend {
@@ -177,6 +181,7 @@ impl EditorBackend {
             treesitter,
             lsp: None,
             fallback_folding_last_version: None,
+            treesitter_last_applied_version: None,
         };
 
         backend.refresh_syntax_highlighting()?;
@@ -293,6 +298,13 @@ impl EditorBackend {
             return Err(EditorBackendError::NoActiveView);
         };
 
+        // Skip if the view version hasn't changed since our last apply.
+        // `apply_processing_edits` bumps the version, so without this check we'd
+        // enter an infinite reparse cycle: process → apply → version bump → process → …
+        if self.treesitter_last_applied_version == Some(version) {
+            return Ok(());
+        }
+
         let delta = self
             .workspace
             .last_text_delta_for_view(self.view_id)
@@ -317,10 +329,15 @@ impl EditorBackend {
         };
 
         if edits.is_empty() {
+            // No edits means tree-sitter is already up-to-date for this version.
+            self.treesitter_last_applied_version = Some(version);
             return Ok(());
         }
 
         self.workspace.apply_processing_edits(buffer_id, edits)?;
+        // Record the *post-apply* version so we don't re-process the version bump
+        // that `apply_processing_edits` just caused.
+        self.treesitter_last_applied_version = self.workspace.view_version(self.view_id);
         Ok(())
     }
 
@@ -354,7 +371,9 @@ impl EditorBackend {
             }],
         )?;
 
-        self.fallback_folding_last_version = Some(version);
+        // Record the *post-apply* version to avoid re-processing the version bump
+        // that `apply_processing_edits` just caused.
+        self.fallback_folding_last_version = self.workspace.view_version(self.view_id);
         Ok(())
     }
 
@@ -1207,24 +1226,21 @@ fn apply_default_treesitter_capture_styles(
 }
 
 fn discover_treesitter_root_dir() -> Option<std::path::PathBuf> {
-    if let Some(v) = std::env::var_os("TAURI_EDITOR_TREESITTER_DIR") {
-        let s = v.to_string_lossy().trim().to_string();
-        if !s.is_empty() {
-            return Some(std::path::PathBuf::from(s));
-        }
+    let v = std::env::var_os("TAURI_EDITOR_TREESITTER_DIR")?;
+    let s = v.to_string_lossy().trim().to_string();
+    if s.is_empty() {
+        return None;
     }
-
-    let cwd = std::env::current_dir().ok()?;
-    let candidates = [
-        cwd.join("../tree-sitter-grammars/treesitter"),
-        cwd.join("tree-sitter-grammars/treesitter"),
-    ];
-    for dir in candidates {
-        if dir.join("registry.json").is_file() {
-            return Some(dir);
-        }
+    let dir = std::path::PathBuf::from(s);
+    if dir.join("registry.json").is_file() {
+        Some(dir)
+    } else {
+        eprintln!(
+            "[tauri-editor] TAURI_EDITOR_TREESITTER_DIR={:?} does not contain registry.json",
+            dir
+        );
+        None
     }
-    None
 }
 
 fn try_build_treesitter_from_registry(path: &Path) -> Option<TreeSitterState> {

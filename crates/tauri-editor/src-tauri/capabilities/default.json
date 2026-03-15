@@ -2,6 +2,6 @@
   "identifier": "main",
   "description": "Default permissions for tauri-editor demo (local only).",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "clipboard-manager:allow-write-text", "clipboard-manager:allow-read-text"]
 }
 

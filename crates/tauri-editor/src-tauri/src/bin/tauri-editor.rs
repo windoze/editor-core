@@ -331,7 +331,13 @@ fn main() {
             eprintln!("failed to open file: {err}");
             EditorBackend::open_text(None, "", 80).expect("open empty text must succeed")
         }),
-        None => EditorBackend::open_text(None, "", 80).expect("open empty text must succeed"),
+        None => {
+            // No file argument: open an embedded Rust demo so tree-sitter highlighting
+            // and code folding work out of the box.
+            const DEMO_TEXT: &str = include_str!("demo.rs");
+            EditorBackend::open_text(Some("demo.rs".to_string()), DEMO_TEXT, 80)
+                .expect("open demo text must succeed")
+        }
     };
 
     tauri::Builder::default()
