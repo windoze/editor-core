@@ -801,9 +801,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
-### T08FR Review：审查视觉行索引同步修复
+### [DONE] T08FR Review：审查视觉行索引同步修复
 
-状态：TODO
+状态：DONE
 
 审查范围：T08F 的所有 diff。
 
@@ -820,6 +820,13 @@
 - `cargo test -p editor-core --test visual_row_index`
 - `cargo test -p editor-core --test visual_row_improvements`
 - `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T08F diff，重点检查 `apply_text_change_to_line_index_and_layout` 是否统一承担 folding line-delta、各多光标/删除/替换路径是否移除重复平移、`VisualRowIndex::insert_lines` / `remove_lines` 批量更新、TUI 直接 fold/unfold 失效路径、workspace/state processing fold replace/clear 失效路径，以及 composed viewport 起点定位逻辑。
+- 未发现需要立即修复或新增前置任务的问题；换行编辑会先平移 folding 再同步 cached visual-row index，fold replace/clear 路径会失效缓存，TUI 直接折叠变更已补失效，composed viewport 使用 visual-row index 与 above-line prefix 定位尾部起点。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core`。
+- 本次 review 未修改编译代码；T08F 完成记录已有 `cargo clippy --all-targets --all-features -- -D warnings` 和 `cargo test --all --all-targets` 通过结果，因此未重复运行全量测试或 fixture suite。
 
 ### T09 实现：行级命令避免全文读取
 

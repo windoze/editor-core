@@ -1,21 +1,28 @@
-## 执行计划
+# Claude Execution Plan
 
-1. 读取 `TODO.md`，严格按标题是否带 `[DONE]` 判定第一个未完成任务。
-2. 检查最新提交是否明确提到与该任务直接相关的未完成问题；如有，将其纳入当前任务或作为前置任务记录到 `TODO.md`。
-3. 只围绕第一个未完成任务收集必要上下文，避免开放式历史问题排查。
-4. 按任务要求实现最小且完整的代码、测试或文档变更；如果发现阻塞当前任务的真实缺陷或缺失能力，优先修复，或在 `TODO.md` 中插入最小前置任务后停止。
-5. 运行要求的格式化、lint、目标测试和必要的完整验证；任何未排期的失败测试或 fixture 都必须修复或加入 `TODO.md` 的正确位置。
-6. 完成后更新 `TODO.md`：在任务标题前加 `[DONE]`，并填写 completion record；仅在阶段计划实际变化时更新 `PLAN.md`。
-7. 检查 git 状态和差异，提交本次任务相关的所有改动，然后停止，不继续下一个任务。
+## Scope
 
-## 当前进度
+This invocation will complete exactly the first incomplete task in `TODO.md`, then stop. `TODO.md` is the source of truth for task order, requirements, validation, and completion records.
 
-- 已读取 `TODO.md`，确认第一个未完成任务为 `T08F 修复：补齐视觉行索引换行与折叠同步`。
-- 已检查最近提交；最新提交为 `[T08R] Record completion plan`，未发现额外未记录的直接相关未完成事项。
-- 已读取 T08F 相关入口，确认主要修改点：统一文本变更路径中的 folding line-delta、`VisualRowIndex` 批量行结构更新、TUI 直接 fold/unfold 后缓存失效、core/UI composed viewport 尾部起点优化，以及 `visual_row_index` 回归测试。
-- 已完成实现：文本变更路径统一 folding line-delta，`VisualRowIndex` 支持批量结构更新，TUI 直接 fold/unfold 会失效缓存，core/UI composed viewport 起点避免从文档头扫描，并补充专项回归测试。
-- 已完成验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core`、`cargo test --all --all-targets` 均通过。
-- 已确认未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
-- 已更新 `TODO.md`，将 `T08F` 标记为 `[DONE]` 并填写完成记录。
-- 已检查最终 git status/diff；`notification.sh`、`run_agent.sh` 为未跟踪且非本任务文件，保持不纳入提交。
-- 下一步：提交 T08F 改动后停止。
+## Step-By-Step Plan
+
+1. Read `TODO.md` and identify the first task whose title is not prefixed with `[DONE]`.
+2. Check the latest commit summary only for directly relevant unfinished work related to that selected task.
+3. Inspect the code and documentation needed for the selected task, avoiding broad unrelated triage.
+4. Implement the selected task completely, or if a concrete blocker prevents correct implementation, add the minimum prerequisite task to `TODO.md` and stop after committing that bookkeeping.
+5. Run targeted validation first, then `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and the required full test/fixture suites unless only documentation changed since a prior green run can be reused.
+6. Fix any observed unscheduled test or fixture failures, or schedule them explicitly before the current task if they block completion.
+7. Mark the selected task title in `TODO.md` with `[DONE]` and update its completion record with the actual work and validation performed.
+8. Update this plan file when key steps complete or if the plan changes.
+9. Review `git status`, `git diff`, and recent commits, then commit all relevant changes with a clear task-specific message.
+10. Stop without starting the next task.
+
+## Progress
+
+- Plan initialized before project commands.
+- Selected first incomplete task: `T08FR Review：审查视觉行索引同步修复`.
+- Next step is to inspect only the T08F-related diff/context and perform the review checklist before updating `TODO.md`.
+- Reviewed the T08F commit scope: centralized folding line-delta handling, visual-row index batch insertion/removal, composed viewport start lookup, TUI direct fold invalidation, and new visual-row regression tests.
+- No blocking finding has been identified so far; validation commands are next.
+- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core --test visual_row_index`, `cargo test -p editor-core --test visual_row_improvements`, and `cargo test -p editor-core`.
+- Marked `T08FR` as `[DONE]` in `TODO.md` with the review result and validation record.
