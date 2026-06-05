@@ -45,4 +45,4 @@
 6. 更新 `TODO.md`：给已完成任务标题加 `[DONE]`，填写完成记录和验证结果；仅在阶段计划确实变化时更新 `PLAN.md`。
 7. 复查 `git diff`、提交本次任务涉及的所有必要文件，提交后停止，不继续下一个任务。
 
-进度：已完成 T08R 静态审查并更新 `TODO.md`。发现 T08 存在需要先修复的后续项：部分真实换行编辑路径没有在视觉行缓存同步前更新 folding line delta，新增测试也缺少多 fold、尾部空行/末尾换行、真实换行命令路径覆盖；TUI 直接 fold/unfold 和 virtual text composed viewport 仍有缓存/线性路径风险。已在 T09 前插入 `T08F` / `T08FR`。验证已通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core`。下一步复查 diff、提交本次 T08R 记录后停止。
+进度：已完成 T08R 静态审查并更新 `TODO.md`。发现 T08 存在需要先修复的后续项：部分真实换行编辑路径没有在视觉行缓存同步前更新 folding line delta，新增测试也缺少多 fold、尾部空行/末尾换行、真实换行命令路径覆盖；TUI 直接 fold/unfold 和 virtual text composed viewport 仍有缓存/线性路径风险。已在 T09 前插入 `T08F` / `T08FR`。验证已通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core`。已提交 T08R 记录：`d0d6ede [T08R] Review visual row index incrementalization`。本次调用到此停止，不继续执行 `T08F`。
