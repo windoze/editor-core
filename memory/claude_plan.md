@@ -219,3 +219,23 @@ This file records an operational plan and progress updates for the current invoc
 - Synchronized `docs/DESIGN.zh.md` with the same current-state wording and removed the stale Chinese folding statement that folds are not shifted after newline edits.
 - Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core --doc`.
 - Marked T20F as `[DONE]` in `TODO.md` with completion details; full `cargo test` was skipped because this task only changed Markdown, `TODO.md`, and this progress file.
+
+## T20FR Review Invocation Plan
+
+1. Read `TODO.md` and select the first heading without `[DONE]`.
+2. Check the latest commit for unfinished work directly relevant to the selected task.
+3. Review the T20F diff against the T20FR checklist: `DESIGN.md` / `DESIGN.zh.md` no longer present `PieceTable` as the main path, grapheme/word wording is accurate, command implementation notes match current code, `UndoRedoManager` location is accurate, and no unrelated commitments were added.
+4. Inspect minimal source context needed to verify the documentation claims.
+5. Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core --doc`.
+6. If findings require follow-up, add the minimum task(s) before T21 in `TODO.md`; otherwise mark T20FR `[DONE]` directly.
+7. Commit the review bookkeeping and stop without starting T21.
+
+## T20FR Progress Updates
+
+- Read `TODO.md`; the first incomplete task is `T20FR Review：审查设计文档残留一致性修复`.
+- Latest commit is `[T20F] Fix design documentation consistency`, directly relevant to T20FR and containing no separate unfinished issue in the commit title.
+- Existing unrelated untracked files `notification.sh` and `run_agent.sh` are present and were left untouched.
+- Reviewed the T20F documentation diff and targeted implementation context in `commands.rs`, `edit_ops.rs`, `line_index.rs`, `text_buffer.rs`, `undo.rs`, and folding/LSP versioning entry points.
+- No follow-up defect was found: the design docs no longer describe `PieceTable` as the main editing path, the grapheme/word boundary wording matches dedicated command support while preserving char/cell public semantics, command implementation notes match the current `LineIndex`/`TextBuffer` path, and undo/redo is documented as implemented in `undo.rs` via the `commands` facade.
+- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core --doc`.
+- Marked T20FR as `[DONE]` in `TODO.md` with completion details; full `cargo test` was skipped because this review did not modify compiled code.

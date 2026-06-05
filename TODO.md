@@ -2119,9 +2119,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
 - 未运行完整 `cargo test`：本任务只修改 Markdown 文档、`TODO.md` 和执行计划记录，且未修改 doc test 示例之外的可编译代码；按任务测试要求运行 doc test 后跳过完整测试套件。
 
-### T20FR Review：审查设计文档残留一致性修复
+### [DONE] T20FR Review：审查设计文档残留一致性修复
 
-状态：TODO
+状态：DONE
 
 审查范围：T20F 的所有 diff。
 
@@ -2136,6 +2136,14 @@
 建议命令：
 
 - `cargo test -p editor-core --doc`
+
+完成记录：
+
+- 已审查 T20F diff，重点检查 `docs/DESIGN.md` / `docs/DESIGN.zh.md` 的 high-level architecture、`PieceTable`、LineIndex/TextBuffer 主路径、folding 编辑语义、grapheme/word 边界、command implementation notes 和 `UndoRedoManager` 模块位置说明。
+- 未发现需要立即修复或新增前置任务的问题；设计文档不再把 `PieceTable` 描述为主编辑路径，grapheme/word 描述已区分专用命令支持与 public coordinate/layout 语义，撤销/重做位置说明已指向 `undo.rs` 并说明经 `commands` facade 使用。
+- 已确认 T20F diff 只包含文档、TODO 和执行计划记录，没有混入编译逻辑或新功能承诺。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
+- 完整测试套件未运行：本 review 未修改编译代码，且任务要求的 doc test 与 lint 已通过。
 
 ### T21 实现：核心 panic 与错误处理专项
 
