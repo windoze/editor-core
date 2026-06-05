@@ -41,7 +41,7 @@ integrate (tabs/splits/multi-file operations).
 
 - A full UI renderer, theme system, or widget toolkit.
 - A fully typed LSP framework (`editor-core-lsp` intentionally uses `serde_json::Value`).
-- Grapheme-cluster-aware cursor movement/selection (see “Unicode model” below).
+- A full grapheme-indexed coordinate, selection, or layout model (see “Unicode model” below).
 - A full incremental parsing pipeline. Highlighting integrations are meant to be swappable.
 
 ## High-level architecture
@@ -61,9 +61,9 @@ snapshots:
 ├──────────────────────────────────────────────┤
 │ Layout (LayoutEngine)                        │  soft wrap + logical↔visual
 ├──────────────────────────────────────────────┤
-│ Line index (LineIndex, ropey)                │  line access + pos↔offset
+│ Text storage + line index                     │  TextBuffer/LineIndex (rope edits + pos↔offset)
 ├──────────────────────────────────────────────┤
-│ Storage (PieceTable)                         │  edits + text retrieval
+│ Deprecated compat shadow                      │  PieceTable debug validation / old API only
 └──────────────────────────────────────────────┘
 ```
 
@@ -78,7 +78,8 @@ behavior.
 
 ### 1) Byte offsets (UTF-8)
 
-- Used internally in `PieceTable` *buffers* (`Piece.start`, `Piece.byte_length`).
+- Used internally in deprecated `PieceTable` compatibility *buffers* (`Piece.start`,
+  `Piece.byte_length`).
 - Not used as the primary API coordinate, because bytes are not stable under Unicode operations.
 
 ### 2) Character offsets (Unicode scalar values)
@@ -136,9 +137,9 @@ The Language Server Protocol uses UTF-16 code units for `Position.character`.
 
 File: `crates/editor-core/src/storage.rs`
 
-`PieceTable` is a deprecated compatibility layer and standalone validation target. The main editing
-path stores text in the rope-backed `TextBuffer` behind `LineIndex`. The compatibility piece table is
-a classic **piece table**:
+`PieceTable` is a deprecated compatibility layer and standalone validation target, not the text
+truth source for editing. The main editing path stores text in the rope-backed `TextBuffer` behind
+`LineIndex`. The compatibility piece table is a classic **piece table**:
 
 - `original_buffer`: immutable bytes of the initial document
 - `add_buffer`: append-only bytes for inserted text
@@ -201,7 +202,9 @@ Layout is a **headless reflow** engine:
 - combining marks → often `0`
 
 Because width is computed per Unicode scalar value, multi-codepoint grapheme clusters are not
-treated as single units for wrapping or cursor movement.
+treated as single units for wrapping, layout columns, or public position ranges. Dedicated cursor and
+delete commands can use grapheme or Unicode word boundaries, but that does not change the core
+coordinate model.
 
 The engine provides coordinate conversion for wrapped lines:
 
@@ -302,14 +305,15 @@ Edits are applied through a command enum:
 
 Implementation notes:
 
-- Edit commands update the piece table, keep style interval offsets consistent (shift on insert/
-  delete), and rebuild the rope + layout as needed.
+- Edit commands mutate the `LineIndex`/`TextBuffer`, keep style interval offsets consistent (shift on
+  insert/delete), apply folding line deltas when newline counts change, refresh only the affected
+  layout window, and sync or invalidate the visual-row index cache.
 - Multi-caret typing is applied by computing all edit ranges in the *original* document and then
   applying changes in descending offset order (so earlier edits don’t invalidate later offsets).
 
 #### Undo/redo model
 
-Undo/redo is implemented in `commands.rs` via an internal `UndoRedoManager`:
+Undo/redo is implemented by `undo.rs` (`UndoRedoManager`) and used through the `commands` facade:
 
 - Each applied edit produces one or more `TextEdit` records (deleted_text + inserted_text).
 - Edits are grouped into `UndoStep { group_id, ... }`.
@@ -479,9 +483,9 @@ For multi-buffer/multi-view wiring, see the `editor-core` workspace examples (e.
 
 ## Known limitations / extension points
 
-- **Grapheme clusters**: public cursor/selection coordinates and layout columns are `char`-based.
-  Dedicated grapheme movement/delete commands exist, but full grapheme-indexed selection or layout
-  semantics are not part of the core API.
+- **Grapheme clusters and words**: public cursor/selection coordinates and layout columns are
+  `char`/cell-based. Dedicated grapheme movement/delete and Unicode word-boundary commands exist,
+  but full grapheme-indexed selection or layout semantics are not part of the core API.
 - **Tabs/control chars**: layout measures per `char` width; hosts typically implement tab expansion
   at render time or by transforming snapshots.
 - **Folding edits**: line-based folds are shifted by newline deltas and clamped after edits, but

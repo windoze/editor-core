@@ -199,3 +199,23 @@ This file records an operational plan and progress updates for the current invoc
 - A directed check found matching stale PieceTable main-path text in `docs/DESIGN.zh.md`; added `T20F` and `T20FR` before `T21` in `TODO.md` to repair the English and Chinese design docs before continuing.
 - Marked `T20R` as `[DONE]` and recorded the review findings and validation results in `TODO.md`.
 - Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core --doc`.
+
+## T20F Invocation Plan
+
+1. Read `TODO.md` and select the first task whose heading is not prefixed with `[DONE]`.
+2. Check the latest commit for unfinished work directly relevant to the selected task.
+3. Inspect only the scoped design documents and minimal source context needed to verify current storage, editing, folding, grapheme/word, and undo semantics.
+4. Update `docs/DESIGN.md` so the high-level architecture, command implementation notes, Unicode model, and undo location describe current behavior.
+5. Synchronize `docs/DESIGN.zh.md` with the same current-state corrections, without adding future commitments.
+6. Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core --doc`.
+7. Mark T20F `[DONE]` in `TODO.md`, record validation, inspect git status/diff/log, commit the intended changes, and stop.
+
+## T20F Progress Updates
+
+- Read `TODO.md`; the first incomplete task is `T20F 修复：收口设计文档残留一致性问题`.
+- Latest commit is `[T20R] Review documentation consistency`, which directly created the T20F follow-up already tracked in `TODO.md`.
+- Existing unrelated untracked files `notification.sh` and `run_agent.sh` are present and were left untouched.
+- Updated `docs/DESIGN.md`: the architecture diagram no longer puts `PieceTable` on the main storage path; command notes now describe `LineIndex`/`TextBuffer`, style interval shifts, folding line delta, affected layout-window refresh, and visual-row cache sync/invalidation; grapheme/word and undo module location text were corrected.
+- Synchronized `docs/DESIGN.zh.md` with the same current-state wording and removed the stale Chinese folding statement that folds are not shifted after newline edits.
+- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core --doc`.
+- Marked T20F as `[DONE]` in `TODO.md` with completion details; full `cargo test` was skipped because this task only changed Markdown, `TODO.md`, and this progress file.

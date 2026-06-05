@@ -2072,9 +2072,9 @@
 - 定向检查发现 `docs/DESIGN.zh.md` 保留同类过时 PieceTable 主路径描述；为避免翻译文档继续与英文设计文档和实现冲突，已在 T21 前新增 `T20F` / `T20FR`。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
 
-### T20F 修复：收口设计文档残留一致性问题
+### [DONE] T20F 修复：收口设计文档残留一致性问题
 
-状态：TODO
+状态：DONE
 
 依赖：
 
@@ -2109,6 +2109,15 @@
 
 - 设计文档不再把 `PieceTable` 描述为主编辑路径。
 - Grapheme/word 支持边界与当前命令实现、公共坐标和 layout 语义一致。
+
+完成记录：
+
+- 更新 `docs/DESIGN.md` 的 high-level architecture、坐标模型、`PieceTable`、`LayoutEngine`、command implementation notes、undo/redo 和 known limitations 段落：主编辑路径改为 `LineIndex` 背后的 rope-backed `TextBuffer`，`PieceTable` 仅为 deprecated compatibility API / debug consistency shadow。
+- 将英文 edit command notes 改为当前语义：编辑修改 `LineIndex`/`TextBuffer`，同步 style intervals，按 newline delta 平移 folding，刷新受影响 layout window，并同步或失效 visual-row index cache。
+- 更新英文 grapheme/word 边界说明：专用 grapheme movement/delete 与 Unicode word-boundary 命令存在，但公共坐标、selection ranges 和 layout columns 仍按 Unicode scalar / cell width 语义。
+- 同步 `docs/DESIGN.zh.md` 中对应残留段落，并修正中文 folding 段落中过时的“不会自动移位”表述，使其与现有 line-delta/clamp、用户 fold 与派生 fold 分离、LSP stale version 忽略策略一致。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
+- 未运行完整 `cargo test`：本任务只修改 Markdown 文档、`TODO.md` 和执行计划记录，且未修改 doc test 示例之外的可编译代码；按任务测试要求运行 doc test 后跳过完整测试套件。
 
 ### T20FR Review：审查设计文档残留一致性修复
 

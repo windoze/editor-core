@@ -35,7 +35,7 @@
 
 - 完整的 UI 渲染器、主题系统或 widget 工具包。
 - 完全类型化的 LSP 框架（`editor-core-lsp` 有意使用 `serde_json::Value`）。
-- Grapheme-cluster 感知的光标移动/选择（参见下面的"Unicode 模型"）。
+- 完整的 grapheme 索引坐标、选择或布局模型（参见下面的"Unicode 模型"）。
 - 完整的增量解析流水线。高亮集成设计为可替换的。
 
 ## 高层架构
@@ -54,9 +54,9 @@
 ├──────────────────────────────────────────────┤
 │ 布局 (LayoutEngine)                          │  软换行 + 逻辑↔视觉
 ├──────────────────────────────────────────────┤
-│ 行索引 (LineIndex, ropey)                    │  行访问 + 位置↔偏移量
+│ 文本存储 + 行索引                            │  TextBuffer/LineIndex（rope 编辑 + 位置↔偏移量）
 ├──────────────────────────────────────────────┤
-│ 存储 (PieceTable)                            │  编辑 + 文本检索
+│ 已废弃兼容影子层                            │  PieceTable debug 校验 / 旧 API 兼容
 └──────────────────────────────────────────────┘
 ```
 
@@ -68,7 +68,7 @@
 
 ### 1) 字节偏移量（UTF-8）
 
-- 在 `PieceTable` *缓冲区*（`Piece.start`、`Piece.byte_length`）内部使用。
+- 在已废弃的 `PieceTable` 兼容*缓冲区*（`Piece.start`、`Piece.byte_length`）内部使用。
 - 不作为主要 API 坐标使用，因为字节在 Unicode 操作下不稳定。
 
 ### 2) 字符偏移量（Unicode 标量值）
@@ -79,6 +79,7 @@
 - 范围通常为半开区间：`[start, end)`。
 
 权衡：用户感知的"字符"（grapheme cluster，如 `👨‍👩‍👧‍👦`）可能是多个 `char`。
+部分光标/删除命令理解 grapheme 或 Unicode word 边界，但已存储位置、选择范围、布局列和公共偏移量仍基于 Unicode scalar，除非特定集成层明确声明其它单位。
 
 ### 3) 逻辑位置（行/列）
 
@@ -119,11 +120,11 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 
 ## 核心数据结构
 
-### PieceTable（存储）
+### PieceTable（已废弃兼容存储）
 
 文件：`crates/editor-core/src/storage.rs`
 
-存储层是经典的 **piece table**：
+`PieceTable` 是已废弃的兼容层和独立校验目标，不是编辑时的文本真相源。主编辑路径把文本存储在 `LineIndex` 背后的 rope-backed `TextBuffer` 中。兼容 piece table 是经典的 **piece table**：
 
 - `original_buffer`：初始文档的不可变字节
 - `add_buffer`：仅追加的已插入文本字节
@@ -159,7 +160,7 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 - 快速行访问（`rope.line(i)`）
 - 高效的字符偏移量和行/列之间的转换
 
-在当前实现中，许多编辑路径在变更后从完整文档文本重建 rope（简单且正确，但不是最增量的方法）。公共 API 仍然暴露增量 `insert/delete` 辅助工具以供将来优化。
+主编辑路径通过 `LineIndex::insert/delete` 修改 rope-backed `TextBuffer`，然后更新受影响的布局窗口。更改布局全局选项或需要重建派生布局状态的操作仍会执行整行/布局重排。
 
 存在两种偏移量转换风格：
 
@@ -180,7 +181,7 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 - 宽 CJK/emoji → 通常为 `2`
 - 组合标记 → 通常为 `0`
 
-因为宽度是按 Unicode 标量值计算的，多码点 grapheme cluster 不会被视为换行或光标移动的单个单元。
+因为宽度是按 Unicode 标量值计算的，多码点 grapheme cluster 不会在换行、布局列或公共位置范围中被视为单个单元。专用光标和删除命令可以使用 grapheme 或 Unicode word 边界，但这不会改变核心坐标模型。
 
 引擎为换行的行提供坐标转换：
 
@@ -231,9 +232,12 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 
 快照可选地使用内置的 `FOLD_PLACEHOLDER_STYLE_ID` 在折叠**起始**行附加区域的占位符。
 
-当前限制：
+当前行为：
 
-- 折叠区域是基于行的，并且**不会在插入或删除换行符的文本编辑时自动移位**。预期用法是将折叠视为派生状态，并在编辑后从外部提供者（例如 LSP 折叠范围或 Sublime 语法折叠）刷新它们。
+- 现有折叠区域基于行。插入或删除换行符的文本编辑会对已存区域应用 line delta，然后将区域 clamp 到当前行数。
+- 用户创建的 fold 与派生 fold 分开保存，因此当范围仍可匹配时，手动折叠状态可以在派生区域刷新后保留。
+- 派生 fold region 通常由 `ProcessingEdit::ReplaceFoldingRegions` 替换；调用方可以要求对匹配或轻微漂移的派生范围保留 collapsed state。
+- LSP folding range response 会绑定请求发送时捕获的文档版本；过期 response 会被忽略，而不会进入核心 folding state。
 
 ## 命令和状态层
 
@@ -243,7 +247,7 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 
 `EditorCore` 聚合所有主要子系统：
 
-- 文本：`PieceTable`、`LineIndex`
+- 文本：通过 `LineIndex` 使用 rope-backed `TextBuffer`（`PieceTable` 只作为已废弃兼容 API 和 debug 一致性影子层存在）
 - 布局：`LayoutEngine`
 - 派生元数据：`IntervalTree`、样式层、`FoldingManager`
 - 选择状态：光标 + 选择
@@ -268,12 +272,12 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 
 实现注意事项：
 
-- 编辑命令更新 piece table，保持样式区间偏移量一致（插入/删除时移位），并根据需要重建 rope + 布局。
+- 编辑命令修改 `LineIndex`/`TextBuffer`，保持样式区间偏移量一致（插入/删除时移位），在换行数变化时应用 folding line delta，只刷新受影响的布局窗口，并同步或失效 visual-row index cache。
 - 多光标输入通过在*原始*文档中计算所有编辑范围，然后按降序偏移量顺序应用更改（这样早期的编辑不会使后期的偏移量失效）。
 
 #### 撤销/重做模型
 
-撤销/重做在 `commands.rs` 中通过内部 `UndoRedoManager` 实现：
+撤销/重做由 `undo.rs` 中的 `UndoRedoManager` 实现，并通过 `commands` facade 使用：
 
 - 每个应用的编辑产生一个或多个 `TextEdit` 记录（deleted_text + inserted_text）。
 - 编辑被分组为 `UndoStep { group_id, ... }`。
@@ -439,7 +443,7 @@ Language Server Protocol 使用 UTF-16 code unit 表示 `Position.character`。
 
 ## 已知限制 / 扩展点
 
-- **Grapheme cluster**：光标移动/选择基于 `char`；如果需要 grapheme 感知的 UX，请使用 `unicode-segmentation` 或类似工具在 `editor-core` 之上实现。
+- **Grapheme cluster 和 word**：公共光标/选择坐标与布局列基于 `char`/cell。专用 grapheme 移动/删除和 Unicode word-boundary 命令已经存在，但完整 grapheme 索引选择或布局语义不是核心 API 的一部分。
 - **Tab/控制字符**：布局测量每个 `char` 的宽度；宿主通常在渲染时实现 tab 扩展或通过转换快照。
-- **折叠编辑**：基于行的折叠不会在换行符编辑时移位；将折叠视为派生状态，并在编辑后从外部源刷新。
+- **折叠编辑**：基于行的折叠会在换行符编辑后按 line delta 平移并 clamp；parser/LSP 派生的折叠结构仍通过替换派生 folding regions 刷新。
 - **增量性**：某些操作为了简单起见从完整文本重建派生结构。架构有意分层，以便内部组件可以随时间变得更增量，而不会破坏公共 API 形态。
