@@ -1692,9 +1692,9 @@
 - 时间窗口测试使用 `Duration::ZERO` 打断合并，不依赖真实 sleep；多光标连续插入、显式 `EndUndoGroup`、非相邻插入、换行、光标移动和 IME-like replacement 均有回归覆盖。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test undo_coalescing`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test undo_tree`、`cargo test -p editor-core`、`cargo test -p editor-core-ui --test ime_undo_grouping_tests`。
 
-### T18 实现：多折叠区域 visual/logical 往返修正
+### [DONE] T18 实现：多折叠区域 visual/logical 往返修正
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -1730,6 +1730,14 @@
 验收标准：
 
 - 多折叠区域映射稳定且与 `EditorCore` viewport 行一致。
+
+完成记录：
+
+- 修正 `FoldingManager::logical_to_visual` / `visual_to_logical`：collapsed region 现在先转换为隐藏行区间 union，再做坐标映射，避免多个重叠或嵌套 collapsed region 重复累计 hidden lines；`visual_to_logical` 同时避免 `visual_line < base_visual` 的下溢。
+- 保持 `EditorCore` 视觉行映射继续以 `VisualRowIndex` 为权威路径；新增 viewport/headless grid 一致性回归，确认 visual row、logical line、soft wrap segment 与渲染行元数据一致。
+- 新增 `crates/editor-core/tests/folding_visual_mapping.rs`，覆盖多个非重叠 collapsed region 的 visual->logical->visual 往返、相邻 collapsed region 边界、重叠 collapsed region hidden-line union、soft wrap 下多折叠往返和 viewport 行一致性。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_visual_mapping`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
 ### T18R Review：审查多折叠映射修正
 

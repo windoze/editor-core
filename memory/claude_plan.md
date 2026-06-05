@@ -1,18 +1,35 @@
-执行计划
+# Execution Plan
 
-1. 读取 `TODO.md`，只根据任务标题是否带有 `[DONE]` 判断完成状态，定位第一个未完成任务。
-2. 查看该任务的依赖、验证要求和完成记录；必要时查看 `PLAN.md`、最近提交和相关源码，但不做开放式历史问题扫查。
-3. 若任务存在必须先修复的具体阻塞项，则把最小必要前置任务写入 `TODO.md`，提交后停止；否则直接实现当前任务。
-4. 以小而集中的补丁修改代码和测试，避免规避规范或弱化测试形状。
-5. 按要求运行格式化、lint、目标测试和必要的完整测试；发现未排期失败时修复或将其排入 `TODO.md`。
-6. 更新 `TODO.md`：将完成任务标题加 `[DONE]`，填写完成记录；仅当阶段级计划改变时更新 `PLAN.md`。
-7. 检查 `git status`、`git diff`、最近提交，提交本次任务相关的全部变更，然后停止，不继续下一项任务。
+This file records the actionable plan and progress for the current invocation. It intentionally contains a concise, auditable plan rather than private chain-of-thought.
 
-进度记录
+## Current Objective
 
-- 已创建初始执行计划，下一步读取 `TODO.md` 定位首个未完成任务。
-- 已定位首个未完成任务：`T17R Review：审查 Undo coalescing 修正`。
-- 本次只执行 T17R：审查 T17 diff，重点检查 coalescing 合并条件、时间窗口测试稳定性、多光标 undo 粒度、redo/clean state 和 IME/snippet 行为；随后运行 T17R 指定测试与 lint，最后更新 `TODO.md` 并提交。
-- 已完成 T17 diff 初审：未发现明显需要阻塞 T17R 的问题；下一步运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings` 和 T17R 指定测试。
-- 已完成验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test undo_coalescing`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test undo_tree`、`cargo test -p editor-core`、`cargo test -p editor-core-ui --test ime_undo_grouping_tests` 均通过。
-- 已将 `TODO.md` 中 T17R 标记为 `[DONE]` 并填写完成记录；下一步检查 diff/status 并提交本次 review 记录。
+Complete exactly `T18 实现：多折叠区域 visual/logical 往返修正`, mark it `[DONE]`, validate it, commit the resulting changes, and stop.
+
+## Step-by-Step Plan
+
+1. Read `TODO.md` first and identify the first task whose title is not prefixed with `[DONE]`.
+2. Check the latest commit message only for unfinished work that is directly relevant to that selected task.
+3. Read the selected task details, dependencies, completion record, and validation requirements.
+4. Inspect only the code and documentation needed to implement that task correctly.
+5. If the task is blocked by a concrete missing prerequisite or unscheduled failing test/fixture, update `TODO.md` with the minimum prerequisite task, commit that bookkeeping change, and stop.
+6. Implement the selected task directly without weakening the intended behavior or introducing workaround-only behavior.
+7. Add or update focused tests and fixtures required by the selected task.
+8. Run formatting first, then linting with warnings denied, then targeted tests, and finally the required full validation if code changes require it.
+9. Fix any observed unscheduled test or fixture failures before marking the task complete, or schedule them explicitly before stopping.
+10. Update `TODO.md` by prefixing the selected task title with `[DONE]` and filling in its completion record with files changed and validation performed.
+11. Update this file when key steps complete or if the plan changes.
+12. Inspect git status, diff, and recent log, then commit all changes relevant to this invocation with a descriptive message.
+13. Stop after the commit without starting the next task.
+
+## Progress
+
+- Plan initialized before reading task details.
+- Read `TODO.md`; first incomplete task is T18.
+- Next checks: latest commit for directly relevant unfinished work, then T18 scoped code/tests only.
+- Latest commit is T17R and does not mention unfinished T18 work.
+- Current focus: add T18 visual/logical mapping coverage and fix `FoldingManager` folded-line mapping so overlapping/nested collapsed regions are treated as a union of hidden lines instead of double-counted ranges.
+- Implemented the mapping fix and added `folding_visual_mapping` regression tests.
+- Validation passed: `cargo fmt`, both clippy variants, T18 targeted tests, `cargo test -p editor-core`, and `cargo test --all --all-targets`.
+- No fixture runner found under `tools/run_fixtures.py` or `tools/**/*fixture*`.
+- Updated `TODO.md` to mark T18 as `[DONE]`; next step is final diff/status review and commit.

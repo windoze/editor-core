@@ -869,42 +869,65 @@ impl FoldingManager {
     ///
     /// Returns the visual line number for the specified logical line number, or None if folded
     pub fn logical_to_visual(&self, logical_line: usize, base_visual: usize) -> Option<usize> {
-        let mut hidden_lines = 0;
+        let mut hidden_lines = 0usize;
 
-        for region in &self.merged_regions {
-            if region.is_collapsed {
-                if logical_line > region.start_line && logical_line <= region.end_line {
-                    // This line is folded
-                    return None;
-                } else if logical_line > region.end_line {
-                    // This fold region is before the target line, count hidden lines
-                    hidden_lines += region.end_line - region.start_line;
-                }
+        for (hidden_start, hidden_end) in self.collapsed_hidden_ranges() {
+            if logical_line >= hidden_start && logical_line < hidden_end {
+                return None;
             }
+            if logical_line <= hidden_start {
+                break;
+            }
+
+            hidden_lines = hidden_lines.saturating_add(hidden_end.min(logical_line) - hidden_start);
         }
 
-        Some(base_visual + logical_line - hidden_lines)
+        Some(base_visual.saturating_add(logical_line.saturating_sub(hidden_lines)))
     }
 
     /// Calculate mapping from visual line to logical line
     pub fn visual_to_logical(&self, visual_line: usize, base_visual: usize) -> usize {
-        let mut logical = visual_line - base_visual;
+        let mut logical = visual_line.saturating_sub(base_visual);
 
-        for region in &self.merged_regions {
-            if region.is_collapsed {
-                let hidden_lines = region.end_line - region.start_line;
-
-                if logical == region.start_line {
-                    // Visual line is exactly the fold start line
-                    return region.start_line;
-                } else if logical > region.start_line {
-                    // Visual line is after fold region, need to add hidden lines
-                    logical += hidden_lines;
-                }
+        for (hidden_start, hidden_end) in self.collapsed_hidden_ranges() {
+            if logical < hidden_start {
+                break;
             }
+            logical = logical.saturating_add(hidden_end - hidden_start);
         }
 
         logical
+    }
+
+    fn collapsed_hidden_ranges(&self) -> Vec<(usize, usize)> {
+        let mut ranges: Vec<(usize, usize)> = Vec::new();
+
+        for region in self
+            .merged_regions
+            .iter()
+            .filter(|region| region.is_collapsed)
+        {
+            if region.end_line <= region.start_line {
+                continue;
+            }
+
+            let hidden_start = region.start_line.saturating_add(1);
+            let hidden_end = region.end_line.saturating_add(1);
+            if hidden_start >= hidden_end {
+                continue;
+            }
+
+            if let Some((_, last_end)) = ranges.last_mut()
+                && hidden_start <= *last_end
+            {
+                *last_end = (*last_end).max(hidden_end);
+                continue;
+            }
+
+            ranges.push((hidden_start, hidden_end));
+        }
+
+        ranges
     }
 
     /// Get all fold regions
