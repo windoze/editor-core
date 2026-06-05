@@ -8,7 +8,7 @@
 //! - observe those messages as events
 //! - (optionally) defer answering server->client requests until the UI is ready
 
-use crate::lsp_sync::{LspPosition, LspRange};
+use crate::lsp_sync::LspRange;
 use serde_json::Value;
 
 /// LSP `MessageType` used by `window/showMessage` and `window/logMessage`.
@@ -120,16 +120,8 @@ pub struct LspPublishDiagnosticsParams {
     pub version: Option<i32>,
 }
 
-fn lsp_position_from_value(value: &Value) -> Option<LspPosition> {
-    let line = value.get("line")?.as_u64()? as u32;
-    let character = value.get("character")?.as_u64()? as u32;
-    Some(LspPosition { line, character })
-}
-
 fn lsp_range_from_value(value: &Value) -> Option<LspRange> {
-    let start = lsp_position_from_value(value.get("start")?)?;
-    let end = lsp_position_from_value(value.get("end")?)?;
-    Some(LspRange { start, end })
+    LspRange::from_value(value)
 }
 
 /// A server->client JSON-RPC request that the host may choose to answer later.

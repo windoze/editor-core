@@ -7,6 +7,7 @@
 //!
 //! It intentionally avoids a full `lsp-types` dependency.
 
+use crate::lsp_sync::LspPosition;
 use editor_core::{
     CallHierarchyIncomingCall, CallHierarchyOutgoingCall, HierarchyItem, SymbolKind,
     SymbolLocation, Utf16Position, Utf16Range,
@@ -14,9 +15,10 @@ use editor_core::{
 use serde_json::Value;
 
 fn utf16_position_from_value(value: &Value) -> Option<Utf16Position> {
+    let pos = LspPosition::from_value(value)?;
     Some(Utf16Position {
-        line: value.get("line")?.as_u64()? as u32,
-        character: value.get("character")?.as_u64()? as u32,
+        line: pos.line,
+        character: pos.character,
     })
 }
 

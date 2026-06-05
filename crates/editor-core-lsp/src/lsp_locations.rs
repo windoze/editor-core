@@ -9,7 +9,7 @@
 //! This module provides a small, dependency-free normalizer that converts those shapes into a
 //! unified list of `(uri, range)` pairs.
 
-use crate::lsp_sync::{LspPosition, LspRange};
+use crate::lsp_sync::LspRange;
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,18 +21,8 @@ pub struct LspLocation {
     pub range: LspRange,
 }
 
-fn position_from_value(value: &Value) -> Option<LspPosition> {
-    Some(LspPosition {
-        line: value.get("line")?.as_u64()? as u32,
-        character: value.get("character")?.as_u64()? as u32,
-    })
-}
-
 fn range_from_value(value: &Value) -> Option<LspRange> {
-    Some(LspRange {
-        start: position_from_value(value.get("start")?)?,
-        end: position_from_value(value.get("end")?)?,
-    })
+    LspRange::from_value(value)
 }
 
 fn location_from_value(value: &Value) -> Option<LspLocation> {

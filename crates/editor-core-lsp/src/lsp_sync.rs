@@ -3,6 +3,19 @@
 //! Translates editor changes into standard LSP JSON-RPC messages and handles UTF-16 coordinate conversions and semantic token parsing.
 
 use editor_core::{Interval, LineIndex, StyleId};
+use serde_json::Value;
+
+fn u64_to_u32_saturating(value: u64) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
+
+fn u32_to_usize_saturating(value: u32) -> usize {
+    usize::try_from(value).unwrap_or(usize::MAX)
+}
+
+fn usize_to_u32_saturating(value: usize) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
 
 fn split_lines_preserve_trailing(text: &str) -> Vec<String> {
     // Keep consistent editor semantics:
@@ -27,6 +40,13 @@ impl LspPosition {
     pub fn new(line: u32, character: u32) -> Self {
         Self { line, character }
     }
+
+    pub(crate) fn from_value(value: &Value) -> Option<Self> {
+        Some(Self {
+            line: u64_to_u32_saturating(value.get("line")?.as_u64()?),
+            character: u64_to_u32_saturating(value.get("character")?.as_u64()?),
+        })
+    }
 }
 
 /// LSP Range
@@ -42,6 +62,13 @@ impl LspRange {
     /// Create a new LSP range.
     pub fn new(start: LspPosition, end: LspPosition) -> Self {
         Self { start, end }
+    }
+
+    pub(crate) fn from_value(value: &Value) -> Option<Self> {
+        Some(Self {
+            start: LspPosition::from_value(value.get("start")?)?,
+            end: LspPosition::from_value(value.get("end")?)?,
+        })
     }
 }
 
@@ -70,16 +97,25 @@ impl LspCoordinateConverter {
         text.chars().take(char_offset).map(|c| c.len_utf16()).sum()
     }
 
-    /// Convert UTF-16 code unit offset to character offset
+    /// Convert UTF-16 code unit offset to character offset.
+    ///
+    /// If the UTF-16 offset falls inside a surrogate pair, it is treated as malformed LSP input and
+    /// clamps to the Unicode scalar's start boundary. Offsets past the line end clamp to line end.
     pub fn utf16_to_char_offset(text: &str, utf16_offset: usize) -> usize {
         let mut current_utf16 = 0;
         let mut char_count = 0;
 
         for ch in text.chars() {
-            if current_utf16 >= utf16_offset {
-                break;
+            if utf16_offset <= current_utf16 {
+                return char_count;
             }
-            current_utf16 += ch.len_utf16();
+
+            let next_utf16 = current_utf16 + ch.len_utf16();
+            if utf16_offset < next_utf16 {
+                return char_count;
+            }
+
+            current_utf16 = next_utf16;
             char_count += 1;
         }
 
@@ -89,12 +125,22 @@ impl LspCoordinateConverter {
     /// Convert line and column (character offset) to LSP Position
     pub fn position_to_lsp(line_text: &str, line: usize, char_in_line: usize) -> LspPosition {
         let utf16_offset = Self::char_offset_to_utf16(line_text, char_in_line);
-        LspPosition::new(line as u32, utf16_offset as u32)
+        LspPosition::new(
+            usize_to_u32_saturating(line),
+            usize_to_u32_saturating(utf16_offset),
+        )
     }
 
     /// Convert LSP Position to character offset
     pub fn lsp_to_char_offset(line_text: &str, character: u32) -> usize {
-        Self::utf16_to_char_offset(line_text, character as usize)
+        Self::utf16_to_char_offset(line_text, u32_to_usize_saturating(character))
+    }
+
+    pub(crate) fn lsp_position_to_char_offset(line_index: &LineIndex, pos: LspPosition) -> usize {
+        let line = u32_to_usize_saturating(pos.line);
+        let line_text = line_index.get_line_text(line).unwrap_or_default();
+        let char_in_line = Self::lsp_to_char_offset(&line_text, pos.character);
+        line_index.position_to_char_offset(line, char_in_line)
     }
 }
 
@@ -212,8 +258,8 @@ impl DeltaCalculator {
                 .unwrap_or(text.len())
         }
 
-        let start_line = change.range.start.line as usize;
-        let end_line = change.range.end.line as usize;
+        let start_line = u32_to_usize_saturating(change.range.start.line);
+        let end_line = u32_to_usize_saturating(change.range.end.line);
 
         // Maintain consistency with editor semantics: at least 1 line.
         if self.lines.is_empty() {
@@ -230,14 +276,12 @@ impl DeltaCalculator {
         let start_line_text = self.lines[start_line].clone();
         let end_line_text = self.lines[end_line].clone();
 
-        let start_char = LspCoordinateConverter::utf16_to_char_offset(
+        let start_char = LspCoordinateConverter::lsp_to_char_offset(
             &start_line_text,
-            change.range.start.character as usize,
+            change.range.start.character,
         );
-        let end_char = LspCoordinateConverter::utf16_to_char_offset(
-            &end_line_text,
-            change.range.end.character as usize,
-        );
+        let end_char =
+            LspCoordinateConverter::lsp_to_char_offset(&end_line_text, change.range.end.character);
 
         let start_byte = char_index_to_byte_offset(&start_line_text, start_char);
         let end_byte = char_index_to_byte_offset(&end_line_text, end_char);
@@ -574,7 +618,7 @@ where
             .checked_add(length)
             .ok_or(SemanticTokensError::Utf16Overflow)?;
 
-        let line_usize = current_line as usize;
+        let line_usize = u32_to_usize_saturating(current_line);
         if line_usize >= line_index.line_count() {
             return Err(SemanticTokensError::InvalidLine(current_line));
         }
@@ -585,9 +629,8 @@ where
         }
 
         let line_text = cached_line_text.as_str();
-        let start_char =
-            LspCoordinateConverter::utf16_to_char_offset(line_text, current_start_utf16 as usize);
-        let end_char = LspCoordinateConverter::utf16_to_char_offset(line_text, end_utf16 as usize);
+        let start_char = LspCoordinateConverter::lsp_to_char_offset(line_text, current_start_utf16);
+        let end_char = LspCoordinateConverter::lsp_to_char_offset(line_text, end_utf16);
 
         if start_char == end_char {
             continue;

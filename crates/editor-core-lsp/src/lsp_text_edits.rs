@@ -27,14 +27,8 @@ impl LspTextEdit {
         let start = range_value.get("start")?;
         let end = range_value.get("end")?;
 
-        let start_pos = LspPosition {
-            line: start.get("line")?.as_u64()? as u32,
-            character: start.get("character")?.as_u64()? as u32,
-        };
-        let end_pos = LspPosition {
-            line: end.get("line")?.as_u64()? as u32,
-            character: end.get("character")?.as_u64()? as u32,
-        };
+        let start_pos = crate::lsp_sync::LspPosition::from_value(start)?;
+        let end_pos = crate::lsp_sync::LspPosition::from_value(end)?;
 
         let new_text = value
             .get("newText")
@@ -65,11 +59,7 @@ pub fn text_edits_from_value(value: &Value) -> Vec<LspTextEdit> {
 }
 
 fn char_offset_for_lsp_position(line_index: &LineIndex, pos: LspPosition) -> usize {
-    let line = pos.line as usize;
-    let line_text = line_index.get_line_text(line).unwrap_or_default();
-    let char_in_line =
-        LspCoordinateConverter::utf16_to_char_offset(&line_text, pos.character as usize);
-    line_index.position_to_char_offset(line, char_in_line)
+    LspCoordinateConverter::lsp_position_to_char_offset(line_index, pos)
 }
 
 /// Convert an LSP range (UTF-16 positions) into a pair of character offsets in the document.

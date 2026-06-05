@@ -12,26 +12,12 @@ use editor_core::{
 };
 use serde_json::Value;
 
-fn parse_lsp_position(value: &Value) -> Option<LspPosition> {
-    Some(LspPosition {
-        line: value.get("line")?.as_u64()? as u32,
-        character: value.get("character")?.as_u64()? as u32,
-    })
-}
-
 fn parse_lsp_range(value: &Value) -> Option<LspRange> {
-    Some(LspRange {
-        start: parse_lsp_position(value.get("start")?)?,
-        end: parse_lsp_position(value.get("end")?)?,
-    })
+    LspRange::from_value(value)
 }
 
 fn char_offset_for_lsp_position(line_index: &LineIndex, pos: LspPosition) -> usize {
-    let line = pos.line as usize;
-    let line_text = line_index.get_line_text(line).unwrap_or_default();
-    let char_in_line =
-        LspCoordinateConverter::utf16_to_char_offset(&line_text, pos.character as usize);
-    line_index.position_to_char_offset(line, char_in_line)
+    LspCoordinateConverter::lsp_position_to_char_offset(line_index, pos)
 }
 
 fn char_offsets_for_lsp_range(line_index: &LineIndex, range: &LspRange) -> (usize, usize) {
@@ -135,9 +121,10 @@ pub fn lsp_document_symbols_to_processing_edit(
 }
 
 fn parse_utf16_position(value: &Value) -> Option<Utf16Position> {
+    let pos = LspPosition::from_value(value)?;
     Some(Utf16Position {
-        line: value.get("line")?.as_u64()? as u32,
-        character: value.get("character")?.as_u64()? as u32,
+        line: pos.line,
+        character: pos.character,
     })
 }
 

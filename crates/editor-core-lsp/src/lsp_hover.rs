@@ -44,18 +44,7 @@ pub struct LspHover {
 }
 
 fn range_from_value(v: &Value) -> Option<LspRange> {
-    let start = v.get("start")?;
-    let end = v.get("end")?;
-    Some(LspRange {
-        start: crate::lsp_sync::LspPosition {
-            line: start.get("line")?.as_u64()? as u32,
-            character: start.get("character")?.as_u64()? as u32,
-        },
-        end: crate::lsp_sync::LspPosition {
-            line: end.get("line")?.as_u64()? as u32,
-            character: end.get("character")?.as_u64()? as u32,
-        },
-    })
+    LspRange::from_value(v)
 }
 
 fn markup_kind_from_str(s: &str) -> Option<LspMarkupKind> {

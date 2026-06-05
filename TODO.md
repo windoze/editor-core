@@ -1764,9 +1764,9 @@
 - 未发现需要立即修复或新增前置任务的问题；`EditorCore` 坐标与 viewport 热路径继续使用 `VisualRowIndex` 作为权威映射，`FoldingManager` legacy 行级映射已避免多个重叠/嵌套 collapsed region 重复累计 hidden lines。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_visual_mapping`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core`。
 
-### T19 实现：LSP UTF-16 代理对边界修正
+### [DONE] T19 实现：LSP UTF-16 代理对边界修正
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -1774,6 +1774,8 @@
 - `crates/editor-core-lsp/src/editor.rs`
 - `crates/editor-core-lsp/tests/diagnostics_processing_edits.rs`
 - 可新增 `crates/editor-core-lsp/tests/utf16_boundaries.rs`
+
+执行备注：定向检查发现 `crates/editor-core-lsp/src/lsp_events.rs`、`crates/editor-core-lsp/src/lsp_text_edits.rs`、`crates/editor-core-lsp/src/lsp_completion.rs`、`crates/editor-core-lsp/src/lsp_hover.rs`、`crates/editor-core-lsp/src/lsp_locations.rs`、`crates/editor-core-lsp/src/lsp_symbols.rs`、`crates/editor-core-lsp/src/lsp_highlights.rs`、`crates/editor-core-lsp/src/lsp_decorations.rs`、`crates/editor-core-lsp/src/lsp_call_hierarchy.rs` 和 `crates/editor-core-lsp/src/lsp_type_hierarchy.rs` 也存在重复的 LSP position 解析或 UTF-16 坐标入口；为保证 T19 的代理对边界策略在所有 LSP 坐标转换入口一致，需要纳入这些最小调用点修改。
 
 已知入口：
 
@@ -1803,6 +1805,15 @@
 验收标准：
 
 - 畸形 LSP UTF-16 坐标不会污染 diagnostics/token 区间。
+
+完成记录：
+
+- 在 `LspCoordinateConverter::utf16_to_char_offset` 中固定半代理对策略：UTF-16 offset 落在 surrogate pair 中间时按畸形 LSP 输入处理并 clamp 到该 Unicode scalar 的起点；超过行尾的 character clamp 到行尾。
+- 新增统一的 LSP position/range 饱和解析和 `lsp_position_to_char_offset` 入口，将 diagnostics、semantic tokens、text edits、completion、hover/location、symbols/highlights/decorations、call/type hierarchy 等 LSP 坐标入口改为共享同一 u32/u64 边界策略，避免 raw JSON 超大 line/character 静默截断。
+- 将 diagnostics 和 semantic token 区间转换改为使用同一 `lsp_to_char_offset` 策略；半个代理对 range 不再扩展到 surrogate pair 后侧，`u32::MAX` character 会稳定 clamp 到当前行尾。
+- 新增 `crates/editor-core-lsp/tests/utf16_boundaries.rs`，覆盖 `a👋b` 的 UTF-16 offset 0/1/2/3/4、半代理对 diagnostics range、超大 character/line clamp，以及 semantic tokens 与 diagnostics 的边界策略一致性。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test utf16_boundaries`、`cargo test -p editor-core-lsp --test diagnostics_processing_edits`、`cargo test -p editor-core-lsp`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
 ### T19R Review：审查 LSP UTF-16 边界修正
 

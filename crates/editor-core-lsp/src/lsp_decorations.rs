@@ -12,18 +12,11 @@ use editor_core::{
 use serde_json::Value;
 
 fn char_offset_for_lsp_position(line_index: &LineIndex, pos: LspPosition) -> usize {
-    let line = pos.line as usize;
-    let line_text = line_index.get_line_text(line).unwrap_or_default();
-    let char_in_line =
-        LspCoordinateConverter::utf16_to_char_offset(&line_text, pos.character as usize);
-    line_index.position_to_char_offset(line, char_in_line)
+    LspCoordinateConverter::lsp_position_to_char_offset(line_index, pos)
 }
 
 fn parse_lsp_position(value: &Value) -> Option<LspPosition> {
-    Some(LspPosition {
-        line: value.get("line")?.as_u64()? as u32,
-        character: value.get("character")?.as_u64()? as u32,
-    })
+    LspPosition::from_value(value)
 }
 
 fn char_offsets_for_lsp_range(
@@ -251,8 +244,10 @@ pub fn lsp_code_lens_to_decorations(line_index: &LineIndex, result: &Value) -> V
             continue;
         }
 
-        let line = start_pos.line as usize;
-        let offset = line_index.position_to_char_offset(line, 0);
+        let offset = LspCoordinateConverter::lsp_position_to_char_offset(
+            line_index,
+            LspPosition::new(start_pos.line, 0),
+        );
 
         out.push(Decoration {
             range: DecorationRange::new(offset, offset),

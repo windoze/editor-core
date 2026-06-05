@@ -9,7 +9,7 @@
 //! - Snippet-shaped inserts (`insertTextFormat == 2`) are applied via `editor-core`’s snippet
 //!   engine (`EditCommand::ApplySnippet`).
 
-use crate::lsp_sync::{LspPosition, LspRange};
+use crate::lsp_sync::LspRange;
 use crate::lsp_text_edits::{LspTextEdit, char_offsets_for_lsp_range, text_edits_from_value};
 use editor_core::{
     Command, EditCommand, EditorStateManager, LineIndex, TextEditSpec, parse_snippet,
@@ -25,17 +25,8 @@ pub enum CompletionTextEditMode {
     Replace,
 }
 
-fn parse_lsp_position(value: &Value) -> Option<LspPosition> {
-    Some(LspPosition {
-        line: value.get("line")?.as_u64()? as u32,
-        character: value.get("character")?.as_u64()? as u32,
-    })
-}
-
 fn parse_lsp_range(value: &Value) -> Option<LspRange> {
-    let start = parse_lsp_position(value.get("start")?)?;
-    let end = parse_lsp_position(value.get("end")?)?;
-    Some(LspRange::new(start, end))
+    LspRange::from_value(value)
 }
 
 fn completion_item_insert_text_is_snippet(item: &Value) -> bool {

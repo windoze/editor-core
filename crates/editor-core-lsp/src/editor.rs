@@ -278,7 +278,10 @@ fn encode_semantic_style_id_from_server_legend(
         return encode_semantic_style_id(token_type, token_modifiers);
     };
 
-    let token_type_name = match legend.token_types.get(token_type as usize) {
+    let Some(token_type_idx) = usize::try_from(token_type).ok() else {
+        return encode_semantic_style_id(token_type, token_modifiers);
+    };
+    let token_type_name = match legend.token_types.get(token_type_idx) {
         Some(s) => s.as_str(),
         None => return encode_semantic_style_id(token_type, token_modifiers),
     };
@@ -292,7 +295,10 @@ fn encode_semantic_style_id_from_server_legend(
         if (token_modifiers & mask) == 0 {
             continue;
         }
-        let Some(name) = legend.token_modifiers.get(bit as usize) else {
+        let Some(bit_idx) = usize::try_from(bit).ok() else {
+            continue;
+        };
+        let Some(name) = legend.token_modifiers.get(bit_idx) else {
             continue;
         };
         canonical_modifier_bits |= canonical_semantic_token_modifier_bit(name.as_str());
@@ -1823,7 +1829,7 @@ impl LspSession {
             let mut data = Vec::with_capacity(data_arr.len());
             for v in data_arr {
                 if let Some(n) = v.as_u64() {
-                    data.push(n as u32);
+                    data.push(u32::try_from(n).unwrap_or(u32::MAX));
                 }
             }
 
@@ -1881,14 +1887,26 @@ impl LspSession {
                 .map(|arr| {
                     arr.iter()
                         .filter_map(Value::as_u64)
-                        .map(|n| n as u32)
+                        .map(|n| u32::try_from(n).unwrap_or(u32::MAX))
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
 
             parsed.push(DeltaEdit {
-                start: start as usize,
-                delete_count: delete_count as usize,
+                start: match usize::try_from(start) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        self.clear_semantic_tokens_cache();
+                        return;
+                    }
+                },
+                delete_count: match usize::try_from(delete_count) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        self.clear_semantic_tokens_cache();
+                        return;
+                    }
+                },
                 data,
             });
         }
@@ -2142,8 +2160,7 @@ fn parse_supports_folding_range(capabilities: &Value) -> bool {
 fn lsp_position_for_offset(line_index: &LineIndex, offset: usize) -> LspPosition {
     let (line, col) = line_index.char_offset_to_position(offset);
     let line_text = line_index.get_line_text(line).unwrap_or_default();
-    let utf16 = LspCoordinateConverter::char_offset_to_utf16(&line_text, col) as u32;
-    LspPosition::new(line as u32, utf16)
+    LspCoordinateConverter::position_to_lsp(&line_text, line, col)
 }
 
 fn lsp_range_to_json(range: &LspRange) -> Value {
@@ -2168,11 +2185,18 @@ fn folding_regions_from_lsp_value(value: &Value) -> Vec<FoldRegion> {
         let Some(end) = range.get("endLine").and_then(Value::as_u64) else {
             continue;
         };
-        if start as usize >= end as usize {
+        let Some(start) = usize::try_from(start).ok() else {
+            continue;
+        };
+        let Some(end) = usize::try_from(end).ok() else {
+            continue;
+        };
+
+        if start >= end {
             continue;
         }
 
-        let mut region = FoldRegion::new(start as usize, end as usize);
+        let mut region = FoldRegion::new(start, end);
         if let Some(kind) = range.get("kind").and_then(Value::as_str) {
             region.placeholder = match kind {
                 "comment" => "/*...*/".to_string(),
@@ -2206,11 +2230,7 @@ fn diagnostic_style_id(severity: Option<crate::lsp_events::LspDiagnosticSeverity
 }
 
 fn char_offset_for_lsp_position(line_index: &LineIndex, pos: LspPosition) -> usize {
-    let line = pos.line as usize;
-    let line_text = line_index.get_line_text(line).unwrap_or_default();
-    let char_in_line =
-        LspCoordinateConverter::utf16_to_char_offset(&line_text, pos.character as usize);
-    line_index.position_to_char_offset(line, char_in_line)
+    LspCoordinateConverter::lsp_position_to_char_offset(line_index, pos)
 }
 
 fn diagnostics_to_style_edit(
