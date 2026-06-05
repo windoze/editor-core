@@ -129,3 +129,21 @@ This file records an operational plan and progress updates for the current invoc
 - No fixture runner was found at `tools/run_fixtures.py` or `tools/**/*fixture*`.
 - Marked T19FF as `[DONE]` in `TODO.md` with completion details.
 - Committed T19FF changes as `2f04c9e [T19FF] Fix DeltaCalculator line clamp`.
+
+## T19FFR Review Invocation Plan
+
+1. Read `TODO.md` and select the first heading without `[DONE]`.
+2. Check the latest commit for unfinished work directly relevant to the selected task.
+3. Review the T19FF diff against the T19FFR checklist: out-of-bounds line clamp to document end, legal range / huge character / reversed range behavior, workspace edit synchronization consistency, half-surrogate policy preservation, and regression coverage.
+4. Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, and `cargo test -p editor-core-lsp`.
+5. If findings require follow-up, add the minimum task(s) before the dependent next task in `TODO.md`; otherwise mark T19FFR `[DONE]` directly.
+6. Commit the review bookkeeping and stop.
+
+## T19FFR Progress Updates
+
+- Read `TODO.md`; the first incomplete task is `T19FFR Review：审查 DeltaCalculator 越界 line clamp 修复`.
+- Latest commits are `[T19FF] Fix DeltaCalculator line clamp` and `[T19FF] Record execution completion`; neither introduced a separate unfinished issue beyond this review task.
+- Reviewed the T19FF scoped diff in `crates/editor-core-lsp/src/lsp_sync.rs` and `crates/editor-core-lsp/tests/utf16_boundaries.rs`.
+- No blocking review finding was found: `DeltaCalculator::apply_change` maps any line beyond the calculator document to document end before range normalization, legal lines still use `LspCoordinateConverter::lsp_to_char_offset`, half-surrogate offsets still clamp to the scalar start, and workspace edit didChange ranges are regenerated from legal char offsets.
+- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, and `cargo test -p editor-core-lsp`.
+- Marked T19FFR as `[DONE]` in `TODO.md` with completion details.

@@ -1976,9 +1976,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test utf16_boundaries`、`cargo test -p editor-core-lsp`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，无可运行的完整 fixture runner。
 
-### T19FFR Review：审查 DeltaCalculator 越界 line clamp 修复
+### [DONE] T19FFR Review：审查 DeltaCalculator 越界 line clamp 修复
 
-状态：TODO
+状态：DONE
 
 审查范围：T19FF 的所有 diff。
 
@@ -1995,6 +1995,12 @@
 - `cargo test -p editor-core-lsp --test utf16_boundaries`
 - `cargo test -p editor-core-lsp`
 - `cargo clippy --all-targets -- -D warnings`
+
+完成记录：
+
+- 已审查 T19FF diff，重点检查 `DeltaCalculator::apply_change` 的越界 line 映射、合法 range/超大 character/反向 range normalize、半代理对 UTF-16 边界策略，以及 workspace edit 应用与 didChange 同步路径。
+- 未发现需要立即修复或新增前置任务的问题；任意越界 line 会直接 clamp 到 calculator 文档末尾，合法 line 仍复用 `LspCoordinateConverter::lsp_to_char_offset`，半代理对中点继续 clamp 到 Unicode scalar 起点，workspace edit 路径使用已合法化的 char range 重新生成 LSP range。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test utf16_boundaries`、`cargo test -p editor-core-lsp`。
 
 ### T20 实现：文档清理和实现一致性修正
 
