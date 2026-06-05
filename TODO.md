@@ -1815,9 +1815,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test utf16_boundaries`、`cargo test -p editor-core-lsp --test diagnostics_processing_edits`、`cargo test -p editor-core-lsp`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
-### T19R Review：审查 LSP UTF-16 边界修正
+### [DONE] T19R Review：审查 LSP UTF-16 边界修正
 
-状态：TODO
+状态：DONE
 
 审查范围：T19 的所有 diff。
 
@@ -1834,6 +1834,82 @@
 - `cargo test -p editor-core-lsp --test utf16_boundaries`
 - `cargo test -p editor-core-lsp --test diagnostics_processing_edits`
 - `cargo test -p editor-core-lsp`
+
+完成记录：
+
+- 已审查 T19 diff，重点检查 `LspCoordinateConverter::utf16_to_char_offset` 半代理对策略、`LspPosition::from_value` / `LspRange::from_value` 饱和解析、diagnostics / semantic tokens 区间转换，以及各 LSP 坐标解析入口改用统一策略的情况。
+- 未发现 diagnostics 和 semantic tokens 半代理对策略不一致的问题；`a👋b` 中 UTF-16 offset 0/1/2/3/4、半代理对 diagnostics range、超大 character clamp 和 semantic token 边界均有 `utf16_boundaries` 覆盖。
+- 发现 T19 后续修复项：server-provided workspace edit 的原始 LSP range 会同步到 `DeltaCalculator::apply_change`，超大 line 仍可能导致内部行数组巨量扩容；`lsp_signature_help.rs` 仍有 LSP UTF-16 offset/index 的 unchecked `as u32` / `as usize` 转换风险。
+- 已在 T20 前新增 `T19F` / `T19FR`，要求先收口上述 LSP 边界解析和 calculator 同步问题。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test utf16_boundaries`、`cargo test -p editor-core-lsp --test diagnostics_processing_edits`、`cargo test -p editor-core-lsp`。
+
+### T19F 修复：收口 LSP workspace edit 与 signatureHelp 边界解析
+
+状态：TODO
+
+依赖：
+
+- T19R 审查发现的 workspace edit calculator 同步边界风险和 `signatureHelp` LSP offset/index unchecked 转换风险。
+
+范围文件：
+
+- `crates/editor-core-lsp/src/lsp_sync.rs`
+- `crates/editor-core-lsp/src/workspace_sync.rs`
+- `crates/editor-core-lsp/src/lsp_signature_help.rs`
+- `crates/editor-core-lsp/tests/utf16_boundaries.rs`，或按现有布局补充 `workspace_sync` / `signature_help` 单元测试
+
+已知入口：
+
+- `DeltaCalculator::apply_change`
+- `workspace_sync::apply_workspace_edit`
+- `workspace_sync::lsp_changes_for_text_edits`
+- `LspTextEdit::from_value`
+- `lsp_signature_help::parameter_label_from_value`
+- `lsp_signature_help::signature_help_from_value`
+- `LspSignatureHelp::to_compact_string`
+
+实现要求：
+
+1. `DeltaCalculator::apply_change` 不得按 untrusted LSP line 直接 `resize(start_line + 1)` / `resize(end_line + 1)`；对越界 line 必须明确 clamp 到当前 calculator 文档末尾，或改为 fallible API 并让调用方丢弃/拒绝非法 change。
+2. `workspace_sync` 在把 server-provided `WorkspaceEdit` 同步回 incremental calculator 时，不得继续使用未归一化的原始 LSP range 触发 calculator 扩容；应复用已 clamp 到当前 `LineIndex` 的坐标，或先将已应用的 char range 转回合法 LSP range。
+3. 保持 workspace edit 的实际文本应用语义不变：超大 line/character 只能按当前统一策略 clamp，不得引入 fixture-only 特例或跳过合法 edit。
+4. `lsp_signature_help.rs` 中 UTF-16 offset 和 active index 解析不得用 unchecked `as u32` / `as usize`；超大值应饱和、丢弃或通过 checked lookup 安全处理，并在测试中固定策略。
+5. 不改变 T19 已固定的半代理对策略：UTF-16 offset 落在 surrogate pair 中间时 clamp 到该 Unicode scalar 起点。
+
+测试要求：
+
+1. 覆盖 server-provided workspace edit 含超大 line/character 时，不 panic、不巨量扩容，workspace 文本与 incremental calculator 同步结果保持一致。
+2. 覆盖合法 workspace edit 仍生成与原行为一致的 didChange range/text。
+3. 覆盖 `signatureHelp` 的超大 parameter label offset、`activeSignature`、`activeParameter` 解析不会 wrap，并且 `to_compact_string` 不会因超大 index 访问错误签名。
+4. 运行 `cargo test -p editor-core-lsp --test utf16_boundaries`，若将回归放入该测试文件。
+5. 运行 `cargo test -p editor-core-lsp`。
+6. 运行 `cargo clippy --all-targets -- -D warnings`。
+
+验收标准：
+
+- LSP 边界值不能通过 workspace edit calculator 同步路径造成 OOM、panic 或状态错位。
+- `signatureHelp` 的 LSP offset/index 边界解析没有 unchecked truncation 风险。
+- T19 diagnostics / semantic tokens 半代理对策略保持不变。
+
+### T19FR Review：审查 LSP workspace edit 与 signatureHelp 边界修复
+
+状态：TODO
+
+审查范围：T19F 的所有 diff。
+
+审查重点：
+
+1. `DeltaCalculator::apply_change` 是否不再按 untrusted line 巨量扩容，且越界策略清晰。
+2. `workspace_sync` 是否使用已 clamp/合法化的坐标同步 calculator，实际 workspace edit 应用语义是否保持。
+3. `signatureHelp` 的 UTF-16 offset/index 是否不再 unchecked 截断或错误索引。
+4. 是否保持 T19 半代理对策略，未引入新的 workaround 或 fixture-only 特例。
+5. 回归测试是否覆盖超大 workspace edit range、合法 workspace edit、signatureHelp 超大值三类边界。
+
+建议命令：
+
+- `cargo test -p editor-core-lsp --test utf16_boundaries`，若 T19F 修改该测试文件
+- `cargo test -p editor-core-lsp`
+- `cargo clippy --all-targets -- -D warnings`
 
 ### T20 实现：文档清理和实现一致性修正
 

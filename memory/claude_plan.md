@@ -37,3 +37,22 @@ This file records an operational plan and progress updates for the current invoc
 - Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, `cargo test -p editor-core-lsp --test diagnostics_processing_edits`, `cargo test -p editor-core-lsp`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test --all --all-targets`.
 - No fixture runner was found at `tools/run_fixtures.py` or `tools/**/*fixture*`.
 - Marked T19 as `[DONE]` in `TODO.md` with completion details. Next step is git inspection and commit.
+
+## T19R Review Invocation Plan
+
+1. Read `TODO.md` and select the first heading without `[DONE]`.
+2. Check the latest commit for unfinished work directly relevant to the selected task.
+3. Review the T19 diff against the T19R checklist: surrogate-pair policy consistency, unified LSP coordinate conversion, unchecked truncation risks, emoji offset correctness, and diagnostics / semantic token coverage.
+4. Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, `cargo test -p editor-core-lsp --test diagnostics_processing_edits`, and `cargo test -p editor-core-lsp`.
+5. If findings require follow-up, add the minimum task(s) before the dependent next task in `TODO.md`; otherwise mark T19R `[DONE]` directly.
+6. Commit the review bookkeeping and stop.
+
+## T19R Progress Updates
+
+- Read `TODO.md`; the first incomplete task is `T19R Review：审查 LSP UTF-16 边界修正`.
+- Latest commit is `[T19] Fix LSP UTF-16 boundary handling`, directly relevant to T19R.
+- Reviewed `LspCoordinateConverter`, diagnostics conversion, semantic token conversion, LSP range/position parsing helpers, workspace sync, signature help parsing, and `utf16_boundaries` tests.
+- Found follow-up issues: `DeltaCalculator::apply_change` can still resize from untrusted LSP line values when syncing server-provided workspace edits back into the incremental calculator, and `lsp_signature_help.rs` still has unchecked `as u32` / `as usize` boundary conversions.
+- Added `T19F` and `T19FR` before `T20` in `TODO.md` to schedule those fixes before continuing.
+- Marked `T19R` as `[DONE]` and recorded the review findings and validation results in `TODO.md`.
+- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, `cargo test -p editor-core-lsp --test diagnostics_processing_edits`, and `cargo test -p editor-core-lsp`.
