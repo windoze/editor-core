@@ -648,9 +648,9 @@
 - `EditorCore::get_text` / `char_count` / `text_range` 统一走 `LineIndex` / `TextBuffer`；undo/redo 和文本 delta 计数通过 `EditorCore::char_count` 获取，删除/插入文本记录继续来自 char-offset range API。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core`。
 
-### T08 实现：视觉行映射索引增量化
+### [DONE] T08 实现：视觉行映射索引增量化
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -696,6 +696,16 @@
 
 - 普通编辑和光标移动不触发全量 visual row 重建。
 - 大文件尾部坐标转换不再是 O(total lines)。
+
+完成记录：
+
+- 新增 `crates/editor-core/src/visual_rows.rs`，将 `VisualRowIndex` / `VisualRowSpan` 从 `commands.rs` 移出，并改为每个 logical line 的 visible visual-count + Fenwick tree 前缀和索引。
+- `EditorCore::visual_line_count`、`visual_to_logical_line`、`logical_position_to_visual`、`visual_position_to_logical` 和 viewport/minimap 路径统一走新索引；`LayoutEngine` / `FoldingManager` 的线性转换不再参与这些核心热路径。
+- 删除编辑/折叠命令开始时的无条件 visual-row cache 失效；单行文本编辑会按受影响 logical line 更新 wrap count，多行结构变化会同步插入/删除索引项并刷新局部范围，折叠/展开会刷新对应折叠区间。
+- 修正 `FoldingManager::apply_line_delta` 后立即重建 merged fold view，保证编辑期间增量 visual-row 索引读取到平移后的折叠状态。
+- 新增 `crates/editor-core/tests/visual_row_index.rs`，覆盖缓存已构建后的 fold/unfold 同步、折叠 + soft wrap + CJK/emoji 的 logical/visual 往返，以及 10 万行文档尾部 visual 查询在连续单行编辑后的性能回归。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
 ### T08R Review：审查视觉行索引增量化
 

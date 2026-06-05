@@ -1,29 +1,26 @@
 # 当前执行计划
 
-## 范围
+本文件记录本次调用的可执行计划、关键进展和验证结果。计划内容只包含可审计的决策依据和步骤，不包含隐藏推理链。
 
-- 仅处理 `TODO.md` 中第一个标题未带 `[DONE]` 的任务。
-- `TODO.md` 是任务顺序、依赖、验证要求和完成记录的唯一依据。
-- 本次选中的任务是 `T07R Review：审查 PieceTable 废弃迁移`；这是 review 任务，不主动重构，只有发现明确 bug、测试缺口或质量问题才修改代码或新增后续任务。
-- 完成该任务后更新 `TODO.md`、提交并停止，不进入 `T08`。
+## 初始计划
 
-## 步骤
+1. 读取 `TODO.md`，按文件顺序找到第一个标题未以 `[DONE]` 标记的任务。
+2. 检查最新提交信息是否明确提到与该任务直接相关的未完成问题；若存在，将其纳入当前任务或按要求补入 `TODO.md`。
+3. 阅读当前任务涉及的代码、测试和文档，确认任务要求、依赖和验证条件。
+4. 若任务可直接完成，实施最小正确修改；若发现必须先修复的具体阻塞项，则将最小前置任务写入 `TODO.md` 并停止。
+5. 针对修改运行格式化、lint 和相关测试；若发现未计划的失败测试或 fixture，修复或按策略补入任务。
+6. 完成后将当前任务标题加上 `[DONE]`，更新 completion record；仅在阶段计划改变时更新 `PLAN.md`。
+7. 检查 git 状态与 diff，提交本次任务涉及的全部变更，然后停止，不继续下一个任务。
 
-1. 阅读 `TODO.md`，确认第一个未完成任务。
-2. 检查最新提交，确认是否有与当前任务直接相关的未完成事项。
-3. 定向审查 T07 diff 和当前代码中的 `PieceTable` / `piece_table` 使用点。
-4. 核对 review 清单：主路径是否仍调用 `piece_table` 读写、兼容 API 是否标注、undo/redo 文本是否准确、`TextDelta` 字符数是否正确、release 主路径是否减少完整文本副本。
-5. 按顺序运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core`。
-6. 若出现未计划失败，先修复或在 `TODO.md` 加入最小必要前置/后续任务，不把 T07R 标记完成。
-7. 若审查和验证通过，给 T07R 标题加 `[DONE]` 并填写完成记录。
-8. 检查 diff/status/log，只提交本次任务相关文件，提交后停止。
+## 进展记录
 
-## 进度记录
-
-- 已初始化本次可公开执行计划。
-- 已确认第一个未完成任务为 `T07R Review：审查 PieceTable 废弃迁移`。
-- 最新提交为 `a6bbf6b [T07] Move PieceTable off main edit path`，未见与 T07R 直接相关的未完成事项。
-- 已审查 T07 提交摘要和定向 `piece_table` 使用点；当前代码中 `PieceTable` 只出现在 deprecated 兼容模块、测试、deprecated root re-export 和 debug-only `piece_table_shadow`，未发现主编辑路径 `piece_table.insert/delete/get_text/get_range` 调用。
-- 审查结论：未发现阻塞问题。deprecated `PieceTable` root re-export 已明确标注，`storage.rs` 说明为兼容层，undo/redo 与 `TextDelta` 计数读取 `EditorCore::char_count`，debug-only shadow 不进入 release 主路径。
-- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core`。
-- 已更新 `TODO.md`，将 T07R 标记为 `[DONE]` 并填写完成记录。
+- 已创建本次执行计划，下一步读取 `TODO.md` 识别第一个未完成任务。
+- 已识别第一个未完成任务为 `T08 实现：视觉行映射索引增量化`。最新提交为 `[T07R] Review PieceTable migration`，未明确提到与 T08 直接相关的未完成问题。
+- 当前执行将限制在 T08 范围内：先检查工作区状态，再阅读视觉行索引、布局和折叠相关入口，随后实现增量索引并补测试。
+- 已阅读 T08 范围入口。当前 `VisualRowIndex` 位于 `commands.rs`，缓存会在编辑/折叠命令开始时直接失效，下一次 visual 查询会按全量 logical lines 重建。
+- 修订实施步骤：新增 `visual_rows.rs`，用每行 visible visual-count + Fenwick tree 支持 `visual->logical` 和 `logical->visual`；编辑路径在 layout 更新后同步受影响行，折叠命令同步对应折叠区间；保留 view option/derived folding wholesale replacement 的全量失效。
+- 已完成核心改动草稿：新增 `visual_rows.rs`，`commands.rs` 改用 Fenwick-backed `VisualRowIndex`；删除编辑/折叠命令开始时的无条件缓存失效；编辑路径会按文本变更同步索引结构和受影响行，折叠命令会同步对应折叠区间；新增 `visual_row_index` 集成测试草稿。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core`。
+- 已运行并通过：`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 已确认不存在 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
+- 下一步更新 `TODO.md` 的 T08 标题、状态和完成记录，然后检查 diff 并提交。

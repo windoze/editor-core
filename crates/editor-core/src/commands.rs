@@ -50,6 +50,7 @@ use crate::snapshot::{
 use crate::snippets::{SnippetNavigation, SnippetSession, parse_snippet};
 #[cfg(debug_assertions)]
 use crate::storage::PieceTable;
+use crate::visual_rows::VisualRowIndex;
 use crate::{FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex};
 use editor_core_lang::{CommentConfig, IndentStyle, IndentationConfig};
 use regex::RegexBuilder;
@@ -1625,46 +1626,6 @@ impl UndoRedoManager {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct VisualRowSpan {
-    logical_line: usize,
-    start_visual_row: usize,
-    visual_line_count: usize,
-}
-
-#[derive(Debug, Clone, Default)]
-struct VisualRowIndex {
-    spans: Vec<VisualRowSpan>,
-    total_visual_lines: usize,
-}
-
-impl VisualRowIndex {
-    fn total_visual_lines(&self) -> usize {
-        self.total_visual_lines
-    }
-
-    fn span_index_for_visual_row(&self, visual_row: usize) -> Option<usize> {
-        let idx = self
-            .spans
-            .partition_point(|span| span.start_visual_row + span.visual_line_count <= visual_row);
-        (idx < self.spans.len()).then_some(idx)
-    }
-
-    fn span_for_visual_row(&self, visual_row: usize) -> Option<(VisualRowSpan, usize)> {
-        let idx = self.span_index_for_visual_row(visual_row)?;
-        let span = self.spans[idx];
-        Some((span, visual_row.saturating_sub(span.start_visual_row)))
-    }
-
-    fn span_for_logical_line(&self, logical_line: usize) -> Option<VisualRowSpan> {
-        let idx = self
-            .spans
-            .binary_search_by_key(&logical_line, |span| span.logical_line)
-            .ok()?;
-        Some(self.spans[idx])
-    }
-}
-
 /// Editor Core state
 ///
 /// `EditorCore` aggregates all underlying editor components, including:
@@ -1822,6 +1783,92 @@ impl EditorCore {
         *self.visual_row_index_cache.borrow_mut() = None;
     }
 
+    fn visual_row_count_for_logical_line(&self, logical_line: usize) -> usize {
+        if logical_line >= self.layout_engine.logical_line_count() {
+            return 0;
+        }
+        if Self::is_logical_line_hidden(self.folding_manager.regions(), logical_line) {
+            return 0;
+        }
+
+        self.layout_engine
+            .get_line_layout(logical_line)
+            .map(|layout| layout.visual_line_count)
+            .unwrap_or(1)
+            .max(1)
+    }
+
+    fn sync_visual_row_index_for_logical_range(&mut self, start_line: usize, end_line: usize) {
+        if self.visual_row_index_cache.borrow().is_none() {
+            return;
+        }
+
+        let line_count = self.layout_engine.logical_line_count();
+        if line_count == 0 || start_line >= line_count {
+            return;
+        }
+
+        let end_line = end_line.min(line_count.saturating_sub(1));
+        let counts = (start_line..=end_line)
+            .map(|line| (line, self.visual_row_count_for_logical_line(line)))
+            .collect::<Vec<_>>();
+
+        let mut cache = self.visual_row_index_cache.borrow_mut();
+        let Some(index) = cache.as_mut() else {
+            return;
+        };
+
+        if index.logical_line_count() != line_count {
+            *cache = None;
+            return;
+        }
+
+        for (line, count) in counts {
+            if !index.set_line_visual_count(line, count) {
+                *cache = None;
+                return;
+            }
+        }
+    }
+
+    fn sync_visual_row_index_after_text_change(
+        &mut self,
+        start_line: usize,
+        deleted_newlines: usize,
+        inserted_newlines: usize,
+    ) {
+        if self.visual_row_index_cache.borrow().is_none() {
+            return;
+        }
+
+        let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+        if line_delta != 0 {
+            let mut cache = self.visual_row_index_cache.borrow_mut();
+            let Some(index) = cache.as_mut() else {
+                return;
+            };
+
+            if line_delta > 0 {
+                for i in 0..(line_delta as usize) {
+                    index.insert_line(start_line.saturating_add(1).saturating_add(i), 0);
+                }
+            } else {
+                for _ in 0..((-line_delta) as usize) {
+                    if !index.remove_line(start_line.saturating_add(1)) {
+                        *cache = None;
+                        return;
+                    }
+                }
+            }
+        }
+
+        let touch_lines = deleted_newlines.max(inserted_newlines).saturating_add(1);
+        self.sync_visual_row_index_for_logical_range(
+            start_line,
+            start_line.saturating_add(touch_lines),
+        );
+    }
+
     /// Reflow every logical line from the canonical line index after layout options change.
     pub(crate) fn reflow_layout_from_line_index(&mut self) {
         let lines: Vec<String> = (0..self.line_index.line_count())
@@ -1845,34 +1892,10 @@ impl EditorCore {
     }
 
     fn build_visual_row_index(&self) -> VisualRowIndex {
-        let regions = self.folding_manager.regions();
-        let mut spans = Vec::new();
-        let mut total_visual = 0usize;
-
-        for logical_line in 0..self.layout_engine.logical_line_count() {
-            if Self::is_logical_line_hidden(regions, logical_line) {
-                continue;
-            }
-
-            let visual_line_count = self
-                .layout_engine
-                .get_line_layout(logical_line)
-                .map(|l| l.visual_line_count)
-                .unwrap_or(1)
-                .max(1);
-
-            spans.push(VisualRowSpan {
-                logical_line,
-                start_visual_row: total_visual,
-                visual_line_count,
-            });
-            total_visual = total_visual.saturating_add(visual_line_count);
-        }
-
-        VisualRowIndex {
-            spans,
-            total_visual_lines: total_visual,
-        }
+        let counts = (0..self.layout_engine.logical_line_count())
+            .map(|logical_line| self.visual_row_count_for_logical_line(logical_line))
+            .collect();
+        VisualRowIndex::from_line_visual_counts(counts)
     }
 
     /// Get styled headless grid snapshot (by visual line).
@@ -1898,21 +1921,22 @@ impl EditorCore {
             let end_visual = start_visual_row.saturating_add(count).min(total_visual);
             let regions = self.folding_manager.regions();
 
-            let Some(mut span_idx) = index.span_index_for_visual_row(start_visual_row) else {
+            let Some((mut span, mut visual_in_line)) = index.span_for_visual_row(start_visual_row)
+            else {
                 return grid;
             };
             let mut current_visual = start_visual_row;
-            let mut visual_in_line =
-                start_visual_row.saturating_sub(index.spans[span_idx].start_visual_row);
 
-            while current_visual < end_visual && span_idx < index.spans.len() {
-                let span = index.spans[span_idx];
+            while current_visual < end_visual {
                 let logical_line = span.logical_line;
 
                 let Some(layout) = self.layout_engine.get_line_layout(logical_line) else {
                     let remaining_in_span = span.visual_line_count.saturating_sub(visual_in_line);
                     current_visual = current_visual.saturating_add(remaining_in_span);
-                    span_idx = span_idx.saturating_add(1);
+                    let Some(next_span) = index.next_span_after_logical_line(logical_line) else {
+                        break;
+                    };
+                    span = next_span;
                     visual_in_line = 0;
                     continue;
                 };
@@ -2025,7 +2049,10 @@ impl EditorCore {
                 current_visual = current_visual.saturating_add(1);
                 visual_in_line = visual_in_line.saturating_add(1);
                 if visual_in_line >= span.visual_line_count {
-                    span_idx = span_idx.saturating_add(1);
+                    let Some(next_span) = index.next_span_after_logical_line(logical_line) else {
+                        break;
+                    };
+                    span = next_span;
                     visual_in_line = 0;
                 }
             }
@@ -2054,21 +2081,22 @@ impl EditorCore {
             let end_visual = start_visual_row.saturating_add(count).min(total_visual);
             let regions = self.folding_manager.regions();
 
-            let Some(mut span_idx) = index.span_index_for_visual_row(start_visual_row) else {
+            let Some((mut span, mut visual_in_line)) = index.span_for_visual_row(start_visual_row)
+            else {
                 return grid;
             };
             let mut current_visual = start_visual_row;
-            let mut visual_in_line =
-                start_visual_row.saturating_sub(index.spans[span_idx].start_visual_row);
 
-            while current_visual < end_visual && span_idx < index.spans.len() {
-                let span = index.spans[span_idx];
+            while current_visual < end_visual {
                 let logical_line = span.logical_line;
 
                 let Some(layout) = self.layout_engine.get_line_layout(logical_line) else {
                     let remaining_in_span = span.visual_line_count.saturating_sub(visual_in_line);
                     current_visual = current_visual.saturating_add(remaining_in_span);
-                    span_idx = span_idx.saturating_add(1);
+                    let Some(next_span) = index.next_span_after_logical_line(logical_line) else {
+                        break;
+                    };
+                    span = next_span;
                     visual_in_line = 0;
                     continue;
                 };
@@ -2193,7 +2221,10 @@ impl EditorCore {
                 current_visual = current_visual.saturating_add(1);
                 visual_in_line = visual_in_line.saturating_add(1);
                 if visual_in_line >= span.visual_line_count {
-                    span_idx = span_idx.saturating_add(1);
+                    let Some(next_span) = index.next_span_after_logical_line(logical_line) else {
+                        break;
+                    };
+                    span = next_span;
                     visual_in_line = 0;
                 }
             }
@@ -2980,25 +3011,6 @@ impl CommandExecutor {
 
         let skip_snippet_delta =
             matches!(&command, Command::Edit(EditCommand::ApplySnippet { .. }));
-
-        let affects_visual_rows = matches!(
-            &command,
-            Command::Edit(_)
-                | Command::View(
-                    ViewCommand::SetViewportWidth { .. }
-                        | ViewCommand::SetWrapMode { .. }
-                        | ViewCommand::SetWrapIndent { .. }
-                        | ViewCommand::SetTabWidth { .. }
-                )
-                | Command::Style(
-                    StyleCommand::Fold { .. }
-                        | StyleCommand::Unfold { .. }
-                        | StyleCommand::UnfoldAll
-                )
-        );
-        if affects_visual_rows {
-            self.editor.invalidate_visual_row_index_cache();
-        }
 
         // Undo grouping:
         //
@@ -7655,15 +7667,16 @@ impl CommandExecutor {
         let affected_line = self.editor.line_index.char_offset_to_position(offset).0;
         let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
 
-        // Execute insertion
+        if inserted_newlines > 0 {
+            self.editor
+                .folding_manager
+                .apply_line_delta(affected_line, inserted_newlines as isize);
+        }
 
         // Update line index + layout engine incrementally.
         self.apply_text_change_to_line_index_and_layout(offset, "", &text);
 
         if inserted_newlines > 0 {
-            self.editor
-                .folding_manager
-                .apply_line_delta(affected_line, inserted_newlines as isize);
             self.editor
                 .folding_manager
                 .clamp_to_line_count(self.editor.line_index.line_count());
@@ -7745,15 +7758,16 @@ impl CommandExecutor {
             .count();
         let affected_line = self.editor.line_index.char_offset_to_position(start).0;
 
-        // Execute deletion
+        if deleted_newlines > 0 {
+            self.editor
+                .folding_manager
+                .apply_line_delta(affected_line, -(deleted_newlines as isize));
+        }
 
         // Update line index + layout engine incrementally.
         self.apply_text_change_to_line_index_and_layout(start, &delta_deleted_text, "");
 
         if deleted_newlines > 0 {
-            self.editor
-                .folding_manager
-                .apply_line_delta(affected_line, -(deleted_newlines as isize));
             self.editor
                 .folding_manager
                 .clamp_to_line_count(self.editor.line_index.line_count());
@@ -7863,13 +7877,16 @@ impl CommandExecutor {
             }
         }
 
-        // Update line index + layout engine incrementally.
-        self.apply_text_change_to_line_index_and_layout(start, &deleted_text, &text);
-
         if line_delta != 0 {
             self.editor
                 .folding_manager
                 .apply_line_delta(affected_line, line_delta);
+        }
+
+        // Update line index + layout engine incrementally.
+        self.apply_text_change_to_line_index_and_layout(start, &deleted_text, &text);
+
+        if line_delta != 0 {
             self.editor
                 .folding_manager
                 .clamp_to_line_count(self.editor.line_index.line_count());
@@ -9728,14 +9745,40 @@ impl CommandExecutor {
                 let mut region = crate::intervals::FoldRegion::new(start_line, end_line);
                 region.collapse();
                 self.editor.folding_manager.add_region(region);
+                self.editor
+                    .sync_visual_row_index_for_logical_range(start_line, end_line);
                 Ok(CommandResult::Success)
             }
             StyleCommand::Unfold { start_line } => {
+                let affected = self
+                    .editor
+                    .folding_manager
+                    .innermost_region_bounds_for_line(start_line);
                 self.editor.folding_manager.expand_line(start_line);
+                if let Some((start, end)) = affected {
+                    self.editor
+                        .sync_visual_row_index_for_logical_range(start, end);
+                }
                 Ok(CommandResult::Success)
             }
             StyleCommand::UnfoldAll => {
+                let affected = self
+                    .editor
+                    .folding_manager
+                    .regions()
+                    .iter()
+                    .filter(|region| region.is_collapsed)
+                    .fold(None::<(usize, usize)>, |acc, region| match acc {
+                        Some((start, end)) => {
+                            Some((start.min(region.start_line), end.max(region.end_line)))
+                        }
+                        None => Some((region.start_line, region.end_line)),
+                    });
                 self.editor.folding_manager.expand_all();
+                if let Some((start, end)) = affected {
+                    self.editor
+                        .sync_visual_row_index_for_logical_range(start, end);
+                }
                 Ok(CommandResult::Success)
             }
             StyleCommand::UpdateBracketMatchHighlights => {
@@ -9831,6 +9874,12 @@ impl CommandExecutor {
                 .unwrap_or_default();
             self.editor.layout_engine.update_line(line, &line_text);
         }
+
+        self.editor.sync_visual_row_index_after_text_change(
+            start_line,
+            deleted_newlines,
+            inserted_newlines,
+        );
     }
 
     #[cfg(debug_assertions)]

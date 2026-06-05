@@ -583,6 +583,20 @@ impl FoldingManager {
         self.merged_regions.iter().find(|r| r.contains_line(line))
     }
 
+    pub(crate) fn innermost_region_bounds_for_line(&self, line: usize) -> Option<(usize, usize)> {
+        self.merged_regions
+            .iter()
+            .filter(|region| region.contains_line(line))
+            .min_by_key(|region| {
+                (
+                    region.end_line.saturating_sub(region.start_line),
+                    region.end_line,
+                    region.start_line,
+                )
+            })
+            .map(|region| (region.start_line, region.end_line))
+    }
+
     /// Get mutable reference to a fold region containing specified line (prefers user folds).
     pub fn get_region_for_line_mut(&mut self, line: usize) -> Option<&mut FoldRegion> {
         // Important: a line can be covered by multiple (nested) fold regions.
@@ -871,6 +885,7 @@ impl FoldingManager {
 
         apply(&mut self.derived_regions);
         apply(&mut self.user_regions);
+        self.rebuild_merged_regions();
     }
 
     /// Clamp fold regions to the given `line_count` after a text edit, dropping invalid regions.
