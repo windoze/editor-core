@@ -56,3 +56,24 @@ This file records an operational plan and progress updates for the current invoc
 - Added `T19F` and `T19FR` before `T20` in `TODO.md` to schedule those fixes before continuing.
 - Marked `T19R` as `[DONE]` and recorded the review findings and validation results in `TODO.md`.
 - Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, `cargo test -p editor-core-lsp --test diagnostics_processing_edits`, and `cargo test -p editor-core-lsp`.
+
+## T19F Invocation Plan
+
+1. Read `TODO.md` and select the first heading without `[DONE]`.
+2. Check the latest commit for unfinished work directly relevant to T19F.
+3. Inspect the listed files and existing tests: `lsp_sync.rs`, `workspace_sync.rs`, `lsp_signature_help.rs`, and `utf16_boundaries.rs`.
+4. Fix `DeltaCalculator::apply_change` so untrusted LSP line values cannot trigger large internal resizes; use the same clamp semantics as the current LSP coordinate policy.
+5. Ensure workspace edit synchronization feeds the incremental calculator with legal/clamped ranges matching the applied edit semantics.
+6. Replace unchecked `as u32` / `as usize` parsing in signature help with saturating or checked handling and safe lookups.
+7. Add focused regressions for oversized workspace edit ranges, unchanged legal workspace edit behavior, and oversized signatureHelp offsets/indexes.
+8. Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, and `cargo test -p editor-core-lsp`.
+9. Mark T19F `[DONE]` with completion notes, commit all related changes, then stop.
+
+## T19F Progress Updates
+
+- Read `TODO.md`; the first incomplete task is `T19F 修复：收口 LSP workspace edit 与 signatureHelp 边界解析`.
+- Latest commit is `[T19R] Review LSP UTF-16 boundary fix`; its relevant follow-up is already represented by `T19F`.
+- Inspected the task files and confirmed current risks: `DeltaCalculator::apply_change` resizes from untrusted LSP lines, workspace edit sync returns original server ranges to the calculator, and `signatureHelp` still truncates large values with `as` casts.
+- Implemented the T19F fixes and added regressions in `utf16_boundaries.rs`.
+- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, and `cargo test -p editor-core-lsp`.
+- Marked T19F as `[DONE]` in `TODO.md` with completion details. Next step is git inspection and commit.

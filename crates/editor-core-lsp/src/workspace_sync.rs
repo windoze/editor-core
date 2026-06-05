@@ -10,7 +10,7 @@
 
 use crate::editor::{LspContentChange, LspDocument, LspSession, LspSessionStartOptions};
 use crate::lsp_events::{LspEvent, LspNotification, LspServerRequestMode, LspServerRequestPolicy};
-use crate::lsp_sync::{DeltaCalculator, TextChange};
+use crate::lsp_sync::{DeltaCalculator, LspCoordinateConverter, LspPosition, LspRange, TextChange};
 use crate::lsp_text_edits::{LspTextEdit, char_offsets_for_lsp_range, workspace_edit_text_edits};
 use editor_core::{BufferId, LineIndex, TextDelta, TextEditSpec, Workspace};
 use serde_json::Value;
@@ -476,21 +476,34 @@ fn lsp_changes_for_text_edits(
     let mut resolved = edits
         .iter()
         .map(|edit| {
-            let (start, _) = char_offsets_for_lsp_range(line_index, &edit.range);
-            (start, edit)
+            let (start, end) = char_offsets_for_lsp_range(line_index, &edit.range);
+            (start, end, edit)
         })
         .collect::<Vec<_>>();
 
     // Match the application order of `apply_text_edits` (descending start offsets).
-    resolved.sort_by_key(|(start, _)| std::cmp::Reverse(*start));
+    resolved.sort_by_key(|(start, _, _)| std::cmp::Reverse(*start));
 
     resolved
         .into_iter()
-        .map(|(_, edit)| LspContentChange {
-            range: edit.range,
+        .map(|(start, end, edit)| LspContentChange {
+            range: lsp_range_for_char_offsets(line_index, start, end),
             text: edit.new_text.clone(),
         })
         .collect()
+}
+
+fn lsp_range_for_char_offsets(line_index: &LineIndex, start: usize, end: usize) -> LspRange {
+    fn position_for_offset(line_index: &LineIndex, offset: usize) -> LspPosition {
+        let (line, char_in_line) = line_index.char_offset_to_position(offset);
+        let line_text = line_index.get_line_text(line).unwrap_or_default();
+        LspCoordinateConverter::position_to_lsp(&line_text, line, char_in_line)
+    }
+
+    LspRange::new(
+        position_for_offset(line_index, start),
+        position_for_offset(line_index, end),
+    )
 }
 
 #[cfg(test)]

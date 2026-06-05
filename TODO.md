@@ -1843,9 +1843,9 @@
 - 已在 T20 前新增 `T19F` / `T19FR`，要求先收口上述 LSP 边界解析和 calculator 同步问题。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test utf16_boundaries`、`cargo test -p editor-core-lsp --test diagnostics_processing_edits`、`cargo test -p editor-core-lsp`。
 
-### T19F 修复：收口 LSP workspace edit 与 signatureHelp 边界解析
+### [DONE] T19F 修复：收口 LSP workspace edit 与 signatureHelp 边界解析
 
-状态：TODO
+状态：DONE
 
 依赖：
 
@@ -1890,6 +1890,14 @@
 - LSP 边界值不能通过 workspace edit calculator 同步路径造成 OOM、panic 或状态错位。
 - `signatureHelp` 的 LSP offset/index 边界解析没有 unchecked truncation 风险。
 - T19 diagnostics / semantic tokens 半代理对策略保持不变。
+
+完成记录：
+
+- 将 `DeltaCalculator::apply_change` 的 LSP range 应用改为先保证至少一行，再将 untrusted start/end line clamp 到当前 calculator 文档末尾，并对反向 range 做 normalize，避免按 server-provided line 直接扩容或 panic。
+- 将 `workspace_sync::lsp_changes_for_text_edits` 改为基于 `char_offsets_for_lsp_range` 已 clamp/normalized 的 char range 重新生成合法 `LspRange`，workspace edit 实际应用和 calculator 同步使用同一边界语义，合法 edit 的 didChange range/text 保持不变。
+- 将 `lsp_signature_help.rs` 中 parameter label offset、`activeSignature`、`activeParameter` 的解析改为 `u64` 到 `u32` 饱和转换；`to_compact_string` 使用 checked index lookup，超大 active index 不再 wrap 到错误签名。
+- 扩展 `utf16_boundaries.rs`，覆盖超大 workspace edit range 不 panic/不巨量扩容且 workspace 文本与 calculator 同步一致、合法 workspace edit 继续产生原 didChange range/text、signatureHelp 超大 offset/index 不 wrap。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test utf16_boundaries`、`cargo test -p editor-core-lsp`。
 
 ### T19FR Review：审查 LSP workspace edit 与 signatureHelp 边界修复
 

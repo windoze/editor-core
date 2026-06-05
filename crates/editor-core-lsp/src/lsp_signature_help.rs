@@ -5,6 +5,10 @@
 use super::lsp_hover::{LspMarkupContent, LspMarkupKind};
 use serde_json::Value;
 
+fn u64_to_u32_saturating(value: u64) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
+
 /// LSP `ParameterInformation.label`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LspParameterLabel {
@@ -78,7 +82,10 @@ fn parameter_label_from_value(v: &Value) -> Option<LspParameterLabel> {
         && arr.len() == 2
         && let (Some(a), Some(b)) = (arr[0].as_u64(), arr[1].as_u64())
     {
-        return Some(LspParameterLabel::Offsets(a as u32, b as u32));
+        return Some(LspParameterLabel::Offsets(
+            u64_to_u32_saturating(a),
+            u64_to_u32_saturating(b),
+        ));
     }
     None
 }
@@ -125,11 +132,11 @@ pub fn signature_help_from_value(value: &Value) -> Option<LspSignatureHelp> {
     let active_signature = value
         .get("activeSignature")
         .and_then(Value::as_u64)
-        .map(|x| x as u32);
+        .map(u64_to_u32_saturating);
     let active_parameter = value
         .get("activeParameter")
         .and_then(Value::as_u64)
-        .map(|x| x as u32);
+        .map(u64_to_u32_saturating);
     Some(LspSignatureHelp {
         signatures,
         active_signature,
@@ -143,7 +150,7 @@ impl LspSignatureHelp {
     /// This is intended for simple UIs (status bars, tooltips). Rich UIs should render the typed
     /// model directly.
     pub fn to_compact_string(&self) -> Option<String> {
-        let idx = self.active_signature.unwrap_or(0) as usize;
+        let idx = usize::try_from(self.active_signature.unwrap_or(0)).ok()?;
         let sig = self.signatures.get(idx)?;
         Some(sig.label.clone())
     }

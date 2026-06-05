@@ -258,30 +258,31 @@ impl DeltaCalculator {
                 .unwrap_or(text.len())
         }
 
-        let start_line = u32_to_usize_saturating(change.range.start.line);
-        let end_line = u32_to_usize_saturating(change.range.end.line);
-
         // Maintain consistency with editor semantics: at least 1 line.
         if self.lines.is_empty() {
             self.lines.push(String::new());
         }
 
-        if start_line >= self.lines.len() {
-            self.lines.resize(start_line + 1, String::new());
-        }
-        if end_line >= self.lines.len() {
-            self.lines.resize(end_line + 1, String::new());
+        let last_line = self.lines.len().saturating_sub(1);
+        let mut start_line = u32_to_usize_saturating(change.range.start.line).min(last_line);
+        let mut end_line = u32_to_usize_saturating(change.range.end.line).min(last_line);
+
+        let mut start_char = LspCoordinateConverter::lsp_to_char_offset(
+            &self.lines[start_line],
+            change.range.start.character,
+        );
+        let mut end_char = LspCoordinateConverter::lsp_to_char_offset(
+            &self.lines[end_line],
+            change.range.end.character,
+        );
+
+        if (end_line, end_char) < (start_line, start_char) {
+            std::mem::swap(&mut start_line, &mut end_line);
+            std::mem::swap(&mut start_char, &mut end_char);
         }
 
         let start_line_text = self.lines[start_line].clone();
         let end_line_text = self.lines[end_line].clone();
-
-        let start_char = LspCoordinateConverter::lsp_to_char_offset(
-            &start_line_text,
-            change.range.start.character,
-        );
-        let end_char =
-            LspCoordinateConverter::lsp_to_char_offset(&end_line_text, change.range.end.character);
 
         let start_byte = char_index_to_byte_offset(&start_line_text, start_char);
         let end_byte = char_index_to_byte_offset(&end_line_text, end_char);

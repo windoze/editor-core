@@ -1,9 +1,11 @@
 use editor_core::processing::ProcessingEdit;
-use editor_core::{LineIndex, StyleLayerId};
+use editor_core::{LineIndex, StyleLayerId, Workspace};
+use editor_core_lsp::workspace_sync::apply_workspace_edit_to_workspace;
 use editor_core_lsp::{
-    LspCoordinateConverter, LspDiagnostic, LspDiagnosticSeverity, LspNotification, LspPosition,
-    LspPublishDiagnosticsParams, LspRange, encode_semantic_style_id,
-    lsp_diagnostics_to_processing_edits, semantic_tokens_to_intervals,
+    DeltaCalculator, LspCoordinateConverter, LspDiagnostic, LspDiagnosticSeverity, LspNotification,
+    LspParameterLabel, LspPosition, LspPublishDiagnosticsParams, LspRange, TextChange,
+    encode_semantic_style_id, lsp_diagnostics_to_processing_edits, semantic_tokens_to_intervals,
+    signature_help_from_value,
 };
 use serde_json::json;
 
@@ -52,6 +54,13 @@ fn diagnostic_ranges(edits: &[ProcessingEdit]) -> (CharRanges, CharRanges) {
     }
 
     (style_ranges, diagnostic_ranges)
+}
+
+fn calc_text(calc: &DeltaCalculator) -> String {
+    (0..calc.line_count())
+        .map(|line| calc.get_line(line).unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[test]
@@ -144,4 +153,109 @@ fn semantic_tokens_use_same_half_surrogate_boundary_policy() {
     assert_eq!(intervals.len(), 1);
     assert_eq!(intervals[0].start, 1);
     assert_eq!(intervals[0].end, 2);
+}
+
+#[test]
+fn oversized_workspace_edit_range_clamps_before_delta_calculator_sync() {
+    let mut workspace = Workspace::new();
+    let opened = workspace
+        .open_buffer(Some("file:///utf16.rs".to_string()), "a👋b\n", 80)
+        .expect("open buffer");
+    let workspace_edit = json!({
+        "changes": {
+            "file:///utf16.rs": [{
+                "range": {
+                    "start": { "line": u64::from(u32::MAX) + 99, "character": u64::MAX },
+                    "end": { "line": u64::from(u32::MAX) + 99, "character": u64::MAX }
+                },
+                "newText": "!"
+            }]
+        }
+    });
+
+    let result = apply_workspace_edit_to_workspace(&mut workspace, &workspace_edit)
+        .expect("apply workspace edit");
+    let text_after_workspace = workspace
+        .buffer_text(opened.buffer_id)
+        .expect("workspace text");
+
+    assert_eq!(text_after_workspace, "a👋b\n!");
+    assert_eq!(result.applied.len(), 1);
+    assert_eq!(result.applied[0].changed_char_ranges, vec![(4, 4)]);
+    assert_eq!(result.applied[0].lsp_changes.len(), 1);
+
+    let change = &result.applied[0].lsp_changes[0];
+    assert_eq!(change.range.start, LspPosition::new(1, 0));
+    assert_eq!(change.range.end, LspPosition::new(1, 0));
+    assert_eq!(change.text, "!");
+
+    let mut calc = DeltaCalculator::from_text("a👋b\n");
+    calc.apply_change(&TextChange {
+        range: change.range,
+        text: change.text.clone(),
+    });
+    assert_eq!(calc_text(&calc), text_after_workspace);
+}
+
+#[test]
+fn legal_workspace_edit_keeps_did_change_range_and_text() {
+    let mut workspace = Workspace::new();
+    let opened = workspace
+        .open_buffer(Some("file:///utf16.rs".to_string()), "a👋b\n", 80)
+        .expect("open buffer");
+    let workspace_edit = json!({
+        "changes": {
+            "file:///utf16.rs": [{
+                "range": {
+                    "start": { "line": 0, "character": 1 },
+                    "end": { "line": 0, "character": 3 }
+                },
+                "newText": "X"
+            }]
+        }
+    });
+
+    let result = apply_workspace_edit_to_workspace(&mut workspace, &workspace_edit)
+        .expect("apply workspace edit");
+    let text_after_workspace = workspace
+        .buffer_text(opened.buffer_id)
+        .expect("workspace text");
+
+    assert_eq!(text_after_workspace, "aXb\n");
+    assert_eq!(result.applied[0].changed_char_ranges, vec![(1, 2)]);
+
+    let change = &result.applied[0].lsp_changes[0];
+    assert_eq!(change.range.start, LspPosition::new(0, 1));
+    assert_eq!(change.range.end, LspPosition::new(0, 3));
+    assert_eq!(change.text, "X");
+
+    let mut calc = DeltaCalculator::from_text("a👋b\n");
+    calc.apply_change(&TextChange {
+        range: change.range,
+        text: change.text.clone(),
+    });
+    assert_eq!(calc_text(&calc), text_after_workspace);
+}
+
+#[test]
+fn signature_help_oversized_offsets_and_indexes_do_not_wrap() {
+    let too_large = u64::from(u32::MAX) + 1;
+    let value = json!({
+        "signatures": [{
+            "label": "call(a)",
+            "parameters": [{ "label": [too_large, u64::MAX] }]
+        }],
+        "activeSignature": too_large,
+        "activeParameter": too_large
+    });
+
+    let help = signature_help_from_value(&value).expect("signature help");
+
+    assert_eq!(help.active_signature, Some(u32::MAX));
+    assert_eq!(help.active_parameter, Some(u32::MAX));
+    assert_eq!(help.to_compact_string(), None);
+    assert_eq!(
+        help.signatures[0].parameters[0].label,
+        Some(LspParameterLabel::Offsets(u32::MAX, u32::MAX))
+    );
 }
