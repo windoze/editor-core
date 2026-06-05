@@ -70,3 +70,13 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core-lsp --test folding_versioning`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 已确认不存在 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 - 已更新 `TODO.md`：T04 标记为 `[DONE]`，状态改为 DONE，并补全完成记录。下一步复查 diff/status 并提交本次 T04 变更。
+
+## T04R 进度记录
+
+- 已读取 `TODO.md`，第一个未完成任务是 `T04R Review：审查折叠版本化与折叠态保留`。
+- 最新提交为 `[T04] Preserve versioned folding state`，与 T04R 审查范围直接相关；当前工作树已有未跟踪的 `notification.sh`、`run_agent.sh`，不属于本任务，不会纳入提交。
+- 已审查 T04 diff，覆盖 LSP folding response 版本守卫、`ProcessingEdit::ReplaceFoldingRegions` 文档和 match 点、`FoldingManager` 的 collapsed 保留策略、`EditorStateManager` / `Workspace` 应用路径，以及新增 folding 测试。
+- 审查发现 T04 需要后续修复任务：`collapsed_fuzzy_match_score` 对默认 placeholder 的相邻或仅共享边界 derived fold 匹配过宽，可能把无关 region 错误继承为 collapsed；新增测试也没有实际先构建 visual-row cache 再验证 fold 替换/清理后的 cache 重建。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core-lsp`。
+- 已更新 `TODO.md`：T04R 标记为 `[DONE]`，状态改为 DONE，并在 T05 前新增 `T04F` 修复任务和 `T04FR` review 任务；本次不继续执行 T04F。
+- 下一步检查最终 diff/status 并提交本次 T04R 审查记录。

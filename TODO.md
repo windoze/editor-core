@@ -303,9 +303,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core-lsp --test folding_versioning`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
-### T04R Review：审查折叠版本化与折叠态保留
+### [DONE] T04R Review：审查折叠版本化与折叠态保留
 
-状态：TODO
+状态：DONE
 
 审查范围：T04 的所有 diff。
 
@@ -321,6 +321,76 @@
 
 - `cargo test -p editor-core --test folding_stability`
 - `cargo test -p editor-core-lsp`
+
+完成记录：
+
+- 已审查 T04 diff，重点检查 `LspSession::handle_pending_response` 的 folding 版本守卫、`ProcessingEdit::ReplaceFoldingRegions` 文档和 match 点、`FoldingManager::replace_derived_regions_preserving_collapsed`、`EditorStateManager` / `Workspace` 应用路径，以及新增 `folding_stability` / `folding_versioning` 测试。
+- 未发现旧版本 LSP folding response 进入 core state 的问题；当前版本检查在生成 `ReplaceFoldingRegions` 前完成，`ProcessingEdit` enum 形状未变，已知构造和 match 点可继续编译覆盖。
+- 发现 T04 后续修复项：`collapsed_fuzzy_match_score` 对默认 placeholder 的相邻或仅共享边界 derived fold 匹配过宽，可能把无关 region 错误继承为 collapsed；新增测试也未实际先构建 visual-row cache 再验证 fold 替换/清理后的 cache 重建。
+- 已在 T05 前新增 `T04F` / `T04FR`，要求先修复该问题并补充专项 review。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core-lsp`。
+
+### T04F 修复：收紧折叠态保留匹配并补 visual-row cache 回归
+
+状态：TODO
+
+依赖：
+
+- T04R 审查发现的折叠态误继承风险和 visual-row cache 测试缺口。
+
+范围文件：
+
+- `crates/editor-core/src/intervals.rs`
+- `crates/editor-core/src/state.rs`
+- `crates/editor-core/src/workspace.rs`
+- `crates/editor-core/tests/folding_stability.rs`
+
+已知入口：
+
+- `FoldingManager::collapsed_fuzzy_match_score`
+- `FoldingManager::replace_derived_regions_preserving_collapsed`
+- `EditorStateManager::replace_folding_regions`
+- `Workspace::apply_processing_edits` 中处理 `ReplaceFoldingRegions` / `ClearFoldingRegions`
+- `EditorCore::visual_line_count` / visual-row cache 构建路径
+
+实现要求：
+
+1. 收紧 derived fold collapsed 保留的模糊匹配，避免默认 placeholder 的相邻 region、仅共享边界 region 或明显不相关 region 继承 collapsed 状态。
+2. 保留 T04 已覆盖的小范围行号漂移场景；若匹配策略改变，需要用测试固定允许继承的正向条件和禁止继承的负向条件。
+3. 补充 visual-row cache 回归：先通过 `visual_line_count` 或 viewport API 构建 cache，再替换或清理 folding regions，验证后续 visual/logical 行数或 viewport 反映最新 fold state。
+4. 不改变用户 fold 与派生 fold 的边界；用户 fold collapsed 状态仍不得复制到派生 fold。
+
+测试要求：
+
+1. 默认 placeholder 的相邻或仅边界重叠 derived folds 不会错误继承 collapsed。
+2. 小范围行号漂移后同一 derived fold 仍能保留 collapsed。
+3. `ReplaceFoldingRegions` 和 `ClearFoldingRegions` 后 visual-row cache 会按最新 fold state 重建。
+4. 运行 `cargo test -p editor-core --test folding_stability`。
+5. 运行 `cargo test -p editor-core`。
+
+验收标准：
+
+- 折叠态保留不会把无关 derived region 错配成 collapsed。
+- fold 替换和清理后的 visual-row cache 行为有明确回归测试。
+
+### T04FR Review：审查折叠态保留匹配修复
+
+状态：TODO
+
+审查范围：T04F 的所有 diff。
+
+审查重点：
+
+1. 模糊匹配是否足够保守，尤其是默认 placeholder、相邻区域和仅共享边界区域。
+2. 正向漂移保留是否未被过度收紧破坏。
+3. 用户 fold 与派生 fold 的 collapsed 状态是否仍严格隔离。
+4. visual-row cache 回归测试是否确实先构建旧 cache，再验证替换/清理后的新结果。
+5. 是否引入新的全局特殊 casing 或 fixture-only workaround。
+
+建议命令：
+
+- `cargo test -p editor-core --test folding_stability`
+- `cargo test -p editor-core`
 
 ### T05 实现：新增 `TextBuffer` 抽象并建立一致性校验
 
