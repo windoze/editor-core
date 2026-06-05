@@ -882,6 +882,18 @@ fn char_column_for_byte_offset(text: &str, byte_offset: usize) -> usize {
     text.get(..byte_offset).unwrap_or(text).chars().count()
 }
 
+fn leading_horizontal_whitespace(text: &str) -> (usize, usize) {
+    let mut column = 0usize;
+    for (byte, ch) in text.char_indices() {
+        if ch != ' ' && ch != '\t' {
+            return (column, byte);
+        }
+        column += 1;
+    }
+
+    (column, text.len())
+}
+
 fn prev_boundary_column(text: &str, column: usize, boundary: TextBoundary) -> usize {
     let byte_pos = byte_offset_for_char_column(text, column);
 
@@ -6367,29 +6379,44 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
-        // Decide whether to comment or uncomment.
+        struct LineCommentTarget {
+            line: usize,
+            text: String,
+            indent_col: usize,
+            indent_byte: usize,
+        }
+
+        // Decide whether to comment or uncomment while scanning each line once.
+        let mut targets: Vec<LineCommentTarget> = Vec::with_capacity(lines.len());
         let mut non_empty = 0usize;
         let mut all_commented = true;
-        for line in &lines {
+        for line in lines {
             let line_text = self
                 .editor
                 .line_index
-                .get_line_text(*line)
+                .get_line_text(line)
                 .unwrap_or_default();
-            let indent = line_text
-                .chars()
-                .take_while(|c| *c == ' ' || *c == '\t')
-                .count();
-            let indent_byte = byte_offset_for_char_column(&line_text, indent);
+            let (indent_col, indent_byte) = leading_horizontal_whitespace(&line_text);
             let rest = line_text.get(indent_byte..).unwrap_or("");
             if rest.is_empty() {
+                targets.push(LineCommentTarget {
+                    line,
+                    text: line_text,
+                    indent_col,
+                    indent_byte,
+                });
                 continue;
             }
             non_empty += 1;
             if !rest.starts_with(token) {
                 all_commented = false;
-                break;
             }
+            targets.push(LineCommentTarget {
+                line,
+                text: line_text,
+                indent_col,
+                indent_byte,
+            });
         }
 
         let should_uncomment = non_empty > 0 && all_commented;
@@ -6408,20 +6435,13 @@ impl CommandExecutor {
 
         let mut ops: Vec<Op> = Vec::new();
 
-        for line in lines {
-            let line_text = self
+        for target in targets {
+            let rest = target.text.get(target.indent_byte..).unwrap_or("");
+
+            let start_offset = self
                 .editor
                 .line_index
-                .get_line_text(line)
-                .unwrap_or_default();
-            let indent = line_text
-                .chars()
-                .take_while(|c| *c == ' ' || *c == '\t')
-                .count();
-            let indent_byte = byte_offset_for_char_column(&line_text, indent);
-            let rest = line_text.get(indent_byte..).unwrap_or("");
-
-            let start_offset = self.editor.line_index.position_to_char_offset(line, indent);
+                .position_to_char_offset(target.line, target.indent_col);
 
             if should_uncomment {
                 if rest.is_empty() || !rest.starts_with(token) {
@@ -6429,7 +6449,9 @@ impl CommandExecutor {
                 }
 
                 let mut remove_len = token_len;
-                if let Some(ch) = line_text.chars().nth(indent + token_len)
+                if let Some(ch) = rest
+                    .get(token.len()..)
+                    .and_then(|suffix| suffix.chars().next())
                     && ch == ' '
                 {
                     remove_len += 1;
@@ -6447,8 +6469,8 @@ impl CommandExecutor {
                     deleted_text,
                     inserted_text: String::new(),
                     inserted_len: 0,
-                    line,
-                    indent_col: indent,
+                    line: target.line,
+                    indent_col: target.indent_col,
                     col_delta: -(remove_len as isize),
                 });
             } else {
@@ -6459,8 +6481,8 @@ impl CommandExecutor {
                     deleted_text: String::new(),
                     inserted_text: insert_text.clone(),
                     inserted_len: insert_len,
-                    line,
-                    indent_col: indent,
+                    line: target.line,
+                    indent_col: target.indent_col,
                     col_delta: insert_len as isize,
                 });
             }

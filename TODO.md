@@ -909,9 +909,9 @@
 - 未发现需要立即修复或新增前置任务的问题；普通行级编辑路径未发现新增 `EditorCore::get_text()` 全文读取，剩余全文读取集中在搜索/替换、公有文本 API、debug-only 一致性断言或测试代码。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core`。
 
-### T10 实现：优化列到字节转换
+### [DONE] T10 实现：优化列到字节转换
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -943,6 +943,15 @@
 验收标准：
 
 - ToggleComment 不再对同一 column 做重复 O(column) 扫描。
+
+完成记录：
+
+- 新增 `leading_horizontal_whitespace`，用单次 `char_indices` 扫描同时得到行注释缩进的 char column 和 byte offset，保留现有 char column 语义。
+- 将 line comment toggle 改为预先收集每个目标行的文本与缩进扫描结果，comment/uncomment 判断和实际 edit 构建复用该结果，不再对同一缩进 column 调用 `byte_offset_for_char_column` 重复扫描。
+- 将 uncomment 删除 token 后空格的检查改为基于已切出的 `rest` 后缀读取，避免再次从行首按 char column 扫描。
+- 扩展 `comment_toggle.rs`，覆盖 CJK、emoji、tab、空白缩进，以及长行多选区 toggle comment 的退化回归。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test unicode_segmentation`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
 ### T10R Review：审查列字节转换优化
 
