@@ -1490,9 +1490,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`、`cargo build -p editor-core-ui-ffi --release`、`swift test`。
 - 未找到 `tools/run_fixtures.py`、`tools/**/*fixture*` 或 `tools/` fixture runner，完整 fixture suite 无可运行入口。
 
-### T16R Review：审查 FFI ABI 定宽迁移
+### [DONE] T16R Review：审查 FFI ABI 定宽迁移
 
-状态：TODO
+状态：DONE
 
 审查范围：T16 的所有 diff。
 
@@ -1509,6 +1509,89 @@
 - `cargo test -p editor-core-ffi --test abi_v1`
 - `cargo test -p editor-core-ffi`
 - `cargo test -p editor-core-ui-ffi`
+
+完成记录：
+
+- 已审查 T16 diff，重点检查 `editor-core-ffi` public `extern "C"` 签名、`editor_core_ffi.h`、Swift 包装、ABI 文档、typed/blob buffer 契约和 `editor-core-ui-ffi` 定宽边界。
+- 定向确认 `crates/editor-core-ffi/src/lib.rs` 和 `crates/editor-core-ui-ffi/src/lib.rs` 的 public `extern "C"` 函数签名未继续暴露 `usize`；`crates/editor-core-ffi/include/editor_core_ffi.h` 未继续暴露 `size_t`。
+- 发现 T16 后续修复项：ABI 文档对旧 ABI 兼容策略、public boolean 表述和当前 fixed-width public surface 覆盖不完整；`editor-core-ui-ffi` 仍存在 public `u32` / count / offset 到 internal `usize` 的 unchecked `as` 转换，以及 RGBA/range 输出长度可能截断为 `u32` 的风险。
+- 已在 T17 前新增 `T16F` / `T16FR`，要求先收口上述 ABI 契约和 UI FFI 转换/长度检查问题。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo test -p editor-core-ui-ffi`。
+
+### T16F 修复：收口 FFI ABI 契约与 UI FFI 转换检查
+
+状态：TODO
+
+依赖：
+
+- T16R 审查发现的 ABI 文档/实现不一致、UI FFI unchecked 转换和输出长度截断风险。
+
+范围文件：
+
+- `crates/editor-core-ui-ffi/src/lib.rs`
+- `crates/editor-core-ui-ffi/tests` 或同文件内测试模块，按现有测试布局选择
+- `crates/editor-core-ffi/include/editor_core_ffi.h`
+- `docs/abi-v1-draft.md`
+
+已知入口：
+
+- `editor_core_ui_ffi_editor_ui_new`
+- `editor_core_ui_ffi_editor_ui_clone_view`
+- `editor_core_ui_ffi_editor_ui_lsp_request_hover`
+- `editor_core_ui_ffi_editor_ui_lsp_request_definition`
+- `editor_core_ui_ffi_editor_ui_set_tab_width`
+- `editor_core_ui_ffi_editor_ui_minimap_json`
+- `editor_core_ui_ffi_editor_ui_set_match_highlights`
+- `editor_core_ui_ffi_editor_ui_render_rgba`
+- `editor_core_ui_ffi_editor_ui_get_selection_ranges`
+- `editor_core_ui_ffi_editor_ui_set_selection_ranges`
+- `editor_core_ui_ffi_editor_ui_set_marked_text_ex`
+- `editor_core_ui_ffi_editor_ui_char_offset_to_logical_position`
+- `editor_core_ui_ffi_editor_ui_char_offset_to_view_point`
+- `docs/abi-v1-draft.md` 的 ABI Rules、Current Fixed-Width JSON/Control-Plane Surfaces、Migration Plan
+
+实现要求：
+
+1. 为 `editor-core-ui-ffi` 增加统一的 `u32`/count/offset 到 `usize` 转换 helper，替换 public ABI 入参进入内部 API 前的 unchecked `as usize` 热点；失败必须返回 UI FFI 的 invalid-argument 状态并设置 last error。
+2. 数组 `range_count`、style/font/decoration count、selection range count 等进入 `slice::from_raw_parts` 前必须显式检查并使用同一转换策略。
+3. RGBA buffer required length、selection/range 输出 count、viewport/state 等 `usize` 到 `u32` 输出不得静默截断；无法用 `u32` 表示时返回明确错误或按文档定义的失败状态。
+4. ABI 文档必须与当前实现一致：说明本轮是 pre-v1 breaking fixed-width 收口，或补充旧 ABI 兼容策略；public boolean 规则必须与 header/Rust 实现一致；Current Fixed-Width JSON/Control-Plane Surfaces 要么覆盖实际 fixed-width public surface，要么明确 header 是权威定义且该节只是代表性示例。
+5. 不改变 T19 已排期的 UTF-16 半代理对策略，不用本任务绕过该行为。
+
+测试要求：
+
+1. 新增或扩展 UI FFI 测试，覆盖 oversized/invalid count、null output pointer、buffer-too-small two-call contract 和输出长度不可表示时的错误路径，按可构造场景选择最小覆盖。
+2. 运行 `cargo test -p editor-core-ui-ffi`。
+3. 运行 `cargo test -p editor-core-ffi --test abi_v1`。
+4. 运行 `cargo test -p editor-core-ffi`。
+5. 运行 `cargo clippy --all-targets -- -D warnings`。
+
+验收标准：
+
+- FFI public ABI 不暴露 `usize` / `size_t`，且从 public fixed-width 参数到 internal `usize` 的转换没有 unchecked truncation 风险。
+- UI FFI two-call buffer/output count 契约不会因 `usize` -> `u32` 截断而返回错误长度。
+- ABI 文档、header 和实际实现对 pre-v1 兼容策略、boolean 表示和 fixed-width surface 的描述一致。
+
+### T16FR Review：审查 FFI ABI 契约与 UI FFI 转换修复
+
+状态：TODO
+
+审查范围：T16F 的所有 diff。
+
+审查重点：
+
+1. `editor-core-ui-ffi` 是否仍存在 public ABI 入参 unchecked `as usize` 截断风险。
+2. 输出长度、range count 和 buffer required length 是否有 `u32` 溢出处理。
+3. ABI 文档是否与 header/Rust 实现一致，尤其是 pre-v1 breaking 策略和 public boolean 表示。
+4. 新增错误路径测试是否真正触发 conversion/output 边界，而不是只覆盖正常路径。
+5. 是否避免混入 T19 UTF-16 半代理对策略或其它无关 ABI 改动。
+
+建议命令：
+
+- `cargo test -p editor-core-ui-ffi`
+- `cargo test -p editor-core-ffi --test abi_v1`
+- `cargo test -p editor-core-ffi`
+- `cargo clippy --all-targets -- -D warnings`
 
 ### T17 实现：Undo coalescing 粒度修正
 

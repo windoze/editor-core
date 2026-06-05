@@ -25,8 +25,8 @@
 7. 检查 git 状态、diff 和最近提交，确认只提交本轮相关变更；若是恢复未完成任务，则按要求包含当前未提交文件。
 8. 使用清晰任务消息提交，提交后停止，不处理下一任务。
 
-进度记录
---------
+历史进度记录：T16
+-----------------
 
 - 已写入初始执行计划。
 - 已读取 `TODO.md`，确认第一个未完成任务是 `T16 实现：FFI ABI 定宽迁移`。
@@ -41,3 +41,14 @@
 - 已通过验证：`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`、`cargo build -p editor-core-ui-ffi --release`、`swift test`。
 - 已确认仓库没有 `tools/run_fixtures.py`、`tools/**/*fixture*` 或 `tools/` fixture runner，完整 fixture suite 无可运行入口。
 - 已将 `TODO.md` 中 T16 标记为 `[DONE]` 并补充完成记录；不会继续执行 T16R。
+
+当前进度记录：T16R
+------------------
+
+- 已读取 `TODO.md`，第一个未完成任务是 `T16R Review：审查 FFI ABI 定宽迁移`。
+- 已检查最近提交：`cc6e542 [T16] Migrate FFI ABI to fixed-width types`，与当前 review 任务直接相关。
+- 当前执行范围限定为审查 T16 diff、确认 public C ABI 定宽与溢出检查、运行 T16R 建议验证命令，并在完成后更新 `TODO.md` 与提交。
+- 已完成 T16R 审查，确认 `editor-core-ffi` public `extern "C"` 签名未继续暴露 `usize`，header 未继续暴露 `size_t`。
+- 审查发现需要排期的 T16 后续修复项：ABI 文档对旧 ABI/布尔类型/当前 public surface 的描述不完全一致，`editor-core-ui-ffi` 仍有 unchecked `as` 转换和部分输出长度截断风险。计划在 `TODO.md` 中新增 `T16F` / `T16FR`，位置放在 `T16R` 之后、`T17` 之前。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo test -p editor-core-ui-ffi`。
+- 已更新 `TODO.md`：`T16R` 标记为 `[DONE]`，并新增 `T16F` / `T16FR` 作为 `T17` 前的后续修复与 review 任务。
