@@ -953,9 +953,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test unicode_segmentation`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
-### T10R Review：审查列字节转换优化
+### [DONE] T10R Review：审查列字节转换优化
 
-状态：TODO
+状态：DONE
 
 审查范围：T10 的所有 diff。
 
@@ -971,6 +971,13 @@
 
 - `cargo test -p editor-core --test comment_toggle`
 - `cargo test -p editor-core --test unicode_segmentation`
+
+完成记录：
+
+- 已审查 T10 diff，重点检查 `leading_horizontal_whitespace` 单次缩进扫描、`execute_toggle_line_comment` 中 char column / byte offset 边界、token 后空格删除、tab 按字符列处理语义，以及旧 `byte_offset_for_char_column` 是否仍处于 ToggleComment 热路径。
+- 未发现需要立即修复或新增前置任务的问题；ToggleComment 已复用每行缩进扫描结果，注释插入/删除继续使用 char offset/char length，`rest.get(token.len()..)` 仅在 `starts_with(token)` 后访问合法 token 字节边界。
+- 测试覆盖已包含 CJK、emoji、tab、空白缩进、Unicode 多行和 token 后空格删除，以及长行多选区退化回归。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test unicode_segmentation`。
 
 ### T11 实现：IntervalTree 更新路径降本
 

@@ -1,19 +1,19 @@
 执行计划记录
 
-当前状态：已读取 TODO.md，确认第一个未完成任务为 T10「优化列到字节转换」。最新提交 `d3aba06 [T09R] Record completion plan` 未明确提到与 T10 直接相关的未完成问题。
+当前状态：已读取 TODO.md，确认第一个未完成任务为 T10R「审查列字节转换优化」。这是 review 任务，不主动重构；仅在发现明确 bug、测试缺口或质量问题时才修改代码或添加后续任务。
 
 计划：
-1. 检查 T10 范围文件：`commands.rs`、`comment_toggle.rs`、`unicode_segmentation.rs`，定位 `byte_offset_for_char_column`、`char_column_for_byte_offset` 与 ToggleComment indent 计算路径。
-2. 将 ToggleComment 的缩进扫描改为单次 `char_indices` 同时得到字符列与字节偏移；若同一行仍有多次 char->byte 转换，添加局部批量转换或缓存，保持 public char column 语义不变。
-3. 补充或调整测试，覆盖 CJK、emoji、tab、空白缩进，以及长行多选区 toggle comment 的性能/退化回归。
-4. 按顺序运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test unicode_segmentation`、`cargo test -p editor-core`；若代码变更后需要全量验证，再运行 `cargo clippy --all-targets --all-features -- -D warnings` 和 `cargo test --all --all-targets`。
-5. 验证通过后更新 TODO.md：给 T10 标题加 `[DONE]` 并写入完成记录；PLAN.md 仅在阶段计划变化时更新。
-6. 检查 git 状态、diff 和近期提交，提交本次 T10 相关变更，然后停止，不进入 T10R。
+1. 检查最新提交记录，确认是否有与 T10R 直接相关的未完成事项需要纳入本 review。
+2. 审查 T10 范围 diff 和相关文件：`crates/editor-core/src/commands.rs`、`crates/editor-core/tests/comment_toggle.rs`、`crates/editor-core/tests/unicode_segmentation.rs`。
+3. 聚焦 T10R 审查点：char column 与 byte offset 是否混用；CJK/emoji/tab 前后注释插入/删除位置是否正确；tab 缩进是否仍按字符列处理；旧 helper 是否仍处于 O(n^2) 热路径；测试是否覆盖非 ASCII 缩进和 token 后空格删除。
+4. 按任务建议运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test unicode_segmentation`；若发现未调度的失败，修复或在 TODO.md 中按顺序新增最小前置任务。
+5. 若 review 未发现阻塞问题，更新 TODO.md：给 T10R 标题加 `[DONE]`，填写完成记录；PLAN.md 仅在阶段计划变化时更新。
+6. 检查 git status、diff 和近期提交，提交本次 T10R review 变更，然后停止，不进入 T11。
 
 进度日志：
-- 已创建本计划文件。
-- 已识别当前任务为 T10「优化列到字节转换」。
-- 已完成核心代码初改：新增单次扫描缩进 helper，并让 line comment toggle 复用每行缩进扫描结果，避免重复 char 列到 byte offset 扫描。
-- 已补充 `comment_toggle` 覆盖：CJK/emoji/tab/空白缩进，以及长行多选区 toggle comment 性能回归。
-- 已完成验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test unicode_segmentation`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets` 均通过；未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`。
-- 已更新 TODO.md，将 T10 标记为 `[DONE]` 并写入完成记录。下一步检查 diff/status 并提交本次 T10 变更。
+- 已创建/更新本计划文件。
+- 已识别当前任务为 T10R「审查列字节转换优化」。
+- 已检查最新提交：`017c827 [T10] Optimize comment column conversion`，未发现与 T10R 直接相关的未完成事项提示。
+- 已完成 T10 diff 与相关实现/测试审查，未发现需要立即修改代码或新增前置任务的阻塞问题。
+- 已完成验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test unicode_segmentation` 均通过。
+- 已更新 TODO.md，将 T10R 标记为 `[DONE]` 并写入完成记录。下一步检查 diff/status 并提交本次 review 变更。
