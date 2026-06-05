@@ -1582,9 +1582,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui-ffi`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
-### T16FR Review：审查 FFI ABI 契约与 UI FFI 转换修复
+### [DONE] T16FR Review：审查 FFI ABI 契约与 UI FFI 转换修复
 
-状态：TODO
+状态：DONE
 
 审查范围：T16F 的所有 diff。
 
@@ -1602,6 +1602,14 @@
 - `cargo test -p editor-core-ffi --test abi_v1`
 - `cargo test -p editor-core-ffi`
 - `cargo clippy --all-targets -- -D warnings`
+
+完成记录：
+
+- 已审查 T16F diff，重点检查 `editor-core-ui-ffi` 的 public fixed-width 入参到 internal `usize` 的转换 helper、FFI slice 构造前 count/null 检查、RGBA required length 与 selection/range 输出长度的 `u32` 溢出处理，以及 ABI 文档/header 表述。
+- 未发现需要立即修复或新增前置任务的问题；`editor-core-ui-ffi/src/lib.rs` 中未发现 public ABI 入参继续使用 unchecked `as usize`，`slice::from_raw_parts(_mut)` 已收敛到统一 helper，`render_rgba` 和 selection/range 输出路径会在无法表示为 `u32` 时返回 invalid-argument 而非截断。
+- 已确认 `crates/editor-core-ffi/include/editor_core_ffi.h` 未暴露 `size_t` public 签名，`crates/editor-core-ui-ffi/include/editor_core_ui_ffi.h` 也保持定宽 C surface；ABI 文档已说明 pre-v1 breaking fixed-width 收口、legacy C `bool` 策略和 C headers 权威性。
+- 未发现 T16F 混入 T19 UTF-16 半代理对策略或其它无关 ABI 行为变更。
+- 已运行并通过：`cargo fmt`、`cargo test -p editor-core-ui-ffi`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo clippy --all-targets -- -D warnings`。
 
 ### T17 实现：Undo coalescing 粒度修正
 
