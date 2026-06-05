@@ -2437,7 +2437,11 @@ impl CommandExecutor {
             before_selection,
             after_selection,
         };
-        let group_id = self.undo_redo.push_step(step, coalesce_undo);
+        let group_id = if coalesce_undo {
+            self.undo_redo.push_explicit_coalescing_step(step)
+        } else {
+            self.undo_redo.push_step(step, false)
+        };
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,

@@ -233,14 +233,18 @@ pub enum EditCommand {
         /// Replacement text.
         text: String,
     },
-    /// Replace text in specified range, but coalesce undo with the currently open undo group.
+    /// Replace text in specified range, requesting undo coalescing when the edit is eligible.
     ///
-    /// This is primarily useful for UI layers that need to apply a rapid sequence of small
-    /// replacements that should undo as a single step (for example IME composition updates).
+    /// This is primarily useful for UI layers that need to keep IME composition updates and the
+    /// final commit in one explicitly delimited undo group.
     ///
     /// Notes:
+    /// - Normal typing coalescing is intentionally limited to pure adjacent insertions without
+    ///   newlines.
+    /// - This explicit composition path may coalesce replacements only when each update replaces
+    ///   the exact range inserted by the previous update and the selection state is continuous.
     /// - The caller is expected to explicitly delimit boundaries via [`EditCommand::EndUndoGroup`]
-    ///   so IME edits do not merge with normal typing groups.
+    ///   so eligible IME insertions do not merge with normal typing groups.
     ReplaceCoalescingUndo {
         /// Character offset of the replacement start.
         start: usize,
@@ -252,8 +256,8 @@ pub enum EditCommand {
     /// Like [`EditCommand::ReplaceCoalescingUndo`], but also sets the primary selection/caret.
     ///
     /// This is primarily useful for IME composition updates where the host provides a
-    /// selection range inside the marked (preedit) string, and we want to keep the entire
-    /// composition (updates + final commit) undoable as a single step.
+    /// selection range inside the marked (preedit) string while keeping composition updates in
+    /// one explicitly delimited undo group.
     ///
     /// Notes:
     /// - `selection_start/selection_end` are **post-edit** character offsets (Unicode scalar indices)

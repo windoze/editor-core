@@ -55,6 +55,7 @@ use editor_core_lang::{CommentConfig, IndentStyle, IndentationConfig};
 use regex::RegexBuilder;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
+use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 
 const DEFAULT_COMMAND_HISTORY_LIMIT: usize = 1000;
@@ -90,7 +91,7 @@ mod line_ops;
 #[path = "edit_ops.rs"]
 mod edit_ops;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SelectionSetSnapshot {
     selections: Vec<Selection>,
     primary_index: usize,
@@ -1079,9 +1080,12 @@ impl CommandExecutor {
         // viewport width updates every frame for soft-wrapping), and those should *not* break
         // the current coalescing group.
         //
-        // We only end the group on cursor/selection/navigation commands, because those indicate
-        // the user changed the insertion point and subsequent typing should start a new group.
-        if matches!(command, Command::Cursor(_)) {
+        // Cursor/selection/navigation and history traversal commands indicate the next insertion
+        // should start a fresh group; other non-insert edit commands close the group when pushed.
+        if matches!(
+            command,
+            Command::Cursor(_) | Command::Edit(EditCommand::Undo | EditCommand::Redo)
+        ) {
             self.undo_redo.end_group();
         }
 
@@ -1194,6 +1198,16 @@ impl CommandExecutor {
     /// Currently open undo group ID (for insert coalescing only)
     pub fn current_change_group(&self) -> Option<usize> {
         self.undo_redo.current_group_id()
+    }
+
+    /// Timeout used when deciding whether adjacent insertion commands remain in one undo group.
+    pub fn undo_coalescing_timeout(&self) -> Duration {
+        self.undo_redo.coalescing_timeout()
+    }
+
+    /// Configure the insertion coalescing timeout; `Duration::ZERO` disables time-based merging.
+    pub fn set_undo_coalescing_timeout(&mut self, timeout: Duration) {
+        self.undo_redo.set_coalescing_timeout(timeout);
     }
 
     /// Whether current state is at clean point (for dirty tracking)

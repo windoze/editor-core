@@ -3,6 +3,9 @@
 use super::{CommandError, Selection, SelectionSetSnapshot};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use std::time::{Duration, Instant};
+
+const DEFAULT_UNDO_COALESCING_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone)]
 pub(super) struct TextEdit {
@@ -20,6 +23,135 @@ impl TextEdit {
     pub(super) fn inserted_len(&self) -> usize {
         self.inserted_text.chars().count()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UndoEditKind {
+    Insert,
+    Explicit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CoalescingEdit {
+    start_before: usize,
+    start_after: usize,
+    deleted_len: usize,
+    inserted_len: usize,
+}
+
+#[derive(Debug, Clone)]
+struct UndoCoalescingState {
+    group_id: usize,
+    last_at: Instant,
+    edit_kind: UndoEditKind,
+    after_selection: SelectionSetSnapshot,
+    edits: Vec<CoalescingEdit>,
+}
+
+impl UndoCoalescingState {
+    fn from_step(
+        group_id: usize,
+        edit_kind: UndoEditKind,
+        step: &UndoStep,
+        last_at: Instant,
+    ) -> Option<Self> {
+        Some(Self {
+            group_id,
+            last_at,
+            edit_kind,
+            after_selection: step.after_selection.clone(),
+            edits: coalescing_edits_for_kind(edit_kind, step)?,
+        })
+    }
+
+    fn extend_with(
+        &self,
+        edit_kind: UndoEditKind,
+        step: &UndoStep,
+        now: Instant,
+        timeout: Duration,
+    ) -> Option<Vec<CoalescingEdit>> {
+        if self.edit_kind != edit_kind {
+            return None;
+        }
+        if edit_kind == UndoEditKind::Insert
+            && now.saturating_duration_since(self.last_at) >= timeout
+        {
+            return None;
+        }
+        if self.after_selection != step.before_selection {
+            return None;
+        }
+
+        let next_edits = coalescing_edits_for_kind(edit_kind, step)?;
+        if self.edits.len() != next_edits.len() {
+            return None;
+        }
+
+        for (previous, next) in self.edits.iter().zip(&next_edits) {
+            match edit_kind {
+                UndoEditKind::Insert => {
+                    let previous_end = previous.start_after.saturating_add(previous.inserted_len);
+                    if previous_end != next.start_before {
+                        return None;
+                    }
+                }
+                UndoEditKind::Explicit => {
+                    if previous.start_after != next.start_before
+                        || previous.inserted_len != next.deleted_len
+                    {
+                        return None;
+                    }
+                }
+            }
+        }
+
+        Some(next_edits)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum UndoCoalescingMode {
+    None,
+    Insert,
+    Explicit,
+}
+
+fn coalescing_edits_for_kind(
+    edit_kind: UndoEditKind,
+    step: &UndoStep,
+) -> Option<Vec<CoalescingEdit>> {
+    if step.edits.is_empty() {
+        return None;
+    }
+
+    let mut edits = Vec::with_capacity(step.edits.len());
+    for edit in &step.edits {
+        let deleted_len = edit.deleted_len();
+        let inserted_len = edit.inserted_len();
+        match edit_kind {
+            UndoEditKind::Insert => {
+                if deleted_len != 0 || inserted_len == 0 || edit.inserted_text.contains('\n') {
+                    return None;
+                }
+            }
+            UndoEditKind::Explicit => {
+                if deleted_len == 0 && inserted_len == 0 {
+                    return None;
+                }
+            }
+        }
+
+        edits.push(CoalescingEdit {
+            start_before: edit.start_before,
+            start_after: edit.start_after,
+            deleted_len,
+            inserted_len,
+        });
+    }
+
+    edits.sort_by_key(|edit| (edit.start_before, edit.start_after));
+    Some(edits)
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +177,8 @@ pub(super) struct UndoRedoManager {
     /// Clean point tracking (node id in the undo tree).
     clean_node: Option<UndoNodeId>,
     next_group_id: usize,
-    open_group_id: Option<usize>,
+    open_group: Option<UndoCoalescingState>,
+    coalescing_timeout: Duration,
 }
 
 type UndoNodeId = usize;
@@ -75,7 +208,8 @@ impl UndoRedoManager {
             max_undo,
             clean_node: Some(0),
             next_group_id: 0,
-            open_group_id: None,
+            open_group: None,
+            coalescing_timeout: DEFAULT_UNDO_COALESCING_TIMEOUT,
         }
     }
 
@@ -108,7 +242,15 @@ impl UndoRedoManager {
     }
 
     pub(super) fn current_group_id(&self) -> Option<usize> {
-        self.open_group_id
+        self.open_group.as_ref().map(|group| group.group_id)
+    }
+
+    pub(super) fn coalescing_timeout(&self) -> Duration {
+        self.coalescing_timeout
+    }
+
+    pub(super) fn set_coalescing_timeout(&mut self, timeout: Duration) {
+        self.coalescing_timeout = timeout;
     }
 
     pub(super) fn is_clean(&self) -> bool {
@@ -121,25 +263,52 @@ impl UndoRedoManager {
     }
 
     pub(super) fn end_group(&mut self) {
-        self.open_group_id = None;
+        self.open_group = None;
     }
 
-    pub(super) fn push_step(&mut self, mut step: UndoStep, coalescible_insert: bool) -> usize {
-        let reuse_open_group = coalescible_insert
-            && self.open_group_id.is_some()
-            && self.clean_node != Some(self.current);
+    pub(super) fn push_step(&mut self, step: UndoStep, coalescible_insert: bool) -> usize {
+        let mode = if coalescible_insert {
+            UndoCoalescingMode::Insert
+        } else {
+            UndoCoalescingMode::None
+        };
+        self.push_step_with_mode(step, mode)
+    }
+
+    pub(super) fn push_explicit_coalescing_step(&mut self, step: UndoStep) -> usize {
+        self.push_step_with_mode(step, UndoCoalescingMode::Explicit)
+    }
+
+    fn push_step_with_mode(&mut self, mut step: UndoStep, mode: UndoCoalescingMode) -> usize {
+        let now = Instant::now();
+        let edit_kind = match mode {
+            UndoCoalescingMode::None => None,
+            UndoCoalescingMode::Insert => Some(UndoEditKind::Insert),
+            UndoCoalescingMode::Explicit => Some(UndoEditKind::Explicit),
+        };
+        let next_edits = edit_kind.and_then(|kind| coalescing_edits_for_kind(kind, &step));
+        let reuse_open_group = next_edits.is_some()
+            && self.clean_node != Some(self.current)
+            && edit_kind.is_some_and(|kind| {
+                self.open_group
+                    .as_ref()
+                    .and_then(|group| group.extend_with(kind, &step, now, self.coalescing_timeout))
+                    .is_some()
+            });
 
         if reuse_open_group {
-            step.group_id = self.open_group_id.expect("checked");
+            if let Some(group) = &self.open_group {
+                step.group_id = group.group_id;
+            }
         } else {
             step.group_id = self.next_group_id;
             self.next_group_id = self.next_group_id.wrapping_add(1);
         }
 
-        if coalescible_insert {
-            self.open_group_id = Some(step.group_id);
+        if let Some(kind) = edit_kind.filter(|_| next_edits.is_some()) {
+            self.open_group = UndoCoalescingState::from_step(step.group_id, kind, &step, now);
         } else {
-            self.open_group_id = None;
+            self.open_group = None;
         }
 
         let group_id = step.group_id;
@@ -510,7 +679,7 @@ impl UndoRedoManager {
             max_undo: self.max_undo,
             clean_index,
             next_group_id: self.next_group_id,
-            open_group_id: self.open_group_id,
+            open_group_id: self.current_group_id(),
         }
     }
 
@@ -638,7 +807,18 @@ impl UndoRedoManager {
         self.current = current_node;
         self.max_undo = max_undo;
         self.next_group_id = snapshot.next_group_id;
-        self.open_group_id = snapshot.open_group_id;
+        self.open_group = snapshot.open_group_id.and_then(|group_id| {
+            let step = self.nodes.get(self.current)?.step.as_ref()?;
+            if step.group_id != group_id {
+                return None;
+            }
+            let kind = if coalescing_edits_for_kind(UndoEditKind::Insert, step).is_some() {
+                UndoEditKind::Insert
+            } else {
+                UndoEditKind::Explicit
+            };
+            UndoCoalescingState::from_step(group_id, kind, step, Instant::now())
+        });
 
         self.clean_node = snapshot.clean_index.and_then(|idx| {
             if idx == 0 {

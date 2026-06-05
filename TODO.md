@@ -1611,9 +1611,9 @@
 - 未发现 T16F 混入 T19 UTF-16 半代理对策略或其它无关 ABI 行为变更。
 - 已运行并通过：`cargo fmt`、`cargo test -p editor-core-ui-ffi`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo clippy --all-targets -- -D warnings`。
 
-### T17 实现：Undo coalescing 粒度修正
+### [DONE] T17 实现：Undo coalescing 粒度修正
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -1655,6 +1655,15 @@
 
 - 单次 undo 不再无限撤销长时间连续输入。
 - undo tree 行为不退化。
+
+完成记录：
+
+- 在 `UndoRedoManager` 的 open coalescing group 中记录 group id、最后编辑时间戳、edit kind、selection/caret 快照和编辑位置摘要；默认 coalescing timeout 为 1s，并通过 `CommandExecutor::set_undo_coalescing_timeout` 提供可控配置。
+- 普通 typing/insert coalescing 仅在纯插入、无换行、selection set 连续、每个插入位置与上一次插入后位置相邻且未超时时复用 group；光标/选择命令、undo/redo、非插入、换行、超时和非相邻插入都会结束或开启新的 undo group。
+- 为 `ReplaceCoalescingUndo*` 保留显式 composition coalescing 模式，但与普通 typing group 隔离，且只在下一次替换正好覆盖上一次插入的 composition 范围并保持 selection 连续时合并，修复全量测试暴露的 IME undo grouping 回归。
+- 新增 `crates/editor-core/tests/undo_coalescing.rs`，覆盖连续快速输入合并、零 timeout 稳定打断、显式 `EndUndoGroup`、非相邻插入、光标移动、换行、显式 IME-like replacement coalescing，以及多光标连续输入 undo 行为。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test undo_coalescing`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test undo_tree`、`cargo test -p editor-core-ui --test ime_undo_grouping_tests`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
 ### T17R Review：审查 Undo coalescing 修正
 
