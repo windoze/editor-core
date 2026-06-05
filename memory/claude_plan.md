@@ -27,6 +27,10 @@
 - 验证已通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test undo_history_robustness`、`cargo test -p editor-core storage::tests`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
 - fixture runner 检查：未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`。
 - UI/app 统计记录：`editor-core-ui/src` 中 `unwrap/expect/panic!` 匹配 250 处（`lib.rs` 247，`keybindings.rs` 3）；`editor-core-app/src` 中匹配 106 处，已准备在 `TODO.md` 中追加后续专项任务，不混入 T21 核心修复。
+- 已读取 `TODO.md`，T21 后的首个未完成任务为 `T21R Review：审查 panic 与错误处理专项`。
+- T21R 静态审查完成：`PieceTable` 的 fallible range/UTF-8 helper 与 `UndoRedoManager` 的 checked node access 符合 review 重点，未发现需要新增前置修复任务的问题。
+- T21R 验证已通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`。
+- 已将 `T21R` 标记为 `[DONE]` 并写入完成记录；下一步检查 diff 并提交本次 review。
 
 ## T21 执行计划
 1. 只读取 T21 指定范围和已知入口：`storage.rs`、`commands.rs`/`undo.rs`、相关测试布局；使用定向 grep 查找 `unwrap`、`expect`、`panic!`、`self.nodes[`、`.parent.unwrap_or(0)`。
@@ -36,3 +40,10 @@
 5. 新增或扩展 `undo_history_robustness` 测试，覆盖非法/stale node restore 返回错误；若能构造 Piece 边界异常，覆盖生产路径不 panic。
 6. 运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`；若代码变化影响更广，再运行必要的额外测试。
 7. 更新 `TODO.md` 中 T21 标题为 `[DONE]` 并填写完成记录；检查 diff/status/log 后提交并停止。
+
+## T21R 执行计划
+1. 读取 `TODO.md`，确认第一个未完成任务是 T21R review。
+2. 查看最新提交，确认 `[T21] Harden core panic handling` 是直接相关提交，未发现额外未完成说明。
+3. 审查 T21 diff 触及的 `storage.rs`、`undo.rs`、`edit_ops.rs` 和新增测试，重点检查可恢复错误是否走 `Result`/`CommandError`、是否吞错、undo checked access 是否覆盖直接索引路径、UTF-8 不变量是否保留 debug 检查，以及是否未混入 UI/app 修复。
+4. 若发现明确问题，则修复或新增最小前置任务；若未发现问题，运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`。
+5. 更新 `TODO.md` 标记 T21R 为 `[DONE]` 并写入审查与验证记录；提交本次 review 后停止。

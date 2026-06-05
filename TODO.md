@@ -2195,9 +2195,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test undo_history_robustness`、`cargo test -p editor-core storage::tests`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，无可运行的完整 fixture runner。
 
-### T21R Review：审查 panic 与错误处理专项
+### [DONE] T21R Review：审查 panic 与错误处理专项
 
-状态：TODO
+状态：DONE
 
 审查范围：T21 的所有 diff。
 
@@ -2212,6 +2212,13 @@
 建议命令：
 
 - `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T21 diff，重点检查 deprecated `PieceTable` 的 fallible range/UTF-8 helper、compatibility infallible API 的 debug invariant handling、`UndoRedoManager` 的 checked node access、stale/tombstone node 错误路径，以及新增 storage / undo history robustness 覆盖。
+- 未发现需要立即修复或新增前置任务的问题；核心生产路径中 T21 涉及的 `storage.rs` UTF-8 unwrap 已移除，undo/redo current、parent、redo child 与 branch 访问已通过 checked lookup 返回 `CommandError` 或安全默认值。
+- 已确认 T21 未把 `editor-core-ui` / `editor-core-app` 大范围修复混入核心任务；两者 panic/unwrap 后续专项已按 TODO 顺序排在 T21R 后。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`。
 
 ### T21U 实现：editor-core-ui panic 与错误处理专项
 
