@@ -381,9 +381,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
 - 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
-### T04FR Review：审查折叠态保留匹配修复
+### [DONE] T04FR Review：审查折叠态保留匹配修复
 
-状态：TODO
+状态：DONE
 
 审查范围：T04F 的所有 diff。
 
@@ -399,6 +399,12 @@
 
 - `cargo test -p editor-core --test folding_stability`
 - `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T04F diff，重点检查 `FoldingManager::collapsed_fuzzy_match_score` 的保守匹配条件、默认 placeholder 边界/相邻负向覆盖、小范围行号漂移正向覆盖、用户 fold 与派生 fold collapsed 状态隔离，以及 `EditorStateManager` / `Workspace` 的 visual-row cache 回归测试。
+- 未发现需要立即修复或新增前置任务的问题；fuzzy 匹配要求同 placeholder、起始行最多漂移 1 行、长度接近且至少共享两行，新增测试会先构建旧 visual-row cache 再验证替换和清理后的映射结果。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core`。
 
 ### T05 实现：新增 `TextBuffer` 抽象并建立一致性校验
 

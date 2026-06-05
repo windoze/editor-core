@@ -92,3 +92,15 @@
 - 已确认不存在 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 - 已更新 `TODO.md`：T04F 标记为 `[DONE]`，状态改为 DONE，并补全完成记录。
 - 下一步复查最终 diff/status 并提交本次 T04F 变更。
+
+## T04FR 执行计划与进度记录
+
+- 已读取 `TODO.md`，第一个未完成任务是 `T04FR Review：审查折叠态保留匹配修复`。
+- 本次只执行 T04FR，不继续处理 T05。
+- 计划步骤：检查最新提交是否直接对应 T04F；复查 T04F diff 与当前实现，重点覆盖 `FoldingManager::collapsed_fuzzy_match_score`、collapsed 保留边界、用户 fold 与派生 fold 隔离、visual-row cache 回归测试是否先构建旧 cache；如发现明确问题，优先最小修复或在 `TODO.md` 中添加必要前置任务；随后运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core`；验证通过后将 T04FR 标记为 `[DONE]` 并补全完成记录；最后检查 `git status` / `git diff` / 最近提交并提交本次 review 结果。
+- 最新提交为 `[T04F] Tighten folding state preservation`，与 T04FR 审查范围直接相关；当前工作树已有未跟踪的 `notification.sh`、`run_agent.sh`，不属于本任务，不会纳入提交。
+- 已审查 T04F diff 与当前实现，覆盖 fuzzy 匹配收紧、默认 placeholder 边界/相邻负向测试、漂移正向测试、用户 fold 与派生 fold 隔离，以及 state/workspace visual-row cache 回归测试。
+- 未发现需要立即修复或新增前置任务的问题。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core`。
+- 已更新 `TODO.md`：T04FR 标记为 `[DONE]`，状态改为 DONE，并补全审查完成记录。
+- 下一步检查最终 diff/status 并提交本次 T04FR 审查记录。
