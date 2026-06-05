@@ -2145,9 +2145,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
 - 完整测试套件未运行：本 review 未修改编译代码，且任务要求的 doc test 与 lint 已通过。
 
-### T21 实现：核心 panic 与错误处理专项
+### [DONE] T21 实现：核心 panic 与错误处理专项
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -2185,6 +2185,16 @@
 - 核心库生产路径 panic 数量下降。
 - 剩余 panic 有明确不可恢复不变量说明。
 
+完成记录：
+
+- 为 deprecated `PieceTable` 新增 `PieceTableError` 和 fallible `try_insert` / `try_delete` / `try_get_text` / `try_get_range` / `try_gc` API；兼容的 infallible API 不再直接 `unwrap` UTF-8 或 unchecked slice，遇到内部 piece-table 不变量破坏时 debug 构建明确 panic、release 构建返回保守 fallback。
+- 将 `PieceTable` 的 split、range 读取和 GC 路径改为 checked range/UTF-8 访问；新增 storage 单元测试覆盖非法 piece range、非法 UTF-8 piece 和 split 期间的异常 piece，不通过生产路径 panic。
+- 将 `UndoRedoManager` 的 undo/redo 弹栈、redo branch 选择、当前节点/redo child/parent 链访问改为 checked access；非法 current/stale/tombstone redo child 会返回 `CommandError::Other("Invalid undo history: ...")`，只读 depth/branch accessor 对损坏状态返回安全默认值而不 panic。
+- 新增 undo 内部单元测试覆盖 stale current node、stale redo child、invalid current accessor 和正常 undo/redo group；新增 `crates/editor-core/tests/undo_history_robustness.rs` 覆盖非法 `clean_index` restore 返回 `UndoHistoryRestoreError`。
+- 按 T21 范围统计但未修改 `editor-core-ui` / `editor-core-app`：`editor-core-ui/src` 中 `unwrap/expect/panic!` 匹配 250 处（`lib.rs` 247，`keybindings.rs` 3）；`editor-core-app/src` 中匹配 106 处。已在 T21R 后、T22 前新增 `T21U` / `T21UR` 和 `T21A` / `T21AR` 作为单独后续专项记录。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test undo_history_robustness`、`cargo test -p editor-core storage::tests`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，无可运行的完整 fixture runner。
+
 ### T21R Review：审查 panic 与错误处理专项
 
 状态：TODO
@@ -2202,6 +2212,116 @@
 建议命令：
 
 - `cargo test -p editor-core`
+
+### T21U 实现：editor-core-ui panic 与错误处理专项
+
+状态：TODO
+
+依赖：
+
+- T21 完成记录中的 `editor-core-ui/src` panic/unwrap/expect 统计。
+- T21R 审查通过后执行。
+
+范围文件：
+
+- `crates/editor-core-ui/src/lib.rs`
+- `crates/editor-core-ui/src/keybindings.rs`
+- 可新增或扩展 `crates/editor-core-ui/tests/*`，按实际修复点选择
+
+已知入口：
+
+- `rg --count-matches "unwrap\(|expect\(|panic!" crates/editor-core-ui/src` 当前统计：`lib.rs` 247，`keybindings.rs` 3。
+- 优先区分生产路径、测试模块、不可恢复不变量和可恢复 UI/host 输入错误。
+
+实现要求：
+
+1. 不做开放式重构；先按生产路径优先级分类 `editor-core-ui/src` 的 `unwrap` / `expect` / `panic!`。
+2. 对 host 输入、LSP/processor 状态、viewport/render 参数等可恢复错误，改为现有 UI error/result 通道或新增最小错误返回。
+3. 测试模块中的 unwrap 可保留；不可恢复内部不变量必须用明确消息说明原因。
+4. 不混入 `editor-core-app` 修复；app 由 `T21A` 单独处理。
+
+测试要求：
+
+1. 为修复的生产路径补充定向 UI 测试。
+2. 运行 `cargo test -p editor-core-ui`。
+3. 运行 `cargo clippy --all-targets -- -D warnings`。
+
+验收标准：
+
+- `editor-core-ui` 生产路径 panic/unwrap/expect 数量下降。
+- 剩余 panic/unwrap/expect 均为测试、明确不可恢复不变量或已记录的后续项。
+
+### T21UR Review：审查 editor-core-ui panic 专项
+
+状态：TODO
+
+审查范围：T21U 的所有 diff。
+
+审查重点：
+
+1. 是否将可恢复 UI/host 错误转为明确错误通道。
+2. 是否误吞 processor/LSP 状态错误导致静默 UI 不一致。
+3. 剩余 `unwrap` / `expect` / `panic!` 是否分类清楚。
+4. 是否避免混入 app 或 core 无关重构。
+
+建议命令：
+
+- `cargo test -p editor-core-ui`
+- `cargo clippy --all-targets -- -D warnings`
+
+### T21A 实现：editor-core-app panic 与错误处理专项
+
+状态：TODO
+
+依赖：
+
+- T21 完成记录中的 `editor-core-app/src` panic/unwrap/expect 统计。
+- T21UR 审查通过后执行。
+
+范围文件：
+
+- `crates/editor-core-app/src/*.rs`
+- 可新增或扩展 `crates/editor-core-app` 测试，按实际修复点选择
+
+已知入口：
+
+- `rg --count-matches "unwrap\(|expect\(|panic!" crates/editor-core-app/src` 当前统计：`search_results.rs` 4，`settings.rs` 7，`find_in_files.rs` 9，`file_io.rs` 11，`pane_layout.rs` 4，`workspace_index.rs` 18，`status_bar.rs` 3，`fuzzy.rs` 1，`workspace_io.rs` 18，`session.rs` 16，`observability.rs` 3，`file_explorer.rs` 12。
+- 优先区分生产路径和 `#[cfg(test)]` 测试代码。
+
+实现要求：
+
+1. 不做开放式重构；优先处理 app 生产路径中可恢复的 IO、settings/session parsing、workspace lookup、pane/file explorer 状态错误。
+2. 测试模块中的 unwrap 可保留；不可恢复内部不变量必须用明确消息说明原因。
+3. 不混入 `editor-core-ui` 或核心库修复；UI 已由 `T21U` 单独处理。
+
+测试要求：
+
+1. 为修复的生产路径补充定向 app 测试。
+2. 运行 `cargo test -p editor-core-app`。
+3. 运行 `cargo clippy --all-targets -- -D warnings`。
+
+验收标准：
+
+- `editor-core-app` 生产路径 panic/unwrap/expect 数量下降。
+- 剩余 panic/unwrap/expect 均为测试、明确不可恢复不变量或已记录的后续项。
+
+### T21AR Review：审查 editor-core-app panic 专项
+
+状态：TODO
+
+审查范围：T21A 的所有 diff。
+
+审查重点：
+
+1. 是否将可恢复 app/IO/session/settings 错误转为明确错误通道。
+2. 是否误吞错误导致 workspace/app 状态静默损坏。
+3. 剩余 `unwrap` / `expect` / `panic!` 是否分类清楚。
+4. 是否避免混入 UI 或 core 无关重构。
+
+建议命令：
+
+- `cargo test -p editor-core-app`
+- `cargo clippy --all-targets -- -D warnings`
 
 ### T22 实现：阶段性全量收口
 

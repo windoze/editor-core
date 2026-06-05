@@ -56,6 +56,77 @@ pub struct PieceTable {
     gc_threshold: usize,
 }
 
+/// Error returned by fallible [`PieceTable`] compatibility APIs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PieceTableError {
+    /// A piece points outside of its backing buffer.
+    InvalidPieceRange {
+        /// Backing buffer selected by the piece.
+        buffer_type: BufferType,
+        /// Byte start recorded in the piece.
+        start: usize,
+        /// Byte length recorded in the piece.
+        byte_length: usize,
+        /// Current byte length of the selected backing buffer.
+        buffer_len: usize,
+    },
+    /// A piece range is not valid UTF-8.
+    InvalidPieceUtf8 {
+        /// Backing buffer selected by the piece.
+        buffer_type: BufferType,
+        /// Byte start recorded in the piece.
+        start: usize,
+        /// Byte length recorded in the piece.
+        byte_length: usize,
+    },
+}
+
+impl std::fmt::Display for PieceTableError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidPieceRange {
+                buffer_type,
+                start,
+                byte_length,
+                buffer_len,
+            } => write!(
+                f,
+                "invalid {:?} piece range {}..{} for buffer length {}",
+                buffer_type,
+                start,
+                start.saturating_add(*byte_length),
+                buffer_len
+            ),
+            Self::InvalidPieceUtf8 {
+                buffer_type,
+                start,
+                byte_length,
+            } => write!(
+                f,
+                "invalid UTF-8 in {:?} piece range {}..{}",
+                buffer_type,
+                start,
+                start.saturating_add(*byte_length)
+            ),
+        }
+    }
+}
+
+impl std::error::Error for PieceTableError {}
+
+fn piece_table_invariant_error<T>(error: PieceTableError, fallback: T) -> T {
+    let _ = &fallback;
+
+    #[cfg(debug_assertions)]
+    panic!("PieceTable invariant violated: {error}");
+
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = error;
+        fallback
+    }
+}
+
 impl PieceTable {
     /// Create a new Piece Table from original text
     pub fn new(text: &str) -> Self {
@@ -91,83 +162,101 @@ impl PieceTable {
 
     /// Insert text at the specified character offset
     pub fn insert(&mut self, offset: usize, text: &str) {
+        if let Err(error) = self.try_insert(offset, text) {
+            piece_table_invariant_error(error, ());
+        }
+    }
+
+    /// Fallible variant of [`PieceTable::insert`] that reports piece-table invariant failures.
+    pub fn try_insert(&mut self, offset: usize, text: &str) -> Result<(), PieceTableError> {
         if text.is_empty() {
-            return;
+            return Ok(());
         }
 
         let text_bytes = text.as_bytes();
         let text_char_count = text.chars().count();
         let text_byte_length = text_bytes.len();
-
-        // Add new text to add_buffer
         let add_start = self.add_buffer.len();
-        self.add_buffer.extend_from_slice(text_bytes);
 
         // Find the piece at the insertion position
         let (piece_index, char_offset_in_piece) = self.find_piece_at_offset(offset);
 
-        if let Some(piece_idx) = piece_index {
-            let piece = &self.pieces[piece_idx];
+        enum InsertPlan {
+            Insert { index: usize, piece: Piece },
+            Splice { index: usize, pieces: Vec<Piece> },
+            Push(Piece),
+        }
+
+        let new_piece = Piece::new(
+            BufferType::Add,
+            add_start,
+            text_byte_length,
+            text_char_count,
+        );
+
+        let plan = if let Some(piece_idx) = piece_index {
+            let piece = self.pieces[piece_idx].clone();
 
             if char_offset_in_piece == 0 {
                 // Insert at the beginning of the piece
-                let new_piece = Piece::new(
-                    BufferType::Add,
-                    add_start,
-                    text_byte_length,
-                    text_char_count,
-                );
-                self.pieces.insert(piece_idx, new_piece);
+                InsertPlan::Insert {
+                    index: piece_idx,
+                    piece: new_piece,
+                }
             } else if char_offset_in_piece == piece.char_count {
                 // Insert at the end of the piece
-                let new_piece = Piece::new(
-                    BufferType::Add,
-                    add_start,
-                    text_byte_length,
-                    text_char_count,
-                );
-                self.pieces.insert(piece_idx + 1, new_piece);
+                InsertPlan::Insert {
+                    index: piece_idx + 1,
+                    piece: new_piece,
+                }
             } else {
                 // Insert in the middle of the piece, need to split
-                let (left_piece, right_piece) = self.split_piece(piece, char_offset_in_piece);
-                let new_piece = Piece::new(
-                    BufferType::Add,
-                    add_start,
-                    text_byte_length,
-                    text_char_count,
-                );
-
-                // Replace the original piece with three new pieces
-                self.pieces.splice(
-                    piece_idx..=piece_idx,
-                    vec![left_piece, new_piece, right_piece],
-                );
+                let (left_piece, right_piece) = self.split_piece(&piece, char_offset_in_piece)?;
+                InsertPlan::Splice {
+                    index: piece_idx,
+                    pieces: vec![left_piece, new_piece, right_piece],
+                }
             }
         } else {
             // Empty document or insert at the end
-            let new_piece = Piece::new(
-                BufferType::Add,
-                add_start,
-                text_byte_length,
-                text_char_count,
-            );
-            self.pieces.push(new_piece);
+            InsertPlan::Push(new_piece)
+        };
+
+        self.add_buffer.extend_from_slice(text_bytes);
+        match plan {
+            InsertPlan::Insert { index, piece } => self.pieces.insert(index, piece),
+            InsertPlan::Splice { index, pieces } => {
+                self.pieces.splice(index..=index, pieces);
+            }
+            InsertPlan::Push(piece) => self.pieces.push(piece),
         }
 
         // Try to merge adjacent pieces
         self.try_merge_adjacent_pieces();
 
         // Check if GC needs to be triggered
-        self.check_gc();
+        self.try_check_gc()?;
+        Ok(())
     }
 
     /// Delete characters in the specified range
     pub fn delete(&mut self, start_offset: usize, length: usize) {
+        if let Err(error) = self.try_delete(start_offset, length) {
+            piece_table_invariant_error(error, ());
+        }
+    }
+
+    /// Fallible variant of [`PieceTable::delete`] that reports piece-table invariant failures.
+    pub fn try_delete(
+        &mut self,
+        start_offset: usize,
+        length: usize,
+    ) -> Result<(), PieceTableError> {
         if length == 0 {
-            return;
+            return Ok(());
         }
 
-        let end_offset = start_offset + length;
+        let end_offset = start_offset.saturating_add(length);
 
         // Find the pieces at the start and end positions
         let (start_piece_idx, start_char_offset) = self.find_piece_at_offset(start_offset);
@@ -176,42 +265,43 @@ impl PieceTable {
         match (start_piece_idx, end_piece_idx) {
             (Some(start_idx), Some(end_idx)) if start_idx == end_idx => {
                 // Delete range is within the same piece
-                let piece = &self.pieces[start_idx];
+                let piece = self.pieces[start_idx].clone();
 
                 if start_char_offset == 0 && end_char_offset == piece.char_count {
                     // Delete the entire piece
                     self.pieces.remove(start_idx);
                 } else if start_char_offset == 0 {
                     // Delete from the beginning
-                    let (_, right) = self.split_piece(piece, end_char_offset);
+                    let (_, right) = self.split_piece(&piece, end_char_offset)?;
                     self.pieces[start_idx] = right;
                 } else if end_char_offset == piece.char_count {
                     // Delete to the end
-                    let (left, _) = self.split_piece(piece, start_char_offset);
+                    let (left, _) = self.split_piece(&piece, start_char_offset)?;
                     self.pieces[start_idx] = left;
                 } else {
                     // Delete in the middle
-                    let (left, temp) = self.split_piece(piece, start_char_offset);
-                    let (_, right) = self.split_piece(&temp, end_char_offset - start_char_offset);
+                    let (left, temp) = self.split_piece(&piece, start_char_offset)?;
+                    let (_, right) =
+                        self.split_piece(&temp, end_char_offset - start_char_offset)?;
                     self.pieces.splice(start_idx..=start_idx, vec![left, right]);
                 }
             }
             (Some(start_idx), Some(end_idx)) => {
                 // Delete range spans multiple pieces
-                let start_piece = &self.pieces[start_idx];
-                let end_piece = &self.pieces[end_idx];
+                let start_piece = self.pieces[start_idx].clone();
+                let end_piece = self.pieces[end_idx].clone();
 
                 let mut new_pieces = Vec::new();
 
                 // Handle the starting piece
                 if start_char_offset > 0 {
-                    let (left, _) = self.split_piece(start_piece, start_char_offset);
+                    let (left, _) = self.split_piece(&start_piece, start_char_offset)?;
                     new_pieces.push(left);
                 }
 
                 // Handle the ending piece
                 if end_char_offset < end_piece.char_count {
-                    let (_, right) = self.split_piece(end_piece, end_char_offset);
+                    let (_, right) = self.split_piece(&end_piece, end_char_offset)?;
                     new_pieces.push(right);
                 }
 
@@ -225,11 +315,11 @@ impl PieceTable {
                 // Only one position is valid, handle edge cases
                 if let Some(start_idx) = start_piece_idx {
                     // Delete from start_idx to the end
-                    let start_piece = &self.pieces[start_idx];
+                    let start_piece = self.pieces[start_idx].clone();
                     if start_char_offset == 0 {
                         self.pieces.truncate(start_idx);
                     } else {
-                        let (left, _) = self.split_piece(start_piece, start_char_offset);
+                        let (left, _) = self.split_piece(&start_piece, start_char_offset)?;
                         self.pieces.truncate(start_idx);
                         self.pieces.push(left);
                     }
@@ -238,45 +328,54 @@ impl PieceTable {
         }
 
         // Check if GC needs to be triggered
-        self.check_gc();
+        self.try_check_gc()?;
+        Ok(())
     }
 
     /// Get the entire document content
     pub fn get_text(&self) -> String {
+        match self.try_get_text() {
+            Ok(text) => text,
+            Err(error) => piece_table_invariant_error(error, String::new()),
+        }
+    }
+
+    /// Fallible variant of [`PieceTable::get_text`] that reports invalid piece ranges or UTF-8.
+    pub fn try_get_text(&self) -> Result<String, PieceTableError> {
         let mut result = String::new();
         for piece in &self.pieces {
-            let buffer = match piece.buffer_type {
-                BufferType::Original => &self.original_buffer,
-                BufferType::Add => &self.add_buffer,
-            };
-            let slice = &buffer[piece.start..piece.start + piece.byte_length];
-            result.push_str(std::str::from_utf8(slice).unwrap());
+            result.push_str(self.piece_text(piece)?);
         }
-        result
+        Ok(result)
     }
 
     /// Get text in the specified range
     pub fn get_range(&self, start_offset: usize, length: usize) -> String {
+        match self.try_get_range(start_offset, length) {
+            Ok(text) => text,
+            Err(error) => piece_table_invariant_error(error, String::new()),
+        }
+    }
+
+    /// Fallible variant of [`PieceTable::get_range`] that reports invalid piece ranges or UTF-8.
+    pub fn try_get_range(
+        &self,
+        start_offset: usize,
+        length: usize,
+    ) -> Result<String, PieceTableError> {
         let mut result = String::new();
-        let mut current_offset = 0;
-        let end_offset = start_offset + length;
+        let mut current_offset: usize = 0;
+        let end_offset = start_offset.saturating_add(length);
 
         for piece in &self.pieces {
-            let piece_end = current_offset + piece.char_count;
+            let piece_end = current_offset.saturating_add(piece.char_count);
 
             if current_offset >= end_offset {
                 break;
             }
 
             if piece_end > start_offset {
-                let buffer = match piece.buffer_type {
-                    BufferType::Original => &self.original_buffer,
-                    BufferType::Add => &self.add_buffer,
-                };
-
-                let piece_text =
-                    std::str::from_utf8(&buffer[piece.start..piece.start + piece.byte_length])
-                        .unwrap();
+                let piece_text = self.piece_text(piece)?;
 
                 let skip_chars = start_offset.saturating_sub(current_offset);
 
@@ -298,7 +397,7 @@ impl PieceTable {
             current_offset = piece_end;
         }
 
-        result
+        Ok(result)
     }
 
     /// Get the total character count of the document
@@ -316,39 +415,72 @@ impl PieceTable {
         self.add_buffer.len()
     }
 
+    fn buffer_for_piece(&self, piece: &Piece) -> &[u8] {
+        match piece.buffer_type {
+            BufferType::Original => &self.original_buffer,
+            BufferType::Add => &self.add_buffer,
+        }
+    }
+
+    fn piece_bytes(&self, piece: &Piece) -> Result<&[u8], PieceTableError> {
+        let buffer = self.buffer_for_piece(piece);
+        let end = piece.start.checked_add(piece.byte_length).ok_or(
+            PieceTableError::InvalidPieceRange {
+                buffer_type: piece.buffer_type,
+                start: piece.start,
+                byte_length: piece.byte_length,
+                buffer_len: buffer.len(),
+            },
+        )?;
+
+        buffer
+            .get(piece.start..end)
+            .ok_or(PieceTableError::InvalidPieceRange {
+                buffer_type: piece.buffer_type,
+                start: piece.start,
+                byte_length: piece.byte_length,
+                buffer_len: buffer.len(),
+            })
+    }
+
+    fn piece_text(&self, piece: &Piece) -> Result<&str, PieceTableError> {
+        std::str::from_utf8(self.piece_bytes(piece)?).map_err(|_| {
+            PieceTableError::InvalidPieceUtf8 {
+                buffer_type: piece.buffer_type,
+                start: piece.start,
+                byte_length: piece.byte_length,
+            }
+        })
+    }
+
     /// Find the piece at the specified character offset and the offset within that piece
     /// Returns (piece_index, char_offset_in_piece)
     fn find_piece_at_offset(&self, offset: usize) -> (Option<usize>, usize) {
-        let mut current_offset = 0;
+        let mut current_offset: usize = 0;
 
         for (idx, piece) in self.pieces.iter().enumerate() {
-            let next_offset = current_offset + piece.char_count;
+            let next_offset = current_offset.saturating_add(piece.char_count);
             if offset <= next_offset {
                 return (Some(idx), offset - current_offset);
             }
             current_offset = next_offset;
         }
 
-        if self.pieces.is_empty() {
-            (None, 0)
-        } else {
-            (
-                Some(self.pieces.len() - 1),
-                self.pieces.last().unwrap().char_count,
-            )
+        match self.pieces.last() {
+            Some(piece) => (Some(self.pieces.len() - 1), piece.char_count),
+            None => (None, 0),
         }
     }
 
     /// Split a piece at the specified character position
     /// Returns (left_piece, right_piece)
-    fn split_piece(&self, piece: &Piece, char_offset: usize) -> (Piece, Piece) {
-        let buffer = match piece.buffer_type {
-            BufferType::Original => &self.original_buffer,
-            BufferType::Add => &self.add_buffer,
-        };
-
-        let piece_text =
-            std::str::from_utf8(&buffer[piece.start..piece.start + piece.byte_length]).unwrap();
+    fn split_piece(
+        &self,
+        piece: &Piece,
+        char_offset: usize,
+    ) -> Result<(Piece, Piece), PieceTableError> {
+        let piece_text = self.piece_text(piece)?;
+        let char_offset = char_offset.min(piece.char_count);
 
         // Calculate byte offset (O(n))
         // `char_offset` is the character offset within this piece; convert it to UTF-8 byte offset to complete the split.
@@ -367,14 +499,14 @@ impl PieceTable {
             piece.char_count - char_offset,
         );
 
-        (left, right)
+        Ok((left, right))
     }
 
     /// Check if two pieces can be merged (must be from the same buffer and adjacent)
     fn can_merge(&self, p1: &Piece, p2: &Piece) -> bool {
         p1.buffer_type == p2.buffer_type &&
         p1.buffer_type == BufferType::Add && // Only merge pieces in AddBuffer
-        p1.start + p1.byte_length == p2.start
+        p1.start.saturating_add(p1.byte_length) == p2.start
     }
 
     /// Merge two adjacent pieces
@@ -382,8 +514,8 @@ impl PieceTable {
         Piece::new(
             p1.buffer_type,
             p1.start,
-            p1.byte_length + p2.byte_length,
-            p1.char_count + p2.char_count,
+            p1.byte_length.saturating_add(p2.byte_length),
+            p1.char_count.saturating_add(p2.char_count),
         )
     }
 
@@ -402,18 +534,43 @@ impl PieceTable {
 
     /// Garbage collection: compact add_buffer, remove unreferenced data
     pub fn gc(&mut self) {
+        if let Err(error) = self.try_gc() {
+            piece_table_invariant_error(error, ());
+        }
+    }
+
+    /// Fallible variant of [`PieceTable::gc`] that reports invalid add-buffer piece ranges.
+    pub fn try_gc(&mut self) -> Result<(), PieceTableError> {
         // Collect all referenced fragments in AddBuffer
-        let mut referenced_ranges: Vec<(usize, usize)> = self
+        let mut referenced_ranges: Vec<(usize, usize)> = Vec::new();
+        for piece in self
             .pieces
             .iter()
             .filter(|p| p.buffer_type == BufferType::Add)
-            .map(|p| (p.start, p.start + p.byte_length))
-            .collect();
+        {
+            let end = piece.start.checked_add(piece.byte_length).ok_or(
+                PieceTableError::InvalidPieceRange {
+                    buffer_type: piece.buffer_type,
+                    start: piece.start,
+                    byte_length: piece.byte_length,
+                    buffer_len: self.add_buffer.len(),
+                },
+            )?;
+            if self.add_buffer.get(piece.start..end).is_none() {
+                return Err(PieceTableError::InvalidPieceRange {
+                    buffer_type: piece.buffer_type,
+                    start: piece.start,
+                    byte_length: piece.byte_length,
+                    buffer_len: self.add_buffer.len(),
+                });
+            }
+            referenced_ranges.push((piece.start, end));
+        }
 
         if referenced_ranges.is_empty() {
             // No references, clear add_buffer
             self.add_buffer.clear();
-            return;
+            return Ok(());
         }
 
         // Sort by start position
@@ -437,7 +594,15 @@ impl PieceTable {
 
         for (old_start, old_end) in merged_ranges {
             let new_start = new_add_buffer.len();
-            new_add_buffer.extend_from_slice(&self.add_buffer[old_start..old_end]);
+            let slice = self.add_buffer.get(old_start..old_end).ok_or(
+                PieceTableError::InvalidPieceRange {
+                    buffer_type: BufferType::Add,
+                    start: old_start,
+                    byte_length: old_end.saturating_sub(old_start),
+                    buffer_len: self.add_buffer.len(),
+                },
+            )?;
+            new_add_buffer.extend_from_slice(slice);
             mappings.push((old_start, old_end, new_start));
         }
 
@@ -462,14 +627,15 @@ impl PieceTable {
 
         self.add_buffer = new_add_buffer;
         self.operation_count = 0; // Reset counter
+        Ok(())
     }
 
-    /// Check if GC needs to be triggered
-    fn check_gc(&mut self) {
+    fn try_check_gc(&mut self) -> Result<(), PieceTableError> {
         self.operation_count += 1;
         if self.operation_count >= self.gc_threshold {
-            self.gc();
+            self.try_gc()?;
         }
+        Ok(())
     }
 
     /// Set GC threshold
@@ -572,6 +738,46 @@ mod tests {
         assert_eq!(pt.get_range(0, 5), "Hello");
         assert_eq!(pt.get_range(7, 5), "World");
         assert_eq!(pt.get_range(0, 13), "Hello, World!");
+    }
+
+    #[test]
+    fn test_try_get_text_reports_invalid_piece_range_without_panic() {
+        let mut pt = PieceTable::new("abc");
+        pt.pieces[0].byte_length = usize::MAX;
+
+        let result = std::panic::catch_unwind(|| pt.try_get_text());
+        assert!(matches!(
+            result,
+            Ok(Err(PieceTableError::InvalidPieceRange { .. }))
+        ));
+    }
+
+    #[test]
+    fn test_try_get_text_reports_invalid_utf8_without_panic() {
+        let mut pt = PieceTable::empty();
+        pt.add_buffer.push(0xff);
+        pt.pieces.push(Piece::new(BufferType::Add, 0, 1, 1));
+
+        let result = std::panic::catch_unwind(|| pt.try_get_text());
+        assert!(matches!(
+            result,
+            Ok(Err(PieceTableError::InvalidPieceUtf8 { .. }))
+        ));
+    }
+
+    #[test]
+    fn test_try_insert_reports_split_piece_invariant_failure() {
+        let mut pt = PieceTable::empty();
+        pt.add_buffer.push(0xff);
+        pt.pieces.push(Piece::new(BufferType::Add, 0, 1, 2));
+
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| pt.try_insert(1, "x")));
+        assert!(matches!(
+            result,
+            Ok(Err(PieceTableError::InvalidPieceUtf8 { .. }))
+        ));
+        assert_eq!(pt.add_buffer, vec![0xff]);
     }
 
     #[test]

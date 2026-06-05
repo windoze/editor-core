@@ -213,20 +213,48 @@ impl UndoRedoManager {
         }
     }
 
+    fn invalid_history_error(context: &str, node: UndoNodeId) -> CommandError {
+        CommandError::Other(format!("Invalid undo history: {context} (node={node})"))
+    }
+
+    fn live_current_node(&self) -> bool {
+        self.current == 0
+            || self
+                .nodes
+                .get(self.current)
+                .is_some_and(|node| node.step.is_some())
+    }
+
     pub(super) fn can_undo(&self) -> bool {
         self.current != 0
+            && self
+                .nodes
+                .get(self.current)
+                .is_some_and(|node| node.step.is_some())
     }
 
     pub(super) fn can_redo(&self) -> bool {
-        !self.nodes[self.current].children.is_empty()
+        self.selected_child(self.current).is_some()
     }
 
     pub(super) fn undo_depth(&self) -> usize {
         let mut depth = 0usize;
         let mut node = self.current;
-        while node != 0 {
+        let mut remaining = self.nodes.len();
+        while node != 0 && remaining > 0 {
+            let Some(current) = self.nodes.get(node) else {
+                break;
+            };
+            let has_step = current.step.is_some();
+            if !has_step {
+                break;
+            }
             depth = depth.saturating_add(1);
-            node = self.nodes[node].parent.unwrap_or(0);
+            let Some(parent) = current.parent else {
+                break;
+            };
+            node = parent;
+            remaining -= 1;
         }
         depth
     }
@@ -234,9 +262,14 @@ impl UndoRedoManager {
     pub(super) fn redo_depth(&self) -> usize {
         let mut depth = 0usize;
         let mut node = self.current;
-        while let Some(child) = self.selected_child(node) {
+        let mut remaining = self.nodes.len();
+        while remaining > 0 {
+            let Some(child) = self.selected_child(node) else {
+                break;
+            };
             depth = depth.saturating_add(1);
             node = child;
+            remaining -= 1;
         }
         depth
     }
@@ -312,7 +345,17 @@ impl UndoRedoManager {
         }
 
         let group_id = step.group_id;
-        let parent = self.current;
+        let parent = if self.live_current_node() {
+            self.current
+        } else {
+            debug_assert!(
+                self.live_current_node(),
+                "undo history current node is stale"
+            );
+            self.current = 0;
+            self.open_group = None;
+            0
+        };
         let new_id = self.nodes.len();
         self.nodes.push(UndoNode {
             parent: Some(parent),
@@ -321,8 +364,17 @@ impl UndoRedoManager {
             step: Some(step),
         });
 
-        self.nodes[parent].children.push(new_id);
-        self.nodes[parent].preferred_child = Some(new_id);
+        if let Some(parent_node) = self.nodes.get_mut(parent) {
+            parent_node.children.push(new_id);
+            parent_node.preferred_child = Some(new_id);
+        } else {
+            debug_assert!(
+                parent < self.nodes.len(),
+                "undo history parent node is invalid"
+            );
+            self.current = new_id;
+            return group_id;
+        }
         self.current = new_id;
         self.step_count = self.step_count.saturating_add(1);
 
@@ -330,76 +382,130 @@ impl UndoRedoManager {
         group_id
     }
 
-    pub(super) fn pop_undo_group(&mut self) -> Option<Vec<UndoStep>> {
+    pub(super) fn pop_undo_group(&mut self) -> Result<Option<Vec<UndoStep>>, CommandError> {
         let mut node = self.current;
-        let group_id = self.nodes[node].step.as_ref().map(|s| s.group_id)?;
+        if node == 0 {
+            return Ok(None);
+        }
+        let group_id = self
+            .nodes
+            .get(node)
+            .ok_or_else(|| Self::invalid_history_error("current node is out of bounds", node))?
+            .step
+            .as_ref()
+            .ok_or_else(|| Self::invalid_history_error("current node is stale", node))?
+            .group_id;
 
         let mut steps: Vec<UndoStep> = Vec::new();
         while node != 0 {
-            let current_step_group = self.nodes[node].step.as_ref().map(|s| s.group_id);
-            if current_step_group != Some(group_id) {
-                break;
+            let (step, parent) = {
+                let current = self.nodes.get(node).ok_or_else(|| {
+                    Self::invalid_history_error("undo path node is out of bounds", node)
+                })?;
+                let step = current
+                    .step
+                    .as_ref()
+                    .ok_or_else(|| Self::invalid_history_error("undo path node is stale", node))?;
+                if step.group_id != group_id {
+                    break;
+                }
+                let parent = current.parent.ok_or_else(|| {
+                    Self::invalid_history_error("undo path node has no parent", node)
+                })?;
+                (step.clone(), parent)
+            };
+
+            if self.nodes.get(parent).is_none() {
+                return Err(Self::invalid_history_error(
+                    "undo path parent is out of bounds",
+                    parent,
+                ));
             }
 
-            let step = self.nodes[node].step.as_ref()?.clone();
             steps.push(step);
 
-            let parent = self.nodes[node].parent.unwrap_or(0);
             // Remember which branch we came from so redo follows it.
-            if parent != 0 || node != 0 {
-                self.nodes[parent].preferred_child = Some(node);
+            if let Some(parent_node) = self.nodes.get_mut(parent) {
+                parent_node.preferred_child = Some(node);
             }
 
             node = parent;
         }
 
         if steps.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         self.current = node;
-        Some(steps)
+        Ok(Some(steps))
     }
 
-    pub(super) fn pop_redo_group(&mut self) -> Option<Vec<UndoStep>> {
-        let first = self.selected_child(self.current)?;
-        let group_id = self.nodes[first].step.as_ref().map(|s| s.group_id)?;
+    pub(super) fn pop_redo_group(&mut self) -> Result<Option<Vec<UndoStep>>, CommandError> {
+        let Some(first) = self.selected_child_checked(self.current)? else {
+            return Ok(None);
+        };
+        let group_id = self
+            .nodes
+            .get(first)
+            .and_then(|node| node.step.as_ref())
+            .ok_or_else(|| Self::invalid_history_error("redo child node is stale", first))?
+            .group_id;
 
         let mut node = self.current;
         let mut steps: Vec<UndoStep> = Vec::new();
-        while let Some(child) = self.selected_child(node) {
-            let child_group = self.nodes[child].step.as_ref().map(|s| s.group_id);
-            if child_group != Some(group_id) {
-                break;
-            }
+        while let Some(child) = self.selected_child_checked(node)? {
+            let step = {
+                let child_node = self.nodes.get(child).ok_or_else(|| {
+                    Self::invalid_history_error("redo child node is out of bounds", child)
+                })?;
+                let step = child_node.step.as_ref().ok_or_else(|| {
+                    Self::invalid_history_error("redo child node is stale", child)
+                })?;
+                if step.group_id != group_id {
+                    break;
+                }
+                step.clone()
+            };
 
             // Ensure this branch remains the selected redo path.
-            self.nodes[node].preferred_child = Some(child);
+            let parent = self.nodes.get_mut(node).ok_or_else(|| {
+                Self::invalid_history_error("redo parent node is out of bounds", node)
+            })?;
+            parent.preferred_child = Some(child);
 
-            steps.push(self.nodes[child].step.as_ref()?.clone());
+            steps.push(step);
             node = child;
         }
 
         if steps.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         self.current = node;
-        Some(steps)
+        Ok(Some(steps))
     }
 
     pub(super) fn redo_branch_count(&self) -> usize {
-        self.nodes[self.current].children.len()
+        self.nodes
+            .get(self.current)
+            .map_or(0, |node| node.children.len())
     }
 
     pub(super) fn selected_redo_branch_index(&self) -> Option<usize> {
-        let node = &self.nodes[self.current];
+        let node = self.nodes.get(self.current)?;
         let selected = self.selected_child(self.current)?;
         node.children.iter().position(|c| *c == selected)
     }
 
     pub(super) fn select_redo_branch(&mut self, index: usize) -> Result<(), CommandError> {
-        let children = self.nodes[self.current].children.clone();
+        let children = self
+            .nodes
+            .get(self.current)
+            .ok_or_else(|| {
+                Self::invalid_history_error("current redo node is out of bounds", self.current)
+            })?
+            .children
+            .clone();
         if index >= children.len() {
             return Err(CommandError::Other(format!(
                 "Invalid redo branch index {} (count={})",
@@ -407,21 +513,53 @@ impl UndoRedoManager {
                 children.len()
             )));
         }
-        self.nodes[self.current].preferred_child = Some(children[index]);
+        let child = children[index];
+        self.ensure_live_redo_child(child)?;
+        self.nodes
+            .get_mut(self.current)
+            .ok_or_else(|| {
+                Self::invalid_history_error("current redo node is out of bounds", self.current)
+            })?
+            .preferred_child = Some(child);
         Ok(())
     }
 
     pub(super) fn selected_child(&self, node: UndoNodeId) -> Option<UndoNodeId> {
-        let n = &self.nodes[node];
+        self.selected_child_checked(node).ok().flatten()
+    }
+
+    fn selected_child_checked(&self, node: UndoNodeId) -> Result<Option<UndoNodeId>, CommandError> {
+        let n = self.nodes.get(node).ok_or_else(|| {
+            Self::invalid_history_error("redo parent node is out of bounds", node)
+        })?;
         if n.children.is_empty() {
-            return None;
+            return Ok(None);
         }
-        if let Some(pref) = n.preferred_child
+        let selected = if let Some(pref) = n.preferred_child
             && n.children.contains(&pref)
         {
-            return Some(pref);
+            pref
+        } else {
+            match n.children.last().copied() {
+                Some(child) => child,
+                None => return Ok(None),
+            }
+        };
+        self.ensure_live_redo_child(selected)?;
+        Ok(Some(selected))
+    }
+
+    fn ensure_live_redo_child(&self, child: UndoNodeId) -> Result<(), CommandError> {
+        let child_node = self.nodes.get(child).ok_or_else(|| {
+            Self::invalid_history_error("redo child node is out of bounds", child)
+        })?;
+        if child_node.step.is_none() {
+            return Err(Self::invalid_history_error(
+                "redo child node is stale",
+                child,
+            ));
         }
-        n.children.last().copied()
+        Ok(())
     }
 
     pub(super) fn prune_if_needed(&mut self) {
@@ -443,32 +581,57 @@ impl UndoRedoManager {
     pub(super) fn find_prunable_leaf(&self) -> Option<UndoNodeId> {
         (1..self.nodes.len())
             .filter(|id| *id != self.current)
-            .filter(|id| self.nodes[*id].step.is_some())
-            .filter(|id| self.nodes[*id].children.is_empty())
+            .filter(|id| self.nodes.get(*id).is_some_and(|node| node.step.is_some()))
+            .filter(|id| {
+                self.nodes
+                    .get(*id)
+                    .is_some_and(|node| node.children.is_empty())
+            })
             .min()
     }
 
     pub(super) fn remove_leaf_node(&mut self, id: UndoNodeId) {
-        let parent = self.nodes[id].parent.unwrap_or(0);
-        self.nodes[parent].children.retain(|c| *c != id);
-        if self.nodes[parent].preferred_child == Some(id) {
-            self.nodes[parent].preferred_child = self.nodes[parent].children.last().copied();
+        let parent = match self.nodes.get(id).and_then(|node| node.parent) {
+            Some(parent) => parent,
+            None => {
+                debug_assert!(self.nodes.get(id).and_then(|node| node.parent).is_some());
+                return;
+            }
+        };
+        let Some(parent_node) = self.nodes.get_mut(parent) else {
+            debug_assert!(
+                parent < self.nodes.len(),
+                "undo history leaf parent is invalid"
+            );
+            return;
+        };
+        parent_node.children.retain(|c| *c != id);
+        if parent_node.preferred_child == Some(id) {
+            parent_node.preferred_child = parent_node.children.last().copied();
         }
 
         if self.clean_node == Some(id) {
             self.clean_node = None;
         }
 
-        self.nodes[id].parent = None;
-        self.nodes[id].children.clear();
-        self.nodes[id].preferred_child = None;
-        self.nodes[id].step = None;
+        let Some(node) = self.nodes.get_mut(id) else {
+            debug_assert!(id < self.nodes.len(), "undo history leaf node is invalid");
+            return;
+        };
+        node.parent = None;
+        node.children.clear();
+        node.preferred_child = None;
+        node.step = None;
 
         self.step_count = self.step_count.saturating_sub(1);
     }
 
     pub(super) fn prune_root_child(&mut self) -> bool {
-        let children = self.nodes[0].children.clone();
+        let Some(root) = self.nodes.first() else {
+            debug_assert!(!self.nodes.is_empty(), "undo history is missing root node");
+            return false;
+        };
+        let children = root.children.clone();
         if children.len() != 1 {
             return false;
         }
@@ -476,28 +639,60 @@ impl UndoRedoManager {
         if doomed == self.current {
             return false;
         }
-        if self.nodes[doomed].step.is_none() {
+        if self
+            .nodes
+            .get(doomed)
+            .is_none_or(|node| node.step.is_none())
+        {
             return false;
         }
 
         // Re-parent all of `doomed`'s children directly under root (root now represents the state
         // *after* `doomed`).
-        let adopted = std::mem::take(&mut self.nodes[doomed].children);
+        let adopted = match self.nodes.get_mut(doomed) {
+            Some(doomed_node) => std::mem::take(&mut doomed_node.children),
+            None => {
+                debug_assert!(
+                    doomed < self.nodes.len(),
+                    "undo history pruned node is invalid"
+                );
+                return false;
+            }
+        };
         for child in &adopted {
-            self.nodes[*child].parent = Some(0);
+            if let Some(child_node) = self.nodes.get_mut(*child) {
+                child_node.parent = Some(0);
+            } else {
+                debug_assert!(
+                    *child < self.nodes.len(),
+                    "undo history child node is invalid"
+                );
+                return false;
+            }
         }
 
-        self.nodes[0].children = adopted;
-        self.nodes[0].preferred_child = self.nodes[0].children.last().copied();
+        let Some(root) = self.nodes.get_mut(0) else {
+            debug_assert!(!self.nodes.is_empty(), "undo history is missing root node");
+            return false;
+        };
+        root.children = adopted;
+        root.preferred_child = root.children.last().copied();
 
         if self.clean_node == Some(doomed) {
             self.clean_node = Some(0);
         }
 
-        self.nodes[doomed].parent = None;
-        self.nodes[doomed].children.clear();
-        self.nodes[doomed].preferred_child = None;
-        self.nodes[doomed].step = None;
+        let Some(doomed_node) = self.nodes.get_mut(doomed) else {
+            debug_assert!(
+                doomed < self.nodes.len(),
+                "undo history pruned node is invalid"
+            );
+            return false;
+        };
+        doomed_node.parent = None;
+        doomed_node.children.clear();
+        doomed_node.preferred_child = None;
+        doomed_node.step = None;
 
         self.step_count = self.step_count.saturating_sub(1);
         true
@@ -776,8 +971,15 @@ impl UndoRedoManager {
                 preferred_child: None,
                 step: Some(step),
             });
-            self.nodes[node].children.push(new_id);
-            self.nodes[node].preferred_child = Some(new_id);
+            if let Some(parent_node) = self.nodes.get_mut(node) {
+                parent_node.children.push(new_id);
+                parent_node.preferred_child = Some(new_id);
+            } else {
+                debug_assert!(
+                    node < self.nodes.len(),
+                    "undo history restore parent is invalid"
+                );
+            }
             node = new_id;
             undo_node_ids.push(new_id);
             self.step_count = self.step_count.saturating_add(1);
@@ -797,8 +999,15 @@ impl UndoRedoManager {
                 preferred_child: None,
                 step: Some(step),
             });
-            self.nodes[redo_parent].children.push(new_id);
-            self.nodes[redo_parent].preferred_child = Some(new_id);
+            if let Some(parent_node) = self.nodes.get_mut(redo_parent) {
+                parent_node.children.push(new_id);
+                parent_node.preferred_child = Some(new_id);
+            } else {
+                debug_assert!(
+                    redo_parent < self.nodes.len(),
+                    "undo history restore redo parent is invalid"
+                );
+            }
             redo_parent = new_id;
             redo_node_ids_nearest_first.push(new_id);
             self.step_count = self.step_count.saturating_add(1);
@@ -838,9 +1047,20 @@ impl UndoRedoManager {
     pub(super) fn undo_path_nodes_oldest_first(&self) -> Vec<UndoNodeId> {
         let mut nodes: Vec<UndoNodeId> = Vec::new();
         let mut node = self.current;
-        while node != 0 {
+        let mut remaining = self.nodes.len();
+        while node != 0 && remaining > 0 {
+            let Some(current) = self.nodes.get(node) else {
+                break;
+            };
+            if current.step.is_none() {
+                break;
+            }
             nodes.push(node);
-            node = self.nodes[node].parent.unwrap_or(0);
+            let Some(parent) = current.parent else {
+                break;
+            };
+            node = parent;
+            remaining -= 1;
         }
         nodes.reverse();
         nodes
@@ -859,7 +1079,12 @@ impl UndoRedoManager {
     pub(super) fn undo_path_steps_oldest_first(&self) -> Vec<UndoStep> {
         self.undo_path_nodes_oldest_first()
             .into_iter()
-            .filter_map(|id| self.nodes[id].step.as_ref().cloned())
+            .filter_map(|id| {
+                self.nodes
+                    .get(id)
+                    .and_then(|node| node.step.as_ref())
+                    .cloned()
+            })
             .collect()
     }
 
@@ -869,9 +1094,107 @@ impl UndoRedoManager {
         let mut steps: Vec<UndoStep> = self
             .redo_path_nodes_nearest_first()
             .into_iter()
-            .filter_map(|id| self.nodes[id].step.as_ref().cloned())
+            .filter_map(|id| {
+                self.nodes
+                    .get(id)
+                    .and_then(|node| node.step.as_ref())
+                    .cloned()
+            })
             .collect();
         steps.reverse();
         steps
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{Position, SelectionDirection};
+    use super::*;
+
+    fn selection_snapshot() -> SelectionSetSnapshot {
+        SelectionSetSnapshot {
+            selections: vec![Selection {
+                start: Position::new(0, 0),
+                end: Position::new(0, 0),
+                direction: SelectionDirection::Forward,
+            }],
+            primary_index: 0,
+        }
+    }
+
+    fn undo_step(group_id: usize) -> UndoStep {
+        UndoStep {
+            group_id,
+            edits: vec![TextEdit {
+                start_before: 0,
+                start_after: 0,
+                deleted_text: String::new(),
+                inserted_text: "x".to_string(),
+            }],
+            before_selection: selection_snapshot(),
+            after_selection: selection_snapshot(),
+        }
+    }
+
+    fn tombstone_node(parent: Option<UndoNodeId>) -> UndoNode {
+        UndoNode {
+            parent,
+            children: Vec::new(),
+            preferred_child: None,
+            step: None,
+        }
+    }
+
+    #[test]
+    fn pop_undo_group_reports_stale_current_node() {
+        let mut manager = UndoRedoManager::new(10);
+        manager.nodes.push(tombstone_node(Some(0)));
+        manager.current = 1;
+
+        let err = manager
+            .pop_undo_group()
+            .expect_err("stale current node should be an explicit error");
+        assert!(err.to_string().contains("current node is stale"));
+    }
+
+    #[test]
+    fn pop_redo_group_reports_stale_child_node() {
+        let mut manager = UndoRedoManager::new(10);
+        manager.nodes.push(tombstone_node(Some(0)));
+        manager.nodes[0].children.push(1);
+        manager.nodes[0].preferred_child = Some(1);
+
+        let err = manager
+            .pop_redo_group()
+            .expect_err("stale redo child should be an explicit error");
+        assert!(err.to_string().contains("redo child node is stale"));
+    }
+
+    #[test]
+    fn checked_history_accessors_do_not_panic_on_invalid_current_node() {
+        let mut manager = UndoRedoManager::new(10);
+        manager.current = 999;
+
+        assert!(!manager.can_undo());
+        assert!(!manager.can_redo());
+        assert_eq!(manager.undo_depth(), 0);
+        assert_eq!(manager.redo_depth(), 0);
+        assert_eq!(manager.redo_branch_count(), 0);
+        assert_eq!(manager.selected_redo_branch_index(), None);
+    }
+
+    #[test]
+    fn valid_undo_redo_group_paths_still_work() {
+        let mut manager = UndoRedoManager::new(10);
+        let group = manager.push_step(undo_step(0), false);
+        assert_eq!(group, 0);
+
+        let undo_steps = manager.pop_undo_group().unwrap().unwrap();
+        assert_eq!(undo_steps.len(), 1);
+        assert_eq!(manager.current, 0);
+
+        let redo_steps = manager.pop_redo_group().unwrap().unwrap();
+        assert_eq!(redo_steps.len(), 1);
+        assert_eq!(manager.current, 1);
     }
 }

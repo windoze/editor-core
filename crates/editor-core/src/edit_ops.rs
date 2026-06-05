@@ -91,14 +91,10 @@ impl CommandExecutor {
 
     pub(super) fn execute_undo_command(&mut self) -> Result<CommandResult, CommandError> {
         self.undo_redo.end_group();
-        if !self.undo_redo.can_undo() {
-            return Err(CommandError::Other("Nothing to undo".to_string()));
-        }
-
         let before_char_count = self.editor.char_count();
         let steps = self
             .undo_redo
-            .pop_undo_group()
+            .pop_undo_group()?
             .ok_or_else(|| CommandError::Other("Nothing to undo".to_string()))?;
 
         let undo_group_id = steps.first().map(|s| s.group_id);
@@ -133,14 +129,10 @@ impl CommandExecutor {
 
     pub(super) fn execute_redo_command(&mut self) -> Result<CommandResult, CommandError> {
         self.undo_redo.end_group();
-        if !self.undo_redo.can_redo() {
-            return Err(CommandError::Other("Nothing to redo".to_string()));
-        }
-
         let before_char_count = self.editor.char_count();
         let steps = self
             .undo_redo
-            .pop_redo_group()
+            .pop_redo_group()?
             .ok_or_else(|| CommandError::Other("Nothing to redo".to_string()))?;
 
         let undo_group_id = steps.first().map(|s| s.group_id);
