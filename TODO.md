@@ -621,9 +621,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test text_buffer_single_source`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core`、`cargo test --all --all-targets`、`cargo test -p editor-core --doc`。
 - 未找到 `tools/run_fixtures.py` 或其它 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
-### T07R Review：审查 `PieceTable` 废弃迁移
+### [DONE] T07R Review：审查 `PieceTable` 废弃迁移
 
-状态：TODO
+状态：DONE
 
 审查范围：T07 的所有 diff。
 
@@ -640,6 +640,13 @@
 - `cargo test -p editor-core --test undo_redo`
 - `cargo test -p editor-core --test line_ops`
 - `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T07 diff，重点检查 `PieceTable` 是否仍参与主编辑路径、deprecated 兼容 API 标注、undo/redo 的 `deleted_text` / `inserted_text` 记录、`TextDelta` 的 before/after char count，以及完整文本副本是否被保留在 release 主路径。
+- 未发现需要立即修复或新增前置任务的问题；当前主路径未发现 `piece_table.insert/delete/get_text/get_range` 调用，剩余 `PieceTable` 使用限于 deprecated 兼容模块、测试、deprecated root re-export 和 debug-only `piece_table_shadow`。
+- `EditorCore::get_text` / `char_count` / `text_range` 统一走 `LineIndex` / `TextBuffer`；undo/redo 和文本 delta 计数通过 `EditorCore::char_count` 获取，删除/插入文本记录继续来自 char-offset range API。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core`。
 
 ### T08 实现：视觉行映射索引增量化
 
