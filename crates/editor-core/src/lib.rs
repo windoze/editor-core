@@ -104,15 +104,16 @@
 //! cannot bypass synchronization invariants. Use read-only getters such as
 //! [`EditorCore::line_index`], [`EditorCore::layout_engine`], [`EditorCore::folding_manager`], and
 //! [`EditorCore::viewport_width`] for inspection. Use [`CommandExecutor`], [`EditorStateManager`],
-//! or [`Workspace`] methods for mutations that must update text, layout, folding, styles, and
-//! notifications together.
+//! [`Workspace`], or narrowly scoped public methods for mutations that must update text, layout,
+//! folding, styles, and notifications together. Layout and interval/folding types are exposed from
+//! the crate root as facade re-exports rather than through public `layout` or `intervals` modules.
 //!
 //! # Module Description
 //!
 //! - [`storage`] - deprecated Piece Table compatibility layer
 //! - [`line_index`] - Rope-based line index and canonical text access facade
-//! - [`layout`] - soft wrappinglayout engine
-//! - [`intervals`] - Style interval tree andcode foldingmanagement
+//! - [`LayoutEngine`], [`WrapMode`], and related root re-exports - soft wrapping layout facade
+//! - [`IntervalTree`], [`FoldingManager`], and related root re-exports - style intervals and code folding facade
 //! - [`snapshot`] - Headless snapshot API (HeadlessGrid)
 //! - [`commands`] - Unified command interface
 //! - [`state`] - State management and query interface

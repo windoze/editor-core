@@ -1231,7 +1231,12 @@ impl CommandExecutor {
         &self.editor
     }
 
-    /// Get a mutable reference to the Editor Core
+    /// Get a mutable reference to the field-private Editor Core.
+    ///
+    /// Prefer [`execute`](Self::execute) for command-driven mutations that must keep text, layout,
+    /// cursor, selection, folding, style, and undo state synchronized. This accessor is intended for
+    /// advanced callers that need to invoke public [`EditorCore`] methods directly; it does not
+    /// expose private fields.
     pub fn editor_mut(&mut self) -> &mut EditorCore {
         &mut self.editor
     }

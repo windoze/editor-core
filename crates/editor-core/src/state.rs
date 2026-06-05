@@ -430,12 +430,15 @@ impl JumpList {
 ///
 /// The state manager adopts a "unidirectional data flow" pattern:
 ///
-/// 1. Frontend executes commands via [`execute()`](EditorStateManager::execute) (recommended)
-/// 2. Or directly modifies internal state via [`editor_mut()`](EditorStateManager::editor_mut) (advanced usage)
-/// 3. If using `editor_mut()`, call [`mark_modified()`](EditorStateManager::mark_modified) after modification
-///    to mark the change type
-/// 3. Manager increments version number and triggers all subscribed callbacks
-/// 4. Frontend retrieves the latest state via various `get_*_state()` methods
+/// 1. Frontends execute edits, cursor movement, viewport changes, and other user actions via
+///    [`execute()`](EditorStateManager::execute) or [`CommandExecutor`].
+/// 2. Derived state such as diagnostics, styles, decorations, symbols, and folds is replaced via
+///    explicit manager or [`Workspace`](crate::Workspace) methods so notifications stay in sync.
+/// 3. [`editor_mut()`](EditorStateManager::editor_mut) is reserved for advanced access to
+///    `EditorCore` public methods; `EditorCore` fields remain private and cannot be mutated
+///    directly.
+/// 4. Manager increments version number and triggers all subscribed callbacks.
+/// 5. Frontends retrieve the latest state via various `get_*_state()` methods.
 ///
 /// # Example
 ///
@@ -514,7 +517,12 @@ impl EditorStateManager {
         self.executor.editor()
     }
 
-    /// Get a mutable reference to the Editor Core
+    /// Get a mutable reference to the field-private Editor Core.
+    ///
+    /// Prefer [`execute`](Self::execute) and the explicit derived-state methods on this manager for
+    /// observable mutations. This accessor is intended for advanced callers that need to invoke
+    /// public [`EditorCore`] methods directly; it does not expose private storage, layout, folding,
+    /// style, or cursor fields.
     pub fn editor_mut(&mut self) -> &mut EditorCore {
         self.executor.editor_mut()
     }

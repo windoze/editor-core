@@ -1287,9 +1287,9 @@
 - 发现 T14 后续文档修复项：`EditorStateManager` 文档仍建议通过 `editor_mut()` 直接修改内部状态并手动 `mark_modified()`，且 `lib.rs` module description 仍以私有 `layout` / `intervals` 模块链接描述 facade；已在 T15 前新增 `T14F` / `T14FR`。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo check -p tui-editor`。
 
-### T14F 修复：同步公开 API 收紧文档
+### [DONE] T14F 修复：同步公开 API 收紧文档
 
-状态：TODO
+状态：DONE
 
 依赖：
 
@@ -1323,6 +1323,14 @@
 
 - 公开文档不再鼓励绕过 T14 建立的受控 mutation API。
 - 可见性迁移说明与 root facade re-export 保持一致。
+
+完成记录：
+
+- 更新 `lib.rs` 的 `API Visibility` 与 `Module Description`，说明 `LayoutEngine`、`IntervalTree`、`FoldingManager` 等公开类型通过 crate root facade re-export 暴露，不再暗示私有 `layout` / `intervals` 模块路径仍是 public API。
+- 更新 `EditorStateManager` 顶层文档，以及 `EditorStateManager::editor_mut` / `CommandExecutor::editor_mut` 方法文档；不再建议外部直接修改内部字段或绕过同步不变量，改为强调命令、manager/workspace 受控 API 和受字段私有化保护的高级 public method 调用。
+- 未修改编译逻辑，未新增 API。
+- 已运行并通过：`cargo fmt`、`cargo test -p editor-core --doc`、`cargo clippy --all-targets -- -D warnings`。
+- 完整测试套件未运行：本任务仅修改文档注释，且 doc test 已通过，按任务要求跳过。
 
 ### T14FR Review：审查公开 API 文档同步修复
 
