@@ -1665,9 +1665,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test undo_coalescing`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test undo_tree`、`cargo test -p editor-core-ui --test ime_undo_grouping_tests`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
-### T17R Review：审查 Undo coalescing 修正
+### [DONE] T17R Review：审查 Undo coalescing 修正
 
-状态：TODO
+状态：DONE
 
 审查范围：T17 的所有 diff。
 
@@ -1684,6 +1684,13 @@
 - `cargo test -p editor-core --test undo_coalescing`
 - `cargo test -p editor-core --test undo_redo`
 - `cargo test -p editor-core --test undo_tree`
+
+完成记录：
+
+- 已审查 T17 diff，重点检查 `UndoRedoManager` 的 open coalescing state、普通 insert 合并条件、`ReplaceCoalescingUndo` 显式 IME 合并路径、selection/caret 快照连续性、多光标插入、redo branch/clean state 相关路径，以及新增 `undo_coalescing` 覆盖。
+- 未发现需要立即修复或新增前置任务的问题；普通 typing coalescing 仅在纯插入、无换行、selection set 连续、每个插入位置相邻且未超时时复用 group，cursor/undo/redo 和非插入 edit 会结束或关闭 open group，IME 显式合并路径与普通 typing group 隔离。
+- 时间窗口测试使用 `Duration::ZERO` 打断合并，不依赖真实 sleep；多光标连续插入、显式 `EndUndoGroup`、非相邻插入、换行、光标移动和 IME-like replacement 均有回归覆盖。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test undo_coalescing`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test undo_tree`、`cargo test -p editor-core`、`cargo test -p editor-core-ui --test ime_undo_grouping_tests`。
 
 ### T18 实现：多折叠区域 visual/logical 往返修正
 
