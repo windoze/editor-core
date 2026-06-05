@@ -23,4 +23,5 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core`。
 - 已运行并通过：`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 已确认不存在 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
-- 下一步更新 `TODO.md` 的 T08 标题、状态和完成记录，然后检查 diff 并提交。
+- 已更新 `TODO.md` 的 T08 标题、状态和完成记录，并提交 T08 变更：`6a93fbb [T08] Incremental visual row index`。
+- 本次调用到此停止，不继续执行 `T08R`。
