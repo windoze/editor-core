@@ -1260,9 +1260,9 @@
 - 已运行并通过：`cargo fmt`、`cargo check -p editor-core-lsp -p editor-core-ffi -p tui-editor`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo test -p tui-editor`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
-### T14R Review：审查公开 API 收紧
+### [DONE] T14R Review：审查公开 API 收紧
 
-状态：TODO
+状态：DONE
 
 审查范围：T14 的所有 diff。
 
@@ -1279,6 +1279,68 @@
 - `cargo test -p editor-core`
 - `cargo test -p editor-core-ffi`
 - `cargo check -p tui-editor`
+
+完成记录：
+
+- 已审查 T14 diff，重点检查 `EditorCore` 字段私有化、只读 getter、`EditorStateManager` / `Workspace` 派生状态 mutation helper、FFI/TUI/workspace 调用点，以及 `layout` / `intervals` 的 root facade re-export。
+- 未发现外部可直接写入文本、layout、folding、style、diagnostics、decorations 或 cursor 字段并破坏同步不变量的 public API；公开 getter 均返回只读引用或切片，派生状态替换路径经 `EditorStateManager` / `Workspace` 受控 API 触发通知和 visual-row cache 处理。
+- 发现 T14 后续文档修复项：`EditorStateManager` 文档仍建议通过 `editor_mut()` 直接修改内部状态并手动 `mark_modified()`，且 `lib.rs` module description 仍以私有 `layout` / `intervals` 模块链接描述 facade；已在 T15 前新增 `T14F` / `T14FR`。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo check -p tui-editor`。
+
+### T14F 修复：同步公开 API 收紧文档
+
+状态：TODO
+
+依赖：
+
+- T14R 审查发现的公开 API 可见性文档不一致问题。
+
+范围文件：
+
+- `crates/editor-core/src/lib.rs`
+- `crates/editor-core/src/state.rs`
+- `crates/editor-core/src/commands.rs`，仅当 `editor_mut` 文档需要同步修正
+
+已知入口：
+
+- `lib.rs` 的 `API Visibility` 与 `Module Description`
+- `EditorStateManager` 顶层文档中关于 `editor_mut()` 直接修改内部状态和手动 `mark_modified()` 的说明
+- `CommandExecutor::editor_mut` / `EditorStateManager::editor_mut` 方法文档
+
+实现要求：
+
+1. 文档必须与 T14 后的实际 API 可见性一致：外部 mutation 应优先走 `CommandExecutor`、`EditorStateManager`、`Workspace` 或明确受控的 public 方法。
+2. 不再建议外部通过 `editor_mut()` 直接修改内部字段或绕过同步不变量；若保留 `editor_mut()` 文档，只能说明它返回受字段私有化保护的 `EditorCore`，适用于有限高级检查或 public method 调用。
+3. 将 `layout` / `intervals` 私有模块的公开文档描述改为 root facade re-export 描述，避免公开 docs 暗示 `editor_core::layout` / `editor_core::intervals` 仍是 public 模块路径。
+4. 不修改编译逻辑，不引入新的 API。
+
+测试要求：
+
+1. 运行 `cargo test -p editor-core --doc`。
+2. 若只修改文档注释且 doc test 通过，可跳过完整测试套件并在完成记录说明原因。
+
+验收标准：
+
+- 公开文档不再鼓励绕过 T14 建立的受控 mutation API。
+- 可见性迁移说明与 root facade re-export 保持一致。
+
+### T14FR Review：审查公开 API 文档同步修复
+
+状态：TODO
+
+审查范围：T14F 的所有 diff。
+
+审查重点：
+
+1. 文档是否准确描述 T14 后的字段私有化和受控 mutation 路径。
+2. 是否仍暗示 `editor_core::layout` / `editor_core::intervals` 是 public 模块路径。
+3. `editor_mut()` 文档是否避免鼓励外部绕过同步不变量。
+4. doc examples 是否仍能编译。
+5. 是否只做文档同步，没有混入逻辑改动。
+
+建议命令：
+
+- `cargo test -p editor-core --doc`
 
 ### T15 实现：删除或私有化 `LineIndex` 陷阱 API
 

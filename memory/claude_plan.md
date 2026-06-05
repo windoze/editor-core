@@ -4,16 +4,15 @@
 
 ## 当前计划
 
-1. 当前第一个未完成任务为 `T14 实现：收紧公开 API 和 EditorCore 字段`；本轮只完成 T14，不进入 T14R 或后续任务。
-2. 在开始实现前检查最近提交，确认是否有直接阻塞 T14 的未完成事项；如有，按 `TODO.md` 规则添加最小前置任务并停止。
-3. 只阅读 T14 范围文件及必要调用点，重点确认 `EditorCore` 公共字段、内部模块可见性、workspace/FFI/TUI 的直接字段访问。
-4. 以最小破坏方式收紧最危险的公开面：文本存储、layout、folding/style 派生状态字段改为私有或受控访问；保留必要 facade re-export，并为外部迁移提供说明。
-5. 更新 workspace、FFI、TUI 及测试中对已私有字段的访问，改用 getter 或受控 mutation API，避免绕过同步不变量。
-6. 按要求运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo test -p tui-editor` 或 `cargo check -p tui-editor`；若发现未排期失败，修复或更新 `TODO.md`。
-7. 任务完成后把 `TODO.md` 的 T14 标题标记为 `[DONE]` 并写入完成记录；仅当阶段级计划变化时才更新 `PLAN.md`。
-8. 检查 git 状态、差异和最近提交，提交本次任务相关全部改动，然后停止。
+1. 当前第一个未完成任务为 `T14R Review：审查公开 API 收紧`；本轮只完成 T14R，不进入后续实现任务。
+2. 先读取 `TODO.md` 确认任务顺序，再检查最近提交是否声明与 T14R 直接相关的未完成事项。
+3. 审查 T14 diff，重点检查 `EditorCore` 字段私有化、只读 getter、受控 mutation API、FFI/TUI/workspace 调用点、必要 facade re-export 和文档一致性。
+4. Review 任务不主动重构；若发现明确问题，优先记录为最小后续任务并放在正确依赖位置。
+5. 按要求运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo check -p tui-editor`。
+6. 更新 `TODO.md`：将 T14R 标记 `[DONE]`，填写完成记录；如新增后续任务，插入到 T15 之前。
+7. 检查 git 状态、差异和最近提交，提交本次任务相关改动，然后停止。
 
-## 进度记录
+## 历史进度记录
 
 - 已写入初始执行计划，下一步读取 `TODO.md` 并识别第一个未完成任务。
 - 已识别第一个未完成任务：`T13 实现：纯移动拆分 commands.rs`。
@@ -45,3 +44,12 @@
 - 验证已通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo test -p tui-editor`、`cargo test --all --all-targets`。
 - 已确认不存在 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，因此无可运行完整 fixture suite。
 - 已将 `TODO.md` 中 T14 标记为 `[DONE]` 并写入完成记录；下一步检查 git diff/status/log，提交本轮相关改动后停止。
+
+## 当前进度记录
+
+- 已读取 `TODO.md`，首个未完成任务为 `T14R Review：审查公开 API 收紧`。
+- 最近提交为 `e782da8 [T14] Tighten editor core public API`，未发现提交信息中声明的未完成事项。
+- 已审查 T14 diff，未发现外部可直接写入文本、layout、folding、style、diagnostics、decorations 或 cursor 字段并破坏同步不变量的 public API。
+- 审查发现文档一致性问题：`EditorStateManager` 文档仍建议通过 `editor_mut()` 直接修改内部状态并手动 `mark_modified()`，且 `lib.rs` 仍以私有 `layout` / `intervals` 模块链接描述 facade。
+- 已完成验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo check -p tui-editor` 均通过。
+- 已更新 `TODO.md`：T14R 标记 `[DONE]`，并在 T15 前插入 `T14F` / `T14FR`，用于后续修正文档与 T14 API 可见性变更不一致的问题。
