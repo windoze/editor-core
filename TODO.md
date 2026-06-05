@@ -1518,9 +1518,9 @@
 - 已在 T17 前新增 `T16F` / `T16FR`，要求先收口上述 ABI 契约和 UI FFI 转换/长度检查问题。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo test -p editor-core-ui-ffi`。
 
-### T16F 修复：收口 FFI ABI 契约与 UI FFI 转换检查
+### [DONE] T16F 修复：收口 FFI ABI 契约与 UI FFI 转换检查
 
-状态：TODO
+状态：DONE
 
 依赖：
 
@@ -1571,6 +1571,16 @@
 - FFI public ABI 不暴露 `usize` / `size_t`，且从 public fixed-width 参数到 internal `usize` 的转换没有 unchecked truncation 风险。
 - UI FFI two-call buffer/output count 契约不会因 `usize` -> `u32` 截断而返回错误长度。
 - ABI 文档、header 和实际实现对 pre-v1 兼容策略、boolean 表示和 fixed-width surface 的描述一致。
+
+完成记录：
+
+- 在 `editor-core-ui-ffi` 中新增 invalid-argument 标记、统一 `u32`/count 到 `usize` 转换 helper、`usize` 到 `u32` 输出 helper，以及 FFI slice 构造前的 count/null/slice-length 检查。
+- 将 UI FFI public 边界中的 viewport width、LSP hover/definition 行列、tab width、semantic token data_len、match highlight ranges、selection ranges、marked text、char offset/view mapping、minimap row/count、RGBA render out buffer 和 viewport/selection 输出等路径改为显式转换，不再直接 `as usize` 或静默 `as u32` 截断。
+- `render_rgba` 在 required RGBA 长度无法用 `u32` 表示时返回 `ECU_ERR_INVALID_ARGUMENT` 并设置 last error；two-call buffer-too-small 路径继续写入可表示的 required length。
+- 扩展 `editor-core-ui-ffi` 单元测试，覆盖 null `out_len`、RGBA required length 超出 `u32`、非零 `range_count` 搭配 null ranges 的 invalid-argument 路径，并更新 null-argument 期望。
+- 更新 `editor_core_ffi.h` 和 `docs/abi-v1-draft.md`，明确当前是 pre-v1 fixed-width 收口、header 是当前 C surface 权威定义、legacy C `bool` 策略，以及 UI FFI fixed-width/control-plane 代表性入口和 array count 契约。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui-ffi`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
 ### T16FR Review：审查 FFI ABI 契约与 UI FFI 转换修复
 

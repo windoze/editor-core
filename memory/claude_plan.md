@@ -1,54 +1,37 @@
-本轮执行计划
-========
+# 当前执行计划
 
-目标：按照 `TODO.md` 的顺序完成第一个未标记 `[DONE]` 的任务，完成后提交并停止。
+## 约束
+- 以 `TODO.md` 为唯一任务顺序和完成状态来源。
+- 本次只完成第一个未在标题中标记 `[DONE]` 的任务，然后停止。
+- 若遇到阻塞当前任务的真实缺陷或缺失能力，先修复；若不能在本次完成，则在 `TODO.md` 中添加最小前置任务并提交后停止。
+- 不用规避、降级夹具、缩小规格或引入临时兼容层来绕开问题。
+- 若有代码变更，按要求运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`，再运行相关测试；需要时运行完整测试套件并记录结果。
+- 任务完成后必须在 `TODO.md` 标题前加 `[DONE]`，更新完成记录，并提交所有相关更改。
 
-约束与判定
-----------
+## 步骤
+1. 读取 `TODO.md`，按顺序定位第一个标题未带 `[DONE]` 的任务。
+2. 查看该任务的依赖、验证要求和完成记录；如最新提交明确提到与该任务直接相关的未完成问题，一并纳入范围或补为前置任务。
+3. 检查当前工作树状态，避免覆盖用户或其他代理的无关改动。
+4. 阅读与当前任务相关的源码、测试和文档，确定最小正确实现范围。
+5. 实施当前任务；若发现阻塞性规格不匹配或缺失能力，按任务规则更新 `TODO.md` 并停止。
+6. 添加或更新聚焦测试，必要时补充文档。
+7. 运行格式化、lint 和任务要求的测试；处理所有未被明确排期的失败。
+8. 更新 `TODO.md` 的 `[DONE]` 标记和完成记录；仅当阶段级计划变化时更新 `PLAN.md`。
+9. 查看 diff、状态和最近提交，确认只提交本次相关文件。
+10. 使用清晰任务编号提交更改，然后停止，不处理下一个任务。
 
-- `TODO.md` 是唯一任务排序与完成状态来源。
-- 只有标题显式带有 `[DONE]` 的任务才算完成。
-- 本轮只完成第一个未完成任务，不继续处理后续任务。
-- 如果遇到阻塞当前任务的真实缺陷、缺失特性或测试/fixture 失败，优先修复；若无法在当前任务内正确修复，则把最小必要前置任务插入 `TODO.md`，提交并停止。
-- 不通过缩小范围、改 fixture 形状、绕开模型或特殊用例来规避规范问题。
-- `PLAN.md` 只在阶段级计划或依赖结构变化时更新。
-
-步骤计划
---------
-
-1. 读取 `TODO.md`，识别第一个标题未带 `[DONE]` 的任务，并记录其要求、依赖和验证项。
-2. 查看最近提交，只有当最新提交明确提到与该任务直接相关的未完成问题时，才把它纳入当前任务或作为前置项写入 `TODO.md`。
-3. 根据该任务定位相关代码、测试和文档，避免无关历史问题扫描。
-4. 实现任务要求；如发现阻塞性规范缺口，按要求更新 `TODO.md` 并停止。
-5. 运行格式化、lint 和相关测试；若涉及编译输出变化，按顺序运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`，再运行必要的完整测试/fixture 验证。
-6. 若所有验证通过，在 `TODO.md` 中给当前任务标题加 `[DONE]`，更新 completion record。
-7. 检查 git 状态、diff 和最近提交，确认只提交本轮相关变更；若是恢复未完成任务，则按要求包含当前未提交文件。
-8. 使用清晰任务消息提交，提交后停止，不处理下一任务。
-
-历史进度记录：T16
------------------
-
-- 已写入初始执行计划。
-- 已读取 `TODO.md`，确认第一个未完成任务是 `T16 实现：FFI ABI 定宽迁移`。
-- T16 的核心要求：定向列出 public `extern "C"` 签名中的 `usize`，将新公共 ABI 迁移为定宽整数，内部转换必须做溢出检查并返回 `InvalidArgument`，同步 ABI 文档和 FFI 测试；完成后只标记 T16，不处理 T16R。
-- 已完成定向 `extern "C" fn` + `usize` 检查，发现公开 `usize` 只在 `editor-core-ffi/src/lib.rs`，`editor-core-ui-ffi` 公开签名未暴露 `usize`。
-- 已将 `editor-core-ffi` 公开 `usize` 签名改为 `u32`/`u64`，并新增定宽入参到 `usize` 的检查 helper；当前定向复查已无 public `extern "C"` 签名暴露 `usize`。
-- 已同步 `crates/editor-core-ffi/include/editor_core_ffi.h`、Swift `EditorCoreFFI` 包装和 `docs/abi-v1-draft.md`；Swift 侧不再用 `Int(clamping:)` 向 ABI 传递会被静默截断的宽度/行数参数。
-- 已扩展 `crates/editor-core-ffi/tests/abi_v1.rs`，加入编译期函数指针签名断言，固定公开 ABI 的 `u32`/`u64` 形状，并覆盖必填输出指针的 `InvalidArgument` 错误路径和 LSP `u64` 边界坐标不截断行为。
+## 进度
+- 已读取 `TODO.md`，第一个未完成任务是 `T16F 修复：收口 FFI ABI 契约与 UI FFI 转换检查`。
+- 已检查最近提交：最新提交为 `T16R`，直接对应当前 T16F 前置修复项，无需额外改写任务顺序。
+- 已检查工作树：本次新增/修改 `memory/claude_plan.md`；未跟踪的 `notification.sh`、`run_agent.sh` 与当前任务无关，不修改也不提交。
+- 已审查 `editor-core-ui-ffi/src/lib.rs`：存在多处 public `u32` 入参直接 `as usize`、slice count 直接进入 `from_raw_parts`、`usize` 输出直接 `as u32`，以及 RGBA required length 可能截断。
+- 已审查 ABI 文档/Header：文档的 boolean 规则与当前 header/Rust 实现仍需补充 pre-v1 兼容说明；fixed-width surface 列表需说明 header 是权威定义或改为代表性示例。
+- 已在 `editor-core-ui-ffi` 增加 fixed-width 转换、slice count、输出 `u32` 边界 helper，并替换 T16F 指定入口及相关选择/渲染路径的直接截断点。
+- 已扩展同文件测试，覆盖 null output pointer、RGBA required length 超出 `u32`、非零 count 搭配 null ranges 的 invalid-argument 路径。
+- 已更新 `editor_core_ffi.h` 与 `docs/abi-v1-draft.md`，说明 pre-v1 fixed-width 收口、legacy C `bool` 策略和 Header 权威性。
 - 已运行 `cargo fmt`。
-- 首次运行 `cargo test -p editor-core-ffi --test abi_v1` 时，新增测试触及已排期 `T19` 的 UTF-16 半代理对策略差异；已将 T16 测试收窄为不覆盖半代理对策略，只验证 u64 边界输入不会被截断。
-- `swift test` 首次运行因 SwiftPM 插件缺少/过期 Rust staticlib 失败；已按插件提示运行 `cargo build -p editor-core-ui-ffi --release`。随后 Swift 编译暴露本轮 Swift 多语句函数漏写 `return`，已修复。
-- 已通过验证：`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`、`cargo build -p editor-core-ui-ffi --release`、`swift test`。
-- 已确认仓库没有 `tools/run_fixtures.py`、`tools/**/*fixture*` 或 `tools/` fixture runner，完整 fixture suite 无可运行入口。
-- 已将 `TODO.md` 中 T16 标记为 `[DONE]` 并补充完成记录；不会继续执行 T16R。
-
-当前进度记录：T16R
-------------------
-
-- 已读取 `TODO.md`，第一个未完成任务是 `T16R Review：审查 FFI ABI 定宽迁移`。
-- 已检查最近提交：`cc6e542 [T16] Migrate FFI ABI to fixed-width types`，与当前 review 任务直接相关。
-- 当前执行范围限定为审查 T16 diff、确认 public C ABI 定宽与溢出检查、运行 T16R 建议验证命令，并在完成后更新 `TODO.md` 与提交。
-- 已完成 T16R 审查，确认 `editor-core-ffi` public `extern "C"` 签名未继续暴露 `usize`，header 未继续暴露 `size_t`。
-- 审查发现需要排期的 T16 后续修复项：ABI 文档对旧 ABI/布尔类型/当前 public surface 的描述不完全一致，`editor-core-ui-ffi` 仍有 unchecked `as` 转换和部分输出长度截断风险。计划在 `TODO.md` 中新增 `T16F` / `T16FR`，位置放在 `T16R` 之后、`T17` 之前。
-- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo test -p editor-core-ui-ffi`。
-- 已更新 `TODO.md`：`T16R` 标记为 `[DONE]`，并新增 `T16F` / `T16FR` 作为 `T17` 前的后续修复与 review 任务。
+- 首次 `cargo clippy --all-targets -- -D warnings` 在 `editor-core-ui-ffi` 编译阶段发现 `ViewportState.sub_row_offset` 是 `u16`，已改为 `u32::from(...)` 无损输出。
+- 已重新运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui-ffi`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
+- 已确认 `tools/run_fixtures.py` 与 `tools/**/*fixture*` 均不存在，完整 fixture suite 无可运行入口。
+- 已更新 `TODO.md`：T16F 标题加 `[DONE]`、状态改为 DONE，并写入实现与验证完成记录。
+- 下一步检查 diff/status，确认只提交 T16F 相关文件和本计划文件，然后创建 Git 提交。

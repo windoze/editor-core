@@ -1,7 +1,7 @@
 # editor-core ABI v1 Draft
 
-Status: Draft aligned with the current ABI-v1 implementation
-Scope date: 2026-06-05
+Status: Draft aligned with the current pre-v1 fixed-width implementation
+Scope date: 2026-06-06
 
 ## Goals
 
@@ -35,15 +35,16 @@ This gives good performance now and allows schema-rich features without blocking
 - Calling convention: `extern "C"`.
 - Endianness: little-endian.
 - Public integers in structs and function signatures: fixed-width only (`uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`, `int32_t`, etc.).
-- Public booleans: `uint8_t` (`0` false, `1` true).
+- Public booleans in new typed structs and out-parameters: `uint8_t` (`0` false, `1` true). The current pre-v1 `editor_core_ffi.h` still contains legacy C `bool` return values for older JSON/control-plane helpers; do not add new `bool` APIs before v1 finalization.
 - No C bitfields in public structs.
 - No Rust `usize` / C `size_t` in public structs or public function signatures.
 - All extensible structs include:
   - `uint32_t abi_version`
   - `uint32_t struct_size`
 - Unknown trailing bytes in input structs must be ignored if `struct_size > known_size`.
-- Output buffers use the two-call pattern: `out_cap` and `out_len` are `uint32_t`; `out_len` must be non-null; null `out_buf` or insufficient `out_cap` returns `ECF_ERR_BUFFER_TOO_SMALL` and writes the required byte length.
-- Rust-side conversions from public fixed-width integers to internal `usize` must be checked. Too-large values return `ECF_ERR_INVALID_ARGUMENT` for status-returning APIs; JSON/string or legacy bool APIs return their failure sentinel and set `last_error_message`.
+- Output buffers use the two-call pattern: `out_cap` and `out_len` are `uint32_t`; `out_len` must be non-null; null `out_buf` or insufficient `out_cap` returns `ECF_ERR_BUFFER_TOO_SMALL` / `ECU_ERR_BUFFER_TOO_SMALL` and writes the required byte length or element count.
+- If a required output length or count cannot be represented as `uint32_t`, the function must not truncate it; status-returning APIs return `INVALID_ARGUMENT` and set `last_error_message`.
+- Rust-side conversions from public fixed-width integers to internal `usize` must be checked. Too-large values return `ECF_ERR_INVALID_ARGUMENT` / `ECU_ERR_INVALID_ARGUMENT` for status-returning APIs; JSON/string or legacy bool APIs return their failure sentinel and set `last_error_message`.
 
 ## Handle Model
 
@@ -226,6 +227,7 @@ Guidelines:
 ## Versioning Strategy
 
 - ABI major version baked into library and exported via `ecf_abi_version()`.
+- The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
   - new functions
   - new enum values
@@ -268,7 +270,7 @@ Guidelines:
 
 ## Current Fixed-Width JSON/Control-Plane Surfaces
 
-The JSON/control-plane functions still return JSON strings for schema flexibility, but their scalar ABI parameters are fixed-width:
+The C headers are authoritative. The examples below are representative surfaces that have been moved to fixed-width scalar parameters while still returning JSON strings for schema flexibility. Entries that still use C `bool` are legacy pre-v1 exports covered by the boolean policy above:
 
 ```c
 EcfEditorState* editor_core_ffi_editor_state_new(const char* initial_text, uint32_t viewport_width);
@@ -285,6 +287,20 @@ uint64_t editor_core_ffi_lsp_char_offset_to_utf16(const char* line_text, uint64_
 uint64_t editor_core_ffi_lsp_utf16_to_char_offset(const char* line_text, uint64_t utf16_offset);
 char* editor_core_ffi_lsp_formatting_options_json(uint32_t tab_size, bool insert_spaces);
 ```
+
+The UI FFI (`editor-core-ui-ffi`) follows the same fixed-width boundary discipline for its C surface. Examples include:
+
+```c
+EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8, uint32_t viewport_width_cells);
+EditorUi* editor_core_ui_ffi_editor_ui_clone_view(EditorUi* ui, uint32_t viewport_width_cells);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_hover(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_set_tab_width(EditorUi* ui, uint32_t width_cells);
+char* editor_core_ui_ffi_editor_ui_minimap_json(EditorUi* ui, uint32_t start_visual_row, uint32_t count);
+int32_t editor_core_ui_ffi_editor_ui_render_rgba(EditorUi* ui, uint8_t* out_buf, uint32_t out_cap, uint32_t* out_len);
+int32_t editor_core_ui_ffi_editor_ui_get_selections(EditorUi* ui, EcuSelectionRange* out_ranges, uint32_t out_cap, uint32_t* out_len, uint32_t* out_primary_index);
+```
+
+All public array counts (`style_count`, `font_count`, `decoration_count`, `range_count`, `data_len`, `out_cap`) are `uint32_t`; Rust checks conversion to internal `usize` and validates Rust slice length limits before constructing slices.
 
 ## Suggested Initial Typed Command Set (v1)
 
@@ -317,11 +333,12 @@ Everything else can remain JSON in v1.
 
 ## Migration Plan from Current JSON-Heavy FFI
 
-1. Keep existing JSON exports intact.
-2. Add typed hot-path functions (parallel API track).
-3. Add binary viewport blob APIs.
-4. Update platform bindings to prefer typed/blob paths.
-5. Restrict JSON path to control plane and tooling.
+1. Complete pre-v1 breaking cleanup of fixed-width scalar types, checked conversions, and legacy boolean policy.
+2. Keep existing JSON exports intact where their signatures match the fixed-width contract; otherwise update them before v1 rather than carrying parallel legacy aliases.
+3. Add typed hot-path functions (parallel API track).
+4. Add binary viewport blob APIs.
+5. Update platform bindings to prefer typed/blob paths.
+6. Restrict JSON path to control plane and tooling.
 
 ## Open Questions
 

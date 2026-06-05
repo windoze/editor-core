@@ -4,6 +4,15 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/*
+ * Pre-v1 ABI note:
+ * - Public sizes, counts, rows, columns, and offsets use fixed-width integer types.
+ * - This header still contains legacy C bool return values for older JSON/control-plane helpers.
+ *   New typed boolean fields and out-parameters should use uint8_t (0=false, 1=true).
+ * - No public signature may use size_t; callers must treat this header as the authoritative
+ *   declaration of the current pre-v1 C surface.
+ */
+
 #ifdef __cplusplus
 extern "C" {
 #endif

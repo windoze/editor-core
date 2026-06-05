@@ -20,6 +20,7 @@ use libc::{c_char, c_float, c_int, c_void};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
+use std::mem;
 use std::ptr;
 use std::slice;
 
@@ -37,6 +38,24 @@ fn clear_last_error() {
     LAST_ERROR.with(|slot| {
         *slot.borrow_mut() = None;
     });
+}
+
+const INVALID_ARGUMENT_PREFIX: &str = "invalid argument: ";
+
+fn invalid_argument(msg: impl Into<String>) -> String {
+    format!("{INVALID_ARGUMENT_PREFIX}{}", msg.into())
+}
+
+fn strip_invalid_argument_prefix(err: &str) -> Option<&str> {
+    err.strip_prefix(INVALID_ARGUMENT_PREFIX)
+}
+
+fn set_last_error_from_error(err: String) {
+    if let Some(msg) = strip_invalid_argument_prefix(&err) {
+        set_last_error(msg.to_string());
+    } else {
+        set_last_error(err);
+    }
 }
 
 fn ffi_catch<T, F>(f: F) -> Result<T, String>
@@ -62,15 +81,23 @@ fn make_c_string_ptr(mut s: String) -> *mut c_char {
 
 fn require_mut<'a, T>(ptr: *mut T, name: &str) -> Result<&'a mut T, String> {
     if ptr.is_null() {
-        return Err(format!("{name} is null"));
+        return Err(invalid_argument(format!("{name} is null")));
     }
     // SAFETY: checked for null; caller promises valid pointer.
     Ok(unsafe { &mut *ptr })
 }
 
+fn require_out_mut<'a, T>(ptr: *mut T, name: &str) -> Result<&'a mut T, String> {
+    if ptr.is_null() {
+        return Err(invalid_argument(format!("{name} is null")));
+    }
+    // SAFETY: checked for null; caller promises valid output pointer.
+    Ok(unsafe { &mut *ptr })
+}
+
 fn require_cstr<'a>(ptr: *const c_char, name: &str) -> Result<&'a CStr, String> {
     if ptr.is_null() {
-        return Err(format!("{name} is null"));
+        return Err(invalid_argument(format!("{name} is null")));
     }
     Ok(unsafe { CStr::from_ptr(ptr) })
 }
@@ -78,12 +105,78 @@ fn require_cstr<'a>(ptr: *const c_char, name: &str) -> Result<&'a CStr, String> 
 fn require_str<'a>(ptr: *const c_char, name: &str) -> Result<&'a str, String> {
     let cstr = require_cstr(ptr, name)?;
     cstr.to_str()
-        .map_err(|_| format!("{name} is not valid UTF-8"))
+        .map_err(|_| invalid_argument(format!("{name} is not valid UTF-8")))
+}
+
+fn u32_to_usize(value: u32, name: &str) -> Result<usize, String> {
+    usize::try_from(value).map_err(|_| {
+        invalid_argument(format!(
+            "{name} value {value} does not fit in usize on this platform"
+        ))
+    })
+}
+
+fn usize_to_u32(value: usize, name: &str) -> Result<u32, String> {
+    u32::try_from(value)
+        .map_err(|_| invalid_argument(format!("{name} value {value} exceeds the u32 ABI limit")))
+}
+
+fn ffi_count_to_usize<T>(value: u32, name: &str) -> Result<usize, String> {
+    let len = u32_to_usize(value, name)?;
+    let elem_size = mem::size_of::<T>().max(1);
+    let max_len = isize::MAX as usize / elem_size;
+    if len > max_len {
+        return Err(invalid_argument(format!(
+            "{name} value {value} exceeds the maximum slice length"
+        )));
+    }
+    Ok(len)
+}
+
+unsafe fn ffi_slice_from_raw_parts<'a, T>(
+    ptr: *const T,
+    count: u32,
+    ptr_name: &str,
+    count_name: &str,
+) -> Result<&'a [T], String> {
+    let len = ffi_count_to_usize::<T>(count, count_name)?;
+    if len == 0 {
+        return Ok(&[]);
+    }
+    if ptr.is_null() {
+        return Err(invalid_argument(format!("{ptr_name} is null")));
+    }
+    // SAFETY: caller promises `ptr` is valid for `len` elements; this helper validates null,
+    // fixed-width conversion, and Rust slice length limits before constructing the slice.
+    Ok(unsafe { slice::from_raw_parts(ptr, len) })
+}
+
+unsafe fn ffi_slice_from_raw_parts_mut<'a, T>(
+    ptr: *mut T,
+    count: u32,
+    ptr_name: &str,
+    count_name: &str,
+) -> Result<&'a mut [T], String> {
+    let len = ffi_count_to_usize::<T>(count, count_name)?;
+    if len == 0 {
+        return Ok(&mut []);
+    }
+    if ptr.is_null() {
+        return Err(invalid_argument(format!("{ptr_name} is null")));
+    }
+    // SAFETY: caller promises `ptr` is valid for `len` elements; this helper validates null,
+    // fixed-width conversion, and Rust slice length limits before constructing the slice.
+    Ok(unsafe { slice::from_raw_parts_mut(ptr, len) })
 }
 
 fn status_from_error(err: String) -> c_int {
-    set_last_error(err);
-    ECU_ERR_INTERNAL
+    let status = if strip_invalid_argument_prefix(&err).is_some() {
+        ECU_ERR_INVALID_ARGUMENT
+    } else {
+        ECU_ERR_INTERNAL
+    };
+    set_last_error_from_error(err);
+    status
 }
 
 const ECU_OK: c_int = 0;
@@ -392,7 +485,8 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_new(
         let initial = require_cstr(initial_text_utf8, "initial_text_utf8")?
             .to_str()
             .map_err(|_| "initial_text_utf8 is not valid UTF-8".to_string())?;
-        let ui = EditorUi::new(initial, viewport_width_cells as usize);
+        let viewport_width_cells = u32_to_usize(viewport_width_cells, "viewport_width_cells")?;
+        let ui = EditorUi::new(initial, viewport_width_cells);
         Ok(Box::into_raw(Box::new(ui)))
     }) {
         Ok(ptr) => {
@@ -400,7 +494,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_new(
             ptr
         }
         Err(err) => {
-            set_last_error(err);
+            set_last_error_from_error(err);
             default
         }
     }
@@ -417,9 +511,8 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_clone_view(
     let default = ptr::null_mut();
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        let cloned = ui
-            .clone_view(viewport_width_cells as usize)
-            .map_err(map_ui_error)?;
+        let viewport_width_cells = u32_to_usize(viewport_width_cells, "viewport_width_cells")?;
+        let cloned = ui.clone_view(viewport_width_cells).map_err(map_ui_error)?;
         Ok(Box::into_raw(Box::new(cloned)))
     }) {
         Ok(ptr) => {
@@ -427,7 +520,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_clone_view(
             ptr
         }
         Err(err) => {
-            set_last_error(err);
+            set_last_error_from_error(err);
             default
         }
     }
@@ -461,7 +554,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_theme(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if theme.is_null() {
-            return Err("theme is null".to_string());
+            return Err(invalid_argument("theme is null"));
         }
         let theme = unsafe { &*theme };
         ui.set_theme(theme_from_ffi(theme));
@@ -489,7 +582,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_chrome_theme(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if theme.is_null() {
-            return Err("theme is null".to_string());
+            return Err(invalid_argument("theme is null"));
         }
         let theme = unsafe { &*theme };
         ui.set_chrome_theme(chrome_theme_from_ffi(theme));
@@ -518,13 +611,13 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_style_colors(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if styles.is_null() && style_count != 0 {
-            return Err("styles is null".to_string());
+            return Err(invalid_argument("styles is null"));
         }
 
         let mut map = BTreeMap::<u32, StyleColors>::new();
         if style_count != 0 {
-            // SAFETY: caller provided `style_count` entries.
-            let slice = unsafe { slice::from_raw_parts(styles, style_count as usize) };
+            let slice =
+                unsafe { ffi_slice_from_raw_parts(styles, style_count, "styles", "style_count")? };
             for entry in slice {
                 let (style_id, colors) = style_colors_from_ffi(entry);
                 map.insert(style_id, colors);
@@ -557,13 +650,13 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_style_fonts(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if fonts.is_null() && font_count != 0 {
-            return Err("fonts is null".to_string());
+            return Err(invalid_argument("fonts is null"));
         }
 
         let mut map = BTreeMap::<u32, StyleFont>::new();
         if font_count != 0 {
-            // SAFETY: caller provided `font_count` entries.
-            let slice = unsafe { slice::from_raw_parts(fonts, font_count as usize) };
+            let slice =
+                unsafe { ffi_slice_from_raw_parts(fonts, font_count, "fonts", "font_count")? };
             for entry in slice {
                 let (style_id, font) = style_font_from_ffi(entry);
                 map.insert(style_id, font);
@@ -596,13 +689,19 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_style_text_decorations
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if decorations.is_null() && decoration_count != 0 {
-            return Err("decorations is null".to_string());
+            return Err(invalid_argument("decorations is null"));
         }
 
         let mut map = BTreeMap::<u32, TextDecorations>::new();
         if decoration_count != 0 {
-            // SAFETY: caller provided `decoration_count` entries.
-            let slice = unsafe { slice::from_raw_parts(decorations, decoration_count as usize) };
+            let slice = unsafe {
+                ffi_slice_from_raw_parts(
+                    decorations,
+                    decoration_count,
+                    "decorations",
+                    "decoration_count",
+                )?
+            };
             for entry in slice {
                 let (style_id, decos) = text_decorations_from_ffi(entry)?;
                 map.insert(style_id, decos);
@@ -670,7 +769,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_set_syntax_path(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_sublime_disable(ui: *mut EditorUi) {
     if ui.is_null() {
-        set_last_error("ui is null".to_string());
+        set_last_error_from_error(invalid_argument("ui is null"));
         return;
     }
     unsafe { &mut *ui }.disable_sublime_syntax();
@@ -691,7 +790,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_sublime_style_id_for_scope
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_style_id.is_null() {
-            return Err("out_style_id is null".to_string());
+            return Err(invalid_argument("out_style_id is null"));
         }
         let scope = require_cstr(scope_utf8, "scope_utf8")?
             .to_str()
@@ -731,7 +830,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_scope_for_style_id(
             ptr
         }
         Err(err) => {
-            set_last_error(err);
+            set_last_error_from_error(err);
             default
         }
     }
@@ -837,7 +936,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_enable_query_pack(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_disable(ui: *mut EditorUi) {
     if ui.is_null() {
-        set_last_error("ui is null".to_string());
+        set_last_error_from_error(invalid_argument("ui is null"));
         return;
     }
     unsafe { &mut *ui }.disable_treesitter();
@@ -905,7 +1004,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_enable(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_disable(ui: *mut EditorUi) {
     if ui.is_null() {
-        set_last_error("ui is null".to_string());
+        set_last_error_from_error(invalid_argument("ui is null"));
         return;
     }
     unsafe { &mut *ui }.lsp_disable();
@@ -924,7 +1023,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_is_enabled(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_enabled.is_null() {
-            return Err("out_enabled is null".to_string());
+            return Err(invalid_argument("out_enabled is null"));
         }
         unsafe {
             *out_enabled = if ui.lsp_is_enabled() { 1 } else { 0 };
@@ -956,7 +1055,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_status_json(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_status_json_utf8.is_null() {
-            return Err("out_status_json_utf8 is null".to_string());
+            return Err(invalid_argument("out_status_json_utf8 is null"));
         }
 
         unsafe {
@@ -996,11 +1095,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_hover(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_request_id.is_null() {
-            return Err("out_request_id is null".to_string());
+            return Err(invalid_argument("out_request_id is null"));
         }
 
         let id = ui
-            .lsp_request_hover(line as usize, column as usize)
+            .lsp_request_hover(u32_to_usize(line, "line")?, u32_to_usize(column, "column")?)
             .map_err(map_ui_error)?;
         unsafe {
             *out_request_id = id;
@@ -1036,10 +1135,10 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_hover_json(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_has_result.is_null() {
-            return Err("out_has_result is null".to_string());
+            return Err(invalid_argument("out_has_result is null"));
         }
         if out_result_json_utf8.is_null() {
-            return Err("out_result_json_utf8 is null".to_string());
+            return Err(invalid_argument("out_result_json_utf8 is null"));
         }
 
         let json = ui.lsp_take_last_hover_result_json();
@@ -1081,11 +1180,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_definition(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_request_id.is_null() {
-            return Err("out_request_id is null".to_string());
+            return Err(invalid_argument("out_request_id is null"));
         }
 
         let id = ui
-            .lsp_request_definition(line as usize, column as usize)
+            .lsp_request_definition(u32_to_usize(line, "line")?, u32_to_usize(column, "column")?)
             .map_err(map_ui_error)?;
         unsafe {
             *out_request_id = id;
@@ -1121,10 +1220,10 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_definition_j
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_has_result.is_null() {
-            return Err("out_has_result is null".to_string());
+            return Err(invalid_argument("out_has_result is null"));
         }
         if out_result_json_utf8.is_null() {
-            return Err("out_result_json_utf8 is null".to_string());
+            return Err(invalid_argument("out_result_json_utf8 is null"));
         }
 
         let json = ui.lsp_take_last_definition_result_json();
@@ -1168,7 +1267,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_format_document(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_applied.is_null() {
-            return Err("out_applied is null".to_string());
+            return Err(invalid_argument("out_applied is null"));
         }
 
         let options = if formatting_options_json_utf8.is_null() {
@@ -1215,10 +1314,10 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_poll_processing(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_applied.is_null() {
-            return Err("out_applied is null".to_string());
+            return Err(invalid_argument("out_applied is null"));
         }
         if out_pending.is_null() {
-            return Err("out_pending is null".to_string());
+            return Err(invalid_argument("out_pending is null"));
         }
 
         let result = ui.poll_processing().map_err(map_ui_error)?;
@@ -1250,7 +1349,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_style_id_for_ca
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_style_id.is_null() {
-            return Err("out_style_id is null".to_string());
+            return Err(invalid_argument("out_style_id is null"));
         }
         let capture = require_cstr(capture_utf8, "capture_utf8")?
             .to_str()
@@ -1290,7 +1389,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_capture_for_style_id(
             ptr
         }
         Err(err) => {
-            set_last_error(err);
+            set_last_error_from_error(err);
             default
         }
     }
@@ -1429,14 +1528,9 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if data.is_null() && data_len != 0 {
-            return Err("data is null".to_string());
+            return Err(invalid_argument("data is null"));
         }
-        // SAFETY: caller provided `data_len` items.
-        let slice = if data_len == 0 {
-            &[][..]
-        } else {
-            unsafe { slice::from_raw_parts(data, data_len as usize) }
-        };
+        let slice = unsafe { ffi_slice_from_raw_parts(data, data_len, "data", "data_len")? };
         ui.lsp_apply_semantic_tokens(slice)
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
@@ -1659,7 +1753,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_tab_width(
 
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.set_tab_width(width_cells as usize)
+        ui.set_tab_width(u32_to_usize(width_cells, "width_cells")?)
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
     }) {
@@ -1800,7 +1894,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_logical_line_count(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        let out = require_mut(out_count, "out_count")?;
+        let out = require_out_mut(out_count, "out_count")?;
         *out = ui.logical_line_count();
         Ok(ECU_OK)
     }) {
@@ -1819,7 +1913,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_gutter_width_cells(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        let out = require_mut(out_width_cells, "out_width_cells")?;
+        let out = require_out_mut(out_width_cells, "out_width_cells")?;
         *out = ui.gutter_width_cells();
         Ok(ECU_OK)
     }) {
@@ -1861,7 +1955,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_rows(
     delta_rows: c_int,
 ) {
     if ui.is_null() {
-        set_last_error("ui is null".to_string());
+        set_last_error_from_error(invalid_argument("ui is null"));
         return;
     }
     let ui = unsafe { &mut *ui };
@@ -1877,7 +1971,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_scroll_by_pixels(
     delta_y_px: c_float,
 ) {
     if ui.is_null() {
-        set_last_error("ui is null".to_string());
+        set_last_error_from_error(invalid_argument("ui is null"));
         return;
     }
     let ui = unsafe { &mut *ui };
@@ -1891,20 +1985,22 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_viewport_state(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        let out = require_mut(out_state, "out_state")?;
+        let out = require_out_mut(out_state, "out_state")?;
 
         let vp = ui.viewport_state();
-        out.width_cells = vp.width as u32;
-        out.height_rows = vp.height.unwrap_or_default() as u32;
-        out.has_height = if vp.height.is_some() { 1 } else { 0 };
-        out.scroll_top = vp.scroll_top as u32;
-        out.sub_row_offset = vp.sub_row_offset as u32;
-        out.overscan_rows = vp.overscan_rows as u32;
-        out.visible_start = vp.visible_lines.start as u32;
-        out.visible_end = vp.visible_lines.end as u32;
-        out.prefetch_start = vp.prefetch_lines.start as u32;
-        out.prefetch_end = vp.prefetch_lines.end as u32;
-        out.total_visual_lines = vp.total_visual_lines as u32;
+        *out = EcuViewportState {
+            width_cells: usize_to_u32(vp.width, "viewport width")?,
+            height_rows: usize_to_u32(vp.height.unwrap_or_default(), "viewport height")?,
+            has_height: if vp.height.is_some() { 1 } else { 0 },
+            scroll_top: usize_to_u32(vp.scroll_top, "viewport scroll_top")?,
+            sub_row_offset: u32::from(vp.sub_row_offset),
+            overscan_rows: usize_to_u32(vp.overscan_rows, "viewport overscan_rows")?,
+            visible_start: usize_to_u32(vp.visible_lines.start, "viewport visible_start")?,
+            visible_end: usize_to_u32(vp.visible_lines.end, "viewport visible_end")?,
+            prefetch_start: usize_to_u32(vp.prefetch_lines.start, "viewport prefetch_start")?,
+            prefetch_end: usize_to_u32(vp.prefetch_lines.end, "viewport prefetch_end")?,
+            total_visual_lines: usize_to_u32(vp.total_visual_lines, "viewport total_visual_lines")?,
+        };
 
         Ok(ECU_OK)
     }) {
@@ -1926,14 +2022,18 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(
     sub_row_offset: u32,
 ) {
     if ui.is_null() {
-        set_last_error("ui is null".to_string());
+        set_last_error_from_error(invalid_argument("ui is null"));
         return;
     }
     let ui = unsafe { &mut *ui };
-    ui.set_smooth_scroll_state(
-        top_visual_row as usize,
-        (sub_row_offset.min(u16::MAX as u32)) as u16,
-    );
+    let top_visual_row = match u32_to_usize(top_visual_row, "top_visual_row") {
+        Ok(row) => row,
+        Err(err) => {
+            set_last_error_from_error(err);
+            return;
+        }
+    };
+    ui.set_smooth_scroll_state(top_visual_row, (sub_row_offset.min(u16::MAX as u32)) as u16);
 }
 
 /// Reveal the primary caret by adjusting the viewport scroll position (best-effort).
@@ -2018,7 +2118,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_has_active_snippet_session
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_active.is_null() {
-            return Err("out_active is null".to_string());
+            return Err(invalid_argument("out_active is null"));
         }
         let active = ui.has_active_snippet_session().map_err(map_ui_error)?;
         unsafe {
@@ -2101,9 +2201,13 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_add_style(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.add_style(start as usize, end as usize, style_id)
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.add_style(
+            u32_to_usize(start, "start")?,
+            u32_to_usize(end, "end")?,
+            style_id,
+        )
+        .map(|_| ECU_OK)
+        .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -2122,9 +2226,13 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_remove_style(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.remove_style(start as usize, end as usize, style_id)
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.remove_style(
+            u32_to_usize(start, "start")?,
+            u32_to_usize(end, "end")?,
+            style_id,
+        )
+        .map(|_| ECU_OK)
+        .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -2158,13 +2266,17 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_match_highlights(
             return Ok(ECU_OK);
         }
         if ranges.is_null() {
-            return Err("ranges is null".to_string());
+            return Err(invalid_argument("ranges is null"));
         }
 
-        let ranges = unsafe { slice::from_raw_parts(ranges, range_count as usize) };
+        let ranges =
+            unsafe { ffi_slice_from_raw_parts(ranges, range_count, "ranges", "range_count")? };
         let mut out: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
         for r in ranges {
-            out.push((r.start as usize, r.end as usize));
+            out.push((
+                u32_to_usize(r.start, "range start")?,
+                u32_to_usize(r.end, "range end")?,
+            ));
         }
 
         ui.set_match_highlights_offsets(&out);
@@ -2203,7 +2315,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_search_set_query(
         let count = ui.search_set_query(query, options).map_err(map_ui_error)?;
         if !out_match_count.is_null() {
             unsafe {
-                *out_match_count = count as u32;
+                *out_match_count = usize_to_u32(count, "match count")?;
             }
         }
         Ok(ECU_OK)
@@ -2336,7 +2448,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_replace_current(
             .map_err(map_ui_error)?;
         if !out_replaced.is_null() {
             unsafe {
-                *out_replaced = replaced as u32;
+                *out_replaced = usize_to_u32(replaced, "replace count")?;
             }
         }
         Ok(ECU_OK)
@@ -2378,7 +2490,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_replace_all(
             .map_err(map_ui_error)?;
         if !out_replaced.is_null() {
             unsafe {
-                *out_replaced = replaced as u32;
+                *out_replaced = usize_to_u32(replaced, "replace count")?;
             }
         }
         Ok(ECU_OK)
@@ -3033,9 +3145,12 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_line_selection_offsets(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.set_line_selection_offsets(anchor_offset as usize, active_offset as usize)
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.set_line_selection_offsets(
+            u32_to_usize(anchor_offset, "anchor_offset")?,
+            u32_to_usize(active_offset, "active_offset")?,
+        )
+        .map(|_| ECU_OK)
+        .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -3052,7 +3167,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_select_paragraph_at_char_offset(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.select_paragraph_at_char_offset(char_offset as usize)
+        ui.select_paragraph_at_char_offset(u32_to_usize(char_offset, "char_offset")?)
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
     }) {
@@ -3072,9 +3187,12 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_paragraph_selection_offsets(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.set_paragraph_selection_offsets(anchor_offset as usize, active_offset as usize)
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.set_paragraph_selection_offsets(
+            u32_to_usize(anchor_offset, "anchor_offset")?,
+            u32_to_usize(active_offset, "active_offset")?,
+        )
+        .map(|_| ECU_OK)
+        .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -3113,9 +3231,9 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_expand_selection_by(
             1 => ExpandSelectionUnit::Word,
             2 => ExpandSelectionUnit::Line,
             _ => {
-                return Err(format!(
+                return Err(invalid_argument(format!(
                     "invalid expand selection unit {unit} (expected 0=character, 1=word, 2=line)"
-                ));
+                )));
             }
         };
 
@@ -3123,13 +3241,13 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_expand_selection_by(
             0 => ExpandSelectionDirection::Backward,
             1 => ExpandSelectionDirection::Forward,
             _ => {
-                return Err(format!(
+                return Err(invalid_argument(format!(
                     "invalid expand selection direction {direction} (expected 0=backward, 1=forward)"
-                ));
+                )));
             }
         };
 
-        ui.expand_selection_by(unit, count as usize, direction)
+        ui.expand_selection_by(unit, u32_to_usize(count, "count")?, direction)
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
     }) {
@@ -3149,7 +3267,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_add_caret_at_char_offset(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.add_caret_at_char_offset(char_offset as usize, make_primary != 0)
+        ui.add_caret_at_char_offset(u32_to_usize(char_offset, "char_offset")?, make_primary != 0)
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
     }) {
@@ -3207,13 +3325,16 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_marked_text_ex(
         let replace_range = if replace_start == u32::MAX {
             None
         } else {
-            Some((replace_start as usize, replace_len as usize))
+            Some((
+                u32_to_usize(replace_start, "replace_start")?,
+                u32_to_usize(replace_len, "replace_len")?,
+            ))
         };
 
         ui.set_marked_text_with_selection(
             text,
-            selected_start as usize,
-            selected_len as usize,
+            u32_to_usize(selected_start, "selected_start")?,
+            u32_to_usize(selected_len, "selected_len")?,
             replace_range,
         )
         .map(|_| ECU_OK)
@@ -3233,7 +3354,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_marked_text_ex(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_unmark_text(ui: *mut EditorUi) {
     if ui.is_null() {
-        set_last_error("ui is null".to_string());
+        set_last_error_from_error(invalid_argument("ui is null"));
         return;
     }
     unsafe { &mut *ui }.unmark_text();
@@ -3368,7 +3489,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_mouse_dragged(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_mouse_up(ui: *mut EditorUi) {
     if ui.is_null() {
-        set_last_error("ui is null".to_string());
+        set_last_error_from_error(invalid_argument("ui is null"));
         return;
     }
     unsafe { &mut *ui }.mouse_up();
@@ -3393,12 +3514,10 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_render_rgba(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        if out_len.is_null() {
-            return Err("out_len is null".to_string());
-        }
+        let out_len = require_out_mut(out_len, "out_len")?;
 
-        let required = ui.required_rgba_len() as u32;
-        unsafe { *out_len = required };
+        let required = usize_to_u32(ui.required_rgba_len(), "rgba buffer required length")?;
+        *out_len = required;
 
         if out_buf.is_null() {
             // Two-call pattern: allow caller to query required size.
@@ -3409,8 +3528,9 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_render_rgba(
             return Ok(ECU_ERR_BUFFER_TOO_SMALL);
         }
 
-        // SAFETY: caller provided buffer with capacity >= required.
-        let dst = unsafe { slice::from_raw_parts_mut(out_buf, required as usize) };
+        let dst = unsafe {
+            ffi_slice_from_raw_parts_mut(out_buf, required, "out_buf", "required rgba length")?
+        };
         ui.render_rgba_visible_into(dst)
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
@@ -3495,7 +3615,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_text(ui: *mut EditorUi) -> *m
             ptr
         }
         Err(err) => {
-            set_last_error(err);
+            set_last_error_from_error(err);
             default
         }
     }
@@ -3515,7 +3635,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_is_modified(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_modified.is_null() {
-            return Err("out_modified is null".to_string());
+            return Err(invalid_argument("out_modified is null"));
         }
         unsafe {
             *out_modified = if ui.is_modified() { 1 } else { 0 };
@@ -3565,7 +3685,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_get_selected_text(ui: *mut Editor
             ptr
         }
         Err(err) => {
-            set_last_error(err);
+            set_last_error_from_error(err);
             default
         }
     }
@@ -3583,16 +3703,17 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_minimap_json(
     let default = ptr::null_mut();
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        Ok(make_c_string_ptr(
-            ui.minimap_json(start_visual_row as usize, count as usize),
-        ))
+        Ok(make_c_string_ptr(ui.minimap_json(
+            u32_to_usize(start_visual_row, "start_visual_row")?,
+            u32_to_usize(count, "count")?,
+        )))
     }) {
         Ok(ptr) => {
             clear_last_error();
             ptr
         }
         Err(err) => {
-            set_last_error(err);
+            set_last_error_from_error(err);
             default
         }
     }
@@ -3614,17 +3735,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_selection_offsets(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        if out_start.is_null() {
-            return Err("out_start is null".to_string());
-        }
-        if out_end.is_null() {
-            return Err("out_end is null".to_string());
-        }
+        let out_start = require_out_mut(out_start, "out_start")?;
+        let out_end = require_out_mut(out_end, "out_end")?;
         let (start, end) = ui.primary_selection_offsets();
-        unsafe {
-            *out_start = start as u32;
-            *out_end = end as u32;
-        }
+        *out_start = usize_to_u32(start, "selection start")?;
+        *out_end = usize_to_u32(end, "selection end")?;
         Ok(ECU_OK)
     }) {
         Ok(code) => {
@@ -3675,19 +3790,23 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_selections(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        if out_len.is_null() {
-            return Err("out_len is null".to_string());
-        }
-        if out_primary_index.is_null() {
-            return Err("out_primary_index is null".to_string());
-        }
+        let out_len = require_out_mut(out_len, "out_len")?;
+        let out_primary_index = require_out_mut(out_primary_index, "out_primary_index")?;
 
         let (ranges, primary) = ui.selections_offsets();
-        let required = ranges.len() as u32;
-        unsafe {
-            *out_len = required;
-            *out_primary_index = primary as u32;
-        }
+        let required = usize_to_u32(ranges.len(), "selection range count")?;
+        let primary = usize_to_u32(primary, "primary selection index")?;
+        let converted = ranges
+            .into_iter()
+            .map(|(start, end)| {
+                Ok(EcuSelectionRange {
+                    start: usize_to_u32(start, "selection range start")?,
+                    end: usize_to_u32(end, "selection range end")?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        *out_len = required;
+        *out_primary_index = primary;
 
         if out_ranges.is_null() {
             return Ok(ECU_ERR_BUFFER_TOO_SMALL);
@@ -3696,14 +3815,15 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_selections(
             return Ok(ECU_ERR_BUFFER_TOO_SMALL);
         }
 
-        // SAFETY: caller provided buffer with capacity >= required.
-        let dst = unsafe { slice::from_raw_parts_mut(out_ranges, required as usize) };
-        for (i, (start, end)) in ranges.into_iter().enumerate() {
-            dst[i] = EcuSelectionRange {
-                start: start as u32,
-                end: end as u32,
-            };
-        }
+        let dst = unsafe {
+            ffi_slice_from_raw_parts_mut(
+                out_ranges,
+                required,
+                "out_ranges",
+                "selection range count",
+            )?
+        };
+        dst.copy_from_slice(&converted);
         Ok(ECU_OK)
     }) {
         Ok(code) => {
@@ -3737,15 +3857,22 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_selections(
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
 
-        let slice = unsafe { slice::from_raw_parts(ranges, range_count as usize) };
+        let slice =
+            unsafe { ffi_slice_from_raw_parts(ranges, range_count, "ranges", "range_count")? };
         let mut vec = Vec::with_capacity(slice.len());
         for r in slice {
-            vec.push((r.start as usize, r.end as usize));
+            vec.push((
+                u32_to_usize(r.start, "range start")?,
+                u32_to_usize(r.end, "range end")?,
+            ));
         }
 
-        ui.set_selections_offsets(vec.as_slice(), primary_index as usize)
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.set_selections_offsets(
+            vec.as_slice(),
+            u32_to_usize(primary_index, "primary_index")?,
+        )
+        .map(|_| ECU_OK)
+        .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -3764,9 +3891,12 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_rect_selection(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        ui.set_rect_selection_offsets(anchor_offset as usize, active_offset as usize)
-            .map(|_| ECU_OK)
-            .map_err(map_ui_error)
+        ui.set_rect_selection_offsets(
+            u32_to_usize(anchor_offset, "anchor_offset")?,
+            u32_to_usize(active_offset, "active_offset")?,
+        )
+        .map(|_| ECU_OK)
+        .map_err(map_ui_error)
     }) {
         Ok(code) => {
             clear_last_error();
@@ -3794,25 +3924,21 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_marked_range(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        if out_has_marked.is_null() {
-            return Err("out_has_marked is null".to_string());
-        }
-        if out_start.is_null() {
-            return Err("out_start is null".to_string());
-        }
-        if out_len.is_null() {
-            return Err("out_len is null".to_string());
-        }
+        let out_has_marked = require_out_mut(out_has_marked, "out_has_marked")?;
+        let out_start = require_out_mut(out_start, "out_start")?;
+        let out_len = require_out_mut(out_len, "out_len")?;
 
         let (has, start, len) = match ui.marked_range() {
-            Some((s, l)) => (1u8, s as u32, l as u32),
+            Some((s, l)) => (
+                1u8,
+                usize_to_u32(s, "marked range start")?,
+                usize_to_u32(l, "marked range length")?,
+            ),
             None => (0u8, 0u32, 0u32),
         };
-        unsafe {
-            *out_has_marked = has;
-            *out_start = start;
-            *out_len = len;
-        }
+        *out_has_marked = has;
+        *out_start = start;
+        *out_len = len;
         Ok(ECU_OK)
     }) {
         Ok(code) => {
@@ -3841,18 +3967,13 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_logical_pos
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        if out_line.is_null() {
-            return Err("out_line is null".to_string());
-        }
-        if out_column.is_null() {
-            return Err("out_column is null".to_string());
-        }
+        let out_line = require_out_mut(out_line, "out_line")?;
+        let out_column = require_out_mut(out_column, "out_column")?;
 
-        let (line, col) = ui.char_offset_to_logical_position(char_offset as usize);
-        unsafe {
-            *out_line = (line.min(u32::MAX as usize)) as u32;
-            *out_column = (col.min(u32::MAX as usize)) as u32;
-        }
+        let (line, col) =
+            ui.char_offset_to_logical_position(u32_to_usize(char_offset, "char_offset")?);
+        *out_line = usize_to_u32(line, "logical line")?;
+        *out_column = usize_to_u32(col, "logical column")?;
         Ok(ECU_OK)
     }) {
         Ok(code) => {
@@ -3881,25 +4002,17 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_char_offset_to_view_point(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        if out_x.is_null() {
-            return Err("out_x is null".to_string());
-        }
-        if out_y.is_null() {
-            return Err("out_y is null".to_string());
-        }
-        if out_line_height_px.is_null() {
-            return Err("out_line_height_px is null".to_string());
-        }
+        let out_x = require_out_mut(out_x, "out_x")?;
+        let out_y = require_out_mut(out_y, "out_y")?;
+        let out_line_height_px = require_out_mut(out_line_height_px, "out_line_height_px")?;
 
         let (x, y) = ui
-            .char_offset_to_view_point_px(char_offset as usize)
+            .char_offset_to_view_point_px(u32_to_usize(char_offset, "char_offset")?)
             .ok_or_else(|| "failed to map char offset to view point".to_string())?;
 
-        unsafe {
-            *out_x = x;
-            *out_y = y;
-            *out_line_height_px = ui.line_height_px();
-        }
+        *out_x = x;
+        *out_y = y;
+        *out_line_height_px = ui.line_height_px();
         Ok(ECU_OK)
     }) {
         Ok(code) => {
@@ -3925,13 +4038,11 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_view_point_to_char_offset(
 ) -> c_int {
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
-        if out_char_offset.is_null() {
-            return Err("out_char_offset is null".to_string());
-        }
+        let out_char_offset = require_out_mut(out_char_offset, "out_char_offset")?;
         let offset = ui
             .view_point_to_char_offset(x_px, y_px)
             .ok_or_else(|| "failed to hit-test view point".to_string())?;
-        unsafe { *out_char_offset = offset as u32 };
+        *out_char_offset = usize_to_u32(offset, "char offset")?;
         Ok(ECU_OK)
     }) {
         Ok(code) => {
@@ -3964,7 +4075,7 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_document_link_json_at_
     match ffi_catch(|| {
         let ui = require_mut(ui, "ui")?;
         if out_has_link.is_null() {
-            return Err("out_has_link is null".to_string());
+            return Err(invalid_argument("out_has_link is null"));
         }
 
         unsafe {
@@ -6701,9 +6812,84 @@ contexts:
     }
 
     #[test]
+    fn ffi_render_rejects_null_out_len() {
+        let initial = CString::new("").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let code = unsafe {
+            editor_core_ui_ffi_editor_ui_render_rgba(ui, ptr::null_mut(), 0, ptr::null_mut())
+        };
+        assert_eq!(code, ECU_ERR_INVALID_ARGUMENT);
+
+        let msg_ptr = editor_core_ui_ffi_last_error_message();
+        let msg = unsafe { CStr::from_ptr(msg_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { editor_core_ui_ffi_string_free(msg_ptr) };
+        assert!(msg.contains("out_len is null"));
+
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+    }
+
+    #[test]
+    fn ffi_render_rejects_required_length_that_exceeds_u32() {
+        let initial = CString::new("").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 1.0, 1.0, 1.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, u32::MAX, 2, 1.0),
+            ECU_OK
+        );
+
+        let mut out_len: u32 = 123;
+        let code = unsafe {
+            editor_core_ui_ffi_editor_ui_render_rgba(ui, ptr::null_mut(), 0, &mut out_len)
+        };
+        assert_eq!(code, ECU_ERR_INVALID_ARGUMENT);
+        assert_eq!(out_len, 123);
+
+        let msg_ptr = editor_core_ui_ffi_last_error_message();
+        let msg = unsafe { CStr::from_ptr(msg_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { editor_core_ui_ffi_string_free(msg_ptr) };
+        assert!(msg.contains("rgba buffer required length"));
+
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+    }
+
+    #[test]
+    fn ffi_set_match_highlights_rejects_null_nonzero_ranges() {
+        let initial = CString::new("abc").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let code = unsafe { editor_core_ui_ffi_editor_ui_set_match_highlights(ui, ptr::null(), 1) };
+        assert_eq!(code, ECU_ERR_INVALID_ARGUMENT);
+
+        let msg_ptr = editor_core_ui_ffi_last_error_message();
+        let msg = unsafe { CStr::from_ptr(msg_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { editor_core_ui_ffi_string_free(msg_ptr) };
+        assert!(msg.contains("ranges is null"));
+
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+    }
+
+    #[test]
     fn ffi_null_args_set_last_error() {
         let code = editor_core_ui_ffi_editor_ui_insert_text(ptr::null_mut(), ptr::null());
-        assert_eq!(code, ECU_ERR_INTERNAL);
+        assert_eq!(code, ECU_ERR_INVALID_ARGUMENT);
         let msg_ptr = editor_core_ui_ffi_last_error_message();
         let msg = unsafe { CStr::from_ptr(msg_ptr) }
             .to_str()
