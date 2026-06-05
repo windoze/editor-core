@@ -145,6 +145,7 @@ pub mod state;
 pub mod storage;
 pub mod symbols;
 mod text;
+mod text_buffer;
 pub mod workspace;
 
 pub use anchors::{AnchorBias, TextAnchor};

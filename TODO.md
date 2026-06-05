@@ -406,9 +406,9 @@
 - 未发现需要立即修复或新增前置任务的问题；fuzzy 匹配要求同 placeholder、起始行最多漂移 1 行、长度接近且至少共享两行，新增测试会先构建旧 visual-row cache 再验证替换和清理后的映射结果。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core`。
 
-### T05 实现：新增 `TextBuffer` 抽象并建立一致性校验
+### [DONE] T05 实现：新增 `TextBuffer` 抽象并建立一致性校验
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -448,6 +448,15 @@
 
 - 新抽象可替代 `LineIndex` 的主要文本访问能力。
 - 当前行为不变，`PieceTable` 与 `TextBuffer` 一致。
+
+完成记录：
+
+- 新增内部 `TextBuffer` 模块，直接持有 `ropey::Rope` 并提供 `len_chars`、`len_bytes`、`line_count`、`insert`、`delete`、`get_text`、`get_range`、`get_line_text`、position/offset 转换和 char/byte offset 转换能力。
+- 将 `LineIndex` 改为委托 `TextBuffer`，保留现有公开 `EditorCore.line_index` 字段和 `PieceTable` 字段，避免引入第四份完整文本副本。
+- 将 `EditorCore::get_text` 和 `EditorCore::char_count` 改为优先读取 `TextBuffer`；命令编辑路径继续写入 `PieceTable`，并在 `apply_text_change_to_line_index_and_layout` 中新增 debug-only 全文一致性断言。
+- 新增 `crates/editor-core/tests/text_buffer_single_source.rs`，覆盖空文档、末尾无换行、末尾有换行、CJK、emoji、CRLF 入口归一化、range/line 读取、插入删除以及 `PieceTable` 影子一致性。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test text_buffer_single_source`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
 ### T05R Review：审查 `TextBuffer` 抽象
 

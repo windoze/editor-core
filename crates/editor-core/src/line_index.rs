@@ -3,7 +3,7 @@
 //! Provides efficient line indexing using Rope data structure, supporting O(log N) access and editing.
 
 use crate::storage::Piece;
-use ropey::Rope;
+use crate::text_buffer::TextBuffer;
 
 /// Metadata for a logical line
 #[derive(Debug, Clone)]
@@ -52,84 +52,82 @@ impl Default for LineMetadata {
 /// Rope provides O(log N) line access, insertion, and deletion performance, suitable for large file editing
 #[derive(Clone)]
 pub struct LineIndex {
-    /// Rope data structure that automatically manages line indexing
-    rope: Rope,
+    /// Rope-backed text buffer that also provides line indexing primitives.
+    text_buffer: TextBuffer,
 }
 
 impl LineIndex {
     /// Create a new line index
     pub fn new() -> Self {
-        Self { rope: Rope::new() }
+        Self {
+            text_buffer: TextBuffer::new(),
+        }
     }
 
     /// Build line index from text
     pub fn from_text(text: &str) -> Self {
         Self {
-            rope: Rope::from_str(text),
+            text_buffer: TextBuffer::from_text(text),
         }
+    }
+
+    /// Return the internal text buffer used as the canonical line-index backing store.
+    pub(crate) fn text_buffer(&self) -> &TextBuffer {
+        &self.text_buffer
     }
 
     /// Append a new line
     pub fn append_line(&mut self, line: LineMetadata) {
         // Reconstruct text from LineMetadata and append
-        let current_len = self.rope.len_chars();
+        let current_len = self.text_buffer.len_chars();
 
         // If not the first line, add a newline first
         if current_len > 0 {
-            self.rope.insert(current_len, "\n");
+            self.text_buffer.insert(current_len, "\n");
         }
 
         // Add line content (LineMetadata doesn't store actual text, using placeholder here)
         // Note: This is for backward compatibility, in actual use should call insert() directly
         let placeholder = "x".repeat(line.char_count);
-        self.rope.insert(self.rope.len_chars(), &placeholder);
+        self.text_buffer
+            .insert(self.text_buffer.len_chars(), &placeholder);
     }
 
     /// Insert a line at the specified position
     pub fn insert_line(&mut self, line_number: usize, line: LineMetadata) {
-        if line_number >= self.rope.len_lines() {
+        if line_number >= self.text_buffer.line_count() {
             self.append_line(line);
             return;
         }
 
         // Get character offset at insertion position
-        let insert_pos = self.rope.line_to_char(line_number);
+        let insert_pos = self.text_buffer.line_to_char(line_number);
 
         // Insert new line content
         let placeholder = "x".repeat(line.char_count);
-        self.rope.insert(insert_pos, &placeholder);
-        self.rope.insert(insert_pos + line.char_count, "\n");
+        self.text_buffer.insert(insert_pos, &placeholder);
+        self.text_buffer.insert(insert_pos + line.char_count, "\n");
     }
 
     /// Delete the specified line
     pub fn delete_line(&mut self, line_number: usize) {
-        if line_number >= self.rope.len_lines() {
+        if line_number >= self.text_buffer.line_count() {
             return;
         }
 
-        let start_char = self.rope.line_to_char(line_number);
-        let end_char = if line_number + 1 < self.rope.len_lines() {
-            self.rope.line_to_char(line_number + 1)
+        let start_char = self.text_buffer.line_to_char(line_number);
+        let end_char = if line_number + 1 < self.text_buffer.line_count() {
+            self.text_buffer.line_to_char(line_number + 1)
         } else {
-            self.rope.len_chars()
+            self.text_buffer.len_chars()
         };
 
-        self.rope.remove(start_char..end_char);
+        self.text_buffer.delete(start_char, end_char - start_char);
     }
 
     /// Get metadata for the specified line number (simulated)
     pub fn get_line(&self, line_number: usize) -> Option<LineMetadata> {
-        if line_number >= self.rope.len_lines() {
-            return None;
-        }
-
-        let line = self.rope.line(line_number);
-        let mut text = line.to_string();
-
-        // Remove trailing newline (Rope's line() includes newline)
-        if text.ends_with('\n') {
-            text.pop();
-        }
+        let mut text = self.text_buffer.get_line_text(line_number)?;
         if text.ends_with('\r') {
             text.pop();
         }
@@ -150,15 +148,15 @@ impl LineIndex {
             return 0;
         }
 
-        if line_number >= self.rope.len_lines() {
+        if line_number >= self.text_buffer.line_count() {
             // Return total bytes minus newline count
-            let newline_count = self.rope.len_lines().saturating_sub(1);
-            return self.rope.len_bytes().saturating_sub(newline_count);
+            let newline_count = self.text_buffer.line_count().saturating_sub(1);
+            return self.text_buffer.len_bytes().saturating_sub(newline_count);
         }
 
         // Rope's line_to_byte includes all newlines from previous lines
         // Subtract line_number newlines to match old behavior
-        self.rope
+        self.text_buffer
             .line_to_byte(line_number)
             .saturating_sub(line_number)
     }
@@ -172,7 +170,7 @@ impl LineIndex {
         // Need to add back newline count to get actual Rope byte offset
         // Binary search to find the correct line
         let mut low = 0;
-        let mut high = self.rope.len_lines();
+        let mut high = self.text_buffer.line_count();
 
         while low < high {
             let mid = (low + high) / 2;
@@ -188,124 +186,89 @@ impl LineIndex {
         }
 
         low.saturating_sub(1)
-            .min(self.rope.len_lines().saturating_sub(1))
+            .min(self.text_buffer.line_count().saturating_sub(1))
     }
 
     /// Get line number and offset within line from character offset
     pub fn char_offset_to_position(&self, char_offset: usize) -> (usize, usize) {
-        let char_offset = char_offset.min(self.rope.len_chars());
-
-        let line_idx = self.rope.char_to_line(char_offset);
-        let line_start_char = self.rope.line_to_char(line_idx);
-        let char_in_line = char_offset - line_start_char;
-
-        (line_idx, char_in_line)
+        self.text_buffer.char_offset_to_position(char_offset)
     }
 
     /// Get character offset from line number and column number
     pub fn position_to_char_offset(&self, line: usize, column: usize) -> usize {
-        if line >= self.rope.len_lines() {
-            return self.rope.len_chars();
-        }
-
-        let line_start_char = self.rope.line_to_char(line);
-        let line_len = if line + 1 < self.rope.len_lines() {
-            self.rope.line_to_char(line + 1) - line_start_char - 1 // -1 for newline
-        } else {
-            self.rope.len_chars() - line_start_char
-        };
-
-        line_start_char + column.min(line_len)
+        self.text_buffer.position_to_char_offset(line, column)
     }
 
     /// Get total line count
     pub fn line_count(&self) -> usize {
-        self.rope.len_lines()
+        self.text_buffer.line_count()
     }
 
     /// Get total byte count
     pub fn byte_count(&self) -> usize {
-        self.rope.len_bytes()
+        self.text_buffer.len_bytes()
     }
 
     /// Get total character count
     pub fn char_count(&self) -> usize {
-        self.rope.len_chars()
+        self.text_buffer.len_chars()
     }
 
     /// Get the character at the specified character offset (Unicode scalar index).
     ///
     /// Returns `None` if `char_offset` is out of bounds.
     pub fn char_at(&self, char_offset: usize) -> Option<char> {
-        if char_offset >= self.rope.len_chars() {
-            None
-        } else {
-            Some(self.rope.char(char_offset))
-        }
+        self.text_buffer.char_at(char_offset)
     }
 
     /// Convert a character offset (Unicode scalar values) to a UTF-8 byte offset.
     ///
     /// The returned byte offset is clamped to the document length.
     pub fn char_offset_to_byte_offset(&self, char_offset: usize) -> usize {
-        let char_offset = char_offset.min(self.rope.len_chars());
-        self.rope.char_to_byte(char_offset)
+        self.text_buffer.char_offset_to_byte_offset(char_offset)
     }
 
     /// Convert a UTF-8 byte offset to a character offset (Unicode scalar values).
     ///
     /// The returned character offset is clamped to the document length.
     pub fn byte_offset_to_char_offset(&self, byte_offset: usize) -> usize {
-        let byte_offset = byte_offset.min(self.rope.len_bytes());
-        self.rope.byte_to_char(byte_offset)
+        self.text_buffer.byte_offset_to_char_offset(byte_offset)
     }
 
     /// Convert a character offset to `(line, byte_column)` where `byte_column` is measured in UTF-8 bytes.
     pub fn char_offset_to_line_byte_column(&self, char_offset: usize) -> (usize, usize) {
-        let char_offset = char_offset.min(self.rope.len_chars());
-        let line = self.rope.char_to_line(char_offset);
-        let line_start_char = self.rope.line_to_char(line);
+        let char_offset = char_offset.min(self.text_buffer.len_chars());
+        let line = self.text_buffer.char_to_line(char_offset);
+        let line_start_char = self.text_buffer.line_to_char(line);
 
-        let line_start_byte = self.rope.char_to_byte(line_start_char);
-        let byte_offset = self.rope.char_to_byte(char_offset);
+        let line_start_byte = self.text_buffer.char_offset_to_byte_offset(line_start_char);
+        let byte_offset = self.text_buffer.char_offset_to_byte_offset(char_offset);
         (line, byte_offset.saturating_sub(line_start_byte))
     }
 
     /// Insert text (at specified character offset)
     pub fn insert(&mut self, char_offset: usize, text: &str) {
-        let char_offset = char_offset.min(self.rope.len_chars());
-        self.rope.insert(char_offset, text);
+        self.text_buffer.insert(char_offset, text);
     }
 
     /// Delete text range (character offset)
     pub fn delete(&mut self, start_char: usize, len_chars: usize) {
-        let start_char = start_char.min(self.rope.len_chars());
-        let end_char = (start_char + len_chars).min(self.rope.len_chars());
-
-        if start_char < end_char {
-            self.rope.remove(start_char..end_char);
-        }
+        self.text_buffer.delete(start_char, len_chars);
     }
 
     /// Get complete text
     pub fn get_text(&self) -> String {
-        self.rope.to_string()
+        self.text_buffer.get_text()
+    }
+
+    /// Get text in the specified character range.
+    pub fn get_range(&self, start_char: usize, len_chars: usize) -> String {
+        self.text_buffer.get_range(start_char, len_chars)
     }
 
     /// Get text of the specified line (excluding newline)
     pub fn get_line_text(&self, line_number: usize) -> Option<String> {
-        if line_number >= self.rope.len_lines() {
-            return None;
-        }
-
-        let mut text = self.rope.line(line_number).to_string();
-
-        // Remove trailing newline
-        if text.ends_with('\n') {
-            text.pop();
-        }
-
-        Some(text)
+        self.text_buffer.get_line_text(line_number)
     }
 }
 
@@ -471,8 +434,8 @@ mod tests {
             assert_eq!(recovered, char_offset);
 
             let (line, byte_col) = index.char_offset_to_line_byte_column(char_offset);
-            let line_start_char = index.rope.line_to_char(line);
-            let line_start_byte = index.rope.char_to_byte(line_start_char);
+            let line_start_char = index.position_to_char_offset(line, 0);
+            let line_start_byte = index.char_offset_to_byte_offset(line_start_char);
             assert_eq!(line_start_byte + byte_col, byte_offset);
         }
     }

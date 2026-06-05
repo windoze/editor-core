@@ -1757,7 +1757,7 @@ impl EditorCore {
 
     /// Get text content
     pub fn get_text(&self) -> String {
-        self.piece_table.get_text()
+        self.line_index.text_buffer().get_text()
     }
 
     /// Get total line count
@@ -1767,7 +1767,7 @@ impl EditorCore {
 
     /// Get total character count
     pub fn char_count(&self) -> usize {
-        self.piece_table.char_count()
+        self.line_index.text_buffer().len_chars()
     }
 
     /// Override the ASCII word-boundary character set used by editor-friendly "word" operations.
@@ -9809,6 +9809,8 @@ impl CommandExecutor {
             self.editor.line_index.insert(start_offset, inserted_text);
         }
 
+        self.assert_piece_table_text_buffer_consistent();
+
         let deleted_newlines = deleted_text
             .as_bytes()
             .iter()
@@ -9858,6 +9860,18 @@ impl CommandExecutor {
             self.editor.layout_engine.update_line(line, &line_text);
         }
     }
+
+    #[cfg(debug_assertions)]
+    fn assert_piece_table_text_buffer_consistent(&self) {
+        debug_assert_eq!(
+            self.editor.piece_table.get_text(),
+            self.editor.line_index.text_buffer().get_text(),
+            "PieceTable shadow text diverged from TextBuffer"
+        );
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn assert_piece_table_text_buffer_consistent(&self) {}
 
     fn position_to_char_offset_clamped(&self, pos: Position) -> usize {
         let line_count = self.editor.line_index.line_count();
