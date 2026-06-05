@@ -1949,6 +1949,7 @@ impl LspSession {
                 self.handle_semantic_tokens_result(&result, line_index, edits);
             }
             PendingLspRequest::FoldingRanges { version } => {
+                // Folding regions are line-indexed, so stale responses must not enter core state.
                 if version != self.document.version {
                     return Ok(());
                 }

@@ -32,7 +32,7 @@ use crate::{
     TabKeyBehavior, ViewCommand,
 };
 use crate::{StateChange, StateChangeCallback, StateChangeType, WrapIndent, WrapMode};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -2210,32 +2210,22 @@ impl Workspace {
                     style_changed = true;
                 }
                 ProcessingEdit::ReplaceFoldingRegions {
-                    mut regions,
+                    regions,
                     preserve_collapsed,
                 } => {
                     if preserve_collapsed {
-                        let collapsed: HashSet<(usize, usize)> = buffer
+                        buffer
                             .executor
-                            .editor()
+                            .editor_mut()
                             .folding_manager
-                            .derived_regions()
-                            .iter()
-                            .filter(|r| r.is_collapsed)
-                            .map(|r| (r.start_line, r.end_line))
-                            .collect();
-
-                        for region in &mut regions {
-                            if collapsed.contains(&(region.start_line, region.end_line)) {
-                                region.is_collapsed = true;
-                            }
-                        }
+                            .replace_derived_regions_preserving_collapsed(regions);
+                    } else {
+                        buffer
+                            .executor
+                            .editor_mut()
+                            .folding_manager
+                            .replace_derived_regions(regions);
                     }
-
-                    buffer
-                        .executor
-                        .editor_mut()
-                        .folding_manager
-                        .replace_derived_regions(regions);
                     buffer
                         .executor
                         .editor_mut()

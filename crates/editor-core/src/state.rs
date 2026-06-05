@@ -43,7 +43,7 @@ use crate::{
     SelectionDirection, StyleCommand, TextAnchor, UndoHistoryRestoreError, UndoHistorySnapshot,
     ViewCommand,
 };
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -1053,33 +1053,18 @@ impl EditorStateManager {
 
     /// Replace folding regions wholesale.
     ///
-    /// If `preserve_collapsed` is true, any region that matches an existing collapsed region
-    /// (`start_line`, `end_line`) will remain collapsed after replacement.
-    pub fn replace_folding_regions(
-        &mut self,
-        mut regions: Vec<FoldRegion>,
-        preserve_collapsed: bool,
-    ) {
+    /// If `preserve_collapsed` is true, matching existing collapsed derived regions stay collapsed
+    /// after replacement, including conservative matches across small line-number drift.
+    pub fn replace_folding_regions(&mut self, regions: Vec<FoldRegion>, preserve_collapsed: bool) {
         if preserve_collapsed {
-            let collapsed: HashSet<(usize, usize)> = self
-                .editor()
+            self.editor_mut()
                 .folding_manager
-                .derived_regions()
-                .iter()
-                .filter(|r| r.is_collapsed)
-                .map(|r| (r.start_line, r.end_line))
-                .collect();
-
-            for region in &mut regions {
-                if collapsed.contains(&(region.start_line, region.end_line)) {
-                    region.is_collapsed = true;
-                }
-            }
+                .replace_derived_regions_preserving_collapsed(regions);
+        } else {
+            self.editor_mut()
+                .folding_manager
+                .replace_derived_regions(regions);
         }
-
-        self.editor_mut()
-            .folding_manager
-            .replace_derived_regions(regions);
         self.editor_mut().invalidate_visual_row_index_cache();
         self.mark_modified(StateChangeType::FoldingChanged);
     }

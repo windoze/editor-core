@@ -53,3 +53,20 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test lsp_wait_for_response`、`cargo test -p editor-core-lsp`。
 - 已更新 `TODO.md`：T03R 标记为 `[DONE]`，状态改为 DONE，并补全审查完成记录。
 - 下一步检查最终 diff/status 并提交本次 T03R 审查记录；未跟踪的 `notification.sh`、`run_agent.sh` 不属于本任务，不会纳入提交。
+
+## T04 进度记录
+
+- 已读取 `TODO.md`，第一个未完成任务是 `T04 实现：折叠派生状态版本化与折叠态保留`。
+- T04 范围文件为 `crates/editor-core/src/intervals.rs`、`crates/editor-core/src/processing.rs`、`crates/editor-core/src/state.rs`、`crates/editor-core/src/workspace.rs`、`crates/editor-core-lsp/src/editor.rs`、`crates/editor-core/tests/folding_stability.rs`，可新增 `crates/editor-core-lsp/tests/folding_versioning.rs`。
+- 本次执行计划：先检查最新提交是否包含与 T04 直接相关的未完成事项；再只阅读 T04 列出的入口和测试；随后实现 LSP folding 旧版本丢弃、折叠区域刷新时的 collapsed 保留策略，并确认用户 fold 与派生 fold 的折叠态边界；补充针对旧版本 response、行号漂移保留 collapsed、派生刷新不删除用户 fold 的测试；最后按要求运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core-lsp`，必要时运行完整测试；验证通过后更新 `TODO.md` 并提交。
+- 最新提交为 `[T03R] Review wait_for_response caching`，未提到与 T04 直接相关的未完成事项。
+- 当前工作树已有未跟踪的 `notification.sh`、`run_agent.sh`，不属于 T04；除非后续明确相关，否则不修改、不纳入提交。
+- 已阅读 T04 范围内入口：`FoldingManager`、`ProcessingEdit::ReplaceFoldingRegions`、`EditorStateManager::replace_folding_regions`、`Workspace::apply_processing_edits` folding 分支、`LspSession::handle_pending_response` folding 分支，以及现有 `folding_stability.rs`。
+- 发现 LSP folding response 已按 `PendingLspRequest::FoldingRanges { version }` 在进入 core 前丢弃旧版本，但缺少专项回归测试；`preserve_collapsed` 仍只按精确 `(start_line, end_line)` 匹配，无法覆盖小范围行号漂移。
+- 修正计划更新为：在 `FoldingManager` 增加共享的派生 fold 替换并保留 collapsed 策略，优先精确匹配，其次使用保守的同 placeholder、start 附近、范围重叠且长度接近的匹配；`state` 和 `workspace` 改用该共享方法；新增 core 测试覆盖漂移保留和用户 fold 不被派生刷新删除；新增 LSP 测试覆盖旧版本 folding response 不生成替换 edit。
+- 已实现共享保留策略：新增 `FoldingManager::replace_derived_regions_preserving_collapsed`，`EditorStateManager` 和 `Workspace` 的 `ReplaceFoldingRegions { preserve_collapsed: true }` 都改用该路径；`ProcessingEdit` 文档补充异步版本来源要求，LSP folding 分支保留进入 core 前的版本丢弃。
+- 已更新 `folding_stability.rs`，新增小范围行号漂移后保留 collapsed、用户 fold collapsed 不复制到派生 fold、多个派生 collapsed fold 在插入/删除后继续平移的覆盖。
+- 已新增 `folding_versioning.rs`，使用 fake LSP server 覆盖当前版本 folding response 产生 `ReplaceFoldingRegions`，以及编辑后旧版本 response 不产生替换 edit 且不会覆盖已平移的多个 collapsed region。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core-lsp --test folding_versioning`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 已确认不存在 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
+- 已更新 `TODO.md`：T04 标记为 `[DONE]`，状态改为 DONE，并补全完成记录。下一步复查 diff/status 并提交本次 T04 变更。

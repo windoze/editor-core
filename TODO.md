@@ -250,9 +250,9 @@
 - 缓存增长风险限于阻塞等待期间到达的非目标 inbound 消息；等待有调用方提供的 timeout，且任务场景要求保留这些消息以避免丢失 pending response。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test lsp_wait_for_response`、`cargo test -p editor-core-lsp`。
 
-### T04 实现：折叠派生状态版本化与折叠态保留
+### [DONE] T04 实现：折叠派生状态版本化与折叠态保留
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -292,6 +292,16 @@
 
 - 编辑后旧 folding response 不污染当前文档。
 - 折叠态保留策略有明确测试覆盖。
+
+完成记录：
+
+- 将 `preserve_collapsed` 的折叠态保留逻辑下沉到 `FoldingManager::replace_derived_regions_preserving_collapsed`，`EditorStateManager` 和 `Workspace` 的 `ReplaceFoldingRegions` 应用路径共享同一策略。
+- 保留策略先按精确 `(start_line, end_line)` 匹配 collapsed 派生 fold；再对同 placeholder、start 附近、范围重叠且长度接近的区域做保守匹配，覆盖小范围行号漂移，且只从派生 fold 继承状态，不把用户 fold collapsed 状态复制到派生 fold。
+- 保持 LSP folding response 在进入 core state 前按 `PendingLspRequest::FoldingRanges { version }` 丢弃旧版本，并在 `ProcessingEdit::ReplaceFoldingRegions` 文档中明确异步版本响应需由 producer 先过滤。
+- 扩展 `folding_stability.rs`，覆盖行号漂移后 collapsed 保留、用户 fold 与派生 fold 折叠态边界、多个派生 collapsed fold 在插入/删除后继续平移。
+- 新增 `crates/editor-core-lsp/tests/folding_versioning.rs`，覆盖当前版本 folding response 产生 `ReplaceFoldingRegions`，以及编辑后旧版本 response 不产生替换 edit 且不会覆盖已平移的多个 collapsed region。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core-lsp --test folding_versioning`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
 ### T04R Review：审查折叠版本化与折叠态保留
 

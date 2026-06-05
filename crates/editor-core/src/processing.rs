@@ -33,8 +33,10 @@ pub enum ProcessingEdit {
     ///
     /// This affects the **derived** fold set (from external providers), leaving user-created folds intact.
     ///
-    /// If `preserve_collapsed` is true, regions that match an existing collapsed region
-    /// (`start_line`, `end_line`) will remain collapsed after replacement.
+    /// Producers with asynchronous document versions must discard stale responses before creating
+    /// this edit; core applies it as an authoritative replacement for the current document state.
+    /// If `preserve_collapsed` is true, regions that match an existing collapsed derived region,
+    /// including conservative matches across small line-number drift, remain collapsed.
     ReplaceFoldingRegions {
         /// The complete set of folding regions.
         regions: Vec<FoldRegion>,

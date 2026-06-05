@@ -470,6 +470,83 @@ impl FoldingManager {
         Self::normalize_regions(regions);
     }
 
+    fn ranges_overlap(left: &FoldRegion, right: &FoldRegion) -> bool {
+        left.start_line <= right.end_line && right.start_line <= left.end_line
+    }
+
+    fn collapsed_fuzzy_match_score(
+        existing: &FoldRegion,
+        replacement: &FoldRegion,
+    ) -> Option<(usize, usize, usize)> {
+        if existing.placeholder != replacement.placeholder {
+            return None;
+        }
+
+        let start_delta = existing.start_line.abs_diff(replacement.start_line);
+        if start_delta > 1 || !Self::ranges_overlap(existing, replacement) {
+            return None;
+        }
+
+        let existing_len = existing.end_line.saturating_sub(existing.start_line);
+        let replacement_len = replacement.end_line.saturating_sub(replacement.start_line);
+        let len_delta = existing_len.abs_diff(replacement_len);
+        let max_len_delta = 2.max(existing_len.max(replacement_len) / 3);
+        if len_delta > max_len_delta {
+            return None;
+        }
+
+        Some((
+            start_delta,
+            len_delta,
+            existing.end_line.abs_diff(replacement.end_line),
+        ))
+    }
+
+    fn preserve_collapsed_states(existing: &[FoldRegion], replacements: &mut [FoldRegion]) {
+        let collapsed = existing
+            .iter()
+            .filter(|region| region.is_collapsed)
+            .collect::<Vec<_>>();
+        if collapsed.is_empty() {
+            return;
+        }
+
+        let mut used = vec![false; collapsed.len()];
+
+        for replacement in replacements.iter_mut() {
+            if let Some(source_idx) = collapsed.iter().enumerate().position(|(idx, existing)| {
+                !used[idx]
+                    && existing.start_line == replacement.start_line
+                    && existing.end_line == replacement.end_line
+            }) {
+                replacement.is_collapsed = true;
+                used[source_idx] = true;
+            }
+        }
+
+        for replacement in replacements
+            .iter_mut()
+            .filter(|region| !region.is_collapsed)
+        {
+            let best = collapsed
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, existing)| {
+                    if used[idx] {
+                        return None;
+                    }
+                    Self::collapsed_fuzzy_match_score(existing, replacement)
+                        .map(|score| (score, idx))
+                })
+                .min_by_key(|(score, idx)| (*score, *idx));
+
+            if let Some((_score, source_idx)) = best {
+                replacement.is_collapsed = true;
+                used[source_idx] = true;
+            }
+        }
+    }
+
     /// Add a user-created fold region.
     pub fn add_region(&mut self, region: FoldRegion) {
         // Keep sorted by start line.
@@ -723,6 +800,14 @@ impl FoldingManager {
     /// Replace derived fold regions (will be sorted by start line and deduplicated).
     pub fn replace_derived_regions(&mut self, mut regions: Vec<FoldRegion>) {
         Self::normalize_regions(&mut regions);
+        self.derived_regions = regions;
+        self.rebuild_merged_regions();
+    }
+
+    /// Replace derived fold regions while preserving collapsed state across small range drift.
+    pub fn replace_derived_regions_preserving_collapsed(&mut self, mut regions: Vec<FoldRegion>) {
+        Self::normalize_regions(&mut regions);
+        Self::preserve_collapsed_states(&self.derived_regions, &mut regions);
         self.derived_regions = regions;
         self.rebuild_merged_regions();
     }
