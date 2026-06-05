@@ -19,16 +19,15 @@ fn main() {
     let mut executor = CommandExecutor::new(&text, 120);
     let open_time = start.elapsed();
 
-    let mut offset = executor.editor().char_count() / 2;
+    let start_offset = executor.editor().char_count() / 2;
     let start = Instant::now();
-    for _ in 0..100 {
+    for offset in start_offset..start_offset + 100 {
         executor
             .execute(Command::Edit(EditCommand::Insert {
                 offset,
                 text: "x".to_string(),
             }))
             .unwrap();
-        offset += 1;
     }
     let typing_time = start.elapsed();
 

@@ -12,6 +12,12 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+/// Default time to wait for an LSP `shutdown` response before forcing termination.
+pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(250);
+
+/// Default time to wait for the process to exit after sending an LSP `exit` notification.
+pub const DEFAULT_EXIT_TIMEOUT: Duration = Duration::from_millis(250);
+
 #[derive(Debug)]
 /// Outbound messages sent to the LSP server.
 pub enum LspOutbound {
@@ -30,7 +36,7 @@ pub enum LspInbound {
 
 /// A minimal JSON-RPC/LSP client implemented on top of stdio pipes.
 pub struct LspClient {
-    _child: Child,
+    child: Child,
     tx: mpsc::Sender<LspOutbound>,
     rx: mpsc::Receiver<LspInbound>,
     next_id: u64,
@@ -70,12 +76,17 @@ impl LspClient {
         thread::spawn(move || lsp_read_loop(stdout, tx_in));
 
         Ok(Self {
-            _child: child,
+            child,
             tx: tx_out,
             rx: rx_in,
             next_id: 1,
             workspace_folders,
         })
+    }
+
+    /// Return the OS process id of the connected LSP server.
+    pub fn process_id(&self) -> u32 {
+        self.child.id()
     }
 
     /// Send a JSON-RPC notification to the server.
@@ -112,6 +123,90 @@ impl LspClient {
         self.tx
             .send(LspOutbound::Message(message))
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "LSP writer thread stopped"))
+    }
+
+    /// Gracefully shut down the LSP server and reap the child process.
+    ///
+    /// The sequence is: send `shutdown`, wait briefly for the response, send `exit`, then wait for
+    /// process exit. If the server does not respond or does not exit, the child is killed and
+    /// waited on so it cannot remain as a zombie process.
+    pub fn shutdown(&mut self, shutdown_timeout: Duration) -> io::Result<()> {
+        self.shutdown_with_timeouts(shutdown_timeout, DEFAULT_EXIT_TIMEOUT)
+    }
+
+    /// Gracefully shut down the server with explicit request and exit timeouts.
+    pub fn shutdown_with_timeouts(
+        &mut self,
+        shutdown_timeout: Duration,
+        exit_timeout: Duration,
+    ) -> io::Result<()> {
+        if self.reap_if_exited()? {
+            return Ok(());
+        }
+
+        let shutdown_result = self
+            .request("shutdown", Value::Null)
+            .and_then(|id| self.wait_for_response(id, shutdown_timeout).map(|_| ()));
+
+        if shutdown_result.is_ok() {
+            return self.exit(exit_timeout);
+        }
+
+        self.terminate()
+    }
+
+    /// Send an LSP `exit` notification, wait briefly, then force termination if needed.
+    pub fn exit(&mut self, exit_timeout: Duration) -> io::Result<()> {
+        if self.reap_if_exited()? {
+            return Ok(());
+        }
+
+        let _ = self.notify("exit", Value::Null);
+        if self.wait_for_process_exit(exit_timeout)? {
+            return Ok(());
+        }
+
+        self.terminate()
+    }
+
+    /// Kill the child process if it is still running, then wait for it.
+    pub fn terminate(&mut self) -> io::Result<()> {
+        if self.reap_if_exited()? {
+            return Ok(());
+        }
+
+        match self.child.kill() {
+            Ok(()) => {}
+            Err(err) if err.kind() == io::ErrorKind::InvalidInput => {}
+            Err(err) => return Err(err),
+        }
+
+        let _ = self.child.wait()?;
+        Ok(())
+    }
+
+    fn reap_if_exited(&mut self) -> io::Result<bool> {
+        if self.child.try_wait()?.is_some() {
+            let _ = self.child.wait()?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn wait_for_process_exit(&mut self, timeout: Duration) -> io::Result<bool> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if self.reap_if_exited()? {
+                return Ok(true);
+            }
+
+            let now = Instant::now();
+            if now >= deadline {
+                return Ok(false);
+            }
+
+            thread::sleep((deadline - now).min(Duration::from_millis(10)));
+        }
     }
 
     /// Try to receive the next inbound message without blocking.
@@ -197,6 +292,12 @@ impl LspClient {
         };
 
         self.respond(id, result)
+    }
+}
+
+impl Drop for LspClient {
+    fn drop(&mut self) {
+        let _ = self.terminate();
     }
 }
 

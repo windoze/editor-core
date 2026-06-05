@@ -29,15 +29,14 @@ fn bench_typing_in_middle(c: &mut Criterion) {
         b.iter_batched(
             || CommandExecutor::new(&text, 120),
             |mut executor| {
-                let mut offset = executor.editor().char_count() / 2;
-                for _ in 0..100 {
+                let start_offset = executor.editor().char_count() / 2;
+                for offset in start_offset..start_offset + 100 {
                     executor
                         .execute(Command::Edit(EditCommand::Insert {
                             offset,
                             text: "x".to_string(),
                         }))
                         .unwrap();
-                    offset += 1;
                 }
                 black_box(executor.editor().char_count());
             },

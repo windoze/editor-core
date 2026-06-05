@@ -2376,11 +2376,13 @@ impl EditorUi {
                             "args": s.server.args,
                         }));
 
-                        activity = s.activity.map(|a| serde_json::json!({
-                            "title": a.title,
-                            "message": a.message,
-                            "percentage": a.percentage,
-                        }));
+                        activity = s.activity.map(|a| {
+                            serde_json::json!({
+                                "title": a.title,
+                                "message": a.message,
+                                "percentage": a.percentage,
+                            })
+                        });
 
                         capabilities = Some(serde_json::json!({
                             "semantic_tokens": s.capabilities.semantic_tokens,
@@ -2552,16 +2554,15 @@ impl EditorUi {
             )
         };
 
-        let supports = match shared.with_session_mut(|lsp| {
-            Ok(lsp.supports_on_type_formatting_trigger(ch))
-        }) {
-            Ok(v) => v,
-            Err(reason) => {
-                let mut doc = self.lock_doc();
-                doc.lsp_fail(reason);
-                return Ok(false);
-            }
-        };
+        let supports =
+            match shared.with_session_mut(|lsp| Ok(lsp.supports_on_type_formatting_trigger(ch))) {
+                Ok(v) => v,
+                Err(reason) => {
+                    let mut doc = self.lock_doc();
+                    doc.lsp_fail(reason);
+                    return Ok(false);
+                }
+            };
         if !supports {
             return Ok(false);
         }
@@ -3452,7 +3453,9 @@ impl EditorUi {
             self.refresh_processing()?;
             // Best-effort: if the LSP server advertises `documentOnTypeFormattingProvider` on
             // newline, request it (async) to improve indentation.
-            let requested_lsp = self.maybe_request_lsp_on_type_formatting("\n").unwrap_or(false);
+            let requested_lsp = self
+                .maybe_request_lsp_on_type_formatting("\n")
+                .unwrap_or(false);
             if !requested_lsp {
                 // Best-effort fallback: if a Tree-sitter `indents.scm` is available for the
                 // current language, use it to compute the desired indentation.

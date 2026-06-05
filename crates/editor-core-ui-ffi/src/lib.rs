@@ -5222,6 +5222,10 @@ contexts:
             editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 60, 1.0),
             ECU_OK
         );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_fold_marker_style(ui, 1),
+            ECU_OK
+        );
         set_test_treesitter_registry(ui);
         assert_eq!(
             editor_core_ui_ffi_editor_ui_treesitter_rust_enable_default(ui),
@@ -5230,7 +5234,7 @@ contexts:
         wait_for_processing(ui);
 
         assert_eq!(
-            editor_core_ui_ffi_editor_ui_set_gutter_width_cells(ui, 2),
+            editor_core_ui_ffi_editor_ui_set_gutter_width_cells(ui, 4),
             ECU_OK
         );
 
@@ -5329,8 +5333,8 @@ contexts:
 
         // Expanded fold marker at first gutter cell.
         assert_eq!(pixel(&buf, 200, 5, 10), [9, 9, 9, 255]);
-        // Gutter background in second cell (avoid line number glyph area).
-        assert_eq!(pixel(&buf, 200, 19, 10), [1, 2, 3, 255]);
+        // Gutter background after the 2-cell block marker column.
+        assert_eq!(pixel(&buf, 200, 25, 10), [1, 2, 3, 255]);
 
         // Click in gutter should toggle fold collapse.
         assert_eq!(

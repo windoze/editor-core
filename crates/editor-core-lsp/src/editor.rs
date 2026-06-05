@@ -9,7 +9,7 @@
 //! The API intentionally uses `serde_json::Value` instead of `lsp-types` to keep the dependency
 //! surface small and allow consumers to shape payloads as needed.
 
-use crate::lsp_client::{LspClient, LspInbound};
+use crate::lsp_client::{DEFAULT_EXIT_TIMEOUT, DEFAULT_SHUTDOWN_TIMEOUT, LspClient, LspInbound};
 use crate::lsp_events::{
     LspEvent, LspNotification, LspResponse, LspResponseError, LspServerRequest,
     LspServerRequestPolicy,
@@ -256,6 +256,7 @@ pub struct LspSession {
 
     pending: HashMap<u64, PendingLspRequest>,
     pending_client_requests: HashMap<u64, String>,
+    shutdown_requested: bool,
     refresh_due: Option<Instant>,
     auto_refresh: LspAutoRefreshOptions,
 
@@ -366,6 +367,7 @@ impl LspSession {
             work_done: WorkDoneProgressTracker::default(),
             pending: HashMap::new(),
             pending_client_requests: HashMap::new(),
+            shutdown_requested: false,
             refresh_due: None,
             auto_refresh: LspAutoRefreshOptions::default(),
             semantic_tokens_result_id: None,
@@ -414,10 +416,7 @@ impl LspSession {
         let mut best_is_indexing = false;
         for item in self.work_done.active.values() {
             let item_is_indexing = is_indexing_title(item.title.as_str())
-                || item
-                    .message
-                    .as_deref()
-                    .is_some_and(is_indexing_title);
+                || item.message.as_deref().is_some_and(is_indexing_title);
 
             match best {
                 None => {
@@ -957,17 +956,25 @@ impl LspSession {
         self.notify("$/cancelRequest", json!({ "id": request_id }))
     }
 
-    /// Graceful shutdown: send `shutdown` request.
+    /// Low-level graceful shutdown request.
     ///
-    /// The response is delivered via [`LspEvent::Response`], after which the host should call
-    /// [`LspSession::exit`] (and terminate the server process if needed).
+    /// The response is delivered via [`LspEvent::Response`], after which the host can call
+    /// [`LspSession::exit`] to send `exit` and reap the server process.
     pub fn shutdown(&mut self) -> Result<u64, String> {
-        self.request("shutdown", Value::Null)
+        let id = self.request("shutdown", Value::Null)?;
+        self.shutdown_requested = true;
+        Ok(id)
     }
 
-    /// Graceful shutdown: send `exit` notification.
+    /// Gracefully exit the LSP server and ensure its child process is reaped.
     pub fn exit(&mut self) -> Result<(), String> {
-        self.notify("exit", Value::Null)
+        let result = if self.shutdown_requested {
+            self.client.exit(DEFAULT_EXIT_TIMEOUT)
+        } else {
+            self.client.shutdown(DEFAULT_SHUTDOWN_TIMEOUT)
+        };
+
+        result.map_err(|err| format!("LSP exit 失败: {}", err))
     }
 
     /// Apply an LSP `WorkspaceEdit` to the active document (best-effort).

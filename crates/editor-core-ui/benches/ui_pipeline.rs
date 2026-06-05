@@ -93,15 +93,14 @@ fn bench_editor_core_typing_demo_size(c: &mut Criterion) {
         b.iter_batched(
             || CommandExecutor::new(&text, 120),
             |mut executor| {
-                let mut offset = executor.editor().char_count() / 2;
-                for _ in 0..100 {
+                let start_offset = executor.editor().char_count() / 2;
+                for offset in start_offset..start_offset + 100 {
                     executor
                         .execute(Command::Edit(EditCommand::Insert {
                             offset,
                             text: "x".to_string(),
                         }))
                         .unwrap();
-                    offset += 1;
                 }
                 black_box(executor.editor().char_count());
             },
@@ -122,15 +121,14 @@ fn bench_treesitter_process_incremental(c: &mut Criterion) {
                 (state, proc)
             },
             |(mut state, mut proc)| {
-                let mut offset = state.editor().char_count() / 2;
-                for _ in 0..100 {
+                let start_offset = state.editor().char_count() / 2;
+                for offset in start_offset..start_offset + 100 {
                     state
                         .execute(Command::Edit(EditCommand::Insert {
                             offset,
                             text: "x".to_string(),
                         }))
                         .unwrap();
-                    offset += 1;
                     state.apply_processor(&mut proc).unwrap();
                 }
                 black_box(state.editor().char_count());

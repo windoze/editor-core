@@ -514,7 +514,10 @@ pub fn canonical_semantic_token_type_index(name: &str) -> Option<u32> {
 ///
 /// Returns `0` when the name is unknown or out of the low-16-bit encodable range.
 pub fn canonical_semantic_token_modifier_bit(name: &str) -> u32 {
-    let Some(idx) = CANONICAL_SEMANTIC_TOKEN_MODIFIERS.iter().position(|&m| m == name) else {
+    let Some(idx) = CANONICAL_SEMANTIC_TOKEN_MODIFIERS
+        .iter()
+        .position(|&m| m == name)
+    else {
         return 0;
     };
     // Low 16 bits are reserved for modifiers in the default encoding.

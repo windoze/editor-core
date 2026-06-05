@@ -26,9 +26,9 @@
 
 ## 任务列表
 
-### T01 实现：LSP 子进程生命周期回收
+### [DONE] T01 实现：LSP 子进程生命周期回收
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -64,6 +64,16 @@
 
 - 销毁 `LspClient` / `LspSession` 后不会遗留子进程。
 - 正常和异常 server 都能被回收。
+
+完成记录：
+
+- 将 `LspClient` 的 `_child` 改为可操作的 `child`，新增 `shutdown` / `exit` / `terminate` 生命周期方法；`shutdown` 会发送 `shutdown` 请求、短超时等待响应、发送 `exit`，超时或 I/O 异常时执行 `kill` + `wait`。
+- 为 `LspClient` 实现 `Drop` 兜底回收，确保仍在运行的子进程会被 kill 后 wait。
+- 将 `LspSession::exit` 改为使用新的生命周期回收路径；保留低层 `LspSession::shutdown` 请求 API，并记录已请求状态，避免手动 shutdown 后 exit 再次发送 shutdown。
+- 新增 `crates/editor-core-lsp/tests/lsp_process_lifecycle.rs`，覆盖 `LspClient` drop 回收、不响应 shutdown 的 session exit 强制回收、响应 shutdown 的 session exit 成功路径。
+- 验证过程中 `cargo clippy --all-targets -- -D warnings` 暴露了若干既有 lint 阻塞项，已做等价最小修复；完整测试首次运行暴露了一个 `editor-core-ui-ffi` fold marker 像素测试不稳定/不一致问题，已通过固定 `Block` marker 样式和匹配 gutter 宽度修正。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test lsp_process_lifecycle`、`cargo test -p editor-core-lsp`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
 ### T01R Review：审查 LSP 子进程生命周期回收
 

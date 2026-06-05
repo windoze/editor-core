@@ -2892,10 +2892,9 @@ fn resolve_cell_font_variant(style_ids: &[u32], theme: &RenderTheme) -> FontVari
     let mut bold: bool = false;
     let mut italic: bool = false;
     for id in style_ids {
-        let spec = theme
-            .style_fonts
-            .get(id)
-            .or_else(|| semantic_token_base_style_id(*id).and_then(|base| theme.style_fonts.get(&base)));
+        let spec = theme.style_fonts.get(id).or_else(|| {
+            semantic_token_base_style_id(*id).and_then(|base| theme.style_fonts.get(&base))
+        });
         let Some(spec) = spec else { continue };
         if let Some(v) = spec.bold {
             bold = v;
@@ -3082,7 +3081,8 @@ fn resolve_cell_line_decorations(
             continue;
         }
         let spec = theme.text_decorations.get(&id).copied().or_else(|| {
-            semantic_token_base_style_id(id).and_then(|base| theme.text_decorations.get(&base).copied())
+            semantic_token_base_style_id(id)
+                .and_then(|base| theme.text_decorations.get(&base).copied())
         });
         let Some(spec) = spec else { continue };
         let Some(underline_style) = spec.underline else {
@@ -3104,7 +3104,8 @@ fn resolve_cell_line_decorations(
     let mut strike_color: Option<Rgba8> = None;
     for &id in style_ids {
         let spec = theme.text_decorations.get(&id).copied().or_else(|| {
-            semantic_token_base_style_id(id).and_then(|base| theme.text_decorations.get(&base).copied())
+            semantic_token_base_style_id(id)
+                .and_then(|base| theme.text_decorations.get(&base).copied())
         });
         let Some(spec) = spec else { continue };
         if let Some(v) = spec.strikethrough {

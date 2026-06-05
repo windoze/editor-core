@@ -2806,7 +2806,7 @@ impl EditorCore {
         let end_line_text = self.line_index.get_line_text(region.end_line)?;
 
         // Common formatting: closing brace is the first non-whitespace char on the end line.
-        if let Some(ch) = end_line_text.chars().skip_while(|c| c.is_whitespace()).next()
+        if let Some(ch) = end_line_text.chars().find(|c| !c.is_whitespace())
             && matches!(ch, '}' | ')' | ']')
         {
             return Some(ch);

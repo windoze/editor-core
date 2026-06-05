@@ -1,0 +1,110 @@
+use editor_core_lsp::{LspClient, LspDocument, LspSession, LspSessionStartOptions};
+use serde_json::json;
+use std::io;
+use std::process::{Child, Command, Stdio};
+use std::thread;
+use std::time::Duration;
+
+fn framed_message_script(body: &str) -> String {
+    format!(
+        "body='{}'; printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${{#body}}\" \"$body\"",
+        body
+    )
+}
+
+fn spawn_shell_child(script: &str) -> io::Result<Child> {
+    Command::new("/bin/sh")
+        .arg("-c")
+        .arg(script)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+}
+
+fn shell_command(script: &str) -> Command {
+    let mut cmd = Command::new("/bin/sh");
+    cmd.arg("-c").arg(script).stderr(Stdio::null());
+    cmd
+}
+
+fn process_exists(pid: u32) -> bool {
+    let output = Command::new("ps")
+        .arg("-p")
+        .arg(pid.to_string())
+        .arg("-o")
+        .arg("pid=")
+        .output();
+
+    let Ok(output) = output else {
+        return false;
+    };
+
+    output.status.success() && !String::from_utf8_lossy(&output.stdout).trim().is_empty()
+}
+
+fn assert_process_exited(pid: u32) {
+    for _ in 0..50 {
+        if !process_exists(pid) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    panic!("process {pid} still exists");
+}
+
+fn start_session(script: &str) -> LspSession {
+    LspSession::start(LspSessionStartOptions {
+        cmd: shell_command(script),
+        workspace_folders: Vec::new(),
+        initialize_params: json!({}),
+        initialize_timeout: Duration::from_secs(1),
+        document: LspDocument {
+            uri: "file:///tmp/lifecycle-test.rs".to_string(),
+            language_id: "rust".to_string(),
+            version: 1,
+        },
+        initial_text: String::new(),
+    })
+    .expect("session starts")
+}
+
+#[test]
+fn drop_kills_unresponsive_lsp_client() {
+    let child = spawn_shell_child("sleep 30").expect("spawn fake server");
+    let pid = child.id();
+
+    {
+        let _client = LspClient::from_child(child, Vec::new()).expect("create client");
+    }
+
+    assert_process_exited(pid);
+}
+
+#[test]
+fn session_exit_kills_server_that_ignores_shutdown() {
+    let initialize =
+        framed_message_script(r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#);
+    let script = format!("{initialize}; sleep 30");
+    let mut session = start_session(&script);
+    let pid = session.client().process_id();
+
+    session.exit().expect("exit recovers by killing server");
+
+    assert_process_exited(pid);
+}
+
+#[test]
+fn session_exit_accepts_responsive_shutdown() {
+    let initialize =
+        framed_message_script(r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#);
+    let shutdown = framed_message_script(r#"{"jsonrpc":"2.0","id":2,"result":null}"#);
+    let script = format!("{initialize}; sleep 0.05; {shutdown}; sleep 0.05");
+    let mut session = start_session(&script);
+    let pid = session.client().process_id();
+
+    session.exit().expect("responsive shutdown succeeds");
+
+    assert_process_exited(pid);
+}
