@@ -46,3 +46,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test text_buffer_single_source`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
 - 已确认不存在 `tools/run_fixtures.py`，因此无可运行的完整 fixture suite。
 - 下一步更新 `TODO.md` 的 T05 标题和完成记录，然后检查 diff 并提交。
+
+## T05R Review 进度记录
+
+- 已定位当前第一个未完成任务：`T05R Review：审查 TextBuffer 抽象`。本次只执行该 review 任务，重点审查 T05 diff 中 TextBuffer char offset 语义、文本副本数量、CRLF 入口归一化、一致性断言覆盖和 Unicode/末尾换行测试。
+- 已审查 T05 代码路径：`TextBuffer` 继续以 char offset 为边界，`LineIndex` 包装该 Rope 存储而非新增额外完整副本，`EditorCore::new` 与编辑命令仍在入口归一化 CRLF，命令编辑路径在同步 `PieceTable` 与 `TextBuffer` 后执行 debug-only 一致性断言；暂未发现需立即修复的问题。
+- 已完成验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test text_buffer_single_source`、`cargo test -p editor-core` 均通过。已将 `T05R` 在 `TODO.md` 中标记为 `[DONE]` 并填写完成记录；下一步检查 diff/status/log 后提交本次 review 记录。

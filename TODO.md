@@ -458,9 +458,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test text_buffer_single_source`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
-### T05R Review：审查 `TextBuffer` 抽象
+### [DONE] T05R Review：审查 `TextBuffer` 抽象
 
-状态：TODO
+状态：DONE
 
 审查范围：T05 的所有 diff。
 
@@ -476,6 +476,13 @@
 
 - `cargo test -p editor-core --test text_buffer_single_source`
 - `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T05 diff，重点检查 `TextBuffer` char offset API、`LineIndex` 包装方式、`EditorCore::get_text` / `char_count` 读路径、编辑命令中的 `PieceTable` 影子写入和 debug-only 一致性断言，以及 `text_buffer_single_source` 覆盖。
+- 未发现需要立即修复或新增前置任务的问题；`TextBuffer` 边界保持 Unicode scalar / char offset 语义，`LineIndex` 以 `TextBuffer` 替代原有 Rope 字段而非新增额外完整文本副本，CRLF 仍由 `EditorCore` / 编辑命令入口归一化，末尾换行、Unicode、range/line 读取和影子一致性已有测试覆盖。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test text_buffer_single_source`、`cargo test -p editor-core`。
+- 本次 review 未修改编译代码；T05 完成记录已有 `cargo test --all --all-targets` 通过结果，因此未重复运行全量测试或 fixture suite。
 
 ### T06 实现：移除 `LayoutEngine.line_texts` 文本副本
 
