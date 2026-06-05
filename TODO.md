@@ -2268,9 +2268,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
-### T21UR Review：审查 editor-core-ui panic 专项
+### [DONE] T21UR Review：审查 editor-core-ui panic 专项
 
-状态：TODO
+状态：DONE
 
 审查范围：T21U 的所有 diff。
 
@@ -2286,6 +2286,73 @@
 - `cargo test -p editor-core-ui`
 - `cargo clippy --all-targets -- -D warnings`
 
+完成记录：
+
+- 已审查 T21U diff，重点检查 `keybindings.rs` parser `unwrap` 移除、`poll_processing` Tree-sitter worker `expect` 转错误路径、`keybindings_tests.rs` 新增 host-input 回归，以及任务记录中的剩余 panic/unwrap/expect 分类。
+- 未发现 T21U 混入 `editor-core-app` 或核心库无关重构；`keybindings.rs` 已无 `unwrap`/`expect`/`panic!` 匹配，`editor-core-ui/src/lib.rs` 剩余生产路径匹配限于 `EditorUi::new` 的初始 buffer 内部不变量 `expect`，其余匹配位于测试模块。
+- 发现 T21U 后续修复项：`poll_lsp_best_effort` 中 LSP-derived `apply_processing_edits` 错误被 `let _ = ...` 忽略，且部分路径会继续报告 `applied = true`；同时 T21U 对 `poll_processing` Tree-sitter worker-missing 错误路径缺少直接回归覆盖。已在 T21A 前新增 `T21UF` / `T21UFR`。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui`。
+
+### T21UF 修复：收口 editor-core-ui LSP processing 错误通道与 poll 回归覆盖
+
+状态：TODO
+
+依赖：
+
+- T21UR 审查发现的 LSP-derived processing edit 错误被忽略和 `poll_processing` 错误路径测试缺口。
+
+范围文件：
+
+- `crates/editor-core-ui/src/lib.rs`
+- `crates/editor-core-ui/tests/*`，或 `lib.rs` 内部测试模块，按现有测试布局选择
+
+已知入口：
+
+- `EditorUi::poll_processing`
+- `EditorUi::poll_lsp_best_effort`
+- `EditorUiDoc::apply_processing_edits`
+- `EditorUiDoc::lsp_fail`
+- `ProcessingPollResult { applied, pending }`
+
+实现要求：
+
+1. `poll_lsp_best_effort` 不得忽略 LSP-derived `apply_processing_edits` 返回的错误；错误必须进入明确 UI 错误通道，例如返回 `UiError::Processor`，或至少设置 `lsp_last_error` 并让 poll result 不报告已应用成功。
+2. `inlayHint`、`codeLens`、`documentLink` 和普通 `session.poll_edits_with_line_index` 产生的 processing edits 应共享一致的错误处理策略，不得一部分静默失败、一部分报告成功。
+3. 保持现有 LSP status JSON 可观测性；若改变 `poll_lsp_best_effort` 返回类型，需要最小更新 `poll_processing` 调用点和测试。
+4. 补充 `poll_processing` / LSP polling 的直接回归测试，覆盖 processing edit apply 失败不会被报告为 `applied = true`，以及 Tree-sitter worker-missing defensive error path 能返回 `UiError::Processor`（若该内部状态可在现有测试布局中安全构造）。
+5. 不混入 `editor-core-app` 或核心库 panic 专项修复；app 仍由 T21A 单独处理。
+
+测试要求：
+
+1. 新增或扩展 UI 测试，覆盖 LSP-derived processing edit apply 失败的错误/状态通道。
+2. 覆盖 T21U 新增的 `poll_processing` Tree-sitter defensive error path，若该路径确认为不可构造，需要在完成记录中说明并用可构造的相邻错误路径替代。
+3. 运行 `cargo test -p editor-core-ui`。
+4. 运行 `cargo clippy --all-targets -- -D warnings`。
+
+验收标准：
+
+- LSP-derived processing edit 应用失败不会被静默吞掉或误报为已成功应用。
+- T21U 的 UI panic/error-handling 修复有覆盖关键错误通道的回归测试。
+
+### T21UFR Review：审查 editor-core-ui LSP processing 错误通道修复
+
+状态：TODO
+
+审查范围：T21UF 的所有 diff。
+
+审查重点：
+
+1. LSP-derived `apply_processing_edits` 错误是否通过明确通道暴露，且不会继续报告 `applied = true`。
+2. `poll_processing` 的 Tree-sitter 与 LSP error handling 是否一致，没有吞错导致 UI 静默不一致。
+3. 新增测试是否真正覆盖错误路径，而不是只覆盖正常路径。
+4. 是否保持 LSP status JSON 可观测性和现有正常 LSP polling 行为。
+5. 是否避免混入 app/core 无关修复。
+
+建议命令：
+
+- `cargo test -p editor-core-ui`
+- `cargo clippy --all-targets -- -D warnings`
+
 ### T21A 实现：editor-core-app panic 与错误处理专项
 
 状态：TODO
@@ -2293,7 +2360,7 @@
 依赖：
 
 - T21 完成记录中的 `editor-core-app/src` panic/unwrap/expect 统计。
-- T21UR 审查通过后执行。
+- T21UFR 审查通过后执行。
 
 范围文件：
 
@@ -2309,7 +2376,7 @@
 
 1. 不做开放式重构；优先处理 app 生产路径中可恢复的 IO、settings/session parsing、workspace lookup、pane/file explorer 状态错误。
 2. 测试模块中的 unwrap 可保留；不可恢复内部不变量必须用明确消息说明原因。
-3. 不混入 `editor-core-ui` 或核心库修复；UI 已由 `T21U` 单独处理。
+3. 不混入 `editor-core-ui` 或核心库修复；UI 已由 `T21U` / `T21UF` 单独处理。
 
 测试要求：
 

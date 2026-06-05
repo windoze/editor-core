@@ -2,25 +2,20 @@
 
 ## 当前执行计划
 
-1. 读取 `TODO.md`，只识别第一个标题未带 `[DONE]` 的任务，不做开放式历史问题排查。
-2. 读取该任务必要上下文，包括相关 `PLAN.md` 片段、最近提交信息，以及任务涉及的代码和测试。
-3. 判断当前任务是否可直接完成；如遇到阻塞当前任务的规格缺口、失败测试或必须先修复的实现边界，按要求在 `TODO.md` 中新增最小前置任务并停止。
-4. 若任务可执行，实施最小正确修改，并保持变更聚焦。
-5. 运行任务要求的验证；按要求先 `cargo fmt`，再 `cargo clippy --all-targets -- -D warnings`，最后运行相关或完整测试。
-6. 更新 `TODO.md`：将完成任务标题加 `[DONE]`，补充完成记录和验证结果。仅当阶段级计划变化时才更新 `PLAN.md`。
-7. 提交所有本次相关变更，提交信息包含任务编号和简明说明。
-8. 完成一个任务后停止，不进入下一个任务。
+1. 已读取 `TODO.md`，按标题是否带 `[DONE]` 识别第一个未完成任务，不做开放式历史问题排查。
+2. 当前任务为 `T21UR Review：审查 editor-core-ui panic 专项`；这是 review 任务，不主动重构，只审查 T21U diff、验证是否有明确缺陷或测试缺口。
+3. 先检查最近提交和工作区状态，确认是否有与 T21UR 直接相关的未完成事项或未提交变更需要纳入本次 review。
+4. 定向查看 T21U 涉及文件：`crates/editor-core-ui/src/lib.rs`、`crates/editor-core-ui/src/keybindings.rs` 以及相关测试，重点核对可恢复 UI/host 错误是否转为明确错误通道、processor 状态错误是否未被吞掉、剩余 panic/unwrap/expect 是否分类清楚、是否未混入 app/core 无关修改。
+5. 运行任务建议验证，按要求先 `cargo fmt`，再 `cargo clippy --all-targets -- -D warnings`，再运行 `cargo test -p editor-core-ui`；若发现未调度失败测试，必须修复或在 `TODO.md` 中新增最小前置任务。
+6. 若 review 未发现阻塞问题，将 `T21UR` 标题加 `[DONE]`、状态改为 DONE，并补充完成记录和验证结果；不更新 `PLAN.md`，除非发现阶段级计划变化。
+7. 提交本次 review 相关变更，提交信息使用 `T21UR` 前缀；完成后停止，不进入 `T21A`。
 
 ## 进度
 
-- 已创建初始计划，下一步读取 `TODO.md` 确认第一个未完成任务。
-- 已确认第一个未完成任务为 `T21U 实现：editor-core-ui panic 与错误处理专项`。
-- 下一步按任务范围读取最近提交、检查工作区状态，并定向分析 `crates/editor-core-ui/src/lib.rs` 与 `keybindings.rs` 中的 `unwrap` / `expect` / `panic!`，优先修复生产路径中的可恢复错误。
-- 定向分类结果：`lib.rs` 中生产路径匹配点为 `EditorUi::new` 的内部不变量 `expect`，以及 `poll_processing` 中 3 个 Tree-sitter worker `expect`；`keybindings.rs` 中 3 个 `unwrap` 属于解析器生产路径。其余 `lib.rs` 匹配点位于 `#[cfg(test)]` 测试模块。
-- 当前编辑计划：将 `keybindings.rs` 解析器 `unwrap` 改为显式错误返回；将 `poll_processing` 的 Tree-sitter worker `expect` 改为 `UiError::Processor`；保留 `EditorUi::new` 的不可恢复内部不变量并在完成记录中分类说明。
-- 已完成代码修改：`keybindings.rs` 解析器不再使用 `unwrap`；`poll_processing` 在 Tree-sitter worker 状态异常时返回 `UiError::Processor`；新增 keybindings 定向测试覆盖 Unicode 单键与 malformed `when` 输入不 panic。
-- 定向复查显示 `editor-core-ui/src` 剩余匹配为 `lib.rs` 244 处：除 `EditorUi::new` 的内部不变量 `expect` 外均位于 `#[cfg(test)]` 测试模块。
-- 验证已通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
-- 已检查 fixture runner：未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`。
-- 下一步更新 `TODO.md` 将 T21U 标记 `[DONE]` 并记录完成内容，然后提交本次变更。
-- 已更新 `TODO.md`：`T21U` 标题已加 `[DONE]`，状态改为 DONE，并记录实现、分类、剩余匹配和验证结果。下一步检查 diff/status 后提交。
+- 已确认第一个未完成任务为 `T21UR Review：审查 editor-core-ui panic 专项`。
+- 已检查最近提交与工作区状态：`HEAD` 为 `[T21U] Harden editor-core-ui panic handling`，当前仅 `memory/claude_plan.md` 为本次修改；另有 `notification.sh`、`run_agent.sh` 未跟踪且与本任务无关，不修改、不提交。
+- 已开始定向审查 T21U 的 UI panic/error-handling 改动和测试覆盖。
+- 定向审查发现后续修复项：`poll_lsp_best_effort` 中 LSP-derived `apply_processing_edits` 错误被忽略，且部分路径会继续报告 `applied = true`；同时 T21U 对 `poll_processing` Tree-sitter worker-missing 错误路径缺少直接回归覆盖。计划在 `T21A` 前新增最小 `T21UF` / `T21UFR`，本次 review 不直接重构实现。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui`。
+- 已更新 `TODO.md`：`T21UR` 标题已加 `[DONE]`，状态改为 DONE，并记录审查结论；已在 `T21A` 前新增 `T21UF` / `T21UFR`，并将 `T21A` 依赖改为 `T21UFR`。
+- 下一步检查 diff/status 后提交本次 review 变更。
