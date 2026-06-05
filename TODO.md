@@ -1408,9 +1408,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test stage2_validation`、`cargo test -p editor-core --test line_endings`、`cargo test -p editor-core`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
-### T15R Review：审查 `LineIndex` API 清理
+### [DONE] T15R Review：审查 `LineIndex` API 清理
 
-状态：TODO
+状态：DONE
 
 审查范围：T15 的所有 diff。
 
@@ -1427,6 +1427,14 @@
 - `cargo test -p editor-core --test stage2_validation`
 - `cargo test -p editor-core --test line_endings`
 - `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T15 diff 和当前源码，重点检查 `LineIndex` public API、`LineMetadata` 字段、legacy offset 迁移说明、CRLF 行尾语义测试和下游编译影响。
+- 未发现需要立即修复或新增前置任务的问题：`LineIndex::append_line`、`LineIndex::insert_line(LineMetadata)`、`LineIndex::get_line_mut` 已不存在；`LineMetadata` 不再暴露 `pieces` 僵尸字段；legacy offset API 已标记 deprecated 并说明推荐迁移路径；直接 CRLF 输入行为和高层入口归一化行为均有测试覆盖。
+- 已确认仓内调用点已迁移到 preferred char/byte offset API，deprecated legacy offset API 仅保留在 `line_index.rs` 内部兼容测试中且带 `#[allow(deprecated)]`。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test stage2_validation`、`cargo test -p editor-core --test line_endings`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py`、`tools/**/*fixture*` 或 `tools/` fixture runner，完整 fixture suite 无可运行入口。
 
 ### T16 实现：FFI ABI 定宽迁移
 

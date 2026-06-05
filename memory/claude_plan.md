@@ -4,14 +4,12 @@
 
 ## 当前计划
 
-1. 当前第一个未完成任务为 `T15 实现：删除或私有化 LineIndex 陷阱 API`；本轮只完成 T15，不进入 T15R 或后续任务。
-2. 检查最近提交是否声明与 T15 直接相关的未完成事项。
-3. 审查 `LineIndex` 陷阱 API：`LineMetadata.pieces`、`append_line`、`insert_line`、`get_line_mut`、legacy offset API 和 CRLF 语义。
-4. 删除或收紧会构造占位文本的公开 API，移除僵尸 Piece 元数据，并补充 legacy offset 迁移说明。
-5. 更新 T15 指定测试，固定 CRLF 直接传入 `LineIndex::from_text` 的低层语义。
-6. 运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、T15 指定测试、完整 Rust 测试和 all-features clippy。
-7. 更新 `TODO.md`：将 T15 标记为 `[DONE]` 并填写完成记录。
-8. 检查 git 状态、差异和最近提交，只提交本轮相关改动，然后停止。
+1. 当前第一个未完成任务为 `T15R Review：审查 LineIndex API 清理`；本轮只完成 T15R，不进入 T16。
+2. 检查最近提交 `db500c8 [T15] Clean up LineIndex trap APIs` 是否包含与 T15R 直接相关的未完成事项。
+3. 审查 T15 diff 和当前源码，重点确认假文本 public API、`LineMetadata` 僵尸字段、legacy offset 说明、CRLF 测试和下游编译情况。
+4. 运行 T15R 建议命令，并按项目纪律补充 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`；必要时运行下游 crate 编译/全量测试。
+5. 若审查发现阻塞问题，按要求修复或在 `TODO.md` 添加最小前置任务并停止；若无阻塞，将 T15R 标记 `[DONE]` 并填写审查记录。
+6. 检查 git 状态、差异和最近提交，提交本轮相关改动后停止。
 
 ## 历史进度记录
 
@@ -67,6 +65,13 @@
 
 ## 当前进度记录
 
+- 本次调用已写入可共享执行计划；下一步读取 `TODO.md` 并识别第一个未完成任务。
+- 已读取 `TODO.md`，首个未完成任务为 `T15R Review：审查 LineIndex API 清理`。
+- 最近提交为 `db500c8 [T15] Clean up LineIndex trap APIs`，提交标题未声明额外未完成事项。
+- 已完成 T15 静态审查：未发现残留的 `LineIndex::append_line`、`LineIndex::insert_line(LineMetadata)`、`LineIndex::get_line_mut` public API；`LineMetadata` 不再暴露 `pieces` 字段；legacy offset API 具备 deprecation 说明且仓内调用已迁移，CRLF 直接输入行为已有测试固定。
+- 已完成验证并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test stage2_validation`、`cargo test -p editor-core --test line_endings`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py`、`tools/**/*fixture*` 或 `tools/` fixture runner，完整 fixture suite 无可运行入口。
+- 下一步将 `TODO.md` 中 T15R 标记为 `[DONE]` 并填写审查完成记录，然后提交本轮相关改动并停止。
 - 已读取 `TODO.md`，首个未完成任务为 `T15 实现：删除或私有化 LineIndex 陷阱 API`。
 - 最近提交为 `5f7367c [T14FR] Review public API documentation sync`，未发现直接影响 T15 的未完成事项。
 - 已完成 T15 定向读取与符号搜索：假文本 API 仅在 `line_index.rs` 和 `stage2_validation.rs` 使用；legacy offset API 另在 `stage6_validation.rs` 使用，需随 deprecation 迁移测试调用点。
