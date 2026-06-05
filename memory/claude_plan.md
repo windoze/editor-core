@@ -26,4 +26,5 @@
 - 已补充行操作、注释切换和 workspace apply-text-edits 的 Unicode、末尾换行、多光标/空行相关回归测试；下一步运行定向检查和验证。
 - 已运行并通过 T09 验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test workspace_search_apply`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 已确认仓库中不存在 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
-- 已将 `TODO.md` 中 T09 标记为 `[DONE]` 并填写完成记录；下一步检查 diff/status 后提交本次任务变更。
+- 已将 `TODO.md` 中 T09 标记为 `[DONE]` 并填写完成记录。
+- 已提交 T09 任务变更：`a470582 [T09] Avoid full-text reads in line commands`；下一步停止，不进入 `T09R`。
