@@ -2047,9 +2047,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
 - 未运行完整 `cargo test`：本任务只修改文档和 crate 级文档注释，且上一任务完成记录已有完整测试通过；按任务测试要求仅运行 doc test。
 
-### T20R Review：审查文档一致性修正
+### [DONE] T20R Review：审查文档一致性修正
 
-状态：TODO
+状态：DONE
 
 审查范围：T20 的所有 diff。
 
@@ -2064,6 +2064,69 @@
 建议命令：
 
 - `cargo test -p editor-core --doc`，仅当修改 doc test 示例时运行。
+
+完成记录：
+
+- 已审查 T20 diff，重点检查 `docs/DESIGN.md`、`docs/abi-v1-draft.md` 和 `crates/editor-core/src/lib.rs` 是否描述当前实现而非未来计划。
+- 发现 T20 后续修复项：`docs/DESIGN.md` 仍在 high-level architecture 与 command implementation notes 中把 `PieceTable` 描述为主存储/编辑路径，且 grapheme non-goal / layout 段落仍暗示没有 grapheme 光标移动支持；`UndoRedoManager` 路径说明也仍指向旧的 `commands.rs`。
+- 定向检查发现 `docs/DESIGN.zh.md` 保留同类过时 PieceTable 主路径描述；为避免翻译文档继续与英文设计文档和实现冲突，已在 T21 前新增 `T20F` / `T20FR`。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
+
+### T20F 修复：收口设计文档残留一致性问题
+
+状态：TODO
+
+依赖：
+
+- T20R 审查发现的 `DESIGN.md` / `DESIGN.zh.md` 残留文档不一致。
+
+范围文件：
+
+- `docs/DESIGN.md`
+- `docs/DESIGN.zh.md`
+
+已知入口：
+
+- `docs/DESIGN.md` high-level architecture 图中的 `Storage (PieceTable)` 层。
+- `docs/DESIGN.md` non-goal / layout / command implementation notes 中关于 grapheme、PieceTable 主路径、rope rebuild 和 `UndoRedoManager` 文件位置的描述。
+- `docs/DESIGN.zh.md` 中与上述英文设计文档对应的过时 PieceTable 主路径描述。
+
+实现要求：
+
+1. 将架构图和命令实现说明改为当前真实主路径：文本真相源是 `LineIndex` 背后的 rope-backed `TextBuffer`；`PieceTable` 只作为 deprecated compatibility API 和 debug-only consistency shadow 存在。
+2. 更新 edit command notes，避免继续写“编辑命令更新 piece table 并重建 rope”；应描述增量更新 `LineIndex` / layout window / interval tree / folding line delta / visual-row index 的当前语义。
+3. 更新 grapheme/word 相关 non-goal 和 layout 段落：专用 grapheme 移动/删除和 Unicode word-boundary 命令已存在，但公共坐标、layout columns、selection ranges 仍按 Unicode scalar / cell width 语义，不是 full grapheme-indexed model。
+4. 将 `UndoRedoManager` 文件位置说明改为当前模块拆分后的真实位置（`undo.rs`，经 `commands` facade 使用），不再暗示它仍实现于 `commands.rs`。
+5. 同步 `docs/DESIGN.zh.md` 中同类过时段落，避免中英文设计文档互相矛盾；不得新增尚未实现的未来承诺。
+
+测试要求：
+
+1. 运行 `cargo fmt`。
+2. 运行 `cargo test -p editor-core --doc`。
+3. 若只修改 Markdown 文档且不修改 doc test 示例，可跳过完整测试套件并在完成记录说明原因。
+
+验收标准：
+
+- 设计文档不再把 `PieceTable` 描述为主编辑路径。
+- Grapheme/word 支持边界与当前命令实现、公共坐标和 layout 语义一致。
+
+### T20FR Review：审查设计文档残留一致性修复
+
+状态：TODO
+
+审查范围：T20F 的所有 diff。
+
+审查重点：
+
+1. `DESIGN.md` / `DESIGN.zh.md` 是否不再保留 PieceTable 主路径描述。
+2. Grapheme/word/non-goal 描述是否准确区分专用命令支持与 public coordinate/layout 语义。
+3. Command implementation notes 是否与当前 `LineIndex` / `TextBuffer` / layout / folding / visual-row update 路径一致。
+4. `UndoRedoManager` 模块位置和 public facade 描述是否准确。
+5. 是否只修正文档一致性，没有混入无关计划或新承诺。
+
+建议命令：
+
+- `cargo test -p editor-core --doc`
 
 ### T21 实现：核心 panic 与错误处理专项
 

@@ -179,3 +179,23 @@ This file records an operational plan and progress updates for the current invoc
 - Edited docs: updated `DESIGN.md` LineIndex/folding/Unicode limitation text, `lib.rs` feature and Unicode summaries, and `abi-v1-draft.md` handle/threading/output-buffer contracts.
 - Validation: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core --doc` all passed.
 - Completion record: marked T20 as `[DONE]` in `TODO.md` with a task-scoped completion record.
+
+## T20R Review Invocation Plan
+
+1. Read `TODO.md` and select the first heading without `[DONE]`.
+2. Check the latest commit for unfinished work directly relevant to the selected task.
+3. Review the T20 diff against the T20R checklist: current-state documentation, complexity claims, grapheme/word/scalar boundary clarity, ABI calling contract clarity, and doc example validity.
+4. Inspect only the relevant T20 scope docs and minimal source context needed to confirm the documentation claims.
+5. Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core --doc`.
+6. If findings require follow-up, add the minimum task(s) before the dependent next task in `TODO.md`; otherwise mark T20R `[DONE]` directly.
+7. Commit the review bookkeeping and stop without starting the next task.
+
+## T20R Progress Updates
+
+- Read `TODO.md`; the first incomplete task is `T20R Review：审查文档一致性修正`.
+- Latest commit is `[T20] Fix documentation consistency`, directly relevant to T20R and containing no separate unfinished issue in the commit title.
+- Reviewed the T20-scoped diffs in `docs/DESIGN.md`, `docs/abi-v1-draft.md`, `crates/editor-core/src/lib.rs`, and minimal source context in `model.rs`, `cursor_ops.rs`, and `edit_ops.rs`.
+- Found follow-up documentation issues: `docs/DESIGN.md` still describes `PieceTable` as the high-level storage/edit path, still says edit commands update the piece table and rebuild the rope, still frames grapheme-aware cursor movement as a non-goal despite dedicated grapheme commands, and still points `UndoRedoManager` to the old `commands.rs` location.
+- A directed check found matching stale PieceTable main-path text in `docs/DESIGN.zh.md`; added `T20F` and `T20FR` before `T21` in `TODO.md` to repair the English and Chinese design docs before continuing.
+- Marked `T20R` as `[DONE]` and recorded the review findings and validation results in `TODO.md`.
+- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core --doc`.
