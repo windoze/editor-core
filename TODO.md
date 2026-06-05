@@ -224,9 +224,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-lsp --test lsp_wait_for_response`、`cargo test -p editor-core-lsp`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
-### T03R Review：审查 `wait_for_response` 响应缓存
+### [DONE] T03R Review：审查 `wait_for_response` 响应缓存
 
-状态：TODO
+状态：DONE
 
 审查范围：T03 的所有 diff。
 
@@ -242,6 +242,13 @@
 
 - `cargo test -p editor-core-lsp --test lsp_wait_for_response`
 - `cargo test -p editor-core-lsp`
+
+完成记录：
+
+- 已审查 T03 diff，重点检查 `LspClient::wait_for_response` / `try_recv` 的 FIFO 缓存路径、`LspSession` poll 处理、server request 自动响应、malformed id 可观察性，以及 `lsp_wait_for_response` 覆盖。
+- 未发现需要立即修复或新增前置任务的问题；非目标 response/notification/malformed id 会按原始顺序留在缓存中，已处理的 server request 不会重复投递，`try_recv` 先排空缓存再读 channel 以保持顺序。
+- 缓存增长风险限于阻塞等待期间到达的非目标 inbound 消息；等待有调用方提供的 timeout，且任务场景要求保留这些消息以避免丢失 pending response。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test lsp_wait_for_response`、`cargo test -p editor-core-lsp`。
 
 ### T04 实现：折叠派生状态版本化与折叠态保留
 

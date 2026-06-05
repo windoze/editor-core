@@ -43,3 +43,13 @@
 - 重新验证已通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-lsp --test lsp_wait_for_response`、`cargo test -p editor-core-lsp`、`cargo test --all --all-targets`。
 - 已更新 `TODO.md` 完成记录，补充 malformed server request 经 session poll 可观察的覆盖。
 - 下一步检查最终 diff/status 并提交本次 T03 变更；未跟踪的 `notification.sh`、`run_agent.sh` 不属于本任务，不会纳入提交。
+
+## T03R 进度记录
+
+- 已读取 `TODO.md`，第一个未完成任务是 `T03R Review：审查 wait_for_response 响应缓存`。
+- 最新提交为 `[T03] Preserve wait_for_response inbound messages`，与 T03R 审查范围直接相关。
+- 已审查 T03 diff 和当前实现，覆盖 `LspClient::wait_for_response`、`LspClient::try_recv`、`LspSession::poll_edits_with_line_index_and_handlers`、server request 自动响应、malformed id 可观察性，以及 `lsp_wait_for_response` 测试。
+- 未发现需要立即修复或新增前置任务的问题；缓存按 FIFO 恢复，已处理的 server request 不重复投递，非目标 response/notification/malformed id 保留给后续 poll。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test lsp_wait_for_response`、`cargo test -p editor-core-lsp`。
+- 已更新 `TODO.md`：T03R 标记为 `[DONE]`，状态改为 DONE，并补全审查完成记录。
+- 下一步检查最终 diff/status 并提交本次 T03R 审查记录；未跟踪的 `notification.sh`、`run_agent.sh` 不属于本任务，不会纳入提交。
