@@ -215,6 +215,9 @@ impl LspWorkspaceSync {
             if diags.uri == active_uri {
                 continue;
             }
+            if !self.session.diagnostics_version_matches(&diags) {
+                continue;
+            }
             let Some(id) = workspace.buffer_id_for_uri(&diags.uri) else {
                 continue;
             };

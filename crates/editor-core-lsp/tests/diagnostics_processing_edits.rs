@@ -1,10 +1,118 @@
 use editor_core::processing::ProcessingEdit;
 use editor_core::{DiagnosticSeverity, LineIndex, StyleLayerId};
 use editor_core_lsp::{
-    LspDiagnostic, LspDiagnosticSeverity, LspPosition, LspPublishDiagnosticsParams, LspRange,
+    LspDiagnostic, LspDiagnosticSeverity, LspDocument, LspEvent, LspNotification, LspPosition,
+    LspPublishDiagnosticsParams, LspRange, LspSession, LspSessionStartOptions,
     lsp_diagnostics_to_processing_edits,
 };
 use serde_json::json;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::Duration;
+
+const TEST_URI: &str = "file:///tmp/diagnostics-version-test.rs";
+
+fn framed_message_script(body: &str) -> String {
+    format!(
+        "body='{}'; printf 'Content-Length: %s\r\n\r\n%s' \"${{#body}}\" \"$body\"",
+        body
+    )
+}
+
+fn shell_command(script: &str) -> Command {
+    let mut cmd = Command::new("/bin/sh");
+    cmd.arg("-c").arg(script).stderr(Stdio::null());
+    cmd
+}
+
+fn diagnostic_notification(version: Option<i32>) -> String {
+    let mut message = json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/publishDiagnostics",
+        "params": {
+            "uri": TEST_URI,
+            "diagnostics": [{
+                "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 1 }
+                },
+                "severity": 1,
+                "source": "unit-test",
+                "message": "diagnostic"
+            }]
+        }
+    });
+
+    if let Some(version) = version {
+        message["params"]["version"] = json!(version);
+    }
+
+    message.to_string()
+}
+
+fn start_diagnostics_session(notification: String, document_version: i32) -> LspSession {
+    let initialize =
+        framed_message_script(r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#);
+    let diagnostics = framed_message_script(&notification);
+    let script = format!("{initialize}; sleep 0.05; {diagnostics}; sleep 30");
+
+    LspSession::start(LspSessionStartOptions {
+        cmd: shell_command(&script),
+        workspace_folders: Vec::new(),
+        initialize_params: json!({}),
+        initialize_timeout: Duration::from_secs(1),
+        document: LspDocument {
+            uri: TEST_URI.to_string(),
+            language_id: "rust".to_string(),
+            version: document_version,
+        },
+        initial_text: "abc\n".to_string(),
+    })
+    .expect("session starts")
+}
+
+fn poll_until_diagnostics_event(
+    session: &mut LspSession,
+    line_index: &LineIndex,
+) -> (Vec<ProcessingEdit>, LspPublishDiagnosticsParams) {
+    let mut all_edits = Vec::new();
+
+    for _ in 0..50 {
+        let edits = session
+            .poll_edits_with_line_index(line_index)
+            .expect("poll succeeds");
+        all_edits.extend(edits);
+
+        for event in session.drain_events() {
+            if let LspEvent::Notification(LspNotification::PublishDiagnostics(diagnostics)) = event
+            {
+                return (all_edits, diagnostics);
+            }
+        }
+
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    panic!("diagnostics notification was not observed");
+}
+
+fn has_diagnostics_style_layer(edits: &[ProcessingEdit]) -> bool {
+    edits.iter().any(|edit| {
+        matches!(
+            edit,
+            ProcessingEdit::ReplaceStyleLayer {
+                layer: StyleLayerId::DIAGNOSTICS,
+                ..
+            }
+        )
+    })
+}
+
+fn has_replace_diagnostics(edits: &[ProcessingEdit]) -> bool {
+    edits
+        .iter()
+        .any(|edit| matches!(edit, ProcessingEdit::ReplaceDiagnostics { .. }))
+}
 
 #[test]
 fn test_lsp_diagnostics_to_processing_edits_utf16_ranges() {
@@ -82,4 +190,40 @@ fn test_lsp_diagnostics_to_processing_edits_utf16_ranges() {
         }
         other => panic!("unexpected edit: {:?}", other),
     }
+}
+
+#[test]
+fn stale_version_diagnostics_are_observable_but_do_not_apply() {
+    let line_index = LineIndex::from_text("abc\n");
+    let mut session = start_diagnostics_session(diagnostic_notification(Some(1)), 2);
+
+    let (edits, diagnostics) = poll_until_diagnostics_event(&mut session, &line_index);
+
+    assert_eq!(diagnostics.version, Some(1));
+    assert!(!has_diagnostics_style_layer(&edits));
+    assert!(!has_replace_diagnostics(&edits));
+}
+
+#[test]
+fn current_version_diagnostics_produce_processing_edits() {
+    let line_index = LineIndex::from_text("abc\n");
+    let mut session = start_diagnostics_session(diagnostic_notification(Some(2)), 2);
+
+    let (edits, diagnostics) = poll_until_diagnostics_event(&mut session, &line_index);
+
+    assert_eq!(diagnostics.version, Some(2));
+    assert!(has_diagnostics_style_layer(&edits));
+    assert!(has_replace_diagnostics(&edits));
+}
+
+#[test]
+fn unversioned_diagnostics_still_apply_for_legacy_servers() {
+    let line_index = LineIndex::from_text("abc\n");
+    let mut session = start_diagnostics_session(diagnostic_notification(None), 2);
+
+    let (edits, diagnostics) = poll_until_diagnostics_event(&mut session, &line_index);
+
+    assert_eq!(diagnostics.version, None);
+    assert!(has_diagnostics_style_layer(&edits));
+    assert!(has_replace_diagnostics(&edits));
 }

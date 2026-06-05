@@ -539,6 +539,19 @@ impl LspSession {
         }
     }
 
+    /// Return whether a `publishDiagnostics` payload matches the tracked document version.
+    pub(crate) fn diagnostics_version_matches(
+        &self,
+        params: &crate::lsp_events::LspPublishDiagnosticsParams,
+    ) -> bool {
+        match (params.version, self.document_for_uri(&params.uri)) {
+            // Older servers may omit the version; keep accepting those diagnostics for compatibility.
+            (None, _) => true,
+            (Some(version), Some(document)) => version == document.version,
+            (Some(_), None) => false,
+        }
+    }
+
     /// Server information parsed from the `initialize` response.
     pub fn server_info(&self) -> Option<&LspServerInfo> {
         self.server_info.as_ref()
@@ -1670,6 +1683,7 @@ impl LspSession {
 
                             if let LspNotification::PublishDiagnostics(diags) = &notification
                                 && diags.uri == self.document.uri
+                                && self.diagnostics_version_matches(diags)
                             {
                                 edits
                                     .extend(lsp_diagnostics_to_processing_edits(line_index, diags));

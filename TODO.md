@@ -100,9 +100,9 @@
 - 未发现需要立即修复或新增前置任务的生命周期缺陷；`kill()` 后和自然退出路径都会进入 `wait()`，`Drop` 忽略错误且不主动 join 后台线程，测试覆盖不响应 shutdown、响应 shutdown 和 drop 回收路径。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test lsp_process_lifecycle`、`cargo test -p editor-core-lsp`。
 
-### T02 实现：diagnostics 版本守卫
+### [DONE] T02 实现：diagnostics 版本守卫
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -110,6 +110,8 @@
 - `crates/editor-core-lsp/src/lsp_sync.rs`
 - `crates/editor-core-lsp/tests/diagnostics_processing_edits.rs`
 - 可新增 `crates/editor-core-lsp/tests/diagnostics_versioning.rs`
+
+执行备注：`crates/editor-core-lsp/src/workspace_sync.rs` 会对非 active document 的 `publishDiagnostics` 另行生成 processing edits；为避免同一版本守卫缺口残留，T02 需要额外纳入该文件的最小修改。
 
 已知入口：
 
@@ -138,6 +140,15 @@
 
 - 旧文本 diagnostics 不会用当前 `LineIndex` 转换坐标。
 - diagnostics、semantic tokens、folding ranges 的版本策略一致。
+
+完成记录：
+
+- 在 `LspSession` 中新增 diagnostics 版本匹配判断：`version` 缺失时保持兼容应用；`version` 存在时必须匹配已跟踪文档版本；有版本但 URI 未被 session 跟踪时不应用。
+- 将版本守卫接入 active document 的 `publishDiagnostics` processing-edit 生成路径，旧版本 diagnostics 仍会进入 `LspEvent::Notification` 和普通 unhandled notification 观察路径。
+- 将同一守卫接入 `workspace_sync.rs` 的非 active document diagnostics 路由，避免 workspace 侧绕过 session 守卫后继续用当前 buffer `LineIndex` 生成派生状态。
+- 扩展 `diagnostics_processing_edits.rs`，覆盖旧版本 diagnostics 不生成 `ReplaceStyleLayer` / `ReplaceDiagnostics`、当前版本正常生成派生状态、无版本 diagnostics 兼容应用三种情况。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-lsp --test diagnostics_processing_edits`、`cargo test -p editor-core-lsp`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
 ### T02R Review：审查 diagnostics 版本守卫
 
