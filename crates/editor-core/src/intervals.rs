@@ -99,6 +99,31 @@ pub struct Interval {
     pub style_id: StyleId,
 }
 
+/// Text edit delta used to shift style intervals after text changes.
+///
+/// Coordinates are character offsets in the pre-edit document. A non-zero deletion is applied
+/// first as `[start, start + delete_len)`, then `insert_len` characters are inserted at `start`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntervalTextEdit {
+    /// Character offset where the edit starts.
+    pub start: usize,
+    /// Number of characters deleted from `start`.
+    pub delete_len: usize,
+    /// Number of characters inserted at `start` after deletion.
+    pub insert_len: usize,
+}
+
+impl IntervalTextEdit {
+    /// Create a text edit delta for interval shifting.
+    pub const fn new(start: usize, delete_len: usize, insert_len: usize) -> Self {
+        Self {
+            start,
+            delete_len,
+            insert_len,
+        }
+    }
+}
+
 impl Interval {
     /// Create a new interval with `[start, end)` offsets and a style id.
     pub fn new(start: usize, end: usize, style_id: StyleId) -> Self {
@@ -167,6 +192,59 @@ impl IntervalTree {
 
     fn rebuild_prefix_max_end(&mut self) {
         self.rebuild_prefix_max_end_from(0);
+    }
+
+    fn apply_insertion_to_interval(interval: &mut Interval, pos: usize, delta: usize) {
+        if interval.start >= pos {
+            interval.start += delta;
+            interval.end += delta;
+        } else if interval.end > pos {
+            // Interval spans insertion point, extend end position.
+            interval.end += delta;
+        }
+    }
+
+    fn apply_deletion_to_interval(interval: &mut Interval, start: usize, end: usize) -> bool {
+        if start >= end {
+            return true;
+        }
+
+        let delta = end - start;
+        if interval.end <= start {
+            // Interval is before deletion range, unaffected.
+            true
+        } else if interval.start >= end {
+            // Interval is after deletion range, move forward.
+            interval.start -= delta;
+            interval.end -= delta;
+            true
+        } else if interval.start >= start && interval.end <= end {
+            // Interval is completely within deletion range.
+            false
+        } else if interval.start < start && interval.end > end {
+            // Interval spans deletion range, shrink.
+            interval.end -= delta;
+            true
+        } else if interval.start < start {
+            // Interval partially overlaps the deletion range at its end.
+            interval.end = start;
+            true
+        } else {
+            // Interval partially overlaps the deletion range at its start.
+            interval.start = start;
+            interval.end -= delta;
+            true
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn debug_assert_sorted(&self) {
+        debug_assert!(
+            self.intervals
+                .windows(2)
+                .all(|pair| pair[0].start <= pair[1].start),
+            "IntervalTree intervals must remain sorted by start offset"
+        );
     }
 
     /// Insert an interval
@@ -307,55 +385,98 @@ impl IntervalTree {
     ///
     /// Call this method to update all intervals when inserting text of `delta` length at position `pos`
     pub fn update_for_insertion(&mut self, pos: usize, delta: usize) {
+        if delta == 0 || self.intervals.is_empty() {
+            return;
+        }
+
         for interval in &mut self.intervals {
-            if interval.start >= pos {
-                interval.start += delta;
-                interval.end += delta;
-            } else if interval.end > pos {
-                // Interval spans insertion point, extend end position
-                interval.end += delta;
-            }
+            Self::apply_insertion_to_interval(interval, pos, delta);
         }
         self.rebuild_prefix_max_end();
+        #[cfg(debug_assertions)]
+        self.debug_assert_sorted();
     }
 
     /// Update offsets (when text is deleted)
     ///
     /// Call this method to update all intervals when deleting text in range `[start, end)`
     pub fn update_for_deletion(&mut self, start: usize, end: usize) {
-        let delta = end - start;
-        let mut to_remove = Vec::new();
+        if start >= end || self.intervals.is_empty() {
+            return;
+        }
 
-        for (idx, interval) in self.intervals.iter_mut().enumerate() {
-            if interval.end <= start {
-                // Interval is before deletion range, unaffected
-                continue;
-            } else if interval.start >= end {
-                // Interval is after deletion range, move forward
-                interval.start -= delta;
-                interval.end -= delta;
-            } else if interval.start >= start && interval.end <= end {
-                // Interval is completely within deletion range, mark for removal
-                to_remove.push(idx);
-            } else if interval.start < start && interval.end > end {
-                // Interval spans deletion range, shrink
-                interval.end -= delta;
-            } else if interval.start < start {
-                // Interval partially in deletion range (end part)
-                interval.end = start;
-            } else {
-                // Interval partially in deletion range (start part)
-                interval.start = start;
-                interval.end -= delta;
+        let mut updated = Vec::with_capacity(self.intervals.len());
+        for mut interval in self.intervals.drain(..) {
+            if Self::apply_deletion_to_interval(&mut interval, start, end) {
+                updated.push(interval);
             }
         }
-
-        // Remove completely deleted intervals
-        for idx in to_remove.into_iter().rev() {
-            self.intervals.remove(idx);
+        if !updated
+            .windows(2)
+            .all(|pair| pair[0].start <= pair[1].start)
+        {
+            updated.sort_by_key(|interval| interval.start);
         }
+        self.intervals = updated;
 
         self.rebuild_prefix_max_end();
+        #[cfg(debug_assertions)]
+        self.debug_assert_sorted();
+    }
+
+    /// Update offsets for multiple text edits in one tree pass.
+    ///
+    /// Edits are interpreted in pre-edit coordinates and applied from larger `start` offsets to
+    /// smaller offsets, matching the command layer's descending mutation order. Each edit applies
+    /// deletion first and insertion second, preserving the single-edit replacement semantics.
+    pub fn update_for_text_edits(&mut self, edits: &[IntervalTextEdit]) {
+        if self.intervals.is_empty()
+            || !edits
+                .iter()
+                .any(|edit| edit.delete_len > 0 || edit.insert_len > 0)
+        {
+            return;
+        }
+
+        let mut ordered_edits: Vec<IntervalTextEdit> = edits
+            .iter()
+            .copied()
+            .filter(|edit| edit.delete_len > 0 || edit.insert_len > 0)
+            .collect();
+        ordered_edits.sort_by_key(|edit| std::cmp::Reverse(edit.start));
+
+        let mut updated = Vec::with_capacity(self.intervals.len());
+        for mut interval in self.intervals.drain(..) {
+            let mut keep = true;
+            for edit in &ordered_edits {
+                if edit.delete_len > 0 {
+                    let end = edit.start.saturating_add(edit.delete_len);
+                    keep = Self::apply_deletion_to_interval(&mut interval, edit.start, end);
+                    if !keep {
+                        break;
+                    }
+                }
+
+                if edit.insert_len > 0 {
+                    Self::apply_insertion_to_interval(&mut interval, edit.start, edit.insert_len);
+                }
+            }
+
+            if keep {
+                updated.push(interval);
+            }
+        }
+        if !updated
+            .windows(2)
+            .all(|pair| pair[0].start <= pair[1].start)
+        {
+            updated.sort_by_key(|interval| interval.start);
+        }
+        self.intervals = updated;
+
+        self.rebuild_prefix_max_end();
+        #[cfg(debug_assertions)]
+        self.debug_assert_sorted();
     }
 }
 
@@ -1020,6 +1141,69 @@ mod tests {
 
         assert_eq!(tree.intervals[2].start, 40); // 50 - 10
         assert_eq!(tree.intervals[2].end, 50); // 60 - 10
+    }
+
+    #[test]
+    fn test_interval_tree_batch_update_matches_sequential_updates() {
+        fn build_tree() -> IntervalTree {
+            let mut tree = IntervalTree::new();
+            tree.insert(Interval::new(0, 4, 1));
+            tree.insert(Interval::new(6, 12, 2));
+            tree.insert(Interval::new(15, 25, 3));
+            tree.insert(Interval::new(20, 24, 4));
+            tree.insert(Interval::new(30, 38, 5));
+            tree.insert(Interval::new(38, 45, 6));
+            tree
+        }
+
+        let edits = vec![
+            IntervalTextEdit::new(40, 5, 2),
+            IntervalTextEdit::new(18, 10, 0),
+            IntervalTextEdit::new(5, 0, 3),
+        ];
+
+        let mut sequential = build_tree();
+        for edit in &edits {
+            if edit.delete_len > 0 {
+                sequential.update_for_deletion(edit.start, edit.start + edit.delete_len);
+            }
+            if edit.insert_len > 0 {
+                sequential.update_for_insertion(edit.start, edit.insert_len);
+            }
+        }
+
+        let mut batched = build_tree();
+        batched.update_for_text_edits(&edits);
+
+        assert_eq!(batched.intervals, sequential.intervals);
+        assert_eq!(batched.prefix_max_end, sequential.prefix_max_end);
+    }
+
+    #[test]
+    fn test_interval_tree_batch_update_keeps_queries_correct() {
+        let mut tree = IntervalTree::new();
+        tree.insert(Interval::new(2, 8, 1));
+        tree.insert(Interval::new(10, 18, 2));
+        tree.insert(Interval::new(20, 30, 3));
+
+        tree.update_for_text_edits(&[
+            IntervalTextEdit::new(12, 4, 1),
+            IntervalTextEdit::new(4, 2, 0),
+        ]);
+
+        let point_styles: Vec<StyleId> = tree
+            .query_point(10)
+            .into_iter()
+            .map(|interval| interval.style_id)
+            .collect();
+        assert_eq!(point_styles, vec![2]);
+
+        let range_styles: Vec<StyleId> = tree
+            .query_range(0, 32)
+            .into_iter()
+            .map(|interval| interval.style_id)
+            .collect();
+        assert_eq!(range_styles, vec![1, 2, 3]);
     }
 
     #[test]

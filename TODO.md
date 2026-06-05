@@ -979,9 +979,9 @@
 - 测试覆盖已包含 CJK、emoji、tab、空白缩进、Unicode 多行和 token 后空格删除，以及长行多选区退化回归。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test unicode_segmentation`。
 
-### T11 实现：IntervalTree 更新路径降本
+### [DONE] T11 实现：IntervalTree 更新路径降本
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -1020,6 +1020,15 @@
 
 - 高频多 layer 编辑不再对每个 edit 都做每层全量更新。
 - interval 查询结果保持不变。
+
+完成记录：
+
+- 新增 `IntervalTextEdit` 与 `IntervalTree::update_for_text_edits`，按 pre-edit start 降序批量应用文本变更；每棵 tree 在一轮批量更新后只重建一次 `prefix_max_end`，并在必要时保持 interval start 排序不变量。
+- 将 `CommandExecutor` 的文本编辑更新路径统一收敛到 `update_interval_trees_for_text_edits`：多光标 insert/type/tab/newline/delete、indent/outdent、apply text edits、snippet additional edits、undo/redo 以及单次 insert/delete/replace 都先收集 interval delta，再对 base interval tree 和各 style layer 各批量更新一次。
+- `apply_text_ops` 改为先基于 pre-edit 坐标准备删除文本和 interval delta，再执行实际文本变更，避免批量 edit 期间每个 edit 对每个 style layer 反复全量更新。
+- 新增 `crates/editor-core/tests/interval_tree_updates.rs`，覆盖插入、删除、跨 interval 删除、完整删除 interval，以及多 style layer 下批量 edit 后 style range 与逐步更新语义一致；扩展 `intervals.rs` 单元测试覆盖批量更新与查询正确性。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test interval_tree_updates`、`cargo test -p editor-core --test diagnostics`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
 ### T11R Review：审查 IntervalTree 更新优化
 

@@ -36,7 +36,7 @@
 use crate::decorations::{Decoration, DecorationLayerId, DecorationPlacement};
 use crate::delta::{TextDelta, TextDeltaEdit};
 use crate::diagnostics::Diagnostic;
-use crate::intervals::{FoldRegion, StyleId, StyleLayerId};
+use crate::intervals::{FoldRegion, IntervalTextEdit, StyleId, StyleLayerId};
 use crate::layout::{
     WrapIndent, WrapMode, cell_width_at, char_width, visual_x_for_column,
     wrap_indent_cells_for_line_text,
@@ -3038,6 +3038,17 @@ impl CommandExecutor {
         Self::new("", viewport_width)
     }
 
+    fn update_interval_trees_for_text_edits(&mut self, edits: &[IntervalTextEdit]) {
+        if edits.is_empty() {
+            return;
+        }
+
+        self.editor.interval_tree.update_for_text_edits(edits);
+        for layer_tree in self.editor.style_layers.values_mut() {
+            layer_tree.update_for_text_edits(edits);
+        }
+    }
+
     /// Execute command
     pub fn execute(&mut self, command: Command) -> Result<CommandResult, CommandError> {
         self.last_text_delta = None;
@@ -3574,29 +3585,18 @@ impl CommandExecutor {
         // Apply edits safely (descending offsets).
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let interval_edits: Vec<IntervalTextEdit> = desc_indices
+            .iter()
+            .map(|&idx| {
+                let op = &ops[idx];
+                IntervalTextEdit::new(op.start_offset, op.delete_len, op.insert_char_len)
+            })
+            .collect();
+        self.update_interval_trees_for_text_edits(&interval_edits);
         let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
-
-            if op.delete_len > 0 {
-                self.editor
-                    .interval_tree
-                    .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree
-                        .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-                }
-            }
-
-            if !op.insert_text.is_empty() {
-                self.editor
-                    .interval_tree
-                    .update_for_insertion(op.start_offset, op.insert_char_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
-                }
-            }
 
             folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
                 op.start_offset,
@@ -3896,31 +3896,24 @@ impl CommandExecutor {
         // Apply edits safely (descending offsets).
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let interval_edits: Vec<IntervalTextEdit> = desc_indices
+            .iter()
+            .filter_map(|&idx| {
+                let op = &ops[idx];
+                op.apply.then_some(IntervalTextEdit::new(
+                    op.start_offset,
+                    op.delete_len,
+                    op.insert_char_len,
+                ))
+            })
+            .collect();
+        self.update_interval_trees_for_text_edits(&interval_edits);
         let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
             if !op.apply {
                 continue;
-            }
-
-            if op.delete_len > 0 {
-                self.editor
-                    .interval_tree
-                    .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree
-                        .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-                }
-            }
-
-            if !op.insert_text.is_empty() {
-                self.editor
-                    .interval_tree
-                    .update_for_insertion(op.start_offset, op.insert_char_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
-                }
             }
 
             folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
@@ -4475,29 +4468,18 @@ impl CommandExecutor {
         // Apply edits safely (descending offsets).
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let interval_edits: Vec<IntervalTextEdit> = desc_indices
+            .iter()
+            .map(|&idx| {
+                let op = &ops[idx];
+                IntervalTextEdit::new(op.start_offset, op.delete_len, op.insert_char_len)
+            })
+            .collect();
+        self.update_interval_trees_for_text_edits(&interval_edits);
         let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
-
-            if op.delete_len > 0 {
-                self.editor
-                    .interval_tree
-                    .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree
-                        .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-                }
-            }
-
-            if !op.insert_text.is_empty() {
-                self.editor
-                    .interval_tree
-                    .update_for_insertion(op.start_offset, op.insert_char_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
-                }
-            }
 
             folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
                 op.start_offset,
@@ -4758,29 +4740,18 @@ impl CommandExecutor {
         // Apply edits safely (descending offsets).
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let interval_edits: Vec<IntervalTextEdit> = desc_indices
+            .iter()
+            .map(|&idx| {
+                let op = &ops[idx];
+                IntervalTextEdit::new(op.start_offset, op.delete_len, op.insert_char_len)
+            })
+            .collect();
+        self.update_interval_trees_for_text_edits(&interval_edits);
         let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
-
-            if op.delete_len > 0 {
-                self.editor
-                    .interval_tree
-                    .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree
-                        .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-                }
-            }
-
-            if !op.insert_text.is_empty() {
-                self.editor
-                    .interval_tree
-                    .update_for_insertion(op.start_offset, op.insert_char_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree.update_for_insertion(op.start_offset, op.insert_char_len);
-                }
-            }
 
             folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
                 op.start_offset,
@@ -4990,28 +4961,17 @@ impl CommandExecutor {
         // Apply ops descending so offsets remain valid.
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let interval_edits: Vec<IntervalTextEdit> = desc_indices
+            .iter()
+            .map(|&idx| {
+                let op = &ops[idx];
+                IntervalTextEdit::new(op.start_offset, op.delete_len, op.insert_len)
+            })
+            .collect();
+        self.update_interval_trees_for_text_edits(&interval_edits);
 
         for &idx in &desc_indices {
             let op = &ops[idx];
-
-            if op.delete_len > 0 {
-                self.editor
-                    .interval_tree
-                    .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree
-                        .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-                }
-            }
-
-            if op.insert_len > 0 {
-                self.editor
-                    .interval_tree
-                    .update_for_insertion(op.start_offset, op.insert_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree.update_for_insertion(op.start_offset, op.insert_len);
-                }
-            }
 
             self.apply_text_change_to_line_index_and_layout(
                 op.start_offset,
@@ -7696,12 +7656,11 @@ impl CommandExecutor {
         let inserted_len = text.chars().count();
 
         // Update interval tree offsets
-        self.editor
-            .interval_tree
-            .update_for_insertion(offset, inserted_len);
-        for layer_tree in self.editor.style_layers.values_mut() {
-            layer_tree.update_for_insertion(offset, inserted_len);
-        }
+        self.update_interval_trees_for_text_edits(&[IntervalTextEdit::new(
+            offset,
+            0,
+            inserted_len,
+        )]);
 
         // Ensure cursor/selection still within valid range
         self.normalize_cursor_and_selection();
@@ -7773,12 +7732,7 @@ impl CommandExecutor {
         }
 
         // Update interval tree offsets
-        self.editor
-            .interval_tree
-            .update_for_deletion(start, start + length);
-        for layer_tree in self.editor.style_layers.values_mut() {
-            layer_tree.update_for_deletion(start, start + length);
-        }
+        self.update_interval_trees_for_text_edits(&[IntervalTextEdit::new(start, length, 0)]);
 
         // Ensure cursor/selection still within valid range
         self.normalize_cursor_and_selection();
@@ -7847,25 +7801,13 @@ impl CommandExecutor {
         let delta_deleted_text = deleted_text.clone();
         let delta_inserted_text = text.clone();
 
-        // Apply as a single operation (delete then insert at the same offset).
-        if length > 0 {
-            self.editor
-                .interval_tree
-                .update_for_deletion(start, start + length);
-            for layer_tree in self.editor.style_layers.values_mut() {
-                layer_tree.update_for_deletion(start, start + length);
-            }
-        }
-
         let inserted_len = text.chars().count();
-        if inserted_len > 0 {
-            self.editor
-                .interval_tree
-                .update_for_insertion(start, inserted_len);
-            for layer_tree in self.editor.style_layers.values_mut() {
-                layer_tree.update_for_insertion(start, inserted_len);
-            }
-        }
+        // Apply as a single operation (delete then insert at the same offset).
+        self.update_interval_trees_for_text_edits(&[IntervalTextEdit::new(
+            start,
+            length,
+            inserted_len,
+        )]);
 
         // Update line index + layout engine incrementally.
         let line_delta =
@@ -8430,18 +8372,20 @@ impl CommandExecutor {
         // Apply deletes descending to keep offsets valid.
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let interval_edits: Vec<IntervalTextEdit> = desc_indices
+            .iter()
+            .map(|&idx| {
+                let op = &ops[idx];
+                IntervalTextEdit::new(op.start_offset, op.delete_len, 0)
+            })
+            .collect();
+        self.update_interval_trees_for_text_edits(&interval_edits);
         let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
             if op.delete_len == 0 {
                 continue;
-            }
-            self.editor
-                .interval_tree
-                .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-            for layer_tree in self.editor.style_layers.values_mut() {
-                layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
 
             folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
@@ -8653,18 +8597,20 @@ impl CommandExecutor {
         // Apply deletes descending to keep offsets valid.
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let interval_edits: Vec<IntervalTextEdit> = desc_indices
+            .iter()
+            .map(|&idx| {
+                let op = &ops[idx];
+                IntervalTextEdit::new(op.start_offset, op.delete_len, 0)
+            })
+            .collect();
+        self.update_interval_trees_for_text_edits(&interval_edits);
         let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
             if op.delete_len == 0 {
                 continue;
-            }
-            self.editor
-                .interval_tree
-                .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-            for layer_tree in self.editor.style_layers.values_mut() {
-                layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
 
             folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
@@ -8863,18 +8809,20 @@ impl CommandExecutor {
         // Apply deletes descending to keep offsets valid.
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let interval_edits: Vec<IntervalTextEdit> = desc_indices
+            .iter()
+            .map(|&idx| {
+                let op = &ops[idx];
+                IntervalTextEdit::new(op.start_offset, op.delete_len, 0)
+            })
+            .collect();
+        self.update_interval_trees_for_text_edits(&interval_edits);
         let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
             if op.delete_len == 0 {
                 continue;
-            }
-            self.editor
-                .interval_tree
-                .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
-            for layer_tree in self.editor.style_layers.values_mut() {
-                layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
 
             folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
@@ -9045,18 +8993,29 @@ impl CommandExecutor {
     fn apply_text_ops(&mut self, mut ops: Vec<(usize, usize, &str)>) -> Result<(), CommandError> {
         // Sort descending by start offset to make offsets stable while mutating.
         ops.sort_by_key(|(start, _, _)| std::cmp::Reverse(*start));
-        let mut folding_line_changed = false;
 
+        struct PreparedTextOp<'a> {
+            start: usize,
+            delete_len: usize,
+            deleted_text: String,
+            insert_text: &'a str,
+            insert_len: usize,
+        }
+
+        let max_offset = self.editor.char_count();
+        let mut prepared_ops = Vec::with_capacity(ops.len());
         for (start, delete_len, insert_text) in ops {
-            let max_offset = self.editor.char_count();
+            let end = start
+                .checked_add(delete_len)
+                .ok_or(CommandError::InvalidRange {
+                    start,
+                    end: usize::MAX,
+                })?;
             if start > max_offset {
                 return Err(CommandError::InvalidOffset(start));
             }
-            if start + delete_len > max_offset {
-                return Err(CommandError::InvalidRange {
-                    start,
-                    end: start + delete_len,
-                });
+            if end > max_offset {
+                return Err(CommandError::InvalidRange { start, end });
             }
 
             let deleted_text = if delete_len > 0 {
@@ -9064,29 +9023,31 @@ impl CommandExecutor {
             } else {
                 String::new()
             };
-
-            if delete_len > 0 {
-                self.editor
-                    .interval_tree
-                    .update_for_deletion(start, start + delete_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree.update_for_deletion(start, start + delete_len);
-                }
-            }
-
             let insert_len = insert_text.chars().count();
-            if insert_len > 0 {
-                self.editor
-                    .interval_tree
-                    .update_for_insertion(start, insert_len);
-                for layer_tree in self.editor.style_layers.values_mut() {
-                    layer_tree.update_for_insertion(start, insert_len);
-                }
-            }
 
-            folding_line_changed |=
-                self.apply_text_change_to_line_index_and_layout(start, &deleted_text, insert_text)
-                    != 0;
+            prepared_ops.push(PreparedTextOp {
+                start,
+                delete_len,
+                deleted_text,
+                insert_text,
+                insert_len,
+            });
+        }
+
+        let interval_edits: Vec<IntervalTextEdit> = prepared_ops
+            .iter()
+            .map(|op| IntervalTextEdit::new(op.start, op.delete_len, op.insert_len))
+            .collect();
+        self.update_interval_trees_for_text_edits(&interval_edits);
+
+        let mut folding_line_changed = false;
+
+        for op in prepared_ops {
+            folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
+                op.start,
+                &op.deleted_text,
+                op.insert_text,
+            ) != 0;
         }
 
         if folding_line_changed {
