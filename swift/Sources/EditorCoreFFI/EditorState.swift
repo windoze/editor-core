@@ -15,9 +15,9 @@ public final class EditorState {
         viewportWidth: UInt
     ) throws {
         self.ffi = library
+        let width = try checkedFFIUInt32(max(1, viewportWidth), context: "editor_state_new.viewport_width")
 
         let handle: OpaquePointer? = initialText.withCString { textPtr in
-            let width = Int(clamping: max(1, viewportWidth))
             return editor_core_ffi_editor_state_new(textPtr, width)
         }
         guard let handle else {
@@ -78,22 +78,28 @@ public final class EditorState {
     }
 
     public func viewportStyledJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
-        try ffi.takeOwnedCString(
-            editor_core_ffi_editor_state_viewport_styled_json(handle, Int(clamping: startVisualRow), Int(clamping: rowCount)),
+        let start = try checkedFFIUInt32(startVisualRow, context: "editor_state_viewport_styled_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "editor_state_viewport_styled_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_viewport_styled_json(handle, start, count),
             context: "editor_state_viewport_styled_json"
         )
     }
 
     public func minimapJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
-        try ffi.takeOwnedCString(
-            editor_core_ffi_editor_state_minimap_json(handle, Int(clamping: startVisualRow), Int(clamping: rowCount)),
+        let start = try checkedFFIUInt32(startVisualRow, context: "editor_state_minimap_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "editor_state_minimap_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_minimap_json(handle, start, count),
             context: "editor_state_minimap_json"
         )
     }
 
     public func viewportComposedJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
-        try ffi.takeOwnedCString(
-            editor_core_ffi_editor_state_viewport_composed_json(handle, Int(clamping: startVisualRow), Int(clamping: rowCount)),
+        let start = try checkedFFIUInt32(startVisualRow, context: "editor_state_viewport_composed_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "editor_state_viewport_composed_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_viewport_composed_json(handle, start, count),
             context: "editor_state_viewport_composed_json"
         )
     }

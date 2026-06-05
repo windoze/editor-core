@@ -83,7 +83,7 @@ public final class LSPBridge {
     public func charOffsetToUTF16(lineText: String, charOffset: Int) -> Int {
         let offset = max(0, charOffset)
         let value = lineText.withCString { textPtr in
-            editor_core_ffi_lsp_char_offset_to_utf16(textPtr, offset)
+            editor_core_ffi_lsp_char_offset_to_utf16(textPtr, UInt64(offset))
         }
         return Int(value)
     }
@@ -91,7 +91,7 @@ public final class LSPBridge {
     public func utf16OffsetToCharOffset(lineText: String, utf16Offset: Int) -> Int {
         let offset = max(0, utf16Offset)
         let value = lineText.withCString { textPtr in
-            editor_core_ffi_lsp_utf16_to_char_offset(textPtr, offset)
+            editor_core_ffi_lsp_utf16_to_char_offset(textPtr, UInt64(offset))
         }
         return Int(value)
     }
@@ -184,8 +184,8 @@ public final class LSPBridge {
         mode: String,
         fallback: (start: Int, end: Int)?
     ) throws -> String {
-        let start = UInt(max(0, fallback?.start ?? 0))
-        let end = UInt(max(0, fallback?.end ?? 0))
+        let start = UInt64(max(0, fallback?.start ?? 0))
+        let end = UInt64(max(0, fallback?.end ?? 0))
         let hasFallback = fallback != nil
 
         let ptr: UnsafeMutablePointer<CChar>? = completionItemJSON.withCString { itemPtr in
@@ -194,8 +194,8 @@ public final class LSPBridge {
                     state.handle,
                     itemPtr,
                     modePtr,
-                    Int(clamping: start),
-                    Int(clamping: end),
+                    start,
+                    end,
                     hasFallback
                 )
             }

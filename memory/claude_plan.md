@@ -1,82 +1,43 @@
-# 执行计划
+本轮执行计划
+========
 
-> 说明：本文件记录可审计的执行计划与进度，不包含隐藏推理细节。
+目标：按照 `TODO.md` 的顺序完成第一个未标记 `[DONE]` 的任务，完成后提交并停止。
 
-## 当前计划
+约束与判定
+----------
 
-1. 当前第一个未完成任务为 `T15R Review：审查 LineIndex API 清理`；本轮只完成 T15R，不进入 T16。
-2. 检查最近提交 `db500c8 [T15] Clean up LineIndex trap APIs` 是否包含与 T15R 直接相关的未完成事项。
-3. 审查 T15 diff 和当前源码，重点确认假文本 public API、`LineMetadata` 僵尸字段、legacy offset 说明、CRLF 测试和下游编译情况。
-4. 运行 T15R 建议命令，并按项目纪律补充 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`；必要时运行下游 crate 编译/全量测试。
-5. 若审查发现阻塞问题，按要求修复或在 `TODO.md` 添加最小前置任务并停止；若无阻塞，将 T15R 标记 `[DONE]` 并填写审查记录。
-6. 检查 git 状态、差异和最近提交，提交本轮相关改动后停止。
+- `TODO.md` 是唯一任务排序与完成状态来源。
+- 只有标题显式带有 `[DONE]` 的任务才算完成。
+- 本轮只完成第一个未完成任务，不继续处理后续任务。
+- 如果遇到阻塞当前任务的真实缺陷、缺失特性或测试/fixture 失败，优先修复；若无法在当前任务内正确修复，则把最小必要前置任务插入 `TODO.md`，提交并停止。
+- 不通过缩小范围、改 fixture 形状、绕开模型或特殊用例来规避规范问题。
+- `PLAN.md` 只在阶段级计划或依赖结构变化时更新。
 
-## 历史进度记录
+步骤计划
+--------
 
-- 已写入初始执行计划，下一步读取 `TODO.md` 并识别第一个未完成任务。
-- 已识别第一个未完成任务：`T13 实现：纯移动拆分 commands.rs`。
-- 最近提交为 `T12R` 审查完成记录，未发现直接阻塞 T13 的未完成事项。
-- T13 专项执行计划：先检查工作区状态和 `commands.rs` 当前结构；随后按纯移动原则拆出模型、undo、编辑、行操作、光标和渲染相关模块；每完成一个模块移动后运行 `cargo test -p editor-core`；最后运行 T13 指定的 `editor-core`、`editor-core-lsp`、`editor-core-ffi` 验证，以及格式化和 lint；完成后更新 `TODO.md` 并提交。
-- 已完成 `model.rs` 纯移动切片：公开命令/坐标/配置模型已移出 `commands.rs` 并通过 `commands` 模块重新导出；`cargo test -p editor-core` 已通过。
-- 已完成 `undo.rs` 纯移动切片：undo tree、内部 undo edit/step 和持久化快照类型已移出 `commands.rs`，公开快照类型继续通过 `commands` 重新导出；`cargo test -p editor-core` 已通过。
-- 已完成 `render_grid.rs` 纯移动切片：styled viewport、minimap 和 composed viewport 快照方法已移出 `commands.rs`；`cargo test -p editor-core` 已通过。
-- 已完成 `cursor_ops.rs` 纯移动切片：词边界配置/辅助函数、选择扩展、多光标查找与 cursor dispatch 已移出 `commands.rs`；`cargo test -p editor-core` 已通过。
-- 已完成 `line_ops.rs` 纯移动切片：行块选择、Duplicate/Delete/Move/Join 和 ToggleComment 相关实现已移出 `commands.rs`；`cargo test -p editor-core` 已通过。
-- 已补齐 `line_ops.rs`：将 `ToggleComment` 的 line/block 具体 helper 也移入该模块；`cargo test -p editor-core` 已通过。
-- 已完成 `edit_ops.rs` 纯移动切片：undo/redo、插入/删除/替换、snippet、查找替换、批量 text ops 和低层文本变更同步 helper 已移出 `commands.rs`；`cargo test -p editor-core` 已通过。
-- 已完成最终验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo test -p editor-core-ffi`、`cargo test --all --all-targets` 均通过；未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
-- 已将 `TODO.md` 中 T13 标记为 `[DONE]` 并写入完成记录；下一步提交本次任务相关改动后停止。
-- 已识别本轮第一个未完成任务：`T13R Review：审查 commands.rs 纯移动拆分`。
-- T13R 执行范围限定为审查 T13 diff、运行建议验证命令、更新 `TODO.md` 完成记录并提交；不进入 `T14`。
-- 已完成 T13 静态审查：未发现混入业务逻辑改动、公开 re-export 缺失、过度 public 模块或跨 crate 引用破坏。
-- 已运行并通过 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo test -p editor-core-ffi`。
-- 已将 `T13R` 在 `TODO.md` 中标记为 `[DONE]` 并写入完成记录。下一步提交本轮改动后停止。
-- 已识别本轮第一个未完成任务：`T14 实现：收紧公开 API 和 EditorCore 字段`。
-- 本轮执行计划已更新：先检查最近提交和 T14 范围调用点，再实施最小 API 收紧、验证、更新 `TODO.md`、提交并停止。
-- 最近提交为 `53e2a3a [T13R] Review commands module split`，未发现直接阻塞 T14 的未完成事项。
-- 当前工作区存在未跟踪 `notification.sh`、`run_agent.sh`，与 T14 无关，本轮不触碰。
-- 已将 `EditorCore` 的文本、layout、style、diagnostics、decorations、symbols、folding、cursor/selection、viewport 字段改为私有，并补充只读 getter 与受控 mutation API。
-- 已把 `state`、`workspace`、TUI、FFI、LSP/Sublime/highlight-simple 调用点、示例和相关测试中的直接字段访问迁移到 getter 或受控 API；下一步格式化并运行编译检查以捕捉遗漏。
-- 已将不需要对外开放的 `EditorCore` mutation helper 收紧为 `pub(crate)`；TUI 折叠操作改走 `EditorStateManager` 的受控 API，并通过 `cargo check -p editor-core-lsp -p editor-core-ffi -p tui-editor`。
-- 已进一步将 `intervals` / `layout` 模块路径收紧为 crate 内部模块，并通过根级 re-export 暴露必要 facade；`line_index` 与 deprecated `storage` 路径保留给后续 T15/兼容清理。
-- 模块可见性调整后已重新格式化并通过 `cargo check -p editor-core-lsp -p editor-core-ffi -p tui-editor`；下一步重新运行 clippy 与测试矩阵。
-- 验证已通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo test -p tui-editor`、`cargo test --all --all-targets`。
-- 已确认不存在 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，因此无可运行完整 fixture suite。
-- 已将 `TODO.md` 中 T14 标记为 `[DONE]` 并写入完成记录；下一步检查 git diff/status/log，提交本轮相关改动后停止。
-- 已识别本轮第一个未完成任务：`T14R Review：审查公开 API 收紧`。
-- 最近提交为 `e782da8 [T14] Tighten editor core public API`，未发现提交信息中声明的未完成事项。
-- 已审查 T14 diff，未发现外部可直接写入文本、layout、folding、style、diagnostics、decorations 或 cursor 字段并破坏同步不变量的 public API。
-- 审查发现文档一致性问题：`EditorStateManager` 文档仍建议通过 `editor_mut()` 直接修改内部状态并手动 `mark_modified()`，且 `lib.rs` 仍以私有 `layout` / `intervals` 模块链接描述 facade。
-- 已完成验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo check -p tui-editor` 均通过。
-- 已更新 `TODO.md`：T14R 标记 `[DONE]`，并在 T15 前插入 `T14F` / `T14FR`，用于后续修正文档与 T14 API 可见性变更不一致的问题。
-- 已读取 `TODO.md`，首个未完成任务为 `T14F 修复：同步公开 API 收紧文档`。
-- 最近提交为 `52985c6 [T14R] Review public API tightening`，提交信息未声明额外未完成事项。
-- 已更新 `lib.rs` 的 API Visibility 与 Module Description，说明 `layout` / `intervals` 相关公开类型经 crate root facade re-export 暴露，不再暗示私有模块路径公开。
-- 已更新 `EditorStateManager` 顶层文档和 `EditorStateManager::editor_mut` / `CommandExecutor::editor_mut` 文档，不再建议外部直接修改内部字段或手动绕过同步不变量。
-- 已运行并通过：`cargo fmt`、`cargo test -p editor-core --doc`、`cargo clippy --all-targets -- -D warnings`。
-- 已将 `TODO.md` 中 T14F 标记为 `[DONE]` 并写入完成记录；下一步检查 diff/status/log 后提交本轮相关改动并停止。
-- 已读取 `TODO.md`，首个未完成任务为 `T14FR Review：审查公开 API 文档同步修复`。
-- 最近提交为 `f6f1449 [T14F] Sync public API documentation`，直接对应当前 review 范围，未发现提交标题提示未完成事项。
-- 已审查 T14F diff：变更限于文档注释、TODO 完成记录和进度文件；当前源码仍将 `layout` 与 `intervals` 保持为 `pub(crate)` 模块，并通过 crate root facade re-export 暴露公开类型。
-- 已确认更新后的 `editor_mut()` 文档不再建议直接修改内部字段或绕过同步不变量。
-- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
-- 已将 `TODO.md` 中 T14FR 标记为 `[DONE]` 并写入审查结果和验证记录。
-- 已提交 T14FR 并停止。
+1. 读取 `TODO.md`，识别第一个标题未带 `[DONE]` 的任务，并记录其要求、依赖和验证项。
+2. 查看最近提交，只有当最新提交明确提到与该任务直接相关的未完成问题时，才把它纳入当前任务或作为前置项写入 `TODO.md`。
+3. 根据该任务定位相关代码、测试和文档，避免无关历史问题扫描。
+4. 实现任务要求；如发现阻塞性规范缺口，按要求更新 `TODO.md` 并停止。
+5. 运行格式化、lint 和相关测试；若涉及编译输出变化，按顺序运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`，再运行必要的完整测试/fixture 验证。
+6. 若所有验证通过，在 `TODO.md` 中给当前任务标题加 `[DONE]`，更新 completion record。
+7. 检查 git 状态、diff 和最近提交，确认只提交本轮相关变更；若是恢复未完成任务，则按要求包含当前未提交文件。
+8. 使用清晰任务消息提交，提交后停止，不处理下一任务。
 
-## 当前进度记录
+进度记录
+--------
 
-- 本次调用已写入可共享执行计划；下一步读取 `TODO.md` 并识别第一个未完成任务。
-- 已读取 `TODO.md`，首个未完成任务为 `T15R Review：审查 LineIndex API 清理`。
-- 最近提交为 `db500c8 [T15] Clean up LineIndex trap APIs`，提交标题未声明额外未完成事项。
-- 已完成 T15 静态审查：未发现残留的 `LineIndex::append_line`、`LineIndex::insert_line(LineMetadata)`、`LineIndex::get_line_mut` public API；`LineMetadata` 不再暴露 `pieces` 字段；legacy offset API 具备 deprecation 说明且仓内调用已迁移，CRLF 直接输入行为已有测试固定。
-- 已完成验证并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test stage2_validation`、`cargo test -p editor-core --test line_endings`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
-- 未找到 `tools/run_fixtures.py`、`tools/**/*fixture*` 或 `tools/` fixture runner，完整 fixture suite 无可运行入口。
-- 下一步将 `TODO.md` 中 T15R 标记为 `[DONE]` 并填写审查完成记录，然后提交本轮相关改动并停止。
-- 已读取 `TODO.md`，首个未完成任务为 `T15 实现：删除或私有化 LineIndex 陷阱 API`。
-- 最近提交为 `5f7367c [T14FR] Review public API documentation sync`，未发现直接影响 T15 的未完成事项。
-- 已完成 T15 定向读取与符号搜索：假文本 API 仅在 `line_index.rs` 和 `stage2_validation.rs` 使用；legacy offset API 另在 `stage6_validation.rs` 使用，需随 deprecation 迁移测试调用点。
-- 已删除 `LineIndex::append_line`、`LineIndex::insert_line(LineMetadata)` 和 `LineIndex::get_line_mut`，移除 `LineMetadata.pieces`，并将 legacy offset API 标记为 deprecated。
-- 已补充 CRLF 低层语义说明和 `line_endings` 回归测试：直接传入 `LineIndex::from_text` 的 CRLF 会保留 `\r` 为普通行内容，Editor/Workspace 入口仍归一化为 LF。
-- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test stage2_validation`、`cargo test -p editor-core --test line_endings`、`cargo test -p editor-core`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
-- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
-- 已将 `TODO.md` 中 T15 标记为 `[DONE]` 并写入完成记录；下一步提交本轮相关改动并停止。
+- 已写入初始执行计划。
+- 已读取 `TODO.md`，确认第一个未完成任务是 `T16 实现：FFI ABI 定宽迁移`。
+- T16 的核心要求：定向列出 public `extern "C"` 签名中的 `usize`，将新公共 ABI 迁移为定宽整数，内部转换必须做溢出检查并返回 `InvalidArgument`，同步 ABI 文档和 FFI 测试；完成后只标记 T16，不处理 T16R。
+- 已完成定向 `extern "C" fn` + `usize` 检查，发现公开 `usize` 只在 `editor-core-ffi/src/lib.rs`，`editor-core-ui-ffi` 公开签名未暴露 `usize`。
+- 已将 `editor-core-ffi` 公开 `usize` 签名改为 `u32`/`u64`，并新增定宽入参到 `usize` 的检查 helper；当前定向复查已无 public `extern "C"` 签名暴露 `usize`。
+- 已同步 `crates/editor-core-ffi/include/editor_core_ffi.h`、Swift `EditorCoreFFI` 包装和 `docs/abi-v1-draft.md`；Swift 侧不再用 `Int(clamping:)` 向 ABI 传递会被静默截断的宽度/行数参数。
+- 已扩展 `crates/editor-core-ffi/tests/abi_v1.rs`，加入编译期函数指针签名断言，固定公开 ABI 的 `u32`/`u64` 形状，并覆盖必填输出指针的 `InvalidArgument` 错误路径和 LSP `u64` 边界坐标不截断行为。
+- 已运行 `cargo fmt`。
+- 首次运行 `cargo test -p editor-core-ffi --test abi_v1` 时，新增测试触及已排期 `T19` 的 UTF-16 半代理对策略差异；已将 T16 测试收窄为不覆盖半代理对策略，只验证 u64 边界输入不会被截断。
+- `swift test` 首次运行因 SwiftPM 插件缺少/过期 Rust staticlib 失败；已按插件提示运行 `cargo build -p editor-core-ui-ffi --release`。随后 Swift 编译暴露本轮 Swift 多语句函数漏写 `return`，已修复。
+- 已通过验证：`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`、`cargo build -p editor-core-ui-ffi --release`、`swift test`。
+- 已确认仓库没有 `tools/run_fixtures.py`、`tools/**/*fixture*` 或 `tools/` fixture runner，完整 fixture suite 无可运行入口。
+- 已将 `TODO.md` 中 T16 标记为 `[DONE]` 并补充完成记录；不会继续执行 T16R。

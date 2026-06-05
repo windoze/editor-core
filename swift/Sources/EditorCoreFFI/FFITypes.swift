@@ -1,6 +1,17 @@
 import CEditorCoreFFI
 import Foundation
 
+func checkedFFIUInt32(_ value: UInt, context: String) throws -> UInt32 {
+    guard value <= UInt(UInt32.max) else {
+        throw EditorCoreFFIError.ffiStatus(
+            code: .invalidArgument,
+            context: context,
+            message: "value exceeds uint32_t range: \(value)"
+        )
+    }
+    return UInt32(value)
+}
+
 public struct DocumentStats: Equatable, Sendable {
     public let lineCount: UInt64
     public let charCount: UInt64

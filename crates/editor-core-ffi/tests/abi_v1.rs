@@ -1,16 +1,25 @@
 use editor_core_ffi::{
-    ECF_ABI_VERSION, EcfDocumentStats, EcfOpenBufferResult, EcfStatus, EcfWorkspaceInfo,
-    EcfWorkspaceViewportState, ecf_abi_version, ecf_editor_backspace, ecf_editor_get_viewport_blob,
-    ecf_editor_insert_text_utf8, ecf_editor_move_to, editor_core_ffi_editor_get_document_stats,
+    ECF_ABI_VERSION, EcfCreateViewResult, EcfDocumentStats, EcfEditorState, EcfOpenBufferResult,
+    EcfStatus, EcfWorkspace, EcfWorkspaceInfo, EcfWorkspaceViewportState, ecf_abi_version,
+    ecf_editor_backspace, ecf_editor_get_viewport_blob, ecf_editor_insert_text_utf8,
+    ecf_editor_move_to, editor_core_ffi_editor_get_document_stats,
     editor_core_ffi_editor_get_viewport_blob, editor_core_ffi_editor_insert_text_utf8,
-    editor_core_ffi_editor_state_free, editor_core_ffi_editor_state_new,
-    editor_core_ffi_last_error_message, editor_core_ffi_string_free,
-    editor_core_ffi_workspace_backspace, editor_core_ffi_workspace_free,
+    editor_core_ffi_editor_state_free, editor_core_ffi_editor_state_minimap_json,
+    editor_core_ffi_editor_state_new, editor_core_ffi_editor_state_viewport_composed_json,
+    editor_core_ffi_editor_state_viewport_styled_json, editor_core_ffi_last_error_message,
+    editor_core_ffi_lsp_char_offset_to_utf16,
+    editor_core_ffi_lsp_completion_item_to_text_edits_json,
+    editor_core_ffi_lsp_formatting_options_json, editor_core_ffi_lsp_utf16_to_char_offset,
+    editor_core_ffi_string_free, editor_core_ffi_workspace_backspace,
+    editor_core_ffi_workspace_create_view_typed, editor_core_ffi_workspace_free,
     editor_core_ffi_workspace_get_info, editor_core_ffi_workspace_get_viewport_blob,
     editor_core_ffi_workspace_get_viewport_state, editor_core_ffi_workspace_insert_text_utf8,
-    editor_core_ffi_workspace_move_to, editor_core_ffi_workspace_new,
-    editor_core_ffi_workspace_open_buffer_typed, editor_core_ffi_workspace_set_smooth_scroll_state,
+    editor_core_ffi_workspace_minimap_json, editor_core_ffi_workspace_move_to,
+    editor_core_ffi_workspace_new, editor_core_ffi_workspace_open_buffer_typed,
+    editor_core_ffi_workspace_set_smooth_scroll_state,
     editor_core_ffi_workspace_set_viewport_height,
+    editor_core_ffi_workspace_viewport_composed_json,
+    editor_core_ffi_workspace_viewport_styled_json,
 };
 use std::ffi::{CStr, CString};
 
@@ -35,6 +44,53 @@ fn read_u32_le(bytes: &[u8], off: usize) -> u32 {
 #[test]
 fn abi_version_and_alias_work() {
     assert_eq!(ecf_abi_version(), ECF_ABI_VERSION);
+}
+
+#[test]
+fn public_abi_scalar_signatures_are_fixed_width() {
+    let _: extern "C" fn(*const std::ffi::c_char, u32) -> *mut EcfEditorState =
+        editor_core_ffi_editor_state_new;
+    let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_viewport_styled_json;
+    let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_minimap_json;
+    let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_viewport_composed_json;
+
+    let _: unsafe extern "C" fn(
+        *mut EcfWorkspace,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+        u32,
+        *mut EcfOpenBufferResult,
+    ) -> i32 = editor_core_ffi_workspace_open_buffer_typed;
+    let _: unsafe extern "C" fn(*mut EcfWorkspace, u64, u32, *mut EcfCreateViewResult) -> i32 =
+        editor_core_ffi_workspace_create_view_typed;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32) -> bool =
+        editor_core_ffi_workspace_set_viewport_height;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u16, u32) -> bool =
+        editor_core_ffi_workspace_set_smooth_scroll_state;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_viewport_styled_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_minimap_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_viewport_composed_json;
+
+    let _: extern "C" fn(*const std::ffi::c_char, u64) -> u64 =
+        editor_core_ffi_lsp_char_offset_to_utf16;
+    let _: extern "C" fn(*const std::ffi::c_char, u64) -> u64 =
+        editor_core_ffi_lsp_utf16_to_char_offset;
+    let _: extern "C" fn(u32, bool) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_formatting_options_json;
+    let _: extern "C" fn(
+        *const EcfEditorState,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+        u64,
+        u64,
+        bool,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_lsp_completion_item_to_text_edits_json;
 }
 
 #[test]
@@ -91,6 +147,59 @@ fn invalid_utf8_returns_status_and_error_message() {
     assert!(msg.contains("utf") || msg.contains("UTF"));
 
     unsafe { editor_core_ffi_editor_state_free(state) };
+}
+
+#[test]
+fn typed_abi_invalid_required_output_pointer_reports_invalid_argument() {
+    let workspace = editor_core_ffi_workspace_new();
+    assert!(!workspace.is_null());
+
+    let text = CString::new("abc\n").expect("cstring");
+    let st = unsafe {
+        editor_core_ffi_workspace_open_buffer_typed(
+            workspace,
+            std::ptr::null(),
+            text.as_ptr(),
+            u32::MAX,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(st, status(EcfStatus::InvalidArgument));
+    let msg = take_string(unsafe { editor_core_ffi_last_error_message() });
+    assert!(msg.contains("out_result"));
+
+    unsafe { editor_core_ffi_workspace_free(workspace) };
+}
+
+#[test]
+fn lsp_coordinate_helpers_accept_u64_boundary_without_truncating() {
+    let text = CString::new("a👋b").expect("cstring");
+
+    assert_eq!(
+        editor_core_ffi_lsp_char_offset_to_utf16(text.as_ptr(), 0),
+        0
+    );
+    assert_eq!(
+        editor_core_ffi_lsp_char_offset_to_utf16(text.as_ptr(), 2),
+        3
+    );
+    assert_eq!(
+        editor_core_ffi_lsp_char_offset_to_utf16(text.as_ptr(), u64::MAX),
+        4
+    );
+
+    assert_eq!(
+        editor_core_ffi_lsp_utf16_to_char_offset(text.as_ptr(), 0),
+        0
+    );
+    assert_eq!(
+        editor_core_ffi_lsp_utf16_to_char_offset(text.as_ptr(), 4),
+        3
+    );
+    assert_eq!(
+        editor_core_ffi_lsp_utf16_to_char_offset(text.as_ptr(), u64::MAX),
+        3
+    );
 }
 
 #[test]

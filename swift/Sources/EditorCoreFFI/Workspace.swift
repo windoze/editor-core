@@ -25,13 +25,14 @@ public final class Workspace {
 
     public func openBuffer(uri: String?, text: String, viewportWidth: UInt) throws -> OpenBufferResult {
         var raw = EcfOpenBufferResult()
+        let width = try checkedFFIUInt32(max(1, viewportWidth), context: "workspace_open_buffer_typed.viewport_width")
         let status: Int32 = text.withCString { textPtr in
             if let uri {
                 return uri.withCString { uriPtr in
-                    editor_core_ffi_workspace_open_buffer_typed(handle, uriPtr, textPtr, Int(clamping: max(1, viewportWidth)), &raw)
+                    editor_core_ffi_workspace_open_buffer_typed(handle, uriPtr, textPtr, width, &raw)
                 }
             }
-            return editor_core_ffi_workspace_open_buffer_typed(handle, nil, textPtr, Int(clamping: max(1, viewportWidth)), &raw)
+            return editor_core_ffi_workspace_open_buffer_typed(handle, nil, textPtr, width, &raw)
         }
         try ffi.ensureStatus(status, context: "workspace_open_buffer_typed")
         return OpenBufferResult(bufferId: raw.buffer_id, viewId: raw.view_id)
@@ -39,7 +40,8 @@ public final class Workspace {
 
     public func createView(bufferId: UInt64, viewportWidth: UInt) throws -> UInt64 {
         var raw = EcfCreateViewResult()
-        let status = editor_core_ffi_workspace_create_view_typed(handle, bufferId, Int(clamping: max(1, viewportWidth)), &raw)
+        let width = try checkedFFIUInt32(max(1, viewportWidth), context: "workspace_create_view_typed.viewport_width")
+        let status = editor_core_ffi_workspace_create_view_typed(handle, bufferId, width, &raw)
         try ffi.ensureStatus(status, context: "workspace_create_view_typed")
         return raw.view_id
     }
@@ -100,7 +102,8 @@ public final class Workspace {
     }
 
     public func setViewportHeight(viewId: UInt64, height: UInt) throws {
-        let ok = editor_core_ffi_workspace_set_viewport_height(handle, viewId, Int(clamping: height))
+        let height = try checkedFFIUInt32(height, context: "workspace_set_viewport_height.height")
+        let ok = editor_core_ffi_workspace_set_viewport_height(handle, viewId, height)
         guard ok else {
             let message = ffi.lastErrorMessage()
             throw EditorCoreFFIError.ffiStatus(code: .internal, context: "workspace_set_viewport_height", message: message.isEmpty ? "no last_error_message" : message)
@@ -113,7 +116,9 @@ public final class Workspace {
         subRowOffset: UInt16,
         overscanRows: UInt
     ) throws {
-        let ok = editor_core_ffi_workspace_set_smooth_scroll_state(handle, viewId, Int(clamping: topVisualRow), subRowOffset, Int(clamping: overscanRows))
+        let top = try checkedFFIUInt32(topVisualRow, context: "workspace_set_smooth_scroll_state.top_visual_row")
+        let overscan = try checkedFFIUInt32(overscanRows, context: "workspace_set_smooth_scroll_state.overscan_rows")
+        let ok = editor_core_ffi_workspace_set_smooth_scroll_state(handle, viewId, top, subRowOffset, overscan)
         guard ok else {
             let message = ffi.lastErrorMessage()
             throw EditorCoreFFIError.ffiStatus(code: .internal, context: "workspace_set_smooth_scroll_state", message: message.isEmpty ? "no last_error_message" : message)
@@ -121,22 +126,28 @@ public final class Workspace {
     }
 
     public func viewportStyledJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
-        try ffi.takeOwnedCString(
-            editor_core_ffi_workspace_viewport_styled_json(handle, viewId, Int(clamping: startVisualRow), Int(clamping: rowCount)),
+        let start = try checkedFFIUInt32(startVisualRow, context: "workspace_viewport_styled_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "workspace_viewport_styled_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_viewport_styled_json(handle, viewId, start, count),
             context: "workspace_viewport_styled_json"
         )
     }
 
     public func minimapJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
-        try ffi.takeOwnedCString(
-            editor_core_ffi_workspace_minimap_json(handle, viewId, Int(clamping: startVisualRow), Int(clamping: rowCount)),
+        let start = try checkedFFIUInt32(startVisualRow, context: "workspace_minimap_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "workspace_minimap_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_minimap_json(handle, viewId, start, count),
             context: "workspace_minimap_json"
         )
     }
 
     public func viewportComposedJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
-        try ffi.takeOwnedCString(
-            editor_core_ffi_workspace_viewport_composed_json(handle, viewId, Int(clamping: startVisualRow), Int(clamping: rowCount)),
+        let start = try checkedFFIUInt32(startVisualRow, context: "workspace_viewport_composed_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "workspace_viewport_composed_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_viewport_composed_json(handle, viewId, start, count),
             context: "workspace_viewport_composed_json"
         )
     }

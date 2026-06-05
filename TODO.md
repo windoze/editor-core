@@ -1436,9 +1436,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test stage2_validation`、`cargo test -p editor-core --test line_endings`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py`、`tools/**/*fixture*` 或 `tools/` fixture runner，完整 fixture suite 无可运行入口。
 
-### T16 实现：FFI ABI 定宽迁移
+### [DONE] T16 实现：FFI ABI 定宽迁移
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -1479,6 +1479,16 @@
 
 - 新公共 ABI 不含 `usize`。
 - ABI 文档与实现一致。
+
+完成记录：
+
+- 按 T16 要求定向检查 `extern "C" fn` 与 `usize`，确认公开 `usize` 签名集中在 `editor-core-ffi/src/lib.rs`；`editor-core-ui-ffi` 公开签名未暴露 `usize`。
+- 将 `editor-core-ffi` 公开 C ABI 中的 viewport width、row/count、tab width、logical line 改为 `u32`，将文档/补全文本 char offset 改为 `u64`；内部转换到 `usize` 均通过 `try_from` helper，status-returning typed API 的转换失败映射为 `InvalidArgument`。
+- 同步更新 `crates/editor-core-ffi/include/editor_core_ffi.h`，移除 public `size_t` 签名；更新 Swift `EditorCoreFFI` 包装，避免继续通过 `Int(clamping:)` 静默截断宽度/行数参数。
+- 更新 `docs/abi-v1-draft.md`，明确 public 函数签名也只能使用定宽整数、`out_cap/out_len` 契约、handle 单线程独占调用契约，以及当前固定宽度 JSON/control-plane ABI 形状。
+- 扩展 `crates/editor-core-ffi/tests/abi_v1.rs`，加入函数指针签名断言固定 `u32`/`u64` ABI 形状，覆盖必填输出指针 `InvalidArgument` 错误路径，并验证 LSP `u64` 边界输入不会被截断。首次新增测试触及已排期 T19 的 UTF-16 半代理对策略差异，已收窄为不覆盖 T19 行为。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ffi --test abi_v1`、`cargo test -p editor-core-ffi`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`、`cargo build -p editor-core-ui-ffi --release`、`swift test`。
+- 未找到 `tools/run_fixtures.py`、`tools/**/*fixture*` 或 `tools/` fixture runner，完整 fixture suite 无可运行入口。
 
 ### T16R Review：审查 FFI ABI 定宽迁移
 

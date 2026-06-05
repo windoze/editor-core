@@ -228,6 +228,22 @@ fn checked_u16(v: usize, what: &str) -> Result<u16, (EcfStatus, String)> {
     })
 }
 
+fn usize_from_u32(v: u32, what: &str) -> Result<usize, String> {
+    usize::try_from(v).map_err(|_| format!("{what} exceeds usize range: {v}"))
+}
+
+fn usize_from_u64(v: u64, what: &str) -> Result<usize, String> {
+    usize::try_from(v).map_err(|_| format!("{what} exceeds usize range: {v}"))
+}
+
+fn u64_from_usize(v: usize, what: &str) -> Result<u64, String> {
+    u64::try_from(v).map_err(|_| format!("{what} exceeds u64 range: {v}"))
+}
+
+fn status_usize_from_u32(v: u32, what: &str) -> Result<usize, (EcfStatus, String)> {
+    usize_from_u32(v, what).map_err(|msg| (EcfStatus::InvalidArgument, msg))
+}
+
 fn require_utf8_bytes<'a>(
     ptr: *const u8,
     len: u32,
@@ -2276,12 +2292,13 @@ pub extern "C" fn editor_core_ffi_version() -> *mut c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_editor_state_new(
     initial_text: *const c_char,
-    viewport_width: usize,
+    viewport_width: u32,
 ) -> *mut EcfEditorState {
     result_ptr(ptr::null_mut(), || {
         let text = require_string(initial_text, "initial_text")?;
+        let viewport_width = usize_from_u32(viewport_width, "viewport_width")?.max(1);
         let state = EcfEditorState {
-            inner: EditorStateManager::new(&text, viewport_width.max(1)),
+            inner: EditorStateManager::new(&text, viewport_width),
         };
         Ok(Box::into_raw(Box::new(state)))
     })
@@ -2464,11 +2481,13 @@ pub extern "C" fn editor_core_ffi_editor_state_get_line_ending(
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_editor_state_viewport_styled_json(
     state: *const EcfEditorState,
-    start_visual_row: usize,
-    count: usize,
+    start_visual_row: u32,
+    count: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
         let state = require_ref(state, "state")?;
+        let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")?;
+        let count = usize_from_u32(count, "count")?;
         let grid = state
             .inner
             .get_viewport_content_styled(start_visual_row, count);
@@ -2480,11 +2499,13 @@ pub extern "C" fn editor_core_ffi_editor_state_viewport_styled_json(
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_editor_state_minimap_json(
     state: *const EcfEditorState,
-    start_visual_row: usize,
-    count: usize,
+    start_visual_row: u32,
+    count: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
         let state = require_ref(state, "state")?;
+        let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")?;
+        let count = usize_from_u32(count, "count")?;
         let grid = state.inner.get_minimap_content(start_visual_row, count);
         Ok(value_minimap_grid(&grid))
     })
@@ -2494,11 +2515,13 @@ pub extern "C" fn editor_core_ffi_editor_state_minimap_json(
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_editor_state_viewport_composed_json(
     state: *const EcfEditorState,
-    start_visual_row: usize,
-    count: usize,
+    start_visual_row: u32,
+    count: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
         let state = require_ref(state, "state")?;
+        let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")?;
+        let count = usize_from_u32(count, "count")?;
         let grid = state
             .inner
             .get_viewport_content_composed(start_visual_row, count);
@@ -2567,15 +2590,16 @@ pub extern "C" fn editor_core_ffi_workspace_open_buffer(
     workspace: *mut EcfWorkspace,
     uri: *const c_char,
     text: *const c_char,
-    viewport_width: usize,
+    viewport_width: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
         let workspace = require_mut(workspace, "workspace")?;
         let uri = optional_string(uri, "uri")?;
         let text = require_string(text, "text")?;
+        let viewport_width = usize_from_u32(viewport_width, "viewport_width")?.max(1);
         let opened = workspace
             .inner
-            .open_buffer(uri, &text, viewport_width.max(1))
+            .open_buffer(uri, &text, viewport_width)
             .map_err(|err| format!("open_buffer failed: {err:?}"))?;
         Ok(value_open_buffer_result(opened))
     })
@@ -2593,7 +2617,7 @@ pub unsafe extern "C" fn editor_core_ffi_workspace_open_buffer_typed(
     workspace: *mut EcfWorkspace,
     uri: *const c_char,
     text: *const c_char,
-    viewport_width: usize,
+    viewport_width: u32,
     out_result: *mut EcfOpenBufferResult,
 ) -> i32 {
     status_result(|| {
@@ -2606,10 +2630,11 @@ pub unsafe extern "C" fn editor_core_ffi_workspace_open_buffer_typed(
             optional_string(uri, "uri").map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
         let text = require_string(text, "text")
             .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        let viewport_width = status_usize_from_u32(viewport_width, "viewport_width")?.max(1);
 
         let opened = workspace
             .inner
-            .open_buffer(uri, &text, viewport_width.max(1))
+            .open_buffer(uri, &text, viewport_width)
             .map_err(|err| (EcfStatus::Internal, format!("open_buffer failed: {err:?}")))?;
 
         let result = EcfOpenBufferResult {
@@ -2664,13 +2689,14 @@ pub extern "C" fn editor_core_ffi_workspace_close_view(
 pub extern "C" fn editor_core_ffi_workspace_create_view(
     workspace: *mut EcfWorkspace,
     buffer_id: u64,
-    viewport_width: usize,
+    viewport_width: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
         let workspace = require_mut(workspace, "workspace")?;
+        let viewport_width = usize_from_u32(viewport_width, "viewport_width")?.max(1);
         let view_id = workspace
             .inner
-            .create_view(BufferId::from_raw(buffer_id), viewport_width.max(1))
+            .create_view(BufferId::from_raw(buffer_id), viewport_width)
             .map_err(|err| format!("create_view failed: {err:?}"))?;
         Ok(json!({ "view_id": view_id.get() }))
     })
@@ -2686,7 +2712,7 @@ pub extern "C" fn editor_core_ffi_workspace_create_view(
 pub unsafe extern "C" fn editor_core_ffi_workspace_create_view_typed(
     workspace: *mut EcfWorkspace,
     buffer_id: u64,
-    viewport_width: usize,
+    viewport_width: u32,
     out_result: *mut EcfCreateViewResult,
 ) -> i32 {
     status_result(|| {
@@ -2696,9 +2722,10 @@ pub unsafe extern "C" fn editor_core_ffi_workspace_create_view_typed(
             return Err((EcfStatus::InvalidArgument, "out_result is null".to_string()));
         }
 
+        let viewport_width = status_usize_from_u32(viewport_width, "viewport_width")?.max(1);
         let view_id = workspace
             .inner
-            .create_view(BufferId::from_raw(buffer_id), viewport_width.max(1))
+            .create_view(BufferId::from_raw(buffer_id), viewport_width)
             .map_err(|err| (EcfStatus::Internal, format!("create_view failed: {err:?}")))?;
 
         let result = EcfCreateViewResult {
@@ -2926,10 +2953,11 @@ pub unsafe extern "C" fn editor_core_ffi_workspace_get_viewport_state(
 pub extern "C" fn editor_core_ffi_workspace_set_viewport_height(
     workspace: *mut EcfWorkspace,
     view_id: u64,
-    height: usize,
+    height: u32,
 ) -> bool {
     result_bool(false, || {
         let workspace = require_mut(workspace, "workspace")?;
+        let height = usize_from_u32(height, "height")?;
         workspace
             .inner
             .set_viewport_height(ViewId::from_raw(view_id), height)
@@ -2943,12 +2971,14 @@ pub extern "C" fn editor_core_ffi_workspace_set_viewport_height(
 pub extern "C" fn editor_core_ffi_workspace_set_smooth_scroll_state(
     workspace: *mut EcfWorkspace,
     view_id: u64,
-    top_visual_row: usize,
+    top_visual_row: u32,
     sub_row_offset: u16,
-    overscan_rows: usize,
+    overscan_rows: u32,
 ) -> bool {
     result_bool(false, || {
         let workspace = require_mut(workspace, "workspace")?;
+        let top_visual_row = usize_from_u32(top_visual_row, "top_visual_row")?;
+        let overscan_rows = usize_from_u32(overscan_rows, "overscan_rows")?;
         workspace
             .inner
             .set_smooth_scroll_state(
@@ -2969,11 +2999,13 @@ pub extern "C" fn editor_core_ffi_workspace_set_smooth_scroll_state(
 pub extern "C" fn editor_core_ffi_workspace_viewport_styled_json(
     workspace: *mut EcfWorkspace,
     view_id: u64,
-    start_visual_row: usize,
-    count: usize,
+    start_visual_row: u32,
+    count: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
         let workspace = require_mut(workspace, "workspace")?;
+        let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")?;
+        let count = usize_from_u32(count, "count")?;
         let grid = workspace
             .inner
             .get_viewport_content_styled(ViewId::from_raw(view_id), start_visual_row, count)
@@ -2987,11 +3019,13 @@ pub extern "C" fn editor_core_ffi_workspace_viewport_styled_json(
 pub extern "C" fn editor_core_ffi_workspace_minimap_json(
     workspace: *mut EcfWorkspace,
     view_id: u64,
-    start_visual_row: usize,
-    count: usize,
+    start_visual_row: u32,
+    count: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
         let workspace = require_mut(workspace, "workspace")?;
+        let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")?;
+        let count = usize_from_u32(count, "count")?;
         let grid = workspace
             .inner
             .get_minimap_content(ViewId::from_raw(view_id), start_visual_row, count)
@@ -3005,11 +3039,13 @@ pub extern "C" fn editor_core_ffi_workspace_minimap_json(
 pub extern "C" fn editor_core_ffi_workspace_viewport_composed_json(
     workspace: *mut EcfWorkspace,
     view_id: u64,
-    start_visual_row: usize,
-    count: usize,
+    start_visual_row: u32,
+    count: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
         let workspace = require_mut(workspace, "workspace")?;
+        let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")?;
+        let count = usize_from_u32(count, "count")?;
         let grid = workspace
             .inner
             .get_viewport_content_composed(ViewId::from_raw(view_id), start_visual_row, count)
@@ -3134,14 +3170,13 @@ pub extern "C" fn editor_core_ffi_lsp_percent_decode_path(path: *const c_char) -
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_lsp_char_offset_to_utf16(
     line_text: *const c_char,
-    char_offset: usize,
-) -> usize {
+    char_offset: u64,
+) -> u64 {
     match ffi_catch(|| {
         let line_text = require_string(line_text, "line_text")?;
-        Ok(LspCoordinateConverter::char_offset_to_utf16(
-            &line_text,
-            char_offset,
-        ))
+        let char_offset = usize_from_u64(char_offset, "char_offset")?;
+        let utf16_offset = LspCoordinateConverter::char_offset_to_utf16(&line_text, char_offset);
+        u64_from_usize(utf16_offset, "utf16_offset")
     }) {
         Ok(v) => {
             clear_last_error();
@@ -3158,14 +3193,13 @@ pub extern "C" fn editor_core_ffi_lsp_char_offset_to_utf16(
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_lsp_utf16_to_char_offset(
     line_text: *const c_char,
-    utf16_offset: usize,
-) -> usize {
+    utf16_offset: u64,
+) -> u64 {
     match ffi_catch(|| {
         let line_text = require_string(line_text, "line_text")?;
-        Ok(LspCoordinateConverter::utf16_to_char_offset(
-            &line_text,
-            utf16_offset,
-        ))
+        let utf16_offset = usize_from_u64(utf16_offset, "utf16_offset")?;
+        let char_offset = LspCoordinateConverter::utf16_to_char_offset(&line_text, utf16_offset);
+        u64_from_usize(char_offset, "char_offset")
     }) {
         Ok(v) => {
             clear_last_error();
@@ -3183,10 +3217,11 @@ pub extern "C" fn editor_core_ffi_lsp_utf16_to_char_offset(
 /// This is primarily useful for indentation and on-type formatting requests.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_lsp_formatting_options_json(
-    tab_size: usize,
+    tab_size: u32,
     insert_spaces: bool,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
+        let tab_size = usize_from_u32(tab_size, "tab_size")?;
         Ok(json!({ "options": lsp_formatting_options(tab_size, insert_spaces) }))
     })
 }
@@ -3201,12 +3236,13 @@ pub extern "C" fn editor_core_ffi_lsp_formatting_options_json(
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_lsp_formatting_options_for_indentation_config_json(
     indentation_config_json: *const c_char,
-    tab_width: usize,
+    tab_width: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
         let json_text = require_string(indentation_config_json, "indentation_config_json")?;
         let cfg: FfiIndentationConfig = parse_json(&json_text, "indentation config")?;
         let cfg: IndentationConfig = cfg.into();
+        let tab_width = usize_from_u32(tab_width, "tab_width")?;
         Ok(json!({
             "options": lsp_formatting_options_for_indentation_config(&cfg, tab_width)
         }))
@@ -3450,8 +3486,8 @@ pub extern "C" fn editor_core_ffi_lsp_completion_item_to_text_edits_json(
     state: *const EcfEditorState,
     completion_item_json: *const c_char,
     mode: *const c_char,
-    fallback_start: usize,
-    fallback_end: usize,
+    fallback_start: u64,
+    fallback_end: u64,
     has_fallback: bool,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
@@ -3461,7 +3497,14 @@ pub extern "C" fn editor_core_ffi_lsp_completion_item_to_text_edits_json(
 
         let mode = parse_completion_mode(&mode)?;
         let item = parse_json_value(&completion_item_json, "completion item")?;
-        let fallback = has_fallback.then_some((fallback_start, fallback_end));
+        let fallback = if has_fallback {
+            Some((
+                usize_from_u64(fallback_start, "fallback_start")?,
+                usize_from_u64(fallback_end, "fallback_end")?,
+            ))
+        } else {
+            None
+        };
 
         let edits = completion_item_to_text_edit_specs(
             state.inner.editor().line_index(),
@@ -3986,12 +4029,13 @@ pub unsafe extern "C" fn editor_core_ffi_treesitter_indenter_free(
 pub extern "C" fn editor_core_ffi_treesitter_indenter_reindent_line_json(
     indenter: *mut EcfTreeSitterIndenter,
     state: *const EcfEditorState,
-    line: usize,
+    line: u32,
     indentation_config_json: *const c_char,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
         let indenter = require_mut(indenter, "indenter")?;
         let state = require_ref(state, "state")?;
+        let line = usize_from_u32(line, "line")?;
 
         let cfg = if let Some(json_text) =
             optional_string(indentation_config_json, "indentation_config_json")?
@@ -4180,12 +4224,11 @@ pub extern "C" fn editor_core_ffi_editor_move_to(
     status_result(|| {
         let state =
             require_mut(state, "state").map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        let line = status_usize_from_u32(line, "line")?;
+        let column = status_usize_from_u32(column, "column")?;
         state
             .inner
-            .execute(Command::Cursor(CursorCommand::MoveTo {
-                line: line as usize,
-                column: column as usize,
-            }))
+            .execute(Command::Cursor(CursorCommand::MoveTo { line, column }))
             .map_err(|err| (EcfStatus::CommandFailed, format!("move_to failed: {err}")))?;
         Ok(())
     })
@@ -4225,6 +4268,10 @@ pub extern "C" fn editor_core_ffi_editor_set_selection(
     status_result(|| {
         let state =
             require_mut(state, "state").map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        let start_line = status_usize_from_u32(start_line, "start_line")?;
+        let start_column = status_usize_from_u32(start_column, "start_column")?;
+        let end_line = status_usize_from_u32(end_line, "end_line")?;
+        let end_column = status_usize_from_u32(end_column, "end_column")?;
         let direction = match direction {
             0 => SelectionDirection::Forward,
             1 => SelectionDirection::Backward,
@@ -4237,8 +4284,8 @@ pub extern "C" fn editor_core_ffi_editor_set_selection(
         };
 
         let selection = Selection {
-            start: Position::new(start_line as usize, start_column as usize),
-            end: Position::new(end_line as usize, end_column as usize),
+            start: Position::new(start_line, start_column),
+            end: Position::new(end_line, end_column),
             direction,
         };
 
@@ -4316,14 +4363,13 @@ pub extern "C" fn editor_core_ffi_workspace_move_to(
     status_result(|| {
         let workspace = require_mut(workspace, "workspace")
             .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        let line = status_usize_from_u32(line, "line")?;
+        let column = status_usize_from_u32(column, "column")?;
         workspace
             .inner
             .execute(
                 ViewId::from_raw(view_id),
-                Command::Cursor(CursorCommand::MoveTo {
-                    line: line as usize,
-                    column: column as usize,
-                }),
+                Command::Cursor(CursorCommand::MoveTo { line, column }),
             )
             .map_err(|err| {
                 (
@@ -4376,9 +4422,11 @@ pub extern "C" fn editor_core_ffi_editor_get_viewport_blob(
     status_result(|| {
         let state =
             require_ref(state, "state").map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        let start_visual_row = status_usize_from_u32(start_visual_row, "start_visual_row")?;
+        let row_count = status_usize_from_u32(row_count, "row_count")?;
         let grid = state
             .inner
-            .get_viewport_content_styled(start_visual_row as usize, row_count as usize);
+            .get_viewport_content_styled(start_visual_row, row_count);
         let blob = build_viewport_blob(&grid)?;
         copy_blob_to_output(&blob, out_buf, out_cap, out_len)
     })
@@ -4398,13 +4446,11 @@ pub extern "C" fn editor_core_ffi_workspace_get_viewport_blob(
     status_result(|| {
         let workspace = require_mut(workspace, "workspace")
             .map_err(|e| (EcfStatus::InvalidArgument, e.to_string()))?;
+        let start_visual_row = status_usize_from_u32(start_visual_row, "start_visual_row")?;
+        let row_count = status_usize_from_u32(row_count, "row_count")?;
         let grid = workspace
             .inner
-            .get_viewport_content_styled(
-                ViewId::from_raw(view_id),
-                start_visual_row as usize,
-                row_count as usize,
-            )
+            .get_viewport_content_styled(ViewId::from_raw(view_id), start_visual_row, row_count)
             .map_err(|err| {
                 (
                     EcfStatus::NotFound,

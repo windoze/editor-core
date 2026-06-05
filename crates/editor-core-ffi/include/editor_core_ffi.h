@@ -2,7 +2,6 @@
 #define EDITOR_CORE_FFI_H
 
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -119,7 +118,7 @@ char* editor_core_ffi_version(void);
 char* editor_core_ffi_last_error_message(void);
 void editor_core_ffi_string_free(char* ptr);
 
-EcfEditorState* editor_core_ffi_editor_state_new(const char* initial_text, size_t viewport_width);
+EcfEditorState* editor_core_ffi_editor_state_new(const char* initial_text, uint32_t viewport_width);
 void editor_core_ffi_editor_state_free(EcfEditorState* state);
 char* editor_core_ffi_editor_state_execute_json(EcfEditorState* state, const char* command_json);
 bool editor_core_ffi_editor_state_apply_processing_edits_json(EcfEditorState* state, const char* edits_json);
@@ -131,9 +130,9 @@ char* editor_core_ffi_editor_state_diagnostics_json(const EcfEditorState* state)
 char* editor_core_ffi_editor_state_decorations_json(const EcfEditorState* state);
 bool editor_core_ffi_editor_state_set_line_ending(EcfEditorState* state, const char* line_ending);
 char* editor_core_ffi_editor_state_get_line_ending(const EcfEditorState* state);
-char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, size_t start_visual_row, size_t count);
-char* editor_core_ffi_editor_state_minimap_json(const EcfEditorState* state, size_t start_visual_row, size_t count);
-char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* state, size_t start_visual_row, size_t count);
+char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_minimap_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_take_last_text_delta_json(EcfEditorState* state);
 char* editor_core_ffi_editor_state_last_text_delta_json(const EcfEditorState* state);
 int32_t editor_core_ffi_editor_get_document_stats(const EcfEditorState* state, EcfDocumentStats* out_stats);
@@ -162,20 +161,20 @@ int32_t editor_core_ffi_editor_get_viewport_blob(
 
 EcfWorkspace* editor_core_ffi_workspace_new(void);
 void editor_core_ffi_workspace_free(EcfWorkspace* workspace);
-char* editor_core_ffi_workspace_open_buffer(EcfWorkspace* workspace, const char* uri, const char* text, size_t viewport_width);
+char* editor_core_ffi_workspace_open_buffer(EcfWorkspace* workspace, const char* uri, const char* text, uint32_t viewport_width);
 int32_t editor_core_ffi_workspace_open_buffer_typed(
     EcfWorkspace* workspace,
     const char* uri,
     const char* text,
-    size_t viewport_width,
+    uint32_t viewport_width,
     EcfOpenBufferResult* out_result);
 bool editor_core_ffi_workspace_close_buffer(EcfWorkspace* workspace, uint64_t buffer_id);
 bool editor_core_ffi_workspace_close_view(EcfWorkspace* workspace, uint64_t view_id);
-char* editor_core_ffi_workspace_create_view(EcfWorkspace* workspace, uint64_t buffer_id, size_t viewport_width);
+char* editor_core_ffi_workspace_create_view(EcfWorkspace* workspace, uint64_t buffer_id, uint32_t viewport_width);
 int32_t editor_core_ffi_workspace_create_view_typed(
     EcfWorkspace* workspace,
     uint64_t buffer_id,
-    size_t viewport_width,
+    uint32_t viewport_width,
     EcfCreateViewResult* out_result);
 bool editor_core_ffi_workspace_set_active_view(EcfWorkspace* workspace, uint64_t view_id);
 char* editor_core_ffi_workspace_info_json(const EcfWorkspace* workspace);
@@ -188,11 +187,11 @@ int32_t editor_core_ffi_workspace_get_viewport_state(
     EcfWorkspace* workspace,
     uint64_t view_id,
     EcfWorkspaceViewportState* out_state);
-bool editor_core_ffi_workspace_set_viewport_height(EcfWorkspace* workspace, uint64_t view_id, size_t height);
-bool editor_core_ffi_workspace_set_smooth_scroll_state(EcfWorkspace* workspace, uint64_t view_id, size_t top_visual_row, uint16_t sub_row_offset, size_t overscan_rows);
-char* editor_core_ffi_workspace_viewport_styled_json(EcfWorkspace* workspace, uint64_t view_id, size_t start_visual_row, size_t count);
-char* editor_core_ffi_workspace_minimap_json(EcfWorkspace* workspace, uint64_t view_id, size_t start_visual_row, size_t count);
-char* editor_core_ffi_workspace_viewport_composed_json(EcfWorkspace* workspace, uint64_t view_id, size_t start_visual_row, size_t count);
+bool editor_core_ffi_workspace_set_viewport_height(EcfWorkspace* workspace, uint64_t view_id, uint32_t height);
+bool editor_core_ffi_workspace_set_smooth_scroll_state(EcfWorkspace* workspace, uint64_t view_id, uint32_t top_visual_row, uint16_t sub_row_offset, uint32_t overscan_rows);
+char* editor_core_ffi_workspace_viewport_styled_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_workspace_minimap_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_workspace_viewport_composed_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_workspace_search_all_open_buffers_json(const EcfWorkspace* workspace, const char* query, const char* options_json);
 char* editor_core_ffi_workspace_apply_text_edits_json(EcfWorkspace* workspace, const char* edits_json);
 int32_t editor_core_ffi_workspace_insert_text_utf8(EcfWorkspace* workspace, uint64_t view_id, const uint8_t* bytes, uint32_t len);
@@ -211,10 +210,10 @@ char* editor_core_ffi_lsp_path_to_file_uri(const char* path);
 char* editor_core_ffi_lsp_file_uri_to_path(const char* uri);
 char* editor_core_ffi_lsp_percent_encode_path(const char* path);
 char* editor_core_ffi_lsp_percent_decode_path(const char* path);
-size_t editor_core_ffi_lsp_char_offset_to_utf16(const char* line_text, size_t char_offset);
-size_t editor_core_ffi_lsp_utf16_to_char_offset(const char* line_text, size_t utf16_offset);
-char* editor_core_ffi_lsp_formatting_options_json(size_t tab_size, bool insert_spaces);
-char* editor_core_ffi_lsp_formatting_options_for_indentation_config_json(const char* indentation_config_json, size_t tab_width);
+uint64_t editor_core_ffi_lsp_char_offset_to_utf16(const char* line_text, uint64_t char_offset);
+uint64_t editor_core_ffi_lsp_utf16_to_char_offset(const char* line_text, uint64_t utf16_offset);
+char* editor_core_ffi_lsp_formatting_options_json(uint32_t tab_size, bool insert_spaces);
+char* editor_core_ffi_lsp_formatting_options_for_indentation_config_json(const char* indentation_config_json, uint32_t tab_width);
 char* editor_core_ffi_lsp_on_type_formatting_params_json(const EcfEditorState* state, const char* uri, const char* ch, const char* options_json);
 char* editor_core_ffi_lsp_apply_text_edits_json(EcfEditorState* state, const char* edits_json);
 char* editor_core_ffi_lsp_semantic_tokens_to_intervals_json(const EcfEditorState* state, const char* data_json);
@@ -227,7 +226,7 @@ char* editor_core_ffi_lsp_document_symbols_to_processing_edit_json(const EcfEdit
 char* editor_core_ffi_lsp_diagnostics_to_processing_edits_json(const EcfEditorState* state, const char* publish_diagnostics_params_json);
 char* editor_core_ffi_lsp_workspace_symbols_json(const char* result_json);
 char* editor_core_ffi_lsp_locations_json(const char* result_json);
-char* editor_core_ffi_lsp_completion_item_to_text_edits_json(const EcfEditorState* state, const char* completion_item_json, const char* mode, size_t fallback_start, size_t fallback_end, bool has_fallback);
+char* editor_core_ffi_lsp_completion_item_to_text_edits_json(const EcfEditorState* state, const char* completion_item_json, const char* mode, uint64_t fallback_start, uint64_t fallback_end, bool has_fallback);
 bool editor_core_ffi_lsp_apply_completion_item_json(EcfEditorState* state, const char* completion_item_json, const char* mode);
 uint32_t editor_core_ffi_lsp_encode_semantic_style_id(uint32_t token_type, uint32_t token_modifiers);
 
@@ -278,7 +277,7 @@ void editor_core_ffi_treesitter_indenter_free(EcfTreeSitterIndenter* indenter);
 char* editor_core_ffi_treesitter_indenter_reindent_line_json(
     EcfTreeSitterIndenter* indenter,
     const EcfEditorState* state,
-    size_t line,
+    uint32_t line,
     const char* indentation_config_json);
 
 /* ABI-v1 short aliases */

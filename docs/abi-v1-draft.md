@@ -1,7 +1,7 @@
 # editor-core ABI v1 Draft
 
-Status: Draft for discussion (not implemented by this document)
-Scope date: 2026-03-01
+Status: Draft aligned with the current ABI-v1 implementation
+Scope date: 2026-06-05
 
 ## Goals
 
@@ -34,15 +34,16 @@ This gives good performance now and allows schema-rich features without blocking
 
 - Calling convention: `extern "C"`.
 - Endianness: little-endian.
-- Public integers: fixed-width only (`uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`, `int32_t`, etc.).
+- Public integers in structs and function signatures: fixed-width only (`uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`, `int32_t`, etc.).
 - Public booleans: `uint8_t` (`0` false, `1` true).
 - No C bitfields in public structs.
-- No Rust `size_t`/`bool` in public structs.
+- No Rust `usize` / C `size_t` in public structs or public function signatures.
 - All extensible structs include:
   - `uint32_t abi_version`
   - `uint32_t struct_size`
 - Unknown trailing bytes in input structs must be ignored if `struct_size > known_size`.
-- Output buffers use two-call pattern (`BUFFER_TOO_SMALL` returns required size).
+- Output buffers use the two-call pattern: `out_cap` and `out_len` are `uint32_t`; `out_len` must be non-null; null `out_buf` or insufficient `out_cap` returns `ECF_ERR_BUFFER_TOO_SMALL` and writes the required byte length.
+- Rust-side conversions from public fixed-width integers to internal `usize` must be checked. Too-large values return `ECF_ERR_INVALID_ARGUMENT` for status-returning APIs; JSON/string or legacy bool APIs return their failure sentinel and set `last_error_message`.
 
 ## Handle Model
 
@@ -61,9 +62,9 @@ Lifecycle:
 
 ## Threading Model
 
-- Default: handles are not thread-safe for concurrent mutation.
-- Rule: one mutable thread-owner per handle at a time.
-- Read-only calls may be allowed concurrently in future revisions, but v1 should document them explicitly if enabled.
+- Contract: opaque handles are single-thread-owned for the duration of each call.
+- Callers must not invoke concurrent mutable operations on the same handle, and must not alias a handle through another API while a mutable call is in progress.
+- Read-only calls are not guaranteed to be concurrency-safe unless a specific API explicitly documents otherwise.
 - Error state is thread-local (`last_error_message`).
 
 ## Error Model
@@ -260,8 +261,30 @@ Guidelines:
   - ranges: half-open `[start, end)` offsets where applicable
 - IDs:
   - `buffer_id` and `view_id` are `uint64_t`
+- View rows, row counts, viewport widths/heights, tab widths, and logical line/column values in typed APIs are `uint32_t`.
+- Document-wide char offsets and lengths use `uint64_t` when they cross the C ABI boundary.
 - Style/decor layer IDs:
   - `uint32_t`
+
+## Current Fixed-Width JSON/Control-Plane Surfaces
+
+The JSON/control-plane functions still return JSON strings for schema flexibility, but their scalar ABI parameters are fixed-width:
+
+```c
+EcfEditorState* editor_core_ffi_editor_state_new(const char* initial_text, uint32_t viewport_width);
+char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_minimap_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+
+int32_t editor_core_ffi_workspace_open_buffer_typed(EcfWorkspace* workspace, const char* uri, const char* text, uint32_t viewport_width, EcfOpenBufferResult* out_result);
+int32_t editor_core_ffi_workspace_create_view_typed(EcfWorkspace* workspace, uint64_t buffer_id, uint32_t viewport_width, EcfCreateViewResult* out_result);
+bool editor_core_ffi_workspace_set_viewport_height(EcfWorkspace* workspace, uint64_t view_id, uint32_t height);
+bool editor_core_ffi_workspace_set_smooth_scroll_state(EcfWorkspace* workspace, uint64_t view_id, uint32_t top_visual_row, uint16_t sub_row_offset, uint32_t overscan_rows);
+
+uint64_t editor_core_ffi_lsp_char_offset_to_utf16(const char* line_text, uint64_t char_offset);
+uint64_t editor_core_ffi_lsp_utf16_to_char_offset(const char* line_text, uint64_t utf16_offset);
+char* editor_core_ffi_lsp_formatting_options_json(uint32_t tab_size, bool insert_spaces);
+```
 
 ## Suggested Initial Typed Command Set (v1)
 
