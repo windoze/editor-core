@@ -1128,9 +1128,9 @@
 - 定向确认 `get_command_history` 当前只用于 core 测试和示例；公开返回类型保持 `&[Command]`，但文档已说明大文本 payload 是摘要。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test command_executor_commands`、`cargo test -p editor-core --test command_history`、`cargo test -p editor-core`。
 
-### T13 实现：纯移动拆分 `commands.rs`
+### [DONE] T13 实现：纯移动拆分 `commands.rs`
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -1172,6 +1172,15 @@
 
 - `commands.rs` 明显变小，职责清晰。
 - 行为测试无变化。
+
+完成记录：
+
+- 新增 `crates/editor-core/src/model.rs`，移动公开命令/坐标/选择模型并通过 `commands` 模块继续 re-export，保持根 `editor_core::{CommandExecutor, Position, Selection}` 等导出兼容。
+- 新增 `crates/editor-core/src/undo.rs`，移动 `TextEdit`、`UndoStep`、`UndoRedoManager`、`UndoNode` 和 undo history snapshot/restore 类型；公开快照类型继续经 `commands` re-export。
+- 复用既有 `visual_rows.rs`，未重复创建视觉行索引模块。
+- 新增 `edit_ops.rs`、`line_ops.rs`、`cursor_ops.rs`、`render_grid.rs`，分别移动编辑命令、行级命令/注释切换、光标/选择/词边界、viewport/minimap/composed snapshot 相关实现；`commands.rs` 保留 `EditorCore` / `CommandExecutor` 主结构、核心访问器和 view/style dispatch。
+- 各移动切片后均运行并通过 `cargo test -p editor-core`；最终验证已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo test -p editor-core-ffi`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
 ### T13R Review：审查 `commands.rs` 纯移动拆分
 
