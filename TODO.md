@@ -1102,9 +1102,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test command_executor_commands`、`cargo test -p editor-core --test command_history`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
-### T12R Review：审查 command_history 内存控制
+### [DONE] T12R Review：审查 command_history 内存控制
 
-状态：TODO
+状态：DONE
 
 审查范围：T12 的所有 diff。
 
@@ -1120,6 +1120,13 @@
 
 - `cargo test -p editor-core --test command_executor_commands`
 - `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T12 diff，重点检查 `CommandExecutor` 的有界 `command_history`、大文本命令摘要、`get_command_history` API 兼容性、默认容量和禁用历史记录路径。
+- 未发现需要立即修复或新增前置任务的问题；history 默认保留最近 1000 条，`0` 可禁用，超过容量会裁剪旧记录，大文本字段会按 UTF-8 边界保存短预览和原始 byte 长度说明，不再把大 `InsertText` 完整克隆到 history。
+- 定向确认 `get_command_history` 当前只用于 core 测试和示例；公开返回类型保持 `&[Command]`，但文档已说明大文本 payload 是摘要。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test command_executor_commands`、`cargo test -p editor-core --test command_history`、`cargo test -p editor-core`。
 
 ### T13 实现：纯移动拆分 `commands.rs`
 
