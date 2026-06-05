@@ -150,9 +150,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-lsp --test diagnostics_processing_edits`、`cargo test -p editor-core-lsp`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
-### T02R Review：审查 diagnostics 版本守卫
+### [DONE] T02R Review：审查 diagnostics 版本守卫
 
-状态：TODO
+状态：DONE
 
 审查范围：T02 的所有 diff。
 
@@ -168,6 +168,12 @@
 
 - `cargo test -p editor-core-lsp --test diagnostics_processing_edits`
 - `cargo test -p editor-core-lsp`
+
+完成记录：
+
+- 已审查 T02 diff，重点检查 `LspSession::diagnostics_version_matches`、active document `publishDiagnostics` processing-edit 生成路径、`workspace_sync.rs` 非 active buffer diagnostics 路由，以及新增 diagnostics 版本测试。
+- 未发现需要立即修复或新增前置任务的问题；旧版本 diagnostics 保留 `LspEvent::Notification` 可观测性但不生成 diagnostics 派生状态，当前版本正常生成 `ReplaceStyleLayer` / `ReplaceDiagnostics`，无版本 diagnostics 继续按兼容策略应用。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test diagnostics_processing_edits`、`cargo test -p editor-core-lsp`。
 
 ### T03 实现：`wait_for_response` 保留其它在途响应
 
