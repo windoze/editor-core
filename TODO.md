@@ -1182,9 +1182,9 @@
 - 各移动切片后均运行并通过 `cargo test -p editor-core`；最终验证已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo test -p editor-core-ffi`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
-### T13R Review：审查 `commands.rs` 纯移动拆分
+### [DONE] T13R Review：审查 `commands.rs` 纯移动拆分
 
-状态：TODO
+状态：DONE
 
 审查范围：T13 的所有 diff。
 
@@ -1201,6 +1201,12 @@
 - `cargo test -p editor-core`
 - `cargo test -p editor-core-lsp`
 - `cargo test -p editor-core-ffi`
+
+完成记录：
+
+- 已审查 T13 diff，重点检查 `commands.rs` 拆分到 `model.rs`、`undo.rs`、`edit_ops.rs`、`line_ops.rs`、`cursor_ops.rs`、`render_grid.rs` 后是否混入业务逻辑改动，公开 re-export 是否保持兼容，以及新增模块是否过度 public 或形成跨 crate 破坏。
+- 未发现需要立即修复或新增前置任务的问题；T13 变更限于纯移动、路径调整和必要的 `pub(super)` 可见性调整，根 `editor_core::{CommandExecutor, Position, Selection, ...}` 与 `editor_core::commands::*` 兼容路径保持可用。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo test -p editor-core-ffi`。
 
 ### T14 实现：收紧公开 API 和 `EditorCore` 字段
 

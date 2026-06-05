@@ -28,3 +28,8 @@
 - 已完成 `edit_ops.rs` 纯移动切片：undo/redo、插入/删除/替换、snippet、查找替换、批量 text ops 和低层文本变更同步 helper 已移出 `commands.rs`；`cargo test -p editor-core` 已通过。
 - 已完成最终验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo test -p editor-core-ffi`、`cargo test --all --all-targets` 均通过；未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
 - 已将 `TODO.md` 中 T13 标记为 `[DONE]` 并写入完成记录；下一步提交本次任务相关改动后停止。
+- 已识别本轮第一个未完成任务：`T13R Review：审查 commands.rs 纯移动拆分`。
+- T13R 执行范围限定为审查 T13 diff、运行建议验证命令、更新 `TODO.md` 完成记录并提交；不进入 `T14`。
+- 已完成 T13 静态审查：未发现混入业务逻辑改动、公开 re-export 缺失、过度 public 模块或跨 crate 引用破坏。
+- 已运行并通过 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo test -p editor-core-ffi`。
+- 已将 `T13R` 在 `TODO.md` 中标记为 `[DONE]` 并写入完成记录。下一步提交本轮改动后停止。
