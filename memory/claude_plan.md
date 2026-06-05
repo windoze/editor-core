@@ -4,14 +4,15 @@
 
 ## 当前计划
 
-1. 当前第一个未完成任务为 `T14F 修复：同步公开 API 收紧文档`；本轮只完成 T14F，不进入 T14FR 或后续任务。
-2. 读取 `TODO.md` 确认任务顺序，并检查最近提交是否声明与 T14F 直接相关的未完成事项。
-3. 仅检查 T14F 范围文件：`crates/editor-core/src/lib.rs`、`crates/editor-core/src/state.rs`、必要时 `crates/editor-core/src/commands.rs`。
-4. 同步公开 API 收紧后的文档说明：不再建议外部通过 `editor_mut()` 直接修改内部字段或绕过同步不变量；说明 `layout` / `intervals` 已通过 crate root facade re-export 暴露必要类型。
-5. 不修改编译逻辑，不新增 API。
-6. 运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`；由于只修改文档注释，完整测试套件可按任务要求跳过并在完成记录中说明。
-7. 更新 `TODO.md`：将 T14F 标记为 `[DONE]` 并填写完成记录。
-8. 检查 git 状态、差异和最近提交，只提交本轮相关改动，然后停止。
+1. 当前第一个未完成任务为 `T14FR Review：审查公开 API 文档同步修复`；本轮只完成 T14FR，不进入 T15 或后续任务。
+2. 检查最近提交是否声明与 T14FR 直接相关的未完成事项。
+3. 审查 T14F diff：确认文档准确描述 T14 后字段私有化和受控 mutation 路径。
+4. 确认文档不再暗示 `editor_core::layout` / `editor_core::intervals` 是 public 模块路径。
+5. 确认 `editor_mut()` 文档不鼓励外部绕过同步不变量。
+6. 确认 doc examples 可编译，且 T14F 未混入编译逻辑或 API 改动。
+7. 运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
+8. 更新 `TODO.md`：将 T14FR 标记为 `[DONE]` 并填写完成记录。
+9. 检查 git 状态、差异和最近提交，只提交本轮相关改动，然后停止。
 
 ## 历史进度记录
 
@@ -51,12 +52,19 @@
 - 审查发现文档一致性问题：`EditorStateManager` 文档仍建议通过 `editor_mut()` 直接修改内部状态并手动 `mark_modified()`，且 `lib.rs` 仍以私有 `layout` / `intervals` 模块链接描述 facade。
 - 已完成验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo check -p tui-editor` 均通过。
 - 已更新 `TODO.md`：T14R 标记 `[DONE]`，并在 T15 前插入 `T14F` / `T14FR`，用于后续修正文档与 T14 API 可见性变更不一致的问题。
-
-## 当前进度记录
-
 - 已读取 `TODO.md`，首个未完成任务为 `T14F 修复：同步公开 API 收紧文档`。
 - 最近提交为 `52985c6 [T14R] Review public API tightening`，提交信息未声明额外未完成事项。
 - 已更新 `lib.rs` 的 API Visibility 与 Module Description，说明 `layout` / `intervals` 相关公开类型经 crate root facade re-export 暴露，不再暗示私有模块路径公开。
 - 已更新 `EditorStateManager` 顶层文档和 `EditorStateManager::editor_mut` / `CommandExecutor::editor_mut` 文档，不再建议外部直接修改内部字段或手动绕过同步不变量。
 - 已运行并通过：`cargo fmt`、`cargo test -p editor-core --doc`、`cargo clippy --all-targets -- -D warnings`。
 - 已将 `TODO.md` 中 T14F 标记为 `[DONE]` 并写入完成记录；下一步检查 diff/status/log 后提交本轮相关改动并停止。
+
+## 当前进度记录
+
+- 已读取 `TODO.md`，首个未完成任务为 `T14FR Review：审查公开 API 文档同步修复`。
+- 最近提交为 `f6f1449 [T14F] Sync public API documentation`，直接对应当前 review 范围，未发现提交标题提示未完成事项。
+- 已审查 T14F diff：变更限于文档注释、TODO 完成记录和进度文件；当前源码仍将 `layout` 与 `intervals` 保持为 `pub(crate)` 模块，并通过 crate root facade re-export 暴露公开类型。
+- 已确认更新后的 `editor_mut()` 文档不再建议直接修改内部字段或绕过同步不变量。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
+- 已将 `TODO.md` 中 T14FR 标记为 `[DONE]` 并写入审查结果和验证记录。
+- 下一步：提交 `TODO.md` 与 `memory/claude_plan.md` 的本轮任务记录，然后停止。

@@ -1332,9 +1332,9 @@
 - 已运行并通过：`cargo fmt`、`cargo test -p editor-core --doc`、`cargo clippy --all-targets -- -D warnings`。
 - 完整测试套件未运行：本任务仅修改文档注释，且 doc test 已通过，按任务要求跳过。
 
-### T14FR Review：审查公开 API 文档同步修复
+### [DONE] T14FR Review：审查公开 API 文档同步修复
 
-状态：TODO
+状态：DONE
 
 审查范围：T14F 的所有 diff。
 
@@ -1349,6 +1349,14 @@
 建议命令：
 
 - `cargo test -p editor-core --doc`
+
+完成记录：
+
+- 已审查 T14F diff，重点检查 `lib.rs` 的 API Visibility / Module Description、`EditorStateManager` 架构说明，以及 `CommandExecutor::editor_mut` / `EditorStateManager::editor_mut` 文档。
+- 未发现需要修复或新增前置任务的问题；文档准确描述 T14 后的字段私有化与受控 mutation 路径，未继续暗示 `editor_core::layout` / `editor_core::intervals` 是 public 模块路径，`editor_mut()` 文档未鼓励绕过同步不变量。
+- T14F diff 仅包含文档注释、TODO 完成记录和进度文件更新，未发现混入编译逻辑或 API 改动。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
+- 完整测试套件未运行：本 review 未修改编译逻辑，且任务要求的 doc test 与 lint 已通过。
 
 ### T15 实现：删除或私有化 `LineIndex` 陷阱 API
 
