@@ -32,3 +32,8 @@
 - 已通过验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test interval_tree_updates`、`cargo test -p editor-core --test diagnostics`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
 - 下一步更新 `TODO.md` 将 T11 标记为 `[DONE]` 并记录完成内容，然后提交本轮改动。
 - 已更新 `TODO.md`：T11 标题已加 `[DONE]`，状态改为 DONE，并记录实现与验证结果。下一步检查 git diff/status/log 后提交。
+- 本轮第一个未完成任务是 `T11R Review：审查 IntervalTree 更新优化`，只审查 T11 diff，不进入 T12。
+- 已检查最近提交：HEAD 为 `[T11] Optimize interval tree text updates`，正是 T11R 审查对象。
+- 已审查 T11 diff 中的 `commands.rs`、`intervals.rs` 和 `interval_tree_updates.rs`，未发现需要立即修复或新增前置任务的问题。
+- 已通过验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test interval_tree_updates`、`cargo test -p editor-core --test diagnostics`、`cargo test -p editor-core`。
+- 已更新 `TODO.md`：T11R 标题已加 `[DONE]`，状态改为 DONE，并记录审查与验证结果。下一步检查 git diff/status/log 后提交。

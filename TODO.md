@@ -1030,9 +1030,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test interval_tree_updates`、`cargo test -p editor-core --test diagnostics`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
-### T11R Review：审查 IntervalTree 更新优化
+### [DONE] T11R Review：审查 IntervalTree 更新优化
 
-状态：TODO
+状态：DONE
 
 审查范围：T11 的所有 diff。
 
@@ -1048,6 +1048,13 @@
 
 - `cargo test -p editor-core --test diagnostics`
 - `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T11 diff，重点检查 `IntervalTree::update_for_text_edits`、`apply_insertion_to_interval` / `apply_deletion_to_interval`、`prefix_max_end` 重建、命令层批量 edit 接入，以及新增 `interval_tree_updates` 测试。
+- 未发现需要立即修复或新增前置任务的问题；批量更新按降序 edit 保持与旧逐步更新一致的 `[start, end)` 删除和插入语义，更新后会必要时重排 interval 并重建 `prefix_max_end`，base interval tree 与各 style layer 共享同一批量更新路径。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test interval_tree_updates`、`cargo test -p editor-core --test diagnostics`、`cargo test -p editor-core`。
+- 本次 review 未修改编译代码；T11 完成记录已有 `cargo clippy --all-targets --all-features -- -D warnings` 和 `cargo test --all --all-targets` 通过结果，因此未重复运行全量 workspace 测试或 fixture suite。
 
 ### T12 实现：限制 `command_history` 内存增长
 
