@@ -542,9 +542,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test incremental_viewport_consistency`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
 - 已确认 `tools/run_fixtures.py` 不存在，完整 fixture suite 无可运行入口。
 
-### T06R Review：审查移除 layout 文本副本
+### [DONE] T06R Review：审查移除 layout 文本副本
 
-状态：TODO
+状态：DONE
 
 审查范围：T06 的所有 diff。
 
@@ -560,6 +560,12 @@
 
 - `cargo test -p editor-core --test incremental_viewport_consistency`
 - `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T06 diff，重点检查 `LayoutEngine` 是否彻底移除 `line_texts` 文本副本、全量重排是否由调用方提供行文本、`CommandExecutor` / `Workspace` / `SnapshotGenerator` 的视图参数变更路径，以及 `incremental_viewport_consistency` 的增量与参考重建比对。
+- 未发现需要立即修复或新增前置任务的问题；当前 Rust 代码中已无 `line_texts` 引用，主视图参数变更路径会从 `LineIndex` 读取当前文本后重排并失效 visual-row cache，新增测试覆盖编辑、undo/redo、viewport width、wrap mode、wrap indent、tab width 变化后的快照一致性。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test incremental_viewport_consistency`、`cargo test -p editor-core`。
 
 ### T07 实现：废弃并移出主路径的 `PieceTable`
 
