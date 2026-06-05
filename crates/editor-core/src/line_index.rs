@@ -2,19 +2,16 @@
 //!
 //! Provides efficient line indexing using Rope data structure, supporting O(log N) access and editing.
 
-use crate::storage::Piece;
 use crate::text_buffer::TextBuffer;
 
-/// Metadata for a logical line
+/// Metadata for a logical line.
 #[derive(Debug, Clone)]
 pub struct LineMetadata {
-    /// List of Pieces referenced by this line (fragments may span multiple pieces)
-    pub pieces: Vec<Piece>,
-    /// Fast path flag: whether this is pure ASCII
+    /// Fast path flag: whether this is pure ASCII.
     pub is_pure_ascii: bool,
-    /// Byte length of this line
+    /// Byte length of this line.
     pub byte_length: usize,
-    /// Character count of this line
+    /// Character count of this line.
     pub char_count: usize,
 }
 
@@ -22,7 +19,6 @@ impl LineMetadata {
     /// Create an empty line metadata record.
     pub fn new() -> Self {
         Self {
-            pieces: Vec::new(),
             is_pure_ascii: true,
             byte_length: 0,
             char_count: 0,
@@ -33,7 +29,6 @@ impl LineMetadata {
     pub fn from_text(text: &str) -> Self {
         let is_pure_ascii = text.is_ascii();
         Self {
-            pieces: Vec::new(),
             is_pure_ascii,
             byte_length: text.len(),
             char_count: text.chars().count(),
@@ -64,7 +59,11 @@ impl LineIndex {
         }
     }
 
-    /// Build line index from text
+    /// Build line index from already-normalized internal text.
+    ///
+    /// This low-level constructor does not normalize line endings. Higher-level editor entry points
+    /// normalize CRLF and lone CR to LF before constructing `LineIndex`; direct CRLF input here keeps
+    /// `\r` as ordinary line content.
     pub fn from_text(text: &str) -> Self {
         Self {
             text_buffer: TextBuffer::from_text(text),
@@ -74,39 +73,6 @@ impl LineIndex {
     /// Return the internal text buffer used as the canonical line-index backing store.
     pub(crate) fn text_buffer(&self) -> &TextBuffer {
         &self.text_buffer
-    }
-
-    /// Append a new line
-    pub fn append_line(&mut self, line: LineMetadata) {
-        // Reconstruct text from LineMetadata and append
-        let current_len = self.text_buffer.len_chars();
-
-        // If not the first line, add a newline first
-        if current_len > 0 {
-            self.text_buffer.insert(current_len, "\n");
-        }
-
-        // Add line content (LineMetadata doesn't store actual text, using placeholder here)
-        // Note: This is for backward compatibility, in actual use should call insert() directly
-        let placeholder = "x".repeat(line.char_count);
-        self.text_buffer
-            .insert(self.text_buffer.len_chars(), &placeholder);
-    }
-
-    /// Insert a line at the specified position
-    pub fn insert_line(&mut self, line_number: usize, line: LineMetadata) {
-        if line_number >= self.text_buffer.line_count() {
-            self.append_line(line);
-            return;
-        }
-
-        // Get character offset at insertion position
-        let insert_pos = self.text_buffer.line_to_char(line_number);
-
-        // Insert new line content
-        let placeholder = "x".repeat(line.char_count);
-        self.text_buffer.insert(insert_pos, &placeholder);
-        self.text_buffer.insert(insert_pos + line.char_count, "\n");
     }
 
     /// Delete the specified line
@@ -127,23 +93,11 @@ impl LineIndex {
 
     /// Get metadata for the specified line number (simulated)
     pub fn get_line(&self, line_number: usize) -> Option<LineMetadata> {
-        let mut text = self.text_buffer.get_line_text(line_number)?;
-        if text.ends_with('\r') {
-            text.pop();
-        }
-
+        let text = self.text_buffer.get_line_text(line_number)?;
         Some(LineMetadata::from_text(&text))
     }
 
-    /// Get mutable reference (Rope doesn't need this method, kept for compatibility)
-    pub fn get_line_mut(&mut self, line_number: usize) -> Option<&mut LineMetadata> {
-        // Rope doesn't support getting mutable references directly, return None
-        let _line_num = line_number;
-        None
-    }
-
-    /// Get byte offset for line number (excluding newlines of previous lines)
-    pub fn line_to_offset(&self, line_number: usize) -> usize {
+    fn legacy_line_to_content_byte_offset(&self, line_number: usize) -> usize {
         if line_number == 0 {
             return 0;
         }
@@ -161,7 +115,28 @@ impl LineIndex {
             .saturating_sub(line_number)
     }
 
-    /// Get line number from byte offset (offset excludes newlines)
+    /// Legacy byte offset for a line start, excluding previous LF separator bytes.
+    ///
+    /// Prefer [`LineIndex::position_to_char_offset`] plus
+    /// [`LineIndex::char_offset_to_byte_offset`] for offsets in the canonical document text. This
+    /// compatibility method preserves the older byte-offset convention where previous `\n` bytes are
+    /// not counted. If this index was built directly from CRLF text, `\r` remains line content and is
+    /// counted.
+    #[deprecated(
+        note = "legacy byte offset excludes previous LF separators; use position_to_char_offset plus char_offset_to_byte_offset"
+    )]
+    pub fn line_to_offset(&self, line_number: usize) -> usize {
+        self.legacy_line_to_content_byte_offset(line_number)
+    }
+
+    /// Legacy line lookup from a byte offset that excludes previous LF separator bytes.
+    ///
+    /// Prefer [`LineIndex::byte_offset_to_char_offset`] plus [`LineIndex::char_offset_to_position`]
+    /// for offsets in the canonical document text. This compatibility method uses the same legacy
+    /// convention as [`LineIndex::line_to_offset`].
+    #[deprecated(
+        note = "legacy byte offset excludes previous LF separators; use byte_offset_to_char_offset plus char_offset_to_position"
+    )]
     pub fn offset_to_line(&self, offset: usize) -> usize {
         if offset == 0 {
             return 0;
@@ -174,7 +149,7 @@ impl LineIndex {
 
         while low < high {
             let mid = (low + high) / 2;
-            let mid_offset = self.line_to_offset(mid);
+            let mid_offset = self.legacy_line_to_content_byte_offset(mid);
 
             if mid_offset < offset {
                 low = mid + 1;
@@ -301,6 +276,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_line_to_offset() {
         let text = "First line\nSecond line\nThird line";
         let index = LineIndex::from_text(text);
@@ -311,6 +287,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_offset_to_line() {
         let text = "First line\nSecond line\nThird line";
         let index = LineIndex::from_text(text);

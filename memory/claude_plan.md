@@ -4,15 +4,14 @@
 
 ## 当前计划
 
-1. 当前第一个未完成任务为 `T14FR Review：审查公开 API 文档同步修复`；本轮只完成 T14FR，不进入 T15 或后续任务。
-2. 检查最近提交是否声明与 T14FR 直接相关的未完成事项。
-3. 审查 T14F diff：确认文档准确描述 T14 后字段私有化和受控 mutation 路径。
-4. 确认文档不再暗示 `editor_core::layout` / `editor_core::intervals` 是 public 模块路径。
-5. 确认 `editor_mut()` 文档不鼓励外部绕过同步不变量。
-6. 确认 doc examples 可编译，且 T14F 未混入编译逻辑或 API 改动。
-7. 运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
-8. 更新 `TODO.md`：将 T14FR 标记为 `[DONE]` 并填写完成记录。
-9. 检查 git 状态、差异和最近提交，只提交本轮相关改动，然后停止。
+1. 当前第一个未完成任务为 `T15 实现：删除或私有化 LineIndex 陷阱 API`；本轮只完成 T15，不进入 T15R 或后续任务。
+2. 检查最近提交是否声明与 T15 直接相关的未完成事项。
+3. 审查 `LineIndex` 陷阱 API：`LineMetadata.pieces`、`append_line`、`insert_line`、`get_line_mut`、legacy offset API 和 CRLF 语义。
+4. 删除或收紧会构造占位文本的公开 API，移除僵尸 Piece 元数据，并补充 legacy offset 迁移说明。
+5. 更新 T15 指定测试，固定 CRLF 直接传入 `LineIndex::from_text` 的低层语义。
+6. 运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、T15 指定测试、完整 Rust 测试和 all-features clippy。
+7. 更新 `TODO.md`：将 T15 标记为 `[DONE]` 并填写完成记录。
+8. 检查 git 状态、差异和最近提交，只提交本轮相关改动，然后停止。
 
 ## 历史进度记录
 
@@ -58,13 +57,21 @@
 - 已更新 `EditorStateManager` 顶层文档和 `EditorStateManager::editor_mut` / `CommandExecutor::editor_mut` 文档，不再建议外部直接修改内部字段或手动绕过同步不变量。
 - 已运行并通过：`cargo fmt`、`cargo test -p editor-core --doc`、`cargo clippy --all-targets -- -D warnings`。
 - 已将 `TODO.md` 中 T14F 标记为 `[DONE]` 并写入完成记录；下一步检查 diff/status/log 后提交本轮相关改动并停止。
-
-## 当前进度记录
-
 - 已读取 `TODO.md`，首个未完成任务为 `T14FR Review：审查公开 API 文档同步修复`。
 - 最近提交为 `f6f1449 [T14F] Sync public API documentation`，直接对应当前 review 范围，未发现提交标题提示未完成事项。
 - 已审查 T14F diff：变更限于文档注释、TODO 完成记录和进度文件；当前源码仍将 `layout` 与 `intervals` 保持为 `pub(crate)` 模块，并通过 crate root facade re-export 暴露公开类型。
 - 已确认更新后的 `editor_mut()` 文档不再建议直接修改内部字段或绕过同步不变量。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
 - 已将 `TODO.md` 中 T14FR 标记为 `[DONE]` 并写入审查结果和验证记录。
-- 下一步：提交 `TODO.md` 与 `memory/claude_plan.md` 的本轮任务记录，然后停止。
+- 已提交 T14FR 并停止。
+
+## 当前进度记录
+
+- 已读取 `TODO.md`，首个未完成任务为 `T15 实现：删除或私有化 LineIndex 陷阱 API`。
+- 最近提交为 `5f7367c [T14FR] Review public API documentation sync`，未发现直接影响 T15 的未完成事项。
+- 已完成 T15 定向读取与符号搜索：假文本 API 仅在 `line_index.rs` 和 `stage2_validation.rs` 使用；legacy offset API 另在 `stage6_validation.rs` 使用，需随 deprecation 迁移测试调用点。
+- 已删除 `LineIndex::append_line`、`LineIndex::insert_line(LineMetadata)` 和 `LineIndex::get_line_mut`，移除 `LineMetadata.pieces`，并将 legacy offset API 标记为 deprecated。
+- 已补充 CRLF 低层语义说明和 `line_endings` 回归测试：直接传入 `LineIndex::from_text` 的 CRLF 会保留 `\r` 为普通行内容，Editor/Workspace 入口仍归一化为 LF。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test stage2_validation`、`cargo test -p editor-core --test line_endings`、`cargo test -p editor-core`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
+- 已将 `TODO.md` 中 T15 标记为 `[DONE]` 并写入完成记录；下一步提交本轮相关改动并停止。

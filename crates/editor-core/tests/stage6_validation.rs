@@ -70,14 +70,14 @@ fn test_integration_with_line_index() {
     // 验证行数
     assert_eq!(line_index.line_count(), 3);
 
-    // 使用 LineIndex 获取每行的起始偏移（不包括换行符）
-    let line0_offset = line_index.line_to_offset(0);
-    let line1_offset = line_index.line_to_offset(1);
-    let line2_offset = line_index.line_to_offset(2);
+    // 使用首列 position 获取每行在规范文本中的起始 char offset。
+    let line0_offset = line_index.position_to_char_offset(0, 0);
+    let line1_offset = line_index.position_to_char_offset(1, 0);
+    let line2_offset = line_index.position_to_char_offset(2, 0);
 
     assert_eq!(line0_offset, 0);
-    assert_eq!(line1_offset, 10); // "First line" (不含 \n)
-    assert_eq!(line2_offset, 21); // "First line" + "Second line" (不含 \n)
+    assert_eq!(line1_offset, 11); // "First line\n"
+    assert_eq!(line2_offset, 23); // "First line\nSecond line\n"
 
     // 生成快照
     let generator = SnapshotGenerator::from_text(text, 80);

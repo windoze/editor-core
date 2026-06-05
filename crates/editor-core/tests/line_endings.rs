@@ -1,4 +1,4 @@
-use editor_core::{Command, EditCommand, EditorStateManager, LineEnding, Workspace};
+use editor_core::{Command, EditCommand, EditorStateManager, LineEnding, LineIndex, Workspace};
 
 #[test]
 fn test_crlf_is_normalized_on_load_and_preserved_for_saving() {
@@ -36,6 +36,20 @@ fn test_cr_is_normalized_to_lf() {
     assert_eq!(manager.editor().get_text(), "a\nb");
     assert_eq!(manager.editor().line_index().get_line_text(0).unwrap(), "a");
     assert_eq!(manager.editor().line_index().get_line_text(1).unwrap(), "b");
+}
+
+#[test]
+fn line_index_from_text_preserves_direct_crlf_input() {
+    let index = LineIndex::from_text("a\r\nb");
+
+    // `LineIndex` is a low-level internal-text facade. Editor entry points normalize line endings
+    // before constructing it; direct CRLF input keeps `\r` as ordinary line content.
+    assert_eq!(index.get_text(), "a\r\nb");
+    assert_eq!(index.get_line_text(0).unwrap(), "a\r");
+
+    let first_line = index.get_line(0).unwrap();
+    assert_eq!(first_line.char_count, 2);
+    assert_eq!(first_line.byte_length, 2);
 }
 
 #[test]

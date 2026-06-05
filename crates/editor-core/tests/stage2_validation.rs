@@ -5,7 +5,7 @@
 //!    Note: The current implementation is O(1), which is even better.
 //! 2. CJK-aware: Ensure `char_count` correctly treats multi-byte UTF-8 characters as single chars.
 
-use editor_core::{LineIndex, line_index::LineMetadata};
+use editor_core::LineIndex;
 
 #[test]
 fn test_line_access_performance() {
@@ -26,10 +26,11 @@ fn test_line_access_performance() {
         let line = index.get_line(line_num);
         assert!(line.is_some(), "行 {} 应该存在", line_num);
 
-        // 验证行号到偏移的转换
-        let offset = index.line_to_offset(line_num);
-        let recovered_line = index.offset_to_line(offset);
+        // 验证首列 position 与 char offset 的往返转换。
+        let offset = index.position_to_char_offset(line_num, 0);
+        let (recovered_line, recovered_column) = index.char_offset_to_position(offset);
         assert_eq!(recovered_line, line_num, "偏移转换不一致");
+        assert_eq!(recovered_column, 0, "首列应保持为 0");
     }
 
     println!("✓ 行访问性能测试通过！");
@@ -166,17 +167,35 @@ fn test_byte_offset_conversions() {
     let text = "abc\n你好\n🌍";
     let index = LineIndex::from_text(text);
 
-    // "abc" = 3 bytes
-    assert_eq!(index.line_to_offset(0), 0);
-    assert_eq!(index.line_to_offset(1), 3);
+    let line0 = index.position_to_char_offset(0, 0);
+    let line1 = index.position_to_char_offset(1, 0);
+    let line2 = index.position_to_char_offset(2, 0);
 
-    // "abc" + "你好" = 3 + 6 = 9 bytes
-    assert_eq!(index.line_to_offset(2), 9);
+    assert_eq!(index.char_offset_to_byte_offset(line0), 0);
+    assert_eq!(index.char_offset_to_byte_offset(line1), 4); // "abc\n"
+
+    // "abc\n" + "你好\n" = 4 + 7 bytes
+    assert_eq!(index.char_offset_to_byte_offset(line2), 11);
 
     // 反向转换
-    assert_eq!(index.offset_to_line(0), 0);
-    assert_eq!(index.offset_to_line(3), 1);
-    assert_eq!(index.offset_to_line(9), 2);
+    assert_eq!(
+        index
+            .char_offset_to_position(index.byte_offset_to_char_offset(0))
+            .0,
+        0
+    );
+    assert_eq!(
+        index
+            .char_offset_to_position(index.byte_offset_to_char_offset(4))
+            .0,
+        1
+    );
+    assert_eq!(
+        index
+            .char_offset_to_position(index.byte_offset_to_char_offset(11))
+            .0,
+        2
+    );
 
     println!("✓ 字节偏移转换测试通过！");
 }
@@ -185,17 +204,13 @@ fn test_byte_offset_conversions() {
 fn test_line_operations_with_cjk() {
     println!("测试包含 CJK 的行操作...");
 
-    let mut index = LineIndex::new();
-
-    // 插入包含 CJK 的行
-    index.append_line(LineMetadata::from_text("第一行"));
-    index.append_line(LineMetadata::from_text("第二行"));
-    index.append_line(LineMetadata::from_text("第三行"));
+    let mut index = LineIndex::from_text("第一行\n第二行\n第三行");
 
     assert_eq!(index.line_count(), 3);
 
     // 在中间插入
-    index.insert_line(1, LineMetadata::from_text("插入的行"));
+    let insert_pos = index.position_to_char_offset(1, 0);
+    index.insert(insert_pos, "插入的行\n");
     assert_eq!(index.line_count(), 4);
     assert_eq!(index.get_line(1).unwrap().char_count, 4); // "插入的行"
 

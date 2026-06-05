@@ -1358,9 +1358,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
 - 完整测试套件未运行：本 review 未修改编译逻辑，且任务要求的 doc test 与 lint 已通过。
 
-### T15 实现：删除或私有化 `LineIndex` 陷阱 API
+### [DONE] T15 实现：删除或私有化 `LineIndex` 陷阱 API
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -1397,6 +1397,16 @@
 
 - 外部不能调用会插入假 `x` 的 API。
 - offset 语义在文档和测试中清楚。
+
+完成记录：
+
+- 删除 `LineIndex::append_line`、`LineIndex::insert_line(LineMetadata)` 和 `LineIndex::get_line_mut`，移除会根据 `LineMetadata` 构造占位 `x` 的公开陷阱 API。
+- 从 `LineMetadata` 中移除僵尸 `pieces` 字段和 `Piece` 依赖，保留当前实际可计算的 ASCII、byte length、char count 元数据。
+- 将 `LineIndex::line_to_offset` / `offset_to_line` 标记为 deprecated legacy API，并补充文档说明其 byte offset 不计前序 LF 分隔符；测试调用点迁移到 `position_to_char_offset`、`char_offset_to_byte_offset`、`byte_offset_to_char_offset` 和 `char_offset_to_position`。
+- 明确 `LineIndex::from_text` 是低层已归一化文本入口：Editor/Workspace 入口会先将 CRLF/lone CR 归一化为 LF；直接传入 CRLF 时 `LineIndex` 保留 `\r` 作为普通行内容，并在 `line_endings` 中固定该行为。
+- 额外更新 `stage6_validation.rs` 的 LineIndex 集成测试，避免在 deprecated legacy offset API 下触发 warning。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test stage2_validation`、`cargo test -p editor-core --test line_endings`、`cargo test -p editor-core`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
 ### T15R Review：审查 `LineIndex` API 清理
 
