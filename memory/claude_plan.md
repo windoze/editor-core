@@ -32,3 +32,5 @@
 - 下一步更新 `TODO.md`，将 T01 标记为 `[DONE]` 并记录完成信息。
 - 已更新 `TODO.md`：T01 标题已标记 `[DONE]`，状态改为 DONE，并写入完成记录。
 - 下一步检查 git diff/status，确认只提交本任务相关修改和要求包含的进度文件。
+- 已提交 T01 修改，提交为 `35c0991 [T01] Reap LSP server processes`。
+- 提交后工作区仅剩本轮开始前已存在且无关的未跟踪文件 `run_agent.sh`，未纳入提交。
