@@ -15,7 +15,7 @@
 //! # Example
 //!
 //! ```rust
-//! use editor_core::{EditorStateManager, StateChangeType};
+//! use editor_core::{Command, EditCommand, EditorStateManager};
 //!
 //! let mut manager = EditorStateManager::new("Hello, World!", 80);
 //!
@@ -28,9 +28,11 @@
 //!     println!("State changed: {:?}", change.change_type);
 //! });
 //!
-//! // Modify document and mark changes
-//! manager.editor_mut().piece_table.insert(0, "New: ");
-//! manager.mark_modified(StateChangeType::DocumentModified);
+//! // Modify document through the command path so text, layout, and derived state stay in sync.
+//! manager.execute(Command::Edit(EditCommand::Insert {
+//!     offset: 0,
+//!     text: "New: ".to_string(),
+//! })).unwrap();
 //! ```
 
 use crate::delta::TextDelta;
@@ -541,7 +543,7 @@ impl EditorStateManager {
     /// Execute a command and automatically trigger state change notifications.
     ///
     /// - This method calls the underlying [`CommandExecutor`] to ensure consistency of components
-    ///   such as `piece_table` / `line_index` / `layout_engine`.
+    ///   such as the text buffer, line index, and layout engine.
     /// - For commands that cause state changes, [`mark_modified`](Self::mark_modified) is automatically called.
     /// - For pure query commands (such as `GetViewport`), the version number is not incremented.
     pub fn execute(&mut self, command: Command) -> Result<CommandResult, CommandError> {

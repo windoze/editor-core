@@ -2,7 +2,7 @@
 //!
 //! End-to-end integration tests: validates the full pipeline from text input to headless grid output.
 
-use editor_core::{Cell, LayoutEngine, LineIndex, PieceTable, SnapshotGenerator};
+use editor_core::{Cell, LayoutEngine, LineIndex, SnapshotGenerator, storage::PieceTable};
 
 /// Test basic snapshot generation flow.
 #[test]

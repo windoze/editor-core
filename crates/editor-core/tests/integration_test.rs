@@ -4,7 +4,7 @@
 
 use editor_core::{
     Command, CommandExecutor, CursorCommand, EditCommand, EditorStateManager, Position,
-    StateChangeType, StyleCommand, ViewCommand,
+    StyleCommand, ViewCommand,
 };
 
 /// Test a full editing session.
@@ -93,10 +93,12 @@ fn test_state_management_integration() {
     assert!(!initial_state.document.is_modified);
 
     // 修改文档
-    manager.editor_mut().piece_table.insert(0, "New: ");
-    manager.editor_mut().line_index =
-        editor_core::LineIndex::from_text(&manager.editor().get_text());
-    manager.mark_modified(StateChangeType::DocumentModified);
+    manager
+        .execute(Command::Edit(EditCommand::Insert {
+            offset: 0,
+            text: "New: ".to_string(),
+        }))
+        .unwrap();
 
     // 验证状态变更
     assert!(manager.version() > initial_version);

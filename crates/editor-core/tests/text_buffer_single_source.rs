@@ -56,18 +56,17 @@ fn line_index_text_buffer_supports_char_ranges_and_conversions() {
 }
 
 #[test]
-fn editor_text_reads_prefer_text_buffer_over_piece_table_shadow() {
-    let mut core = EditorCore::new("abc", 80);
+fn editor_text_range_reads_from_text_buffer() {
+    let core = EditorCore::new("a你\n🙂b", 80);
 
-    core.piece_table.insert(0, "shadow ");
-
-    assert_eq!(core.get_text(), "abc");
-    assert_eq!(core.char_count(), 3);
-    assert_eq!(core.line_index.get_text(), "abc");
+    assert_eq!(core.text_range(1, 2), "你\n");
+    assert_eq!(core.text_range(3, 2), "🙂b");
+    assert_eq!(core.text_range(99, 2), "");
+    assert_eq!(core.line_index.get_text(), core.get_text());
 }
 
 #[test]
-fn command_edits_keep_piece_table_shadow_and_text_buffer_consistent() {
+fn command_edits_keep_text_buffer_consistent() {
     let mut executor = CommandExecutor::new("", 80);
 
     executor
@@ -96,7 +95,6 @@ fn command_edits_keep_piece_table_shadow_and_text_buffer_consistent() {
 
     let editor = executor.editor();
     assert_eq!(editor.get_text(), "中two🙂");
-    assert_eq!(editor.piece_table.get_text(), editor.get_text());
     assert_eq!(editor.line_index.get_text(), editor.get_text());
     assert_eq!(editor.line_index.get_range(0, 1), "中");
     assert_eq!(

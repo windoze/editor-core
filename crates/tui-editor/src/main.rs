@@ -1225,9 +1225,7 @@ impl App {
                 (end_offset, start_offset)
             };
 
-            self.clipboard = editor
-                .piece_table
-                .get_range(min_offset, max_offset.saturating_sub(min_offset));
+            self.clipboard = editor.text_range(min_offset, max_offset.saturating_sub(min_offset));
         } else {
             let mut parts = Vec::with_capacity(selections.len());
             for selection in selections {
@@ -1240,11 +1238,7 @@ impl App {
                 } else {
                     (end_offset, start_offset)
                 };
-                parts.push(
-                    editor
-                        .piece_table
-                        .get_range(min_offset, max_offset.saturating_sub(min_offset)),
-                );
+                parts.push(editor.text_range(min_offset, max_offset.saturating_sub(min_offset)));
             }
             self.clipboard = parts.join("\n");
         }

@@ -2,7 +2,7 @@
 //!
 //! Demonstrates how to use `EditorStateManager` to query editor state.
 
-use editor_core::{EditorStateManager, Position, StateChangeType};
+use editor_core::{Command, EditCommand, EditorStateManager, Position, StateChangeType};
 use std::sync::{Arc, Mutex};
 
 fn main() {
@@ -44,10 +44,12 @@ fn main() {
 
     // 修改文档
     println!("\n7. 执行编辑操作：");
-    manager.editor_mut().piece_table.insert(0, "// Comment\n");
-    manager.editor_mut().line_index =
-        editor_core::LineIndex::from_text(&manager.editor().get_text());
-    manager.mark_modified(StateChangeType::DocumentModified);
+    manager
+        .execute(Command::Edit(EditCommand::Insert {
+            offset: 0,
+            text: "// Comment\n".to_string(),
+        }))
+        .unwrap();
 
     println!("  文档已修改");
     println!("  新版本号: {}", manager.version());

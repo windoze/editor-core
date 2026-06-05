@@ -1,7 +1,7 @@
-//! Stage 1: Linear Storage Layer
+//! Deprecated Piece Table compatibility layer.
 //!
-//! Implements efficient insertion and deletion operations using Piece Table,
-//! providing O(1) undo capability.
+//! The main editor path uses the rope-backed `TextBuffer` behind `LineIndex`. This module remains
+//! public for compatibility and standalone validation tests.
 
 /// Buffer type identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

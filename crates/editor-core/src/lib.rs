@@ -11,8 +11,8 @@
 //!
 //! # Core Features
 //!
-//! - **Efficient Text Storage**: based Piece Table  O(1) insertion/deletion
-//! - **Fast Line Index**: based Rope  O(log n) line access
+//! - **Efficient Text Storage**: Rope-backed text buffer with `char`-indexed access
+//! - **Fast Line Index**: Rope-based  O(log n) line access
 //! - **Soft Wrapping Support**: Headless layout engine, supporting arbitrary container widths
 //! - **Style Management**: Interval tree structure, O(log n + k) query complexity
 //! - **Code Folding**: Supports arbitrary levels of code folding
@@ -32,9 +32,7 @@
 //! ├─────────────────────────────────────────────┤
 //! │  Layout Engine (Soft Wrapping)              │  ← Text Layout
 //! ├─────────────────────────────────────────────┤
-//! │  Line Index (Rope-based)                    │  ← Line Access
-//! ├─────────────────────────────────────────────┤
-//! │  Piece Table Storage                        │  ← Text Storage
+//! │  Line Index + TextBuffer (Rope-based)       │  ← Text Storage / Line Access
 //! └─────────────────────────────────────────────┘
 //! ```
 //!
@@ -102,8 +100,8 @@
 //!
 //! # Module Description
 //!
-//! - [`storage`] - Piece Table text storage layer
-//! - [`line_index`] - Rope based line index
+//! - [`storage`] - deprecated Piece Table compatibility layer
+//! - [`line_index`] - Rope-based line index and canonical text access facade
 //! - [`layout`] - soft wrappinglayout engine
 //! - [`intervals`] - Style interval tree andcode foldingmanagement
 //! - [`snapshot`] - Headless snapshot API (HeadlessGrid)
@@ -188,6 +186,9 @@ pub use state::{
     EditorStateManager, FoldingState, SmoothScrollState, StateChange, StateChangeCallback,
     StateChangeType, StyleState, UndoRedoState, ViewportState,
 };
+#[deprecated(
+    note = "PieceTable is no longer on the main editing path; use EditorCore/LineIndex text APIs instead"
+)]
 pub use storage::PieceTable;
 pub use symbols::{
     DocumentOutline, DocumentSymbol, SymbolKind, SymbolLocation, SymbolRange, Utf16Position,

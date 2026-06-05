@@ -48,9 +48,9 @@ use crate::snapshot::{
     HeadlessGrid, HeadlessLine, MinimapGrid, MinimapLine,
 };
 use crate::snippets::{SnippetNavigation, SnippetSession, parse_snippet};
-use crate::{
-    FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex, PieceTable,
-};
+#[cfg(debug_assertions)]
+use crate::storage::PieceTable;
+use crate::{FOLD_PLACEHOLDER_STYLE_ID, FoldingManager, IntervalTree, LayoutEngine, LineIndex};
 use editor_core_lang::{CommentConfig, IndentStyle, IndentationConfig};
 use regex::RegexBuilder;
 #[cfg(feature = "serde")]
@@ -1669,8 +1669,7 @@ impl VisualRowIndex {
 ///
 /// `EditorCore` aggregates all underlying editor components, including:
 ///
-/// - **PieceTable**: Efficient text storage and modification
-/// - **LineIndex**: Rope-based line index, supporting fast line access
+/// - **LineIndex**: Rope-backed canonical text buffer with fast line access
 /// - **LayoutEngine**: Soft wrapping and text layout calculation
 /// - **IntervalTree**: Style interval management
 /// - **FoldingManager**: Code folding management
@@ -1686,8 +1685,9 @@ impl VisualRowIndex {
 /// assert_eq!(core.get_text(), "Hello\nWorld");
 /// ```
 pub struct EditorCore {
-    /// Piece Table storage layer
-    pub piece_table: PieceTable,
+    /// Debug-only deprecated PieceTable shadow used to catch migration regressions.
+    #[cfg(debug_assertions)]
+    piece_table_shadow: PieceTable,
     /// Line index
     pub line_index: LineIndex,
     /// Layout engine
@@ -1722,7 +1722,8 @@ impl EditorCore {
         let normalized = crate::text::normalize_crlf_to_lf(text);
         let text = normalized.as_ref();
 
-        let piece_table = PieceTable::new(text);
+        #[cfg(debug_assertions)]
+        let piece_table_shadow = PieceTable::new(text);
         let line_index = LineIndex::from_text(text);
         let mut layout_engine = LayoutEngine::new(viewport_width);
 
@@ -1732,7 +1733,8 @@ impl EditorCore {
         layout_engine.from_lines(&line_refs);
 
         Self {
-            piece_table,
+            #[cfg(debug_assertions)]
+            piece_table_shadow,
             line_index,
             layout_engine,
             interval_tree: IntervalTree::new(),
@@ -1758,6 +1760,11 @@ impl EditorCore {
     /// Get text content
     pub fn get_text(&self) -> String {
         self.line_index.text_buffer().get_text()
+    }
+
+    /// Get a text range by character offset and length.
+    pub fn text_range(&self, start: usize, len: usize) -> String {
+        self.line_index.text_buffer().get_range(start, len)
     }
 
     /// Get total line count
@@ -3308,7 +3315,7 @@ impl CommandExecutor {
             return Err(CommandError::Other("Nothing to undo".to_string()));
         }
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let steps = self
             .undo_redo
             .pop_undo_group()
@@ -3336,7 +3343,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id,
         });
@@ -3350,7 +3357,7 @@ impl CommandExecutor {
             return Err(CommandError::Other("Nothing to redo".to_string()));
         }
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let steps = self
             .undo_redo
             .pop_redo_group()
@@ -3378,7 +3385,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id,
         });
@@ -3411,7 +3418,7 @@ impl CommandExecutor {
         }
 
         let text = crate::text::normalize_crlf_to_lf_string(text);
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
 
         // Build canonical selection set (primary + secondary), VSCode-like: edits are applied
@@ -3460,7 +3467,7 @@ impl CommandExecutor {
             let deleted_text = if delete_len == 0 {
                 String::new()
             } else {
-                self.editor.piece_table.get_range(start_offset, delete_len)
+                self.editor.text_range(start_offset, delete_len)
             };
 
             let mut insert_text = String::with_capacity(text.len() + start_pad);
@@ -3528,9 +3535,6 @@ impl CommandExecutor {
 
             if op.delete_len > 0 {
                 self.editor
-                    .piece_table
-                    .delete(op.start_offset, op.delete_len);
-                self.editor
                     .interval_tree
                     .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
                 for layer_tree in self.editor.style_layers.values_mut() {
@@ -3540,9 +3544,6 @@ impl CommandExecutor {
             }
 
             if !op.insert_text.is_empty() {
-                self.editor
-                    .piece_table
-                    .insert(op.start_offset, &op.insert_text);
                 self.editor
                     .interval_tree
                     .update_for_insertion(op.start_offset, op.insert_char_len);
@@ -3630,7 +3631,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -3654,7 +3655,7 @@ impl CommandExecutor {
             return self.execute_insert_tab_command();
         }
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
         let selections = before_selection.selections.clone();
         let primary_index = before_selection.primary_index;
@@ -3685,7 +3686,7 @@ impl CommandExecutor {
 
         let mut ops: Vec<Op> = Vec::with_capacity(selections.len());
 
-        let doc_char_count = self.editor.piece_table.char_count();
+        let doc_char_count = self.editor.char_count();
 
         let next_char_matches = |this: &Self, offset: usize, ch: char| -> bool {
             this.editor.line_index.char_at(offset) == Some(ch)
@@ -3706,7 +3707,7 @@ impl CommandExecutor {
             let deleted_text = if delete_len == 0 {
                 String::new()
             } else {
-                self.editor.piece_table.get_range(start_offset, delete_len)
+                self.editor.text_range(start_offset, delete_len)
             };
 
             // Skip-over closing delimiter: only for empty selections/carets.
@@ -3880,9 +3881,6 @@ impl CommandExecutor {
 
             if op.delete_len > 0 {
                 self.editor
-                    .piece_table
-                    .delete(op.start_offset, op.delete_len);
-                self.editor
                     .interval_tree
                     .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
                 for layer_tree in self.editor.style_layers.values_mut() {
@@ -3892,9 +3890,6 @@ impl CommandExecutor {
             }
 
             if !op.insert_text.is_empty() {
-                self.editor
-                    .piece_table
-                    .insert(op.start_offset, &op.insert_text);
                 self.editor
                     .interval_tree
                     .update_for_insertion(op.start_offset, op.insert_char_len);
@@ -3944,11 +3939,11 @@ impl CommandExecutor {
             let (start_line, start_col) = self
                 .editor
                 .line_index
-                .char_offset_to_position(start_offset.min(self.editor.piece_table.char_count()));
+                .char_offset_to_position(start_offset.min(self.editor.char_count()));
             let (end_line, end_col) = self
                 .editor
                 .line_index
-                .char_offset_to_position(end_offset.min(self.editor.piece_table.char_count()));
+                .char_offset_to_position(end_offset.min(self.editor.char_count()));
 
             let start_pos = Position::new(start_line, start_col);
             let end_pos = Position::new(end_line, end_col);
@@ -4019,7 +4014,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -4121,7 +4116,7 @@ impl CommandExecutor {
         let before_selection = self.snapshot_selection_set();
         let selections = before_selection.selections.clone();
         let primary_index = before_selection.primary_index;
-        let doc_char_count = self.editor.piece_table.char_count();
+        let doc_char_count = self.editor.char_count();
 
         let mut new_carets: Vec<Selection> = Vec::with_capacity(selections.len());
         for selection in &selections {
@@ -4184,7 +4179,7 @@ impl CommandExecutor {
         match action {
             SnippetNavigation::Noop => Ok(CommandResult::Success),
             SnippetNavigation::Finish(offset) => {
-                let doc_char_count = self.editor.piece_table.char_count();
+                let doc_char_count = self.editor.char_count();
                 let target = offset.min(doc_char_count);
                 let (line, column) = self.editor.line_index.char_offset_to_position(target);
                 let pos = Position::new(line, column);
@@ -4205,7 +4200,7 @@ impl CommandExecutor {
                     return Ok(CommandResult::Success);
                 }
 
-                let doc_char_count = self.editor.piece_table.char_count();
+                let doc_char_count = self.editor.char_count();
                 let mut selections: Vec<Selection> = Vec::with_capacity(ranges.len());
                 for (start, end) in ranges {
                     let a = start.min(doc_char_count);
@@ -4305,7 +4300,7 @@ impl CommandExecutor {
     }
 
     fn execute_insert_tab_command(&mut self) -> Result<CommandResult, CommandError> {
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
 
         let mut selections: Vec<Selection> =
@@ -4382,7 +4377,7 @@ impl CommandExecutor {
             let deleted_text = if delete_len == 0 {
                 String::new()
             } else {
-                self.editor.piece_table.get_range(start_offset, delete_len)
+                self.editor.text_range(start_offset, delete_len)
             };
 
             // Compute cell X within the logical line at the insertion position (including virtual pad).
@@ -4483,9 +4478,6 @@ impl CommandExecutor {
 
             if op.delete_len > 0 {
                 self.editor
-                    .piece_table
-                    .delete(op.start_offset, op.delete_len);
-                self.editor
                     .interval_tree
                     .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
                 for layer_tree in self.editor.style_layers.values_mut() {
@@ -4495,9 +4487,6 @@ impl CommandExecutor {
             }
 
             if !op.insert_text.is_empty() {
-                self.editor
-                    .piece_table
-                    .insert(op.start_offset, &op.insert_text);
                 self.editor
                     .interval_tree
                     .update_for_insertion(op.start_offset, op.insert_char_len);
@@ -4585,7 +4574,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -4647,7 +4636,7 @@ impl CommandExecutor {
         // Newline insertion should not coalesce into a typing group.
         self.undo_redo.end_group();
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
 
         // Canonical selection set (primary + secondary).
@@ -4687,7 +4676,7 @@ impl CommandExecutor {
             let deleted_text = if delete_len == 0 {
                 String::new()
             } else {
-                self.editor.piece_table.get_range(start_offset, delete_len)
+                self.editor.text_range(start_offset, delete_len)
             };
 
             let (insert_text, caret_offset_in_insert) = if auto_indent {
@@ -4769,9 +4758,6 @@ impl CommandExecutor {
 
             if op.delete_len > 0 {
                 self.editor
-                    .piece_table
-                    .delete(op.start_offset, op.delete_len);
-                self.editor
                     .interval_tree
                     .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
                 for layer_tree in self.editor.style_layers.values_mut() {
@@ -4781,9 +4767,6 @@ impl CommandExecutor {
             }
 
             if !op.insert_text.is_empty() {
-                self.editor
-                    .piece_table
-                    .insert(op.start_offset, &op.insert_text);
                 self.editor
                     .interval_tree
                     .update_for_insertion(op.start_offset, op.insert_char_len);
@@ -4864,7 +4847,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -4875,7 +4858,7 @@ impl CommandExecutor {
     fn execute_indent_command(&mut self, outdent: bool) -> Result<CommandResult, CommandError> {
         self.undo_redo.end_group();
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
         let selections = before_selection.selections.clone();
 
@@ -4948,7 +4931,7 @@ impl CommandExecutor {
                     continue;
                 }
 
-                let deleted_text = self.editor.piece_table.get_range(start_offset, remove_len);
+                let deleted_text = self.editor.text_range(start_offset, remove_len);
                 ops.push(Op {
                     start_offset,
                     start_after: start_offset,
@@ -5000,9 +4983,6 @@ impl CommandExecutor {
 
             if op.delete_len > 0 {
                 self.editor
-                    .piece_table
-                    .delete(op.start_offset, op.delete_len);
-                self.editor
                     .interval_tree
                     .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
                 for layer_tree in self.editor.style_layers.values_mut() {
@@ -5012,9 +4992,6 @@ impl CommandExecutor {
             }
 
             if op.insert_len > 0 {
-                self.editor
-                    .piece_table
-                    .insert(op.start_offset, &op.insert_text);
                 self.editor
                     .interval_tree
                     .update_for_insertion(op.start_offset, op.insert_len);
@@ -5097,7 +5074,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -5165,7 +5142,7 @@ impl CommandExecutor {
     fn execute_duplicate_lines_command(&mut self) -> Result<CommandResult, CommandError> {
         self.undo_redo.end_group();
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
         let selections = before_selection.selections.clone();
         let primary_index = before_selection.primary_index;
@@ -5180,7 +5157,7 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
-        let doc_text = self.editor.piece_table.get_text();
+        let doc_text = self.editor.get_text();
         let doc_ends_with_newline = doc_text.ends_with('\n');
 
         struct Op {
@@ -5357,7 +5334,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -5368,7 +5345,7 @@ impl CommandExecutor {
     fn execute_delete_lines_command(&mut self) -> Result<CommandResult, CommandError> {
         self.undo_redo.end_group();
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
         let selections = before_selection.selections.clone();
         let primary_selection = selections
@@ -5424,7 +5401,7 @@ impl CommandExecutor {
             }
 
             let delete_len = end_offset - start_offset;
-            let deleted_text = self.editor.piece_table.get_range(start_offset, delete_len);
+            let deleted_text = self.editor.text_range(start_offset, delete_len);
 
             if crate::selection_set::selection_contains_position_inclusive(
                 &primary_selection,
@@ -5521,7 +5498,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -5532,7 +5509,7 @@ impl CommandExecutor {
     fn execute_move_lines_command(&mut self, up: bool) -> Result<CommandResult, CommandError> {
         self.undo_redo.end_group();
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
         let selections = before_selection.selections.clone();
         let primary_index = before_selection.primary_index;
@@ -5606,8 +5583,7 @@ impl CommandExecutor {
 
             let deleted_text = self
                 .editor
-                .piece_table
-                .get_range(start_offset, end_offset - start_offset);
+                .text_range(start_offset, end_offset - start_offset);
 
             let block_text = self.slice_text_for_lines(block.start, block.end);
 
@@ -5733,7 +5709,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -5744,7 +5720,7 @@ impl CommandExecutor {
     fn execute_join_lines_command(&mut self) -> Result<CommandResult, CommandError> {
         self.undo_redo.end_group();
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
         let selections = before_selection.selections.clone();
 
@@ -5835,7 +5811,7 @@ impl CommandExecutor {
             };
             let inserted_len = inserted_text.chars().count();
             let delete_len = end_offset - join_offset;
-            let deleted_text = self.editor.piece_table.get_range(join_offset, delete_len);
+            let deleted_text = self.editor.text_range(join_offset, delete_len);
 
             ops.push(Op {
                 start_before: join_offset,
@@ -5922,7 +5898,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -5942,7 +5918,7 @@ impl CommandExecutor {
 
         self.undo_redo.end_group();
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
         let selections = before_selection.selections.clone();
         let primary_index = before_selection.primary_index;
@@ -6011,7 +5987,7 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
 
         let max_offset = before_char_count;
@@ -6060,7 +6036,7 @@ impl CommandExecutor {
             let deleted_text = if delete_len == 0 {
                 String::new()
             } else {
-                self.editor.piece_table.get_range(edit.start, delete_len)
+                self.editor.text_range(edit.start, delete_len)
             };
 
             let inserted_text = edit.text;
@@ -6127,7 +6103,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -6147,7 +6123,7 @@ impl CommandExecutor {
         // A new snippet insert replaces any existing snippet session.
         self.snippet_session = None;
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
 
         if start > end {
@@ -6213,7 +6189,7 @@ impl CommandExecutor {
             let deleted_text = if delete_len == 0 {
                 String::new()
             } else {
-                self.editor.piece_table.get_range(edit.start, delete_len)
+                self.editor.text_range(edit.start, delete_len)
             };
 
             let inserted_text = edit.text;
@@ -6263,7 +6239,7 @@ impl CommandExecutor {
                 // Defensive fallback: treat as "no tabstops".
                 self.snippet_session = None;
             } else {
-                let doc_char_count = self.editor.piece_table.char_count();
+                let doc_char_count = self.editor.char_count();
                 let mut selections: Vec<Selection> = Vec::with_capacity(ranges.len());
                 for (a, b) in ranges {
                     let start = a.min(doc_char_count);
@@ -6293,7 +6269,7 @@ impl CommandExecutor {
                 self.snippet_session = Some(session);
             }
         } else {
-            let doc_char_count = self.editor.piece_table.char_count();
+            let doc_char_count = self.editor.char_count();
             let target = main_start_after
                 .saturating_add(template.final_offset)
                 .min(doc_char_count);
@@ -6340,7 +6316,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -6453,7 +6429,7 @@ impl CommandExecutor {
                     continue;
                 }
 
-                let deleted_text = self.editor.piece_table.get_range(start_offset, remove_len);
+                let deleted_text = self.editor.text_range(start_offset, remove_len);
                 ops.push(Op {
                     start_before: start_offset,
                     start_after: start_offset,
@@ -6575,7 +6551,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -6636,16 +6612,12 @@ impl CommandExecutor {
 
             let already_wrapped = start >= start_len
                 && end + end_len <= before_char_count
-                && self
-                    .editor
-                    .piece_table
-                    .get_range(start - start_len, start_len)
-                    == block_start
-                && self.editor.piece_table.get_range(end, end_len) == block_end;
+                && self.editor.text_range(start - start_len, start_len) == block_start
+                && self.editor.text_range(end, end_len) == block_end;
 
             if already_wrapped {
                 // Delete end token first (higher offset), then start token.
-                let deleted_end = self.editor.piece_table.get_range(end, end_len);
+                let deleted_end = self.editor.text_range(end, end_len);
                 ops.push(Op {
                     start_before: end,
                     start_after: end,
@@ -6658,10 +6630,7 @@ impl CommandExecutor {
                 });
 
                 let start_token_offset = start - start_len;
-                let deleted_start = self
-                    .editor
-                    .piece_table
-                    .get_range(start_token_offset, start_len);
+                let deleted_start = self.editor.text_range(start_token_offset, start_len);
                 ops.push(Op {
                     start_before: start_token_offset,
                     start_after: start_token_offset,
@@ -6790,7 +6759,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -6851,7 +6820,7 @@ impl CommandExecutor {
                 all_wrapped = false;
                 break;
             }
-            let text = self.editor.piece_table.get_range(*start, end - start);
+            let text = self.editor.text_range(*start, end - start);
             if !text.starts_with(block_start) || !text.ends_with(block_end) {
                 all_wrapped = false;
                 break;
@@ -6873,7 +6842,7 @@ impl CommandExecutor {
             if all_wrapped {
                 // Remove end token (at end-end_len) and start token (at start).
                 let end_token_start = end.saturating_sub(end_len);
-                let deleted_end = self.editor.piece_table.get_range(end_token_start, end_len);
+                let deleted_end = self.editor.text_range(end_token_start, end_len);
                 ops.push(Op {
                     start_before: end_token_start,
                     start_after: end_token_start,
@@ -6883,7 +6852,7 @@ impl CommandExecutor {
                     inserted_len: 0,
                 });
 
-                let deleted_start = self.editor.piece_table.get_range(*start, start_len);
+                let deleted_start = self.editor.text_range(*start, start_len);
                 ops.push(Op {
                     start_before: *start,
                     start_after: *start,
@@ -6981,7 +6950,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -7459,10 +7428,7 @@ impl CommandExecutor {
 
         if range.start != range.end {
             let len = range.end - range.start;
-            return Some((
-                self.editor.piece_table.get_range(range.start, len),
-                Some(range),
-            ));
+            return Some((self.editor.text_range(range.start, len), Some(range)));
         }
 
         let caret = primary.end;
@@ -7491,8 +7457,7 @@ impl CommandExecutor {
         };
         Some((
             self.editor
-                .piece_table
-                .get_range(range.start, range.end.saturating_sub(range.start)),
+                .text_range(range.start, range.end.saturating_sub(range.start)),
             Some(range),
         ))
     }
@@ -7539,7 +7504,7 @@ impl CommandExecutor {
             }
         }
 
-        let text = self.editor.piece_table.get_text();
+        let text = self.editor.get_text();
 
         let mut ranges: Vec<SearchMatch> = selections
             .iter()
@@ -7632,7 +7597,7 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
-        let text = self.editor.piece_table.get_text();
+        let text = self.editor.get_text();
         let matches =
             find_all(&text, &query, options).map_err(|err| CommandError::Other(err.to_string()))?;
 
@@ -7679,19 +7644,18 @@ impl CommandExecutor {
         }
 
         let text = crate::text::normalize_crlf_to_lf_string(text);
-        let max_offset = self.editor.piece_table.char_count();
+        let max_offset = self.editor.char_count();
         if offset > max_offset {
             return Err(CommandError::InvalidOffset(offset));
         }
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
 
         let affected_line = self.editor.line_index.char_offset_to_position(offset).0;
         let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
 
         // Execute insertion
-        self.editor.piece_table.insert(offset, &text);
 
         // Update line index + layout engine incrementally.
         self.apply_text_change_to_line_index_and_layout(offset, "", &text);
@@ -7737,7 +7701,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: vec![TextDeltaEdit {
                 start: offset,
                 deleted_text: String::new(),
@@ -7758,8 +7722,8 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
-        let before_char_count = self.editor.piece_table.char_count();
-        let max_offset = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
+        let max_offset = self.editor.char_count();
         if start > max_offset {
             return Err(CommandError::InvalidOffset(start));
         }
@@ -7772,7 +7736,7 @@ impl CommandExecutor {
 
         let before_selection = self.snapshot_selection_set();
 
-        let deleted_text = self.editor.piece_table.get_range(start, length);
+        let deleted_text = self.editor.text_range(start, length);
         let delta_deleted_text = deleted_text.clone();
         let deleted_newlines = deleted_text
             .as_bytes()
@@ -7782,7 +7746,6 @@ impl CommandExecutor {
         let affected_line = self.editor.line_index.char_offset_to_position(start).0;
 
         // Execute deletion
-        self.editor.piece_table.delete(start, length);
 
         // Update line index + layout engine incrementally.
         self.apply_text_change_to_line_index_and_layout(start, &delta_deleted_text, "");
@@ -7824,7 +7787,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: vec![TextDeltaEdit {
                 start,
                 deleted_text: delta_deleted_text,
@@ -7844,8 +7807,8 @@ impl CommandExecutor {
         coalesce_undo: bool,
         selection_after: Option<(usize, usize)>,
     ) -> Result<CommandResult, CommandError> {
-        let before_char_count = self.editor.piece_table.char_count();
-        let max_offset = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
+        let max_offset = self.editor.char_count();
         if start > max_offset {
             return Err(CommandError::InvalidOffset(start));
         }
@@ -7866,7 +7829,7 @@ impl CommandExecutor {
         let deleted_text = if length == 0 {
             String::new()
         } else {
-            self.editor.piece_table.get_range(start, length)
+            self.editor.text_range(start, length)
         };
         let delta_deleted_text = deleted_text.clone();
         let delta_inserted_text = text.clone();
@@ -7882,7 +7845,6 @@ impl CommandExecutor {
 
         // Apply as a single operation (delete then insert at the same offset).
         if length > 0 {
-            self.editor.piece_table.delete(start, length);
             self.editor
                 .interval_tree
                 .update_for_deletion(start, start + length);
@@ -7893,7 +7855,6 @@ impl CommandExecutor {
 
         let inserted_len = text.chars().count();
         if inserted_len > 0 {
-            self.editor.piece_table.insert(start, &text);
             self.editor
                 .interval_tree
                 .update_for_insertion(start, inserted_len);
@@ -7920,7 +7881,7 @@ impl CommandExecutor {
         // Optional: set selection/caret as part of this edit command (so hosts can update IME
         // preedit selection without breaking the undo group via a separate cursor command).
         if let Some((mut sel_start_off, mut sel_end_off)) = selection_after {
-            let doc_char_count = self.editor.piece_table.char_count();
+            let doc_char_count = self.editor.char_count();
             sel_start_off = sel_start_off.min(doc_char_count);
             sel_end_off = sel_end_off.min(doc_char_count);
 
@@ -7968,7 +7929,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: vec![TextDeltaEdit {
                 start,
                 deleted_text: delta_deleted_text,
@@ -8024,7 +7985,7 @@ impl CommandExecutor {
             return Ok(CommandResult::SearchNotFound);
         }
 
-        let text = self.editor.piece_table.get_text();
+        let text = self.editor.get_text();
         let from = if let Some(selection) = self.primary_selection_char_range() {
             if forward {
                 selection.end
@@ -8102,7 +8063,7 @@ impl CommandExecutor {
             return Err(CommandError::Other("Search query is empty".to_string()));
         }
 
-        let text = self.editor.piece_table.get_text();
+        let text = self.editor.get_text();
         let selection_range = self.primary_selection_char_range();
 
         let mut target = None::<SearchMatch>;
@@ -8133,11 +8094,8 @@ impl CommandExecutor {
         };
         let inserted_text = crate::text::normalize_crlf_to_lf_string(inserted_text);
 
-        let deleted_text = self
-            .editor
-            .piece_table
-            .get_range(target.start, target.len());
-        let before_char_count = self.editor.piece_table.char_count();
+        let deleted_text = self.editor.text_range(target.start, target.len());
+        let before_char_count = self.editor.char_count();
         let delta_deleted_text = deleted_text.clone();
 
         let before_selection = self.snapshot_selection_set();
@@ -8166,7 +8124,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: vec![TextDeltaEdit {
                 start: target.start,
                 deleted_text: delta_deleted_text,
@@ -8189,7 +8147,7 @@ impl CommandExecutor {
         }
 
         let replacement = crate::text::normalize_crlf_to_lf_string(replacement);
-        let text = self.editor.piece_table.get_text();
+        let text = self.editor.get_text();
         let matches =
             find_all(&text, &query, options).map_err(|err| CommandError::Other(err.to_string()))?;
         if matches.is_empty() {
@@ -8267,7 +8225,7 @@ impl CommandExecutor {
             delta += op.inserted_len as i64 - op.delete_len as i64;
         }
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
         let apply_ops: Vec<(usize, usize, &str)> = ops
             .iter()
@@ -8323,7 +8281,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -8435,7 +8393,7 @@ impl CommandExecutor {
             let deleted_text = if delete_len == 0 {
                 String::new()
             } else {
-                self.editor.piece_table.get_range(start_offset, delete_len)
+                self.editor.text_range(start_offset, delete_len)
             };
 
             ops.push(Op {
@@ -8451,7 +8409,7 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
 
         // Compute caret offsets in the post-delete document (ascending order with delta).
         let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
@@ -8493,10 +8451,6 @@ impl CommandExecutor {
                     .folding_manager
                     .apply_line_delta(edit_line, -(deleted_newlines as isize));
             }
-
-            self.editor
-                .piece_table
-                .delete(op.start_offset, op.delete_len);
             self.editor
                 .interval_tree
                 .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
@@ -8576,7 +8530,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -8597,7 +8551,7 @@ impl CommandExecutor {
         let selections = before_selection.selections.clone();
         let primary_index = before_selection.primary_index;
 
-        let doc_char_count = self.editor.piece_table.char_count();
+        let doc_char_count = self.editor.char_count();
 
         #[derive(Debug)]
         struct Op {
@@ -8672,7 +8626,7 @@ impl CommandExecutor {
             let deleted_text = if delete_len == 0 {
                 String::new()
             } else {
-                self.editor.piece_table.get_range(start_offset, delete_len)
+                self.editor.text_range(start_offset, delete_len)
             };
 
             ops.push(Op {
@@ -8688,7 +8642,7 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
 
         // Compute caret offsets in the post-delete document (ascending order with delta).
         let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
@@ -8713,10 +8667,6 @@ impl CommandExecutor {
             if op.delete_len == 0 {
                 continue;
             }
-
-            self.editor
-                .piece_table
-                .delete(op.start_offset, op.delete_len);
             self.editor
                 .interval_tree
                 .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
@@ -8792,7 +8742,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -8812,7 +8762,7 @@ impl CommandExecutor {
         let selections = before_selection.selections.clone();
         let primary_index = before_selection.primary_index;
 
-        let doc_char_count = self.editor.piece_table.char_count();
+        let doc_char_count = self.editor.char_count();
 
         #[derive(Debug)]
         struct Op {
@@ -8875,7 +8825,7 @@ impl CommandExecutor {
             let deleted_text = if delete_len == 0 {
                 String::new()
             } else {
-                self.editor.piece_table.get_range(start_offset, delete_len)
+                self.editor.text_range(start_offset, delete_len)
             };
 
             ops.push(Op {
@@ -8891,7 +8841,7 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
-        let before_char_count = self.editor.piece_table.char_count();
+        let before_char_count = self.editor.char_count();
 
         // Compute caret offsets in the post-delete document (ascending order with delta).
         let mut asc_indices: Vec<usize> = (0..ops.len()).collect();
@@ -8916,10 +8866,6 @@ impl CommandExecutor {
             if op.delete_len == 0 {
                 continue;
             }
-
-            self.editor
-                .piece_table
-                .delete(op.start_offset, op.delete_len);
             self.editor
                 .interval_tree
                 .update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
@@ -8995,7 +8941,7 @@ impl CommandExecutor {
 
         self.last_text_delta = Some(TextDelta {
             before_char_count,
-            after_char_count: self.editor.piece_table.char_count(),
+            after_char_count: self.editor.char_count(),
             edits: delta_edits,
             undo_group_id: Some(group_id),
         });
@@ -9087,7 +9033,7 @@ impl CommandExecutor {
         ops.sort_by_key(|(start, _, _)| std::cmp::Reverse(*start));
 
         for (start, delete_len, insert_text) in ops {
-            let max_offset = self.editor.piece_table.char_count();
+            let max_offset = self.editor.char_count();
             if start > max_offset {
                 return Err(CommandError::InvalidOffset(start));
             }
@@ -9100,7 +9046,7 @@ impl CommandExecutor {
 
             let edit_line = self.editor.line_index.char_offset_to_position(start).0;
             let deleted_text = if delete_len > 0 {
-                self.editor.piece_table.get_range(start, delete_len)
+                self.editor.text_range(start, delete_len)
             } else {
                 String::new()
             };
@@ -9122,7 +9068,6 @@ impl CommandExecutor {
             }
 
             if delete_len > 0 {
-                self.editor.piece_table.delete(start, delete_len);
                 self.editor
                     .interval_tree
                     .update_for_deletion(start, start + delete_len);
@@ -9133,7 +9078,6 @@ impl CommandExecutor {
 
             let insert_len = insert_text.chars().count();
             if insert_len > 0 {
-                self.editor.piece_table.insert(start, insert_text);
                 self.editor
                     .interval_tree
                     .update_for_insertion(start, insert_len);
@@ -9823,6 +9767,20 @@ impl CommandExecutor {
             self.editor.line_index.insert(start_offset, inserted_text);
         }
 
+        #[cfg(debug_assertions)]
+        {
+            if deleted_chars > 0 {
+                self.editor
+                    .piece_table_shadow
+                    .delete(start_offset, deleted_chars);
+            }
+            if !inserted_text.is_empty() {
+                self.editor
+                    .piece_table_shadow
+                    .insert(start_offset, inserted_text);
+            }
+        }
+
         self.assert_piece_table_text_buffer_consistent();
 
         let deleted_newlines = deleted_text
@@ -9878,7 +9836,7 @@ impl CommandExecutor {
     #[cfg(debug_assertions)]
     fn assert_piece_table_text_buffer_consistent(&self) {
         debug_assert_eq!(
-            self.editor.piece_table.get_text(),
+            self.editor.piece_table_shadow.get_text(),
             self.editor.line_index.text_buffer().get_text(),
             "PieceTable shadow text diverged from TextBuffer"
         );

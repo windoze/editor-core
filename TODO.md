@@ -567,9 +567,9 @@
 - 未发现需要立即修复或新增前置任务的问题；当前 Rust 代码中已无 `line_texts` 引用，主视图参数变更路径会从 `LineIndex` 读取当前文本后重排并失效 visual-row cache，新增测试覆盖编辑、undo/redo、viewport width、wrap mode、wrap indent、tab width 变化后的快照一致性。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test incremental_viewport_consistency`、`cargo test -p editor-core`。
 
-### T07 实现：废弃并移出主路径的 `PieceTable`
+### [DONE] T07 实现：废弃并移出主路径的 `PieceTable`
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -579,6 +579,8 @@
 - `crates/editor-core/tests/text_buffer_single_source.rs`
 - `crates/editor-core/tests/undo_redo.rs`
 - `crates/editor-core/tests/line_ops.rs`
+
+执行备注：`crates/editor-core/src/workspace.rs` 仍通过公开 `EditorCore.piece_table` 读取 buffer 字符数和 range；`crates/tui-editor/src/main.rs`、`crates/editor-core/examples/state_management.rs`、`crates/editor-core/tests/integration_test.rs` 和 `crates/editor-core/src/state.rs` 文档示例也有直接字段访问。为完成 T07 的 `piece_table` 私有化与主路径迁移，需要纳入这些最小调用点修改。
 
 已知入口：
 
@@ -608,6 +610,16 @@
 
 - 主编辑路径只有一个完整文本真相源。
 - `storage.rs` 不再参与正常编辑同步链路。
+
+完成记录：
+
+- 将 `EditorCore.piece_table` 从公开字段移除，改为 debug-only 私有 `piece_table_shadow`，仅用于迁移期一致性断言；release 主路径不再持有 PieceTable 影子副本。
+- 新增 `EditorCore::text_range`，将 `commands.rs`、`workspace.rs`、TUI 复制逻辑、state 示例和集成测试中的文本读写迁移到 `LineIndex` / `TextBuffer` API。
+- 保留 `storage::PieceTable` 兼容模块，并将根 re-export `editor_core::PieceTable` 标记为 deprecated；旧 PieceTable 验证测试改为直接通过 `editor_core::storage::PieceTable` 使用兼容模块，避免 deprecation warning。
+- 将 `apply_text_change_to_line_index_and_layout` 的文本变更统一落到 `LineIndex` / `TextBuffer`，并在 debug 构建同步 `piece_table_shadow` 后断言两者一致。
+- 更新 `text_buffer_single_source.rs`，覆盖 `EditorCore::text_range` 的 Unicode/range/clamp 读取，以及命令编辑后 `EditorCore` 与 `LineIndex` 文本一致。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test text_buffer_single_source`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core`、`cargo test --all --all-targets`、`cargo test -p editor-core --doc`。
+- 未找到 `tools/run_fixtures.py` 或其它 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
 ### T07R Review：审查 `PieceTable` 废弃迁移
 

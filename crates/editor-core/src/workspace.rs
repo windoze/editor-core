@@ -757,14 +757,14 @@ impl Workspace {
         let Some(buffer) = self.buffers.get(&buffer_id) else {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
-        Ok(buffer.executor.editor().piece_table.char_count())
+        Ok(buffer.executor.editor().char_count())
     }
 
     /// Get a slice of the buffer text as a `String` by character offset + length.
     ///
     /// Notes:
     /// - `start` and `len` are in Unicode scalar indices (Rust `char`s), not bytes.
-    /// - Out-of-bounds ranges are clamped by the underlying piece table.
+    /// - Out-of-bounds ranges are clamped by the underlying text buffer.
     pub fn buffer_text_range(
         &self,
         buffer_id: BufferId,
@@ -774,7 +774,7 @@ impl Workspace {
         let Some(buffer) = self.buffers.get(&buffer_id) else {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
-        Ok(buffer.executor.editor().piece_table.get_range(start, len))
+        Ok(buffer.executor.editor().text_range(start, len))
     }
 
     /// Get all decoration layers for a buffer.

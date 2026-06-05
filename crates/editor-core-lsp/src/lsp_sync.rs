@@ -538,7 +538,7 @@ pub fn decode_semantic_style_id(style_id: StyleId) -> (u32, u32) {
 ///   `(deltaLine, deltaStart, length, tokenType, tokenModifiers)`
 /// - `deltaStart`/`length` units are UTF-16 code units.
 ///
-/// The returned intervals use **character offset (char offset)**, consistent with `LineIndex` / `PieceTable` / `IntervalTree`.
+/// The returned intervals use **character offset (char offset)**, consistent with `LineIndex` / `TextBuffer` / `IntervalTree`.
 pub fn semantic_tokens_to_intervals<F>(
     data: &[u32],
     line_index: &LineIndex,

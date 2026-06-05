@@ -4,7 +4,7 @@
 //! 1. Consistency: Run many random insert/delete operations on a reasonably sized document and verify it matches a reference implementation.
 //! 2. Memory footprint: Perform 1,000,000 small edits; memory growth should be limited to the size of the `AddBuffer`.
 
-use editor_core::PieceTable;
+use editor_core::storage::PieceTable;
 use rand::Rng;
 use ropey::Rope;
 

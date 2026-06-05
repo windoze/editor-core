@@ -1,70 +1,34 @@
-# 执行计划
+# 当前执行计划
 
-## 当前约束
+## 范围
 
-- `TODO.md` 是任务顺序、要求、依赖和完成记录的唯一权威来源。
-- 本轮只完成第一个标题未带 `[DONE]` 的任务，完成后提交并停止。
-- 若遇到阻塞当前任务的真实缺口或测试/fixture 失败，必须修复，或把最小前置任务写入 `TODO.md` 后提交并停止。
-- 不为方便而拆分任务，不绕过规格要求，不修改无关用户改动。
-- 我不会记录隐藏推理链路；本文件记录可审计的执行计划、关键决策和进度。
+- 仅处理 `TODO.md` 中第一个标题未带 `[DONE]` 的任务。
+- 不做开放式历史问题排查；只有阻塞当前任务、破坏当前任务指定行为，或由当前任务直接引入的问题才纳入本次范围。
+- 如遇无法按规格完成的具体阻塞项，先把最小必要前置任务写入 `TODO.md` 并提交，然后停止。
 
-## 初始步骤
+## 步骤
 
-1. 读取 `TODO.md`，找到第一个未以 `[DONE]` 开头的任务。
-2. 检查该任务的正文、依赖、验证要求和完成记录。
-3. 查看最近提交是否明确提到与该任务直接相关的未完成事项；如有，将其纳入当前任务或作为前置任务记录到 `TODO.md`。
-4. 根据任务范围读取相关源码、测试和文档，只做与当前任务相关的调查。
+1. 阅读 `TODO.md`，确认第一个未完成任务及其依赖、验证要求、完成记录格式。
+2. 检查最新提交信息；如果其明确提到与当前任务直接相关的未完成问题，将其纳入当前任务或作为前置任务记录到 `TODO.md`。
+3. 阅读当前任务涉及的代码、测试和文档，只收集完成该任务所需的上下文。
+4. 按任务要求做最小正确实现；编辑前后持续更新本文件，记录关键进度和计划变化。
+5. 运行相关的格式化、lint 和测试；按要求先 `cargo fmt`，再 `cargo clippy --all-targets -- -D warnings`，最后运行必要的测试套件。
+6. 若发现未计划的测试或 fixture 失败，修复它，或在 `TODO.md` 中加入最小必要前置/后续任务，且不把当前任务标记为完成。
+7. 完成后在 `TODO.md` 的任务标题前加 `[DONE]`，更新完成记录；仅当阶段计划本身变化时才更新 `PLAN.md`。
+8. 检查工作区状态与 diff，提交本次任务涉及的所有未提交文件，提交信息包含任务编号和清晰说明。
+9. 提交后停止，不继续下一个任务。
 
-## 实施步骤
+## 当前状态
 
-1. 按任务要求实现最小且完整的代码或文档变更。
-2. 如发现当前任务被具体缺口阻塞，更新 `TODO.md` 的依赖/前置任务，并停止后续实现。
-3. 对修改点添加或更新聚焦测试；避免 fixture-only hack 或弱化规格。
-4. 运行 `cargo fmt`。
-5. 运行 `cargo clippy --all-targets -- -D warnings`。
-6. 在 lint 通过后运行任务要求的目标测试；如任务或改动需要，运行完整测试套件并设置足够超时。
-
-## 收尾步骤
-
-1. 将当前任务标题在 `TODO.md` 中加上 `[DONE]`，并更新完成记录，写明实现内容和验证结果。
-2. 仅当阶段级计划、依赖或完成标准变化时更新 `PLAN.md`。
-3. 检查 `git status`、`git diff` 和最近提交，确认只提交预期文件；若本轮是恢复未提交任务，按要求包含当前未提交文件。
-4. 使用清晰提交信息提交本轮改动。
-5. 停止，不继续下一项任务。
-
-## 进度记录
-
-- 本轮已读取 `TODO.md`，第一个未完成任务是 `T06 实现：移除 LayoutEngine.line_texts 文本副本`。
-- T06 范围限定为 `layout.rs`、相关重排调用点、snapshot/state/commands 触发路径以及布局一致性测试；本轮不进入 T06R 或后续任务。
-- 执行计划：先检查最新提交和当前工作区状态；再读取 T06 范围源码与现有测试，定位 `LayoutEngine.line_texts` 的字段、方法和调用点；随后删除该文本副本，让布局变更由调用方从 `LineIndex`/`TextBuffer` 提供行文本触发重排，并确保 visual-row cache 失效；最后补充 resize、wrap mode、wrap indent、tab width 与编辑后 viewport 一致性测试。
-- 验证计划：按要求先运行 `cargo fmt`，再运行 `cargo clippy --all-targets -- -D warnings`，之后运行 `cargo test -p editor-core --test incremental_viewport_consistency` 和 `cargo test -p editor-core`；如改动影响范围扩大，再运行必要的全量测试。
-- 已删除 `LayoutEngine.line_texts` 字段；`set_viewport_width` / `set_wrap_mode` / `set_wrap_indent` / `set_tab_width` 现在只更新布局参数，新增 `recalculate_all_from_lines` 供调用方用真实文本重排。
-- 已将 `CommandExecutor` 视图设置路径、workspace 视图状态恢复路径和 `SnapshotGenerator` 改为在布局参数变化后从 `LineIndex` 或自身行列表触发全量重排，并使 visual-row cache 在重排后失效。
-- 已扩展 `incremental_viewport_consistency`，覆盖 viewport width、wrap mode、wrap indent、tab width 变化后的参考快照一致性。
-- 已确认 `crates/**/*.rs` 中不再存在 `line_texts`，也不再存在旧的内部 `recalculate_all()` 文本副本重排路径。
-- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test incremental_viewport_consistency`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
-- 已检查 `tools/run_fixtures.py` 不存在，因此无可运行的完整 fixture suite。下一步更新 `TODO.md` 的 T06 完成记录并提交。
-- 已创建初始执行计划；下一步读取 `TODO.md` 确认第一个未完成任务。
-- 已读取 `TODO.md`，第一个未完成任务是 `T05 实现：新增 TextBuffer 抽象并建立一致性校验`。
-- 已检查最新提交 `50a3680 [T04FR] Review folding preservation fix`，未发现与 T05 直接相关的未完成事项。
-- 下一步只读取 T05 范围文件和相关入口，确认现有 `LineIndex`、`PieceTable`、`EditorCore` 与命令编辑路径后实施。
-- 已确认现有文本副本为 `PieceTable`、`LineIndex` 内部 Rope、`LayoutEngine` 行文本；为避免新增第四份完整文本，将新增内部 `TextBuffer` 直接持有 Rope，并让 `LineIndex` 委托 `TextBuffer`，而不是在 `EditorCore` 中另存一份文本。
-- `EditorCore::get_text` / `char_count` 将改为通过 `LineIndex` 暴露的 `TextBuffer` 读取；编辑路径继续更新 `PieceTable` 作为影子，并在 `apply_text_change_to_line_index_and_layout` 末尾增加 debug-only 一致性断言。
-- 已新增 `crates/editor-core/src/text_buffer.rs`，将 `LineIndex` 改为委托 `TextBuffer`，并让 `EditorCore::get_text` / `char_count` 优先读取该缓冲。
-- 已在命令编辑同步路径中加入 debug-only `PieceTable` 与 `TextBuffer` 全文一致性断言。
-- 已新增 `crates/editor-core/tests/text_buffer_single_source.rs`，覆盖空文档、末尾换行、Unicode、CRLF 入口归一化、range/line 读取、插入删除和影子一致性。
-- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test text_buffer_single_source`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
-- 已确认不存在 `tools/run_fixtures.py`，因此无可运行的完整 fixture suite。
-- 下一步更新 `TODO.md` 的 T05 标题和完成记录，然后检查 diff 并提交。
-
-## T05R Review 进度记录
-
-- 已定位当前第一个未完成任务：`T05R Review：审查 TextBuffer 抽象`。本次只执行该 review 任务，重点审查 T05 diff 中 TextBuffer char offset 语义、文本副本数量、CRLF 入口归一化、一致性断言覆盖和 Unicode/末尾换行测试。
-- 已审查 T05 代码路径：`TextBuffer` 继续以 char offset 为边界，`LineIndex` 包装该 Rope 存储而非新增额外完整副本，`EditorCore::new` 与编辑命令仍在入口归一化 CRLF，命令编辑路径在同步 `PieceTable` 与 `TextBuffer` 后执行 debug-only 一致性断言；暂未发现需立即修复的问题。
-- 已完成验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test text_buffer_single_source`、`cargo test -p editor-core` 均通过。已将 `T05R` 在 `TODO.md` 中标记为 `[DONE]` 并填写完成记录；下一步检查 diff/status/log 后提交本次 review 记录。
-
-## T06R Review 进度记录
-
-- 已定位当前第一个未完成任务：`T06R Review：审查移除 layout 文本副本`。本次只执行该 review 任务，重点审查 T06 diff 中 `LayoutEngine.line_texts` 删除、调用方重排、视图参数变更行为、visual-row cache 失效和增量/参考布局测试。
-- 已审查 T06 代码路径：当前 Rust 代码中已无 `line_texts` 引用；`CommandExecutor` 视图命令、`Workspace` view-state 恢复和 `SnapshotGenerator` 均在布局参数变化后由调用方提供行文本触发重排；主路径会同步失效 visual-row cache；暂未发现需立即修复的问题。
-- 已完成验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test incremental_viewport_consistency`、`cargo test -p editor-core` 均通过。已将 `T06R` 在 `TODO.md` 中标记为 `[DONE]` 并填写完成记录；下一步检查 diff/status/log 后提交本次 review 记录。
+- 已读取 `TODO.md`。
+- 第一个未完成任务：`T07 实现：废弃并移出主路径的 PieceTable`。
+- T07 范围文件：`crates/editor-core/src/storage.rs`、`crates/editor-core/src/commands.rs`、`crates/editor-core/src/lib.rs`、`crates/editor-core/tests/text_buffer_single_source.rs`、`crates/editor-core/tests/undo_redo.rs`、`crates/editor-core/tests/line_ops.rs`。
+- T07 验证要求：`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core`，并按全局要求先运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`。
+- 最新提交：`d58e7c0 [T06R] Review layout text cache removal`，未发现与 T07 直接相关的未完成问题。
+- 发现必要额外范围：`crates/editor-core/src/workspace.rs` 仍通过公开 `EditorCore.piece_table` 读取 buffer 字符数和 range；TUI、示例、集成测试和 `state.rs` 文档示例也有直接字段访问。已把原因写入 `TODO.md` 的 T07 执行备注。
+- 已开始代码迁移：`EditorCore.piece_table` 已改为 debug-only 私有 `piece_table_shadow`，并新增 `EditorCore::text_range`；多数命令读路径已批量改为 `TextBuffer`/`LineIndex`。
+- 已清除主路径中的 `self.editor.piece_table.*` 读写；`PieceTable` 现仅用于 debug shadow、兼容 re-export/模块和旧验证测试。
+- 已迁移 `workspace.rs`、TUI 复制逻辑、state 文档示例、state example、integration test 的直接字段访问。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test text_buffer_single_source`、`cargo test -p editor-core --test undo_redo`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core`、`cargo test --all --all-targets`、`cargo test -p editor-core --doc`。
+- 未找到 `tools/run_fixtures.py` 或其它 `tools/**/*fixture*` fixture runner，因此无可运行的完整 fixture suite。
+- 下一步：更新 `TODO.md` 的 T07 标题和完成记录，检查 diff/status 后提交。
