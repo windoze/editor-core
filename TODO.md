@@ -1739,9 +1739,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_visual_mapping`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
-### T18R Review：审查多折叠映射修正
+### [DONE] T18R Review：审查多折叠映射修正
 
-状态：TODO
+状态：DONE
 
 审查范围：T18 的所有 diff。
 
@@ -1757,6 +1757,12 @@
 
 - `cargo test -p editor-core --test folding_stability`
 - `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T18 diff，重点检查 `FoldingManager::logical_to_visual` / `visual_to_logical` 的 collapsed hidden-range union、start line 可见语义、base visual row 处理，以及新增 `folding_visual_mapping` 中多个非重叠/相邻/重叠 collapsed region 和 soft wrap viewport 往返覆盖。
+- 未发现需要立即修复或新增前置任务的问题；`EditorCore` 坐标与 viewport 热路径继续使用 `VisualRowIndex` 作为权威映射，`FoldingManager` legacy 行级映射已避免多个重叠/嵌套 collapsed region 重复累计 hidden lines。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_visual_mapping`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core`。
 
 ### T19 实现：LSP UTF-16 代理对边界修正
 
