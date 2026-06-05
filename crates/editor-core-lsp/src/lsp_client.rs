@@ -6,6 +6,8 @@
 
 use crate::lsp_transport::{read_lsp_message, write_lsp_message};
 use serde_json::Value;
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::io::{self, BufReader, BufWriter};
 use std::process::{Child, Command as ProcessCommand, Stdio};
 use std::sync::mpsc;
@@ -39,8 +41,15 @@ pub struct LspClient {
     child: Child,
     tx: mpsc::Sender<LspOutbound>,
     rx: mpsc::Receiver<LspInbound>,
+    deferred_inbound: RefCell<VecDeque<LspInbound>>,
     next_id: u64,
     workspace_folders: Vec<Value>,
+}
+
+enum WaitInbound {
+    Matched(Value),
+    Deferred(LspInbound),
+    HandledServerRequest,
 }
 
 impl LspClient {
@@ -79,6 +88,7 @@ impl LspClient {
             child,
             tx: tx_out,
             rx: rx_in,
+            deferred_inbound: RefCell::new(VecDeque::new()),
             next_id: 1,
             workspace_folders,
         })
@@ -211,19 +221,48 @@ impl LspClient {
 
     /// Try to receive the next inbound message without blocking.
     pub fn try_recv(&self) -> Option<LspInbound> {
+        if let Some(inbound) = self.deferred_inbound.borrow_mut().pop_front() {
+            return Some(inbound);
+        }
+
         self.rx.try_recv().ok()
     }
 
     /// Wait for a matching JSON-RPC response message `{ id: request_id, ... }`.
     ///
     /// While waiting, this also answers common server->client requests (e.g. `workspace/configuration`)
-    /// via [`Self::handle_server_request`], to avoid deadlocks.
+    /// via [`Self::handle_server_request`] to avoid deadlocks. Other inbound messages are deferred
+    /// and remain visible to later [`Self::try_recv`] calls.
     pub fn wait_for_response(&mut self, request_id: u64, timeout: Duration) -> io::Result<Value> {
         let deadline = Instant::now() + timeout;
+        let mut deferred = self.take_deferred_inbound();
+
+        let mut cached = std::mem::take(&mut deferred);
+        while let Some(inbound) = cached.pop_front() {
+            let outcome = match self.handle_wait_inbound(inbound, request_id) {
+                Ok(outcome) => outcome,
+                Err(err) => {
+                    deferred.extend(cached);
+                    self.restore_deferred_inbound(deferred);
+                    return Err(err);
+                }
+            };
+
+            match outcome {
+                WaitInbound::Matched(msg) => {
+                    deferred.extend(cached);
+                    self.restore_deferred_inbound(deferred);
+                    return Ok(msg);
+                }
+                WaitInbound::Deferred(inbound) => deferred.push_back(inbound),
+                WaitInbound::HandledServerRequest => {}
+            }
+        }
 
         loop {
             let now = Instant::now();
             if now >= deadline {
+                self.restore_deferred_inbound(deferred);
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
                     format!("Timed out waiting for LSP response id={}", request_id),
@@ -231,25 +270,70 @@ impl LspClient {
             }
 
             let remaining = deadline - now;
-            let inbound = self
-                .rx
-                .recv_timeout(remaining)
-                .map_err(|err| io::Error::new(io::ErrorKind::TimedOut, err))?;
+            let inbound = self.rx.recv_timeout(remaining).map_err(|err| {
+                self.restore_deferred_inbound(std::mem::take(&mut deferred));
+                io::Error::new(io::ErrorKind::TimedOut, err)
+            })?;
 
-            match inbound {
-                LspInbound::IoError(err) => {
-                    return Err(io::Error::new(io::ErrorKind::BrokenPipe, err));
+            let outcome = match self.handle_wait_inbound(inbound, request_id) {
+                Ok(outcome) => outcome,
+                Err(err) => {
+                    self.restore_deferred_inbound(deferred);
+                    return Err(err);
                 }
-                LspInbound::Message(msg) => {
-                    if msg.get("id").and_then(|v| v.as_u64()) == Some(request_id) {
-                        return Ok(msg);
-                    }
+            };
 
-                    // Handle server requests while waiting, otherwise some servers may block.
-                    if msg.get("method").is_some() && msg.get("id").is_some() {
+            match outcome {
+                WaitInbound::Matched(msg) => {
+                    self.restore_deferred_inbound(deferred);
+                    return Ok(msg);
+                }
+                WaitInbound::Deferred(inbound) => deferred.push_back(inbound),
+                WaitInbound::HandledServerRequest => {}
+            }
+        }
+    }
+
+    fn take_deferred_inbound(&self) -> VecDeque<LspInbound> {
+        std::mem::take(&mut *self.deferred_inbound.borrow_mut())
+    }
+
+    fn restore_deferred_inbound(&self, mut deferred: VecDeque<LspInbound>) {
+        if deferred.is_empty() {
+            return;
+        }
+
+        let mut cached = self.deferred_inbound.borrow_mut();
+        if cached.is_empty() {
+            *cached = deferred;
+        } else {
+            deferred.append(&mut cached);
+            *cached = deferred;
+        }
+    }
+
+    fn handle_wait_inbound(
+        &mut self,
+        inbound: LspInbound,
+        request_id: u64,
+    ) -> io::Result<WaitInbound> {
+        match inbound {
+            LspInbound::IoError(err) => Err(io::Error::new(io::ErrorKind::BrokenPipe, err)),
+            LspInbound::Message(msg) => {
+                if msg.get("method").is_some() && msg.get("id").is_some() {
+                    if msg.get("id").and_then(Value::as_u64).is_some() {
                         self.handle_server_request(&msg)?;
+                        return Ok(WaitInbound::HandledServerRequest);
                     }
+
+                    return Ok(WaitInbound::Deferred(LspInbound::Message(msg)));
                 }
+
+                if msg.get("id").and_then(Value::as_u64) == Some(request_id) {
+                    return Ok(WaitInbound::Matched(msg));
+                }
+
+                Ok(WaitInbound::Deferred(LspInbound::Message(msg)))
             }
         }
     }

@@ -483,7 +483,7 @@ impl LspSession {
     /// Notes:
     /// - While waiting, the underlying client will still respond to common server->client requests
     ///   (e.g. `workspace/configuration`) to avoid deadlocks.
-    /// - Notifications received during the wait are not queued; callers should keep waits short.
+    /// - Other responses and notifications received during the wait remain queued for polling.
     pub fn wait_for_response(
         &mut self,
         request_id: u64,
@@ -1635,8 +1635,8 @@ impl LspSession {
                                     self.schedule_refresh(Duration::from_millis(0));
                                 }
                             }
-                        } else if let Err(err) = self.client.handle_server_request(&msg) {
-                            return Err(format!("LSP request 处理失败: {}", err));
+                        } else {
+                            on_unhandled_message(msg);
                         }
                         continue;
                     }

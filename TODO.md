@@ -175,9 +175,9 @@
 - 未发现需要立即修复或新增前置任务的问题；旧版本 diagnostics 保留 `LspEvent::Notification` 可观测性但不生成 diagnostics 派生状态，当前版本正常生成 `ReplaceStyleLayer` / `ReplaceDiagnostics`，无版本 diagnostics 继续按兼容策略应用。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test diagnostics_processing_edits`、`cargo test -p editor-core-lsp`。
 
-### T03 实现：`wait_for_response` 保留其它在途响应
+### [DONE] T03 实现：`wait_for_response` 保留其它在途响应
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -213,6 +213,16 @@
 验收标准：
 
 - 阻塞等待某个 request 不会导致其它 pending request 永久泄漏。
+
+完成记录：
+
+- 在 `LspClient` 中新增 FIFO `deferred_inbound` 缓存；`try_recv` 优先返回缓存内容，再读取 channel。
+- 重写 `wait_for_response` 等待路径：目标 response 返回给调用方；其它 response、notification、malformed id 消息按原始顺序缓存，供后续 poll / `try_recv` 观察。
+- 等待期间的 server->client request 仍通过 `handle_server_request` 自动响应；只有已成功处理的 server request 不再重新投递，避免初始化或阻塞等待死锁。
+- 更新 `LspSession::wait_for_response` 文档，明确其它 response/notification 会继续排队。
+- 新增 `crates/editor-core-lsp/tests/lsp_wait_for_response.rs`，覆盖乱序 response 保留、等待期间 server request 自动响应、notification 保留、malformed response id 保留，以及 malformed server request 经 session poll 可观察。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-lsp --test lsp_wait_for_response`、`cargo test -p editor-core-lsp`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
 ### T03R Review：审查 `wait_for_response` 响应缓存
 
