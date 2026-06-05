@@ -97,3 +97,34 @@ This file records an operational plan and progress updates for the current invoc
 - Added `T19FF` and `T19FFR` before `T20` in `TODO.md` to schedule that fix and review before continuing.
 - Marked `T19FR` as `[DONE]` and recorded the review findings and validation results in `TODO.md`.
 - Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, and `cargo test -p editor-core-lsp`.
+
+## Current Invocation Plan
+
+1. Read `TODO.md` and identify the first task whose heading is not prefixed with `[DONE]`.
+2. Check the latest commit only for unfinished work directly relevant to that selected task.
+3. Inspect the selected task body, dependencies, touched files, and validation requirements; update this file with a task-specific plan once the task is known.
+4. Implement the selected task completely, or add the minimum prerequisite task if a concrete blocker prevents correct implementation.
+5. Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, targeted tests, and any required broader validation.
+6. Update `TODO.md` completion state and record validation; update `PLAN.md` only if phase-level sequencing changes.
+7. Inspect git status, diff, and recent log, commit the intended changes with a task-specific message, then stop.
+
+## T19FF Invocation Plan
+
+1. Selected task: `T19FF 修复：统一 DeltaCalculator 越界 line clamp 语义`.
+2. Check the latest commit for unfinished work directly relevant to T19FF.
+3. Inspect `crates/editor-core-lsp/src/lsp_sync.rs` and the existing UTF-16 boundary tests.
+4. Update `DeltaCalculator::apply_change` so any out-of-bounds LSP line clamps to the calculator document end before character handling, matching the shared LSP coordinate policy.
+5. Preserve existing behavior for legal positions and the surrogate-pair middle clamp-to-scalar-start policy.
+6. Add focused regressions for out-of-bounds line plus `character = 0`, out-of-bounds line plus huge character, reversed ranges, and half-surrogate behavior.
+7. Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, and `cargo test -p editor-core-lsp`.
+8. Mark T19FF `[DONE]`, record validation, inspect git status/diff/log, commit the intended changes, and stop.
+
+## T19FF Progress Updates
+
+- Read `TODO.md`; the first incomplete task is `T19FF 修复：统一 DeltaCalculator 越界 line clamp 语义`.
+- Latest commit is `[T19FR] Review LSP boundary follow-up`; its relevant follow-up is already represented by `T19FF`.
+- Implemented the `DeltaCalculator::apply_change` line-position clamp so any LSP line beyond the current calculator document maps to document end before range normalization.
+- Added UTF-16 boundary regressions for out-of-bounds line plus zero character, out-of-bounds line plus huge character, reversed ranges, and half-surrogate replacement behavior.
+- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, `cargo test -p editor-core-lsp`, and `cargo test --all --all-targets`.
+- No fixture runner was found at `tools/run_fixtures.py` or `tools/**/*fixture*`.
+- Marked T19FF as `[DONE]` in `TODO.md` with completion details. Next step is git inspection and commit.

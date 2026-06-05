@@ -198,6 +198,57 @@ fn oversized_workspace_edit_range_clamps_before_delta_calculator_sync() {
 }
 
 #[test]
+fn delta_calculator_oversized_line_with_zero_character_inserts_at_document_end() {
+    let mut calc = DeltaCalculator::from_text("a👋b\nlast");
+    let end = LspPosition::new(u32::MAX, 0);
+
+    calc.apply_change(&TextChange {
+        range: LspRange::new(end, end),
+        text: "!".to_string(),
+    });
+
+    assert_eq!(calc_text(&calc), "a👋b\nlast!");
+}
+
+#[test]
+fn delta_calculator_oversized_line_with_huge_character_clamps_to_document_end() {
+    let mut calc = DeltaCalculator::from_text("a👋b\n");
+    let start = LspPosition::new(u32::MAX, 0);
+    let end = LspPosition::new(u32::MAX, u32::MAX);
+
+    calc.apply_change(&TextChange {
+        range: LspRange::new(start, end),
+        text: "!".to_string(),
+    });
+
+    assert_eq!(calc_text(&calc), "a👋b\n!");
+}
+
+#[test]
+fn delta_calculator_reversed_range_with_oversized_line_uses_document_end() {
+    let mut calc = DeltaCalculator::from_text("abc\ndef");
+
+    calc.apply_change(&TextChange {
+        range: LspRange::new(LspPosition::new(u32::MAX, 0), LspPosition::new(0, 1)),
+        text: "!".to_string(),
+    });
+
+    assert_eq!(calc_text(&calc), "a!");
+}
+
+#[test]
+fn delta_calculator_half_surrogate_range_clamps_to_scalar_start() {
+    let mut calc = DeltaCalculator::from_text("a👋b");
+
+    calc.apply_change(&TextChange {
+        range: LspRange::new(LspPosition::new(0, 2), LspPosition::new(0, 3)),
+        text: "X".to_string(),
+    });
+
+    assert_eq!(calc_text(&calc), "aXb");
+}
+
+#[test]
 fn legal_workspace_edit_keeps_did_change_range_and_text() {
     let mut workspace = Workspace::new();
     let opened = workspace

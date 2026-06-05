@@ -264,17 +264,21 @@ impl DeltaCalculator {
         }
 
         let last_line = self.lines.len().saturating_sub(1);
-        let mut start_line = u32_to_usize_saturating(change.range.start.line).min(last_line);
-        let mut end_line = u32_to_usize_saturating(change.range.end.line).min(last_line);
+        let position_to_line_char = |pos: LspPosition| {
+            let line = u32_to_usize_saturating(pos.line);
+            if line >= self.lines.len() {
+                // Match LineIndex/LSP policy: any line beyond the document maps to document end.
+                return (last_line, self.lines[last_line].chars().count());
+            }
 
-        let mut start_char = LspCoordinateConverter::lsp_to_char_offset(
-            &self.lines[start_line],
-            change.range.start.character,
-        );
-        let mut end_char = LspCoordinateConverter::lsp_to_char_offset(
-            &self.lines[end_line],
-            change.range.end.character,
-        );
+            (
+                line,
+                LspCoordinateConverter::lsp_to_char_offset(&self.lines[line], pos.character),
+            )
+        };
+
+        let (mut start_line, mut start_char) = position_to_line_char(change.range.start);
+        let (mut end_line, mut end_char) = position_to_line_char(change.range.end);
 
         if (end_line, end_char) < (start_line, start_char) {
             std::mem::swap(&mut start_line, &mut end_line);
