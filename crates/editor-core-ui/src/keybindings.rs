@@ -452,11 +452,12 @@ fn key_from_token(token: &str) -> Result<Key, KeySequenceParseError> {
                 } else {
                     return Err(KeySequenceParseError::InvalidFunctionKey(token.to_string()));
                 }
-            } else if token_trimmed.chars().count() == 1 {
-                let ch = token_trimmed.chars().next().unwrap();
-                Key::Char(ch)
             } else {
-                return Err(KeySequenceParseError::UnknownToken(token.to_string()));
+                let mut chars = token_trimmed.chars();
+                match (chars.next(), chars.next()) {
+                    (Some(ch), None) => Key::Char(ch),
+                    _ => return Err(KeySequenceParseError::UnknownToken(token.to_string())),
+                }
             }
         }
     };
@@ -898,7 +899,7 @@ impl<'a> WhenParser<'a> {
     }
 
     fn lex_token(&mut self) -> Result<Option<WhenToken>, WhenParseError> {
-        self.skip_ws();
+        self.skip_ws()?;
         if self.idx >= self.src.len() {
             return Ok(None);
         }
@@ -933,7 +934,10 @@ impl<'a> WhenParser<'a> {
                 let start = self.idx;
                 self.idx += ch.len_utf8();
                 while self.idx < self.src.len() {
-                    let c = self.src[self.idx..].chars().next().unwrap();
+                    let c = self.src[self.idx..]
+                        .chars()
+                        .next()
+                        .ok_or(WhenParseError::UnexpectedEof)?;
                     if is_ident_continue(c) {
                         self.idx += c.len_utf8();
                     } else {
@@ -946,15 +950,19 @@ impl<'a> WhenParser<'a> {
         }
     }
 
-    fn skip_ws(&mut self) {
+    fn skip_ws(&mut self) -> Result<(), WhenParseError> {
         while self.idx < self.src.len() {
-            let c = self.src[self.idx..].chars().next().unwrap();
+            let c = self.src[self.idx..]
+                .chars()
+                .next()
+                .ok_or(WhenParseError::UnexpectedEof)?;
             if c.is_whitespace() {
                 self.idx += c.len_utf8();
             } else {
                 break;
             }
         }
+        Ok(())
     }
 }
 

@@ -2220,9 +2220,9 @@
 - 已确认 T21 未把 `editor-core-ui` / `editor-core-app` 大范围修复混入核心任务；两者 panic/unwrap 后续专项已按 TODO 顺序排在 T21R 后。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`。
 
-### T21U 实现：editor-core-ui panic 与错误处理专项
+### [DONE] T21U 实现：editor-core-ui panic 与错误处理专项
 
-状态：TODO
+状态：DONE
 
 依赖：
 
@@ -2257,6 +2257,16 @@
 
 - `editor-core-ui` 生产路径 panic/unwrap/expect 数量下降。
 - 剩余 panic/unwrap/expect 均为测试、明确不可恢复不变量或已记录的后续项。
+
+完成记录：
+
+- 定向分类 `editor-core-ui/src` 的 `unwrap` / `expect` / `panic!`：生产路径匹配点集中在 `keybindings.rs` 解析器、`EditorUi::poll_processing` Tree-sitter worker 状态断言，以及 `EditorUi::new` 的初始 workspace buffer 内部不变量；其余 `lib.rs` 匹配点位于 `#[cfg(test)]` 测试模块。
+- 将 `keybindings.rs` 的 3 个解析器 `unwrap` 改为显式错误返回：单字符 key 解析不再对 `chars().next()` unwrap，`when` parser 的 identifier/whitespace 扫描改为 fallible 路径。
+- 将 `EditorUi::poll_processing` 中 3 个 Tree-sitter worker `expect` 改为 `UiError::Processor`，避免异常 processor 状态直接 panic；保留 `EditorUi::new` 中 `Workspace::open_buffer(None, ...)` 的不可恢复内部不变量 `expect`。
+- 新增 `keybinding_parsers_return_errors_for_host_input_without_panicking`，覆盖 Unicode 单键解析和 malformed `when` host 输入返回错误而非 panic。
+- 定向复查后 `editor-core-ui/src` 剩余匹配为 `lib.rs` 244 处：除 `EditorUi::new` 的内部不变量 `expect` 外均位于测试模块；`keybindings.rs` 已无匹配。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
 ### T21UR Review：审查 editor-core-ui panic 专项
 

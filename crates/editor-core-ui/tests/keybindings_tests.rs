@@ -35,6 +35,19 @@ fn when_clause_parses_and_evaluates() {
 }
 
 #[test]
+fn keybinding_parsers_return_errors_for_host_input_without_panicking() {
+    let km = Keymap::from_json_str(
+        r#"[{ "keys": "\u00e5", "command": "editor.insertUnicode" }]"#,
+        Platform::Linux,
+    )
+    .unwrap();
+    assert_eq!(km.bindings()[0].sequence[0].key, Key::Char('\u{00e5}'));
+
+    let err = KeybindingWhen::parse("\u{2003}editorFocus && \u{1f600}").unwrap_err();
+    assert!(err.to_string().contains("unexpected token"));
+}
+
+#[test]
 fn resolver_supports_chords_and_resets_state() {
     let platform = Platform::Linux;
     let keymap =

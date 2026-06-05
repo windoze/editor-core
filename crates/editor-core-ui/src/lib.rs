@@ -2722,7 +2722,11 @@ impl EditorUi {
 
             loop {
                 let ev = {
-                    let worker = doc.treesitter.as_mut().expect("treesitter worker missing");
+                    let Some(worker) = doc.treesitter.as_mut() else {
+                        return Err(UiError::Processor(
+                            "tree-sitter worker missing during processing poll".to_string(),
+                        ));
+                    };
                     worker.rx.try_recv()
                 };
                 match ev {
@@ -2757,7 +2761,11 @@ impl EditorUi {
                     .map_err(|e| UiError::Processor(format!("{e:?}")))?;
                 doc.treesitter_doc_version = doc.treesitter_doc_version.saturating_add(1);
                 let version = doc.treesitter_doc_version;
-                let worker = doc.treesitter.as_mut().expect("treesitter worker missing");
+                let Some(worker) = doc.treesitter.as_mut() else {
+                    return Err(UiError::Processor(
+                        "tree-sitter worker missing during full sync".to_string(),
+                    ));
+                };
                 worker.requested_version = Some(version);
                 worker
                     .tx
@@ -2772,7 +2780,11 @@ impl EditorUi {
             }
 
             let (requested, pending) = {
-                let worker = doc.treesitter.as_ref().expect("treesitter worker missing");
+                let Some(worker) = doc.treesitter.as_ref() else {
+                    return Err(UiError::Processor(
+                        "tree-sitter worker missing after processing poll".to_string(),
+                    ));
+                };
                 (worker.requested_version, worker.is_pending())
             };
 
