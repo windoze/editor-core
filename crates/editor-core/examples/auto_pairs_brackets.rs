@@ -41,8 +41,7 @@ fn main() {
 
     let highlight_count = executor
         .editor()
-        .style_layers
-        .get(&StyleLayerId::BRACKET_MATCHES)
+        .style_layer(StyleLayerId::BRACKET_MATCHES)
         .map(|t| t.len())
         .unwrap_or(0);
 

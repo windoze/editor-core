@@ -2,7 +2,7 @@
 //!
 //! Demonstrates how to use `EditorStateManager` to query editor state.
 
-use editor_core::{Command, EditCommand, EditorStateManager, Position, StateChangeType};
+use editor_core::{Command, CursorCommand, EditCommand, EditorStateManager, Position};
 use std::sync::{Arc, Mutex};
 
 fn main() {
@@ -56,8 +56,12 @@ fn main() {
     println!("  是否修改: {}", manager.get_document_state().is_modified);
 
     // 移动光标
-    manager.editor_mut().cursor_position = Position::new(1, 4);
-    manager.mark_modified(StateChangeType::CursorMoved);
+    manager
+        .execute(Command::Cursor(CursorCommand::MoveTo {
+            line: 1,
+            column: 4,
+        }))
+        .unwrap();
 
     println!("\n8. 光标移动后：");
     print_cursor_state(&manager);
@@ -69,8 +73,12 @@ fn main() {
         end: Position::new(0, 10),
         direction: editor_core::SelectionDirection::Forward,
     };
-    manager.editor_mut().selection = Some(selection);
-    manager.mark_modified(StateChangeType::SelectionChanged);
+    manager
+        .execute(Command::Cursor(CursorCommand::SetSelection {
+            start: selection.start,
+            end: selection.end,
+        }))
+        .unwrap();
 
     let cursor_state = manager.get_cursor_state();
     if let Some(sel) = &cursor_state.selection {

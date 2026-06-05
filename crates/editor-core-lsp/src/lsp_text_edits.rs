@@ -87,7 +87,7 @@ pub fn apply_text_edits(
     state_manager: &mut EditorStateManager,
     edits: &[LspTextEdit],
 ) -> Result<Vec<(usize, usize)>, String> {
-    let line_index = &state_manager.editor().line_index;
+    let line_index = state_manager.editor().line_index();
 
     let mut resolved = edits
         .iter()

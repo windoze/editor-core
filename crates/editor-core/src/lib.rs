@@ -98,6 +98,15 @@
 //! assert!(grid.actual_line_count() > 0);
 //! ```
 //!
+//! # API Visibility
+//!
+//! `EditorCore` keeps its storage, layout, style, folding, and cursor fields private so hosts
+//! cannot bypass synchronization invariants. Use read-only getters such as
+//! [`EditorCore::line_index`], [`EditorCore::layout_engine`], [`EditorCore::folding_manager`], and
+//! [`EditorCore::viewport_width`] for inspection. Use [`CommandExecutor`], [`EditorStateManager`],
+//! or [`Workspace`] methods for mutations that must update text, layout, folding, styles, and
+//! notifications together.
+//!
 //! # Module Description
 //!
 //! - [`storage`] - deprecated Piece Table compatibility layer
@@ -130,8 +139,8 @@ pub mod decorations;
 pub mod delta;
 pub mod diagnostics;
 pub mod intelligence;
-pub mod intervals;
-pub mod layout;
+pub(crate) mod intervals;
+pub(crate) mod layout;
 pub mod line_ending;
 pub mod line_index;
 pub mod processing;
@@ -169,10 +178,16 @@ pub use intelligence::{
 pub use intervals::{
     CODE_LENS_STYLE_ID, DOCUMENT_HIGHLIGHT_READ_STYLE_ID, DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
     DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, DOCUMENT_LINK_STYLE_ID, FOLD_PLACEHOLDER_STYLE_ID,
-    FoldRegion, FoldingManager, IME_MARKED_TEXT_STYLE_ID, INLAY_HINT_STYLE_ID, IntervalTree,
-    MATCH_HIGHLIGHT_STYLE_ID, StyleLayerId,
+    FoldRegion, FoldingManager, IME_MARKED_TEXT_STYLE_ID, INLAY_HINT_STYLE_ID, Interval,
+    IntervalTextEdit, IntervalTree, MATCH_HIGHLIGHT_STYLE_ID, StyleId, StyleLayerId,
 };
-pub use layout::{LayoutEngine, WrapIndent, WrapMode};
+pub use layout::{
+    DEFAULT_TAB_WIDTH, LayoutEngine, VisualLineInfo, WrapIndent, WrapMode, WrapPoint,
+    calculate_wrap_points, calculate_wrap_points_with_tab_width,
+    calculate_wrap_points_with_tab_width_and_mode,
+    calculate_wrap_points_with_tab_width_mode_and_indent, cell_width_at, char_width, str_width,
+    str_width_with_tab_width, visual_x_for_column,
+};
 pub use line_ending::LineEnding;
 pub use line_index::LineIndex;
 pub use processing::{DocumentProcessor, ProcessingEdit};

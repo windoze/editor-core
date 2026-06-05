@@ -133,11 +133,11 @@ fn stale_folding_response_after_edit_does_not_replace_shifted_state() {
     state.replace_folding_regions(vec![collapsed_region(1, 2), collapsed_region(4, 5)], false);
 
     let initial_edits = session
-        .poll_edits_with_line_index(&state.editor().line_index)
+        .poll_edits_with_line_index(state.editor().line_index())
         .expect("initial poll sends folding request");
     assert!(!has_replace_folding_regions(&initial_edits));
 
-    let change = session.content_change_for_offsets(&state.editor().line_index, 0, 0, "\n");
+    let change = session.content_change_for_offsets(state.editor().line_index(), 0, 0, "\n");
     session
         .did_change(change)
         .expect("didChange bumps document version");
@@ -148,11 +148,11 @@ fn stale_folding_response_after_edit_does_not_replace_shifted_state() {
         }))
         .expect("local edit shifts fold regions");
 
-    let edits = poll_until_log_message(&mut session, &state.editor().line_index, "stale-folding");
+    let edits = poll_until_log_message(&mut session, state.editor().line_index(), "stale-folding");
     assert!(!has_replace_folding_regions(&edits));
 
     state.apply_processing_edits(edits);
-    let derived = state.editor().folding_manager.derived_regions();
+    let derived = state.editor().folding_manager().derived_regions();
     assert_eq!(derived.len(), 2);
     assert_eq!((derived[0].start_line, derived[0].end_line), (2, 3));
     assert!(derived[0].is_collapsed);

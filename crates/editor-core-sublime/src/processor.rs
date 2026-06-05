@@ -2,10 +2,8 @@ use crate::sublime_syntax::{
     SublimeHighlightResult, SublimeScopeMapper, SublimeSyntax, SublimeSyntaxError,
     SublimeSyntaxSet, highlight_document,
 };
-use editor_core::EditorStateManager;
-use editor_core::LineIndex;
-use editor_core::intervals::StyleLayerId;
 use editor_core::processing::{DocumentProcessor, ProcessingEdit};
+use editor_core::{EditorStateManager, LineIndex, StyleLayerId};
 use std::sync::Arc;
 
 /// A stateful `.sublime-syntax` document processor.
@@ -94,6 +92,6 @@ impl DocumentProcessor for SublimeProcessor {
     type Error = SublimeSyntaxError;
 
     fn process(&mut self, state: &EditorStateManager) -> Result<Vec<ProcessingEdit>, Self::Error> {
-        self.compute_processing_edits(&state.editor().line_index)
+        self.compute_processing_edits(state.editor().line_index())
     }
 }

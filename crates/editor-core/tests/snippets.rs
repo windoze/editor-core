@@ -4,10 +4,10 @@ fn primary_selection_offsets(executor: &CommandExecutor) -> Option<(usize, usize
     let editor = executor.editor();
     let sel = editor.selection()?;
     let a = editor
-        .line_index
+        .line_index()
         .position_to_char_offset(sel.start.line, sel.start.column);
     let b = editor
-        .line_index
+        .line_index()
         .position_to_char_offset(sel.end.line, sel.end.column);
     Some((a.min(b), a.max(b)))
 }
@@ -47,7 +47,7 @@ fn apply_snippet_inserts_text_and_selects_first_placeholder() {
     let caret = executor.editor().cursor_position();
     let caret_off = executor
         .editor()
-        .line_index
+        .line_index()
         .position_to_char_offset(caret.line, caret.column);
     assert_eq!(caret_off, executor.editor().get_text().chars().count());
 }

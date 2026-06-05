@@ -4,7 +4,7 @@
 //! 1. Folding awareness: With a fold starting at logical line 5, requesting visual line 6 should return content logically after line 5.
 //! 2. Interval overlap: When multiple styles overlap (e.g. search highlight + syntax highlight), the interval tree must return all matches.
 
-use editor_core::intervals::{FoldRegion, FoldingManager, Interval, IntervalTree};
+use editor_core::{FoldRegion, FoldingManager, Interval, IntervalTree};
 
 #[test]
 fn test_folding_awareness() {

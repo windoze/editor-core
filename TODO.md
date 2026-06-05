@@ -1208,9 +1208,9 @@
 - 未发现需要立即修复或新增前置任务的问题；T13 变更限于纯移动、路径调整和必要的 `pub(super)` 可见性调整，根 `editor_core::{CommandExecutor, Position, Selection, ...}` 与 `editor_core::commands::*` 兼容路径保持可用。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo test -p editor-core-ffi`。
 
-### T14 实现：收紧公开 API 和 `EditorCore` 字段
+### [DONE] T14 实现：收紧公开 API 和 `EditorCore` 字段
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -1250,6 +1250,15 @@
 
 - 外部无法直接写破坏文本/layout/folding/style 同步的字段。
 - 内部使用受控 API 维护不变量。
+
+完成记录：
+
+- 将 `EditorCore` 的文本、layout、base/style layers、diagnostics、decorations、document symbols、folding、cursor/selection、viewport 字段改为私有，保留只读 getter（如 `line_index()`、`layout_engine()`、`style_layers()`、`folding_manager()`、`viewport_width()`）供外部检查。
+- 新增或收紧受控 mutation 路径：内部通过 `set_view_options`、`set_cursor_state`、style/diagnostics/decorations/symbols/folding 替换 helper 维护同步不变量；对外 TUI 折叠改走 `EditorStateManager::toggle_fold_at_current_line` / `expand_all_folds`，避免直接修改 `FoldingManager` 后遗漏 visual-row cache/状态通知。
+- 将 `intervals` / `layout` 模块路径收紧为 crate 内部模块，并通过根级 re-export 暴露必要 facade（`Interval`、`StyleId`、`StyleLayerId`、`LayoutEngine`、wrap/width helper 等）；`line_index` 与 deprecated `storage` 模块路径保留给 T15 与兼容清理继续处理。
+- 更新 workspace、state、FFI、TUI、LSP/Sublime/Treesitter/highlight/UI 调用点、示例和测试，改用 getter、root facade re-export 或 StateManager/Workspace 受控 API；在 `lib.rs` 新增 API visibility 迁移说明。
+- 已运行并通过：`cargo fmt`、`cargo check -p editor-core-lsp -p editor-core-ffi -p tui-editor`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo test -p tui-editor`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
 ### T14R Review：审查公开 API 收紧
 

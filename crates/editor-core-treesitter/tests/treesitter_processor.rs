@@ -1,5 +1,6 @@
-use editor_core::intervals::StyleLayerId;
-use editor_core::{Command, DocumentProcessor, EditCommand, EditorStateManager, ProcessingEdit};
+use editor_core::{
+    Command, DocumentProcessor, EditCommand, EditorStateManager, ProcessingEdit, StyleLayerId,
+};
 use editor_core_treesitter::{
     TreeSitterConfig, TreeSitterProcessor, TreeSitterUpdateMode, load_processor_config_from_config,
 };

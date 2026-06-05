@@ -181,25 +181,25 @@ fn adjacent_folds_soft_wrap_and_tail_empty_line_use_cached_index() {
 
 #[test]
 fn direct_fold_mutation_can_rebuild_cached_visual_row_index() {
-    let mut executor = CommandExecutor::new("l0\nl1\nl2\nl3\nl4", 80);
-    executor
+    let mut state = EditorStateManager::new("l0\nl1\nl2\nl3\nl4", 80);
+    state
         .execute(Command::Style(StyleCommand::Fold {
             start_line: 1,
             end_line: 3,
         }))
         .expect("fold should succeed");
+    state
+        .execute(Command::Cursor(editor_core::CursorCommand::MoveTo {
+            line: 1,
+            column: 0,
+        }))
+        .expect("cursor move should succeed");
 
-    assert_eq!(executor.editor().visual_line_count(), 3);
-    assert!(
-        executor
-            .editor_mut()
-            .folding_manager
-            .toggle_region_starting_at_line(1)
-    );
-    executor.editor_mut().invalidate_visual_row_index_cache();
+    assert_eq!(state.total_visual_lines(), 3);
+    assert!(state.toggle_fold_at_current_line());
 
-    assert_eq!(executor.editor().visual_line_count(), 5);
-    assert_eq!(executor.editor().visual_to_logical_line(3), (3, 0));
+    assert_eq!(state.total_visual_lines(), 5);
+    assert_eq!(state.visual_to_logical_line(3), (3, 0));
 }
 
 #[test]
@@ -241,11 +241,11 @@ fn composed_tail_viewport_with_virtual_text_stays_fast_and_mapped() {
     let tail_line = 99_999usize;
     let tail_start = manager
         .editor()
-        .line_index
+        .line_index()
         .position_to_char_offset(tail_line, 0);
     let inline_anchor = manager
         .editor()
-        .line_index
+        .line_index()
         .position_to_char_offset(tail_line, 4);
 
     manager.apply_processing_edits(vec![ProcessingEdit::ReplaceDecorations {

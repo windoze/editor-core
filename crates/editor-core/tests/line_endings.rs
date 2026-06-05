@@ -34,8 +34,8 @@ fn test_cr_is_normalized_to_lf() {
     // Treat lone `\r` as a line break on load, normalizing to internal LF storage.
     let manager = EditorStateManager::new("a\rb", 80);
     assert_eq!(manager.editor().get_text(), "a\nb");
-    assert_eq!(manager.editor().line_index.get_line_text(0).unwrap(), "a");
-    assert_eq!(manager.editor().line_index.get_line_text(1).unwrap(), "b");
+    assert_eq!(manager.editor().line_index().get_line_text(0).unwrap(), "a");
+    assert_eq!(manager.editor().line_index().get_line_text(1).unwrap(), "b");
 }
 
 #[test]

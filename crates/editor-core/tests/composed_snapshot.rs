@@ -67,7 +67,7 @@ fn test_composed_snapshot_injects_inline_virtual_text() {
 #[test]
 fn test_composed_snapshot_injects_above_line_virtual_text() {
     let mut manager = EditorStateManager::new("line1\nline2\n", 80);
-    let anchor = manager.editor().line_index.position_to_char_offset(1, 0);
+    let anchor = manager.editor().line_index().position_to_char_offset(1, 0);
 
     manager.apply_processing_edits(vec![ProcessingEdit::ReplaceDecorations {
         layer: DecorationLayerId::CODE_LENS,

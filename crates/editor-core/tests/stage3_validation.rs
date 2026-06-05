@@ -4,7 +4,7 @@
 //! 1. Dynamic reflow: After changing the viewport width, the total visual line count must update accordingly.
 //! 2. Double-width wrapping: If a line has 1 cell remaining and the next character is double-width, it must wrap entirely to the next line.
 
-use editor_core::layout::{LayoutEngine, calculate_wrap_points, char_width, str_width};
+use editor_core::{LayoutEngine, calculate_wrap_points, char_width, str_width};
 
 #[test]
 fn test_dynamic_reflow() {

@@ -17,11 +17,11 @@ fn main() {
     ]);
 
     state.apply_processing_edits(vec![lsp_document_symbols_to_processing_edit(
-        &state.editor().line_index,
+        state.editor().line_index(),
         &document_symbols,
     )]);
 
-    let outline = &state.editor().document_symbols;
+    let outline = state.editor().document_symbols();
     println!("document symbols: top_level={}", outline.top_level_count());
     for sym in outline.flatten_preorder() {
         println!(

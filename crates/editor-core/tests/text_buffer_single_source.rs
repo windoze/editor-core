@@ -6,13 +6,16 @@ fn assert_editor_text(input: &str, expected_text: &str, expected_lines: &[&str])
     assert_eq!(core.get_text(), expected_text);
     assert_eq!(core.char_count(), expected_text.chars().count());
     assert_eq!(core.line_count(), expected_lines.len());
-    assert_eq!(core.line_index.get_text(), expected_text);
-    assert_eq!(core.line_index.char_count(), expected_text.chars().count());
-    assert_eq!(core.line_index.byte_count(), expected_text.len());
+    assert_eq!(core.line_index().get_text(), expected_text);
+    assert_eq!(
+        core.line_index().char_count(),
+        expected_text.chars().count()
+    );
+    assert_eq!(core.line_index().byte_count(), expected_text.len());
 
     for (line, expected) in expected_lines.iter().enumerate() {
         assert_eq!(
-            core.line_index.get_line_text(line).as_deref(),
+            core.line_index().get_line_text(line).as_deref(),
             Some(*expected)
         );
     }
@@ -62,7 +65,7 @@ fn editor_text_range_reads_from_text_buffer() {
     assert_eq!(core.text_range(1, 2), "你\n");
     assert_eq!(core.text_range(3, 2), "🙂b");
     assert_eq!(core.text_range(99, 2), "");
-    assert_eq!(core.line_index.get_text(), core.get_text());
+    assert_eq!(core.line_index().get_text(), core.get_text());
 }
 
 #[test]
@@ -95,10 +98,10 @@ fn command_edits_keep_text_buffer_consistent() {
 
     let editor = executor.editor();
     assert_eq!(editor.get_text(), "中two🙂");
-    assert_eq!(editor.line_index.get_text(), editor.get_text());
-    assert_eq!(editor.line_index.get_range(0, 1), "中");
+    assert_eq!(editor.line_index().get_text(), editor.get_text());
+    assert_eq!(editor.line_index().get_range(0, 1), "中");
     assert_eq!(
-        editor.line_index.get_line_text(0).as_deref(),
+        editor.line_index().get_line_text(0).as_deref(),
         Some("中two🙂")
     );
 }

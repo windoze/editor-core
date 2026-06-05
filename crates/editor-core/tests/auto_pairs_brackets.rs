@@ -216,8 +216,7 @@ fn bracket_match_highlights_update_and_clear_style_layer() {
 
     let tree = executor
         .editor()
-        .style_layers
-        .get(&StyleLayerId::BRACKET_MATCHES)
+        .style_layer(StyleLayerId::BRACKET_MATCHES)
         .expect("expected BRACKET_MATCHES style layer");
     assert_eq!(tree.len(), 2);
     assert!(
@@ -239,7 +238,7 @@ fn bracket_match_highlights_update_and_clear_style_layer() {
     assert!(
         !executor
             .editor()
-            .style_layers
+            .style_layers()
             .contains_key(&StyleLayerId::BRACKET_MATCHES)
     );
 }

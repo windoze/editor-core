@@ -135,7 +135,7 @@ pub fn completion_item_to_text_edit_specs(
 
 fn primary_selection_char_range(state_manager: &EditorStateManager) -> (usize, usize) {
     let editor = state_manager.editor();
-    let line_index = &editor.line_index;
+    let line_index = editor.line_index();
 
     if let Some(sel) = editor.selection() {
         let a = line_index.position_to_char_offset(sel.start.line, sel.start.column);
@@ -159,7 +159,7 @@ pub fn apply_completion_item(
     mode: CompletionTextEditMode,
 ) -> Result<(), String> {
     let fallback = primary_selection_char_range(state_manager);
-    let line_index = &state_manager.editor().line_index;
+    let line_index = state_manager.editor().line_index();
 
     if completion_item_insert_text_is_snippet(item) {
         let mut additional_edits: Vec<TextEditSpec> = Vec::new();

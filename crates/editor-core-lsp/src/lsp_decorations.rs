@@ -4,11 +4,10 @@
 //! to bridge common LSP "virtual text" features into `editor-core`'s decoration model.
 
 use crate::lsp_sync::{LspCoordinateConverter, LspPosition};
-use editor_core::intervals::Interval;
 use editor_core::processing::ProcessingEdit;
 use editor_core::{
     CODE_LENS_STYLE_ID, DOCUMENT_LINK_STYLE_ID, Decoration, DecorationKind, DecorationLayerId,
-    DecorationPlacement, DecorationRange, INLAY_HINT_STYLE_ID, LineIndex, StyleLayerId,
+    DecorationPlacement, DecorationRange, INLAY_HINT_STYLE_ID, Interval, LineIndex, StyleLayerId,
 };
 use serde_json::Value;
 

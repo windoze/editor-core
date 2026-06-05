@@ -12,13 +12,12 @@ fn main() {
     let highlights = json!([
         { "range": { "start": { "line": 1, "character": 4 }, "end": { "line": 1, "character": 6 } }, "kind": 1 }
     ]);
-    let edit = lsp_document_highlights_to_processing_edit(&state.editor().line_index, &highlights);
+    let edit = lsp_document_highlights_to_processing_edit(state.editor().line_index(), &highlights);
     state.apply_processing_edits(vec![edit]);
 
     let highlight_count = state
         .editor()
-        .style_layers
-        .get(&StyleLayerId::DOCUMENT_HIGHLIGHTS)
+        .style_layer(StyleLayerId::DOCUMENT_HIGHLIGHTS)
         .map(|tree| tree.query_range(0, state.editor().char_count()).len())
         .unwrap_or(0);
     println!("document highlight intervals: {}", highlight_count);
@@ -31,7 +30,7 @@ fn main() {
             "tooltip": "example"
         }
     ]);
-    let edit = lsp_document_links_to_processing_edit(&state.editor().line_index, &links);
+    let edit = lsp_document_links_to_processing_edit(state.editor().line_index(), &links);
     state.apply_processing_edits(vec![edit]);
 
     // 3) Code lens → decorations
@@ -41,7 +40,7 @@ fn main() {
             "command": { "title": "Run (demo)", "command": "demo.run" }
         }
     ]);
-    let edit = lsp_code_lens_to_processing_edit(&state.editor().line_index, &lenses);
+    let edit = lsp_code_lens_to_processing_edit(state.editor().line_index(), &lenses);
     state.apply_processing_edits(vec![edit]);
 
     // 4) Completion apply helpers (additionalTextEdits + snippet-shaped inserts)

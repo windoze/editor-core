@@ -3,9 +3,8 @@
 //! This crate is intended for lightweight formats (JSON/INI/etc.) where full parsing or LSP
 //! integration is unnecessary.
 
-use editor_core::intervals::{Interval, StyleId, StyleLayerId};
 use editor_core::processing::{DocumentProcessor, ProcessingEdit};
-use editor_core::{EditorStateManager, LineIndex};
+use editor_core::{EditorStateManager, Interval, LineIndex, StyleId, StyleLayerId};
 use regex::Regex;
 use std::convert::Infallible;
 
@@ -179,7 +178,7 @@ impl DocumentProcessor for RegexHighlightProcessor {
     type Error = Infallible;
 
     fn process(&mut self, state: &EditorStateManager) -> Result<Vec<ProcessingEdit>, Self::Error> {
-        let intervals = self.highlighter.highlight(&state.editor().line_index);
+        let intervals = self.highlighter.highlight(state.editor().line_index());
         Ok(vec![ProcessingEdit::ReplaceStyleLayer {
             layer: self.layer,
             intervals,

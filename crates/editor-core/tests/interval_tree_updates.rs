@@ -1,6 +1,6 @@
-use editor_core::intervals::{Interval, IntervalTextEdit};
 use editor_core::{
-    Command, CommandExecutor, EditCommand, IntervalTree, StyleCommand, StyleLayerId, TextEditSpec,
+    Command, EditCommand, EditorStateManager, Interval, IntervalTextEdit, IntervalTree,
+    StyleCommand, StyleLayerId, TextEditSpec,
 };
 
 fn interval_snapshot(tree: &IntervalTree) -> Vec<(usize, usize, u32)> {
@@ -54,8 +54,8 @@ fn batch_interval_update_matches_sequential_insert_delete_and_removal() {
 
 #[test]
 fn apply_text_edits_updates_base_and_layered_styles_once_per_batch() {
-    let mut executor = CommandExecutor::new("abcdefghijklmnopqrstuvwxyz", 80);
-    executor
+    let mut manager = EditorStateManager::new("abcdefghijklmnopqrstuvwxyz", 80);
+    manager
         .execute(Command::Style(StyleCommand::AddStyle {
             start: 2,
             end: 10,
@@ -65,18 +65,8 @@ fn apply_text_edits_updates_base_and_layered_styles_once_per_batch() {
 
     let layer_a = StyleLayerId::new(101);
     let layer_b = StyleLayerId::new(102);
-    executor
-        .editor_mut()
-        .style_layers
-        .entry(layer_a)
-        .or_default()
-        .insert(Interval::new(0, 6, 11));
-    executor
-        .editor_mut()
-        .style_layers
-        .entry(layer_b)
-        .or_default()
-        .insert(Interval::new(12, 22, 12));
+    manager.replace_style_layer(layer_a, vec![Interval::new(0, 6, 11)]);
+    manager.replace_style_layer(layer_b, vec![Interval::new(12, 22, 12)]);
 
     let edits = vec![
         TextEditSpec {
@@ -114,20 +104,20 @@ fn apply_text_edits_updates_base_and_layered_styles_once_per_batch() {
     expected_b.insert(Interval::new(12, 22, 12));
     apply_sequential(&mut expected_b, &interval_edits);
 
-    executor
+    manager
         .execute(Command::Edit(EditCommand::ApplyTextEdits { edits }))
         .unwrap();
 
     assert_eq!(
-        interval_snapshot(&executor.editor().interval_tree),
+        interval_snapshot(manager.editor().interval_tree()),
         interval_snapshot(&expected_base)
     );
     assert_eq!(
-        interval_snapshot(executor.editor().style_layers.get(&layer_a).unwrap()),
+        interval_snapshot(manager.editor().style_layer(layer_a).unwrap()),
         interval_snapshot(&expected_a)
     );
     assert_eq!(
-        interval_snapshot(executor.editor().style_layers.get(&layer_b).unwrap()),
+        interval_snapshot(manager.editor().style_layer(layer_b).unwrap()),
         interval_snapshot(&expected_b)
     );
 }

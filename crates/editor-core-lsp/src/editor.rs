@@ -19,11 +19,10 @@ use crate::lsp_sync::{
     canonical_semantic_token_type_index, encode_semantic_style_id, semantic_tokens_to_intervals,
 };
 use crate::lsp_text_edits::{apply_text_edits, workspace_edit_text_edits_for_uri};
-use editor_core::intervals::{FoldRegion, Interval, StyleId};
 use editor_core::processing::{DocumentProcessor, ProcessingEdit};
 use editor_core::{
     DecorationLayerId, Diagnostic, DiagnosticRange, DiagnosticSeverity, EditorStateManager,
-    LineIndex, StyleLayerId,
+    FoldRegion, Interval, LineIndex, StyleId, StyleLayerId,
 };
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -1597,7 +1596,7 @@ impl LspSession {
         G: FnMut(&LspNotification),
     {
         self.poll_edits_with_line_index_and_handlers(
-            &state.editor().line_index,
+            state.editor().line_index(),
             on_unhandled_message,
             on_notification,
         )

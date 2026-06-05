@@ -12,8 +12,6 @@ use editor_core::decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,
 };
 use editor_core::diagnostics::{Diagnostic, DiagnosticRange, DiagnosticSeverity};
-use editor_core::intervals::{FoldRegion, Interval, StyleLayerId};
-use editor_core::layout::{WrapIndent, WrapMode};
 use editor_core::processing::{DocumentProcessor, ProcessingEdit};
 use editor_core::snapshot::{
     Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
@@ -31,7 +29,10 @@ use editor_core::workspace::{
     BufferId, OpenBufferResult, ViewId, ViewSmoothScrollState, Workspace, WorkspaceSearchResult,
     WorkspaceViewportState,
 };
-use editor_core::{IndentStyle, IndentationConfig, LineEnding, SearchMatch, SearchOptions};
+use editor_core::{
+    FoldRegion, IndentStyle, IndentationConfig, Interval, LineEnding, SearchMatch, SearchOptions,
+    StyleLayerId, WrapIndent, WrapMode,
+};
 use editor_core_lsp::{
     CompletionTextEditMode, LspCoordinateConverter, apply_completion_item, apply_text_edits,
     completion_item_to_text_edit_specs, decode_semantic_style_id, encode_semantic_style_id,
@@ -2379,7 +2380,7 @@ pub extern "C" fn editor_core_ffi_editor_state_document_symbols_json(
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
         let state = require_ref(state, "state")?;
-        let symbols = &state.inner.editor().document_symbols;
+        let symbols = state.inner.editor().document_symbols();
         Ok(json!({
             "symbols": symbols
                 .symbols
@@ -2401,7 +2402,7 @@ pub extern "C" fn editor_core_ffi_editor_state_diagnostics_json(
             "diagnostics": state
                 .inner
                 .editor()
-                .diagnostics
+                .diagnostics()
                 .iter()
                 .map(value_diagnostic)
                 .collect::<Vec<_>>()
@@ -2419,7 +2420,7 @@ pub extern "C" fn editor_core_ffi_editor_state_decorations_json(
         let layers = state
             .inner
             .editor()
-            .decorations
+            .decorations()
             .iter()
             .map(|(layer, decorations)| {
                 json!({
@@ -3239,7 +3240,7 @@ pub extern "C" fn editor_core_ffi_lsp_on_type_formatting_params_json(
         let line_text = state
             .inner
             .editor()
-            .line_index
+            .line_index()
             .get_line_text(pos.line)
             .unwrap_or_default();
         let utf16_character = LspCoordinateConverter::char_offset_to_utf16(&line_text, pos.column);
@@ -3289,7 +3290,7 @@ pub extern "C" fn editor_core_ffi_lsp_semantic_tokens_to_intervals_json(
         let data: Vec<u32> = parse_json(&data_json, "semantic tokens data")?;
         let intervals = semantic_tokens_to_intervals(
             &data,
-            &state.inner.editor().line_index,
+            state.inner.editor().line_index(),
             encode_semantic_style_id,
         )
         .map_err(|err| format!("semantic_tokens_to_intervals failed: {err}"))?;
@@ -3391,7 +3392,7 @@ pub extern "C" fn editor_core_ffi_lsp_diagnostics_to_processing_edits_json(
             return Err("invalid publishDiagnostics payload".to_string());
         };
 
-        let edits = lsp_diagnostics_to_processing_edits(&state.inner.editor().line_index, &params);
+        let edits = lsp_diagnostics_to_processing_edits(state.inner.editor().line_index(), &params);
         Ok(json!({
             "edits": edits.iter().map(value_processing_edit).collect::<Vec<_>>()
         }))
@@ -3463,7 +3464,7 @@ pub extern "C" fn editor_core_ffi_lsp_completion_item_to_text_edits_json(
         let fallback = has_fallback.then_some((fallback_start, fallback_end));
 
         let edits = completion_item_to_text_edit_specs(
-            &state.inner.editor().line_index,
+            state.inner.editor().line_index(),
             &item,
             mode,
             fallback,
@@ -3521,7 +3522,7 @@ where
         let state = require_ref(state, "state")?;
         let result_json = require_string(result_json, "result_json")?;
         let value = parse_json_value(&result_json, "LSP result")?;
-        let edit = f(&state.inner.editor().line_index, &value);
+        let edit = f(state.inner.editor().line_index(), &value);
         Ok(value_processing_edit(&edit))
     })
 }

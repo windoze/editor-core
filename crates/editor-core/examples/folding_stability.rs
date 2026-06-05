@@ -15,7 +15,7 @@ fn main() {
     state.replace_folding_regions(vec![FoldRegion::new(0, 2)], false);
 
     // Both sources coexist in the merged view.
-    assert_eq!(state.editor().folding_manager.user_regions().len(), 1);
-    assert_eq!(state.editor().folding_manager.derived_regions().len(), 1);
-    assert_eq!(state.editor().folding_manager.regions().len(), 2);
+    assert_eq!(state.editor().folding_manager().user_regions().len(), 1);
+    assert_eq!(state.editor().folding_manager().derived_regions().len(), 1);
+    assert_eq!(state.editor().folding_manager().regions().len(), 2);
 }

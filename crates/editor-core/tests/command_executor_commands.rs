@@ -35,10 +35,10 @@ fn test_insert_updates_line_index_and_layout_engine() {
 
     assert_eq!(executor.editor().line_count(), 1);
     assert_eq!(
-        executor.editor().layout_engine.logical_line_count(),
+        executor.editor().layout_engine().logical_line_count(),
         executor.editor().line_count()
     );
-    assert_eq!(executor.editor().layout_engine.visual_line_count(), 2);
+    assert_eq!(executor.editor().layout_engine().visual_line_count(), 2);
 
     // 插入换行，增加逻辑行
     let end = executor.editor().char_count();
@@ -51,7 +51,7 @@ fn test_insert_updates_line_index_and_layout_engine() {
 
     assert_eq!(executor.editor().line_count(), 2);
     assert_eq!(
-        executor.editor().layout_engine.logical_line_count(),
+        executor.editor().layout_engine().logical_line_count(),
         executor.editor().line_count()
     );
 }
@@ -394,14 +394,14 @@ fn test_extend_selection_creates_from_cursor_and_tracks_direction() {
 #[test]
 fn test_view_set_viewport_width_triggers_reflow() {
     let mut executor = CommandExecutor::new("12345678901", 20);
-    assert_eq!(executor.editor().layout_engine.visual_line_count(), 1);
+    assert_eq!(executor.editor().layout_engine().visual_line_count(), 1);
 
     executor
         .execute(Command::View(ViewCommand::SetViewportWidth { width: 10 }))
         .unwrap();
 
-    assert_eq!(executor.editor().viewport_width, 10);
-    assert_eq!(executor.editor().layout_engine.visual_line_count(), 2);
+    assert_eq!(executor.editor().viewport_width(), 10);
+    assert_eq!(executor.editor().layout_engine().visual_line_count(), 2);
 }
 
 #[test]
@@ -460,7 +460,7 @@ fn test_style_add_and_remove_updates_interval_tree() {
             style_id: 42,
         }))
         .unwrap();
-    let styles = executor.editor().interval_tree.query_point(1);
+    let styles = executor.editor().interval_tree().query_point(1);
     assert_eq!(styles.len(), 1);
     assert_eq!(styles[0].style_id, 42);
 
@@ -471,7 +471,7 @@ fn test_style_add_and_remove_updates_interval_tree() {
             style_id: 42,
         }))
         .unwrap();
-    assert!(executor.editor().interval_tree.query_point(1).is_empty());
+    assert!(executor.editor().interval_tree().query_point(1).is_empty());
 }
 
 #[test]
@@ -497,7 +497,7 @@ fn test_folding_commands_fold_unfold_unfold_all() {
         }))
         .unwrap();
 
-    let region = executor.editor().folding_manager.regions()[0].clone();
+    let region = executor.editor().folding_manager().regions()[0].clone();
     assert!(region.is_collapsed);
     assert_eq!(region.start_line, 1);
     assert_eq!(region.end_line, 3);
@@ -505,7 +505,7 @@ fn test_folding_commands_fold_unfold_unfold_all() {
     executor
         .execute(Command::Style(StyleCommand::Unfold { start_line: 1 }))
         .unwrap();
-    assert!(!executor.editor().folding_manager.regions()[0].is_collapsed);
+    assert!(!executor.editor().folding_manager().regions()[0].is_collapsed);
 
     executor
         .execute(Command::Style(StyleCommand::Fold {
@@ -516,7 +516,7 @@ fn test_folding_commands_fold_unfold_unfold_all() {
     executor
         .execute(Command::Style(StyleCommand::UnfoldAll))
         .unwrap();
-    assert!(!executor.editor().folding_manager.regions()[0].is_collapsed);
+    assert!(!executor.editor().folding_manager().regions()[0].is_collapsed);
 }
 
 #[test]

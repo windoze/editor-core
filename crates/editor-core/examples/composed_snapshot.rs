@@ -6,8 +6,8 @@ use editor_core::{
 fn main() {
     let mut manager = EditorStateManager::new("fn main() {\n    let x = 1;\n}\n", 80);
 
-    let line_1_start = manager.editor().line_index.position_to_char_offset(1, 0);
-    let after_x = manager.editor().line_index.position_to_char_offset(1, 9);
+    let line_1_start = manager.editor().line_index().position_to_char_offset(1, 0);
+    let after_x = manager.editor().line_index().position_to_char_offset(1, 9);
 
     let code_lens = Decoration {
         range: DecorationRange::new(line_1_start, line_1_start),

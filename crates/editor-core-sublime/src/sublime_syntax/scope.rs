@@ -1,4 +1,4 @@
-use editor_core::intervals::StyleId;
+use editor_core::StyleId;
 use std::collections::HashMap;
 
 /// A simple scope-to-`StyleId` mapper for `.sublime-syntax` scopes.

@@ -117,13 +117,13 @@ impl ViewCore {
     fn from_executor(executor: &CommandExecutor) -> Self {
         let editor = executor.editor();
         Self {
-            cursor_position: editor.cursor_position,
-            selection: editor.selection.clone(),
-            secondary_selections: editor.secondary_selections.clone(),
-            viewport_width: editor.viewport_width,
-            wrap_mode: editor.layout_engine.wrap_mode(),
-            wrap_indent: editor.layout_engine.wrap_indent(),
-            tab_width: editor.layout_engine.tab_width(),
+            cursor_position: editor.cursor_position(),
+            selection: editor.selection().cloned(),
+            secondary_selections: editor.secondary_selections().to_vec(),
+            viewport_width: editor.viewport_width(),
+            wrap_mode: editor.layout_engine().wrap_mode(),
+            wrap_indent: editor.layout_engine().wrap_indent(),
+            tab_width: editor.layout_engine().tab_width(),
             tab_key_behavior: executor.tab_key_behavior(),
             indentation_config: executor.indentation_config().clone(),
             auto_pairs: executor.auto_pairs_config().clone(),
@@ -135,23 +135,20 @@ impl ViewCore {
     fn apply_to_executor(&self, executor: &mut CommandExecutor) {
         let mut invalidate_visual_rows = false;
         let editor = executor.editor_mut();
-        editor.cursor_position = self.cursor_position;
-        editor.selection = self.selection.clone();
-        editor.secondary_selections = self.secondary_selections.clone();
+        editor.set_cursor_state(
+            self.cursor_position,
+            self.selection.clone(),
+            self.secondary_selections.clone(),
+        );
 
-        if editor.viewport_width != self.viewport_width {
-            editor.viewport_width = self.viewport_width;
+        if editor.viewport_width() != self.viewport_width {
             invalidate_visual_rows = true;
         }
 
-        let before_wrap_mode = editor.layout_engine.wrap_mode();
-        let before_wrap_indent = editor.layout_engine.wrap_indent();
-        let before_tab_width = editor.layout_engine.tab_width();
-        let before_viewport_width = editor.layout_engine.viewport_width();
-        editor.layout_engine.set_viewport_width(self.viewport_width);
-        editor.layout_engine.set_wrap_mode(self.wrap_mode);
-        editor.layout_engine.set_wrap_indent(self.wrap_indent);
-        editor.layout_engine.set_tab_width(self.tab_width);
+        let before_wrap_mode = editor.layout_engine().wrap_mode();
+        let before_wrap_indent = editor.layout_engine().wrap_indent();
+        let before_tab_width = editor.layout_engine().tab_width();
+        let before_viewport_width = editor.layout_engine().viewport_width();
         if before_wrap_mode != self.wrap_mode
             || before_wrap_indent != self.wrap_indent
             || before_tab_width != self.tab_width
@@ -161,7 +158,12 @@ impl ViewCore {
         }
 
         if invalidate_visual_rows {
-            editor.reflow_layout_from_line_index();
+            editor.set_view_options(
+                self.viewport_width,
+                self.wrap_mode,
+                self.wrap_indent,
+                self.tab_width,
+            );
         }
 
         executor.set_tab_key_behavior(self.tab_key_behavior);
@@ -749,7 +751,7 @@ impl Workspace {
         let Some(buffer) = self.buffers.get(&buffer_id) else {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
-        Ok(&buffer.executor.editor().line_index)
+        Ok(buffer.executor.editor().line_index())
     }
 
     /// Get the document length for a buffer in Unicode scalar values (Rust `char`s).
@@ -785,7 +787,7 @@ impl Workspace {
         let Some(buffer) = self.buffers.get(&buffer_id) else {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
-        Ok(&buffer.executor.editor().decorations)
+        Ok(buffer.executor.editor().decorations())
     }
 
     /// Get the current folding regions for a buffer (user folds + derived folds).
@@ -796,7 +798,12 @@ impl Workspace {
         let Some(buffer) = self.buffers.get(&buffer_id) else {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
-        Ok(buffer.executor.editor().folding_manager.regions().to_vec())
+        Ok(buffer
+            .executor
+            .editor()
+            .folding_manager()
+            .regions()
+            .to_vec())
     }
 
     /// Returns whether a buffer has unsaved text edits.
@@ -1017,7 +1024,7 @@ impl Workspace {
             return Err(WorkspaceError::BufferNotFound(view.buffer));
         };
 
-        let line_index = &buffer.executor.editor().line_index;
+        let line_index = buffer.executor.editor().line_index();
 
         let mut selections: Vec<Selection> =
             Vec::with_capacity(1 + view.core.secondary_selections.len());
@@ -1272,7 +1279,7 @@ impl Workspace {
         };
 
         let before_view_core = view.core.clone();
-        let before_line_index = buffer.executor.editor().line_index.clone();
+        let before_line_index = buffer.executor.editor().line_index().clone();
         let before_char_count = buffer.executor.editor().char_count();
 
         // Load view-local state into the executor, execute, then snapshot it back.
@@ -1325,7 +1332,7 @@ impl Workspace {
 
             // Shift other views' cursor/selections through the delta (if any).
             if let Some(ref delta_arc) = delta {
-                let new_index = &buffer.executor.editor().line_index;
+                let new_index = buffer.executor.editor().line_index();
                 for (other_id, other) in views.iter_mut() {
                     if other.buffer != buffer_id || *other_id == view_id {
                         continue;
@@ -1423,7 +1430,7 @@ impl Workspace {
         let line_start = buffer
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(view.core.cursor_position.line, 0);
 
         let added = buffer.bookmarks.toggle_line_start(line_start);
@@ -1444,7 +1451,7 @@ impl Workspace {
         };
         Ok(buffer
             .bookmarks
-            .line_numbers(&buffer.executor.editor().line_index))
+            .line_numbers(buffer.executor.editor().line_index()))
     }
 
     /// Clear all bookmarks for a buffer.
@@ -1471,7 +1478,7 @@ impl Workspace {
         let (line, column) = buffer
             .executor
             .editor()
-            .line_index
+            .line_index()
             .char_offset_to_position(anchor.offset);
         view.core.cursor_position = Position::new(line, column);
         view.core.preferred_x_cells = buffer
@@ -1498,15 +1505,19 @@ impl Workspace {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
 
-        let current_line_start = buffer.executor.editor().line_index.position_to_char_offset(
-            self.views
-                .get(&view_id)
-                .ok_or(WorkspaceError::ViewNotFound(view_id))?
-                .core
-                .cursor_position
-                .line,
-            0,
-        );
+        let current_line_start = buffer
+            .executor
+            .editor()
+            .line_index()
+            .position_to_char_offset(
+                self.views
+                    .get(&view_id)
+                    .ok_or(WorkspaceError::ViewNotFound(view_id))?
+                    .core
+                    .cursor_position
+                    .line,
+                0,
+            );
 
         let Some(target) = buffer.bookmarks.next_after_line_start(current_line_start) else {
             return Ok(None);
@@ -1534,15 +1545,19 @@ impl Workspace {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
 
-        let current_line_start = buffer.executor.editor().line_index.position_to_char_offset(
-            self.views
-                .get(&view_id)
-                .ok_or(WorkspaceError::ViewNotFound(view_id))?
-                .core
-                .cursor_position
-                .line,
-            0,
-        );
+        let current_line_start = buffer
+            .executor
+            .editor()
+            .line_index()
+            .position_to_char_offset(
+                self.views
+                    .get(&view_id)
+                    .ok_or(WorkspaceError::ViewNotFound(view_id))?
+                    .core
+                    .cursor_position
+                    .line,
+                0,
+            );
 
         let Some(target) = buffer.bookmarks.prev_before_line_start(current_line_start) else {
             return Ok(None);
@@ -1583,7 +1598,7 @@ impl Workspace {
         let offset = buffer
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(pos.line, pos.column);
         buffer.marks.set(name, offset);
 
@@ -1682,7 +1697,7 @@ impl Workspace {
         let offset = buffer
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(pos.line, pos.column);
 
         view.jump_list.record(JumpEntry {
@@ -1715,7 +1730,7 @@ impl Workspace {
         let current_offset = buffer
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(current_pos.line, current_pos.column);
         let current = JumpEntry {
             buffer_id,
@@ -1737,7 +1752,7 @@ impl Workspace {
         let (line, column) = target_buffer
             .executor
             .editor()
-            .line_index
+            .line_index()
             .char_offset_to_position(target.anchor.offset);
         let target_pos = Position::new(line, column);
 
@@ -1777,7 +1792,7 @@ impl Workspace {
         let current_offset = buffer
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(current_pos.line, current_pos.column);
         let current = JumpEntry {
             buffer_id,
@@ -1799,7 +1814,7 @@ impl Workspace {
         let (line, column) = target_buffer
             .executor
             .editor()
-            .line_index
+            .line_index()
             .char_offset_to_position(target.anchor.offset);
         let target_pos = Position::new(line, column);
 
@@ -1975,7 +1990,7 @@ impl Workspace {
             .min(total_visual_lines);
 
         Ok(WorkspaceViewportState {
-            width: editor.viewport_width,
+            width: editor.viewport_width(),
             height: viewport_height,
             scroll_top,
             visible_lines,
@@ -2191,90 +2206,61 @@ impl Workspace {
         for edit in edits {
             match edit {
                 ProcessingEdit::ReplaceStyleLayer { layer, intervals } => {
-                    let editor = buffer.executor.editor_mut();
-                    if intervals.is_empty() {
-                        editor.style_layers.remove(&layer);
-                    } else {
-                        let tree = editor.style_layers.entry(layer).or_default();
-                        tree.clear();
-                        for interval in intervals {
-                            if interval.start < interval.end {
-                                tree.insert(interval);
-                            }
-                        }
-                    }
+                    buffer
+                        .executor
+                        .editor_mut()
+                        .replace_style_layer(layer, intervals);
                     style_changed = true;
                 }
                 ProcessingEdit::ClearStyleLayer { layer } => {
-                    buffer.executor.editor_mut().style_layers.remove(&layer);
+                    buffer.executor.editor_mut().clear_style_layer(layer);
                     style_changed = true;
                 }
                 ProcessingEdit::ReplaceFoldingRegions {
                     regions,
                     preserve_collapsed,
                 } => {
-                    if preserve_collapsed {
-                        buffer
-                            .executor
-                            .editor_mut()
-                            .folding_manager
-                            .replace_derived_regions_preserving_collapsed(regions);
-                    } else {
-                        buffer
-                            .executor
-                            .editor_mut()
-                            .folding_manager
-                            .replace_derived_regions(regions);
-                    }
                     buffer
                         .executor
                         .editor_mut()
-                        .invalidate_visual_row_index_cache();
+                        .replace_folding_regions(regions, preserve_collapsed);
                     folding_changed = true;
                 }
                 ProcessingEdit::ClearFoldingRegions => {
-                    buffer
-                        .executor
-                        .editor_mut()
-                        .folding_manager
-                        .clear_derived_regions();
-                    buffer
-                        .executor
-                        .editor_mut()
-                        .invalidate_visual_row_index_cache();
+                    buffer.executor.editor_mut().clear_derived_folding_regions();
                     folding_changed = true;
                 }
                 ProcessingEdit::ReplaceDiagnostics { diagnostics } => {
-                    buffer.executor.editor_mut().diagnostics = diagnostics;
-                    diagnostics_changed = true;
-                }
-                ProcessingEdit::ClearDiagnostics => {
-                    buffer.executor.editor_mut().diagnostics.clear();
-                    diagnostics_changed = true;
-                }
-                ProcessingEdit::ReplaceDecorations {
-                    layer,
-                    mut decorations,
-                } => {
-                    decorations.sort_unstable_by_key(|d| (d.range.start, d.range.end));
                     buffer
                         .executor
                         .editor_mut()
-                        .decorations
-                        .insert(layer, decorations);
+                        .replace_diagnostics(diagnostics);
+                    diagnostics_changed = true;
+                }
+                ProcessingEdit::ClearDiagnostics => {
+                    buffer.executor.editor_mut().clear_diagnostics();
+                    diagnostics_changed = true;
+                }
+                ProcessingEdit::ReplaceDecorations { layer, decorations } => {
+                    buffer
+                        .executor
+                        .editor_mut()
+                        .replace_decorations(layer, decorations);
                     decorations_changed = true;
                 }
                 ProcessingEdit::ClearDecorations { layer } => {
-                    buffer.executor.editor_mut().decorations.remove(&layer);
+                    buffer.executor.editor_mut().clear_decorations(layer);
                     decorations_changed = true;
                 }
                 ProcessingEdit::ReplaceDocumentSymbols { symbols } => {
-                    buffer.executor.editor_mut().document_symbols = symbols;
+                    buffer
+                        .executor
+                        .editor_mut()
+                        .replace_document_symbols(symbols);
                     symbols_changed = true;
                 }
                 ProcessingEdit::ClearDocumentSymbols => {
-                    buffer.executor.editor_mut().document_symbols =
-                        crate::DocumentOutline::default();
+                    buffer.executor.editor_mut().clear_document_symbols();
                     symbols_changed = true;
                 }
             }
@@ -2362,7 +2348,7 @@ impl Workspace {
                 return Err(WorkspaceError::BufferNotFound(buffer_id));
             };
 
-            let before_line_index = buffer.executor.editor().line_index.clone();
+            let before_line_index = buffer.executor.editor().line_index().clone();
             let before_char_count = buffer.executor.editor().char_count();
 
             // Apply without relying on any specific view selection: load a neutral view state.
@@ -2370,10 +2356,10 @@ impl Workspace {
                 cursor_position: Position::new(0, 0),
                 selection: None,
                 secondary_selections: Vec::new(),
-                viewport_width: buffer.executor.editor().viewport_width.max(1),
-                wrap_mode: buffer.executor.editor().layout_engine.wrap_mode(),
-                wrap_indent: buffer.executor.editor().layout_engine.wrap_indent(),
-                tab_width: buffer.executor.editor().layout_engine.tab_width(),
+                viewport_width: buffer.executor.editor().viewport_width().max(1),
+                wrap_mode: buffer.executor.editor().layout_engine().wrap_mode(),
+                wrap_indent: buffer.executor.editor().layout_engine().wrap_indent(),
+                tab_width: buffer.executor.editor().layout_engine().tab_width(),
                 tab_key_behavior: buffer.executor.tab_key_behavior(),
                 indentation_config: buffer.executor.indentation_config().clone(),
                 auto_pairs: buffer.executor.auto_pairs_config().clone(),
@@ -2403,7 +2389,7 @@ impl Workspace {
 
                 if let Some(ref delta_arc) = delta {
                     buffer.last_text_delta = Some(delta_arc.clone());
-                    let new_index = &buffer.executor.editor().line_index;
+                    let new_index = buffer.executor.editor().line_index();
                     for view in self.views.values_mut() {
                         if view.buffer != buffer_id {
                             continue;

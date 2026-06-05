@@ -307,14 +307,21 @@ fn test_styles_and_folding() {
         EditorStateManager::new("fn main() {\n    code();\n    more_code();\n}\n", 80);
 
     // 添加样式
-    manager.editor_mut().interval_tree.insert(
-        editor_core::intervals::Interval::new(0, 2, 1), // "fn" 关键字
-    );
+    manager
+        .execute(Command::Style(StyleCommand::AddStyle {
+            start: 0,
+            end: 2,
+            style_id: 1,
+        }))
+        .unwrap();
 
     // 添加折叠区域
-    let mut region = editor_core::intervals::FoldRegion::new(1, 2);
-    region.collapse();
-    manager.editor_mut().folding_manager.add_region(region);
+    manager
+        .execute(Command::Style(StyleCommand::Fold {
+            start_line: 1,
+            end_line: 2,
+        }))
+        .unwrap();
 
     // 验证状态
     let folding_state = manager.get_folding_state();

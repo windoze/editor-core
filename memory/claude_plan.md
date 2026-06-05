@@ -4,14 +4,14 @@
 
 ## 当前计划
 
-1. 阅读 `TODO.md`，按文件顺序识别第一个标题未带 `[DONE]` 的任务。
-2. 检查最近提交与当前任务是否直接相关；如存在阻塞当前任务的未完成事项，按要求纳入当前任务或在 `TODO.md` 中插入最小前置任务。
-3. 阅读当前任务涉及的代码、测试、文档和计划上下文，避免做开放式历史问题扫描。
-4. 完整实现第一个未完成任务，保持改动聚焦且不绕过规格要求。
-5. 运行格式化、lint、相关测试以及必要的完整验证；发现未排期失败时，修复或在 `TODO.md` 中添加正确顺序的前置/后续任务。
-6. 更新 `TODO.md`：仅在任务完成后给任务标题加 `[DONE]`，并填写完成记录；仅当阶段级计划变化时更新 `PLAN.md`。
-7. 检查 git 状态、差异和最近提交，提交本次任务相关全部改动。
-8. 完成一个任务后停止，不继续处理下一个任务。
+1. 当前第一个未完成任务为 `T14 实现：收紧公开 API 和 EditorCore 字段`；本轮只完成 T14，不进入 T14R 或后续任务。
+2. 在开始实现前检查最近提交，确认是否有直接阻塞 T14 的未完成事项；如有，按 `TODO.md` 规则添加最小前置任务并停止。
+3. 只阅读 T14 范围文件及必要调用点，重点确认 `EditorCore` 公共字段、内部模块可见性、workspace/FFI/TUI 的直接字段访问。
+4. 以最小破坏方式收紧最危险的公开面：文本存储、layout、folding/style 派生状态字段改为私有或受控访问；保留必要 facade re-export，并为外部迁移提供说明。
+5. 更新 workspace、FFI、TUI 及测试中对已私有字段的访问，改用 getter 或受控 mutation API，避免绕过同步不变量。
+6. 按要求运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo test -p tui-editor` 或 `cargo check -p tui-editor`；若发现未排期失败，修复或更新 `TODO.md`。
+7. 任务完成后把 `TODO.md` 的 T14 标题标记为 `[DONE]` 并写入完成记录；仅当阶段级计划变化时才更新 `PLAN.md`。
+8. 检查 git 状态、差异和最近提交，提交本次任务相关全部改动，然后停止。
 
 ## 进度记录
 
@@ -33,3 +33,15 @@
 - 已完成 T13 静态审查：未发现混入业务逻辑改动、公开 re-export 缺失、过度 public 模块或跨 crate 引用破坏。
 - 已运行并通过 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo test -p editor-core-ffi`。
 - 已将 `T13R` 在 `TODO.md` 中标记为 `[DONE]` 并写入完成记录。下一步提交本轮改动后停止。
+- 已识别本轮第一个未完成任务：`T14 实现：收紧公开 API 和 EditorCore 字段`。
+- 本轮执行计划已更新：先检查最近提交和 T14 范围调用点，再实施最小 API 收紧、验证、更新 `TODO.md`、提交并停止。
+- 最近提交为 `53e2a3a [T13R] Review commands module split`，未发现直接阻塞 T14 的未完成事项。
+- 当前工作区存在未跟踪 `notification.sh`、`run_agent.sh`，与 T14 无关，本轮不触碰。
+- 已将 `EditorCore` 的文本、layout、style、diagnostics、decorations、symbols、folding、cursor/selection、viewport 字段改为私有，并补充只读 getter 与受控 mutation API。
+- 已把 `state`、`workspace`、TUI、FFI、LSP/Sublime/highlight-simple 调用点、示例和相关测试中的直接字段访问迁移到 getter 或受控 API；下一步格式化并运行编译检查以捕捉遗漏。
+- 已将不需要对外开放的 `EditorCore` mutation helper 收紧为 `pub(crate)`；TUI 折叠操作改走 `EditorStateManager` 的受控 API，并通过 `cargo check -p editor-core-lsp -p editor-core-ffi -p tui-editor`。
+- 已进一步将 `intervals` / `layout` 模块路径收紧为 crate 内部模块，并通过根级 re-export 暴露必要 facade；`line_index` 与 deprecated `storage` 路径保留给后续 T15/兼容清理。
+- 模块可见性调整后已重新格式化并通过 `cargo check -p editor-core-lsp -p editor-core-ffi -p tui-editor`；下一步重新运行 clippy 与测试矩阵。
+- 验证已通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-ffi`、`cargo test -p tui-editor`、`cargo test --all --all-targets`。
+- 已确认不存在 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，因此无可运行完整 fixture suite。
+- 已将 `TODO.md` 中 T14 标记为 `[DONE]` 并写入完成记录；下一步检查 git diff/status/log，提交本轮相关改动后停止。

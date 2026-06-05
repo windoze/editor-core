@@ -2,8 +2,7 @@
 //!
 //! Translates editor changes into standard LSP JSON-RPC messages and handles UTF-16 coordinate conversions and semantic token parsing.
 
-use editor_core::LineIndex;
-use editor_core::intervals::{Interval, StyleId};
+use editor_core::{Interval, LineIndex, StyleId};
 
 fn split_lines_preserve_trailing(text: &str) -> Vec<String> {
     // Keep consistent editor semantics:

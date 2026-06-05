@@ -120,29 +120,29 @@ pub struct EditorCore {
     #[cfg(debug_assertions)]
     piece_table_shadow: PieceTable,
     /// Line index
-    pub line_index: LineIndex,
+    line_index: LineIndex,
     /// Layout engine
-    pub layout_engine: LayoutEngine,
+    layout_engine: LayoutEngine,
     /// Interval tree (style management)
-    pub interval_tree: IntervalTree,
+    interval_tree: IntervalTree,
     /// Layered styles (for semantic highlighting/simple syntax highlighting, etc.)
-    pub style_layers: BTreeMap<StyleLayerId, IntervalTree>,
+    style_layers: BTreeMap<StyleLayerId, IntervalTree>,
     /// Derived diagnostics for this document (character-offset ranges + metadata).
-    pub diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Diagnostic>,
     /// Derived decorations for this document (virtual text, links, etc.).
-    pub decorations: BTreeMap<DecorationLayerId, Vec<Decoration>>,
+    decorations: BTreeMap<DecorationLayerId, Vec<Decoration>>,
     /// Derived document symbols / outline for this document.
-    pub document_symbols: crate::DocumentOutline,
+    document_symbols: crate::DocumentOutline,
     /// Folding manager
-    pub folding_manager: FoldingManager,
+    folding_manager: FoldingManager,
     /// Current cursor position
-    pub cursor_position: Position,
+    cursor_position: Position,
     /// Current selection range
-    pub selection: Option<Selection>,
+    selection: Option<Selection>,
     /// Secondary selections/cursors (multi-cursor). Each Selection can be empty (start==end), representing a caret.
-    pub secondary_selections: Vec<Selection>,
+    secondary_selections: Vec<Selection>,
     /// Viewport width
-    pub viewport_width: usize,
+    viewport_width: usize,
     word_boundary: WordBoundaryConfig,
     visual_row_index_cache: RefCell<Option<VisualRowIndex>>,
 }
@@ -235,9 +235,51 @@ impl EditorCore {
         &self.secondary_selections
     }
 
+    /// Replace cursor and selection state as one view-local snapshot.
+    pub(crate) fn set_cursor_state(
+        &mut self,
+        cursor_position: Position,
+        selection: Option<Selection>,
+        secondary_selections: Vec<Selection>,
+    ) {
+        self.cursor_position = cursor_position;
+        self.selection = selection;
+        self.secondary_selections = secondary_selections;
+    }
+
+    /// Get the canonical line index and text access facade.
+    pub fn line_index(&self) -> &LineIndex {
+        &self.line_index
+    }
+
+    /// Get the current layout engine state.
+    pub fn layout_engine(&self) -> &LayoutEngine {
+        &self.layout_engine
+    }
+
+    /// Get the base style interval tree.
+    pub fn interval_tree(&self) -> &IntervalTree {
+        &self.interval_tree
+    }
+
+    /// Get all style layers.
+    pub fn style_layers(&self) -> &BTreeMap<StyleLayerId, IntervalTree> {
+        &self.style_layers
+    }
+
+    /// Get one style layer by id.
+    pub fn style_layer(&self, layer: StyleLayerId) -> Option<&IntervalTree> {
+        self.style_layers.get(&layer)
+    }
+
     /// Get the current diagnostics list.
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+
+    /// Get all decoration layers.
+    pub fn decorations(&self) -> &BTreeMap<DecorationLayerId, Vec<Decoration>> {
+        &self.decorations
     }
 
     /// Get all decorations for a given layer.
@@ -246,6 +288,173 @@ impl EditorCore {
             .get(&layer)
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+
+    /// Get the current document outline.
+    pub fn document_symbols(&self) -> &crate::DocumentOutline {
+        &self.document_symbols
+    }
+
+    /// Get the folding manager as a read-only view.
+    pub fn folding_manager(&self) -> &FoldingManager {
+        &self.folding_manager
+    }
+
+    /// Get the current viewport width in cells.
+    pub fn viewport_width(&self) -> usize {
+        self.viewport_width
+    }
+
+    /// Replace view layout options and reflow from the canonical text source when needed.
+    pub(crate) fn set_view_options(
+        &mut self,
+        viewport_width: usize,
+        wrap_mode: crate::WrapMode,
+        wrap_indent: crate::WrapIndent,
+        tab_width: usize,
+    ) {
+        let viewport_width = viewport_width.max(1);
+        let tab_width = tab_width.max(1);
+
+        let changed = self.viewport_width != viewport_width
+            || self.layout_engine.viewport_width() != viewport_width
+            || self.layout_engine.wrap_mode() != wrap_mode
+            || self.layout_engine.wrap_indent() != wrap_indent
+            || self.layout_engine.tab_width() != tab_width;
+
+        self.viewport_width = viewport_width;
+        self.layout_engine.set_viewport_width(viewport_width);
+        self.layout_engine.set_wrap_mode(wrap_mode);
+        self.layout_engine.set_wrap_indent(wrap_indent);
+        self.layout_engine.set_tab_width(tab_width);
+
+        if changed {
+            self.reflow_layout_from_line_index();
+        }
+    }
+
+    /// Insert a base style interval through the controlled style path.
+    pub(crate) fn insert_style_interval(&mut self, interval: crate::intervals::Interval) {
+        self.interval_tree.insert(interval);
+    }
+
+    /// Remove a base style interval through the controlled style path.
+    pub(crate) fn remove_style_interval(&mut self, start: usize, end: usize, style_id: StyleId) {
+        self.interval_tree.remove(start, end, style_id);
+    }
+
+    /// Replace one derived style layer; empty intervals clear the layer.
+    pub(crate) fn replace_style_layer(
+        &mut self,
+        layer: StyleLayerId,
+        intervals: Vec<crate::intervals::Interval>,
+    ) {
+        if intervals.is_empty() {
+            self.style_layers.remove(&layer);
+            return;
+        }
+
+        let tree = self.style_layers.entry(layer).or_default();
+        tree.clear();
+        for interval in intervals {
+            if interval.start < interval.end {
+                tree.insert(interval);
+            }
+        }
+    }
+
+    /// Clear one derived style layer.
+    pub(crate) fn clear_style_layer(&mut self, layer: StyleLayerId) {
+        self.style_layers.remove(&layer);
+    }
+
+    /// Replace diagnostics wholesale.
+    pub(crate) fn replace_diagnostics(&mut self, diagnostics: Vec<Diagnostic>) {
+        self.diagnostics = diagnostics;
+    }
+
+    /// Clear all diagnostics.
+    pub(crate) fn clear_diagnostics(&mut self) {
+        self.diagnostics.clear();
+    }
+
+    /// Replace a decoration layer, sorting it into deterministic range order.
+    pub(crate) fn replace_decorations(
+        &mut self,
+        layer: DecorationLayerId,
+        mut decorations: Vec<Decoration>,
+    ) {
+        decorations.sort_unstable_by_key(|d| (d.range.start, d.range.end));
+        self.decorations.insert(layer, decorations);
+    }
+
+    /// Clear one decoration layer.
+    pub(crate) fn clear_decorations(&mut self, layer: DecorationLayerId) {
+        self.decorations.remove(&layer);
+    }
+
+    /// Replace document symbols / outline wholesale.
+    pub(crate) fn replace_document_symbols(&mut self, symbols: crate::DocumentOutline) {
+        self.document_symbols = symbols;
+    }
+
+    /// Clear document symbols / outline.
+    pub(crate) fn clear_document_symbols(&mut self) {
+        self.document_symbols = crate::DocumentOutline::default();
+    }
+
+    /// Replace derived folding regions and invalidate visual-row mappings.
+    pub(crate) fn replace_folding_regions(
+        &mut self,
+        regions: Vec<FoldRegion>,
+        preserve_collapsed: bool,
+    ) {
+        if preserve_collapsed {
+            self.folding_manager
+                .replace_derived_regions_preserving_collapsed(regions);
+        } else {
+            self.folding_manager.replace_derived_regions(regions);
+        }
+        self.invalidate_visual_row_index_cache();
+    }
+
+    /// Clear derived folding regions and invalidate visual-row mappings.
+    pub(crate) fn clear_derived_folding_regions(&mut self) {
+        self.folding_manager.clear_derived_regions();
+        self.invalidate_visual_row_index_cache();
+    }
+
+    /// Toggle a fold starting at `line` and refresh affected visual-row mappings.
+    pub(crate) fn toggle_fold_at_line(&mut self, line: usize) -> bool {
+        let affected = self
+            .folding_manager
+            .regions()
+            .iter()
+            .filter(|region| region.start_line == line && region.end_line > region.start_line)
+            .min_by_key(|region| region.end_line)
+            .map(|region| (region.start_line, region.end_line));
+        let toggled = self.folding_manager.toggle_region_starting_at_line(line);
+        if toggled {
+            if let Some((start, end)) = affected {
+                self.sync_visual_row_index_for_logical_range(start, end);
+            } else {
+                self.invalidate_visual_row_index_cache();
+            }
+        }
+        toggled
+    }
+
+    /// Expand all folds and refresh visual-row mappings.
+    pub(crate) fn expand_all_folds(&mut self) {
+        let had_collapsed = self
+            .folding_manager
+            .regions()
+            .iter()
+            .any(|region| region.is_collapsed);
+        self.folding_manager.expand_all();
+        if had_collapsed {
+            self.invalidate_visual_row_index_cache();
+        }
     }
 
     /// Invalidate cached visual-row index (wrap/folding derived mapping).
@@ -1112,19 +1321,30 @@ impl CommandExecutor {
                     ));
                 }
 
-                self.editor.viewport_width = width;
-                self.editor.layout_engine.set_viewport_width(width);
-                self.editor.reflow_layout_from_line_index();
+                self.editor.set_view_options(
+                    width,
+                    self.editor.layout_engine.wrap_mode(),
+                    self.editor.layout_engine.wrap_indent(),
+                    self.editor.layout_engine.tab_width(),
+                );
                 Ok(CommandResult::Success)
             }
             ViewCommand::SetWrapMode { mode } => {
-                self.editor.layout_engine.set_wrap_mode(mode);
-                self.editor.reflow_layout_from_line_index();
+                self.editor.set_view_options(
+                    self.editor.viewport_width,
+                    mode,
+                    self.editor.layout_engine.wrap_indent(),
+                    self.editor.layout_engine.tab_width(),
+                );
                 Ok(CommandResult::Success)
             }
             ViewCommand::SetWrapIndent { indent } => {
-                self.editor.layout_engine.set_wrap_indent(indent);
-                self.editor.reflow_layout_from_line_index();
+                self.editor.set_view_options(
+                    self.editor.viewport_width,
+                    self.editor.layout_engine.wrap_mode(),
+                    indent,
+                    self.editor.layout_engine.tab_width(),
+                );
                 Ok(CommandResult::Success)
             }
             ViewCommand::SetTabWidth { width } => {
@@ -1134,8 +1354,12 @@ impl CommandExecutor {
                     ));
                 }
 
-                self.editor.layout_engine.set_tab_width(width);
-                self.editor.reflow_layout_from_line_index();
+                self.editor.set_view_options(
+                    self.editor.viewport_width,
+                    self.editor.layout_engine.wrap_mode(),
+                    self.editor.layout_engine.wrap_indent(),
+                    width,
+                );
                 Ok(CommandResult::Success)
             }
             ViewCommand::SetTabKeyBehavior { behavior } => {
@@ -1192,7 +1416,7 @@ impl CommandExecutor {
                 }
 
                 let interval = crate::intervals::Interval::new(start, end, style_id);
-                self.editor.interval_tree.insert(interval);
+                self.editor.insert_style_interval(interval);
                 Ok(CommandResult::Success)
             }
             StyleCommand::RemoveStyle {
@@ -1200,7 +1424,7 @@ impl CommandExecutor {
                 end,
                 style_id,
             } => {
-                self.editor.interval_tree.remove(start, end, style_id);
+                self.editor.remove_style_interval(start, end, style_id);
                 Ok(CommandResult::Success)
             }
             StyleCommand::Fold {
@@ -1340,7 +1564,7 @@ mod tests {
         let result = executor.execute(Command::View(ViewCommand::SetViewportWidth { width: 40 }));
 
         assert!(result.is_ok());
-        assert_eq!(executor.editor().viewport_width, 40);
+        assert_eq!(executor.editor().viewport_width(), 40);
     }
 
     #[test]

@@ -60,8 +60,7 @@ use crossterm::{
 use editor_core::{
     Command, CommandResult, CursorCommand, EditCommand, EditorStateManager,
     FOLD_PLACEHOLDER_STYLE_ID, Position, SearchOptions, Selection, StyleLayerId, TextDelta,
-    ViewCommand,
-    layout::{cell_width_at, visual_x_for_column},
+    ViewCommand, cell_width_at, visual_x_for_column,
 };
 use editor_core_app::WorkspaceFileIndex;
 use editor_core_highlight_simple::{
@@ -1086,7 +1085,7 @@ impl App {
     fn is_logical_line_hidden(&self, logical_line: usize) -> bool {
         self.state_manager
             .editor()
-            .folding_manager
+            .folding_manager()
             .regions()
             .iter()
             .any(|region| {
@@ -1211,7 +1210,7 @@ impl App {
         }
 
         let editor = self.state_manager.editor();
-        let line_index = &editor.line_index;
+        let line_index = editor.line_index();
 
         if selections.len() == 1 {
             let selection = &selections[0];
@@ -1296,17 +1295,7 @@ impl App {
     }
 
     fn toggle_fold_at_cursor(&mut self) {
-        let line = self.state_manager.editor().cursor_position().line;
-        let toggled = self
-            .state_manager
-            .editor_mut()
-            .folding_manager
-            .toggle_region_starting_at_line(line);
-        if toggled {
-            self.state_manager
-                .editor_mut()
-                .invalidate_visual_row_index_cache();
-        }
+        let toggled = self.state_manager.toggle_fold_at_current_line();
 
         if toggled {
             self.status_message = "已切换折叠状态".to_string();
@@ -1318,10 +1307,7 @@ impl App {
     }
 
     fn unfold_all(&mut self) {
-        self.state_manager.editor_mut().folding_manager.expand_all();
-        self.state_manager
-            .editor_mut()
-            .invalidate_visual_row_index_cache();
+        self.state_manager.expand_all_folds();
         self.status_message = "已展开全部折叠".to_string();
         self.adjust_scroll();
     }
@@ -1343,7 +1329,7 @@ impl App {
             let prev_line_len = self
                 .state_manager
                 .editor()
-                .line_index
+                .line_index()
                 .get_line_text(prev_line)
                 .unwrap_or_default()
                 .chars()
@@ -1401,7 +1387,7 @@ impl App {
         let current_line = self
             .state_manager
             .editor()
-            .line_index
+            .line_index()
             .get_line_text(pos.line)
             .unwrap_or_default();
         let line_len = current_line.chars().count();
@@ -1489,7 +1475,7 @@ impl App {
         let line_len = self
             .state_manager
             .editor()
-            .line_index
+            .line_index()
             .get_line_text(pos.line)
             .unwrap_or_default()
             .chars()
@@ -1590,7 +1576,7 @@ impl App {
 
     fn move_cursor_by_visual_lines(&mut self, delta_visual: isize, selecting: bool) {
         let editor = self.state_manager.editor();
-        let layout_engine = &editor.layout_engine;
+        let layout_engine = editor.layout_engine();
         let cursor_pos = editor.cursor_position();
 
         let Some((cursor_visual_row, cursor_x)) =
@@ -1617,7 +1603,7 @@ impl App {
         };
 
         let line_text = editor
-            .line_index
+            .line_index()
             .get_line_text(target_line)
             .unwrap_or_default();
         let line_char_len = line_text.chars().count();
@@ -1714,7 +1700,7 @@ impl App {
         self.state_manager.set_viewport_height(viewport_height);
 
         // 更新视口宽度（触发布局引擎重排）
-        if viewport_width > 0 && viewport_width != self.state_manager.editor().viewport_width {
+        if viewport_width > 0 && viewport_width != self.state_manager.editor().viewport_width() {
             self.execute(Command::View(ViewCommand::SetViewportWidth {
                 width: viewport_width,
             }));
@@ -1870,8 +1856,8 @@ impl App {
     /// 渲染编辑器内容
     fn render_editor(&self, frame: &mut Frame, area: Rect) {
         let editor = self.state_manager.editor();
-        let layout_engine = &editor.layout_engine;
-        let line_index = &editor.line_index;
+        let layout_engine = editor.layout_engine();
+        let line_index = editor.line_index();
 
         let inner_height = area.height.saturating_sub(2) as usize;
         let inner_width = area.width.saturating_sub(2) as usize;

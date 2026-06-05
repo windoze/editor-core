@@ -32,10 +32,10 @@ fn assert_viewport_matches_reference(
 
     let reference = SnapshotGenerator::from_text_with_layout_options(
         &text,
-        executor.editor().viewport_width,
-        executor.editor().layout_engine.tab_width(),
-        executor.editor().layout_engine.wrap_mode(),
-        executor.editor().layout_engine.wrap_indent(),
+        executor.editor().viewport_width(),
+        executor.editor().layout_engine().tab_width(),
+        executor.editor().layout_engine().wrap_mode(),
+        executor.editor().layout_engine().wrap_indent(),
     )
     .get_headless_grid(start_row, count);
 
@@ -55,17 +55,17 @@ fn assert_viewport_matches_reference(
 }
 
 fn offset_at(executor: &CommandExecutor, line: usize, column: usize) -> usize {
-    let line_count = executor.editor().line_index.line_count().max(1);
+    let line_count = executor.editor().line_index().line_count().max(1);
     let line = line.min(line_count - 1);
     let line_text = executor
         .editor()
-        .line_index
+        .line_index()
         .get_line_text(line)
         .unwrap_or_default();
     let column = column.min(line_text.chars().count());
     executor
         .editor()
-        .line_index
+        .line_index()
         .position_to_char_offset(line, column)
 }
 

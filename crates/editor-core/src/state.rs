@@ -557,7 +557,7 @@ impl EditorStateManager {
         let cursor_before = self.executor.editor().cursor_position();
         let selection_before = self.executor.editor().selection().cloned();
         let secondary_before = self.executor.editor().secondary_selections().to_vec();
-        let viewport_width_before = self.executor.editor().viewport_width;
+        let viewport_width_before = self.executor.editor().viewport_width();
         let char_count_before = self.executor.editor().char_count();
 
         let result = self.executor.execute(command)?;
@@ -578,7 +578,7 @@ impl EditorStateManager {
                             != secondary_before.as_slice()
                 }
                 StateChangeType::ViewportChanged => {
-                    self.executor.editor().viewport_width != viewport_width_before
+                    self.executor.editor().viewport_width() != viewport_width_before
                 }
                 StateChangeType::DocumentModified => {
                     // EditCommand::Backspace / DeleteForward can be valid no-ops at boundaries.
@@ -809,7 +809,7 @@ impl EditorStateManager {
 
         let position = primary.end;
         let offset = editor
-            .line_index
+            .line_index()
             .position_to_char_offset(position.line, position.column);
 
         let selection = if primary.start == primary.end {
@@ -858,7 +858,7 @@ impl EditorStateManager {
             .min(total_visual_lines);
 
         ViewportState {
-            width: editor.viewport_width,
+            width: editor.viewport_width(),
             height: self.viewport_height,
             scroll_top: clamped_top,
             sub_row_offset: self.scroll_sub_row_offset,
@@ -885,7 +885,7 @@ impl EditorStateManager {
     /// Get folding state
     pub fn get_folding_state(&self) -> FoldingState {
         let editor = self.executor.editor();
-        let regions = editor.folding_manager.regions().to_vec();
+        let regions = editor.folding_manager().regions().to_vec();
         let collapsed_line_count: usize = regions
             .iter()
             .filter(|r| r.is_collapsed)
@@ -905,9 +905,9 @@ impl EditorStateManager {
     /// Get style state
     pub fn get_style_state(&self) -> StyleState {
         let editor = self.executor.editor();
-        let layered_count: usize = editor.style_layers.values().map(|t| t.len()).sum();
+        let layered_count: usize = editor.style_layers().values().map(|t| t.len()).sum();
         StyleState {
-            style_count: editor.interval_tree.len() + layered_count,
+            style_count: editor.interval_tree().len() + layered_count,
         }
     }
 
@@ -915,16 +915,16 @@ impl EditorStateManager {
     pub fn get_diagnostics_state(&self) -> DiagnosticsState {
         let editor = self.executor.editor();
         DiagnosticsState {
-            diagnostics_count: editor.diagnostics.len(),
+            diagnostics_count: editor.diagnostics().len(),
         }
     }
 
     /// Get decorations state.
     pub fn get_decorations_state(&self) -> DecorationsState {
         let editor = self.executor.editor();
-        let decoration_count: usize = editor.decorations.values().map(|d| d.len()).sum();
+        let decoration_count: usize = editor.decorations().values().map(|d| d.len()).sum();
         DecorationsState {
-            layer_count: editor.decorations.len(),
+            layer_count: editor.decorations().len(),
             decoration_count,
         }
     }
@@ -933,13 +933,13 @@ impl EditorStateManager {
     pub fn get_styles_in_range(&self, start: usize, end: usize) -> Vec<(usize, usize, StyleId)> {
         let editor = self.executor.editor();
         let mut result: Vec<(usize, usize, StyleId)> = editor
-            .interval_tree
+            .interval_tree()
             .query_range(start, end)
             .iter()
             .map(|interval| (interval.start, interval.end, interval.style_id))
             .collect();
 
-        for tree in editor.style_layers.values() {
+        for tree in editor.style_layers().values() {
             result.extend(
                 tree.query_range(start, end)
                     .iter()
@@ -955,13 +955,13 @@ impl EditorStateManager {
     pub fn get_styles_at(&self, offset: usize) -> Vec<StyleId> {
         let editor = self.executor.editor();
         let mut styles: Vec<StyleId> = editor
-            .interval_tree
+            .interval_tree()
             .query_point(offset)
             .iter()
             .map(|interval| interval.style_id)
             .collect();
 
-        for tree in editor.style_layers.values() {
+        for tree in editor.style_layers().values() {
             styles.extend(
                 tree.query_point(offset)
                     .iter()
@@ -979,77 +979,53 @@ impl EditorStateManager {
     /// Suitable for scenarios such as LSP semantic highlighting and simple syntax highlighting that require "full layer refresh".
     /// This method only triggers `StyleChanged` once, avoiding version number explosion due to individual insertions.
     pub fn replace_style_layer(&mut self, layer: StyleLayerId, intervals: Vec<Interval>) {
-        let editor = self.executor.editor_mut();
-
-        if intervals.is_empty() {
-            editor.style_layers.remove(&layer);
-            self.mark_modified(StateChangeType::StyleChanged);
-            return;
-        }
-
-        let tree = editor.style_layers.entry(layer).or_default();
-        tree.clear();
-
-        for interval in intervals {
-            if interval.start < interval.end {
-                tree.insert(interval);
-            }
-        }
-
+        self.executor
+            .editor_mut()
+            .replace_style_layer(layer, intervals);
         self.mark_modified(StateChangeType::StyleChanged);
     }
 
     /// Clear the specified style layer.
     pub fn clear_style_layer(&mut self, layer: StyleLayerId) {
-        let editor = self.executor.editor_mut();
-        editor.style_layers.remove(&layer);
+        self.executor.editor_mut().clear_style_layer(layer);
         self.mark_modified(StateChangeType::StyleChanged);
     }
 
     /// Replace diagnostics wholesale.
     pub fn replace_diagnostics(&mut self, diagnostics: Vec<Diagnostic>) {
-        let editor = self.executor.editor_mut();
-        editor.diagnostics = diagnostics;
+        self.executor.editor_mut().replace_diagnostics(diagnostics);
         self.mark_modified(StateChangeType::DiagnosticsChanged);
     }
 
     /// Clear all diagnostics.
     pub fn clear_diagnostics(&mut self) {
-        let editor = self.executor.editor_mut();
-        editor.diagnostics.clear();
+        self.executor.editor_mut().clear_diagnostics();
         self.mark_modified(StateChangeType::DiagnosticsChanged);
     }
 
     /// Replace document symbols / outline wholesale.
     pub fn replace_document_symbols(&mut self, symbols: crate::DocumentOutline) {
-        let editor = self.executor.editor_mut();
-        editor.document_symbols = symbols;
+        self.executor.editor_mut().replace_document_symbols(symbols);
         self.mark_modified(StateChangeType::SymbolsChanged);
     }
 
     /// Clear document symbols / outline.
     pub fn clear_document_symbols(&mut self) {
-        let editor = self.executor.editor_mut();
-        editor.document_symbols = crate::DocumentOutline::default();
+        self.executor.editor_mut().clear_document_symbols();
         self.mark_modified(StateChangeType::SymbolsChanged);
     }
 
     /// Replace a decoration layer wholesale.
-    pub fn replace_decorations(
-        &mut self,
-        layer: DecorationLayerId,
-        mut decorations: Vec<Decoration>,
-    ) {
-        decorations.sort_unstable_by_key(|d| (d.range.start, d.range.end));
-        let editor = self.executor.editor_mut();
-        editor.decorations.insert(layer, decorations);
+    pub fn replace_decorations(&mut self, layer: DecorationLayerId, decorations: Vec<Decoration>) {
+        self.executor
+            .editor_mut()
+            .replace_decorations(layer, decorations);
         self.mark_modified(StateChangeType::DecorationsChanged);
     }
 
     /// Clear a decoration layer.
     pub fn clear_decorations(&mut self, layer: DecorationLayerId) {
-        let editor = self.executor.editor_mut();
-        editor.decorations.remove(&layer);
+        self.executor.editor_mut().clear_decorations(layer);
         self.mark_modified(StateChangeType::DecorationsChanged);
     }
 
@@ -1058,24 +1034,41 @@ impl EditorStateManager {
     /// If `preserve_collapsed` is true, matching existing collapsed derived regions stay collapsed
     /// after replacement, including conservative matches across small line-number drift.
     pub fn replace_folding_regions(&mut self, regions: Vec<FoldRegion>, preserve_collapsed: bool) {
-        if preserve_collapsed {
-            self.editor_mut()
-                .folding_manager
-                .replace_derived_regions_preserving_collapsed(regions);
-        } else {
-            self.editor_mut()
-                .folding_manager
-                .replace_derived_regions(regions);
-        }
-        self.editor_mut().invalidate_visual_row_index_cache();
+        self.executor
+            .editor_mut()
+            .replace_folding_regions(regions, preserve_collapsed);
         self.mark_modified(StateChangeType::FoldingChanged);
     }
 
     /// Clear all *derived* folding regions (leaves user folds intact).
     pub fn clear_folding_regions(&mut self) {
-        self.editor_mut().folding_manager.clear_derived_regions();
-        self.editor_mut().invalidate_visual_row_index_cache();
+        self.executor.editor_mut().clear_derived_folding_regions();
         self.mark_modified(StateChangeType::FoldingChanged);
+    }
+
+    /// Toggle the fold region that starts on the current cursor line.
+    pub fn toggle_fold_at_current_line(&mut self) -> bool {
+        let line = self.executor.editor().cursor_position().line;
+        let toggled = self.executor.editor_mut().toggle_fold_at_line(line);
+        if toggled {
+            self.mark_modified(StateChangeType::FoldingChanged);
+        }
+        toggled
+    }
+
+    /// Expand all folding regions.
+    pub fn expand_all_folds(&mut self) {
+        let had_collapsed = self
+            .executor
+            .editor()
+            .folding_manager()
+            .regions()
+            .iter()
+            .any(|region| region.is_collapsed);
+        self.executor.editor_mut().expand_all_folds();
+        if had_collapsed {
+            self.mark_modified(StateChangeType::FoldingChanged);
+        }
     }
 
     /// Apply derived-state edits produced by a document processor (highlighting, folding, etc.).
@@ -1138,10 +1131,10 @@ impl EditorStateManager {
         let text = editor.get_text();
         let generator = crate::SnapshotGenerator::from_text_with_layout_options(
             &text,
-            editor.viewport_width,
-            editor.layout_engine.tab_width(),
-            editor.layout_engine.wrap_mode(),
-            editor.layout_engine.wrap_indent(),
+            editor.viewport_width(),
+            editor.layout_engine().tab_width(),
+            editor.layout_engine().wrap_mode(),
+            editor.layout_engine().wrap_indent(),
         );
         generator.get_headless_grid(start_row, count)
     }
@@ -1299,7 +1292,7 @@ impl EditorStateManager {
         let line_start = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(line, 0);
         let added = self.bookmarks.toggle_line_start(line_start);
         self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
@@ -1309,7 +1302,7 @@ impl EditorStateManager {
     /// Return all bookmark line numbers (0-based).
     pub fn bookmark_lines(&self) -> Vec<usize> {
         self.bookmarks
-            .line_numbers(&self.executor.editor().line_index)
+            .line_numbers(self.executor.editor().line_index())
     }
 
     /// Clear all bookmarks.
@@ -1326,7 +1319,7 @@ impl EditorStateManager {
         let current_line_start = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(line, 0);
 
         let Some(target) = self.bookmarks.next_after_line_start(current_line_start) else {
@@ -1336,7 +1329,7 @@ impl EditorStateManager {
         let (line, column) = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .char_offset_to_position(target.offset);
         self.execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
         let _ = self.execute(Command::Cursor(CursorCommand::ClearSelection))?;
@@ -1351,7 +1344,7 @@ impl EditorStateManager {
         let current_line_start = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(line, 0);
 
         let Some(target) = self.bookmarks.prev_before_line_start(current_line_start) else {
@@ -1361,7 +1354,7 @@ impl EditorStateManager {
         let (line, column) = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .char_offset_to_position(target.offset);
         self.execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
         let _ = self.execute(Command::Cursor(CursorCommand::ClearSelection))?;
@@ -1378,7 +1371,7 @@ impl EditorStateManager {
         let offset = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(pos.line, pos.column);
         self.marks.set(name, offset);
         self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
@@ -1395,7 +1388,7 @@ impl EditorStateManager {
         let (line, column) = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .char_offset_to_position(anchor.offset);
         self.execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
         let _ = self.execute(Command::Cursor(CursorCommand::ClearSelection))?;
@@ -1433,7 +1426,7 @@ impl EditorStateManager {
         let offset = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(pos.line, pos.column);
         self.jump_list.record(offset);
         self.mark_modified_internal(StateChangeType::NavigationChanged, None, None);
@@ -1447,7 +1440,7 @@ impl EditorStateManager {
         let current_offset = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(pos.line, pos.column);
 
         let Some(target) = self.jump_list.back(current_offset) else {
@@ -1459,7 +1452,7 @@ impl EditorStateManager {
         let (line, column) = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .char_offset_to_position(target.offset);
         self.execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
         let _ = self.execute(Command::Cursor(CursorCommand::ClearSelection))?;
@@ -1474,7 +1467,7 @@ impl EditorStateManager {
         let current_offset = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .position_to_char_offset(pos.line, pos.column);
 
         let Some(target) = self.jump_list.forward(current_offset) else {
@@ -1486,7 +1479,7 @@ impl EditorStateManager {
         let (line, column) = self
             .executor
             .editor()
-            .line_index
+            .line_index()
             .char_offset_to_position(target.offset);
         self.execute(Command::Cursor(CursorCommand::MoveTo { line, column }))?;
         let _ = self.execute(Command::Cursor(CursorCommand::ClearSelection))?;
@@ -1749,11 +1742,10 @@ mod tests {
     fn test_get_styles() {
         let mut manager = EditorStateManager::new("Hello World", 80);
 
-        // Add style via editor
+        // Add style through the controlled editor-core API.
         manager
             .editor_mut()
-            .interval_tree
-            .insert(crate::intervals::Interval::new(0, 5, 1));
+            .insert_style_interval(crate::intervals::Interval::new(0, 5, 1));
 
         let styles = manager.get_styles_in_range(0, 10);
         assert_eq!(styles.len(), 1);
@@ -1778,8 +1770,7 @@ mod tests {
         // Base layer + layered styles are merged.
         manager
             .editor_mut()
-            .interval_tree
-            .insert(Interval::new(0, 5, 1));
+            .insert_style_interval(Interval::new(0, 5, 1));
 
         assert_eq!(manager.get_styles_at(0), vec![1, 100]);
     }

@@ -1,7 +1,6 @@
 use editor_core::delta::TextDelta;
-use editor_core::intervals::{FoldRegion, Interval, StyleId, StyleLayerId};
 use editor_core::processing::{DocumentProcessor, ProcessingEdit};
-use editor_core::{EditorStateManager, LineIndex};
+use editor_core::{EditorStateManager, FoldRegion, Interval, LineIndex, StyleId, StyleLayerId};
 use std::collections::BTreeMap;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, Tree};

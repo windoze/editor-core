@@ -29,7 +29,7 @@ fn test_user_folds_shift_on_newline_insertion_above() {
     }))
     .unwrap();
 
-    let user = ex.editor().folding_manager.user_regions();
+    let user = ex.editor().folding_manager().user_regions();
     assert_eq!(user.len(), 1);
     assert_eq!(user[0].start_line, 1);
     assert_eq!(user[0].end_line, 3);
@@ -40,7 +40,7 @@ fn test_user_folds_shift_on_newline_insertion_above() {
     }))
     .unwrap();
 
-    let user = ex.editor().folding_manager.user_regions();
+    let user = ex.editor().folding_manager().user_regions();
     assert_eq!(user.len(), 1);
     assert_eq!(user[0].start_line, 2);
     assert_eq!(user[0].end_line, 4);
@@ -57,14 +57,14 @@ fn test_user_folds_shift_on_newline_insertion_inside_region() {
     .unwrap();
 
     // Insert a newline at the start of logical line 2 (inside the folded region).
-    let offset = ex.editor().line_index.position_to_char_offset(2, 0);
+    let offset = ex.editor().line_index().position_to_char_offset(2, 0);
     ex.execute(Command::Edit(EditCommand::Insert {
         offset,
         text: "\n".to_string(),
     }))
     .unwrap();
 
-    let user = ex.editor().folding_manager.user_regions();
+    let user = ex.editor().folding_manager().user_regions();
     assert_eq!(user.len(), 1);
     assert_eq!(user[0].start_line, 1);
     assert_eq!(user[0].end_line, 4);
@@ -81,14 +81,14 @@ fn test_user_folds_shift_on_newline_deletion_above() {
     .unwrap();
 
     // Delete the newline after line 0, merging line 0 and line 1.
-    let newline_offset = ex.editor().line_index.position_to_char_offset(0, 1);
+    let newline_offset = ex.editor().line_index().position_to_char_offset(0, 1);
     ex.execute(Command::Edit(EditCommand::Delete {
         start: newline_offset,
         length: 1,
     }))
     .unwrap();
 
-    let user = ex.editor().folding_manager.user_regions();
+    let user = ex.editor().folding_manager().user_regions();
     assert_eq!(user.len(), 1);
     assert_eq!(user[0].start_line, 0);
     assert_eq!(user[0].end_line, 2);
@@ -105,14 +105,14 @@ fn test_replace_derived_folds_keeps_user_folds() {
         }))
         .unwrap();
 
-    assert_eq!(state.editor().folding_manager.user_regions().len(), 1);
-    assert_eq!(state.editor().folding_manager.derived_regions().len(), 0);
+    assert_eq!(state.editor().folding_manager().user_regions().len(), 1);
+    assert_eq!(state.editor().folding_manager().derived_regions().len(), 0);
 
     state.replace_folding_regions(vec![FoldRegion::new(0, 1)], false);
 
-    assert_eq!(state.editor().folding_manager.user_regions().len(), 1);
-    assert_eq!(state.editor().folding_manager.derived_regions().len(), 1);
-    assert_eq!(state.editor().folding_manager.regions().len(), 2);
+    assert_eq!(state.editor().folding_manager().user_regions().len(), 1);
+    assert_eq!(state.editor().folding_manager().derived_regions().len(), 1);
+    assert_eq!(state.editor().folding_manager().regions().len(), 2);
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn test_replace_derived_folds_preserves_collapsed_after_line_drift() {
         true,
     );
 
-    let derived = state.editor().folding_manager.derived_regions();
+    let derived = state.editor().folding_manager().derived_regions();
     assert_eq!(derived.len(), 2);
     assert!(
         derived
@@ -157,7 +157,7 @@ fn test_replace_derived_folds_does_not_preserve_boundary_only_default_placeholde
 
     state.replace_folding_regions(vec![FoldRegion::new(2, 3), FoldRegion::new(7, 8)], true);
 
-    let derived = state.editor().folding_manager.derived_regions();
+    let derived = state.editor().folding_manager().derived_regions();
     assert_eq!(derived.len(), 2);
     assert!(derived.iter().all(|region| !region.is_collapsed));
 }
@@ -175,15 +175,15 @@ fn test_replace_derived_folds_does_not_copy_user_collapsed_state() {
 
     state.replace_folding_regions(vec![FoldRegion::new(1, 3)], true);
 
-    let user = state.editor().folding_manager.user_regions();
+    let user = state.editor().folding_manager().user_regions();
     assert_eq!(user.len(), 1);
     assert!(user[0].is_collapsed);
 
-    let derived = state.editor().folding_manager.derived_regions();
+    let derived = state.editor().folding_manager().derived_regions();
     assert_eq!(derived.len(), 1);
     assert!(!derived[0].is_collapsed);
 
-    let merged = state.editor().folding_manager.regions();
+    let merged = state.editor().folding_manager().regions();
     assert_eq!(merged.len(), 1);
     assert!(merged[0].is_collapsed);
 }
@@ -201,7 +201,7 @@ fn test_multiple_derived_folds_shift_on_insert_and_delete() {
         }))
         .unwrap();
 
-    let derived = state.editor().folding_manager.derived_regions();
+    let derived = state.editor().folding_manager().derived_regions();
     assert_eq!(derived[0].start_line, 2);
     assert_eq!(derived[0].end_line, 3);
     assert!(derived[0].is_collapsed);
@@ -216,7 +216,7 @@ fn test_multiple_derived_folds_shift_on_insert_and_delete() {
         }))
         .unwrap();
 
-    let derived = state.editor().folding_manager.derived_regions();
+    let derived = state.editor().folding_manager().derived_regions();
     assert_eq!(derived[0].start_line, 1);
     assert_eq!(derived[0].end_line, 2);
     assert!(derived[0].is_collapsed);

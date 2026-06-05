@@ -28,10 +28,10 @@ fn test_replace_and_clear_document_symbols() {
         symbols: outline.clone(),
     }]);
 
-    assert_eq!(manager.editor().document_symbols, outline);
+    assert_eq!(manager.editor().document_symbols(), &outline);
 
     manager.apply_processing_edits(vec![ProcessingEdit::ClearDocumentSymbols]);
-    assert!(manager.editor().document_symbols.is_empty());
+    assert!(manager.editor().document_symbols().is_empty());
 
     let seen = seen.lock().unwrap().clone();
     assert_eq!(

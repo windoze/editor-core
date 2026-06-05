@@ -8,12 +8,11 @@ mod keybindings;
 mod multi_document;
 mod windowing;
 
-use editor_core::intervals::Interval;
 use editor_core::snapshot::{ComposedCellSource, ComposedGrid, ComposedLineKind, HeadlessGrid};
 use editor_core::workspace::{BufferId, ViewId, Workspace};
 use editor_core::{
     AutoPairsConfig, Command, CommandResult, CursorCommand, DecorationKind, DecorationLayerId,
-    EditCommand, ExpandSelectionDirection, ExpandSelectionUnit, IME_MARKED_TEXT_STYLE_ID,
+    EditCommand, ExpandSelectionDirection, ExpandSelectionUnit, IME_MARKED_TEXT_STYLE_ID, Interval,
     MATCH_HIGHLIGHT_STYLE_ID, Position, ProcessingEdit, SearchOptions, Selection,
     SelectionDirection, StyleCommand, StyleLayerId, ViewCommand,
 };

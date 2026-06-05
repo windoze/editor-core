@@ -47,11 +47,11 @@ fn test_apply_completion_item_groups_edits_into_single_undo_step() {
         .expect("placeholder should be selected");
     let a = state
         .editor()
-        .line_index
+        .line_index()
         .position_to_char_offset(sel.start.line, sel.start.column);
     let b = state
         .editor()
-        .line_index
+        .line_index()
         .position_to_char_offset(sel.end.line, sel.end.column);
     assert_eq!((a.min(b), a.max(b)), (expected_start, expected_end));
     assert!(state.editor().secondary_selections().is_empty());

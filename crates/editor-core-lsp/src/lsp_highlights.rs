@@ -4,11 +4,10 @@
 //! to bridge `textDocument/documentHighlight` results into a dedicated `StyleLayerId`.
 
 use crate::lsp_sync::{LspCoordinateConverter, LspPosition, LspRange};
-use editor_core::intervals::{Interval, StyleId};
 use editor_core::processing::ProcessingEdit;
 use editor_core::{
     DOCUMENT_HIGHLIGHT_READ_STYLE_ID, DOCUMENT_HIGHLIGHT_TEXT_STYLE_ID,
-    DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, LineIndex, StyleLayerId,
+    DOCUMENT_HIGHLIGHT_WRITE_STYLE_ID, Interval, LineIndex, StyleId, StyleLayerId,
 };
 use serde_json::Value;
 
