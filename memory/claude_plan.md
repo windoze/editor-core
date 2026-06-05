@@ -32,7 +32,8 @@
 - 已审查 T09 代码改动：`slice_text_for_lines` 改为 char range 读取，duplicate-lines 末尾换行判断改为读取最后一个 char；剩余 `EditorCore::get_text()` 调用不在普通行级编辑路径。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core`。
 - 已更新 `TODO.md`：将 T09R 标记为 `[DONE]` 并填写完成记录。
-- 下一步：检查 diff 和 git 状态，提交 T09R review 变更。
+- 已提交 T09R review 记录。
+- 下一步：停止，不进入 T10。
 
 ## T09R 审查计划
 
