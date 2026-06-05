@@ -54,6 +54,38 @@ fn test_duplicate_lines_multi_cursor_disjoint_blocks() {
 }
 
 #[test]
+fn test_duplicate_lines_last_unicode_line_without_trailing_newline() {
+    let mut ex = CommandExecutor::new("alpha\n🙂", 80);
+    ex.execute(Command::Cursor(CursorCommand::MoveTo {
+        line: 1,
+        column: 0,
+    }))
+    .unwrap();
+
+    ex.execute(Command::Edit(EditCommand::DuplicateLines))
+        .unwrap();
+
+    assert_eq!(ex.editor().get_text(), "alpha\n🙂\n🙂");
+    assert_eq!(ex.editor().cursor_position(), Position::new(2, 0));
+}
+
+#[test]
+fn test_duplicate_lines_preserves_trailing_newline() {
+    let mut ex = CommandExecutor::new("a\nβ\n", 80);
+    ex.execute(Command::Cursor(CursorCommand::MoveTo {
+        line: 1,
+        column: 0,
+    }))
+    .unwrap();
+
+    ex.execute(Command::Edit(EditCommand::DuplicateLines))
+        .unwrap();
+
+    assert_eq!(ex.editor().get_text(), "a\nβ\nβ\n");
+    assert_eq!(ex.editor().cursor_position(), Position::new(2, 0));
+}
+
+#[test]
 fn test_delete_lines_removes_selected_line() {
     let mut ex = CommandExecutor::new("a\nb\nc", 80);
     ex.execute(Command::Cursor(CursorCommand::MoveTo {
@@ -84,6 +116,20 @@ fn test_delete_lines_last_line_removes_prev_newline() {
 }
 
 #[test]
+fn test_delete_lines_multi_cursor_unicode_with_trailing_newline() {
+    let mut ex = CommandExecutor::new("你\n🙂\nend\n", 80);
+    ex.execute(Command::Cursor(CursorCommand::SetSelections {
+        selections: vec![caret(0, 0), caret(2, 0)],
+        primary_index: 1,
+    }))
+    .unwrap();
+
+    ex.execute(Command::Edit(EditCommand::DeleteLines)).unwrap();
+
+    assert_eq!(ex.editor().get_text(), "🙂\n");
+}
+
+#[test]
 fn test_move_lines_up_down_swaps_with_neighbor() {
     let mut ex = CommandExecutor::new("a\nb\nc", 80);
 
@@ -103,6 +149,22 @@ fn test_move_lines_up_down_swaps_with_neighbor() {
 }
 
 #[test]
+fn test_move_lines_down_preserves_unicode_and_trailing_newline() {
+    let mut ex = CommandExecutor::new("α\n中\n🙂\n", 80);
+    ex.execute(Command::Cursor(CursorCommand::MoveTo {
+        line: 1,
+        column: 0,
+    }))
+    .unwrap();
+
+    ex.execute(Command::Edit(EditCommand::MoveLinesDown))
+        .unwrap();
+
+    assert_eq!(ex.editor().get_text(), "α\n🙂\n中\n");
+    assert_eq!(ex.editor().cursor_position(), Position::new(2, 0));
+}
+
+#[test]
 fn test_join_lines_trims_leading_ws_and_inserts_space() {
     let mut ex = CommandExecutor::new("a\n  b\nc", 80);
     ex.execute(Command::Cursor(CursorCommand::MoveTo {
@@ -114,6 +176,21 @@ fn test_join_lines_trims_leading_ws_and_inserts_space() {
     ex.execute(Command::Edit(EditCommand::JoinLines)).unwrap();
 
     assert_eq!(ex.editor().get_text(), "a b\nc");
+    assert_eq!(ex.editor().cursor_position(), Position::new(0, 2));
+}
+
+#[test]
+fn test_join_lines_handles_unicode_neighbor_lines() {
+    let mut ex = CommandExecutor::new("你\n  🙂\n尾", 80);
+    ex.execute(Command::Cursor(CursorCommand::MoveTo {
+        line: 0,
+        column: 0,
+    }))
+    .unwrap();
+
+    ex.execute(Command::Edit(EditCommand::JoinLines)).unwrap();
+
+    assert_eq!(ex.editor().get_text(), "你 🙂\n尾");
     assert_eq!(ex.editor().cursor_position(), Position::new(0, 2));
 }
 

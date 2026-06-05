@@ -5124,20 +5124,25 @@ impl CommandExecutor {
             return String::new();
         }
 
-        let mut out = String::new();
-        for line in start_line..=end_line.min(line_count - 1) {
-            let text = self
-                .editor
+        let end_line = end_line.min(line_count - 1);
+        let start_offset = self
+            .editor
+            .line_index
+            .position_to_char_offset(start_line, 0);
+        let end_offset = if end_line + 1 < line_count {
+            self.editor
                 .line_index
-                .get_line_text(line)
-                .unwrap_or_default();
-            out.push_str(&text);
-            // In the stored document, every line except the last has a trailing '\n'.
-            if line + 1 < line_count {
-                out.push('\n');
-            }
+                .position_to_char_offset(end_line + 1, 0)
+        } else {
+            self.editor.char_count()
+        };
+
+        if end_offset <= start_offset {
+            return String::new();
         }
-        out
+
+        self.editor
+            .text_range(start_offset, end_offset - start_offset)
     }
 
     fn execute_duplicate_lines_command(&mut self) -> Result<CommandResult, CommandError> {
@@ -5158,8 +5163,12 @@ impl CommandExecutor {
             return Ok(CommandResult::Success);
         }
 
-        let doc_text = self.editor.get_text();
-        let doc_ends_with_newline = doc_text.ends_with('\n');
+        let doc_ends_with_newline = before_char_count > 0
+            && self
+                .editor
+                .line_index
+                .char_at(before_char_count - 1)
+                .is_some_and(|ch| ch == '\n');
 
         struct Op {
             start_before: usize,

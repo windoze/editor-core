@@ -1,28 +1,29 @@
-# Claude Execution Plan
+# 当前执行计划
 
-## Scope
+## 目标
 
-This invocation will complete exactly the first incomplete task in `TODO.md`, then stop. `TODO.md` is the source of truth for task order, requirements, validation, and completion records.
+- 以 `TODO.md` 为唯一任务来源，完成其中第一个标题未带 `[DONE]` 的任务。
+- 完成一个任务后立即停止，不继续处理后续任务。
 
-## Step-By-Step Plan
+## 步骤
 
-1. Read `TODO.md` and identify the first task whose title is not prefixed with `[DONE]`.
-2. Check the latest commit summary only for directly relevant unfinished work related to that selected task.
-3. Inspect the code and documentation needed for the selected task, avoiding broad unrelated triage.
-4. Implement the selected task completely, or if a concrete blocker prevents correct implementation, add the minimum prerequisite task to `TODO.md` and stop after committing that bookkeeping.
-5. Run targeted validation first, then `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and the required full test/fixture suites unless only documentation changed since a prior green run can be reused.
-6. Fix any observed unscheduled test or fixture failures, or schedule them explicitly before the current task if they block completion.
-7. Mark the selected task title in `TODO.md` with `[DONE]` and update its completion record with the actual work and validation performed.
-8. Update this plan file when key steps complete or if the plan changes.
-9. Review `git status`, `git diff`, and recent commits, then commit all relevant changes with a clear task-specific message.
-10. Stop without starting the next task.
+1. 读取 `TODO.md`，按文件顺序定位第一个未完成任务，并确认其依赖、验证要求和完成记录要求。
+2. 检查最近提交信息；若它明确提到与当前任务直接相关的未完成问题，将该问题纳入当前任务或作为前置任务写入 `TODO.md`。
+3. 读取当前任务涉及的代码、测试和文档，只做与当前任务直接相关的上下文调查。
+4. 如果当前任务可直接完成，实施最小正确修改；如果存在阻塞当前任务的具体前置问题，更新 `TODO.md` 记录该前置任务并停止。
+5. 运行要求的格式化、lint、目标测试和必要的完整验证；发现未排期的失败测试或 fixture 时，修复或将最小前置任务加入 `TODO.md`。
+6. 将当前任务标题标记为 `[DONE]`，更新 `TODO.md` 的完成记录；仅当阶段级计划变化时才更新 `PLAN.md`。
+7. 检查 `git status`、`git diff` 和最近提交，提交本次任务相关的全部变更。
+8. 在最终回复中简要说明完成内容、验证结果和提交信息。
 
-## Progress
+## 进度记录
 
-- Plan initialized before project commands.
-- Selected first incomplete task: `T08FR Review：审查视觉行索引同步修复`.
-- Next step is to inspect only the T08F-related diff/context and perform the review checklist before updating `TODO.md`.
-- Reviewed the T08F commit scope: centralized folding line-delta handling, visual-row index batch insertion/removal, composed viewport start lookup, TUI direct fold invalidation, and new visual-row regression tests.
-- No blocking finding has been identified so far; validation commands are next.
-- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core --test visual_row_index`, `cargo test -p editor-core --test visual_row_improvements`, and `cargo test -p editor-core`.
-- Marked `T08FR` as `[DONE]` in `TODO.md` with the review result and validation record.
+- 已写入初始执行计划，下一步读取 `TODO.md` 定位首个未完成任务。
+- 已读取 `TODO.md`，首个未完成任务为 `T09 实现：行级命令避免全文读取`。
+- T09 范围限定在 `commands.rs`、`search.rs` 以及 `line_ops`、`comment_toggle`、`workspace_search_apply` 测试；下一步检查最近提交是否有与 T09 直接相关的未完成问题，并读取这些入口实现。
+- 最近提交未提到与 T09 直接相关的未完成问题。
+- 已定位并修改 T09 主问题：`DuplicateLines` 不再通过 `EditorCore::get_text()` 读取全文判断末尾换行，改为读取最后一个 char；`slice_text_for_lines` 改为按行范围计算 char offset 后用 `text_range` 读取受影响范围。
+- 已补充行操作、注释切换和 workspace apply-text-edits 的 Unicode、末尾换行、多光标/空行相关回归测试；下一步运行定向检查和验证。
+- 已运行并通过 T09 验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test workspace_search_apply`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 已确认仓库中不存在 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
+- 已将 `TODO.md` 中 T09 标记为 `[DONE]` 并填写完成记录；下一步检查 diff/status 后提交本次任务变更。

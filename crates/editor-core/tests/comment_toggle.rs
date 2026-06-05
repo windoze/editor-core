@@ -52,6 +52,31 @@ fn test_toggle_line_comment_multi_line_selection() {
 }
 
 #[test]
+fn test_toggle_line_comment_unicode_multiline_with_empty_line() {
+    let mut ex = CommandExecutor::new("  你\n\n\t🙂", 80);
+
+    ex.execute(Command::Cursor(CursorCommand::SetSelection {
+        start: Position::new(0, 0),
+        end: Position::new(2, 0),
+    }))
+    .unwrap();
+
+    ex.execute(Command::Edit(EditCommand::ToggleComment {
+        config: CommentConfig::line("//"),
+    }))
+    .unwrap();
+
+    assert_eq!(ex.editor().get_text(), "  // 你\n// \n\t// 🙂");
+
+    ex.execute(Command::Edit(EditCommand::ToggleComment {
+        config: CommentConfig::line("//"),
+    }))
+    .unwrap();
+
+    assert_eq!(ex.editor().get_text(), "  你\n\n\t🙂");
+}
+
+#[test]
 fn test_toggle_block_comment_inline_single_line_selection() {
     let mut ex = CommandExecutor::new("abc", 80);
 

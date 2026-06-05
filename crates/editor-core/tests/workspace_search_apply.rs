@@ -65,3 +65,34 @@ fn test_workspace_apply_text_edits_groups_undo_per_document() {
     assert_eq!(ws.buffer_text(a).unwrap(), "foo bar");
     assert_eq!(ws.buffer_text(b).unwrap(), "bar foo");
 }
+
+#[test]
+fn test_workspace_apply_text_edits_preserves_unicode_ranges_for_undo() {
+    let mut ws = Workspace::new();
+    let OpenBufferResult { buffer_id, view_id } =
+        ws.open_buffer(None, "α foo\n🙂 bar", 80).unwrap();
+
+    ws.apply_text_edits(vec![(
+        buffer_id,
+        vec![
+            TextEditSpec {
+                start: 0,
+                end: 1,
+                text: "你".to_string(),
+            },
+            TextEditSpec {
+                start: 6,
+                end: 7,
+                text: "🚀".to_string(),
+            },
+        ],
+    )])
+    .unwrap();
+
+    assert_eq!(ws.buffer_text(buffer_id).unwrap(), "你 foo\n🚀 bar");
+
+    ws.execute(view_id, Command::Edit(EditCommand::Undo))
+        .unwrap();
+
+    assert_eq!(ws.buffer_text(buffer_id).unwrap(), "α foo\n🙂 bar");
+}

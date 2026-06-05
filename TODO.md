@@ -828,9 +828,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core`。
 - 本次 review 未修改编译代码；T08F 完成记录已有 `cargo clippy --all-targets --all-features -- -D warnings` 和 `cargo test --all --all-targets` 通过结果，因此未重复运行全量测试或 fixture suite。
 
-### T09 实现：行级命令避免全文读取
+### [DONE] T09 实现：行级命令避免全文读取
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -872,6 +872,16 @@
 
 - 普通行级编辑只分配受影响范围的文本。
 - 行操作行为不变。
+
+完成记录：
+
+- 将 `slice_text_for_lines` 改为根据 logical line 计算 char offset 区间，并通过 `EditorCore::text_range` 读取受影响行范围，避免逐行拼接或读取全文。
+- 将 `execute_duplicate_lines_command` 的末尾换行判断从 `EditorCore::get_text().ends_with('\n')` 改为读取最后一个 char；T09 行级命令路径不再因该判断分配完整文档 `String`。
+- 保留搜索/替换命令的全文读取路径，并通过定向 grep 确认剩余 `EditorCore::get_text()` 调用属于搜索路径、公开 API、debug-only 一致性断言或测试代码。
+- 扩展 `line_ops.rs`，覆盖 duplicate/delete/move/join 在末尾无换行、末尾有换行、多光标和 Unicode 行下的行为。
+- 扩展 `comment_toggle.rs`，覆盖多行、Unicode 和空行的 line comment toggle；扩展 `workspace_search_apply.rs`，覆盖 Unicode apply-text-edits 的 undo range 准确性。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test workspace_search_apply`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
 ### T09R Review：审查行级命令性能优化
 
