@@ -127,4 +127,5 @@ This file records an operational plan and progress updates for the current invoc
 - Added UTF-16 boundary regressions for out-of-bounds line plus zero character, out-of-bounds line plus huge character, reversed ranges, and half-surrogate replacement behavior.
 - Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, `cargo test -p editor-core-lsp`, and `cargo test --all --all-targets`.
 - No fixture runner was found at `tools/run_fixtures.py` or `tools/**/*fixture*`.
-- Marked T19FF as `[DONE]` in `TODO.md` with completion details. Next step is git inspection and commit.
+- Marked T19FF as `[DONE]` in `TODO.md` with completion details.
+- Committed T19FF changes as `2f04c9e [T19FF] Fix DeltaCalculator line clamp`.
