@@ -1302,6 +1302,11 @@ impl App {
             .editor_mut()
             .folding_manager
             .toggle_region_starting_at_line(line);
+        if toggled {
+            self.state_manager
+                .editor_mut()
+                .invalidate_visual_row_index_cache();
+        }
 
         if toggled {
             self.status_message = "已切换折叠状态".to_string();
@@ -1314,6 +1319,9 @@ impl App {
 
     fn unfold_all(&mut self) {
         self.state_manager.editor_mut().folding_manager.expand_all();
+        self.state_manager
+            .editor_mut()
+            .invalidate_visual_row_index_cache();
         self.status_message = "已展开全部折叠".to_string();
         self.adjust_scroll();
     }

@@ -30,6 +30,11 @@ impl VisualRowIndex {
         self.tree.total()
     }
 
+    pub(crate) fn visual_rows_before_logical_line(&self, logical_line: usize) -> usize {
+        self.tree
+            .prefix_sum(logical_line.min(self.line_visual_counts.len()))
+    }
+
     pub(crate) fn set_line_visual_count(
         &mut self,
         logical_line: usize,
@@ -50,18 +55,32 @@ impl VisualRowIndex {
         true
     }
 
-    pub(crate) fn insert_line(&mut self, logical_line: usize, visual_line_count: usize) {
+    pub(crate) fn insert_lines<I>(&mut self, logical_line: usize, visual_line_counts: I)
+    where
+        I: IntoIterator<Item = usize>,
+    {
+        let counts = visual_line_counts.into_iter().collect::<Vec<_>>();
+        if counts.is_empty() {
+            return;
+        }
+
         let pos = logical_line.min(self.line_visual_counts.len());
-        self.line_visual_counts.insert(pos, visual_line_count);
+        self.line_visual_counts.splice(pos..pos, counts);
         self.tree = FenwickTree::from_values(&self.line_visual_counts);
     }
 
-    pub(crate) fn remove_line(&mut self, logical_line: usize) -> bool {
-        if logical_line >= self.line_visual_counts.len() {
+    pub(crate) fn remove_lines(&mut self, logical_line: usize, count: usize) -> bool {
+        if count == 0 {
+            return true;
+        }
+        if logical_line >= self.line_visual_counts.len()
+            || logical_line.saturating_add(count) > self.line_visual_counts.len()
+        {
             return false;
         }
 
-        self.line_visual_counts.remove(logical_line);
+        self.line_visual_counts
+            .drain(logical_line..logical_line.saturating_add(count));
         self.tree = FenwickTree::from_values(&self.line_visual_counts);
         true
     }
@@ -219,12 +238,12 @@ mod tests {
         assert_eq!(index.span_for_visual_row(4).unwrap().0.logical_line, 1);
         assert_eq!(index.span_for_logical_line(2).unwrap().start_visual_row, 5);
 
-        index.insert_line(2, 2);
+        index.insert_lines(2, [2]);
         assert_eq!(index.logical_line_count(), 4);
         assert_eq!(index.span_for_logical_line(2).unwrap().start_visual_row, 5);
         assert_eq!(index.span_for_logical_line(3).unwrap().start_visual_row, 7);
 
-        assert!(index.remove_line(1));
+        assert!(index.remove_lines(1, 1));
         assert_eq!(index.logical_line_count(), 3);
         assert_eq!(index.total_visual_lines(), 4);
         assert_eq!(index.span_for_visual_row(1).unwrap().0.logical_line, 1);

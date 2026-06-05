@@ -5688,16 +5688,18 @@ impl EditorUi {
             }
         }
 
-        let regions = doc
-            .ws
-            .folding_regions_for_buffer(self.buffer_id)
-            .unwrap_or_default();
         let mut prefix = 0usize;
-        for line in 0..top_logical_line {
-            if is_logical_line_hidden(regions.as_slice(), line) {
-                continue;
+        if !above_count.is_empty() {
+            let regions = doc
+                .ws
+                .folding_regions_for_buffer(self.buffer_id)
+                .unwrap_or_default();
+            for (line, count) in above_count {
+                if line >= top_logical_line || is_logical_line_hidden(regions.as_slice(), line) {
+                    continue;
+                }
+                prefix = prefix.saturating_add(count);
             }
-            prefix = prefix.saturating_add(above_count.get(&line).copied().unwrap_or(0));
         }
         doc_row.saturating_add(prefix)
     }

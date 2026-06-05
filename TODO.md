@@ -734,9 +734,9 @@
 - 已在 T09 前新增 `T08F` / `T08FR`，要求先修复上述问题并补充专项 review。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core`。
 
-### T08F 修复：补齐视觉行索引换行与折叠同步
+### [DONE] T08F 修复：补齐视觉行索引换行与折叠同步
 
-状态：TODO
+状态：DONE
 
 依赖：
 
@@ -790,6 +790,16 @@
 - 所有真实换行编辑路径后的 folding state 与 cached visual-row index 一致。
 - 多 fold、尾部空行和 virtual text composed viewport 均有明确回归覆盖。
 - 大文件尾部 viewport / visual-row 查询不因残留线性路径退化到从文档头部扫描。
+
+完成记录：
+
+- 将 folding line-delta 收敛到 `apply_text_change_to_line_index_and_layout`，确保 `InsertNewline`、`DeleteForward` / `Backspace`、boundary 删除、普通 `Insert` / `Delete` / `Replace`、多光标文本插入和 `apply_text_ops` 都先按同一语义平移 folding，再同步 cached `VisualRowIndex`。
+- 将 `VisualRowIndex` 多行结构变更改为批量 `insert_lines` / `remove_lines` 后重建一次 Fenwick tree，避免多行插入/删除逐行重复重建。
+- 保持 processing/workspace fold replace/clear 路径的缓存失效，并补齐 TUI 直接 `toggle_fold_at_cursor` / `unfold_all` 后的 visual-row cache 失效。
+- 优化 core composed viewport 起点计算：利用 visual-row index 和 above-line virtual text 前缀计数直接定位尾部 composed 起点，不再从文档头逐行扫描；同步将 UI 的 doc-row 到 composed-row 映射改为只遍历 above-line decorations。
+- 扩展 `visual_row_index.rs`，覆盖 cached 状态下 `InsertNewline`、`DeleteForward`、`Backspace`、boundary 删除跨换行后的多 collapsed fold 映射，adjacent folds + soft wrap + 尾部空行，直接 fold mutation 失效重建，以及带 above-line / inline virtual text 的 10 万行尾部 composed viewport 映射与性能。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
 ### T08FR Review：审查视觉行索引同步修复
 

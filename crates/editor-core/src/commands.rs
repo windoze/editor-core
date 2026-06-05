@@ -1843,21 +1843,29 @@ impl EditorCore {
 
         let line_delta = inserted_newlines as isize - deleted_newlines as isize;
         if line_delta != 0 {
+            let line_count = self.layout_engine.logical_line_count();
             let mut cache = self.visual_row_index_cache.borrow_mut();
             let Some(index) = cache.as_mut() else {
                 return;
             };
 
             if line_delta > 0 {
-                for i in 0..(line_delta as usize) {
-                    index.insert_line(start_line.saturating_add(1).saturating_add(i), 0);
+                let inserted = line_delta as usize;
+                if index.logical_line_count().saturating_add(inserted) != line_count {
+                    *cache = None;
+                    return;
                 }
+                index.insert_lines(
+                    start_line.saturating_add(1),
+                    std::iter::repeat_n(0, inserted),
+                );
             } else {
-                for _ in 0..((-line_delta) as usize) {
-                    if !index.remove_line(start_line.saturating_add(1)) {
-                        *cache = None;
-                        return;
-                    }
+                let removed = (-line_delta) as usize;
+                if index.logical_line_count().saturating_sub(removed) != line_count
+                    || !index.remove_lines(start_line.saturating_add(1), removed)
+                {
+                    *cache = None;
+                    return;
                 }
             }
         }
@@ -2302,25 +2310,64 @@ impl EditorCore {
             }
         }
 
-        // Compute the total composed visual line count for bounds checking.
         let regions = self.folding_manager.regions();
-        let mut total_composed = 0usize;
-        for logical_line in 0..self.layout_engine.logical_line_count() {
-            if Self::is_logical_line_hidden(regions, logical_line) {
+        let line_count = self.layout_engine.logical_line_count();
+        let mut above_lines = Vec::new();
+        let mut above_prefix_counts = vec![0usize];
+        let mut total_above = 0usize;
+        for (&line, above) in &above_by_line {
+            if line >= line_count || Self::is_logical_line_hidden(regions, line) {
                 continue;
             }
-
-            if let Some(above) = above_by_line.get(&logical_line) {
-                total_composed = total_composed.saturating_add(above.len());
-            }
-
-            total_composed = total_composed.saturating_add(
-                self.layout_engine
-                    .get_line_layout(logical_line)
-                    .map(|l| l.visual_line_count)
-                    .unwrap_or(1),
-            );
+            above_lines.push(line);
+            total_above = total_above.saturating_add(above.len());
+            above_prefix_counts.push(total_above);
         }
+
+        let above_count_before_line = |line: usize| -> usize {
+            let idx = above_lines.partition_point(|candidate| *candidate < line);
+            above_prefix_counts[idx]
+        };
+
+        let (total_composed, start_logical_line, mut current_visual) =
+            self.with_visual_row_index(|index| {
+                let total_composed = index.total_visual_lines().saturating_add(total_above);
+                if line_count == 0 || start_visual_row >= total_composed {
+                    return (total_composed, line_count, total_composed);
+                }
+
+                let composed_rows_before_line = |line: usize| -> usize {
+                    index
+                        .visual_rows_before_logical_line(line)
+                        .saturating_add(above_count_before_line(line))
+                };
+
+                let mut low = 0usize;
+                let mut high = line_count;
+                while low < high {
+                    let mid = (low + high).div_ceil(2);
+                    if composed_rows_before_line(mid) <= start_visual_row {
+                        low = mid;
+                    } else {
+                        high = mid.saturating_sub(1);
+                    }
+                }
+
+                let mut start_line = low.min(line_count.saturating_sub(1));
+                if index.span_for_logical_line(start_line).is_none() {
+                    let doc_visual = index.visual_rows_before_logical_line(start_line);
+                    let Some((span, _)) = index.span_for_visual_row(doc_visual) else {
+                        return (total_composed, line_count, total_composed);
+                    };
+                    start_line = span.logical_line;
+                }
+
+                (
+                    total_composed,
+                    start_line,
+                    composed_rows_before_line(start_line),
+                )
+            });
 
         if start_visual_row >= total_composed {
             return grid;
@@ -2329,9 +2376,7 @@ impl EditorCore {
         let end_visual = start_visual_row.saturating_add(count).min(total_composed);
         let tab_width = self.layout_engine.tab_width();
 
-        let mut current_visual = 0usize;
-
-        for logical_line in 0..self.layout_engine.logical_line_count() {
+        for logical_line in start_logical_line..line_count {
             if Self::is_logical_line_hidden(regions, logical_line) {
                 continue;
             }
@@ -3517,33 +3562,10 @@ impl CommandExecutor {
         // Apply edits safely (descending offsets).
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
-
-            let edit_line = self
-                .editor
-                .line_index
-                .char_offset_to_position(op.start_offset)
-                .0;
-            let deleted_newlines = op
-                .deleted_text
-                .as_bytes()
-                .iter()
-                .filter(|b| **b == b'\n')
-                .count();
-            let inserted_newlines = op
-                .insert_text
-                .as_bytes()
-                .iter()
-                .filter(|b| **b == b'\n')
-                .count();
-            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
-            if line_delta != 0 {
-                self.editor
-                    .folding_manager
-                    .apply_line_delta(edit_line, line_delta);
-            }
 
             if op.delete_len > 0 {
                 self.editor
@@ -3564,16 +3586,18 @@ impl CommandExecutor {
                 }
             }
 
-            self.apply_text_change_to_line_index_and_layout(
+            folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
                 op.start_offset,
                 &op.deleted_text,
                 &op.insert_text,
-            );
+            ) != 0;
         }
 
-        self.editor
-            .folding_manager
-            .clamp_to_line_count(self.editor.line_index.line_count());
+        if folding_line_changed {
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
+        }
 
         // Update selection state: collapse to carets after typing.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -3860,35 +3884,12 @@ impl CommandExecutor {
         // Apply edits safely (descending offsets).
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
             if !op.apply {
                 continue;
-            }
-
-            let edit_line = self
-                .editor
-                .line_index
-                .char_offset_to_position(op.start_offset)
-                .0;
-            let deleted_newlines = op
-                .deleted_text
-                .as_bytes()
-                .iter()
-                .filter(|b| **b == b'\n')
-                .count();
-            let inserted_newlines = op
-                .insert_text
-                .as_bytes()
-                .iter()
-                .filter(|b| **b == b'\n')
-                .count();
-            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
-            if line_delta != 0 {
-                self.editor
-                    .folding_manager
-                    .apply_line_delta(edit_line, line_delta);
             }
 
             if op.delete_len > 0 {
@@ -3910,16 +3911,18 @@ impl CommandExecutor {
                 }
             }
 
-            self.apply_text_change_to_line_index_and_layout(
+            folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
                 op.start_offset,
                 &op.deleted_text,
                 &op.insert_text,
-            );
+            ) != 0;
         }
 
-        self.editor
-            .folding_manager
-            .clamp_to_line_count(self.editor.line_index.line_count());
+        if folding_line_changed {
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
+        }
 
         // Build post-edit selection set (one entry per original selection index).
         let mut new_selections: Vec<Selection> = vec![
@@ -4460,33 +4463,10 @@ impl CommandExecutor {
         // Apply edits safely (descending offsets).
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
-
-            let edit_line = self
-                .editor
-                .line_index
-                .char_offset_to_position(op.start_offset)
-                .0;
-            let deleted_newlines = op
-                .deleted_text
-                .as_bytes()
-                .iter()
-                .filter(|b| **b == b'\n')
-                .count();
-            let inserted_newlines = op
-                .insert_text
-                .as_bytes()
-                .iter()
-                .filter(|b| **b == b'\n')
-                .count();
-            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
-            if line_delta != 0 {
-                self.editor
-                    .folding_manager
-                    .apply_line_delta(edit_line, line_delta);
-            }
 
             if op.delete_len > 0 {
                 self.editor
@@ -4507,16 +4487,18 @@ impl CommandExecutor {
                 }
             }
 
-            self.apply_text_change_to_line_index_and_layout(
+            folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
                 op.start_offset,
                 &op.deleted_text,
                 &op.insert_text,
-            );
+            ) != 0;
         }
 
-        self.editor
-            .folding_manager
-            .clamp_to_line_count(self.editor.line_index.line_count());
+        if folding_line_changed {
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
+        }
 
         // Update selection state: collapse to carets after insertion.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -4764,6 +4746,7 @@ impl CommandExecutor {
         // Apply edits safely (descending offsets).
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
@@ -4787,11 +4770,17 @@ impl CommandExecutor {
                 }
             }
 
-            self.apply_text_change_to_line_index_and_layout(
+            folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
                 op.start_offset,
                 &op.deleted_text,
                 &op.insert_text,
-            );
+            ) != 0;
+        }
+
+        if folding_line_changed {
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
         }
 
         // Update selection state: collapse to carets after insertion.
@@ -7664,19 +7653,10 @@ impl CommandExecutor {
         let before_char_count = self.editor.char_count();
         let before_selection = self.snapshot_selection_set();
 
-        let affected_line = self.editor.line_index.char_offset_to_position(offset).0;
-        let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
-
-        if inserted_newlines > 0 {
-            self.editor
-                .folding_manager
-                .apply_line_delta(affected_line, inserted_newlines as isize);
-        }
-
         // Update line index + layout engine incrementally.
-        self.apply_text_change_to_line_index_and_layout(offset, "", &text);
+        let line_delta = self.apply_text_change_to_line_index_and_layout(offset, "", &text);
 
-        if inserted_newlines > 0 {
+        if line_delta != 0 {
             self.editor
                 .folding_manager
                 .clamp_to_line_count(self.editor.line_index.line_count());
@@ -7751,23 +7731,11 @@ impl CommandExecutor {
 
         let deleted_text = self.editor.text_range(start, length);
         let delta_deleted_text = deleted_text.clone();
-        let deleted_newlines = deleted_text
-            .as_bytes()
-            .iter()
-            .filter(|b| **b == b'\n')
-            .count();
-        let affected_line = self.editor.line_index.char_offset_to_position(start).0;
-
-        if deleted_newlines > 0 {
-            self.editor
-                .folding_manager
-                .apply_line_delta(affected_line, -(deleted_newlines as isize));
-        }
-
         // Update line index + layout engine incrementally.
-        self.apply_text_change_to_line_index_and_layout(start, &delta_deleted_text, "");
+        let line_delta =
+            self.apply_text_change_to_line_index_and_layout(start, &delta_deleted_text, "");
 
-        if deleted_newlines > 0 {
+        if line_delta != 0 {
             self.editor
                 .folding_manager
                 .clamp_to_line_count(self.editor.line_index.line_count());
@@ -7848,15 +7816,6 @@ impl CommandExecutor {
         let delta_deleted_text = deleted_text.clone();
         let delta_inserted_text = text.clone();
 
-        let affected_line = self.editor.line_index.char_offset_to_position(start).0;
-        let deleted_newlines = deleted_text
-            .as_bytes()
-            .iter()
-            .filter(|b| **b == b'\n')
-            .count();
-        let inserted_newlines = text.as_bytes().iter().filter(|b| **b == b'\n').count();
-        let line_delta = inserted_newlines as isize - deleted_newlines as isize;
-
         // Apply as a single operation (delete then insert at the same offset).
         if length > 0 {
             self.editor
@@ -7877,14 +7836,9 @@ impl CommandExecutor {
             }
         }
 
-        if line_delta != 0 {
-            self.editor
-                .folding_manager
-                .apply_line_delta(affected_line, line_delta);
-        }
-
         // Update line index + layout engine incrementally.
-        self.apply_text_change_to_line_index_and_layout(start, &deleted_text, &text);
+        let line_delta =
+            self.apply_text_change_to_line_index_and_layout(start, &deleted_text, &text);
 
         if line_delta != 0 {
             self.editor
@@ -8445,28 +8399,12 @@ impl CommandExecutor {
         // Apply deletes descending to keep offsets valid.
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
             if op.delete_len == 0 {
                 continue;
-            }
-
-            let edit_line = self
-                .editor
-                .line_index
-                .char_offset_to_position(op.start_offset)
-                .0;
-            let deleted_newlines = op
-                .deleted_text
-                .as_bytes()
-                .iter()
-                .filter(|b| **b == b'\n')
-                .count();
-            if deleted_newlines > 0 {
-                self.editor
-                    .folding_manager
-                    .apply_line_delta(edit_line, -(deleted_newlines as isize));
             }
             self.editor
                 .interval_tree
@@ -8475,12 +8413,18 @@ impl CommandExecutor {
                 layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
 
-            self.apply_text_change_to_line_index_and_layout(op.start_offset, &op.deleted_text, "");
+            folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                "",
+            ) != 0;
         }
 
-        self.editor
-            .folding_manager
-            .clamp_to_line_count(self.editor.line_index.line_count());
+        if folding_line_changed {
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
+        }
 
         // Collapse selection state to carets at the start of deleted ranges.
         let mut new_carets: Vec<Selection> = Vec::with_capacity(caret_offsets.len());
@@ -8678,6 +8622,7 @@ impl CommandExecutor {
         // Apply deletes descending to keep offsets valid.
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
@@ -8691,7 +8636,17 @@ impl CommandExecutor {
                 layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
 
-            self.apply_text_change_to_line_index_and_layout(op.start_offset, &op.deleted_text, "");
+            folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                "",
+            ) != 0;
+        }
+
+        if folding_line_changed {
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
         }
 
         // Collapse selection state to carets at the start of deleted ranges.
@@ -8877,6 +8832,7 @@ impl CommandExecutor {
         // Apply deletes descending to keep offsets valid.
         let mut desc_indices = asc_indices;
         desc_indices.sort_by_key(|&idx| std::cmp::Reverse(ops[idx].start_offset));
+        let mut folding_line_changed = false;
 
         for &idx in &desc_indices {
             let op = &ops[idx];
@@ -8890,7 +8846,17 @@ impl CommandExecutor {
                 layer_tree.update_for_deletion(op.start_offset, op.start_offset + op.delete_len);
             }
 
-            self.apply_text_change_to_line_index_and_layout(op.start_offset, &op.deleted_text, "");
+            folding_line_changed |= self.apply_text_change_to_line_index_and_layout(
+                op.start_offset,
+                &op.deleted_text,
+                "",
+            ) != 0;
+        }
+
+        if folding_line_changed {
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
         }
 
         // Collapse selection state to carets at the start of deleted ranges.
@@ -9048,6 +9014,7 @@ impl CommandExecutor {
     fn apply_text_ops(&mut self, mut ops: Vec<(usize, usize, &str)>) -> Result<(), CommandError> {
         // Sort descending by start offset to make offsets stable while mutating.
         ops.sort_by_key(|(start, _, _)| std::cmp::Reverse(*start));
+        let mut folding_line_changed = false;
 
         for (start, delete_len, insert_text) in ops {
             let max_offset = self.editor.char_count();
@@ -9061,28 +9028,11 @@ impl CommandExecutor {
                 });
             }
 
-            let edit_line = self.editor.line_index.char_offset_to_position(start).0;
             let deleted_text = if delete_len > 0 {
                 self.editor.text_range(start, delete_len)
             } else {
                 String::new()
             };
-            let deleted_newlines = deleted_text
-                .as_bytes()
-                .iter()
-                .filter(|b| **b == b'\n')
-                .count();
-            let inserted_newlines = insert_text
-                .as_bytes()
-                .iter()
-                .filter(|b| **b == b'\n')
-                .count();
-            let line_delta = inserted_newlines as isize - deleted_newlines as isize;
-            if line_delta != 0 {
-                self.editor
-                    .folding_manager
-                    .apply_line_delta(edit_line, line_delta);
-            }
 
             if delete_len > 0 {
                 self.editor
@@ -9103,12 +9053,16 @@ impl CommandExecutor {
                 }
             }
 
-            self.apply_text_change_to_line_index_and_layout(start, &deleted_text, insert_text);
+            folding_line_changed |=
+                self.apply_text_change_to_line_index_and_layout(start, &deleted_text, insert_text)
+                    != 0;
         }
 
-        self.editor
-            .folding_manager
-            .clamp_to_line_count(self.editor.line_index.line_count());
+        if folding_line_changed {
+            self.editor
+                .folding_manager
+                .clamp_to_line_count(self.editor.line_index.line_count());
+        }
         self.normalize_cursor_and_selection();
 
         Ok(())
@@ -9795,12 +9749,29 @@ impl CommandExecutor {
         start_offset: usize,
         deleted_text: &str,
         inserted_text: &str,
-    ) {
+    ) -> isize {
         let start_line = self
             .editor
             .line_index
             .char_offset_to_position(start_offset)
             .0;
+
+        let deleted_newlines = deleted_text
+            .as_bytes()
+            .iter()
+            .filter(|b| **b == b'\n')
+            .count();
+        let inserted_newlines = inserted_text
+            .as_bytes()
+            .iter()
+            .filter(|b| **b == b'\n')
+            .count();
+        let line_delta = inserted_newlines as isize - deleted_newlines as isize;
+        if line_delta != 0 {
+            self.editor
+                .folding_manager
+                .apply_line_delta(start_line, line_delta);
+        }
 
         let deleted_chars = deleted_text.chars().count();
         if deleted_chars > 0 {
@@ -9826,18 +9797,6 @@ impl CommandExecutor {
 
         self.assert_piece_table_text_buffer_consistent();
 
-        let deleted_newlines = deleted_text
-            .as_bytes()
-            .iter()
-            .filter(|b| **b == b'\n')
-            .count();
-        let inserted_newlines = inserted_text
-            .as_bytes()
-            .iter()
-            .filter(|b| **b == b'\n')
-            .count();
-
-        let line_delta = inserted_newlines as isize - deleted_newlines as isize;
         if line_delta > 0 {
             for i in 0..(line_delta as usize) {
                 let line = start_line.saturating_add(1).saturating_add(i);
@@ -9863,7 +9822,7 @@ impl CommandExecutor {
 
         let line_count = self.editor.line_index.line_count();
         if line_count == 0 {
-            return;
+            return line_delta;
         }
         let last_line = line_count.saturating_sub(1);
         for line in start_line..=end_line.min(last_line) {
@@ -9880,6 +9839,8 @@ impl CommandExecutor {
             deleted_newlines,
             inserted_newlines,
         );
+
+        line_delta
     }
 
     #[cfg(debug_assertions)]
