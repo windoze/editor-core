@@ -75,9 +75,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test lsp_process_lifecycle`、`cargo test -p editor-core-lsp`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
-### T01R Review：审查 LSP 子进程生命周期回收
+### [DONE] T01R Review：审查 LSP 子进程生命周期回收
 
-状态：TODO
+状态：DONE
 
 审查范围：T01 的所有 diff。
 
@@ -93,6 +93,12 @@
 
 - `cargo test -p editor-core-lsp --test lsp_process_lifecycle`
 - `cargo test -p editor-core-lsp`
+
+完成记录：
+
+- 已审查 T01 diff，重点检查 `LspClient::shutdown` / `exit` / `terminate` / `Drop`、`LspSession::exit` 生命周期接入，以及 `lsp_process_lifecycle` 测试。
+- 未发现需要立即修复或新增前置任务的生命周期缺陷；`kill()` 后和自然退出路径都会进入 `wait()`，`Drop` 忽略错误且不主动 join 后台线程，测试覆盖不响应 shutdown、响应 shutdown 和 drop 回收路径。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test lsp_process_lifecycle`、`cargo test -p editor-core-lsp`。
 
 ### T02 实现：diagnostics 版本守卫
 
