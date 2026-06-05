@@ -883,9 +883,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core --test workspace_search_apply`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
-### T09R Review：审查行级命令性能优化
+### [DONE] T09R Review：审查行级命令性能优化
 
-状态：TODO
+状态：DONE
 
 审查范围：T09 的所有 diff。
 
@@ -902,6 +902,12 @@
 - `cargo test -p editor-core --test line_ops`
 - `cargo test -p editor-core --test comment_toggle`
 - `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T09 diff，重点检查 `slice_text_for_lines` range 读取、`DuplicateLines` 末尾换行判断、Delete/Move/Join/ToggleComment/ApplyTextEdits 的删除文本和 undo range 记录，以及搜索/替换全文读取路径隔离。
+- 未发现需要立即修复或新增前置任务的问题；普通行级编辑路径未发现新增 `EditorCore::get_text()` 全文读取，剩余全文读取集中在搜索/替换、公有文本 API、debug-only 一致性断言或测试代码。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test line_ops`、`cargo test -p editor-core --test comment_toggle`、`cargo test -p editor-core`。
 
 ### T10 实现：优化列到字节转换
 
