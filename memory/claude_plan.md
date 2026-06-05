@@ -80,3 +80,15 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core-lsp`。
 - 已更新 `TODO.md`：T04R 标记为 `[DONE]`，状态改为 DONE，并在 T05 前新增 `T04F` 修复任务和 `T04FR` review 任务；本次不继续执行 T04F。
 - 下一步检查最终 diff/status 并提交本次 T04R 审查记录。
+
+## T04F 进度记录
+
+- 已读取 `TODO.md`，第一个未完成任务是 `T04F 修复：收紧折叠态保留匹配并补 visual-row cache 回归`。
+- 最新提交为 `[T04R] Review folding state preservation`，与 T04F 直接相关；当前工作树已有未跟踪的 `notification.sh`、`run_agent.sh`，不属于本任务，不会纳入提交。
+- 已检查 T04F 范围入口：`FoldingManager::collapsed_fuzzy_match_score` / `replace_derived_regions_preserving_collapsed`、`EditorStateManager` 和 `Workspace` 的 folding processing edit 应用路径、`EditorCore::visual_line_count` 的 visual-row cache 构建路径，以及 `folding_stability.rs`。
+- 已实现更保守的 derived fold collapsed 保留策略：fuzzy 匹配仍要求相同 placeholder、起始行最多漂移 1 行、长度接近，并新增至少共享两行的要求，从而拒绝仅共享边界的默认 placeholder 匹配。
+- 已更新 `folding_stability.rs`，新增默认 placeholder 边界/相邻负向回归、保留既有小范围漂移正向覆盖，并新增 `EditorStateManager` 与 `Workspace::apply_processing_edits` 在先构建 visual-row cache 后执行 `ReplaceFoldingRegions` / `ClearFoldingRegions` 的 cache 重建回归。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
+- 已确认不存在 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
+- 已更新 `TODO.md`：T04F 标记为 `[DONE]`，状态改为 DONE，并补全完成记录。
+- 下一步复查最终 diff/status 并提交本次 T04F 变更。

@@ -330,9 +330,9 @@
 - 已在 T05 前新增 `T04F` / `T04FR`，要求先修复该问题并补充专项 review。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core-lsp`。
 
-### T04F 修复：收紧折叠态保留匹配并补 visual-row cache 回归
+### [DONE] T04F 修复：收紧折叠态保留匹配并补 visual-row cache 回归
 
-状态：TODO
+状态：DONE
 
 依赖：
 
@@ -372,6 +372,14 @@
 
 - 折叠态保留不会把无关 derived region 错配成 collapsed。
 - fold 替换和清理后的 visual-row cache 行为有明确回归测试。
+
+完成记录：
+
+- 收紧 `FoldingManager::collapsed_fuzzy_match_score`：fuzzy 匹配仍要求同 placeholder、起始行最多漂移 1 行、长度接近，并新增至少共享两行的要求，避免默认 placeholder 的仅边界重叠区域误继承 collapsed。
+- 扩展 `folding_stability.rs`，新增默认 placeholder 边界/相邻负向回归，并保留小范围行号漂移后同一 derived fold 继承 collapsed 的正向覆盖。
+- 新增 `EditorStateManager` 与 `Workspace::apply_processing_edits` 的 visual-row cache 回归：先通过 visual line 查询构建旧 cache，再执行 `ReplaceFoldingRegions` / `ClearFoldingRegions`，验证后续 visual/logical 映射反映最新 fold state。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test folding_stability`、`cargo test -p editor-core`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
+- 未找到 `tools/run_fixtures.py`，无可运行的完整 fixture runner。
 
 ### T04FR Review：审查折叠态保留匹配修复
 

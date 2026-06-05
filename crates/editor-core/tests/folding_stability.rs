@@ -1,5 +1,6 @@
 use editor_core::{
-    Command, CommandExecutor, EditCommand, EditorStateManager, FoldRegion, StyleCommand,
+    Command, CommandExecutor, EditCommand, EditorStateManager, FoldRegion, ProcessingEdit,
+    StyleCommand, Workspace,
 };
 
 fn collapsed_region(start_line: usize, end_line: usize) -> FoldRegion {
@@ -149,6 +150,19 @@ fn test_replace_derived_folds_preserves_collapsed_after_line_drift() {
 }
 
 #[test]
+fn test_replace_derived_folds_does_not_preserve_boundary_only_default_placeholder_match() {
+    let mut state = EditorStateManager::new("a\nb\nc\nd\ne\nf\ng\nh\ni", 80);
+
+    state.replace_folding_regions(vec![collapsed_region(1, 2), collapsed_region(5, 6)], false);
+
+    state.replace_folding_regions(vec![FoldRegion::new(2, 3), FoldRegion::new(7, 8)], true);
+
+    let derived = state.editor().folding_manager.derived_regions();
+    assert_eq!(derived.len(), 2);
+    assert!(derived.iter().all(|region| !region.is_collapsed));
+}
+
+#[test]
 fn test_replace_derived_folds_does_not_copy_user_collapsed_state() {
     let mut state = EditorStateManager::new("a\nb\nc\nd", 80);
 
@@ -209,4 +223,70 @@ fn test_multiple_derived_folds_shift_on_insert_and_delete() {
     assert_eq!(derived[1].start_line, 4);
     assert_eq!(derived[1].end_line, 5);
     assert!(derived[1].is_collapsed);
+}
+
+#[test]
+fn test_state_folding_replace_and_clear_rebuild_visual_row_cache() {
+    let mut state = EditorStateManager::new("a\nb\nc\nd\ne", 80);
+
+    assert_eq!(state.total_visual_lines(), 5);
+
+    state.replace_folding_regions(vec![collapsed_region(1, 3)], false);
+    assert_eq!(state.total_visual_lines(), 3);
+    assert_eq!(state.visual_to_logical_line(2), (4, 0));
+
+    state.clear_folding_regions();
+    assert_eq!(state.total_visual_lines(), 5);
+    assert_eq!(state.visual_to_logical_line(2), (2, 0));
+}
+
+#[test]
+fn test_workspace_folding_replace_and_clear_rebuild_visual_row_cache() {
+    let mut workspace = Workspace::new();
+    let opened = workspace.open_buffer(None, "a\nb\nc\nd\ne", 80).unwrap();
+
+    assert_eq!(
+        workspace
+            .total_visual_lines_for_view(opened.view_id)
+            .unwrap(),
+        5
+    );
+
+    workspace
+        .apply_processing_edits(
+            opened.buffer_id,
+            [ProcessingEdit::ReplaceFoldingRegions {
+                regions: vec![collapsed_region(1, 3)],
+                preserve_collapsed: false,
+            }],
+        )
+        .unwrap();
+    assert_eq!(
+        workspace
+            .total_visual_lines_for_view(opened.view_id)
+            .unwrap(),
+        3
+    );
+    assert_eq!(
+        workspace
+            .visual_to_logical_for_view(opened.view_id, 2)
+            .unwrap(),
+        (4, 0)
+    );
+
+    workspace
+        .apply_processing_edits(opened.buffer_id, [ProcessingEdit::ClearFoldingRegions])
+        .unwrap();
+    assert_eq!(
+        workspace
+            .total_visual_lines_for_view(opened.view_id)
+            .unwrap(),
+        5
+    );
+    assert_eq!(
+        workspace
+            .visual_to_logical_for_view(opened.view_id, 2)
+            .unwrap(),
+        (2, 0)
+    );
 }

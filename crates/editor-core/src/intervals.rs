@@ -470,8 +470,10 @@ impl FoldingManager {
         Self::normalize_regions(regions);
     }
 
-    fn ranges_overlap(left: &FoldRegion, right: &FoldRegion) -> bool {
-        left.start_line <= right.end_line && right.start_line <= left.end_line
+    fn overlapping_line_count(left: &FoldRegion, right: &FoldRegion) -> usize {
+        let start = left.start_line.max(right.start_line);
+        let end = left.end_line.min(right.end_line);
+        if start > end { 0 } else { end - start + 1 }
     }
 
     fn collapsed_fuzzy_match_score(
@@ -483,7 +485,8 @@ impl FoldingManager {
         }
 
         let start_delta = existing.start_line.abs_diff(replacement.start_line);
-        if start_delta > 1 || !Self::ranges_overlap(existing, replacement) {
+        let overlapping_line_count = Self::overlapping_line_count(existing, replacement);
+        if start_delta > 1 || overlapping_line_count < 2 {
             return None;
         }
 
