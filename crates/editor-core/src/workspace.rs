@@ -161,7 +161,7 @@ impl ViewCore {
         }
 
         if invalidate_visual_rows {
-            editor.invalidate_visual_row_index_cache();
+            editor.reflow_layout_from_line_index();
         }
 
         executor.set_tab_key_behavior(self.tab_key_behavior);

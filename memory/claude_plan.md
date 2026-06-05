@@ -34,6 +34,16 @@
 
 ## 进度记录
 
+- 本轮已读取 `TODO.md`，第一个未完成任务是 `T06 实现：移除 LayoutEngine.line_texts 文本副本`。
+- T06 范围限定为 `layout.rs`、相关重排调用点、snapshot/state/commands 触发路径以及布局一致性测试；本轮不进入 T06R 或后续任务。
+- 执行计划：先检查最新提交和当前工作区状态；再读取 T06 范围源码与现有测试，定位 `LayoutEngine.line_texts` 的字段、方法和调用点；随后删除该文本副本，让布局变更由调用方从 `LineIndex`/`TextBuffer` 提供行文本触发重排，并确保 visual-row cache 失效；最后补充 resize、wrap mode、wrap indent、tab width 与编辑后 viewport 一致性测试。
+- 验证计划：按要求先运行 `cargo fmt`，再运行 `cargo clippy --all-targets -- -D warnings`，之后运行 `cargo test -p editor-core --test incremental_viewport_consistency` 和 `cargo test -p editor-core`；如改动影响范围扩大，再运行必要的全量测试。
+- 已删除 `LayoutEngine.line_texts` 字段；`set_viewport_width` / `set_wrap_mode` / `set_wrap_indent` / `set_tab_width` 现在只更新布局参数，新增 `recalculate_all_from_lines` 供调用方用真实文本重排。
+- 已将 `CommandExecutor` 视图设置路径、workspace 视图状态恢复路径和 `SnapshotGenerator` 改为在布局参数变化后从 `LineIndex` 或自身行列表触发全量重排，并使 visual-row cache 在重排后失效。
+- 已扩展 `incremental_viewport_consistency`，覆盖 viewport width、wrap mode、wrap indent、tab width 变化后的参考快照一致性。
+- 已确认 `crates/**/*.rs` 中不再存在 `line_texts`，也不再存在旧的内部 `recalculate_all()` 文本副本重排路径。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test incremental_viewport_consistency`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
+- 已检查 `tools/run_fixtures.py` 不存在，因此无可运行的完整 fixture suite。下一步更新 `TODO.md` 的 T06 完成记录并提交。
 - 已创建初始执行计划；下一步读取 `TODO.md` 确认第一个未完成任务。
 - 已读取 `TODO.md`，第一个未完成任务是 `T05 实现：新增 TextBuffer 抽象并建立一致性校验`。
 - 已检查最新提交 `50a3680 [T04FR] Review folding preservation fix`，未发现与 T05 直接相关的未完成事项。

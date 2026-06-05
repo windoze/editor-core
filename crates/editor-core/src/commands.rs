@@ -1815,6 +1815,16 @@ impl EditorCore {
         *self.visual_row_index_cache.borrow_mut() = None;
     }
 
+    /// Reflow every logical line from the canonical line index after layout options change.
+    pub(crate) fn reflow_layout_from_line_index(&mut self) {
+        let lines: Vec<String> = (0..self.line_index.line_count())
+            .map(|line| self.line_index.get_line_text(line).unwrap_or_default())
+            .collect();
+        self.layout_engine
+            .recalculate_all_from_lines(lines.iter().map(String::as_str));
+        self.invalidate_visual_row_index_cache();
+    }
+
     fn with_visual_row_index<R>(&self, f: impl FnOnce(&VisualRowIndex) -> R) -> R {
         if self.visual_row_index_cache.borrow().is_none() {
             let index = self.build_visual_row_index();
@@ -9671,14 +9681,17 @@ impl CommandExecutor {
 
                 self.editor.viewport_width = width;
                 self.editor.layout_engine.set_viewport_width(width);
+                self.editor.reflow_layout_from_line_index();
                 Ok(CommandResult::Success)
             }
             ViewCommand::SetWrapMode { mode } => {
                 self.editor.layout_engine.set_wrap_mode(mode);
+                self.editor.reflow_layout_from_line_index();
                 Ok(CommandResult::Success)
             }
             ViewCommand::SetWrapIndent { indent } => {
                 self.editor.layout_engine.set_wrap_indent(indent);
+                self.editor.reflow_layout_from_line_index();
                 Ok(CommandResult::Success)
             }
             ViewCommand::SetTabWidth { width } => {
@@ -9689,6 +9702,7 @@ impl CommandExecutor {
                 }
 
                 self.editor.layout_engine.set_tab_width(width);
+                self.editor.reflow_layout_from_line_index();
                 Ok(CommandResult::Success)
             }
             ViewCommand::SetTabKeyBehavior { behavior } => {

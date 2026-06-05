@@ -1,5 +1,6 @@
 use editor_core::{
-    Command, CommandExecutor, EditCommand, HeadlessGrid, SnapshotGenerator, ViewCommand, WrapIndent,
+    Command, CommandExecutor, EditCommand, HeadlessGrid, SnapshotGenerator, ViewCommand,
+    WrapIndent, WrapMode,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,4 +130,45 @@ fn test_incremental_viewport_matches_reference_across_edits_and_undo_redo() {
     assert_viewport_matches_reference(&mut executor, 0, 50);
     executor.execute(Command::Edit(EditCommand::Redo)).unwrap();
     assert_viewport_matches_reference(&mut executor, 0, 50);
+}
+
+#[test]
+fn test_layout_reflow_options_match_reference() {
+    let mut executor = CommandExecutor::new("    abcdefghijklmnop\n\twide 你好 world\nshort", 8);
+
+    assert_viewport_matches_reference(&mut executor, 0, 80);
+    let narrow_visual_count = executor.editor().visual_line_count();
+
+    executor
+        .execute(Command::View(ViewCommand::SetViewportWidth { width: 16 }))
+        .unwrap();
+    assert_viewport_matches_reference(&mut executor, 0, 80);
+    assert!(
+        executor.editor().visual_line_count() < narrow_visual_count,
+        "wider viewport should rebuild layout with fewer wrapped rows"
+    );
+
+    executor
+        .execute(Command::View(ViewCommand::SetWrapMode {
+            mode: WrapMode::None,
+        }))
+        .unwrap();
+    assert_viewport_matches_reference(&mut executor, 0, 80);
+
+    executor
+        .execute(Command::View(ViewCommand::SetWrapMode {
+            mode: WrapMode::Char,
+        }))
+        .unwrap();
+    executor
+        .execute(Command::View(ViewCommand::SetWrapIndent {
+            indent: WrapIndent::FixedCells(4),
+        }))
+        .unwrap();
+    assert_viewport_matches_reference(&mut executor, 0, 80);
+
+    executor
+        .execute(Command::View(ViewCommand::SetTabWidth { width: 2 }))
+        .unwrap();
+    assert_viewport_matches_reference(&mut executor, 0, 80);
 }

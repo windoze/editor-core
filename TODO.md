@@ -484,9 +484,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test text_buffer_single_source`、`cargo test -p editor-core`。
 - 本次 review 未修改编译代码；T05 完成记录已有 `cargo test --all --all-targets` 通过结果，因此未重复运行全量测试或 fixture suite。
 
-### T06 实现：移除 `LayoutEngine.line_texts` 文本副本
+### [DONE] T06 实现：移除 `LayoutEngine.line_texts` 文本副本
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -531,6 +531,16 @@
 
 - `LayoutEngine` 不再保存整行文本副本。
 - 所有快照和布局测试通过。
+
+完成记录：
+
+- 删除 `LayoutEngine.line_texts` 字段，布局引擎只保留 wrap 参数和每个逻辑行的 `VisualLineInfo`；`from_lines` / `add_line` / `update_line` / `insert_line` 仍接收文本用于即时计算但不再保存文本。
+- 新增 `LayoutEngine::recalculate_all_from_lines`，将 viewport width、wrap mode、wrap indent、tab width 变化后的全量重排改为由调用方显式提供行文本。
+- 将 `CommandExecutor` 视图设置路径、workspace 视图状态恢复路径和 `SnapshotGenerator` 改为从 `LineIndex`/自身行列表触发重排，并在 core 重排后失效 visual-row cache。
+- 调整 `LayoutEngine::logical_position_to_visual` / `logical_position_to_visual_allow_virtual`，由调用方传入对应行文本，避免布局层为了坐标计算保留文本副本。
+- 扩展 `crates/editor-core/tests/incremental_viewport_consistency.rs`，覆盖编辑后 viewport 与参考重建一致，以及 resize、wrap mode、wrap indent、tab width 变化后的快照一致性和 visual-row cache 重建。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test incremental_viewport_consistency`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
+- 已确认 `tools/run_fixtures.py` 不存在，完整 fixture suite 无可运行入口。
 
 ### T06R Review：审查移除 layout 文本副本
 

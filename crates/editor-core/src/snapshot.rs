@@ -364,25 +364,31 @@ impl SnapshotGenerator {
             lines
         };
 
-        let line_refs: Vec<&str> = self.lines.iter().map(|s| s.as_str()).collect();
-        self.layout_engine.from_lines(&line_refs);
+        self.reflow_layout();
     }
 
     /// Set viewport width
     pub fn set_viewport_width(&mut self, width: usize) {
         self.viewport_width = width;
         self.layout_engine.set_viewport_width(width);
+        self.reflow_layout();
     }
 
     /// Set tab width (in cells) used for expanding `'\t'`.
     pub fn set_tab_width(&mut self, tab_width: usize) {
         self.tab_width = tab_width.max(1);
         self.layout_engine.set_tab_width(self.tab_width);
+        self.reflow_layout();
     }
 
     /// Get tab width (in cells).
     pub fn tab_width(&self) -> usize {
         self.tab_width
+    }
+
+    fn reflow_layout(&mut self) {
+        self.layout_engine
+            .recalculate_all_from_lines(self.lines.iter().map(String::as_str));
     }
 
     /// Get headless grid snapshot

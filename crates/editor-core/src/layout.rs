@@ -394,8 +394,6 @@ pub struct LayoutEngine {
     wrap_indent: WrapIndent,
     /// Visual information for each logical line
     line_layouts: Vec<VisualLineInfo>,
-    /// Raw text for each logical line (excluding newline characters)
-    line_texts: Vec<String>,
 }
 
 impl LayoutEngine {
@@ -407,15 +405,15 @@ impl LayoutEngine {
             wrap_mode: WrapMode::Char,
             wrap_indent: WrapIndent::None,
             line_layouts: Vec::new(),
-            line_texts: Vec::new(),
         }
     }
 
-    /// Set viewport width
+    /// Set viewport width.
+    ///
+    /// Callers must reflow existing lines after changing this option.
     pub fn set_viewport_width(&mut self, width: usize) {
         if self.viewport_width != width {
             self.viewport_width = width;
-            self.recalculate_all();
         }
     }
 
@@ -431,11 +429,10 @@ impl LayoutEngine {
 
     /// Set wrap mode.
     ///
-    /// If `wrap_mode` changes, all line layouts are recalculated.
+    /// Callers must reflow existing lines after changing this option.
     pub fn set_wrap_mode(&mut self, wrap_mode: WrapMode) {
         if self.wrap_mode != wrap_mode {
             self.wrap_mode = wrap_mode;
-            self.recalculate_all();
         }
     }
 
@@ -446,11 +443,10 @@ impl LayoutEngine {
 
     /// Set wrapped-line indentation policy.
     ///
-    /// If `wrap_indent` changes, all line layouts are recalculated.
+    /// Callers must reflow existing lines after changing this option.
     pub fn set_wrap_indent(&mut self, wrap_indent: WrapIndent) {
         if self.wrap_indent != wrap_indent {
             self.wrap_indent = wrap_indent;
-            self.recalculate_all();
         }
     }
 
@@ -461,21 +457,28 @@ impl LayoutEngine {
 
     /// Set tab width (in cells) used for expanding `'\t'`.
     ///
-    /// If `tab_width` changes, all line layouts are recalculated.
+    /// Callers must reflow existing lines after changing this option.
     pub fn set_tab_width(&mut self, tab_width: usize) {
         let tab_width = tab_width.max(1);
         if self.tab_width != tab_width {
             self.tab_width = tab_width;
-            self.recalculate_all();
         }
     }
 
     /// Build layout from list of text lines
     pub fn from_lines(&mut self, lines: &[&str]) {
+        self.recalculate_all_from_lines(lines.iter().copied());
+    }
+
+    /// Recalculate layout for all lines using caller-provided text.
+    pub fn recalculate_all_from_lines<I, S>(&mut self, lines: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         self.line_layouts.clear();
-        self.line_texts.clear();
         for line in lines {
-            self.line_texts.push((*line).to_string());
+            let line = line.as_ref();
             self.line_layouts
                 .push(VisualLineInfo::from_text_with_layout_options(
                     line,
@@ -489,7 +492,6 @@ impl LayoutEngine {
 
     /// Add a line
     pub fn add_line(&mut self, text: &str) {
-        self.line_texts.push(text.to_string());
         self.line_layouts
             .push(VisualLineInfo::from_text_with_layout_options(
                 text,
@@ -503,7 +505,6 @@ impl LayoutEngine {
     /// Update a specific line
     pub fn update_line(&mut self, line_index: usize, text: &str) {
         if line_index < self.line_layouts.len() {
-            self.line_texts[line_index] = text.to_string();
             self.line_layouts[line_index] = VisualLineInfo::from_text_with_layout_options(
                 text,
                 self.viewport_width,
@@ -517,7 +518,6 @@ impl LayoutEngine {
     /// Insert a line
     pub fn insert_line(&mut self, line_index: usize, text: &str) {
         let pos = line_index.min(self.line_layouts.len());
-        self.line_texts.insert(pos, text.to_string());
         self.line_layouts.insert(
             pos,
             VisualLineInfo::from_text_with_layout_options(
@@ -533,7 +533,6 @@ impl LayoutEngine {
     /// Delete a line
     pub fn delete_line(&mut self, line_index: usize) {
         if line_index < self.line_layouts.len() {
-            self.line_texts.remove(line_index);
             self.line_layouts.remove(line_index);
         }
     }
@@ -588,45 +587,16 @@ impl LayoutEngine {
         (last_line, last_visual_offset)
     }
 
-    /// Recalculate layout for all lines
-    fn recalculate_all(&mut self) {
-        if self.line_texts.len() != self.line_layouts.len() {
-            // Conservative handling: avoid out-of-bounds access. Normally these two should always be consistent.
-            self.line_layouts.clear();
-            for line in &self.line_texts {
-                self.line_layouts
-                    .push(VisualLineInfo::from_text_with_layout_options(
-                        line,
-                        self.viewport_width,
-                        self.tab_width,
-                        self.wrap_mode,
-                        self.wrap_indent,
-                    ));
-            }
-            return;
-        }
-
-        for (layout, line_text) in self.line_layouts.iter_mut().zip(self.line_texts.iter()) {
-            *layout = VisualLineInfo::from_text_with_layout_options(
-                line_text,
-                self.viewport_width,
-                self.tab_width,
-                self.wrap_mode,
-                self.wrap_indent,
-            );
-        }
-    }
-
     /// Clear all lines
     pub fn clear(&mut self) {
         self.line_layouts.clear();
-        self.line_texts.clear();
     }
 
     /// Convert logical coordinates (line, column) to visual coordinates (visual row number, x cell offset within row).
     ///
     /// - `logical_line`: Logical line number (0-based)
     /// - `column`: Character column within the logical line (0-based, counted by `char`)
+    /// - `line_text`: Text for `logical_line`, supplied by the caller's canonical text store.
     ///
     /// Return value:
     /// - `Some((visual_row, x))`: `visual_row` is the global visual row number, `x` is the cell offset within that visual row
@@ -635,9 +605,9 @@ impl LayoutEngine {
         &self,
         logical_line: usize,
         column: usize,
+        line_text: &str,
     ) -> Option<(usize, usize)> {
         let layout = self.get_line_layout(logical_line)?;
-        let line_text = self.line_texts.get(logical_line)?;
 
         let line_char_len = line_text.chars().count();
         let column = column.min(line_char_len);
@@ -690,13 +660,14 @@ impl LayoutEngine {
     /// Difference from [`logical_position_to_visual`](Self::logical_position_to_visual):
     /// - `column` is not clamped to `line_char_len`
     /// - Excess portion is treated as virtual spaces of `' '` (width=1)
+    /// - `line_text` comes from the caller's canonical text store.
     pub fn logical_position_to_visual_allow_virtual(
         &self,
         logical_line: usize,
         column: usize,
+        line_text: &str,
     ) -> Option<(usize, usize)> {
         let layout = self.get_line_layout(logical_line)?;
-        let line_text = self.line_texts.get(logical_line)?;
 
         let line_char_len = line_text.chars().count();
         let clamped_column = column.min(line_char_len);

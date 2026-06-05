@@ -524,15 +524,20 @@ fn test_layout_engine_logical_position_to_visual_for_wrapped_lines() {
     use editor_core::LayoutEngine;
 
     let mut engine = LayoutEngine::new(10);
-    engine.from_lines(&["12345678901"]);
+    let line = "12345678901";
+    engine.from_lines(&[line]);
 
-    assert_eq!(engine.logical_position_to_visual(0, 0), Some((0, 0)));
-    assert_eq!(engine.logical_position_to_visual(0, 10), Some((1, 0)));
-    assert_eq!(engine.logical_position_to_visual(0, 11), Some((1, 1)));
-    assert_eq!(engine.logical_position_to_visual(0, 999), Some((1, 1))); // clamp
+    assert_eq!(engine.logical_position_to_visual(0, 0, line), Some((0, 0)));
+    assert_eq!(engine.logical_position_to_visual(0, 10, line), Some((1, 0)));
+    assert_eq!(engine.logical_position_to_visual(0, 11, line), Some((1, 1)));
+    assert_eq!(
+        engine.logical_position_to_visual(0, 999, line),
+        Some((1, 1))
+    ); // clamp
 
     let mut engine = LayoutEngine::new(6);
-    engine.from_lines(&["Hello你"]);
-    assert_eq!(engine.logical_position_to_visual(0, 5), Some((1, 0)));
-    assert_eq!(engine.logical_position_to_visual(0, 6), Some((1, 2)));
+    let line = "Hello你";
+    engine.from_lines(&[line]);
+    assert_eq!(engine.logical_position_to_visual(0, 5, line), Some((1, 0)));
+    assert_eq!(engine.logical_position_to_visual(0, 6, line), Some((1, 2)));
 }
