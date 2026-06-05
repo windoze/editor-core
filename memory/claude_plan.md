@@ -77,3 +77,23 @@ This file records an operational plan and progress updates for the current invoc
 - Implemented the T19F fixes and added regressions in `utf16_boundaries.rs`.
 - Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, and `cargo test -p editor-core-lsp`.
 - Marked T19F as `[DONE]` in `TODO.md` with completion details. Next step is git inspection and commit.
+
+## T19FR Review Invocation Plan
+
+1. Read `TODO.md` and select the first heading without `[DONE]`.
+2. Check the latest commit for unfinished work directly relevant to the selected task.
+3. Review the T19F diff against the T19FR checklist: `DeltaCalculator::apply_change`, workspace edit calculator synchronization, signatureHelp checked parsing, T19 half-surrogate policy preservation, and regression coverage.
+4. Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, and `cargo test -p editor-core-lsp`.
+5. If findings require follow-up, add the minimum task(s) before the dependent next task in `TODO.md`; otherwise mark T19FR `[DONE]` directly.
+6. Commit the review bookkeeping and stop.
+
+## T19FR Progress Updates
+
+- Read `TODO.md`; the first incomplete task is `T19FR Review：审查 LSP workspace edit 与 signatureHelp 边界修复`.
+- Latest commit is `[T19F] Fix LSP workspace edit boundary sync`, directly relevant to T19FR and containing no separate unfinished issue in the commit title.
+- Reviewed `DeltaCalculator::apply_change`, `workspace_sync::lsp_changes_for_text_edits`, `lsp_signature_help`, shared LSP range conversion, and the `utf16_boundaries` regression additions.
+- Workspace edit synchronization now regenerates didChange ranges from clamped char offsets, and signatureHelp oversized values use saturating parsing with checked active-signature lookup.
+- Found a follow-up issue: `DeltaCalculator::apply_change` still clamps an out-of-bounds LSP line to the last line and then honors the original character. With `character = 0`, the edit lands at the start of the last line instead of document end, so it does not match the required unified clamp semantics.
+- Added `T19FF` and `T19FFR` before `T20` in `TODO.md` to schedule that fix and review before continuing.
+- Marked `T19FR` as `[DONE]` and recorded the review findings and validation results in `TODO.md`.
+- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, and `cargo test -p editor-core-lsp`.

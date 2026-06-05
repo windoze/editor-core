@@ -1899,9 +1899,9 @@
 - 扩展 `utf16_boundaries.rs`，覆盖超大 workspace edit range 不 panic/不巨量扩容且 workspace 文本与 calculator 同步一致、合法 workspace edit 继续产生原 didChange range/text、signatureHelp 超大 offset/index 不 wrap。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test utf16_boundaries`、`cargo test -p editor-core-lsp`。
 
-### T19FR Review：审查 LSP workspace edit 与 signatureHelp 边界修复
+### [DONE] T19FR Review：审查 LSP workspace edit 与 signatureHelp 边界修复
 
-状态：TODO
+状态：DONE
 
 审查范围：T19F 的所有 diff。
 
@@ -1916,6 +1916,75 @@
 建议命令：
 
 - `cargo test -p editor-core-lsp --test utf16_boundaries`，若 T19F 修改该测试文件
+- `cargo test -p editor-core-lsp`
+- `cargo clippy --all-targets -- -D warnings`
+
+完成记录：
+
+- 已审查 T19F diff，重点检查 `DeltaCalculator::apply_change`、`workspace_sync::lsp_changes_for_text_edits`、`lsp_signature_help` 的饱和解析/checked lookup，以及 `utf16_boundaries` 新增回归覆盖。
+- 未发现 workspace edit 同步继续使用原始超大 LSP range 触发 calculator 巨量扩容的问题；`workspace_sync` 会先通过 `char_offsets_for_lsp_range` clamp/normalize 到当前 `LineIndex`，再用合法 char offsets 重新生成 didChange range，合法 workspace edit 的 range/text 回归已有覆盖。
+- 未发现 `signatureHelp` 中 active index 或 parameter label offset 继续 unchecked 截断的问题；超大值饱和到 `u32::MAX`，`to_compact_string` 使用 checked lookup，不会 wrap 到错误签名。
+- 发现 T19F 后续修复项：`DeltaCalculator::apply_change` 直接处理 untrusted `TextChange` 时只把越界 line clamp 到最后一行，再按原 character 转换；当越界 line 搭配 `character = 0` 时会落到最后一行开头，而不是任务要求的文档末尾，且当前测试只覆盖了超大 line + 超大 character。
+- 已在 T20 前新增 `T19FF` / `T19FFR`，要求先修复该 calculator 越界 line clamp 语义并补测试。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test utf16_boundaries`、`cargo test -p editor-core-lsp`。
+
+### T19FF 修复：统一 DeltaCalculator 越界 line clamp 语义
+
+状态：TODO
+
+依赖：
+
+- T19FR 审查发现的 `DeltaCalculator::apply_change` 越界 line clamp 语义缺口。
+
+范围文件：
+
+- `crates/editor-core-lsp/src/lsp_sync.rs`
+- `crates/editor-core-lsp/tests/utf16_boundaries.rs`，或 `lsp_sync.rs` 单元测试，按最小覆盖选择
+
+已知入口：
+
+- `DeltaCalculator::apply_change`
+- `LspCoordinateConverter::lsp_position_to_char_offset`
+- `TextChange`
+
+实现要求：
+
+1. `DeltaCalculator::apply_change` 处理 untrusted `TextChange` 时，越界 line 必须按当前统一 LSP 坐标策略 clamp 到当前 calculator 文档末尾，而不是最后一行的任意 character。
+2. 超大 line 搭配 `character = 0`、超大 line 搭配超大 character、反向 range 都必须稳定 normalize，不得 panic、巨量扩容或修改错误位置。
+3. 保持 T19 已固定的 UTF-16 半代理对策略：落在 surrogate pair 中间的 character clamp 到该 Unicode scalar 起点。
+4. 保持 workspace edit 实际应用语义与 calculator 同步语义一致，不引入 fixture-only 特例。
+
+测试要求：
+
+1. 覆盖 `DeltaCalculator::apply_change` 直接接收越界 line + `character = 0` 的 insert/replace，结果应发生在文档末尾。
+2. 覆盖越界 line + 超大 character 与反向 range normalize 仍保持文档末尾 clamp 语义。
+3. 覆盖半代理对 range 策略不回退。
+4. 运行 `cargo test -p editor-core-lsp --test utf16_boundaries`，若回归放入该测试文件。
+5. 运行 `cargo test -p editor-core-lsp`。
+6. 运行 `cargo clippy --all-targets -- -D warnings`。
+
+验收标准：
+
+- `DeltaCalculator::apply_change` 与 `LineIndex`/workspace edit 的 LSP position clamp 策略一致。
+- 任意越界 LSP line 不会落到最后一行开头或中间位置。
+
+### T19FFR Review：审查 DeltaCalculator 越界 line clamp 修复
+
+状态：TODO
+
+审查范围：T19FF 的所有 diff。
+
+审查重点：
+
+1. 越界 line 是否无条件 clamp 到 calculator 文档末尾，而不是最后一行加原 character。
+2. 正常合法 range、超大 character、反向 range 和半代理对策略是否未退化。
+3. workspace edit 的实际文本应用与 calculator didChange 同步是否仍一致。
+4. 测试是否覆盖越界 line + `character = 0` 这个 T19FR 发现的缺口。
+5. 是否避免引入 workaround 或 fixture-only 特例。
+
+建议命令：
+
+- `cargo test -p editor-core-lsp --test utf16_boundaries`
 - `cargo test -p editor-core-lsp`
 - `cargo clippy --all-targets -- -D warnings`
 
