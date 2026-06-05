@@ -1,39 +1,24 @@
-# 执行计划
+## 执行计划
 
-## 当前约束
-
-- `TODO.md` 是任务顺序、依赖、验证要求和完成记录的唯一权威来源。
-- 本轮只处理 `TODO.md` 中第一个标题未带 `[DONE]` 的任务，完成后提交并停止。
-- 不做开放式历史问题扫描；只处理会阻塞当前任务或验证失败暴露且未被显式排期的问题。
-- 若遇到无法按规格完成的缺口，不采用 workaround；在 `TODO.md` 中插入最小必要前置任务，提交后停止。
-
-## 初始步骤
-
-1. 读取 `TODO.md`，确定第一个未完成任务及其验证要求。
-2. 查看最近提交摘要，仅判断是否有与该任务直接相关的未完成事项。
-3. 读取当前任务涉及的源码、测试和文档，确认最小实现边界。
-
-## 执行步骤
-
-1. 按当前任务要求实现最小正确改动。
-2. 添加或更新聚焦回归测试；必要时同步文档或完成记录。
-3. 先运行格式化，再运行 clippy，最后运行任务要求的相关测试；若观察到未排期测试/fixture 失败，修复或加入前置任务。
-4. 将任务标题更新为 `[DONE] ...`，填写完成记录和验证结果。
-5. 检查 git 状态、diff 和最近提交，提交本轮所有相关改动。
-6. 停止，不进入下一个任务。
+1. 读取 `TODO.md`，按标题是否包含 `[DONE]` 判断第一个未完成任务，并核对任务要求、依赖和验证要求。
+2. 检查最近提交和当前工作区状态，只用于判断是否存在与当前任务直接相关的未完成问题或必须一起提交的遗留改动。
+3. 根据当前任务阅读最小必要代码与测试，确认实现边界，不做无关历史问题扫查。
+4. 完整实现当前任务；如发现阻塞当前任务的缺失功能、规范不匹配或未计划失败测试，则按要求更新 `TODO.md` 加入最小前置任务并停止。
+5. 运行格式化、lint、相关测试以及任务要求的验证；若失败，修复或按策略记录为前置任务。
+6. 将当前任务标题标记为 `[DONE]`，更新完成记录；仅在阶段级计划变化时更新 `PLAN.md`。
+7. 检查 diff，提交本次任务涉及的所有必要改动，然后停止，不继续下一个任务。
 
 ## 进度记录
 
-- 已创建本计划文件；下一步读取 `TODO.md` 识别第一个未完成任务。
-- 已读取 `TODO.md`，第一个未完成任务是 `T11 实现：IntervalTree 更新路径降本`。本轮只处理 T11，不进入 `T11R`。
-- T11 范围：`intervals.rs`、`commands.rs`、`processing.rs`、`diagnostics.rs`，必要时新增 `interval_tree_updates.rs`；重点是批量编辑时避免每个 edit 对每个 style layer 反复全量更新，同时保持 interval 查询和 `prefix_max_end` 正确。
-- 已检查当前更新入口，重复全量更新主要集中在 `commands.rs` 的多光标/批量文本变更循环中。执行方案：在 `intervals.rs` 新增批量 `IntervalTextEdit` 更新入口，按现有“删除后插入、按 pre-edit start 降序应用”的语义一次更新每棵树并重建一次 `prefix_max_end`；命令层改为先收集 interval delta，再对 base tree 和每个 style layer 各调用一次。
-- 已实现批量 interval 更新入口，并将命令层文本变更路径改为统一收集 `IntervalTextEdit` 后批量更新 base/style layer trees；新增 `interval_tree_updates` 回归测试。
-- 已通过验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test interval_tree_updates`、`cargo test -p editor-core --test diagnostics`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
-- 下一步更新 `TODO.md` 将 T11 标记为 `[DONE]` 并记录完成内容，然后提交本轮改动。
-- 已更新 `TODO.md`：T11 标题已加 `[DONE]`，状态改为 DONE，并记录实现与验证结果。下一步检查 git diff/status/log 后提交。
-- 本轮第一个未完成任务是 `T11R Review：审查 IntervalTree 更新优化`，只审查 T11 diff，不进入 T12。
-- 已检查最近提交：HEAD 为 `[T11] Optimize interval tree text updates`，正是 T11R 审查对象。
-- 已审查 T11 diff 中的 `commands.rs`、`intervals.rs` 和 `interval_tree_updates.rs`，未发现需要立即修复或新增前置任务的问题。
-- 已通过验证：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test interval_tree_updates`、`cargo test -p editor-core --test diagnostics`、`cargo test -p editor-core`。
-- 已更新 `TODO.md`：T11R 标题已加 `[DONE]`，状态改为 DONE，并记录审查与验证结果。下一步检查 git diff/status/log 后提交。
+- 已创建初始执行计划，下一步读取 `TODO.md` 确认第一个未完成任务。
+- 已确认第一个未完成任务为 `T12 实现：限制 command_history 内存增长`。下一步按任务要求定向检查 `get_command_history` 消费者、最近提交和当前工作区状态。
+- 定向检查结果：`get_command_history` 只出现在 `commands.rs`、测试和示例中；最近提交为 T11R，不含 T12 直接阻塞项；工作区未跟踪 `notification.sh`、`run_agent.sh` 非本任务改动，保持不动。
+- 实现方案：将 `CommandExecutor` 的历史改为有界环形/队列语义，并在记录历史时把大文本命令转为摘要形式，保持 `get_command_history` 返回 `&[Command]` 的公开 API 形状。
+- 已实现：`CommandExecutor` 默认保留最近 1000 条历史，支持 `set_command_history_limit(0)` 禁用；记录历史时对大文本字段做预览截断，避免保存完整大文本副本。新增 `command_history.rs` 覆盖容量裁剪、禁用历史和大 `InsertText` 摘要。
+- 下一步运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、T12 指定测试和相关 crate 测试。
+- `cargo clippy --all-targets -- -D warnings` 首次发现 `SearchOptions` 是 `Copy`，已将历史摘要构造中的 `clone()` 改为解引用复制；下一步重新格式化和验证。
+- 已通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test command_executor_commands`、`cargo test -p editor-core --test command_history`、`cargo test -p editor-core`。
+- 下一步运行 `cargo clippy --all-targets --all-features -- -D warnings` 和 `cargo test --all --all-targets`，并检查是否存在 fixture runner。
+- 已通过：`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
+- 下一步更新 `TODO.md`：将 T12 标记为 `[DONE]` 并写入完成记录，然后检查 diff 并提交。
+- 已将 T12 在 `TODO.md` 标记为 `[DONE]` 并补充完成记录。下一步检查 `git status` / `git diff` / `git log`，仅提交本任务相关文件。

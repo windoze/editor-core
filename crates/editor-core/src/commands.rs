@@ -61,6 +61,9 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use unicode_segmentation::UnicodeSegmentation;
 
+const DEFAULT_COMMAND_HISTORY_LIMIT: usize = 1000;
+const COMMAND_HISTORY_TEXT_PREVIEW_BYTES: usize = 256;
+
 /// Position coordinates (line and column numbers)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -224,6 +227,37 @@ pub struct TextEditSpec {
     pub end: usize,
     /// Replacement text.
     pub text: String,
+}
+
+impl TextEditSpec {
+    fn history_summary(&self) -> Self {
+        Self {
+            start: self.start,
+            end: self.end,
+            text: summarize_history_text(&self.text),
+        }
+    }
+}
+
+fn summarize_history_text(text: &str) -> String {
+    if text.len() <= COMMAND_HISTORY_TEXT_PREVIEW_BYTES {
+        return text.to_string();
+    }
+
+    let mut preview_end = 0;
+    for (byte_idx, ch) in text.char_indices() {
+        let next = byte_idx + ch.len_utf8();
+        if next > COMMAND_HISTORY_TEXT_PREVIEW_BYTES {
+            break;
+        }
+        preview_end = next;
+    }
+
+    format!(
+        "{}...[history truncated: {} bytes]",
+        &text[..preview_end],
+        text.len()
+    )
 }
 
 /// Text editing commands
@@ -703,6 +737,156 @@ pub enum Command {
     View(ViewCommand),
     /// Style command
     Style(StyleCommand),
+}
+
+impl EditCommand {
+    fn history_summary(&self) -> Self {
+        match self {
+            EditCommand::Insert { offset, text } => EditCommand::Insert {
+                offset: *offset,
+                text: summarize_history_text(text),
+            },
+            EditCommand::Delete { start, length } => EditCommand::Delete {
+                start: *start,
+                length: *length,
+            },
+            EditCommand::Replace {
+                start,
+                length,
+                text,
+            } => EditCommand::Replace {
+                start: *start,
+                length: *length,
+                text: summarize_history_text(text),
+            },
+            EditCommand::ReplaceCoalescingUndo {
+                start,
+                length,
+                text,
+            } => EditCommand::ReplaceCoalescingUndo {
+                start: *start,
+                length: *length,
+                text: summarize_history_text(text),
+            },
+            EditCommand::ReplaceCoalescingUndoWithSelection {
+                start,
+                length,
+                text,
+                selection_start,
+                selection_end,
+            } => EditCommand::ReplaceCoalescingUndoWithSelection {
+                start: *start,
+                length: *length,
+                text: summarize_history_text(text),
+                selection_start: *selection_start,
+                selection_end: *selection_end,
+            },
+            EditCommand::InsertText { text } => EditCommand::InsertText {
+                text: summarize_history_text(text),
+            },
+            EditCommand::TypeChar { ch } => EditCommand::TypeChar { ch: *ch },
+            EditCommand::InsertTab => EditCommand::InsertTab,
+            EditCommand::InsertNewline { auto_indent } => EditCommand::InsertNewline {
+                auto_indent: *auto_indent,
+            },
+            EditCommand::Indent => EditCommand::Indent,
+            EditCommand::Outdent => EditCommand::Outdent,
+            EditCommand::DuplicateLines => EditCommand::DuplicateLines,
+            EditCommand::DeleteLines => EditCommand::DeleteLines,
+            EditCommand::MoveLinesUp => EditCommand::MoveLinesUp,
+            EditCommand::MoveLinesDown => EditCommand::MoveLinesDown,
+            EditCommand::JoinLines => EditCommand::JoinLines,
+            EditCommand::SplitLine => EditCommand::SplitLine,
+            EditCommand::ToggleComment { config } => EditCommand::ToggleComment {
+                config: config.clone(),
+            },
+            EditCommand::ApplyTextEdits { edits } => EditCommand::ApplyTextEdits {
+                edits: edits.iter().map(TextEditSpec::history_summary).collect(),
+            },
+            EditCommand::ApplySnippet {
+                start,
+                end,
+                snippet,
+                additional_edits,
+            } => EditCommand::ApplySnippet {
+                start: *start,
+                end: *end,
+                snippet: summarize_history_text(snippet),
+                additional_edits: additional_edits
+                    .iter()
+                    .map(TextEditSpec::history_summary)
+                    .collect(),
+            },
+            EditCommand::DeleteToPrevTabStop => EditCommand::DeleteToPrevTabStop,
+            EditCommand::DeleteGraphemeBack => EditCommand::DeleteGraphemeBack,
+            EditCommand::DeleteGraphemeForward => EditCommand::DeleteGraphemeForward,
+            EditCommand::DeleteWordBack => EditCommand::DeleteWordBack,
+            EditCommand::DeleteWordForward => EditCommand::DeleteWordForward,
+            EditCommand::Backspace => EditCommand::Backspace,
+            EditCommand::DeleteForward => EditCommand::DeleteForward,
+            EditCommand::Undo => EditCommand::Undo,
+            EditCommand::Redo => EditCommand::Redo,
+            EditCommand::EndUndoGroup => EditCommand::EndUndoGroup,
+            EditCommand::ReplaceCurrent {
+                query,
+                replacement,
+                options,
+            } => EditCommand::ReplaceCurrent {
+                query: summarize_history_text(query),
+                replacement: summarize_history_text(replacement),
+                options: *options,
+            },
+            EditCommand::ReplaceAll {
+                query,
+                replacement,
+                options,
+            } => EditCommand::ReplaceAll {
+                query: summarize_history_text(query),
+                replacement: summarize_history_text(replacement),
+                options: *options,
+            },
+        }
+    }
+}
+
+impl CursorCommand {
+    fn history_summary(&self) -> Self {
+        match self {
+            CursorCommand::FindNext { query, options } => CursorCommand::FindNext {
+                query: summarize_history_text(query),
+                options: *options,
+            },
+            CursorCommand::FindPrev { query, options } => CursorCommand::FindPrev {
+                query: summarize_history_text(query),
+                options: *options,
+            },
+            _ => self.clone(),
+        }
+    }
+}
+
+impl ViewCommand {
+    fn history_summary(&self) -> Self {
+        match self {
+            ViewCommand::SetWordBoundaryAsciiBoundaryChars { boundary_chars } => {
+                ViewCommand::SetWordBoundaryAsciiBoundaryChars {
+                    boundary_chars: summarize_history_text(boundary_chars),
+                }
+            }
+            _ => self.clone(),
+        }
+    }
+}
+
+impl Command {
+    fn history_summary(&self) -> Self {
+        match self {
+            Command::Edit(command) => Command::Edit(command.history_summary()),
+            Command::Cursor(command) => Command::Cursor(command.history_summary()),
+            Command::View(command) => Command::View(command.history_summary()),
+            Command::Style(command) => Command::Style(command.clone()),
+        }
+    }
 }
 
 /// Command execution result
@@ -2996,8 +3180,10 @@ impl EditorCore {
 pub struct CommandExecutor {
     /// Editor Core
     editor: EditorCore,
-    /// Command history
+    /// Bounded command history for debug/inspection APIs.
     command_history: Vec<Command>,
+    /// Maximum number of commands retained in `command_history`; zero disables history.
+    command_history_limit: usize,
     /// Undo/redo manager (only records CommandExecutor edit commands executed via)
     undo_redo: UndoRedoManager,
     /// Controls how [`EditCommand::InsertTab`] behaves.
@@ -3021,7 +3207,8 @@ impl CommandExecutor {
     pub fn new(text: &str, viewport_width: usize) -> Self {
         Self {
             editor: EditorCore::new(text, viewport_width),
-            command_history: Vec::new(),
+            command_history: Vec::with_capacity(DEFAULT_COMMAND_HISTORY_LIMIT),
+            command_history_limit: DEFAULT_COMMAND_HISTORY_LIMIT,
             undo_redo: UndoRedoManager::new(1000),
             tab_key_behavior: TabKeyBehavior::Spaces,
             indentation_config: IndentationConfig::default(),
@@ -3046,6 +3233,30 @@ impl CommandExecutor {
         self.editor.interval_tree.update_for_text_edits(edits);
         for layer_tree in self.editor.style_layers.values_mut() {
             layer_tree.update_for_text_edits(edits);
+        }
+    }
+
+    fn record_command_history(&mut self, command: &Command) {
+        if self.command_history_limit == 0 {
+            return;
+        }
+
+        self.command_history.push(command.history_summary());
+        self.trim_command_history_to_limit();
+    }
+
+    fn trim_command_history_to_limit(&mut self) {
+        if self.command_history_limit == 0 {
+            self.command_history.clear();
+            return;
+        }
+
+        let excess = self
+            .command_history
+            .len()
+            .saturating_sub(self.command_history_limit);
+        if excess > 0 {
+            self.command_history.drain(..excess);
         }
     }
 
@@ -3074,8 +3285,8 @@ impl CommandExecutor {
             self.snippet_session = None;
         }
 
-        // Save command to history
-        self.command_history.push(command.clone());
+        // Save a bounded summary before execution so failed commands remain observable.
+        self.record_command_history(&command);
 
         let skip_snippet_delta =
             matches!(&command, Command::Edit(EditCommand::ApplySnippet { .. }));
@@ -3140,9 +3351,23 @@ impl CommandExecutor {
         Ok(results)
     }
 
-    /// Get command history
+    /// Get the bounded command history.
+    ///
+    /// Large text payloads are stored as summaries so this debug-oriented history does not keep
+    /// another full copy of pasted or inserted text.
     pub fn get_command_history(&self) -> &[Command] {
         &self.command_history
+    }
+
+    /// Get the maximum number of commands retained in history.
+    pub fn command_history_limit(&self) -> usize {
+        self.command_history_limit
+    }
+
+    /// Set the maximum number of commands retained in history; `0` disables history recording.
+    pub fn set_command_history_limit(&mut self, limit: usize) {
+        self.command_history_limit = limit;
+        self.trim_command_history_to_limit();
     }
 
     /// Can undo

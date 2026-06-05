@@ -1056,9 +1056,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test interval_tree_updates`、`cargo test -p editor-core --test diagnostics`、`cargo test -p editor-core`。
 - 本次 review 未修改编译代码；T11 完成记录已有 `cargo clippy --all-targets --all-features -- -D warnings` 和 `cargo test --all --all-targets` 通过结果，因此未重复运行全量 workspace 测试或 fixture suite。
 
-### T12 实现：限制 `command_history` 内存增长
+### [DONE] T12 实现：限制 `command_history` 内存增长
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -1092,6 +1092,15 @@
 
 - `command_history` 不再无界增长。
 - 大 `InsertText` 不再因 history 额外完整 clone。
+
+完成记录：
+
+- 定向确认 `get_command_history` 只在 `commands.rs`、测试和示例中使用，未发现生产消费者。
+- 将 `CommandExecutor` 的 `command_history` 改为有界调试历史，默认保留最近 1000 条命令，并新增 `command_history_limit` / `set_command_history_limit`，`0` 可关闭历史记录。
+- 历史记录在执行前保存命令摘要，继续记录失败命令；大文本字段只保留 UTF-8 边界安全的短预览和原始 byte 长度说明，避免 `InsertText` / replace / snippet / text edits / search 字符串在 history 中额外完整 clone。
+- 新增 `crates/editor-core/tests/command_history.rs`，覆盖超过容量只保留最近命令、禁用历史记录、执行大 `InsertText` 仍修改正文但 history 只保存摘要。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test command_executor_commands`、`cargo test -p editor-core --test command_history`、`cargo test -p editor-core`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，完整 fixture suite 无可运行入口。
 
 ### T12R Review：审查 command_history 内存控制
 
