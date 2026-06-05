@@ -707,9 +707,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。
 
-### T08R Review：审查视觉行索引增量化
+### [DONE] T08R Review：审查视觉行索引增量化
 
-状态：TODO
+状态：DONE
 
 审查范围：T08 的所有 diff。
 
@@ -723,6 +723,91 @@
 
 建议命令：
 
+- `cargo test -p editor-core --test visual_row_improvements`
+- `cargo test -p editor-core`
+
+完成记录：
+
+- 已审查 T08 diff，重点检查 `VisualRowIndex` / Fenwick 前缀和、`EditorCore` 视觉行映射入口、文本编辑后的缓存同步、fold/unfold 同步路径，以及新增 `visual_row_index` 测试。
+- 发现 T08 后续修复项：`InsertNewline`、`DeleteForward` / `Backspace`、boundary 删除等真实换行编辑路径会调用 `apply_text_change_to_line_index_and_layout` 触发视觉行缓存增量同步，但没有像 `Insert` / `Delete` / `Replace` / `apply_text_ops` 那样先执行 `FoldingManager::apply_line_delta`，已构建缓存可能与平移后的折叠语义错位。
+- 同时发现覆盖缺口和残留路径：新增测试未覆盖多个折叠区域、尾部空行/末尾换行、真实换行插入删除命令与 cached visual mapping 的组合；TUI 仍可直接修改 `folding_manager` 而不失效或同步视觉行缓存；带 virtual text 的 composed viewport 仍从文档头部线性扫描。
+- 已在 T09 前新增 `T08F` / `T08FR`，要求先修复上述问题并补充专项 review。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --test visual_row_improvements`、`cargo test -p editor-core --test visual_row_index`、`cargo test -p editor-core`。
+
+### T08F 修复：补齐视觉行索引换行与折叠同步
+
+状态：TODO
+
+依赖：
+
+- T08R 审查发现的视觉行缓存与 folding 同步缺口、测试覆盖缺口和 composed viewport 残留线性路径。
+
+范围文件：
+
+- `crates/editor-core/src/commands.rs`
+- `crates/editor-core/src/visual_rows.rs`
+- `crates/editor-core/src/intervals.rs`
+- `crates/editor-core/src/state.rs`
+- `crates/editor-core/src/workspace.rs`
+- `crates/tui-editor/src/main.rs`
+- `crates/editor-core-ui/src/lib.rs`，仅当 composed viewport 调用路径需要同步调整
+- `crates/editor-core/tests/visual_row_index.rs`
+- `crates/editor-core/tests/visual_row_improvements.rs`
+
+已知入口：
+
+- `CommandExecutor::apply_text_change_to_line_index_and_layout`
+- `CommandExecutor::execute_insert_newline_command`
+- `CommandExecutor::execute_delete_like_command`
+- `CommandExecutor::execute_delete_by_boundary_command`
+- `EditorCore::sync_visual_row_index_after_text_change`
+- `EditorCore::sync_visual_row_index_for_logical_range`
+- `FoldingManager::apply_line_delta`
+- `EditorCore::get_headless_grid_composed`
+- TUI `toggle_fold_at_cursor` / `unfold_all`
+
+实现要求：
+
+1. 所有可能改变换行数的文本编辑路径必须在视觉行缓存增量同步前按同一语义更新 `FoldingManager`，覆盖 `InsertNewline`、`DeleteForward` / `Backspace`、boundary 删除、普通 `Insert` / `Delete` / `Replace` 和 `apply_text_ops`。
+2. 消除重复或遗漏的 folding line-delta 逻辑；若保留多个调用点，必须用测试覆盖每类真实命令路径。
+3. cached `VisualRowIndex` 在折叠状态变化、用户 fold 变化、TUI 直接 fold/unfold 路径和 processing/workspace fold 替换路径后不得过窄更新或保留旧状态。
+4. 多行插入/删除更新 `VisualRowIndex` 时不得对每个新增/删除行重复全量重建 Fenwick tree；至少应批量变更后重建一次或使用等价批量更新。
+5. 带 virtual text 的 composed viewport 不得继续在尾部 viewport 上从文档头部线性扫描 document visual rows；若需要额外 composed-prefix 索引，应在本任务内实现，不得以 fixture-only 特例绕过。
+6. 保持 `LayoutEngine` / `FoldingManager` 旧线性转换 API 的兼容性，但核心 editor/UI viewport 和坐标查询热路径不得继续依赖旧线性实现。
+
+测试要求：
+
+1. 缓存已构建后，`InsertNewline`、`DeleteForward`、`Backspace`、boundary 删除跨换行时，多个 collapsed fold 的 `visual_line_count`、`visual_to_logical_line` 和 `logical_position_to_visual` 保持正确。
+2. 覆盖多个折叠区域、嵌套或相邻折叠区域、尾部空行、末尾有换行、末尾无换行与 soft wrap 的组合。
+3. 覆盖 TUI 或等价直接 fold/unfold 调用路径不会留下 stale visual-row cache。
+4. 覆盖 composed viewport 在存在 above-line / inline virtual text 时的尾部 viewport 映射与性能行为。
+5. 运行 `cargo test -p editor-core --test visual_row_index`。
+6. 运行 `cargo test -p editor-core --test visual_row_improvements`。
+7. 运行 `cargo test -p editor-core`。
+
+验收标准：
+
+- 所有真实换行编辑路径后的 folding state 与 cached visual-row index 一致。
+- 多 fold、尾部空行和 virtual text composed viewport 均有明确回归覆盖。
+- 大文件尾部 viewport / visual-row 查询不因残留线性路径退化到从文档头部扫描。
+
+### T08FR Review：审查视觉行索引同步修复
+
+状态：TODO
+
+审查范围：T08F 的所有 diff。
+
+审查重点：
+
+1. 所有换行编辑命令是否统一更新 folding 后再同步视觉行缓存，且没有重复平移 fold。
+2. 多个 collapsed fold、尾部空行和末尾换行的 cached visual mapping 是否正确。
+3. TUI / workspace / processing 等 fold 变更路径是否都会同步或失效 visual-row cache。
+4. composed viewport 是否不再保留尾部线性扫描热路径。
+5. Fenwick 批量插入/删除是否避免 O(k*n) 重建并保持前缀和正确。
+
+建议命令：
+
+- `cargo test -p editor-core --test visual_row_index`
 - `cargo test -p editor-core --test visual_row_improvements`
 - `cargo test -p editor-core`
 
