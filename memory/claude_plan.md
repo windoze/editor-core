@@ -147,3 +147,35 @@ This file records an operational plan and progress updates for the current invoc
 - No blocking review finding was found: `DeltaCalculator::apply_change` maps any line beyond the calculator document to document end before range normalization, legal lines still use `LspCoordinateConverter::lsp_to_char_offset`, half-surrogate offsets still clamp to the scalar start, and workspace edit didChange ranges are regenerated from legal char offsets.
 - Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-lsp --test utf16_boundaries`, and `cargo test -p editor-core-lsp`.
 - Marked T19FFR as `[DONE]` in `TODO.md` with completion details.
+
+## T20 Invocation Plan
+
+### Scope
+
+- Work from `TODO.md` as the authoritative task source.
+- Complete exactly the first incomplete task, then stop.
+- Keep `TODO.md` completion state explicit by adding `[DONE]` to the completed task title only after implementation and required validation pass.
+- Update `PLAN.md` only if phase-level sequencing, dependencies, assumptions, or completion criteria change.
+
+### Execution Plan
+
+1. Read `TODO.md` and identify the first task whose title is not prefixed with `[DONE]`.
+2. Check the latest commit message only for an explicitly unfinished issue directly relevant to that task.
+3. Read the selected task details, dependencies, validation requirements, and any relevant project context.
+4. Inspect the minimal code/docs/tests needed for that task.
+5. Implement the task fully, or if a concrete blocker makes correct implementation impossible, update `TODO.md` with the minimum prerequisite task and stop after committing.
+6. Run formatting first, then linting, then targeted tests, then full tests if code changes require them.
+7. Address any failing test or fixture unless it is already explicitly scheduled later.
+8. Update `TODO.md` with `[DONE]` and a completion record after validation.
+9. Commit all relevant changes with a descriptive task-scoped commit message.
+10. Stop without starting the next task.
+
+### Progress Log
+
+- Started: Created this plan before inspecting project task state.
+- Selected task: `T20 实现：文档清理和实现一致性修正` is the first incomplete task in `TODO.md`.
+- Latest commit check: `b4c653d [T19FFR] Review DeltaCalculator line clamp`; no explicit unfinished issue in the latest commit message that changes T20 scope.
+- Next step: inspect only T20 scope files (`docs/DESIGN.md`, `docs/abi-v1-draft.md`, `crates/editor-core/src/lib.rs`) and apply focused documentation corrections.
+- Edited docs: updated `DESIGN.md` LineIndex/folding/Unicode limitation text, `lib.rs` feature and Unicode summaries, and `abi-v1-draft.md` handle/threading/output-buffer contracts.
+- Validation: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core --doc` all passed.
+- Completion record: marked T20 as `[DONE]` in `TODO.md` with a task-scoped completion record.

@@ -2002,9 +2002,9 @@
 - 未发现需要立即修复或新增前置任务的问题；任意越界 line 会直接 clamp 到 calculator 文档末尾，合法 line 仍复用 `LspCoordinateConverter::lsp_to_char_offset`，半代理对中点继续 clamp 到 Unicode scalar 起点，workspace edit 路径使用已合法化的 char range 重新生成 LSP range。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-lsp --test utf16_boundaries`、`cargo test -p editor-core-lsp`。
 
-### T20 实现：文档清理和实现一致性修正
+### [DONE] T20 实现：文档清理和实现一致性修正
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -2037,6 +2037,15 @@
 验收标准：
 
 - 文档不再与实现明显矛盾。
+
+完成记录：
+
+- 更新 `docs/DESIGN.md`：将 `PieceTable` 明确为 deprecated compatibility layer，说明主编辑路径通过 `LineIndex` 背后的 rope-backed `TextBuffer` 增量更新；修正 LineIndex 不再“many edit paths rebuild rope from full text”的过时表述。
+- 更新 folding 设计说明：区分文本编辑时现有 fold 的 line-delta 平移与 clamp、用户 fold 与派生 fold 的独立存储、派生 fold 刷新时的 collapsed-state 保留，以及 LSP folding range stale version 忽略策略。
+- 更新 `crates/editor-core/src/lib.rs`：修正拼写/断词、移除 PieceTable/AddBuffer 主路径暗示，并拆开说明公共坐标/布局仍按 Unicode scalar，而专用 grapheme/word 命令分别使用 UAX #29 或配置化 ASCII token 边界。
+- 更新 `docs/abi-v1-draft.md`：把 handle 单线程/独占访问写成调用契约，补充 handle alias/free 约束，并明确 `count`、`out_cap`、`out_len` 对 byte/blob 与 typed array 的单位。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core --doc`。
+- 未运行完整 `cargo test`：本任务只修改文档和 crate 级文档注释，且上一任务完成记录已有完整测试通过；按任务测试要求仅运行 doc test。
 
 ### T20R Review：审查文档一致性修正
 

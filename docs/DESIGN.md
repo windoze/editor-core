@@ -89,6 +89,9 @@ Most public APIs use **character offsets** (`usize`):
 - Ranges are typically half-open: `[start, end)`.
 
 Tradeoff: a user-perceived “character” (a grapheme cluster like `👨‍👩‍👧‍👦`) may be multiple `char`s.
+Some cursor/delete commands understand grapheme or Unicode word boundaries, but stored positions,
+selection ranges, layout columns, and public offsets remain Unicode-scalar based unless a specific
+integration layer documents another unit.
 
 ### 3) Logical positions (line/column)
 
@@ -129,11 +132,13 @@ The Language Server Protocol uses UTF-16 code units for `Position.character`.
 
 ## Core data structures
 
-### PieceTable (storage)
+### PieceTable (deprecated compatibility storage)
 
 File: `crates/editor-core/src/storage.rs`
 
-The storage layer is a classic **piece table**:
+`PieceTable` is a deprecated compatibility layer and standalone validation target. The main editing
+path stores text in the rope-backed `TextBuffer` behind `LineIndex`. The compatibility piece table is
+a classic **piece table**:
 
 - `original_buffer`: immutable bytes of the initial document
 - `add_buffer`: append-only bytes for inserted text
@@ -170,9 +175,9 @@ The line index is built on `ropey::Rope`:
 - fast line access (`rope.line(i)`)
 - efficient conversions between char offsets and line/column
 
-In the current implementation, many edit paths rebuild the rope from the full document text after
-mutations (simple and correct, not the most incremental approach). The public API still exposes
-incremental `insert/delete` helpers for future optimizations.
+The main edit path mutates the rope-backed `TextBuffer` through `LineIndex::insert/delete` and then
+updates the affected layout window. Full line/layout reflow is still used for operations that change
+layout-wide options or otherwise need to rebuild derived layout state.
 
 Two offset conversion styles exist:
 
@@ -251,11 +256,16 @@ When a region is collapsed, lines `(start_line + 1 ..= end_line)` become hidden.
 Snapshots optionally append the region’s placeholder on the fold **start** line using the built-in
 `FOLD_PLACEHOLDER_STYLE_ID`.
 
-Current limitation:
+Current behavior:
 
-- Folding regions are line-based and are **not automatically shifted** on text edits that insert or
-  delete newlines. The intended usage is to treat folds as derived state and refresh them from an
-  external provider (e.g. LSP folding ranges or Sublime syntax folding) after edits.
+- Existing fold regions are line-based. Text edits that insert or delete newlines apply a line delta
+  to the stored regions and then clamp them to the current line count.
+- User-created folds are kept in a separate set from derived folds, so manual fold state can survive
+  derived-region refreshes when ranges still match.
+- Derived fold regions are normally replaced from `ProcessingEdit::ReplaceFoldingRegions`; callers can
+  request collapsed-state preservation for matching or slightly drifted derived ranges.
+- LSP folding range responses are tied to the document version captured when the request was sent;
+  stale responses are ignored instead of entering core folding state.
 
 ## Command and state layers
 
@@ -265,7 +275,8 @@ File: `crates/editor-core/src/commands.rs` (`pub struct EditorCore`)
 
 `EditorCore` aggregates all major subsystems:
 
-- text: `PieceTable`, `LineIndex`
+- text: rope-backed `TextBuffer` through `LineIndex` (`PieceTable` exists only as a deprecated
+  compatibility API and debug consistency shadow)
 - layout: `LayoutEngine`
 - derived metadata: `IntervalTree`, style layers, `FoldingManager`
 - selection state: cursor + selection(s)
@@ -468,12 +479,13 @@ For multi-buffer/multi-view wiring, see the `editor-core` workspace examples (e.
 
 ## Known limitations / extension points
 
-- **Grapheme clusters**: cursor movement/selection is `char`-based; if you need grapheme-aware UX,
-  layer it above `editor-core` using `unicode-segmentation` or similar.
+- **Grapheme clusters**: public cursor/selection coordinates and layout columns are `char`-based.
+  Dedicated grapheme movement/delete commands exist, but full grapheme-indexed selection or layout
+  semantics are not part of the core API.
 - **Tabs/control chars**: layout measures per `char` width; hosts typically implement tab expansion
   at render time or by transforming snapshots.
-- **Folding edits**: line-based folds are not shifted on newline edits; treat folding as derived
-  state and refresh from an external source after edits.
+- **Folding edits**: line-based folds are shifted by newline deltas and clamped after edits, but
+  parser/LSP-derived fold structure is still refreshed by replacing derived folding regions.
 - **Incrementality**: some operations rebuild derived structures from the full text for simplicity.
   The architecture is intentionally layered so internal components can be made more incremental
   over time without breaking the public API shape.

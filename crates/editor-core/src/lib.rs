@@ -12,7 +12,7 @@
 //! # Core Features
 //!
 //! - **Efficient Text Storage**: Rope-backed text buffer with `char`-indexed access
-//! - **Fast Line Index**: Rope-based  O(log n) line access
+//! - **Fast Line Index**: Rope-based line access and coordinate conversion
 //! - **Soft Wrapping Support**: Headless layout engine, supporting arbitrary container widths
 //! - **Style Management**: Interval tree structure, O(log n + k) query complexity
 //! - **Code Folding**: Supports arbitrary levels of code folding
@@ -67,7 +67,7 @@
 //!
 //! let mut manager = EditorStateManager::new("Initial text", 80);
 //!
-//! // Subscribe toState changed
+//! // Subscribe to state changes
 //! manager.subscribe(|change| {
 //!     println!("State changed: {:?}", change.change_type);
 //! });
@@ -110,7 +110,7 @@
 //!
 //! # Module Description
 //!
-//! - [`storage`] - deprecated Piece Table compatibility layer
+//! - [`storage`] - deprecated Piece Table compatibility layer; it is not on the main editing path
 //! - [`line_index`] - Rope-based line index and canonical text access facade
 //! - [`LayoutEngine`], [`WrapMode`], and related root re-exports - soft wrapping layout facade
 //! - [`IntervalTree`], [`FoldingManager`], and related root re-exports - style intervals and code folding facade
@@ -123,16 +123,21 @@
 //! - **Loading**: 1000 line document < 100ms
 //! - **insertion**: 100 random insertions < 100ms
 //! - **line access**: 1000 line accesses < 10ms
-//! - **Memory**: 100 modifications, memory growth limited to AddBuffer size
+//! - **Memory**: bounded command history with rope-backed text storage on the main editing path
 //!
 //! # Unicode Support
 //!
 //! - UTF-8 internal encoding
 //! - Proper handling of CJK double-width characters
-//! - Grapheme/word-aware cursor + delete commands (UAX #29), while keeping `char`-indexed
-//!   coordinates at the API boundary
-//! - via `editor-core-lsp` provides UTF-16 code unit coordinate conversion (for upper-layer protocols/integrations)
-//! - via `editor-core-sublime` provides `.sublime-syntax` syntax highlighting and folding (optional integration)
+//! - Public offsets and positions are `char`-indexed Unicode scalar coordinates
+//! - Layout columns and snapshot ranges use Unicode scalar positions plus rendered cell widths, not
+//!   grapheme-cluster indices
+//! - Dedicated grapheme cursor/delete commands use UAX #29 boundaries; dedicated word movement and
+//!   deletion commands use Unicode word boundaries
+//! - Editor-friendly word selection and expansion use configurable ASCII token boundaries, treating
+//!   non-ASCII scalars as single-character word units
+//! - `editor-core-lsp` provides UTF-16 code unit coordinate conversion for LSP integrations
+//! - `editor-core-sublime` provides optional `.sublime-syntax` syntax highlighting and folding
 
 pub mod anchors;
 pub mod commands;

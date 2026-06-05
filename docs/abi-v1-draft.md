@@ -43,6 +43,8 @@ This gives good performance now and allows schema-rich features without blocking
   - `uint32_t struct_size`
 - Unknown trailing bytes in input structs must be ignored if `struct_size > known_size`.
 - Output buffers use the two-call pattern: `out_cap` and `out_len` are `uint32_t`; `out_len` must be non-null; null `out_buf` or insufficient `out_cap` returns `ECF_ERR_BUFFER_TOO_SMALL` / `ECU_ERR_BUFFER_TOO_SMALL` and writes the required byte length or element count.
+- For byte/string/blob outputs, `out_cap` and `out_len` are byte counts. For typed array outputs, they are element counts of the pointed-to element type. APIs must state which unit they use when the name alone is ambiguous.
+- Input array `count`/`len` parameters are element counts for typed arrays and byte counts for UTF-8/blob inputs; Rust must validate pointer nullability, count conversion, and slice construction before reading.
 - If a required output length or count cannot be represented as `uint32_t`, the function must not truncate it; status-returning APIs return `INVALID_ARGUMENT` and set `last_error_message`.
 - Rust-side conversions from public fixed-width integers to internal `usize` must be checked. Too-large values return `ECF_ERR_INVALID_ARGUMENT` / `ECU_ERR_INVALID_ARGUMENT` for status-returning APIs; JSON/string or legacy bool APIs return their failure sentinel and set `last_error_message`.
 
@@ -60,12 +62,15 @@ Lifecycle:
 - `*_new` returns handle or `NULL`.
 - `*_free` accepts `NULL` and is idempotent only for `NULL`.
 - No transfer of ownership between handles unless API explicitly says so.
+- Callers must not use a handle after `*_free` starts, and must not pass the same handle more than
+  once to an API unless that API explicitly documents the aliasing behavior.
 
 ## Threading Model
 
-- Contract: opaque handles are single-thread-owned for the duration of each call.
-- Callers must not invoke concurrent mutable operations on the same handle, and must not alias a handle through another API while a mutable call is in progress.
-- Read-only calls are not guaranteed to be concurrency-safe unless a specific API explicitly documents otherwise.
+- Contract: opaque handles are single-thread-owned for the duration of each call, not merely a usage recommendation.
+- A caller must provide exclusive access to a handle while any mutable call is in progress.
+- Callers must not invoke concurrent operations on the same handle, including read-only calls, unless a specific API explicitly documents that it is concurrency-safe.
+- Callers must not alias a handle through another API while a mutable call is in progress.
 - Error state is thread-local (`last_error_message`).
 
 ## Error Model
