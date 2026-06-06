@@ -393,9 +393,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test projection_unified`；`cargo test -p editor-core-diff-view`。
 - Full test suite：本次 review 未改动编译输出，T05 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
-### [TODO] T06 实现：`project_side_by_side`（spacer + max 对齐）
+### [DONE] T06 实现：`project_side_by_side`（spacer + max 对齐）
 
-状态：TODO
+状态：DONE
 
 依赖：T05。
 
@@ -431,7 +431,11 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：在 `projection.rs` 中实现 `DiffMode::SideBySide` 路径，要求两列宽度输入，按两侧各自列宽复用 `SnapshotGenerator` wrap，并按每个 `AlignUnit` 内两侧 visual row 数取 `max` 后补齐到统一 row 轴。
+- 2026-06-07：`Context` / `Replace` / `Add` / `Remove` 单元均按单元末尾补 `Spacer`；`Add` / `Remove` 缺失侧整段补对应 change 的 spacer，`Replace` 中 before 列使用 Remove 语义、after 列使用 Add 语义；未改动 T05 unified 路径。
+- 2026-06-07：新增 `tests/projection_side_by_side.rs`，覆盖 Add/Remove 缺失侧 spacer、不同列宽下的 unit 末尾补齐、Replace 短侧 spacer change 语义，以及所有 projected row 均为两列。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test projection_side_by_side`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
+- Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
 ### [TODO] T06R Review：审查 side-by-side 对齐
 

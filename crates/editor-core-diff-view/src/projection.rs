@@ -15,7 +15,7 @@ const AFTER_SIDE: usize = 1;
 pub enum DiffMode {
     /// Single-column unified diff, with removed rows before added rows.
     Unified,
-    /// Two-column side-by-side diff. Implemented in the next projection task.
+    /// Two-column side-by-side diff with spacer rows for per-unit alignment.
     SideBySide,
 }
 
@@ -141,8 +141,18 @@ pub fn project_unified(model: &DiffModel, per_column_widths: &[usize]) -> DiffPr
     DiffProjection { columns: 1, rows }
 }
 
-fn project_side_by_side(_model: &DiffModel, _per_column_widths: &[usize]) -> DiffProjection {
-    unimplemented!("side-by-side projection is implemented by T06")
+fn project_side_by_side(model: &DiffModel, per_column_widths: &[usize]) -> DiffProjection {
+    let widths = side_by_side_widths(per_column_widths);
+    let wrapped_sides = wrap_sides_by_widths(model, &widths);
+    let mut rows = Vec::new();
+
+    for unit in model.alignment() {
+        let mut columns = [Vec::new(), Vec::new()];
+        let spacer_changes = push_side_by_side_unit(&mut columns, &wrapped_sides, unit);
+        push_aligned_unit_rows(&mut rows, columns, spacer_changes);
+    }
+
+    DiffProjection { columns: 2, rows }
 }
 
 fn unified_width(per_column_widths: &[usize]) -> usize {
@@ -154,6 +164,20 @@ fn unified_width(per_column_widths: &[usize]) -> usize {
     let width = per_column_widths[0];
     assert!(width > 0, "column width must be greater than zero");
     width
+}
+
+fn side_by_side_widths(per_column_widths: &[usize]) -> [usize; 2] {
+    assert_eq!(
+        per_column_widths.len(),
+        2,
+        "side-by-side projection requires exactly two column widths"
+    );
+    let widths = [per_column_widths[0], per_column_widths[1]];
+    assert!(
+        widths.iter().all(|width| *width > 0),
+        "column widths must be greater than zero"
+    );
+    widths
 }
 
 fn context_display_side(sides: &[Range<usize>]) -> usize {
@@ -179,6 +203,26 @@ fn wrap_all_sides(model: &DiffModel, width: usize) -> Vec<WrappedSide> {
         .sides()
         .iter()
         .map(|side| wrap_side(side, width))
+        .collect()
+}
+
+fn wrap_sides_by_widths(model: &DiffModel, widths: &[usize]) -> Vec<WrappedSide> {
+    assert_eq!(
+        model.sides().len(),
+        2,
+        "side-by-side projection requires a two-side diff model"
+    );
+    assert_eq!(
+        widths.len(),
+        model.sides().len(),
+        "side widths must match model sides"
+    );
+
+    model
+        .sides()
+        .iter()
+        .zip(widths.iter().copied())
+        .map(|(side, width)| wrap_side(side, width))
         .collect()
 }
 
@@ -213,18 +257,123 @@ fn push_line_rows(
     lines: &Range<usize>,
     change: DiffLineKind,
 ) {
+    let mut slots = Vec::new();
+    push_line_slots(&mut slots, wrapped_sides, side, lines, change);
+
+    rows.extend(slots.into_iter().map(|slot| Row::new(vec![slot])));
+}
+
+fn push_line_slots(
+    slots: &mut Vec<RowSlot>,
+    wrapped_sides: &[WrappedSide],
+    side: usize,
+    lines: &Range<usize>,
+    change: DiffLineKind,
+) {
     let wrapped_side = wrapped_sides
         .get(side)
         .unwrap_or_else(|| panic!("side {side} is outside wrapped sides"));
 
     for logical_line in lines.clone() {
         for visual_in_logical in wrapped_side.visual_segments(logical_line) {
-            rows.push(Row::new(vec![RowSlot::Line {
+            slots.push(RowSlot::Line {
                 side,
                 logical_line,
                 visual_in_logical: *visual_in_logical,
                 change,
-            }]));
+            });
         }
+    }
+}
+
+fn push_side_by_side_unit(
+    columns: &mut [Vec<RowSlot>; 2],
+    wrapped_sides: &[WrappedSide],
+    unit: &AlignUnit,
+) -> [DiffLineKind; 2] {
+    match unit {
+        AlignUnit::Context { sides } => {
+            assert!(
+                sides.len() >= 2,
+                "context alignment units require before and after sides"
+            );
+            for side in [BEFORE_SIDE, AFTER_SIDE] {
+                push_line_slots(
+                    &mut columns[side],
+                    wrapped_sides,
+                    side,
+                    &sides[side],
+                    DiffLineKind::Context,
+                );
+            }
+            [DiffLineKind::Context, DiffLineKind::Context]
+        }
+        AlignUnit::Replace { sides } => {
+            assert!(
+                sides.len() >= 2,
+                "replace alignment units require before and after sides"
+            );
+            push_line_slots(
+                &mut columns[BEFORE_SIDE],
+                wrapped_sides,
+                BEFORE_SIDE,
+                &sides[BEFORE_SIDE],
+                DiffLineKind::Remove,
+            );
+            push_line_slots(
+                &mut columns[AFTER_SIDE],
+                wrapped_sides,
+                AFTER_SIDE,
+                &sides[AFTER_SIDE],
+                DiffLineKind::Add,
+            );
+            [DiffLineKind::Remove, DiffLineKind::Add]
+        }
+        AlignUnit::Add { side, lines } => {
+            assert!(
+                *side < 2,
+                "add alignment side is outside side-by-side columns"
+            );
+            push_line_slots(
+                &mut columns[*side],
+                wrapped_sides,
+                *side,
+                lines,
+                DiffLineKind::Add,
+            );
+            [DiffLineKind::Add, DiffLineKind::Add]
+        }
+        AlignUnit::Remove { side, lines } => {
+            assert!(
+                *side < 2,
+                "remove alignment side is outside side-by-side columns"
+            );
+            push_line_slots(
+                &mut columns[*side],
+                wrapped_sides,
+                *side,
+                lines,
+                DiffLineKind::Remove,
+            );
+            [DiffLineKind::Remove, DiffLineKind::Remove]
+        }
+    }
+}
+
+fn push_aligned_unit_rows(
+    rows: &mut Vec<Row>,
+    mut columns: [Vec<RowSlot>; 2],
+    spacer_changes: [DiffLineKind; 2],
+) {
+    let unit_height = columns.iter().map(Vec::len).max().unwrap_or(0);
+    for (side, slots) in columns.iter_mut().enumerate() {
+        slots.resize_with(unit_height, || RowSlot::Spacer {
+            change: spacer_changes[side],
+        });
+    }
+
+    let [before_slots, after_slots] = columns;
+    for (before_slot, after_slot) in before_slots.into_iter().zip(after_slots) {
+        rows.push(Row::new(vec![before_slot, after_slot]));
     }
 }
