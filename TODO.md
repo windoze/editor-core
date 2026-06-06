@@ -580,9 +580,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test gutter`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
 - Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
-### [TODO] T08R Review：审查 gutter line mark
+### [DONE] T08R Review：审查 gutter line mark
 
-状态：TODO
+状态：DONE
 
 审查范围：T08 的所有 diff。
 
@@ -601,7 +601,10 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：已审查 T08 的 gutter line mark 实现与 `tests/gutter.rs`；未发现需修复问题。`Gutter` 保持在 diff-view projection 层作为纯数据，Add/Remove/Context 行号与 `+`/`-` 标记符合 T08/T08R 要求，Spacer 与 wrap 续段不显示行号/标记。
+- 2026-06-07：已确认 T08 未改动 `editor-core` 通用 line mark / decoration 设施；后续“提取为通用能力”已保留在 T08 完成记录与 TODO 末尾推迟项中。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test gutter`；`cargo test -p editor-core-diff-view`。
+- Full test suite：本次 review 仅更新 `TODO.md` / `memory/claude_plan.md` 文档记录，T08 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
 ### [TODO] T09 实现：`Command::is_mutating()` 分类（editor-core）
 

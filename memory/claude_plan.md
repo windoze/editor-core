@@ -31,3 +31,19 @@
 - 已检查 staged diff；`notification.sh` 与 `run_agent.sh` 为未跟踪且非本任务文件，不纳入提交。
 - 已提交 T08 实现，提交为 `f8ccf46 [T08] Implement diff-view gutter data`。
 - 本次任务完成后停止，不进入 T08R。
+
+T08R 计划
+1. 读取 TODO.md，确认第一个未完成任务为 `T08R Review：审查 gutter line mark`。
+2. 查看最新提交，仅判断是否存在与 T08R 直接相关的未完成事项。
+3. 审查 T08 的实现提交、`projection.rs`、`tests/gutter.rs` 与必要导出，重点检查行号映射、spacer/续段、是否越界改动 core 通用设施、是否保持纯数据。
+4. 若发现明确问题，修复或在 TODO.md 增加最小后续/前置任务；若无问题，运行格式化、lint 和 T08R 指定测试。
+5. 更新 TODO.md，将 T08R 标记为 [DONE] 并补充完成记录。
+6. 检查 diff/status，提交 T08R review 记录后停止。
+
+T08R 进度
+- 已读取 TODO.md；第一个未完成任务是 `T08R Review：审查 gutter line mark`。
+- 最新提交为 `[T08] Record final plan status`，未发现与 T08R 直接相关的未完成事项。
+- 已审查 T08 相关 diff、`projection.rs`、`tests/gutter.rs` 与 `lib.rs` 导出；未发现需修复问题。
+- 审查结论：`Gutter` 保持 diff-view projection 层纯数据；Add/Remove/Context 行号与 `+`/`-` 标记符合要求；Spacer 与 wrap 续段 gutter 为空；T08 未改动 `editor-core` 通用 line mark / decoration 设施；后续通用能力提取已记录。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test gutter`；`cargo test -p editor-core-diff-view`。
+- 已更新 TODO.md：T08R 标题已标记 `[DONE]`，完成记录包含审查结论与验证命令。Full workspace test 未重跑，因为本次 review 仅更新文档/进度记录，T08 已记录全量测试通过。
