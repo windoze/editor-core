@@ -2370,9 +2370,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui`。
 - 本次 review 未修改编译代码；T21UF 完成记录已有全量测试与 all-features clippy 通过结果，因此未重复运行完整 workspace 测试或 fixture suite。
 
-### T21A 实现：editor-core-app panic 与错误处理专项
+### [DONE] T21A 实现：editor-core-app panic 与错误处理专项
 
-状态：TODO
+状态：DONE
 
 依赖：
 
@@ -2405,6 +2405,15 @@
 
 - `editor-core-app` 生产路径 panic/unwrap/expect 数量下降。
 - 剩余 panic/unwrap/expect 均为测试、明确不可恢复不变量或已记录的后续项。
+
+完成记录：
+
+- 定向分类 `editor-core-app/src` 的 `unwrap()` / `expect()` / `panic!`：任务记录中的 106 个 `rg --count-matches "unwrap\(|expect\(|panic!" crates/editor-core-app/src` 匹配均位于各文件 `#[cfg(test)]` 模块；生产路径未发现直接 `unwrap()` / `expect()` / `panic!` 匹配。
+- 修复 settings reload 错误处理：`SettingsStore::reload_if_changed` 不再把 settings 文件缺失、不可读或 metadata 读取失败静默当作“未变更”；metadata I/O 错误现在通过 `SettingsError::Io` 明确返回，无法读取 modified timestamp 时会保守重读文件。
+- 收紧 hot-exit restore 的损坏快照处理：`HotExitSnapshot::restore` 的 per-view buffer/first-view 访问改为 checked access，异常状态返回 `AppSessionError::InvalidSnapshot`；空 selection snapshot 的 primary index clamp 改为基于实际恢复的 selection 列表。
+- 新增 app 定向回归测试，覆盖 settings 文件删除后的 reload 错误返回、损坏 hot-exit view `buffer_index` 不 panic 并返回 `InvalidSnapshot`、空 selection snapshot 仍恢复单 caret 且 primary index clamp 到 0。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-app`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，无可运行的完整 fixture runner。
 
 ### T21AR Review：审查 editor-core-app panic 专项
 

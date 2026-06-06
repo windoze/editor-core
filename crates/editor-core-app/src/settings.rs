@@ -177,10 +177,9 @@ impl SettingsStore {
     }
 
     pub fn reload_if_changed(&mut self) -> Result<bool, SettingsError> {
-        let modified = std::fs::metadata(&self.path)
-            .and_then(|m| m.modified())
-            .ok();
-        if modified.is_none() || modified == self.last_modified {
+        let metadata = std::fs::metadata(&self.path)?;
+        let modified = metadata.modified().ok();
+        if modified.is_some() && modified == self.last_modified {
             return Ok(false);
         }
 
@@ -237,5 +236,18 @@ tab_width = 4
 
         let indent = ws.indentation_config_for_view(opened.view_id).unwrap();
         assert_eq!(indent.style, IndentStyle::Spaces(2));
+    }
+
+    #[test]
+    fn reload_if_changed_reports_missing_settings_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.toml");
+        std::fs::write(&path, "[editor]\ntab_width = 4\n").unwrap();
+
+        let mut store = SettingsStore::load(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        let err = store.reload_if_changed().unwrap_err();
+        assert!(matches!(err, SettingsError::Io(_)));
     }
 }

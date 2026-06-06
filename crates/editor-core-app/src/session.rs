@@ -244,15 +244,26 @@ impl HotExitSnapshot {
         let mut used_first_view: Vec<bool> = vec![false; self.buffers.len()];
 
         for view in &self.views {
-            let buffer_id = *buffer_index_to_id.get(view.buffer_index).ok_or_else(|| {
+            let buffer_index = view.buffer_index;
+            let buffer_id = *buffer_index_to_id.get(buffer_index).ok_or_else(|| {
                 AppSessionError::InvalidSnapshot("invalid buffer_index".to_string())
             })?;
+            let used_first_view_for_buffer =
+                used_first_view.get_mut(buffer_index).ok_or_else(|| {
+                    AppSessionError::InvalidSnapshot("invalid buffer_index".to_string())
+                })?;
 
-            let view_id = if !used_first_view[view.buffer_index] {
-                used_first_view[view.buffer_index] = true;
-                first_view_for_buffer[view.buffer_index].ok_or_else(|| {
-                    AppSessionError::InvalidSnapshot("missing first view for buffer".to_string())
-                })?
+            let view_id = if !*used_first_view_for_buffer {
+                *used_first_view_for_buffer = true;
+                first_view_for_buffer
+                    .get(buffer_index)
+                    .copied()
+                    .flatten()
+                    .ok_or_else(|| {
+                        AppSessionError::InvalidSnapshot(
+                            "missing first view for buffer".to_string(),
+                        )
+                    })?
             } else {
                 ws.create_view(buffer_id, view.viewport_width)?
             };
@@ -302,10 +313,10 @@ impl HotExitSnapshot {
             ws.execute(
                 view_id,
                 Command::Cursor(CursorCommand::SetSelections {
-                    selections,
                     primary_index: view
                         .primary_selection_index
-                        .min(view.selections.len().saturating_sub(1)),
+                        .min(selections.len().saturating_sub(1)),
+                    selections,
                 }),
             )?;
 
@@ -443,6 +454,38 @@ mod tests {
             .execute(v0, Command::Edit(EditCommand::Undo))
             .unwrap();
         assert_eq!(restored.buffer_text(b0).unwrap(), "a\nb\n");
+    }
+
+    #[test]
+    fn hot_exit_restore_rejects_invalid_view_buffer_index_without_panicking() {
+        let mut ws = Workspace::new();
+        ws.open_buffer(Some("file:///a.txt".to_string()), "a\n", 80)
+            .unwrap();
+
+        let mut snap = HotExitSnapshot::capture(&mut ws).unwrap();
+        snap.views[0].buffer_index = snap.buffers.len();
+
+        let err = snap.restore().unwrap_err();
+        assert!(
+            matches!(err, AppSessionError::InvalidSnapshot(msg) if msg == "invalid buffer_index")
+        );
+    }
+
+    #[test]
+    fn hot_exit_restore_clamps_primary_selection_for_empty_selection_snapshot() {
+        let mut ws = Workspace::new();
+        ws.open_buffer(Some("file:///a.txt".to_string()), "a\n", 80)
+            .unwrap();
+
+        let mut snap = HotExitSnapshot::capture(&mut ws).unwrap();
+        snap.views[0].selections.clear();
+        snap.views[0].primary_selection_index = usize::MAX;
+
+        let restored = snap.restore().unwrap();
+        let view_id = restored.active_view_id().unwrap();
+        let cursor = restored.cursor_state_for_view(view_id).unwrap();
+        assert_eq!(cursor.selections.len(), 1);
+        assert_eq!(cursor.primary_selection_index, 0);
     }
 
     #[test]

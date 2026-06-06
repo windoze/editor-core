@@ -1,28 +1,26 @@
-# Claude Execution Plan
-
-## Scope
-- Follow `TODO.md` as the authoritative task list.
-- Identify and complete exactly the first incomplete task, then stop.
-- Do not proceed to later tasks in this invocation.
-
 ## Execution Plan
-1. Read `TODO.md` and identify the first task whose title is not prefixed with `[DONE]`.
-2. Check the latest commit only for unfinished work directly relevant to that task.
-3. Read the task details and nearby context, then inspect only the relevant code, tests, and documentation.
-4. Implement the task as specified, without weakening scope or using workarounds.
-5. Run formatting, linting, targeted tests, and required broader validation in the required order.
-6. If validation exposes unscheduled failures, either fix them if in scope or add the minimum prerequisite/follow-up task to `TODO.md` before marking completion.
-7. Mark the completed task title with `[DONE]` and update its completion record.
-8. Commit all intended changes with a descriptive message.
-9. Stop after the commit.
 
-## Progress Log
-- Initial execution plan recorded before reading project task files.
-- Read `TODO.md` and identified the first incomplete task as `T21UFR Review: 审查 editor-core-ui LSP processing 错误通道修复`.
-- This invocation will perform only the T21UFR review, run the task-required validation, update `TODO.md` with `[DONE]` and a completion record if review passes, then commit and stop.
-- Checked latest commit and confirmed `[T21UF] Fix UI LSP processing error handling` is the direct review target.
-- Reviewed the T21UF diff in `crates/editor-core-ui/src/lib.rs`, including LSP processing-edit error propagation, `poll_processing` result reporting, LSP status handling, and new regression tests.
-- Review found no blocking defect or missing prerequisite task.
-- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core-ui`.
-- Updated `TODO.md` to mark `T21UFR` as `[DONE]` with the review completion record.
-- Reviewed final diff/status; only `TODO.md` and this progress file are intended for commit. Existing untracked `notification.sh` and `run_agent.sh` are unrelated and will remain untouched.
+Status: T21A completed; awaiting commit.
+
+1. Inspect `TODO.md` and identify the first task whose title is not prefixed with `[DONE]`.
+2. Check the latest commit message only for unfinished work directly relevant to that task.
+3. Read the selected task details, dependencies, validation requirements, and nearby context in `TODO.md`.
+4. Implement the selected task exactly as written, without changing scope or using workarounds.
+5. If a concrete blocker prevents correct implementation, update `TODO.md` with the minimum prerequisite task, keep the current task incomplete, commit that bookkeeping, and stop.
+6. Run required formatting, linting, targeted tests, and then broader validation as required by the task and repository policy.
+7. If unscheduled test or fixture failures appear, fix them or schedule the minimum prerequisite/follow-up task before marking the current task done.
+8. Mark the completed task title in `TODO.md` with `[DONE]` and update its completion record with implementation and validation notes.
+9. Commit all relevant changes with a descriptive message for the completed task, then stop without starting the next task.
+
+Progress Log:
+- Created initial execution plan before reading project files or running commands.
+- Identified first incomplete task in `TODO.md`: `T21A 实现：editor-core-app panic 与错误处理专项`.
+- Next step: check the latest commit for unfinished work directly relevant to T21A, then inspect only the task-scoped `editor-core-app` files and existing tests.
+- Latest commit is `7ff08a5 [T21UFR] Review UI LSP processing error handling`; it does not add a separate unfinished app issue beyond the already scheduled T21A.
+- Classified the task-cited `rg --count-matches "unwrap\(|expect\(|panic!" crates/editor-core-app/src` results. The direct matches are all inside `#[cfg(test)]` modules; production code has no direct `unwrap()`, `expect()`, or `panic!` match.
+- Implementation focus: remove remaining recoverable production panic risk from session restore direct indexing by using checked access and returning `AppSessionError::InvalidSnapshot`, then add targeted app tests.
+- Implemented T21A fixes: `SettingsStore::reload_if_changed` now returns metadata/read errors instead of silently reporting no change; `HotExitSnapshot::restore` uses checked per-view snapshot access and clamps restored primary selection against the actual recovered selection list.
+- Added targeted app tests for missing settings file reload, invalid hot-exit `buffer_index`, and empty selection snapshot primary-index clamp.
+- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test -p editor-core-app`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test --all --all-targets`.
+- Checked for fixture runners with `tools/run_fixtures.py` and `tools/**/*fixture*`; none were present.
+- Marked `T21A` as `[DONE]` in `TODO.md` and recorded implementation/validation notes.
