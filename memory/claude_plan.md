@@ -1,21 +1,31 @@
-执行计划（非私有推理记录）
+执行计划记录
 
-1. 读取 `TODO.md`，按文件顺序定位第一个标题未带 `[DONE]` 的任务，并核对任务正文、依赖、验证要求和完成记录。
-2. 检查最近提交是否明确提到与该任务直接相关的未完成事项；只在它阻塞当前任务时纳入当前工作或补充为前置任务。
-3. 阅读当前任务涉及的代码、测试和文档，确认最小但完整的实现范围；不做开放式历史问题扫查。
-4. 若发现当前任务存在具体阻塞且不能按规格完成，更新 `TODO.md` 添加最小前置任务并停止；否则直接实现当前任务。
-5. 按需新增或调整测试，先运行针对性验证，再按要求运行 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`，最后运行相关完整测试；若只改文档则复用最近绿色结果并记录原因。
-6. 更新 `TODO.md`：将完成任务标题加 `[DONE]`，补充完成记录和实际验证命令；仅在阶段计划确实变化时更新 `PLAN.md`。
-7. 检查工作区差异，提交本次任务相关全部变更，提交信息包含任务编号和简要说明。
-8. 完成一个任务后停止，不继续处理下一项。
+当前约束
+- 只处理 TODO.md 中第一个标题未带 [DONE] 的任务，完成后停止。
+- 不做开放式历史问题扫除；只处理阻塞当前任务或验证失败暴露出的未排期问题。
+- 如遇到无法按规格完成的阻塞问题，最小化新增前置任务到 TODO.md，提交后停止。
+- 不记录私有推理过程；本文件记录可审计的执行计划、决策和进度。
 
-进度记录
+初始计划
+1. 读取 TODO.md，识别第一个未完成任务及其验证要求、依赖和完成记录。
+2. 查看最新提交信息，只判断是否有与当前任务直接相关的未完成事项。
+3. 根据当前任务读取必要的代码、测试、文档上下文，避免无关 triage。
+4. 实现当前任务；若发现规格阻塞，更新 TODO.md 加入最小前置任务并停止。
+5. 按要求运行格式化、lint、相关测试，并在需要时运行完整测试套件。
+6. 更新 TODO.md：将完成任务标题加 [DONE]，补充 completion record。
+7. 检查 git diff/status，提交所有与本次任务相关的改动，然后停止。
 
-- 已创建初始执行计划，下一步读取 `TODO.md` 确认首个未完成任务。
-- 已读取 `TODO.md`，首个未完成任务为 `T07R Review：审查 diff 样式`。
-- 下一步检查最近提交与 T07 涉及文件，重点审查 StyleId 命名段、Add/Remove/Spacer/Context 样式叠加、是否误做行内 diff，以及 `editor-core` 改动是否最小。
-- 已检查最近提交 `d86f00b [T07] Implement diff semantic styles` 与 T07 涉及文件；当前未发现需修复问题。
-- 下一步按顺序运行 `cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-diff-view --test style`、`cargo test -p editor-core`。
-- 已完成验证：`cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-diff-view --test style`、`cargo test -p editor-core`、`cargo test -p editor-core-diff-view` 均通过。
-- 已将 `T07R Review：审查 diff 样式` 标记为 `[DONE]` 并补充完成记录。下一步检查 diff 并提交本次审查记录。
-- 已提交 T07R 审查记录，提交为 `e980d91 [T07R] Review diff semantic styles`。本次任务完成后停止，不进入 T08。
+进度
+- 已创建执行计划记录，下一步读取 TODO.md 识别第一个未完成任务。
+- 已读取 TODO.md；第一个未完成任务是 T08：在 diff-view projection 数据中加入 gutter 行号与 +/- 标记，新增 gutter 测试，不触碰 editor-core 通用 line mark 设施。
+- 下一步检查最新提交是否有与 T08 直接相关的未完成事项，然后读取 `projection.rs` 与相关测试结构。
+- 最新提交为 `[T07R] Record final plan status`，未提及与 T08 直接相关的未完成事项。
+- 下一步读取 `projection.rs`、`style.rs` 及现有 projection/style 测试，确定最小数据结构改动。
+- 已确认投影层当前 `RowSlot` 已承载 `side` / `logical_line` / `visual_in_logical` / `change` / `cells`，T08 可在此基础上最小新增 `Gutter` 数据，不需要改 `editor-core` 通用 decoration/line mark。
+- 实施计划：新增 `Gutter { before_line, after_line, marker }`，给 `Line` 与 `Spacer` slot 挂载；unified context 填两侧 0-based 行号，side-by-side 各列只填本侧行号；Add/Remove 首段分别填 `+`/`-`，续段与 spacer 为空；新增 `tests/gutter.rs` 覆盖要求。
+- 已实现初版：`RowSlot` 新增 gutter 数据，新增 gutter 专项测试，更新 smoke 构造。下一步按顺序运行 `cargo fmt`、lint 与测试。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test gutter`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
+- 已确认仓库内无 `tools/run_fixtures.py`，无独立 fixture suite 可运行。
+- 下一步更新 TODO.md，将 T08 标记为 `[DONE]` 并补充完成记录，然后检查 diff/status 并提交。
+- 已更新 TODO.md：T08 标题已标记 `[DONE]`，完成记录包含实现摘要、后续通用 line mark 提取项、验证命令和 fixture suite 状态。
+- 已检查 staged diff；`notification.sh` 与 `run_agent.sh` 为未跟踪且非本任务文件，不纳入提交。

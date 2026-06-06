@@ -535,9 +535,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test style`；`cargo test -p editor-core`；`cargo test -p editor-core-diff-view`。
 - Full test suite：本次 review 仅更新 `TODO.md` / `memory/claude_plan.md` 文档记录，T07 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
-### [TODO] T08 实现：gutter line mark（diff-view 内最小实现）
+### [DONE] T08 实现：gutter line mark（diff-view 内最小实现）
 
-状态：TODO
+状态：DONE
 
 依赖：T05/T06。
 
@@ -573,7 +573,12 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：在 `editor-core-diff-view` projection 层新增纯数据 `Gutter { before_line, after_line, marker }`，并挂载到 `RowSlot::Line` / `RowSlot::Spacer`；未修改 `editor-core` 通用 line mark / decoration 设施。
+- 2026-06-07：Add 行首个 wrap segment 在 after gutter 暴露 0-based `after_line` 与 `+` 标记，Remove 行首个 wrap segment 在 before gutter 暴露 0-based `before_line` 与 `-` 标记，Context 在 side-by-side 各列暴露本侧行号，Unified context 暴露 before/after 两侧行号；Spacer 与 wrap 续段 gutter 保持为空。
+- 2026-06-07：新增 `tests/gutter.rs`，覆盖 Add/Remove/Context 行号与标记、Spacer 无 gutter、wrap 续段不重复行号/标记，以及 unified context 双侧行号；同步更新 smoke 测试并 re-export `Gutter`。
+- 后续项：把 diff-view 内最小 gutter line mark 提取为 `editor-core` 通用 line mark 能力（断点/blame/fold 复用）仍按 TODO 末尾“推迟到后续版本”执行，本任务未实现。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test gutter`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
+- Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
 ### [TODO] T08R Review：审查 gutter line mark
 

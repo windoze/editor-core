@@ -68,6 +68,24 @@ impl Row {
     }
 }
 
+/// Pure gutter data for a projected row slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Gutter {
+    /// 0-based line index in the before side, when this slot should show one.
+    pub before_line: Option<usize>,
+    /// 0-based line index in the after side, when this slot should show one.
+    pub after_line: Option<usize>,
+    /// Diff line marker displayed by the host gutter, currently `+` or `-`.
+    pub marker: Option<char>,
+}
+
+impl Gutter {
+    /// Returns an empty gutter for spacers and wrapped continuation segments.
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
 /// One projected row slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RowSlot {
@@ -81,6 +99,8 @@ pub enum RowSlot {
         visual_in_logical: usize,
         /// Diff change kind for the logical line.
         change: DiffLineKind,
+        /// Pure gutter metadata for line numbers and diff markers.
+        gutter: Gutter,
         /// Cells for this wrapped visual segment with diff-semantic styles applied.
         cells: Vec<Cell>,
     },
@@ -88,6 +108,8 @@ pub enum RowSlot {
     Spacer {
         /// Diff change kind for the alignment unit that owns this spacer.
         change: DiffLineKind,
+        /// Empty gutter metadata; spacers do not correspond to source lines.
+        gutter: Gutter,
         /// Styled placeholder cells for the spacer row.
         cells: Vec<Cell>,
     },
@@ -98,6 +120,13 @@ impl RowSlot {
     pub fn cells(&self) -> &[Cell] {
         match self {
             RowSlot::Line { cells, .. } | RowSlot::Spacer { cells, .. } => cells,
+        }
+    }
+
+    /// Returns the pure gutter metadata attached to this slot.
+    pub fn gutter(&self) -> Gutter {
+        match self {
+            RowSlot::Line { gutter, .. } | RowSlot::Spacer { gutter, .. } => *gutter,
         }
     }
 }
@@ -111,6 +140,10 @@ pub fn project_unified(model: &DiffModel, per_column_widths: &[usize]) -> DiffPr
     for unit in model.alignment() {
         match unit {
             AlignUnit::Context { sides } => {
+                assert!(
+                    sides.len() >= 2,
+                    "context alignment units require before and after sides"
+                );
                 let side = context_display_side(sides);
                 push_line_rows(
                     &mut rows,
@@ -118,6 +151,11 @@ pub fn project_unified(model: &DiffModel, per_column_widths: &[usize]) -> DiffPr
                     side,
                     &sides[side],
                     DiffLineKind::Context,
+                    GutterMapping::UnifiedContext {
+                        before_start: sides[BEFORE_SIDE].start,
+                        after_start: sides[AFTER_SIDE].start,
+                        display_start: sides[side].start,
+                    },
                 );
             }
             AlignUnit::Replace { sides } => {
@@ -131,6 +169,7 @@ pub fn project_unified(model: &DiffModel, per_column_widths: &[usize]) -> DiffPr
                     BEFORE_SIDE,
                     &sides[BEFORE_SIDE],
                     DiffLineKind::Remove,
+                    GutterMapping::SideLine,
                 );
                 push_line_rows(
                     &mut rows,
@@ -138,10 +177,18 @@ pub fn project_unified(model: &DiffModel, per_column_widths: &[usize]) -> DiffPr
                     AFTER_SIDE,
                     &sides[AFTER_SIDE],
                     DiffLineKind::Add,
+                    GutterMapping::SideLine,
                 );
             }
             AlignUnit::Add { side, lines } => {
-                push_line_rows(&mut rows, &wrapped_sides, *side, lines, DiffLineKind::Add);
+                push_line_rows(
+                    &mut rows,
+                    &wrapped_sides,
+                    *side,
+                    lines,
+                    DiffLineKind::Add,
+                    GutterMapping::SideLine,
+                );
             }
             AlignUnit::Remove { side, lines } => {
                 push_line_rows(
@@ -150,6 +197,7 @@ pub fn project_unified(model: &DiffModel, per_column_widths: &[usize]) -> DiffPr
                     *side,
                     lines,
                     DiffLineKind::Remove,
+                    GutterMapping::SideLine,
                 );
             }
         }
@@ -211,6 +259,72 @@ struct WrappedSide {
 struct WrappedSegment {
     visual_in_logical: usize,
     cells: Vec<Cell>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GutterMapping {
+    SideLine,
+    UnifiedContext {
+        before_start: usize,
+        after_start: usize,
+        display_start: usize,
+    },
+}
+
+impl GutterMapping {
+    fn gutter(
+        self,
+        side: usize,
+        logical_line: usize,
+        visual_in_logical: usize,
+        change: DiffLineKind,
+    ) -> Gutter {
+        if visual_in_logical != 0 {
+            return Gutter::empty();
+        }
+
+        match self {
+            GutterMapping::SideLine => side_line_gutter(side, logical_line, change),
+            GutterMapping::UnifiedContext {
+                before_start,
+                after_start,
+                display_start,
+            } => {
+                let offset = logical_line - display_start;
+                Gutter {
+                    before_line: Some(before_start + offset),
+                    after_line: Some(after_start + offset),
+                    marker: None,
+                }
+            }
+        }
+    }
+}
+
+fn side_line_gutter(side: usize, logical_line: usize, change: DiffLineKind) -> Gutter {
+    let marker = match change {
+        DiffLineKind::Context => None,
+        DiffLineKind::Add => Some('+'),
+        DiffLineKind::Remove => Some('-'),
+    };
+
+    match side {
+        BEFORE_SIDE => Gutter {
+            before_line: Some(logical_line),
+            after_line: None,
+            marker,
+        },
+        AFTER_SIDE => Gutter {
+            before_line: None,
+            after_line: Some(logical_line),
+            marker,
+        },
+        _ => Gutter {
+            before_line: None,
+            after_line: None,
+            marker,
+        },
+    }
 }
 
 impl WrappedSide {
@@ -282,9 +396,17 @@ fn push_line_rows(
     side: usize,
     lines: &Range<usize>,
     change: DiffLineKind,
+    gutter_mapping: GutterMapping,
 ) {
     let mut slots = Vec::new();
-    push_line_slots(&mut slots, wrapped_sides, side, lines, change);
+    push_line_slots(
+        &mut slots,
+        wrapped_sides,
+        side,
+        lines,
+        change,
+        gutter_mapping,
+    );
 
     rows.extend(slots.into_iter().map(|slot| Row::new(vec![slot])));
 }
@@ -295,6 +417,7 @@ fn push_line_slots(
     side: usize,
     lines: &Range<usize>,
     change: DiffLineKind,
+    gutter_mapping: GutterMapping,
 ) {
     let wrapped_side = wrapped_sides
         .get(side)
@@ -309,6 +432,12 @@ fn push_line_slots(
                 logical_line,
                 visual_in_logical: segment.visual_in_logical,
                 change,
+                gutter: gutter_mapping.gutter(
+                    side,
+                    logical_line,
+                    segment.visual_in_logical,
+                    change,
+                ),
                 cells,
             });
         }
@@ -333,6 +462,7 @@ fn push_side_by_side_unit(
                     side,
                     &sides[side],
                     DiffLineKind::Context,
+                    GutterMapping::SideLine,
                 );
             }
             [DiffLineKind::Context, DiffLineKind::Context]
@@ -348,6 +478,7 @@ fn push_side_by_side_unit(
                 BEFORE_SIDE,
                 &sides[BEFORE_SIDE],
                 DiffLineKind::Remove,
+                GutterMapping::SideLine,
             );
             push_line_slots(
                 &mut columns[AFTER_SIDE],
@@ -355,6 +486,7 @@ fn push_side_by_side_unit(
                 AFTER_SIDE,
                 &sides[AFTER_SIDE],
                 DiffLineKind::Add,
+                GutterMapping::SideLine,
             );
             [DiffLineKind::Remove, DiffLineKind::Add]
         }
@@ -369,6 +501,7 @@ fn push_side_by_side_unit(
                 *side,
                 lines,
                 DiffLineKind::Add,
+                GutterMapping::SideLine,
             );
             [DiffLineKind::Add, DiffLineKind::Add]
         }
@@ -383,6 +516,7 @@ fn push_side_by_side_unit(
                 *side,
                 lines,
                 DiffLineKind::Remove,
+                GutterMapping::SideLine,
             );
             [DiffLineKind::Remove, DiffLineKind::Remove]
         }
@@ -398,6 +532,7 @@ fn push_aligned_unit_rows(
     for (side, slots) in columns.iter_mut().enumerate() {
         slots.resize_with(unit_height, || RowSlot::Spacer {
             change: spacer_changes[side],
+            gutter: Gutter::empty(),
             cells: style::diff_spacer_cells(),
         });
     }
