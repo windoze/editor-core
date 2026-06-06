@@ -2441,9 +2441,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-app`。
 - 本次 review 未修改编译代码；T21A 完成记录已有 `cargo test --all --all-targets` 和 `cargo clippy --all-targets --all-features -- -D warnings` 通过结果，因此未重复运行完整 workspace 测试或 fixture suite。
 
-### T22 实现：阶段性全量收口
+### [DONE] T22 实现：阶段性全量收口
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -2462,6 +2462,12 @@
 验收标准：
 
 - 全量测试和 clippy 通过，或所有失败都有明确外部原因记录。
+
+完成记录：
+
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core`、`cargo test -p editor-core-lsp`、`cargo test -p editor-core-ffi`、`cargo test`、最终复跑 `cargo clippy --all-targets --all-features -- -D warnings`。
+- `cargo fmt` 未产生源码格式化 diff；验证命令未暴露需要修复的测试、clippy 或文档一致性问题。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，无可运行的完整 fixture runner。
 
 ### T22R Review：审查阶段性全量收口
 

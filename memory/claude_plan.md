@@ -3,28 +3,34 @@
 ## Scope
 
 - Follow `TODO.md` as the authoritative task list.
-- Identify the first task whose heading is not prefixed with `[DONE]`.
-- Complete exactly that task, then stop after committing.
+- Identify and complete exactly the first task whose heading is not prefixed with `[DONE]`.
+- Stop after committing that task or, if blocked, after recording the minimum required prerequisite task and committing the bookkeeping change.
 
-## Steps
+## Step-by-Step Plan
 
-1. Read `TODO.md` to identify the first incomplete task and its validation requirements.
-2. Check the latest commit only for unfinished work directly relevant to that selected task.
-3. Inspect the relevant code and tests for the selected task.
-4. Implement the smallest spec-correct change needed for the selected task.
-5. Add or update focused tests for the changed behavior.
-6. Run formatting first, then clippy with warnings denied, then the required test suite.
-7. If any failing test or fixture is observed and is not already explicitly scheduled, fix it or add the minimum prerequisite task before marking the current task complete.
-8. Update `TODO.md` by prefixing the completed task heading with `[DONE]` and adding a completion record with validation results.
-9. Commit all relevant changes with a descriptive task-scoped commit message.
-10. Stop without starting the next task.
+1. Read `TODO.md` first and identify the first incomplete task.
+2. Inspect only the files needed to understand that task and its validation requirements.
+3. Check the recent commit message only if it may mention unfinished work directly relevant to the selected task.
+4. Implement the task as written, avoiding workarounds or narrowed scope.
+5. Add or update focused tests for the behavior changed by the task.
+6. Run formatting, linting, and relevant tests in the required order.
+7. If any failing test or fixture is observed, either fix it or add the minimum scheduled task before marking the current task done.
+8. Update `TODO.md` by prefixing the task heading with `[DONE]` and adding a completion record.
+9. Update this plan file with completed key steps and validation results.
+10. Inspect git status and diff, then commit all intended changes with a descriptive message.
+11. Stop without starting the next task.
 
-## Progress Log
+## Progress
 
-- Initial plan written before task inspection.
-- First incomplete task identified: `T21AR Review: 审查 editor-core-app panic 专项`.
-- Review scope is the T21A diff and related app panic/error handling paths only.
-- Reviewed the T21A source diff in `session.rs` and `settings.rs`; no immediate blocker found.
-- Running required validation for the review task: `cargo fmt`, clippy with warnings denied, and `cargo test -p editor-core-app`.
-- Validation passed: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test -p editor-core-app`.
-- Updated `TODO.md` to mark `T21AR` as `[DONE]` with review findings and validation results.
+- Initial execution plan written.
+- First incomplete task identified: `T22 实现：阶段性全量收口`.
+- T22 scope is validation-only except for fixes required by formatting, tests, clippy, or documentation consistency failures.
+- `cargo fmt` completed with no source changes.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo test -p editor-core` passed.
+- `cargo test -p editor-core-lsp` passed.
+- `cargo test -p editor-core-ffi` passed.
+- `cargo test` passed for the full workspace test suite.
+- Final `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- No fixture runner found at `tools/run_fixtures.py` or `tools/**/*fixture*`.
+- `TODO.md` updated to mark T22 as `[DONE]` with validation results.
