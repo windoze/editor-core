@@ -368,9 +368,9 @@
 - 验证通过：`cargo fmt`；`cargo test -p editor-core-diff-view --test projection_unified`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
 - Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
-### [TODO] T05R Review：审查 projection 骨架与 unified
+### [DONE] T05R Review：审查 projection 骨架与 unified
 
-状态：TODO
+状态：DONE
 
 审查范围：T05 的所有 diff。
 
@@ -389,7 +389,9 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：已审查 T05 的 `DiffProjection` / `Row` / `RowSlot` 数据结构、`DiffProjection::build`、`project_unified` 与 `tests/projection_unified.rs`；未发现需修复问题。Unified projection 保持 `columns == 1` 且不产生 `Spacer`，修改块按先 Remove 后 Add 展开，wrap 通过 `SnapshotGenerator::set_viewport_width` + `get_headless_grid` 取得 `logical_line` / `visual_in_logical`，`build` 为无增量状态的整体重建。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test projection_unified`；`cargo test -p editor-core-diff-view`。
+- Full test suite：本次 review 未改动编译输出，T05 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
 ### [TODO] T06 实现：`project_side_by_side`（spacer + max 对齐）
 

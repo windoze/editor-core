@@ -1,28 +1,30 @@
-# Execution Plan
+# Current Invocation Plan
 
 ## Scope
-- Follow `TODO.md` as the authoritative ordered task list.
-- Complete exactly the first task whose heading is not prefixed with `[DONE]`, then stop.
-- Do not perform broad historical triage before selecting the current task.
 
-## Steps
-1. Read `TODO.md` and identify the first incomplete task exactly as written.
-2. Check the latest commit only for an unfinished issue that is directly relevant to that task.
-3. Inspect the files and tests needed for that task.
-4. Implement the task directly, unless a concrete prerequisite blocker makes correct execution impossible.
-5. If blocked, add the minimum prerequisite task to `TODO.md`, update this plan, commit, and stop.
-6. Run formatting, linting, targeted tests, and then broader validation as required by the task and repository policy.
-7. Mark the task heading in `TODO.md` with `[DONE]` and update its completion record.
-8. Commit all intended changes with a clear task-specific message.
-9. Stop without starting the next task.
+- Follow `TODO.md` as the authoritative task list.
+- Complete exactly the first task whose heading is not prefixed with `[DONE]`.
+- Stop after implementing, validating, documenting, and committing that one task, or after committing any required prerequisite/blocker bookkeeping if completion is impossible.
 
-## Progress
-- Plan initialized before executing repository commands.
-- First incomplete task identified: T05 `DiffProjection` skeleton + `project_unified`.
-- Next step: inspect only T05-relevant design/code/tests and the latest commit for directly relevant unfinished work.
-- Latest commit `319ba73 [T04R] Record review plan status` has no directly relevant unfinished T05 issue.
-- Implemented the initial projection structures, unified build path, SnapshotGenerator-based wrapping, and `projection_unified` regression tests.
-- Verification passed: `cargo fmt`, `cargo test -p editor-core-diff-view --test projection_unified`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test -p editor-core-diff-view`, and `cargo test --all --all-targets`.
-- `TODO.md` updated to mark T05 `[DONE]` with completion notes.
-- T05 implementation committed as `4f8176e [T05] Implement unified diff projection`.
-- Remaining untracked files `notification.sh` and `run_agent.sh` were not created for this task and are intentionally left untouched.
+## Execution Steps
+
+1. Read `TODO.md` to identify the first incomplete task and its validation requirements.
+2. Check recent project context only as needed for that task, including whether the latest commit references a directly relevant unfinished issue.
+3. Inspect the files and tests relevant to the selected task.
+4. Implement the smallest correct change that satisfies the task without workarounds or spec deviations.
+5. Run formatting first, then linting, then the relevant/full tests required by the task policy.
+6. If any unscheduled failing test or fixture is observed, fix it or add the minimum prerequisite task in `TODO.md` before marking the current task complete.
+7. Update `TODO.md` by prefixing the completed task heading with `[DONE]` and filling its completion record.
+8. Update this plan file when key steps complete or if the plan changes.
+9. Inspect git status/diff/log, commit all intended changes with a descriptive message, then stop.
+
+## Progress Log
+
+- Initial plan written before repository inspection.
+- Read `TODO.md`; selected first incomplete task: `T05R Review：审查 projection 骨架与 unified`.
+- Current scope is review-only unless a concrete T05 bug, test gap, or quality issue is found.
+- Reviewed T05 projection implementation and unified tests against `TODO.md` / `PLAN.md`; no concrete issue found so far.
+- Next validation order: `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, then T05R suggested tests.
+- Validation passed: `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test -p editor-core-diff-view --test projection_unified`, and `cargo test -p editor-core-diff-view`.
+- Updated `TODO.md` to mark `T05R` as `[DONE]` with completion notes; no `PLAN.md` update needed because phase sequencing did not change.
+- Git inspection before commit showed intended changes in `TODO.md` and this plan file, plus unrelated untracked `notification.sh` and `run_agent.sh` left untouched.
