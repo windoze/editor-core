@@ -111,9 +111,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo build -p editor-core-diff-view`；`cargo test -p editor-core-diff-view`。
 - Full test suite：本次仅更新 review/TODO/计划文档，T01 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
-### [TODO] T02 实现：固化 `AlignUnit` 与对齐算法（before + after 来源）
+### [DONE] T02 实现：固化 `AlignUnit` 与对齐算法（before + after 来源）
 
-状态：TODO
+状态：DONE
 
 依赖：T01。这是 `PLAN.md` §2 点名的 first step，阻塞 T03/T04/T05。
 
@@ -151,7 +151,11 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：在 `model.rs` 中固化 `AlignUnit::{Context, Replace, Add, Remove}`，以 `Range<usize>` 表达 0-based 逻辑行区间，v1 使用两侧但 `Context` / `Replace` 保留 per-side `Vec` 扩展形状。
+- 2026-06-07：新增 `align_before_after(before, after, LineDiffConfig)`，基于 `diff_line_hunks` 的 unified hunk 顺序生成完整 alignment：补齐 hunk 外 context，连续 context 合并为 `Context`，连续非 context diff 行归并为块级 `Replace` 或纯 `Add` / `Remove`，不引入 spacer 或行内 diff。
+- 2026-06-07：新增 `tests/alignment.rs`，覆盖无变更、纯增、纯删、单个修改块、多个分散修改块、首行/末行改动、末尾有/无换行边界，并用性质检查验证每侧 range 按序拼接完整全文、无重叠、无遗漏。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test alignment`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
+- Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
 ### [TODO] T02R Review：审查对齐算法
 
