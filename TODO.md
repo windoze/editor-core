@@ -252,9 +252,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test model`；`cargo test -p editor-core-diff-view`。
 - Full test suite：本次 review 未改动编译输出，T03 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
-### [TODO] T04 实现：`file + patch` 数据源归约到 `DiffModel`
+### [DONE] T04 实现：`file + patch` 数据源归约到 `DiffModel`
 
-状态：TODO
+状态：DONE
 
 依赖：T03。可与 T05 并行。
 
@@ -290,7 +290,11 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：新增 `DiffModel::from_file_and_patch(file, patch)`，固定支持单文件 unified diff，`file` 作为 before 侧，patch hunk 记录直接重建 after 侧全文并生成 alignment，不对重建后的全文重新运行 diff。
+- 2026-06-07：新增 `PatchParseError`，解析/应用失败返回带行号和消息的明确错误；解析支持常见 unified diff 元数据、空 patch、hunk range、context/add/remove 行和 `\ No newline at end of file` 标记，并校验 patch 上下文/删除行必须匹配输入文件。
+- 2026-06-07：新增 `tests/model_patch.rs`，覆盖 file+patch 与 before+after 归约结果一致、小 context 下 hunk 外未改区域补齐、空 patch、末尾无换行 marker（含 CRLF patch 行结束符）、hunk 计数畸形错误和非 diff 文本错误。
+- 验证通过：`cargo fmt`；`cargo test -p editor-core-diff-view --test model_patch`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
+- Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
 ### [TODO] T04R Review：审查 file+patch 数据源
 

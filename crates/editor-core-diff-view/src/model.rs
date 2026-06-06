@@ -1,5 +1,6 @@
 //! Width-independent diff-view model primitives.
 
+use std::fmt;
 use std::ops::Range;
 
 use editor_core_diff::{DiffLineKind, LineDiffConfig, diff_line_hunks};
@@ -66,6 +67,23 @@ impl DiffModel {
         }
     }
 
+    /// Builds a two-side model from a before-side file and a single-file unified diff patch.
+    ///
+    /// The patch is interpreted as a unified diff from `file` to the after side. Hunk records
+    /// drive both after-text reconstruction and alignment construction, so this path does not
+    /// re-run the line diff algorithm over the reconstructed full texts.
+    pub fn from_file_and_patch(file: &str, patch: &str) -> Result<Self, PatchParseError> {
+        let (after, alignment) = apply_unified_patch(file, patch)?;
+        let sides = vec![SideDoc::from_text(file), SideDoc::from_text(&after)];
+        let line_kinds = build_line_kinds(&sides, &alignment);
+
+        Ok(Self {
+            sides,
+            alignment,
+            line_kinds,
+        })
+    }
+
     /// Returns all side documents participating in this model.
     pub fn sides(&self) -> &[SideDoc] {
         &self.sides
@@ -86,6 +104,36 @@ impl DiffModel {
         self.line_kinds[side][logical_line]
     }
 }
+
+/// Error returned when a unified diff patch cannot be parsed or applied to the input file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PatchParseError {
+    line: Option<usize>,
+    message: String,
+}
+
+impl PatchParseError {
+    /// Returns the 1-based patch line associated with the error, when available.
+    pub fn line(&self) -> Option<usize> {
+        self.line
+    }
+
+    /// Returns a human-readable parse or apply error message.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for PatchParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.line {
+            Some(line) => write!(formatter, "patch line {line}: {}", self.message),
+            None => formatter.write_str(&self.message),
+        }
+    }
+}
+
+impl std::error::Error for PatchParseError {}
 
 /// Logical-line alignment unit shared by model and projection layers.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -214,6 +262,558 @@ fn logical_line_count(text: &str) -> usize {
         newlines
     } else {
         newlines + 1
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PatchHunkHeader {
+    before: Range<usize>,
+    after: Range<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PatchRecordKind {
+    Context,
+    Add,
+    Remove,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PatchRecord {
+    kind: PatchRecordKind,
+    text: String,
+    line: usize,
+}
+
+fn apply_unified_patch(
+    file: &str,
+    patch: &str,
+) -> Result<(String, Vec<AlignUnit>), PatchParseError> {
+    let source_lines = split_text_lines(file);
+    let patch_lines = split_patch_lines(patch);
+    let mut after = String::with_capacity(file.len());
+    let mut units = Vec::new();
+    let mut before_cursor = 0;
+    let mut after_cursor = 0;
+    let mut patch_index = 0;
+    let mut seen_hunk = false;
+
+    while patch_index < patch_lines.len() {
+        let line = patch_lines[patch_index];
+        let line_number = patch_index + 1;
+
+        if is_hunk_header(line) {
+            seen_hunk = true;
+            let header = parse_hunk_header(line, line_number)?;
+            append_unchanged_before_hunk(
+                &source_lines,
+                &mut after,
+                &mut units,
+                &mut before_cursor,
+                &mut after_cursor,
+                &header,
+                line_number,
+            )?;
+
+            patch_index += 1;
+            let (records, next_index) = parse_hunk_records(&patch_lines, patch_index, &header)?;
+            apply_hunk_records(
+                &source_lines,
+                &mut after,
+                &mut units,
+                &mut before_cursor,
+                &mut after_cursor,
+                &header,
+                &records,
+            )?;
+            patch_index = next_index;
+        } else {
+            if is_no_newline_marker(line) {
+                return Err(patch_error(
+                    Some(line_number),
+                    "no-newline marker appeared outside a hunk",
+                ));
+            }
+            if seen_hunk {
+                return Err(patch_error(
+                    Some(line_number),
+                    "unexpected trailing content after unified diff hunk",
+                ));
+            }
+            if !is_ignorable_preamble_line(line) {
+                return Err(patch_error(
+                    Some(line_number),
+                    "unexpected content before first unified diff hunk",
+                ));
+            }
+            patch_index += 1;
+        }
+    }
+
+    append_unchanged_tail(
+        &source_lines,
+        &mut after,
+        &mut units,
+        before_cursor,
+        after_cursor,
+    );
+
+    Ok((after, units))
+}
+
+fn split_text_lines(text: &str) -> Vec<&str> {
+    if text.is_empty() {
+        Vec::new()
+    } else {
+        text.split_inclusive('\n').collect()
+    }
+}
+
+fn split_patch_lines(patch: &str) -> Vec<&str> {
+    if patch.is_empty() {
+        Vec::new()
+    } else {
+        patch.split_inclusive('\n').collect()
+    }
+}
+
+fn is_hunk_header(line: &str) -> bool {
+    line.trim_end_matches(['\r', '\n']).starts_with("@@ ")
+}
+
+fn is_no_newline_marker(line: &str) -> bool {
+    line.trim_end_matches(['\r', '\n']) == r"\ No newline at end of file"
+}
+
+fn is_ignorable_preamble_line(line: &str) -> bool {
+    let line = line.trim_end_matches(['\r', '\n']);
+    line.is_empty()
+        || line.starts_with("diff --git ")
+        || line.starts_with("index ")
+        || line.starts_with("old mode ")
+        || line.starts_with("new mode ")
+        || line.starts_with("deleted file mode ")
+        || line.starts_with("new file mode ")
+        || line.starts_with("similarity index ")
+        || line.starts_with("dissimilarity index ")
+        || line.starts_with("rename from ")
+        || line.starts_with("rename to ")
+        || line.starts_with("copy from ")
+        || line.starts_with("copy to ")
+        || line.starts_with("--- ")
+        || line.starts_with("+++ ")
+}
+
+fn parse_hunk_header(line: &str, line_number: usize) -> Result<PatchHunkHeader, PatchParseError> {
+    let trimmed = line.trim_end_matches(['\r', '\n']);
+    let mut parts = trimmed.split_whitespace();
+    if parts.next() != Some("@@") {
+        return Err(patch_error(
+            Some(line_number),
+            "expected unified diff hunk header",
+        ));
+    }
+
+    let before = parts
+        .next()
+        .ok_or_else(|| patch_error(Some(line_number), "missing before range in hunk header"))?;
+    let after = parts
+        .next()
+        .ok_or_else(|| patch_error(Some(line_number), "missing after range in hunk header"))?;
+
+    if parts.next() != Some("@@") {
+        return Err(patch_error(
+            Some(line_number),
+            "missing closing @@ in hunk header",
+        ));
+    }
+
+    Ok(PatchHunkHeader {
+        before: parse_unified_range(before, '-', line_number)?,
+        after: parse_unified_range(after, '+', line_number)?,
+    })
+}
+
+fn parse_unified_range(
+    token: &str,
+    prefix: char,
+    line_number: usize,
+) -> Result<Range<usize>, PatchParseError> {
+    let body = token.strip_prefix(prefix).ok_or_else(|| {
+        patch_error(
+            Some(line_number),
+            format!("expected {prefix} range in hunk header"),
+        )
+    })?;
+    let (start, count) = match body.split_once(',') {
+        Some((start, count)) => (start, count),
+        None => (body, "1"),
+    };
+
+    let start = parse_hunk_number(start, line_number, "range start")?;
+    let count = parse_hunk_number(count, line_number, "range count")?;
+    let start_index = if count == 0 {
+        start
+    } else {
+        start.checked_sub(1).ok_or_else(|| {
+            patch_error(
+                Some(line_number),
+                "non-empty hunk range must start at line 1 or greater",
+            )
+        })?
+    };
+    let end = start_index
+        .checked_add(count)
+        .ok_or_else(|| patch_error(Some(line_number), "hunk range overflows platform usize"))?;
+
+    Ok(start_index..end)
+}
+
+fn parse_hunk_number(
+    value: &str,
+    line_number: usize,
+    label: &str,
+) -> Result<usize, PatchParseError> {
+    if value.is_empty() {
+        return Err(patch_error(
+            Some(line_number),
+            format!("empty {label} in hunk header"),
+        ));
+    }
+
+    value
+        .parse::<usize>()
+        .map_err(|_| patch_error(Some(line_number), format!("invalid {label} in hunk header")))
+}
+
+fn append_unchanged_before_hunk(
+    source_lines: &[&str],
+    after: &mut String,
+    units: &mut Vec<AlignUnit>,
+    before_cursor: &mut usize,
+    after_cursor: &mut usize,
+    header: &PatchHunkHeader,
+    line_number: usize,
+) -> Result<(), PatchParseError> {
+    if header.before.start < *before_cursor {
+        return Err(patch_error(
+            Some(line_number),
+            "hunk before range overlaps a previous hunk",
+        ));
+    }
+    if header.before.start > source_lines.len() {
+        return Err(patch_error(
+            Some(line_number),
+            "hunk before range starts beyond input file",
+        ));
+    }
+
+    let unchanged_len = header.before.start - *before_cursor;
+    let expected_after_start = after_cursor.checked_add(unchanged_len).ok_or_else(|| {
+        patch_error(
+            Some(line_number),
+            "after line cursor overflows platform usize",
+        )
+    })?;
+    if header.after.start != expected_after_start {
+        return Err(patch_error(
+            Some(line_number),
+            "hunk after range is inconsistent with preceding unchanged lines",
+        ));
+    }
+
+    after.push_str(&source_lines[*before_cursor..header.before.start].concat());
+    push_context(
+        units,
+        *before_cursor..header.before.start,
+        *after_cursor..header.after.start,
+    );
+    *before_cursor = header.before.start;
+    *after_cursor = header.after.start;
+    Ok(())
+}
+
+fn parse_hunk_records(
+    patch_lines: &[&str],
+    mut patch_index: usize,
+    header: &PatchHunkHeader,
+) -> Result<(Vec<PatchRecord>, usize), PatchParseError> {
+    let mut records = Vec::new();
+    let mut before_count = 0;
+    let mut after_count = 0;
+    let expected_before = header.before.end - header.before.start;
+    let expected_after = header.after.end - header.after.start;
+
+    while before_count < expected_before || after_count < expected_after {
+        if patch_index >= patch_lines.len() {
+            return Err(patch_error(
+                None,
+                "patch ended before hunk line counts were satisfied",
+            ));
+        }
+
+        let line = patch_lines[patch_index];
+        let line_number = patch_index + 1;
+        if is_no_newline_marker(line) {
+            strip_previous_record_newline(&mut records, line_number)?;
+            patch_index += 1;
+            continue;
+        }
+        if is_hunk_header(line) {
+            return Err(patch_error(
+                Some(line_number),
+                "next hunk header appeared before current hunk counts were satisfied",
+            ));
+        }
+
+        let (kind, text) = parse_hunk_record_line(line, line_number)?;
+        match kind {
+            PatchRecordKind::Context => {
+                before_count += 1;
+                after_count += 1;
+            }
+            PatchRecordKind::Add => {
+                after_count += 1;
+            }
+            PatchRecordKind::Remove => {
+                before_count += 1;
+            }
+        }
+        if before_count > expected_before || after_count > expected_after {
+            return Err(patch_error(
+                Some(line_number),
+                "hunk line count exceeds header range",
+            ));
+        }
+
+        records.push(PatchRecord {
+            kind,
+            text: text.to_owned(),
+            line: line_number,
+        });
+        patch_index += 1;
+    }
+
+    if patch_index < patch_lines.len() && is_no_newline_marker(patch_lines[patch_index]) {
+        strip_previous_record_newline(&mut records, patch_index + 1)?;
+        patch_index += 1;
+    }
+
+    Ok((records, patch_index))
+}
+
+fn parse_hunk_record_line(
+    line: &str,
+    line_number: usize,
+) -> Result<(PatchRecordKind, &str), PatchParseError> {
+    let Some(prefix) = line.as_bytes().first().copied() else {
+        return Err(patch_error(Some(line_number), "empty line inside hunk"));
+    };
+    let text = &line[1..];
+
+    match prefix {
+        b' ' => Ok((PatchRecordKind::Context, text)),
+        b'+' => Ok((PatchRecordKind::Add, text)),
+        b'-' => Ok((PatchRecordKind::Remove, text)),
+        _ => Err(patch_error(
+            Some(line_number),
+            "hunk line must start with space, +, -, or no-newline marker",
+        )),
+    }
+}
+
+fn strip_previous_record_newline(
+    records: &mut [PatchRecord],
+    line_number: usize,
+) -> Result<(), PatchParseError> {
+    let previous = records.last_mut().ok_or_else(|| {
+        patch_error(
+            Some(line_number),
+            "no-newline marker has no preceding hunk line",
+        )
+    })?;
+    if previous.text.ends_with("\r\n") {
+        previous.text.truncate(previous.text.len() - 2);
+    } else if previous.text.ends_with('\n') {
+        previous.text.pop();
+    }
+    Ok(())
+}
+
+fn apply_hunk_records(
+    source_lines: &[&str],
+    after: &mut String,
+    units: &mut Vec<AlignUnit>,
+    before_cursor: &mut usize,
+    after_cursor: &mut usize,
+    header: &PatchHunkHeader,
+    records: &[PatchRecord],
+) -> Result<(), PatchParseError> {
+    let mut record_index = 0;
+    while record_index < records.len() {
+        match records[record_index].kind {
+            PatchRecordKind::Context => {
+                let before_start = *before_cursor;
+                let after_start = *after_cursor;
+                while record_index < records.len()
+                    && records[record_index].kind == PatchRecordKind::Context
+                {
+                    apply_source_record(
+                        source_lines,
+                        after,
+                        before_cursor,
+                        after_cursor,
+                        &records[record_index],
+                    )?;
+                    record_index += 1;
+                }
+                push_context(
+                    units,
+                    before_start..*before_cursor,
+                    after_start..*after_cursor,
+                );
+            }
+            PatchRecordKind::Add | PatchRecordKind::Remove => {
+                let before_start = *before_cursor;
+                let after_start = *after_cursor;
+                let mut saw_add = false;
+                let mut saw_remove = false;
+
+                while record_index < records.len()
+                    && records[record_index].kind != PatchRecordKind::Context
+                {
+                    match records[record_index].kind {
+                        PatchRecordKind::Context => unreachable!(),
+                        PatchRecordKind::Add => {
+                            saw_add = true;
+                            after.push_str(&records[record_index].text);
+                            *after_cursor += 1;
+                        }
+                        PatchRecordKind::Remove => {
+                            saw_remove = true;
+                            validate_source_record(
+                                source_lines,
+                                *before_cursor,
+                                &records[record_index],
+                            )?;
+                            *before_cursor += 1;
+                        }
+                    }
+                    record_index += 1;
+                }
+
+                push_change_unit(
+                    units,
+                    saw_remove,
+                    saw_add,
+                    before_start..*before_cursor,
+                    after_start..*after_cursor,
+                );
+            }
+        }
+    }
+
+    if *before_cursor != header.before.end {
+        return Err(patch_error(
+            None,
+            "applied hunk before line count does not match header",
+        ));
+    }
+    if *after_cursor != header.after.end {
+        return Err(patch_error(
+            None,
+            "applied hunk after line count does not match header",
+        ));
+    }
+
+    Ok(())
+}
+
+fn apply_source_record(
+    source_lines: &[&str],
+    after: &mut String,
+    before_cursor: &mut usize,
+    after_cursor: &mut usize,
+    record: &PatchRecord,
+) -> Result<(), PatchParseError> {
+    validate_source_record(source_lines, *before_cursor, record)?;
+    after.push_str(&record.text);
+    *before_cursor += 1;
+    *after_cursor += 1;
+    Ok(())
+}
+
+fn validate_source_record(
+    source_lines: &[&str],
+    before_cursor: usize,
+    record: &PatchRecord,
+) -> Result<(), PatchParseError> {
+    let Some(source_line) = source_lines.get(before_cursor) else {
+        return Err(patch_error(
+            Some(record.line),
+            "hunk reads beyond input file",
+        ));
+    };
+    if *source_line != record.text {
+        return Err(patch_error(
+            Some(record.line),
+            "hunk line does not match input file",
+        ));
+    }
+    Ok(())
+}
+
+fn push_change_unit(
+    units: &mut Vec<AlignUnit>,
+    saw_remove: bool,
+    saw_add: bool,
+    before: Range<usize>,
+    after: Range<usize>,
+) {
+    match (saw_remove, saw_add) {
+        (true, true) => push_unit(
+            units,
+            AlignUnit::Replace {
+                sides: vec![before, after],
+            },
+        ),
+        (true, false) => push_unit(
+            units,
+            AlignUnit::Remove {
+                side: BEFORE_SIDE,
+                lines: before,
+            },
+        ),
+        (false, true) => push_unit(
+            units,
+            AlignUnit::Add {
+                side: AFTER_SIDE,
+                lines: after,
+            },
+        ),
+        (false, false) => unreachable!(),
+    }
+}
+
+fn append_unchanged_tail(
+    source_lines: &[&str],
+    after: &mut String,
+    units: &mut Vec<AlignUnit>,
+    before_cursor: usize,
+    after_cursor: usize,
+) {
+    after.push_str(&source_lines[before_cursor..].concat());
+    push_context(
+        units,
+        before_cursor..source_lines.len(),
+        after_cursor..after_cursor + source_lines.len() - before_cursor,
+    );
+}
+
+fn patch_error(line: Option<usize>, message: impl Into<String>) -> PatchParseError {
+    PatchParseError {
+        line,
+        message: message.into(),
     }
 }
 
