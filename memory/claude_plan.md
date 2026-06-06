@@ -21,3 +21,9 @@
 验证进度：`cargo clippy --all-targets --all-features -- -D warnings` 已通过；已确认未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
 
 完成记录更新：已将 `T22R Review：审查阶段性全量收口` 标记为 `[DONE]`，记录 review 结论和验证命令。下一步检查 git diff/status 并提交本任务变更。
+
+最终收口：本次重新读取完整 `TODO.md` 后，确认所有任务标题均已标记 `[DONE]`，没有第一个未完成任务。最近提交为 `[T22R] Review phase validation sweep`，未声明与最终收口直接相关的未完成问题。
+
+最终验证：已运行并通过 `cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，无可运行的完整 fixture runner。
+
+提交准备：`notification.sh` 和 `run_agent.sh` 是既有未跟踪文件，不属于本次收口变更，将保持不动。本次仅提交 `memory/claude_plan.md` 的最终收口记录，然后创建 `v0.1.0` 标签。
