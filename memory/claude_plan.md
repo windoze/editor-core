@@ -21,4 +21,5 @@
 - 已检查 T01 范围文件：workspace 成员、crate 依赖、模块占位、re-export 与 smoke test 均限定在骨架范围内；当前无审查发现。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo build -p editor-core-diff-view`、`cargo test -p editor-core-diff-view`。
 - 已将 `TODO.md` 中 `T01R Review：审查 crate 骨架` 标记为 `[DONE]`，完成记录写明无审查发现及验证命令；full test 因本次未改代码而复用 T01 已记录的绿色结果。
-- 下一步：检查 git diff/status/log，提交 T01R review 文档变更后停止。
+- 已提交 T01R review 文档变更：`a3e0c72 [T01R] Review diff-view crate skeleton`。
+- 当前任务完成，停止，不进入 T02。
