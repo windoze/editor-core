@@ -1,31 +1,26 @@
-# Current Invocation Plan
+# Claude Plan
 
-## Scope
+## 当前目标
 
-- Use `TODO.md` as the authoritative task list and complete exactly the first heading not prefixed with `[DONE]`.
-- Keep `PLAN.md` unchanged unless phase-level sequencing, dependencies, assumptions, or completion criteria change.
-- Stop after the selected task is implemented, validated, documented in `TODO.md`, committed, and no next task is started.
+- 当前第一个未完成任务：`T06R Review：审查 side-by-side 对齐`。
+- 只完成该 review 任务；完成后更新 `TODO.md`、验证、提交，并停止。
 
-## Execution Steps
+## 执行计划
 
-1. Read `TODO.md` first to identify the first incomplete task and its explicit requirements.
-2. Inspect recent git context only for directly relevant unfinished work tied to that task.
-3. Read the task-related code, tests, fixtures, and design notes needed to understand the target behavior.
-4. Implement the smallest spec-correct change, or add the minimum prerequisite task in `TODO.md` if a concrete blocker prevents correct implementation.
-5. Update this file whenever the selected task is identified, a key implementation step completes, validation status changes, or the plan changes.
-6. Run validation in the required order: formatting, linting with warnings denied, then relevant/full tests or fixtures required by the task.
-7. Address any observed unscheduled failing tests or fixtures by fixing them or scheduling the minimum prerequisite before completion.
-8. Mark the completed task heading in `TODO.md` with `[DONE]` and update its completion record.
-9. Inspect git status, diff, and recent log; commit intended changes with a descriptive task-scoped message; then stop.
+1. 查看最近提交信息，判断是否存在与 T06R 直接相关的未完成问题；只在其阻塞 review 时纳入处理或写入 `TODO.md` 前置任务。
+2. 审查 T06 范围文件：`crates/editor-core-diff-view/src/projection.rs` 与 `crates/editor-core-diff-view/tests/projection_side_by_side.rs`。
+3. 重点核对每个 `AlignUnit` 内 max 对齐、spacer 末尾补齐、不同列宽对齐、`Spacer.change` 语义、unified 路径未回退、未提前实现增量重算。
+4. 如发现明确 bug、测试缺口或质量问题，先修复并补测试；如果存在无法在 review 内正确处理的阻塞问题，则把最小前置任务插入 `TODO.md`，提交后停止。
+5. 按任务建议和通用清单运行验证：`cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-diff-view --test projection_side_by_side`、`cargo test -p editor-core-diff-view`。若无编译输出变化，可复用 T06 的全量绿色结果并记录原因。
+6. 更新 `TODO.md`：将 T06R 标题标记为 `[DONE]`，补充完成记录和验证结果；除非阶段计划变化，不更新 `PLAN.md`。
+7. 检查工作区差异，确保仅提交本任务需要的文件且不回退用户变更。
+8. 创建清晰的 Git 提交，然后停止。
 
-## Progress Log
+## 进度记录
 
-- Wrote this invocation plan before selecting the current `TODO.md` task. This file records auditable plan/progress, not private chain-of-thought.
-- Read `TODO.md`; selected first incomplete task: `T06 实现：project_side_by_side（spacer + max 对齐）`.
-- Current scope is limited to `crates/editor-core-diff-view/src/projection.rs` and new `tests/projection_side_by_side.rs`, unless a directly blocking T06 issue requires TODO bookkeeping.
-- Implemented the side-by-side projection path and added T06-focused tests for Add/Remove spacers, different column widths, end-of-unit padding, and Replace spacer semantics.
-- Next validation order: `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, targeted T06 tests, crate tests, then full workspace tests.
-- First clippy run found `needless_range_loop` in the new projection row materialization; replaced the index loop with direct two-column iteration and will rerun validation from formatting.
-- Validation passed after the fix: `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test -p editor-core-diff-view --test projection_side_by_side`, `cargo test -p editor-core-diff-view`, and `cargo test --all --all-targets`.
-- Fixture runner check: `tools/run_fixtures.py` is not present in this repository, so no separate fixture suite was run.
-- Updated `TODO.md` to mark `T06` as `[DONE]` with implementation and validation notes; no `PLAN.md` change is needed.
+- 已读取 `TODO.md`，确认第一个未完成任务为 `T06R Review：审查 side-by-side 对齐`。
+- 已查看最近提交，`ba6885b [T06] Implement side-by-side projection` 与当前 review 直接相关；未发现额外未完成提交说明。
+- 已审查 `projection.rs` 与 `projection_side_by_side.rs`：未发现 side-by-side 对齐、spacer 语义、unified 路径或增量重算方面的问题。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test projection_side_by_side`；`cargo test -p editor-core-diff-view`。
+- 已更新 `TODO.md`，将 T06R 标记为 `[DONE]` 并写入完成记录；未修改 `PLAN.md`，因为阶段计划未变化。
+- 下一步检查工作区差异并提交本次任务变更。

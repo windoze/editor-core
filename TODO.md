@@ -437,9 +437,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test projection_side_by_side`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
 - Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
-### [TODO] T06R Review：审查 side-by-side 对齐
+### [DONE] T06R Review：审查 side-by-side 对齐
 
-状态：TODO
+状态：DONE
 
 审查范围：T06 的所有 diff。
 
@@ -458,7 +458,9 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：已审查 T06 的 `project_side_by_side` 实现与 `tests/projection_side_by_side.rs`；未发现需修复问题。每个 alignment unit 内按两侧 visual row 数取 `max` 后在单元末尾补 `Spacer`，不同列宽下对齐稳定，`Add` / `Remove` / `Replace` 的 `Spacer.change` 语义明确，T05 unified 路径未被回退，未引入增量重算逻辑。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test projection_side_by_side`；`cargo test -p editor-core-diff-view`。
+- Full test suite：本次 review 未改动编译输出，T06 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
 ### [TODO] T07 实现：diff-semantic 样式常量与叠加
 
