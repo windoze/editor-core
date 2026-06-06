@@ -652,9 +652,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core --test command_is_mutating`；`cargo test -p editor-core`；`cargo test --all --all-targets`。
 - Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
-### [TODO] T09R Review：审查 `is_mutating` 分类
+### [DONE] T09R Review：审查 `is_mutating` 分类
 
-状态：TODO
+状态：DONE
 
 审查范围：T09 的所有 diff。
 
@@ -673,7 +673,10 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：已审查 T09 的 `Command::is_mutating` 实现与 `command_is_mutating` 测试；未发现需修复问题。`EditCommand` / `CursorCommand` / `ViewCommand` / `StyleCommand` 分类均使用无通配符匹配覆盖全部现有变体，新增变体时会触发非 exhaustive 检查。
+- 2026-06-07：已确认所有编辑命令归为 mutating，cursor/selection/scroll/find/go-to 类命令归为 readonly-safe，view 配置与 style/folding/bracket-highlight 命令归为 mutating，符合 T09/T09R 要求；未新增独立命令 enum，未改变既有命令语义。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core --test command_is_mutating`；`cargo test -p editor-core`。
+- Full test suite：本次 review 未改动编译输出，T09 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
 ### [TODO] T10 实现：Views（每列一个）+ readonly 命令 + 坐标映射
 

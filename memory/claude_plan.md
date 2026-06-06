@@ -66,3 +66,20 @@ T09 进度
 - 已确认仓库内无 `tools/run_fixtures.py`，无独立 fixture suite 可运行。
 - 已将 T09 在 `TODO.md` 标记为 `[DONE]` 并补充完成记录。
 - 提交前检查发现未跟踪的 `notification.sh` 与 `run_agent.sh` 非本任务文件，不纳入提交。
+
+T09R 计划
+1. 读取 TODO.md，确认第一个未完成任务为 `T09R Review：审查 is_mutating 分类`。
+2. 查看最新提交，仅判断是否存在与 T09R 直接相关的未完成事项。
+3. 审查 T09 的 `Command::is_mutating` 实现与 `command_is_mutating` 测试，重点检查变体覆盖、折叠分类、边界命令分类、是否改变既有语义以及测试是否逐变体覆盖。
+4. 若发现明确问题，修复或在 TODO.md 增加最小后续/前置任务；若无问题，运行格式化、lint 和 T09R 指定测试。
+5. 更新 TODO.md，将 T09R 标记为 [DONE] 并补充完成记录。
+6. 检查 diff/status，提交 T09R review 记录后停止。
+
+T09R 进度
+- 已读取 `TODO.md`；第一个未完成任务是 `T09R Review：审查 is_mutating 分类`。
+- 最新提交为 `[T09] Implement command mutating classification`，未发现与 T09R 直接相关的未完成事项之外的阻塞问题。
+- 已审查 T09 的 `model.rs` 与 `tests/command_is_mutating.rs`；未发现需修复问题。
+- 审查结论：`EditCommand` / `CursorCommand` / `ViewCommand` / `StyleCommand` 均使用无通配符匹配覆盖全部现有变体；编辑命令归为 mutating，cursor/selection/scroll/find/go-to 类命令归为 readonly-safe，view 配置与 style/folding/bracket-highlight 命令归为 mutating；未新增独立命令 enum，未改变既有命令语义。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core --test command_is_mutating`；`cargo test -p editor-core`。
+- 已更新 TODO.md：T09R 标题已标记 `[DONE]`，完成记录包含审查结论与验证命令。Full workspace test 未重跑，因为本次 review 未改动编译输出，T09 已记录全量测试通过。
+- 提交前检查将只纳入 `TODO.md` 与 `memory/claude_plan.md`；未跟踪的 `notification.sh` 与 `run_agent.sh` 非本任务文件，不纳入提交。
