@@ -29,3 +29,5 @@
 - 下一步更新 TODO.md，将 T08 标记为 `[DONE]` 并补充完成记录，然后检查 diff/status 并提交。
 - 已更新 TODO.md：T08 标题已标记 `[DONE]`，完成记录包含实现摘要、后续通用 line mark 提取项、验证命令和 fixture suite 状态。
 - 已检查 staged diff；`notification.sh` 与 `run_agent.sh` 为未跟踪且非本任务文件，不纳入提交。
+- 已提交 T08 实现，提交为 `f8ccf46 [T08] Implement diff-view gutter data`。
+- 本次任务完成后停止，不进入 T08R。
