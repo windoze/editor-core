@@ -24,6 +24,7 @@ fn line_slots(projection: &DiffProjection) -> Vec<(usize, usize, usize, DiffLine
                     logical_line,
                     visual_in_logical,
                     change,
+                    ..
                 } => (*side, *logical_line, *visual_in_logical, *change),
                 RowSlot::Spacer { .. } => panic!("unified projection must not produce spacers"),
             }

@@ -11,6 +11,7 @@ fn placeholder_types_are_constructible() {
     let _row = Row::default();
     let _slot = RowSlot::Spacer {
         change: DiffLineKind::Context,
+        cells: Vec::new(),
     };
     let _mode = DiffMode::Unified;
     let _view = DiffColumnView;

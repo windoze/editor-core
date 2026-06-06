@@ -462,9 +462,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test projection_side_by_side`；`cargo test -p editor-core-diff-view`。
 - Full test suite：本次 review 未改动编译输出，T06 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
-### [TODO] T07 实现：diff-semantic 样式常量与叠加
+### [DONE] T07 实现：diff-semantic 样式常量与叠加
 
-状态：TODO
+状态：DONE
 
 依赖：T05/T06。
 
@@ -502,7 +502,12 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：在 `editor-core` 的 `StyleId` 命名空间新增 `0x0900_xxxx` diff 专用段：`DIFF_ADD_LINE_STYLE_ID`、`DIFF_REMOVE_LINE_STYLE_ID`、`DIFF_SPACER_STYLE_ID`，并从 `editor-core` 根模块导出，未与现有 `0x0300` / `0x0400` / `0x0700` / `0x0800` 段冲突。
+- 2026-06-07：在 `editor-core-diff-view/src/style.rs` re-export diff 样式常量，并提供行级 diff 样式叠加辅助；projection 的 `RowSlot` 现在携带 `Cell` 数据，Add/Remove 行会在保留既有 `Cell.styles` 的基础上追加 diff 背景样式，Spacer 携带 spacer 样式，Context 行不追加 diff 背景；未实现行内/字符级 diff 样式。
+- 2026-06-07：新增 `tests/style.rs`，覆盖 Add/Remove/Spacer/Context 样式、diff 样式与已有 cell style 的叠加关系，以及新增常量段不冲突；同步调整既有 projection/smoke 测试以适配 `RowSlot` 携带 cells。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test style`；`cargo test -p editor-core`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
+- 说明：首次运行 `cargo test -p editor-core` 时遇到 Rust 增量编译缓存缺失对象文件错误；已执行 `cargo clean -p editor-core` 清理受影响构建缓存后重跑同一测试并通过。
+- Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
 ### [TODO] T07R Review：审查 diff 样式
 

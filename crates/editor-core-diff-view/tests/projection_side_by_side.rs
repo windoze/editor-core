@@ -46,8 +46,9 @@ fn projected_slots(projection: &DiffProjection) -> Vec<Vec<SlotSummary>> {
                         logical_line,
                         visual_in_logical,
                         change,
+                        ..
                     } => line(*side, *logical_line, *visual_in_logical, *change),
-                    RowSlot::Spacer { change } => spacer(*change),
+                    RowSlot::Spacer { change, .. } => spacer(*change),
                 })
                 .collect()
         })

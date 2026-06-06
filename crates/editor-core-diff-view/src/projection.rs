@@ -2,10 +2,11 @@
 
 use std::ops::Range;
 
-use editor_core::snapshot::SnapshotGenerator;
+use editor_core::{Cell, snapshot::SnapshotGenerator};
 use editor_core_diff::DiffLineKind;
 
 use crate::model::{AlignUnit, DiffModel, SideDoc};
+use crate::style;
 
 const BEFORE_SIDE: usize = 0;
 const AFTER_SIDE: usize = 1;
@@ -80,9 +81,25 @@ pub enum RowSlot {
         visual_in_logical: usize,
         /// Diff change kind for the logical line.
         change: DiffLineKind,
+        /// Cells for this wrapped visual segment with diff-semantic styles applied.
+        cells: Vec<Cell>,
     },
     /// A filler row used by aligned multi-column projections.
-    Spacer { change: DiffLineKind },
+    Spacer {
+        /// Diff change kind for the alignment unit that owns this spacer.
+        change: DiffLineKind,
+        /// Styled placeholder cells for the spacer row.
+        cells: Vec<Cell>,
+    },
+}
+
+impl RowSlot {
+    /// Returns the cells projected for this slot.
+    pub fn cells(&self) -> &[Cell] {
+        match self {
+            RowSlot::Line { cells, .. } | RowSlot::Spacer { cells, .. } => cells,
+        }
+    }
 }
 
 /// Builds the single-column unified projection.
@@ -187,11 +204,17 @@ fn context_display_side(sides: &[Range<usize>]) -> usize {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WrappedSide {
-    visual_segments_by_line: Vec<Vec<usize>>,
+    visual_segments_by_line: Vec<Vec<WrappedSegment>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WrappedSegment {
+    visual_in_logical: usize,
+    cells: Vec<Cell>,
 }
 
 impl WrappedSide {
-    fn visual_segments(&self, logical_line: usize) -> &[usize] {
+    fn visual_segments(&self, logical_line: usize) -> &[WrappedSegment] {
         self.visual_segments_by_line
             .get(logical_line)
             .unwrap_or_else(|| panic!("logical line {logical_line} is outside wrapped side"))
@@ -234,7 +257,10 @@ fn wrap_side(side: &SideDoc, width: usize) -> WrappedSide {
 
     for headless_line in grid.lines {
         if let Some(segments) = visual_segments_by_line.get_mut(headless_line.logical_line_index) {
-            segments.push(headless_line.visual_in_logical);
+            segments.push(WrappedSegment {
+                visual_in_logical: headless_line.visual_in_logical,
+                cells: headless_line.cells,
+            });
         }
     }
 
@@ -275,12 +301,15 @@ fn push_line_slots(
         .unwrap_or_else(|| panic!("side {side} is outside wrapped sides"));
 
     for logical_line in lines.clone() {
-        for visual_in_logical in wrapped_side.visual_segments(logical_line) {
+        for segment in wrapped_side.visual_segments(logical_line) {
+            let mut cells = segment.cells.clone();
+            style::apply_diff_line_style(&mut cells, change);
             slots.push(RowSlot::Line {
                 side,
                 logical_line,
-                visual_in_logical: *visual_in_logical,
+                visual_in_logical: segment.visual_in_logical,
                 change,
+                cells,
             });
         }
     }
@@ -369,6 +398,7 @@ fn push_aligned_unit_rows(
     for (side, slots) in columns.iter_mut().enumerate() {
         slots.resize_with(unit_height, || RowSlot::Spacer {
             change: spacer_changes[side],
+            cells: style::diff_spacer_cells(),
         });
     }
 

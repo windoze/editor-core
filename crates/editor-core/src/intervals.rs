@@ -40,6 +40,13 @@ pub const DOCUMENT_LINK_STYLE_ID: StyleId = 0x0800_0003;
 /// Built-in style id for match highlights (e.g. search matches, bracket matches).
 pub const MATCH_HIGHLIGHT_STYLE_ID: StyleId = 0x0800_0004;
 
+/// Built-in style id for added lines in headless diff projections.
+pub const DIFF_ADD_LINE_STYLE_ID: StyleId = 0x0900_0001;
+/// Built-in style id for removed lines in headless diff projections.
+pub const DIFF_REMOVE_LINE_STYLE_ID: StyleId = 0x0900_0002;
+/// Built-in style id for filler spacer rows in headless diff projections.
+pub const DIFF_SPACER_STYLE_ID: StyleId = 0x0900_0003;
+
 /// Style layer ID
 ///
 /// Used to distinguish style sources (e.g., LSP semantic highlighting, simple syntax highlighting, diagnostics, etc.),
