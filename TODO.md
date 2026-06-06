@@ -321,9 +321,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test model_patch`；`cargo test -p editor-core-diff-view`。
 - Full test suite：本次 review 未改动编译输出，T04 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
-### [TODO] T05 实现：`DiffProjection` 骨架 + `project_unified`
+### [DONE] T05 实现：`DiffProjection` 骨架 + `project_unified`
 
-状态：TODO
+状态：DONE
 
 依赖：T03。
 
@@ -362,7 +362,11 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：在 `projection.rs` 中将 placeholder 替换为真实 `DiffMode` / `DiffProjection` / `Row` / `RowSlot` 数据结构，新增 `DiffProjection::build` 与 `project_unified`，统一按宽度整体重建；`SideBySide` 分支保留到 T06 实现。
+- 2026-06-07：Unified projection 复用 `SnapshotGenerator::set_viewport_width` + `get_headless_grid` 计算各侧 wrap segment，按 alignment 顺序展开单列，Context 使用 after 侧展示，Replace 按先 Remove 后 Add 输出，不产生 `Spacer`。
+- 2026-06-07：新增 `tests/projection_unified.rs`，覆盖单列无 spacer、修改块先删后增、相同宽度确定性、宽度变化触发 wrap row 数变化，以及 CJK/emoji 宽度下的 visual segment 序号。
+- 验证通过：`cargo fmt`；`cargo test -p editor-core-diff-view --test projection_unified`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
+- Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
 ### [TODO] T05R Review：审查 projection 骨架与 unified
 

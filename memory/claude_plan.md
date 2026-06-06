@@ -1,11 +1,26 @@
-执行计划（不包含私有推理过程）
+# Execution Plan
 
-1. 读取 TODO.md，按标题是否带有 [DONE] 找出第一个未完成任务，并只处理该任务。
-2. 查看最近提交信息，判断是否有明确提到且与当前任务直接相关的未完成事项。
-3. 阅读当前任务涉及的计划、源码和测试，确认要求、依赖与验证方式。
-4. 以最小正确改动实现当前任务；若发现阻塞当前任务的真实前置问题，则更新 TODO.md 记录前置任务并停止。
-5. 为改动添加或更新聚焦测试，执行格式化、clippy、相关测试以及必要的完整验证。
-6. 将当前任务标题标记为 [DONE]，更新 TODO.md 完成记录；仅在阶段计划变化时更新 PLAN.md。
-7. 检查 git diff/status，提交所有本次任务相关改动，然后停止，不进入下一个任务。
+## Scope
+- Follow `TODO.md` as the authoritative ordered task list.
+- Complete exactly the first task whose heading is not prefixed with `[DONE]`, then stop.
+- Do not perform broad historical triage before selecting the current task.
 
-进度记录：已完成 T04R 审查并更新 TODO.md：未发现需要修复或新增前置任务的问题。验证通过 `cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-diff-view --test model_patch`、`cargo test -p editor-core-diff-view`。T04R 完成记录已提交为 `250fef2 [T04R] Review file patch diff model`；本轮停止，不进入 T05。
+## Steps
+1. Read `TODO.md` and identify the first incomplete task exactly as written.
+2. Check the latest commit only for an unfinished issue that is directly relevant to that task.
+3. Inspect the files and tests needed for that task.
+4. Implement the task directly, unless a concrete prerequisite blocker makes correct execution impossible.
+5. If blocked, add the minimum prerequisite task to `TODO.md`, update this plan, commit, and stop.
+6. Run formatting, linting, targeted tests, and then broader validation as required by the task and repository policy.
+7. Mark the task heading in `TODO.md` with `[DONE]` and update its completion record.
+8. Commit all intended changes with a clear task-specific message.
+9. Stop without starting the next task.
+
+## Progress
+- Plan initialized before executing repository commands.
+- First incomplete task identified: T05 `DiffProjection` skeleton + `project_unified`.
+- Next step: inspect only T05-relevant design/code/tests and the latest commit for directly relevant unfinished work.
+- Latest commit `319ba73 [T04R] Record review plan status` has no directly relevant unfinished T05 issue.
+- Implemented the initial projection structures, unified build path, SnapshotGenerator-based wrapping, and `projection_unified` regression tests.
+- Verification passed: `cargo fmt`, `cargo test -p editor-core-diff-view --test projection_unified`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test -p editor-core-diff-view`, and `cargo test --all --all-targets`.
+- `TODO.md` updated to mark T05 `[DONE]` with completion notes. Next step: inspect git diff/status and commit the T05 changes only.
