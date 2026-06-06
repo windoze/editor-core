@@ -18,3 +18,4 @@
 - 下一步按顺序运行 `cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-diff-view --test style`、`cargo test -p editor-core`。
 - 已完成验证：`cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-diff-view --test style`、`cargo test -p editor-core`、`cargo test -p editor-core-diff-view` 均通过。
 - 已将 `T07R Review：审查 diff 样式` 标记为 `[DONE]` 并补充完成记录。下一步检查 diff 并提交本次审查记录。
+- 已提交 T07R 审查记录，提交为 `e980d91 [T07R] Review diff semantic styles`。本次任务完成后停止，不进入 T08。
