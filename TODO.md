@@ -2469,9 +2469,9 @@
 - `cargo fmt` 未产生源码格式化 diff；验证命令未暴露需要修复的测试、clippy 或文档一致性问题。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，无可运行的完整 fixture runner。
 
-### T22R Review：审查阶段性全量收口
+### [DONE] T22R Review：审查阶段性全量收口
 
-状态：TODO
+状态：DONE
 
 审查范围：T22 的所有 diff 和测试输出。
 
@@ -2486,3 +2486,10 @@
 
 - `cargo test`
 - `cargo clippy --all-targets --all-features`
+
+完成记录：
+
+- 已审查 T22 diff，确认该提交仅将 T22 标记为完成并补充验证记录，未包含源码、测试或功能逻辑改动。
+- 未发现需要立即修复或新增前置任务的问题；T22 记录的验证矩阵覆盖 `editor-core`、`editor-core-lsp`、`editor-core-ffi`、完整 workspace test 和 all-features clippy，且本次 review 复跑关键全量命令通过。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test`、`cargo clippy --all-targets --all-features -- -D warnings`。
+- 已确认未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner，完整 fixture suite 无可运行入口。

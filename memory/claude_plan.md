@@ -1,36 +1,23 @@
-# Execution Plan
+# 执行计划
 
-## Scope
+说明：我不能记录私密推理过程，但会在这里持续记录可审阅的执行计划、关键决策、进度和验证结果。
 
-- Follow `TODO.md` as the authoritative task list.
-- Identify and complete exactly the first task whose heading is not prefixed with `[DONE]`.
-- Stop after committing that task or, if blocked, after recording the minimum required prerequisite task and committing the bookkeeping change.
+1. 读取 `TODO.md`，按文件顺序找到第一个标题未以 `[DONE]` 标记的任务。
+2. 检查该任务的依赖、验收标准、验证要求和完成记录，并查看最近提交是否明确提到与该任务直接相关的未完成事项。
+3. 读取与当前任务相关的源码、测试、文档和计划文件，确认需要修改的最小范围。
+4. 按当前任务要求实现或修复；如果发现阻塞该任务的真实前置问题，则只在 `TODO.md` 中加入最小前置任务并停止。
+5. 为实现补充或调整聚焦测试，不使用规避、弱化 fixture 或任务私有特例。
+6. 运行格式化、lint、目标测试以及必要的完整测试/fixture 验证；若发现未被明确排期的失败测试或 fixture，修复或将其排入 `TODO.md`。
+7. 更新 `TODO.md`：在当前任务标题前加 `[DONE]`，补全完成记录；仅当阶段级计划改变时更新 `PLAN.md`。
+8. 检查 git 状态和差异，提交本任务涉及的全部未提交文件，然后停止，不推进下一项任务。
 
-## Step-by-Step Plan
+当前状态：已读取 `TODO.md`，第一个未完成任务是 `T22R Review：审查阶段性全量收口`。下一步检查最近提交与 T22/T22R 相关上下文，然后执行 review 范围验证。
 
-1. Read `TODO.md` first and identify the first incomplete task.
-2. Inspect only the files needed to understand that task and its validation requirements.
-3. Check the recent commit message only if it may mention unfinished work directly relevant to the selected task.
-4. Implement the task as written, avoiding workarounds or narrowed scope.
-5. Add or update focused tests for the behavior changed by the task.
-6. Run formatting, linting, and relevant tests in the required order.
-7. If any failing test or fixture is observed, either fix it or add the minimum scheduled task before marking the current task done.
-8. Update `TODO.md` by prefixing the task heading with `[DONE]` and adding a completion record.
-9. Update this plan file with completed key steps and validation results.
-10. Inspect git status and diff, then commit all intended changes with a descriptive message.
-11. Stop without starting the next task.
+进度更新：已检查最新提交 `[T22] Complete phase validation sweep`，该提交只修改 `TODO.md` 和 `memory/claude_plan.md`，未包含源码或测试文件改动，也未声明与 T22R 直接相关的未完成问题。下一步按 review 要求重新运行验证命令。
 
-## Progress
+验证进度：`cargo fmt` 已运行完成。
+验证进度：`cargo clippy --all-targets -- -D warnings` 已通过。
+验证进度：`cargo test` 已通过。
+验证进度：`cargo clippy --all-targets --all-features -- -D warnings` 已通过；已确认未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*` fixture runner。
 
-- Initial execution plan written.
-- First incomplete task identified: `T22 实现：阶段性全量收口`.
-- T22 scope is validation-only except for fixes required by formatting, tests, clippy, or documentation consistency failures.
-- `cargo fmt` completed with no source changes.
-- `cargo clippy --all-targets --all-features -- -D warnings` passed.
-- `cargo test -p editor-core` passed.
-- `cargo test -p editor-core-lsp` passed.
-- `cargo test -p editor-core-ffi` passed.
-- `cargo test` passed for the full workspace test suite.
-- Final `cargo clippy --all-targets --all-features -- -D warnings` passed.
-- No fixture runner found at `tools/run_fixtures.py` or `tools/**/*fixture*`.
-- `TODO.md` updated to mark T22 as `[DONE]` with validation results.
+完成记录更新：已将 `T22R Review：审查阶段性全量收口` 标记为 `[DONE]`，记录 review 结论和验证命令。下一步检查 git diff/status 并提交本任务变更。
