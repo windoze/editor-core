@@ -105,3 +105,21 @@ T10 进度
 - 已确认仓库内不存在 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 - 已将 T10 在 `TODO.md` 标记为 `[DONE]` 并填写完成记录。
 - 提交前检查将纳入 T10 相关代码、测试、`TODO.md` 与 `memory/claude_plan.md`；未跟踪的 `notification.sh` 与 `run_agent.sh` 非本任务文件，不纳入提交。
+
+T10R 计划
+1. 读取 `TODO.md`，确认第一个未完成任务为 `T10R Review：审查 Views 与坐标映射`。
+2. 查看最新提交，仅判断是否存在与 T10R 直接相关的未完成事项。
+3. 审查 T10 的 `projection.rs`、`view.rs`、`tests/view.rs`、`tests/smoke.rs` 与公开导出，重点检查 readonly 命令过滤、per-side visual row ↔ unified row 映射、spacer 跳过、是否复用 editor 导航逻辑以及是否保持 headless。
+4. 若发现明确问题，修复或在 `TODO.md` 增加最小后续/前置任务；若无问题，运行格式化、lint 和 T10R 指定测试。
+5. 更新 `TODO.md`，将 T10R 标记为 `[DONE]` 并补充完成记录。
+6. 检查 diff/status/log，提交 T10R review 记录；若确认 TODO 已全部完成，按发布收口规则处理最终标签。
+
+T10R 进度
+- 已读取 `TODO.md`；第一个未完成任务是 `T10R Review：审查 Views 与坐标映射`。
+- 最新提交为 `[T10] Implement readonly diff column views`，未发现提交信息中声明的未完成事项。
+- 工作区已有未跟踪文件 `notification.sh`、`run_agent.sh`，与当前 T10R 无关，将保持不动。
+- 已审查 T10 范围内 `projection.rs`、`view.rs`、`tests/view.rs`、`tests/smoke.rs` 和公开 re-export；未发现明确 bug、规格偏离或需要新增修复任务的问题。
+- 已完成验证：`cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-diff-view --test view`、`cargo test -p editor-core-diff-view` 均通过。
+- 已更新 `TODO.md`，将 T10R 标记为 `[DONE]` 并补充完成记录。全量测试套件未重跑，原因是本次 review 未改动编译输出，T10 记录已有 `cargo test --all --all-targets` 绿色结果。
+- 已确认 `TODO.md` 中没有剩余 `[TODO]` 任务；已阅读 `PLAN.md` 并核对 v1 阶段范围与 TODO 完成记录一致。
+- 下一步检查待提交 diff，提交 T10R 文档记录；提交后创建 `v0.1.0` 标签。

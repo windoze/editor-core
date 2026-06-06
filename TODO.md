@@ -727,9 +727,9 @@
 - 验证通过：`cargo fmt`；`cargo test -p editor-core-diff-view --test view`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
 - Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
-### [TODO] T10R Review：审查 Views 与坐标映射
+### [DONE] T10R Review：审查 Views 与坐标映射
 
-状态：TODO
+状态：DONE
 
 审查范围：T10 的所有 diff。
 
@@ -748,7 +748,10 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：已审查 T10 的 `DiffColumnView`、per-side visual row ↔ unified row 映射、readonly 命令过滤、column row 薄投影与 `tests/view.rs`；未发现需修复问题。mutating 命令统一经 `Command::is_mutating()` 拒绝，cursor/selection/scroll/find 等 readonly-safe 命令继续复用 `CommandExecutor` 既有导航逻辑；含 spacer 的行映射返回 `None`，cursor 通过 side 真实坐标自然跳过 filler row。
+- 2026-06-07：已确认 view/projection 仍只暴露 headless 数据，不管理 rendering、scrolling、layout 或 splitter；side-by-side 两列视图与统一 row 轴一致，wrap/CJK/emoji/spacer 组合已有测试覆盖。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test view`；`cargo test -p editor-core-diff-view`。
+- Full test suite：本次 review 未改动编译输出，T10 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
 ## 推迟到后续版本（不在本 TODO）
 
