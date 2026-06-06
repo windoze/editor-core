@@ -296,9 +296,9 @@
 - 验证通过：`cargo fmt`；`cargo test -p editor-core-diff-view --test model_patch`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
 - Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
-### [TODO] T04R Review：审查 file+patch 数据源
+### [DONE] T04R Review：审查 file+patch 数据源
 
-状态：TODO
+状态：DONE
 
 审查范围：T04 的所有 diff。
 
@@ -317,7 +317,9 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：已审查 T04 的 `DiffModel::from_file_and_patch`、unified diff 解析/应用逻辑与 `tests/model_patch.rs`；未发现需修复问题。file+patch 路径直接利用 hunk 记录重建 after 文本与 alignment，hunk 外未改区域由输入 file 补齐，错误路径返回 `PatchParseError` 而非 panic，未对重建后的全文重新运行 diff。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test model_patch`；`cargo test -p editor-core-diff-view`。
+- Full test suite：本次 review 未改动编译输出，T04 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
 ### [TODO] T05 实现：`DiffProjection` 骨架 + `project_unified`
 
