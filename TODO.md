@@ -509,9 +509,9 @@
 - 说明：首次运行 `cargo test -p editor-core` 时遇到 Rust 增量编译缓存缺失对象文件错误；已执行 `cargo clean -p editor-core` 清理受影响构建缓存后重跑同一测试并通过。
 - Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
-### [TODO] T07R Review：审查 diff 样式
+### [DONE] T07R Review：审查 diff 样式
 
-状态：TODO
+状态：DONE
 
 审查范围：T07 的所有 diff。
 
@@ -530,7 +530,10 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：已审查 T07 的 diff-semantic 样式实现与测试；未发现需修复问题。新增 `StyleId` 使用 `0x0900_xxxx` diff 专用段且未与既有 core/render-skia 样式段冲突，`Add` / `Remove` / `Spacer` / `Context` 样式叠加符合 T07/T07R 要求，diff-semantic 样式追加到既有 `Cell.styles` 而非覆盖，未发现行内/字符级 diff 高亮实现。
+- 2026-06-07：已确认 `editor-core` 改动仅新增并导出 diff 样式常量；`editor-core-diff-view` 改动集中在 projection slot cells 与 `style.rs` 辅助，未引入 rendering、scrolling、splitter 或其它 UI 逻辑。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test style`；`cargo test -p editor-core`；`cargo test -p editor-core-diff-view`。
+- Full test suite：本次 review 仅更新 `TODO.md` / `memory/claude_plan.md` 文档记录，T07 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
 ### [TODO] T08 实现：gutter line mark（diff-view 内最小实现）
 
