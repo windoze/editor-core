@@ -29,4 +29,6 @@
 - 验证已通过：`cargo fmt`；`cargo test -p editor-core-diff-view --test model_patch`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
 - Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 - 已更新 `TODO.md` 标记 T04 完成并填写完成记录。
-- 下一步检查最终差异并提交本轮相关文件；未跟踪的 `notification.sh`、`run_agent.sh` 继续保持不动。
+- 已提交本轮实现：`4b54e3a [T04] Implement file patch diff model`。
+- 提交后工作区仅剩无关未跟踪文件 `notification.sh`、`run_agent.sh`，已保持不动。
+- T04 已完成，本轮停止，不进入 T04R。
