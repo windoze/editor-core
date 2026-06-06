@@ -33,3 +33,8 @@
 - 仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。下一步更新 `TODO.md` 的 T02 标题和完成记录，然后检查 diff 并提交。
 - 已将 `TODO.md` 中 T02 标记为 `[DONE]` 并填写完成记录。下一步执行提交前检查：`git status`、`git diff`、`git log --oneline -10`。
 - 已检查并暂存本任务相关文件：`TODO.md`、`model.rs`、`tests/alignment.rs`、`memory/claude_plan.md`；未跟踪的 `notification.sh` 和 `run_agent.sh` 非本任务产物，保持未暂存。下一步提交后停止。
+- 本轮已读取 `TODO.md`，第一个未完成任务是 `T02R Review：审查对齐算法`。
+- 最近提交为 `[T02] Implement diff-view alignment`，未提到与 T02R 直接相关的未完成问题。
+- 已审查 `AlignUnit`、`align_before_after`、hunk 外 context 补齐、块级 `Replace` 归并、纯 `Add`/`Remove` 归类和 `alignment` 测试覆盖；未发现需要修复的问题。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test alignment`；`cargo test -p editor-core-diff-view`。
+- 已更新 `TODO.md` 将 T02R 标记为 `[DONE]` 并填写 review 完成记录；`PLAN.md` 无阶段级变更，不更新。下一步提交本轮 review 记录。

@@ -157,9 +157,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test alignment`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
 - Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
-### [TODO] T02R Review：审查对齐算法
+### [DONE] T02R Review：审查对齐算法
 
-状态：TODO
+状态：DONE
 
 审查范围：T02 的所有 diff。
 
@@ -178,7 +178,9 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：已审查 T02 对齐算法与测试；未发现需修复问题。`AlignUnit` 保留 per-side `Vec<Range<usize>>` 扩展形状，hunk 外 context 补齐、hunk 内 context/修改块边界、块级 `Replace` 配对、纯 `Add`/`Remove` 归类与完整覆盖性质测试均符合 T02/T02R 要求；未引入 spacer 或行内 diff 逻辑。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test alignment`；`cargo test -p editor-core-diff-view`。
+- Full test suite：本次 review 未改动编译输出，T02 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
 ### [TODO] T03 实现：`DiffModel`（width-independent 真值，before + after 来源）
 
