@@ -47,6 +47,45 @@ impl DiffProjection {
     pub fn rows(&self) -> &[Row] {
         &self.rows
     }
+
+    /// Maps a side-local visual row to the shared unified row axis.
+    pub fn unified_row_for_side_visual_row(
+        &self,
+        side: usize,
+        side_visual_row: usize,
+    ) -> Option<usize> {
+        let mut current_side_row = 0;
+        for (unified_row, row) in self.rows.iter().enumerate() {
+            if row_has_side_visual_row(row, side) {
+                if current_side_row == side_visual_row {
+                    return Some(unified_row);
+                }
+                current_side_row += 1;
+            }
+        }
+
+        None
+    }
+
+    /// Maps a unified row back to a side-local visual row when that side has a real line there.
+    pub fn side_visual_row_for_unified_row(
+        &self,
+        side: usize,
+        unified_row: usize,
+    ) -> Option<usize> {
+        let mut current_side_row = 0;
+        for (row_index, row) in self.rows.iter().enumerate() {
+            let has_side_row = row_has_side_visual_row(row, side);
+            if row_index == unified_row {
+                return has_side_row.then_some(current_side_row);
+            }
+            if has_side_row {
+                current_side_row += 1;
+            }
+        }
+
+        None
+    }
 }
 
 /// One row in the unified visual row axis.
@@ -128,6 +167,32 @@ impl RowSlot {
         match self {
             RowSlot::Line { gutter, .. } | RowSlot::Spacer { gutter, .. } => *gutter,
         }
+    }
+}
+
+fn row_has_side_visual_row(row: &Row, side: usize) -> bool {
+    row.slots
+        .iter()
+        .any(|slot| slot_represents_side_visual_row(slot, side))
+}
+
+fn slot_represents_side_visual_row(slot: &RowSlot, side: usize) -> bool {
+    match slot {
+        RowSlot::Line {
+            side: slot_side,
+            change,
+            gutter,
+            ..
+        } => {
+            *slot_side == side
+                || (*change == DiffLineKind::Context
+                    && match side {
+                        BEFORE_SIDE => gutter.before_line.is_some(),
+                        AFTER_SIDE => gutter.after_line.is_some(),
+                        _ => false,
+                    })
+        }
+        RowSlot::Spacer { .. } => false,
     }
 }
 

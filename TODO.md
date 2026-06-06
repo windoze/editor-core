@@ -678,9 +678,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core --test command_is_mutating`；`cargo test -p editor-core`。
 - Full test suite：本次 review 未改动编译输出，T09 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
-### [TODO] T10 实现：Views（每列一个）+ readonly 命令 + 坐标映射
+### [DONE] T10 实现：Views（每列一个）+ readonly 命令 + 坐标映射
 
-状态：TODO
+状态：DONE
 
 依赖：T05/T06/T09。
 
@@ -720,7 +720,12 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：在 `DiffProjection` 上新增 per-side visual row ↔ unified row 双向映射方法，按 projection 行数据按需计算；真实 side line 可映射，`Spacer` 行返回 `None`，unified context 行可同时代表 before/after 两侧真实 visual row。
+- 2026-06-07：在 `view.rs` 中实现 `DiffColumnView`，每个列视图借用 projection、持有该侧 readonly `CommandExecutor`，通过 `Command::is_mutating()` 拒绝 insert/delete/replace/undo/redo/折叠等 mutating 命令，允许 cursor/selection/scroll/find 等 readonly-safe 命令继续复用 editor 既有导航逻辑。
+- 2026-06-07：新增 `DiffColumnRow` / `DiffColumnRowSource` 作为 column slot 的薄投影；真实 `Line` 透传 cells/gutter/source 元数据，`Spacer` 在 view 层输出空 cells 与空 gutter，不引入 rendering、scrolling、layout 或 splitter 逻辑。
+- 2026-06-07：新增 `tests/view.rs`，覆盖 mutating 命令拒绝与 navigation 允许、含 spacer/wrap/CJK/emoji 的映射往返、向下移动时 cursor 通过 side 真实坐标自然跳过 spacer，以及 side-by-side 两列 view 与统一 row 轴一致。
+- 验证通过：`cargo fmt`；`cargo test -p editor-core-diff-view --test view`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
+- Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
 ### [TODO] T10R Review：审查 Views 与坐标映射
 

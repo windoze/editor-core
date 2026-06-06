@@ -1,4 +1,4 @@
-use editor_core_diff::DiffLineKind;
+use editor_core_diff::{DiffLineKind, LineDiffConfig};
 use editor_core_diff_view::{
     DiffColumnView, DiffMode, DiffModel, DiffProjection, Gutter, Row, RowSlot, SideDoc,
 };
@@ -15,5 +15,7 @@ fn placeholder_types_are_constructible() {
         cells: Vec::new(),
     };
     let _mode = DiffMode::Unified;
-    let _view = DiffColumnView;
+    let model = DiffModel::from_before_after("a\n", "a\n", LineDiffConfig::default());
+    let projection = DiffProjection::build(&model, DiffMode::SideBySide, &[80, 80]);
+    let _view = DiffColumnView::new(&model, &projection, 0, 0, 80);
 }

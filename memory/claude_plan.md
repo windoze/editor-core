@@ -83,3 +83,25 @@ T09R 进度
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core --test command_is_mutating`；`cargo test -p editor-core`。
 - 已更新 TODO.md：T09R 标题已标记 `[DONE]`，完成记录包含审查结论与验证命令。Full workspace test 未重跑，因为本次 review 未改动编译输出，T09 已记录全量测试通过。
 - 提交前检查将只纳入 `TODO.md` 与 `memory/claude_plan.md`；未跟踪的 `notification.sh` 与 `run_agent.sh` 非本任务文件，不纳入提交。
+
+T10 计划
+1. 读取 `TODO.md`，确认第一个未完成任务为 `T10 实现：Views（每列一个）+ readonly 命令 + 坐标映射`。
+2. 查看最新提交，仅判断是否存在与 T10 直接相关的未完成事项。
+3. 读取 T10 指定文件、`PLAN.md` §6、projection/model 现状与 `editor-core` 的 `CommandExecutor` / `Command::is_mutating()` 入口。
+4. 在 `DiffProjection` 上新增按需计算的 per-side visual row ↔ unified row 映射。
+5. 在 `view.rs` 实现借用 projection 的 `DiffColumnView`，内部持有该侧 readonly `CommandExecutor`，`execute` 拒绝 mutating 命令。
+6. 新增视图行数据类型，让 line 透传 cells/gutter，让 spacer 输出空 cells 与空 gutter。
+7. 新增 `tests/view.rs`，覆盖 readonly 命令、坐标映射、spacer 跳过和 side-by-side view 投影。
+8. 运行 `cargo fmt`、clippy、T10 指定测试、diff-view 包测试和完整 Rust 测试；确认 fixture runner 是否存在。
+9. 更新 `TODO.md` 将 T10 标记为 `[DONE]` 并填写完成记录；检查 diff/status/log 后提交并停止。
+
+T10 进度
+- 已读取 `TODO.md`，首个未完成任务为 `T10 实现：Views（每列一个）+ readonly 命令 + 坐标映射`。
+- 最近提交为 `[T09R] Review command mutating classification`，未明确记录与 T10 直接相关的未完成问题。
+- 当前工作区除本计划文件外已有未跟踪 `notification.sh`、`run_agent.sh`，本任务不会修改或回滚这些无关文件。
+- 已读取 T10 指定文件、`PLAN.md` §6、projection/model 现状与 `editor-core` 的 `CommandExecutor` / `Command::is_mutating()` 入口。
+- 已按最小补丁修改 `projection.rs`、`view.rs`、`lib.rs`、`tests/smoke.rs` 并新增 `tests/view.rs`。
+- 已完成验证：`cargo fmt`、`cargo test -p editor-core-diff-view --test view`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-diff-view`、`cargo test --all --all-targets` 均通过。
+- 已确认仓库内不存在 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
+- 已将 T10 在 `TODO.md` 标记为 `[DONE]` 并填写完成记录。
+- 提交前检查将纳入 T10 相关代码、测试、`TODO.md` 与 `memory/claude_plan.md`；未跟踪的 `notification.sh` 与 `run_agent.sh` 非本任务文件，不纳入提交。

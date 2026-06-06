@@ -11,4 +11,4 @@ pub mod view;
 
 pub use model::{AlignUnit, DiffModel, SideDoc};
 pub use projection::{DiffMode, DiffProjection, Gutter, Row, RowSlot};
-pub use view::DiffColumnView;
+pub use view::{DiffColumnRow, DiffColumnRowSource, DiffColumnView};
