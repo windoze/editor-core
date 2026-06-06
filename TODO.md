@@ -2415,9 +2415,9 @@
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-app`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --all --all-targets`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，无可运行的完整 fixture runner。
 
-### T21AR Review：审查 editor-core-app panic 专项
+### [DONE] T21AR Review：审查 editor-core-app panic 专项
 
-状态：TODO
+状态：DONE
 
 审查范围：T21A 的所有 diff。
 
@@ -2432,6 +2432,14 @@
 
 - `cargo test -p editor-core-app`
 - `cargo clippy --all-targets -- -D warnings`
+
+完成记录：
+
+- 已审查 T21A diff，重点检查 `settings.rs` 的 settings reload I/O 错误通道、`session.rs` 的 hot-exit 损坏 view/buffer index 处理、空 selection snapshot 恢复，以及新增 app 回归测试。
+- 未发现需要立即修复或新增前置任务的问题；settings 文件缺失/metadata 错误不再静默当作 unchanged，损坏 hot-exit `buffer_index` 返回 `InvalidSnapshot`，空 selection snapshot 会恢复为单 caret 并 clamp primary index。
+- 已定向复查 `editor-core-app/src` 的 `unwrap()` / `expect()` / `panic!` 匹配，T21A 记录的生产路径分类仍成立；新增匹配来自测试模块。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-app`。
+- 本次 review 未修改编译代码；T21A 完成记录已有 `cargo test --all --all-targets` 和 `cargo clippy --all-targets --all-features -- -D warnings` 通过结果，因此未重复运行完整 workspace 测试或 fixture suite。
 
 ### T22 实现：阶段性全量收口
 
