@@ -227,9 +227,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test model`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
 - Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
-### [TODO] T03R Review：审查 `DiffModel`
+### [DONE] T03R Review：审查 `DiffModel`
 
-状态：TODO
+状态：DONE
 
 审查范围：T03 的所有 diff。
 
@@ -248,7 +248,9 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：已审查 T03 的 `DiffModel` / `SideDoc` 实现与模型测试；未发现需修复问题。模型保持 width/mode 无关，未泄漏 wrap、spacer、rendering、scrolling 或 width 依赖；缓存覆盖各侧逻辑行、alignment 与每行 `DiffLineKind`，`side_line_kind` 覆盖 T03 生成的 `Context` / `Add` / `Remove` / `Replace` 语义；公开接口未暴露可变内部状态。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test model`；`cargo test -p editor-core-diff-view`。
+- Full test suite：本次 review 未改动编译输出，T03 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
 ### [TODO] T04 实现：`file + patch` 数据源归约到 `DiffModel`
 
