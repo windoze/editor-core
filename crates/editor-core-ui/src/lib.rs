@@ -664,6 +664,24 @@ impl EditorUiDoc {
             .map_err(|e| UiError::Processor(format!("{e:?}")))
     }
 
+    fn apply_lsp_processing_edits<I>(&mut self, edits: I) -> Result<bool, UiError>
+    where
+        I: IntoIterator<Item = ProcessingEdit>,
+    {
+        let edits = edits.into_iter().collect::<Vec<_>>();
+        if edits.is_empty() {
+            return Ok(false);
+        }
+
+        if let Err(err) = self.apply_processing_edits(edits) {
+            let reason = format!("failed to apply LSP processing edits: {err}");
+            self.lsp_fail(reason.clone());
+            return Err(UiError::Processor(reason));
+        }
+
+        Ok(true)
+    }
+
     fn lsp_is_enabled(&self) -> bool {
         let Some(shared) = self.lsp.as_ref() else {
             return false;
@@ -2710,7 +2728,7 @@ impl EditorUi {
             let mut doc = self.lock_doc();
             if doc.treesitter.is_none() {
                 drop(doc);
-                let lsp_applied = self.poll_lsp_best_effort();
+                let lsp_applied = self.poll_lsp_best_effort()?;
                 return Ok(ProcessingPollResult {
                     applied: lsp_applied,
                     pending: self.lsp_is_enabled(),
@@ -2812,7 +2830,7 @@ impl EditorUi {
             treesitter_applied = true;
         }
 
-        let lsp_applied = self.poll_lsp_best_effort();
+        let lsp_applied = self.poll_lsp_best_effort()?;
 
         Ok(ProcessingPollResult {
             applied: treesitter_applied || lsp_applied,
@@ -5195,15 +5213,15 @@ impl EditorUi {
         out
     }
 
-    fn poll_lsp_best_effort(&mut self) -> bool {
+    fn poll_lsp_best_effort(&mut self) -> Result<bool, UiError> {
         let (shared, doc_uri) = {
             let mut doc = self.lock_doc();
             let Some(shared) = doc.lsp.clone() else {
-                return false;
+                return Ok(false);
             };
             let Some(doc_uri) = doc.lsp_document_uri.clone() else {
                 doc.lsp_fail("LSP document URI missing");
-                return true;
+                return Ok(false);
             };
             (shared, doc_uri)
         };
@@ -5215,7 +5233,7 @@ impl EditorUi {
                 Ok(idx) => idx,
                 Err(_) => {
                     doc.lsp_fail("LSP buffer line index unavailable");
-                    return true;
+                    return Ok(false);
                 }
             };
             let edits = match shared.with_session_mut(|session| {
@@ -5225,19 +5243,16 @@ impl EditorUi {
                 Ok(edits) => edits,
                 Err(reason) => {
                     doc.lsp_fail(reason);
-                    return true;
+                    return Ok(false);
                 }
             };
-            if !edits.is_empty() {
-                let _ = doc.apply_processing_edits(edits);
-                applied = true;
-            }
+            applied |= doc.apply_lsp_processing_edits(edits)?;
         }
 
         if let Err(err) = self.maybe_request_lsp_aux() {
             let mut doc = self.lock_doc();
             doc.lsp_fail(err.to_string());
-            return true;
+            return Ok(false);
         }
 
         let events = match shared.with_session_mut(|session| Ok(session.drain_events())) {
@@ -5245,11 +5260,11 @@ impl EditorUi {
             Err(reason) => {
                 let mut doc = self.lock_doc();
                 doc.lsp_fail(reason);
-                return true;
+                return Ok(false);
             }
         };
         if events.is_empty() {
-            return applied;
+            return Ok(applied);
         }
 
         // Avoid re-entrant locking: collect text edits while holding the doc lock and apply
@@ -5270,11 +5285,10 @@ impl EditorUi {
                         Ok(line_index) => lsp_inlay_hints_to_processing_edit(line_index, &result),
                         Err(_) => {
                             doc.lsp_fail("LSP buffer line index unavailable");
-                            return true;
+                            return Ok(false);
                         }
                     };
-                    let _ = doc.apply_processing_edits([edit]);
-                    applied = true;
+                    applied |= doc.apply_lsp_processing_edits([edit])?;
                 }
                 "textDocument/codeLens" => {
                     doc.lsp_code_lens_in_flight = false;
@@ -5283,11 +5297,10 @@ impl EditorUi {
                         Ok(line_index) => lsp_code_lens_to_processing_edit(line_index, &result),
                         Err(_) => {
                             doc.lsp_fail("LSP buffer line index unavailable");
-                            return true;
+                            return Ok(false);
                         }
                     };
-                    let _ = doc.apply_processing_edits([edit]);
-                    applied = true;
+                    applied |= doc.apply_lsp_processing_edits([edit])?;
                 }
                 "textDocument/documentLink" => {
                     doc.lsp_document_links_in_flight = false;
@@ -5298,13 +5311,10 @@ impl EditorUi {
                         }
                         Err(_) => {
                             doc.lsp_fail("LSP buffer line index unavailable");
-                            return true;
+                            return Ok(false);
                         }
                     };
-                    if !edits.is_empty() {
-                        let _ = doc.apply_processing_edits(edits);
-                        applied = true;
-                    }
+                    applied |= doc.apply_lsp_processing_edits(edits)?;
                 }
                 "textDocument/hover" => {
                     if let Some(LspClientRequest::Hover { view }) =
@@ -5386,12 +5396,12 @@ impl EditorUi {
                 Err(_err) => {
                     let mut doc = self.lock_doc();
                     doc.lsp_fail(_err.to_string());
-                    return true;
+                    return Ok(false);
                 }
             }
         }
 
-        applied
+        Ok(applied)
     }
 
     fn maybe_request_lsp_aux(&mut self) -> Result<(), UiError> {
@@ -6198,6 +6208,96 @@ mod tests {
     }
     use editor_core::CursorCommand;
     use editor_core_treesitter::TreeSitterUpdateMode;
+
+    #[test]
+    fn lsp_processing_edit_apply_failure_records_status_and_returns_error() {
+        let ui = EditorUi::new("abc", 80);
+
+        let err = {
+            let mut doc = ui.lock_doc();
+            doc.lsp_last_cmd = Some("fake-lsp".to_string());
+            let buffer_id = doc.buffer_id;
+            doc.ws.close_buffer(buffer_id).unwrap();
+            doc.apply_lsp_processing_edits([ProcessingEdit::ClearDiagnostics])
+                .unwrap_err()
+        };
+
+        let UiError::Processor(message) = err else {
+            panic!("expected processor error");
+        };
+        assert!(
+            message.contains("failed to apply LSP processing edits"),
+            "unexpected error message: {message}"
+        );
+
+        let status: serde_json::Value =
+            serde_json::from_str(ui.lsp_status_json().as_str()).unwrap();
+        assert_eq!(status["availability"], "failed");
+        assert_eq!(status["state"], "failed");
+        assert!(
+            status["detail"]
+                .as_str()
+                .is_some_and(|detail| detail.contains("failed to apply LSP processing edits")),
+            "unexpected LSP status: {status}"
+        );
+    }
+
+    #[test]
+    fn poll_processing_reports_lsp_failure_without_applied_success() {
+        let mut ui = EditorUi::new("abc", 80);
+        {
+            let mut doc = ui.lock_doc();
+            doc.lsp_last_cmd = Some("fake-lsp".to_string());
+            doc.lsp_document_uri = Some("file:///test.rs".to_string());
+            doc.lsp = Some(Arc::new(SharedLspSession {
+                session: Mutex::new(None),
+            }));
+        }
+
+        let result = ui.poll_processing().unwrap();
+        assert!(!result.applied);
+        assert!(!result.pending);
+
+        let status: serde_json::Value =
+            serde_json::from_str(ui.lsp_status_json().as_str()).unwrap();
+        assert_eq!(status["availability"], "failed");
+        assert!(
+            status["detail"]
+                .as_str()
+                .is_some_and(|detail| detail.contains("LSP session is not available")),
+            "unexpected LSP status: {status}"
+        );
+    }
+
+    #[test]
+    fn poll_processing_reports_treesitter_worker_disconnected() {
+        let mut ui = EditorUi::new("fn main() {}", 80);
+        let (tx_worker, rx_worker) = mpsc::channel::<TreeSitterWorkerMsg>();
+        drop(rx_worker);
+        let (tx_events, rx_events) = mpsc::channel::<TreeSitterWorkerEvent>();
+        drop(tx_events);
+
+        {
+            let mut doc = ui.lock_doc();
+            doc.treesitter = Some(TreeSitterAsyncWorker {
+                tx: tx_worker,
+                rx: rx_events,
+                join: None,
+                requested_version: Some(1),
+                applied_version: None,
+                last_update_mode: None,
+            });
+        }
+
+        let err = ui.poll_processing().unwrap_err();
+        let UiError::Processor(message) = err else {
+            panic!("expected processor error");
+        };
+        assert!(
+            message.contains("tree-sitter worker disconnected"),
+            "unexpected error message: {message}"
+        );
+    }
 
     #[test]
     fn ui_text_roundtrip() {

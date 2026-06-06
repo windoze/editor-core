@@ -1,21 +1,33 @@
-本文件记录本次任务的可审计执行计划、关键决策和进度检查点。不会记录隐藏推理链。
+# Claude Execution Plan
 
-## 当前执行计划
+## Scope
 
-1. 已读取 `TODO.md`，按标题是否带 `[DONE]` 识别第一个未完成任务，不做开放式历史问题排查。
-2. 当前任务为 `T21UR Review：审查 editor-core-ui panic 专项`；这是 review 任务，不主动重构，只审查 T21U diff、验证是否有明确缺陷或测试缺口。
-3. 先检查最近提交和工作区状态，确认是否有与 T21UR 直接相关的未完成事项或未提交变更需要纳入本次 review。
-4. 定向查看 T21U 涉及文件：`crates/editor-core-ui/src/lib.rs`、`crates/editor-core-ui/src/keybindings.rs` 以及相关测试，重点核对可恢复 UI/host 错误是否转为明确错误通道、processor 状态错误是否未被吞掉、剩余 panic/unwrap/expect 是否分类清楚、是否未混入 app/core 无关修改。
-5. 运行任务建议验证，按要求先 `cargo fmt`，再 `cargo clippy --all-targets -- -D warnings`，再运行 `cargo test -p editor-core-ui`；若发现未调度失败测试，必须修复或在 `TODO.md` 中新增最小前置任务。
-6. 若 review 未发现阻塞问题，将 `T21UR` 标题加 `[DONE]`、状态改为 DONE，并补充完成记录和验证结果；不更新 `PLAN.md`，除非发现阶段级计划变化。
-7. 提交本次 review 相关变更，提交信息使用 `T21UR` 前缀；完成后停止，不进入 `T21A`。
+- Follow `TODO.md` as the authoritative task list.
+- Complete exactly the first task whose title is not prefixed with `[DONE]`, then stop.
+- Do not perform broad issue triage before selecting the current task.
 
-## 进度
+## Steps
 
-- 已确认第一个未完成任务为 `T21UR Review：审查 editor-core-ui panic 专项`。
-- 已检查最近提交与工作区状态：`HEAD` 为 `[T21U] Harden editor-core-ui panic handling`，当前仅 `memory/claude_plan.md` 为本次修改；另有 `notification.sh`、`run_agent.sh` 未跟踪且与本任务无关，不修改、不提交。
-- 已开始定向审查 T21U 的 UI panic/error-handling 改动和测试覆盖。
-- 定向审查发现后续修复项：`poll_lsp_best_effort` 中 LSP-derived `apply_processing_edits` 错误被忽略，且部分路径会继续报告 `applied = true`；同时 T21U 对 `poll_processing` Tree-sitter worker-missing 错误路径缺少直接回归覆盖。计划在 `T21A` 前新增最小 `T21UF` / `T21UFR`，本次 review 不直接重构实现。
-- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui`。
-- 已更新 `TODO.md`：`T21UR` 标题已加 `[DONE]`，状态改为 DONE，并记录审查结论；已在 `T21A` 前新增 `T21UF` / `T21UFR`，并将 `T21A` 依赖改为 `T21UFR`。
-- 下一步检查 diff/status 后提交本次 review 变更。
+1. Read `TODO.md` and identify the first incomplete task by title prefix.
+2. Check the latest commit message only for directly relevant unfinished work tied to that task.
+3. Inspect the files and tests relevant to the selected task.
+4. If a concrete prerequisite blocks correct execution, update `TODO.md` with the minimum prerequisite task, commit that bookkeeping, and stop.
+5. Otherwise, implement the selected task completely with small focused patches.
+6. Run formatting, linting, targeted tests, and required full validation in the requested order unless the task changes only documentation/bookkeeping and a prior green run can be reused.
+7. Update `TODO.md` by prefixing the completed task title with `[DONE]` and filling its completion record.
+8. Commit all relevant changes with a clear task-scoped message.
+9. Stop without starting the next task.
+
+## Progress
+
+- Plan initialized before reading project task files.
+- Selected first incomplete task: `T21UF 修复：收口 editor-core-ui LSP processing 错误通道与 poll 回归覆盖`.
+- Next: check the latest commit for directly relevant unfinished work, then inspect only the listed UI entry points and tests.
+- Latest commit is `[T21UR] Review editor-core-ui panic handling`; its recorded follow-up is exactly T21UF, so no extra prerequisite is needed.
+- Implementation plan: add one LSP processing-edit apply helper that records failures through `lsp_fail` and returns `UiError::Processor`; update `poll_lsp_best_effort` and `poll_processing` to propagate that result; add internal tests for LSP apply failure and a constructible Tree-sitter poll error path.
+- Implemented the LSP processing-edit helper and updated `poll_lsp_best_effort` / `poll_processing` to propagate apply failures without reporting `applied = true`.
+- Added internal UI tests for LSP processing edit apply failure status, LSP session failure poll result, and Tree-sitter worker disconnection poll error.
+- Validation passed: `cargo fmt`, `cargo test -p editor-core-ui`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all --all-targets`, and `cargo clippy --all-targets --all-features -- -D warnings`.
+- Fixture runner check: `tools/run_fixtures.py` / `tools/**/*fixture*` not found.
+- Updated `TODO.md`: marked `T21UF` as `[DONE]` and recorded implementation notes, validation, and the Tree-sitter worker-missing constructability note.
+- Next: inspect git status/diff/log, then commit the task changes.

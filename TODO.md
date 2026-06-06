@@ -2293,9 +2293,9 @@
 - 发现 T21U 后续修复项：`poll_lsp_best_effort` 中 LSP-derived `apply_processing_edits` 错误被 `let _ = ...` 忽略，且部分路径会继续报告 `applied = true`；同时 T21U 对 `poll_processing` Tree-sitter worker-missing 错误路径缺少直接回归覆盖。已在 T21A 前新增 `T21UF` / `T21UFR`。
 - 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui`。
 
-### T21UF 修复：收口 editor-core-ui LSP processing 错误通道与 poll 回归覆盖
+### [DONE] T21UF 修复：收口 editor-core-ui LSP processing 错误通道与 poll 回归覆盖
 
-状态：TODO
+状态：DONE
 
 依赖：
 
@@ -2333,6 +2333,15 @@
 
 - LSP-derived processing edit 应用失败不会被静默吞掉或误报为已成功应用。
 - T21U 的 UI panic/error-handling 修复有覆盖关键错误通道的回归测试。
+
+完成记录：
+
+- 新增 `EditorUiDoc::apply_lsp_processing_edits`，统一处理 `session.poll_edits_with_line_index`、`inlayHint`、`codeLens` 和 `documentLink` 产生的 LSP-derived processing edits；应用失败时记录 `lsp_last_error`、重置 LSP 状态并返回 `UiError::Processor`，不再通过 `let _ = ...` 静默吞错。
+- 将 `poll_lsp_best_effort` 改为返回 `Result<bool, UiError>`，`poll_processing` 通过 `?` 传播 LSP processing edit 应用失败；LSP session/URI/line-index 等失败路径继续进入 LSP status JSON，但不再把失败误报为 `applied = true`。
+- 新增内部 UI 回归测试，覆盖 LSP processing edit 应用失败的错误/状态通道、LSP session failure 时 `poll_processing` 不报告 applied success，以及 Tree-sitter worker disconnected 这个可构造的相邻 defensive poll 错误路径。
+- `poll_processing` 中 worker-missing 的三个 defensive 分支在当前安全 API 下不可直接构造：进入分支前后均持有同一 `EditorUiDoc` 锁，`doc.treesitter` 不能在检查后被外部置空；本任务用断连 worker 覆盖同一 poll 错误通道。
+- 已运行并通过：`cargo fmt`、`cargo test -p editor-core-ui`、`cargo clippy --all-targets -- -D warnings`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
+- 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，无可运行的完整 fixture runner。
 
 ### T21UFR Review：审查 editor-core-ui LSP processing 错误通道修复
 
