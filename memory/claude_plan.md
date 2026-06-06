@@ -8,4 +8,4 @@
 6. 将当前任务标题标记为 [DONE]，更新 TODO.md 完成记录；仅在阶段计划变化时更新 PLAN.md。
 7. 检查 git diff/status，提交所有本次任务相关改动，然后停止，不进入下一个任务。
 
-进度记录：已完成 T04R 审查并更新 TODO.md：未发现需要修复或新增前置任务的问题。验证通过 `cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-diff-view --test model_patch`、`cargo test -p editor-core-diff-view`；下一步检查 diff/status 并提交本次 review 改动。
+进度记录：已完成 T04R 审查并更新 TODO.md：未发现需要修复或新增前置任务的问题。验证通过 `cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test -p editor-core-diff-view --test model_patch`、`cargo test -p editor-core-diff-view`。T04R 完成记录已提交为 `250fef2 [T04R] Review file patch diff model`；本轮停止，不进入 T05。
