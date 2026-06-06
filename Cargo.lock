@@ -900,6 +900,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "editor-core-diff-view"
+version = "0.4.0"
+dependencies = [
+ "editor-core",
+ "editor-core-diff",
+]
+
+[[package]]
 name = "editor-core-dist"
 version = "0.4.0"
 dependencies = [

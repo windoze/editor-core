@@ -41,9 +41,9 @@
 
 ## 任务列表
 
-### [TODO] T01 实现：搭建 `editor-core-diff-view` crate 骨架
+### [DONE] T01 实现：搭建 `editor-core-diff-view` crate 骨架
 
-状态：TODO
+状态：DONE
 
 范围文件：
 
@@ -82,7 +82,9 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：新增 `editor-core-diff-view` workspace crate，包含 `model` / `projection` / `view` / `style` 四个模块、计划公开类型的占位定义与最小 smoke test；crate 保持 headless，仅依赖 `editor-core` 和 `editor-core-diff` path 依赖。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo build -p editor-core-diff-view`；`cargo test -p editor-core-diff-view`；`cargo clippy -p editor-core-diff-view --all-targets -- -D warnings`；`cargo test --all --all-targets`。
+- Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
 ### [TODO] T01R Review：审查 crate 骨架
 

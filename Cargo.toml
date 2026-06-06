@@ -4,6 +4,7 @@ members = [
     "crates/editor-core",
     "crates/editor-core-app",
     "crates/editor-core-diff",
+    "crates/editor-core-diff-view",
     "crates/editor-core-ffi",
     "crates/editor-core-dist",
     "crates/editor-core-lang",
