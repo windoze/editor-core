@@ -86,9 +86,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo build -p editor-core-diff-view`；`cargo test -p editor-core-diff-view`；`cargo clippy -p editor-core-diff-view --all-targets -- -D warnings`；`cargo test --all --all-targets`。
 - Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
-### [TODO] T01R Review：审查 crate 骨架
+### [DONE] T01R Review：审查 crate 骨架
 
-状态：TODO
+状态：DONE
 
 审查范围：T01 的所有 diff。
 
@@ -107,7 +107,9 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：已审查 T01 crate 骨架；未发现需修复问题。workspace 成员、path 依赖、模块划分、re-export、headless 约束与占位 smoke test 均符合 T01/T01R 要求，未混入业务逻辑或 rendering/scrolling/splitter 相关实现。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo build -p editor-core-diff-view`；`cargo test -p editor-core-diff-view`。
+- Full test suite：本次仅更新 review/TODO/计划文档，T01 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
 ### [TODO] T02 实现：固化 `AlignUnit` 与对齐算法（before + after 来源）
 
