@@ -23,4 +23,6 @@
 - Latest commit `319ba73 [T04R] Record review plan status` has no directly relevant unfinished T05 issue.
 - Implemented the initial projection structures, unified build path, SnapshotGenerator-based wrapping, and `projection_unified` regression tests.
 - Verification passed: `cargo fmt`, `cargo test -p editor-core-diff-view --test projection_unified`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test -p editor-core-diff-view`, and `cargo test --all --all-targets`.
-- `TODO.md` updated to mark T05 `[DONE]` with completion notes. Next step: inspect git diff/status and commit the T05 changes only.
+- `TODO.md` updated to mark T05 `[DONE]` with completion notes.
+- T05 implementation committed as `4f8176e [T05] Implement unified diff projection`.
+- Remaining untracked files `notification.sh` and `run_agent.sh` were not created for this task and are intentionally left untouched.
