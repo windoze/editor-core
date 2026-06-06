@@ -182,9 +182,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test alignment`；`cargo test -p editor-core-diff-view`。
 - Full test suite：本次 review 未改动编译输出，T02 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
-### [TODO] T03 实现：`DiffModel`（width-independent 真值，before + after 来源）
+### [DONE] T03 实现：`DiffModel`（width-independent 真值，before + after 来源）
 
-状态：TODO
+状态：DONE
 
 依赖：T02。
 
@@ -221,7 +221,11 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：在 `model.rs` 中将 `SideDoc` / `DiffModel` 从占位类型替换为真实 width-independent 模型：`SideDoc` 缓存原文与不含 trailing LF 的逻辑行，`DiffModel::from_before_after` 复用 T02 alignment，并缓存每侧每行 `DiffLineKind`。
+- 2026-06-07：新增 `DiffModel::{sides, side, alignment, side_line_kind}` 与 `SideDoc::{from_text, text, logical_lines, logical_line, line_count}` 查询接口；模型层不包含 spacer、wrap、rendering、scrolling 或 width 依赖。
+- 2026-06-07：新增 `tests/model.rs`，覆盖无变更、纯增、纯删、修改块 alignment 一致性，`side_line_kind` 在 Context/Add/Remove/Replace 下的每侧结果，以及末尾换行边界和空文档逻辑行缓存；同步更新旧 smoke 测试以使用真实模型默认构造。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test model`；`cargo test -p editor-core-diff-view`；`cargo test --all --all-targets`。
+- Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
 ### [TODO] T03R Review：审查 `DiffModel`
 

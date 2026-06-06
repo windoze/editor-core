@@ -4,13 +4,88 @@ use std::ops::Range;
 
 use editor_core_diff::{DiffLineKind, LineDiffConfig, diff_line_hunks};
 
-/// A side document participating in a diff view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct SideDoc;
+const BEFORE_SIDE: usize = 0;
+const AFTER_SIDE: usize = 1;
 
-/// Width-independent diff model placeholder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct DiffModel;
+/// A side document participating in a diff view.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SideDoc {
+    text: String,
+    logical_lines: Vec<String>,
+}
+
+impl SideDoc {
+    /// Builds a side document cache from the original side text.
+    pub fn from_text(text: &str) -> Self {
+        Self {
+            text: text.to_owned(),
+            logical_lines: split_logical_lines(text),
+        }
+    }
+
+    /// Returns the original text for this side.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Returns cached logical lines without trailing LF separators.
+    pub fn logical_lines(&self) -> &[String] {
+        &self.logical_lines
+    }
+
+    /// Returns one cached logical line by 0-based logical line index.
+    pub fn logical_line(&self, logical_line: usize) -> Option<&str> {
+        self.logical_lines.get(logical_line).map(String::as_str)
+    }
+
+    /// Returns the number of logical lines on this side.
+    pub fn line_count(&self) -> usize {
+        self.logical_lines.len()
+    }
+}
+
+/// Width-independent diff model shared by projection modes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DiffModel {
+    sides: Vec<SideDoc>,
+    alignment: Vec<AlignUnit>,
+    line_kinds: Vec<Vec<DiffLineKind>>,
+}
+
+impl DiffModel {
+    /// Builds a two-side model from before/after text and line-diff configuration.
+    pub fn from_before_after(before: &str, after: &str, config: LineDiffConfig) -> Self {
+        let sides = vec![SideDoc::from_text(before), SideDoc::from_text(after)];
+        let alignment = align_before_after(before, after, config);
+        let line_kinds = build_line_kinds(&sides, &alignment);
+
+        Self {
+            sides,
+            alignment,
+            line_kinds,
+        }
+    }
+
+    /// Returns all side documents participating in this model.
+    pub fn sides(&self) -> &[SideDoc] {
+        &self.sides
+    }
+
+    /// Returns one side document by side index.
+    pub fn side(&self, side: usize) -> Option<&SideDoc> {
+        self.sides.get(side)
+    }
+
+    /// Returns cached width-independent alignment units.
+    pub fn alignment(&self) -> &[AlignUnit] {
+        &self.alignment
+    }
+
+    /// Returns the cached diff kind for a side logical line.
+    pub fn side_line_kind(&self, side: usize, logical_line: usize) -> DiffLineKind {
+        self.line_kinds[side][logical_line]
+    }
+}
 
 /// Logical-line alignment unit shared by model and projection layers.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,9 +102,6 @@ pub enum AlignUnit {
 
 /// Builds width-independent alignment units from a before/after text pair.
 pub fn align_before_after(before: &str, after: &str, config: LineDiffConfig) -> Vec<AlignUnit> {
-    const BEFORE_SIDE: usize = 0;
-    const AFTER_SIDE: usize = 1;
-
     let before_len = logical_line_count(before);
     let after_len = logical_line_count(after);
     let hunks = diff_line_hunks(before, after, config);
@@ -184,4 +256,66 @@ fn push_unit(units: &mut Vec<AlignUnit>, unit: AlignUnit) {
     }
 
     units.push(unit);
+}
+
+fn split_logical_lines(text: &str) -> Vec<String> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+
+    let text_without_final_lf = text.strip_suffix('\n').unwrap_or(text);
+    text_without_final_lf
+        .split('\n')
+        .map(str::to_owned)
+        .collect()
+}
+
+fn build_line_kinds(sides: &[SideDoc], alignment: &[AlignUnit]) -> Vec<Vec<DiffLineKind>> {
+    let mut line_kinds: Vec<Vec<DiffLineKind>> = sides
+        .iter()
+        .map(|side| vec![DiffLineKind::Context; side.line_count()])
+        .collect();
+
+    for unit in alignment {
+        match unit {
+            AlignUnit::Context { sides } => {
+                for (side, lines) in sides.iter().enumerate() {
+                    mark_lines(&mut line_kinds, side, lines, DiffLineKind::Context);
+                }
+            }
+            AlignUnit::Replace { sides } => {
+                for (side, lines) in sides.iter().enumerate() {
+                    let kind = if side == BEFORE_SIDE {
+                        DiffLineKind::Remove
+                    } else {
+                        DiffLineKind::Add
+                    };
+                    mark_lines(&mut line_kinds, side, lines, kind);
+                }
+            }
+            AlignUnit::Add { side, lines } => {
+                mark_lines(&mut line_kinds, *side, lines, DiffLineKind::Add);
+            }
+            AlignUnit::Remove { side, lines } => {
+                mark_lines(&mut line_kinds, *side, lines, DiffLineKind::Remove);
+            }
+        }
+    }
+
+    line_kinds
+}
+
+fn mark_lines(
+    line_kinds: &mut [Vec<DiffLineKind>],
+    side: usize,
+    lines: &Range<usize>,
+    kind: DiffLineKind,
+) {
+    debug_assert!(side < line_kinds.len());
+    if let Some(side_kinds) = line_kinds.get_mut(side) {
+        debug_assert!(lines.end <= side_kinds.len());
+        for logical_line in lines.clone() {
+            side_kinds[logical_line] = kind;
+        }
+    }
 }
