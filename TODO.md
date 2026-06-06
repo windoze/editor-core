@@ -2343,9 +2343,9 @@
 - 已运行并通过：`cargo fmt`、`cargo test -p editor-core-ui`、`cargo clippy --all-targets -- -D warnings`、`cargo test --all --all-targets`、`cargo clippy --all-targets --all-features -- -D warnings`。
 - 未找到 `tools/run_fixtures.py` 或 `tools/**/*fixture*`，无可运行的完整 fixture runner。
 
-### T21UFR Review：审查 editor-core-ui LSP processing 错误通道修复
+### [DONE] T21UFR Review：审查 editor-core-ui LSP processing 错误通道修复
 
-状态：TODO
+状态：DONE
 
 审查范围：T21UF 的所有 diff。
 
@@ -2361,6 +2361,14 @@
 
 - `cargo test -p editor-core-ui`
 - `cargo clippy --all-targets -- -D warnings`
+
+完成记录：
+
+- 已审查 T21UF diff，重点检查 `EditorUiDoc::apply_lsp_processing_edits`、`poll_lsp_best_effort`、`poll_processing` 的错误传播、LSP status JSON 可观测性，以及新增 UI 回归测试。
+- 未发现需要立即修复或新增前置任务的问题；`session.poll_edits_with_line_index`、`inlayHint`、`codeLens` 和 `documentLink` 的 LSP-derived processing edits 统一经 helper 应用，失败会记录 `lsp_last_error`、重置 LSP 状态并返回 `UiError::Processor`，不会继续报告 `applied = true`。
+- 已确认 Tree-sitter worker disconnected 回归覆盖同一 poll 错误通道；当前 worker-missing defensive 分支在安全 API 下不可直接构造的说明与实现一致。
+- 已运行并通过：`cargo fmt`、`cargo clippy --all-targets -- -D warnings`、`cargo test -p editor-core-ui`。
+- 本次 review 未修改编译代码；T21UF 完成记录已有全量测试与 all-features clippy 通过结果，因此未重复运行完整 workspace 测试或 fixture suite。
 
 ### T21A 实现：editor-core-app panic 与错误处理专项
 
