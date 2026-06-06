@@ -691,6 +691,43 @@ pub enum Command {
 }
 
 impl EditCommand {
+    fn is_mutating(&self) -> bool {
+        match self {
+            EditCommand::Insert { .. }
+            | EditCommand::Delete { .. }
+            | EditCommand::Replace { .. }
+            | EditCommand::ReplaceCoalescingUndo { .. }
+            | EditCommand::ReplaceCoalescingUndoWithSelection { .. }
+            | EditCommand::InsertText { .. }
+            | EditCommand::TypeChar { .. }
+            | EditCommand::InsertTab
+            | EditCommand::InsertNewline { .. }
+            | EditCommand::Indent
+            | EditCommand::Outdent
+            | EditCommand::DuplicateLines
+            | EditCommand::DeleteLines
+            | EditCommand::MoveLinesUp
+            | EditCommand::MoveLinesDown
+            | EditCommand::JoinLines
+            | EditCommand::SplitLine
+            | EditCommand::ToggleComment { .. }
+            | EditCommand::ApplyTextEdits { .. }
+            | EditCommand::ApplySnippet { .. }
+            | EditCommand::DeleteToPrevTabStop
+            | EditCommand::DeleteGraphemeBack
+            | EditCommand::DeleteGraphemeForward
+            | EditCommand::DeleteWordBack
+            | EditCommand::DeleteWordForward
+            | EditCommand::Backspace
+            | EditCommand::DeleteForward
+            | EditCommand::Undo
+            | EditCommand::Redo
+            | EditCommand::EndUndoGroup
+            | EditCommand::ReplaceCurrent { .. }
+            | EditCommand::ReplaceAll { .. } => true,
+        }
+    }
+
     fn history_summary(&self) -> Self {
         match self {
             EditCommand::Insert { offset, text } => EditCommand::Insert {
@@ -801,6 +838,42 @@ impl EditCommand {
 }
 
 impl CursorCommand {
+    fn is_mutating(&self) -> bool {
+        match self {
+            CursorCommand::MoveTo { .. }
+            | CursorCommand::MoveBy { .. }
+            | CursorCommand::MoveVisualBy { .. }
+            | CursorCommand::MoveToVisual { .. }
+            | CursorCommand::MoveToLineStart
+            | CursorCommand::MoveToLineEnd
+            | CursorCommand::MoveToVisualLineStart
+            | CursorCommand::MoveToVisualLineEnd
+            | CursorCommand::MoveGraphemeLeft
+            | CursorCommand::MoveGraphemeRight
+            | CursorCommand::MoveWordLeft
+            | CursorCommand::MoveWordRight
+            | CursorCommand::MoveToMatchingBracket
+            | CursorCommand::SnippetNextPlaceholder
+            | CursorCommand::SnippetPrevPlaceholder
+            | CursorCommand::SetSelection { .. }
+            | CursorCommand::ExtendSelection { .. }
+            | CursorCommand::ClearSelection
+            | CursorCommand::SetSelections { .. }
+            | CursorCommand::ClearSecondarySelections
+            | CursorCommand::SetRectSelection { .. }
+            | CursorCommand::SelectLine
+            | CursorCommand::SelectWord
+            | CursorCommand::ExpandSelection
+            | CursorCommand::ExpandSelectionBy { .. }
+            | CursorCommand::AddCursorAbove
+            | CursorCommand::AddCursorBelow
+            | CursorCommand::AddNextOccurrence { .. }
+            | CursorCommand::AddAllOccurrences { .. }
+            | CursorCommand::FindNext { .. }
+            | CursorCommand::FindPrev { .. } => false,
+        }
+    }
+
     fn history_summary(&self) -> Self {
         match self {
             CursorCommand::FindNext { query, options } => CursorCommand::FindNext {
@@ -817,6 +890,22 @@ impl CursorCommand {
 }
 
 impl ViewCommand {
+    fn is_mutating(&self) -> bool {
+        match self {
+            ViewCommand::SetViewportWidth { .. }
+            | ViewCommand::SetWrapMode { .. }
+            | ViewCommand::SetWrapIndent { .. }
+            | ViewCommand::SetTabWidth { .. }
+            | ViewCommand::SetTabKeyBehavior { .. }
+            | ViewCommand::SetIndentationConfig { .. }
+            | ViewCommand::SetAutoPairsConfig { .. }
+            | ViewCommand::SetAutoPairsEnabled { .. }
+            | ViewCommand::SetWordBoundaryAsciiBoundaryChars { .. }
+            | ViewCommand::ResetWordBoundaryDefaults => true,
+            ViewCommand::ScrollTo { .. } | ViewCommand::GetViewport { .. } => false,
+        }
+    }
+
     fn history_summary(&self) -> Self {
         match self {
             ViewCommand::SetWordBoundaryAsciiBoundaryChars { boundary_chars } => {
@@ -829,7 +918,31 @@ impl ViewCommand {
     }
 }
 
+impl StyleCommand {
+    fn is_mutating(&self) -> bool {
+        match self {
+            StyleCommand::AddStyle { .. }
+            | StyleCommand::RemoveStyle { .. }
+            | StyleCommand::Fold { .. }
+            | StyleCommand::Unfold { .. }
+            | StyleCommand::UnfoldAll
+            | StyleCommand::UpdateBracketMatchHighlights
+            | StyleCommand::ClearBracketMatchHighlights => true,
+        }
+    }
+}
+
 impl Command {
+    /// Returns whether this command mutates document content, history, configuration, or styles.
+    pub fn is_mutating(&self) -> bool {
+        match self {
+            Command::Edit(command) => command.is_mutating(),
+            Command::Cursor(command) => command.is_mutating(),
+            Command::View(command) => command.is_mutating(),
+            Command::Style(command) => command.is_mutating(),
+        }
+    }
+
     pub(super) fn history_summary(&self) -> Self {
         match self {
             Command::Edit(command) => Command::Edit(command.history_summary()),

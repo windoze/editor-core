@@ -47,3 +47,22 @@ T08R 进度
 - 审查结论：`Gutter` 保持 diff-view projection 层纯数据；Add/Remove/Context 行号与 `+`/`-` 标记符合要求；Spacer 与 wrap 续段 gutter 为空；T08 未改动 `editor-core` 通用 line mark / decoration 设施；后续通用能力提取已记录。
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test gutter`；`cargo test -p editor-core-diff-view`。
 - 已更新 TODO.md：T08R 标题已标记 `[DONE]`，完成记录包含审查结论与验证命令。Full workspace test 未重跑，因为本次 review 仅更新文档/进度记录，T08 已记录全量测试通过。
+
+T09 计划
+1. 读取 TODO.md，确认第一个未完成任务为 `T09 实现：Command::is_mutating() 分类（editor-core）`。
+2. 查看最新提交，仅判断是否存在与 T09 直接相关的未完成事项。
+3. 读取 `crates/editor-core/src/model.rs` 中 `Command`、`EditCommand`、`CursorCommand`、`ViewCommand`、`StyleCommand` 定义。
+4. 在 `Command` 上新增 `pub fn is_mutating(&self) -> bool`，用显式匹配覆盖全部现有子命令变体。
+5. 新增 `crates/editor-core/tests/command_is_mutating.rs`，覆盖 T09 要求的分类结果。
+6. 依次运行 `cargo fmt`、`cargo clippy --all-targets --all-features -- -D warnings`、T09 指定测试、`cargo test -p editor-core` 和 `cargo test --all --all-targets`。
+7. 更新 TODO.md，将 T09 标记为 [DONE] 并补充完成记录；检查 diff/status 后提交。
+
+T09 进度
+- 已读取 `TODO.md`，第一个未完成任务为 T09：在 `editor-core` 中实现 `Command::is_mutating()` 分类并新增专项测试。
+- 最新提交为 T08R，未发现与 T09 直接相关的未完成事项。
+- 已在 `model.rs` 中新增 `Command::is_mutating()` 及私有子命令分类 helper；`EditCommand` 全部为 mutating，`CursorCommand` 全部为非 mutating，`ViewCommand` 中配置变更为 mutating 且 `ScrollTo` / `GetViewport` 为非 mutating，`StyleCommand` 全部为 mutating。
+- 已新增 `crates/editor-core/tests/command_is_mutating.rs`，覆盖 edit/cursor/view/style 分类。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core --test command_is_mutating`；`cargo test -p editor-core`；`cargo test --all --all-targets`。
+- 已确认仓库内无 `tools/run_fixtures.py`，无独立 fixture suite 可运行。
+- 已将 T09 在 `TODO.md` 标记为 `[DONE]` 并补充完成记录。
+- 提交前检查发现未跟踪的 `notification.sh` 与 `run_agent.sh` 非本任务文件，不纳入提交。

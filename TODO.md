@@ -606,9 +606,9 @@
 - 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core-diff-view --test gutter`；`cargo test -p editor-core-diff-view`。
 - Full test suite：本次 review 仅更新 `TODO.md` / `memory/claude_plan.md` 文档记录，T08 完成记录已有 `cargo test --all --all-targets` 绿色结果，未重新运行。
 
-### [TODO] T09 实现：`Command::is_mutating()` 分类（editor-core）
+### [DONE] T09 实现：`Command::is_mutating()` 分类（editor-core）
 
-状态：TODO
+状态：DONE
 
 依赖：无（独立）。建议在 T10 前完成。
 
@@ -646,7 +646,11 @@
 
 完成记录：
 
-- 待填写。
+- 2026-06-07：在 `editor-core` 的 `Command` 上新增 `pub fn is_mutating(&self) -> bool`，通过私有 helper 显式覆盖 `EditCommand` / `CursorCommand` / `ViewCommand` / `StyleCommand` 全部现有变体，新增变体时会触发非 exhaustive 匹配检查。
+- 2026-06-07：分类规则按 readonly diff-view 需求固化：所有 `EditCommand` 均为 mutating；cursor/selection/find/go-to 类 `CursorCommand` 为非 mutating；`ViewCommand` 中配置变更为 mutating，`ScrollTo` / `GetViewport` 为非 mutating；所有 style/folding/bracket-highlight `StyleCommand` 均为 mutating，折叠命令按 v1 决策归入拒绝类。
+- 2026-06-07：新增 `crates/editor-core/tests/command_is_mutating.rs`，覆盖每个 `EditCommand` 变体、cursor/selection/scroll/find/go-to 非 mutating、View 配置与查询分类，以及 folding/style 命令 mutating。
+- 验证通过：`cargo fmt`；`cargo clippy --all-targets --all-features -- -D warnings`；`cargo test -p editor-core --test command_is_mutating`；`cargo test -p editor-core`；`cargo test --all --all-targets`。
+- Fixture suite：仓库内未发现 `tools/run_fixtures.py`，无独立 fixture runner 可运行。
 
 ### [TODO] T09R Review：审查 `is_mutating` 分类
 
