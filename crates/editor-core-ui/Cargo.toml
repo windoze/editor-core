@@ -13,11 +13,11 @@ keywords = ["editor", "ui"]
 categories = ["text-editors"]
 
 [dependencies]
-editor-core = { version = "0.4.0", path = "../editor-core" }
-editor-core-render-skia = { version = "0.4.0", path = "../editor-core-render-skia" }
-editor-core-sublime = { version = "0.4.0", path = "../editor-core-sublime" }
-editor-core-treesitter = { version = "0.4.0", path = "../editor-core-treesitter" }
-editor-core-lsp = { version = "0.4.0", path = "../editor-core-lsp" }
+editor-core = { version = "0.4.1", path = "../editor-core" }
+editor-core-render-skia = { version = "0.4.1", path = "../editor-core-render-skia" }
+editor-core-sublime = { version = "0.4.1", path = "../editor-core-sublime" }
+editor-core-treesitter = { version = "0.4.1", path = "../editor-core-treesitter" }
+editor-core-lsp = { version = "0.4.1", path = "../editor-core-lsp" }
 serde_json = "1"
 thiserror = "2"
 
