@@ -18,7 +18,7 @@ unicode-segmentation = "1.12"
 unicode-width = "0.2"
 ropey = "1.6"
 regex = "1.11"
-editor-core-lang = { version = "0.4.2", path = "../editor-core-lang" }
+editor-core-lang = { version = "0.4.3", path = "../editor-core-lang" }
 serde = { version = "1.0", features = ["derive"], optional = true }
 
 [features]

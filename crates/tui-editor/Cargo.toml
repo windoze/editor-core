@@ -17,11 +17,11 @@ crossterm = "0.28"
 ratatui = "0.29"
 serde_json = "1.0"
 
-editor-core = { version = "0.4.2", path = "../editor-core" }
-editor-core-lsp = { version = "0.4.2", path = "../editor-core-lsp" }
-editor-core-highlight-simple = { version = "0.4.2", path = "../editor-core-highlight-simple" }
-editor-core-sublime = { version = "0.4.2", path = "../editor-core-sublime" }
-editor-core-app = { version = "0.4.2", path = "../editor-core-app" }
+editor-core = { version = "0.4.3", path = "../editor-core" }
+editor-core-lsp = { version = "0.4.3", path = "../editor-core-lsp" }
+editor-core-highlight-simple = { version = "0.4.3", path = "../editor-core-highlight-simple" }
+editor-core-sublime = { version = "0.4.3", path = "../editor-core-sublime" }
+editor-core-app = { version = "0.4.3", path = "../editor-core-app" }
 
 [[bin]]
 name = "editor"

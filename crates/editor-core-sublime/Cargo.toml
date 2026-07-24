@@ -14,7 +14,7 @@ categories = ["text-editors", "text-processing"]
 readme = "README.md"
 
 [dependencies]
-editor-core = { version = "0.4.2", path = "../editor-core" }
+editor-core = { version = "0.4.3", path = "../editor-core" }
 onig = "6.5"
 regex = "1.11"
 serde = { version = "1.0", features = ["derive"] }
