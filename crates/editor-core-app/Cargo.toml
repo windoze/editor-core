@@ -13,9 +13,9 @@ keywords = ["editor", "workspace", "tabs", "search"]
 categories = ["text-editors", "text-processing"]
 
 [dependencies]
-editor-core = { version = "0.4.1", path = "../editor-core", features = ["serde"] }
-editor-core-lang = { version = "0.4.1", path = "../editor-core-lang" }
-editor-core-lsp = { version = "0.4.1", path = "../editor-core-lsp" }
+editor-core = { version = "0.4.2", path = "../editor-core", features = ["serde"] }
+editor-core-lang = { version = "0.4.2", path = "../editor-core-lang" }
+editor-core-lsp = { version = "0.4.2", path = "../editor-core-lsp" }
 
 ignore = "0.4"
 regex = "1"

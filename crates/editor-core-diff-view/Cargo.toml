@@ -13,5 +13,5 @@ keywords = ["editor", "diff", "view", "headless", "text"]
 categories = ["text-editors", "text-processing"]
 
 [dependencies]
-editor-core = { version = "0.4.1", path = "../editor-core" }
-editor-core-diff = { version = "0.4.1", path = "../editor-core-diff" }
+editor-core = { version = "0.4.2", path = "../editor-core" }
+editor-core-diff = { version = "0.4.2", path = "../editor-core-diff" }
