@@ -736,7 +736,9 @@ impl LspSession {
             return Ok(());
         }
 
-        self.document.version = self.document.version.saturating_add(1);
+        // Compute the next version but only commit it after the notification is sent, so a send
+        // failure does not leave the tracked version ahead of what the server actually received.
+        let next_version = self.document.version.saturating_add(1);
 
         let content_changes = changes
             .into_iter()
@@ -751,7 +753,7 @@ impl LspSession {
         let params = json!({
             "textDocument": {
                 "uri": self.document.uri.as_str(),
-                "version": self.document.version,
+                "version": next_version,
             },
             "contentChanges": content_changes,
         });
@@ -760,6 +762,7 @@ impl LspSession {
             return Err(format!("LSP didChange 失败，已禁用: {}", err));
         }
 
+        self.document.version = next_version;
         self.schedule_refresh(self.auto_refresh.delay);
         Ok(())
     }
