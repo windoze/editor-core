@@ -179,6 +179,15 @@ impl DeltaCalculator {
         self.lines.len()
     }
 
+    /// Total number of Unicode scalar values in the mirrored document, counting the `\n`
+    /// separators between logical lines (so it matches `EditorStateManager::char_count()` and a
+    /// [`TextDelta`]'s `before_char_count` / `after_char_count`).
+    pub fn char_count(&self) -> usize {
+        let line_chars: usize = self.lines.iter().map(|line| line.chars().count()).sum();
+        // N lines are joined by N-1 newline separators.
+        line_chars + self.lines.len().saturating_sub(1)
+    }
+
     /// Calculate change for insert operation
     pub fn calculate_insert_change(
         &self,
@@ -713,6 +722,37 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_delta_calculator_char_count() {
+        // Empty calculator: no lines, no chars.
+        assert_eq!(DeltaCalculator::new().char_count(), 0);
+
+        // Single line, no trailing newline.
+        assert_eq!(DeltaCalculator::from_text("abc").char_count(), 3);
+        assert_eq!(DeltaCalculator::from_text("").char_count(), 0);
+
+        // Newlines count toward the total (N lines => N-1 separators).
+        assert_eq!(DeltaCalculator::from_text("a\nb\nc").char_count(), 5);
+        assert_eq!(DeltaCalculator::from_text("ab\n").char_count(), 3);
+
+        // Multi-byte / CJK count as scalar values, not bytes.
+        assert_eq!(DeltaCalculator::from_text("你好\n👋").char_count(), 4);
+
+        // Matches the length of the full document string in chars.
+        for text in ["", "abc", "a\nb\nc", "ab\n", "你好\n👋", "\r\nx"] {
+            let expected = DeltaCalculator::from_text(text)
+                .lines
+                .join("\n")
+                .chars()
+                .count();
+            assert_eq!(
+                DeltaCalculator::from_text(text).char_count(),
+                expected,
+                "char_count mismatch for {text:?}"
+            );
+        }
+    }
 
     #[test]
     fn test_utf8_to_utf16_len() {
