@@ -722,6 +722,195 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use editor_core::{
+        AutoPairsConfig, Command, CursorCommand, EditCommand, EditorStateManager, Position,
+        Selection, SelectionDirection, ViewCommand,
+    };
+
+    fn enable_auto_pairs(manager: &mut EditorStateManager) {
+        manager
+            .execute(Command::View(ViewCommand::SetAutoPairsConfig {
+                config: AutoPairsConfig {
+                    enabled: true,
+                    ..AutoPairsConfig::default()
+                },
+            }))
+            .expect("set auto-pairs config");
+    }
+
+    /// Reconstruct the mirror's full document text from its line buffer.
+    fn mirror_text(calc: &DeltaCalculator) -> String {
+        (0..calc.line_count())
+            .map(|i| calc.get_line(i).unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Drive an editor edit, take its delta, feed it through the converter, and assert the mirror
+    /// tracks the editor buffer exactly.
+    fn assert_delta_keeps_mirror_in_sync(
+        manager: &mut EditorStateManager,
+        calc: &mut DeltaCalculator,
+        edit: Command,
+    ) {
+        assert_eq!(
+            calc.char_count(),
+            manager.editor().char_count(),
+            "precondition: mirror already matches buffer"
+        );
+        manager.execute(edit).expect("edit executes");
+        let delta = manager
+            .take_last_text_delta()
+            .expect("edit produced a delta");
+        assert_eq!(
+            delta.before_char_count,
+            calc.char_count(),
+            "delta before-count must match mirror"
+        );
+        text_changes_for_text_delta(calc, &delta);
+        assert_eq!(
+            delta.after_char_count,
+            calc.char_count(),
+            "delta after-count must match advanced mirror"
+        );
+        assert_eq!(
+            mirror_text(calc),
+            manager.editor().get_text(),
+            "mirror text drifted from editor buffer"
+        );
+    }
+
+    #[test]
+    fn test_delta_pair_deletion_removes_two_chars() {
+        // Backspace between an auto-paired "()" deletes both delimiters at once. The mirror must
+        // end up empty, matching the editor.
+        let mut manager = EditorStateManager::new("()", 80);
+        enable_auto_pairs(&mut manager);
+        // Place the cursor between the two delimiters.
+        manager
+            .execute(Command::Cursor(CursorCommand::MoveTo {
+                line: 0,
+                column: 1,
+            }))
+            .unwrap();
+
+        let mut calc = DeltaCalculator::from_text("()");
+        assert_delta_keeps_mirror_in_sync(
+            &mut manager,
+            &mut calc,
+            Command::Edit(EditCommand::Backspace),
+        );
+        assert_eq!(mirror_text(&calc), "");
+    }
+
+    #[test]
+    fn test_delta_multi_cursor_insert_keeps_mirror_in_sync() {
+        let mut manager = EditorStateManager::new("a\nb\nc", 80);
+        let selections = (0..3)
+            .map(|line| Selection {
+                start: Position::new(line, 0),
+                end: Position::new(line, 0),
+                direction: SelectionDirection::Forward,
+            })
+            .collect::<Vec<_>>();
+        manager
+            .execute(Command::Cursor(CursorCommand::SetSelections {
+                selections,
+                primary_index: 0,
+            }))
+            .unwrap();
+
+        let mut calc = DeltaCalculator::from_text("a\nb\nc");
+        assert_delta_keeps_mirror_in_sync(
+            &mut manager,
+            &mut calc,
+            Command::Edit(EditCommand::InsertText {
+                text: "X".to_string(),
+            }),
+        );
+        assert_eq!(mirror_text(&calc), "Xa\nXb\nXc");
+    }
+
+    #[test]
+    fn test_delta_crlf_and_multibyte_ranges() {
+        // Document mixes CRLF, CJK, and an emoji. Deleting the CJK run must produce correct
+        // UTF-16 columns and keep the mirror aligned.
+        let initial = "你好\r\n世界👋";
+        let mut manager = EditorStateManager::new(initial, 80);
+        // Select "世界" on the second line (chars 0..2) and delete it.
+        manager
+            .execute(Command::Cursor(CursorCommand::SetSelections {
+                selections: vec![Selection {
+                    start: Position::new(1, 0),
+                    end: Position::new(1, 2),
+                    direction: SelectionDirection::Forward,
+                }],
+                primary_index: 0,
+            }))
+            .unwrap();
+
+        // DeltaCalculator strips the trailing '\r', matching the editor's line model.
+        let mut calc = DeltaCalculator::from_text(initial);
+        assert_delta_keeps_mirror_in_sync(
+            &mut manager,
+            &mut calc,
+            Command::Edit(EditCommand::DeleteForward),
+        );
+
+        let change = {
+            let mut c = DeltaCalculator::from_text(initial);
+            let delta = {
+                let mut m = EditorStateManager::new(initial, 80);
+                m.execute(Command::Cursor(CursorCommand::SetSelections {
+                    selections: vec![Selection {
+                        start: Position::new(1, 0),
+                        end: Position::new(1, 2),
+                        direction: SelectionDirection::Forward,
+                    }],
+                    primary_index: 0,
+                }))
+                .unwrap();
+                m.execute(Command::Edit(EditCommand::DeleteForward))
+                    .unwrap();
+                m.take_last_text_delta().unwrap()
+            };
+            text_changes_for_text_delta(&mut c, &delta).remove(0)
+        };
+        // "你好" is 2 UTF-16 units; deletion starts at line 1, column 0.
+        assert_eq!(change.range.start.line, 1);
+        assert_eq!(change.range.start.character, 0);
+        // "世界" is 2 UTF-16 units.
+        assert_eq!(change.range.end.line, 1);
+        assert_eq!(change.range.end.character, 2);
+    }
+
+    #[test]
+    fn test_delta_consecutive_edits_never_drift() {
+        let mut manager = EditorStateManager::new("fn main() {}", 80);
+        enable_auto_pairs(&mut manager);
+        manager
+            .execute(Command::Cursor(CursorCommand::MoveTo {
+                line: 0,
+                column: 12,
+            }))
+            .unwrap();
+
+        let mut calc = DeltaCalculator::from_text("fn main() {}");
+        let edits = vec![
+            Command::Edit(EditCommand::InsertNewline { auto_indent: false }),
+            Command::Edit(EditCommand::InsertText {
+                text: "let x = (".to_string(),
+            }),
+            Command::Edit(EditCommand::Backspace),
+            Command::Edit(EditCommand::InsertText {
+                text: "42".to_string(),
+            }),
+        ];
+        for edit in edits {
+            assert_delta_keeps_mirror_in_sync(&mut manager, &mut calc, edit);
+        }
+        assert_eq!(mirror_text(&calc), manager.editor().get_text());
+    }
 
     #[test]
     fn test_delta_calculator_char_count() {

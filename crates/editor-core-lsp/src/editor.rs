@@ -841,6 +841,16 @@ impl LspSession {
         self.send_active_did_change(&content_changes)
     }
 
+    /// Character count of the internal `didChange` mirror for the active document.
+    ///
+    /// Intended for consistency checks: after each edit is forwarded via
+    /// [`did_change_from_text_delta`](Self::did_change_from_text_delta) or
+    /// [`did_change_many`](Self::did_change_many), this should equal the source buffer's
+    /// `EditorStateManager::char_count()`.
+    pub fn mirror_char_count(&self) -> usize {
+        self.change_calculator.char_count()
+    }
+
     /// Send `textDocument/didOpen` for a new document and track its version.
     ///
     /// This enables multi-document LSP sessions while keeping a single "active" document
