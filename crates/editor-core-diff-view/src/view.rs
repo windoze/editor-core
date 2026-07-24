@@ -18,20 +18,22 @@ pub struct DiffColumnView<'projection> {
 
 impl<'projection> DiffColumnView<'projection> {
     /// Builds a column view for one source side and one projected column.
+    ///
+    /// The backing editor's viewport width is taken from the projection's `column_widths[column]`,
+    /// so this view's wrapping always matches the projected row axis. Passing an independent width
+    /// (as an earlier API did) could silently desynchronize cursor/row mapping.
     pub fn new(
         model: &DiffModel,
         projection: &'projection DiffProjection,
         column: usize,
         side: usize,
-        viewport_width: usize,
     ) -> Self {
-        assert!(
-            column < projection.columns(),
-            "column is outside diff projection"
-        );
+        let viewport_width = projection
+            .column_width(column)
+            .unwrap_or_else(|| panic!("column {column} is outside diff projection"));
         assert!(
             viewport_width > 0,
-            "viewport width must be greater than zero"
+            "projection column width must be greater than zero"
         );
         let side_doc = model
             .side(side)

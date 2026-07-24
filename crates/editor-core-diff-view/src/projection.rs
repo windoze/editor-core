@@ -27,6 +27,11 @@ pub struct DiffProjection {
     pub columns: usize,
     /// Unified visual row axis shared by all columns.
     pub rows: Vec<Row>,
+    /// The viewport width used to wrap each column. `column_widths.len() == columns`.
+    ///
+    /// A [`crate::DiffColumnView`] derives its editor's width from this so its wrapping always
+    /// matches the projected row axis; a mismatch would silently misalign cursor/row mapping.
+    pub column_widths: Vec<usize>,
 }
 
 impl DiffProjection {
@@ -41,6 +46,11 @@ impl DiffProjection {
     /// Returns the number of projected columns.
     pub fn columns(&self) -> usize {
         self.columns
+    }
+
+    /// Returns the viewport width the given column was wrapped at, if the column exists.
+    pub fn column_width(&self, column: usize) -> Option<usize> {
+        self.column_widths.get(column).copied()
     }
 
     /// Returns the unified visual row axis.
@@ -268,7 +278,11 @@ pub fn project_unified(model: &DiffModel, per_column_widths: &[usize]) -> DiffPr
         }
     }
 
-    DiffProjection { columns: 1, rows }
+    DiffProjection {
+        columns: 1,
+        rows,
+        column_widths: vec![width],
+    }
 }
 
 fn project_side_by_side(model: &DiffModel, per_column_widths: &[usize]) -> DiffProjection {
@@ -282,7 +296,11 @@ fn project_side_by_side(model: &DiffModel, per_column_widths: &[usize]) -> DiffP
         push_aligned_unit_rows(&mut rows, columns, spacer_changes);
     }
 
-    DiffProjection { columns: 2, rows }
+    DiffProjection {
+        columns: 2,
+        rows,
+        column_widths: widths.to_vec(),
+    }
 }
 
 fn unified_width(per_column_widths: &[usize]) -> usize {

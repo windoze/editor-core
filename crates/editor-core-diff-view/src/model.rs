@@ -17,10 +17,19 @@ pub struct SideDoc {
 
 impl SideDoc {
     /// Builds a side document cache from the original side text.
+    ///
+    /// The text is normalized to LF line endings (CRLF and lone CR both become LF) before it is
+    /// stored and split into logical lines. This keeps the model's line count and per-line content
+    /// consistent with the projection layer, which runs the text through `SnapshotGenerator` (that
+    /// applies the same normalization). Without this, a lone CR would make the model see fewer
+    /// lines than the projection, causing content to be dropped and line numbers to misalign; and
+    /// CRLF would leave a stray `\r` in `logical_lines` that the projected cells do not contain.
     pub fn from_text(text: &str) -> Self {
+        let normalized = normalize_line_endings_to_lf(text);
+        let logical_lines = split_logical_lines(&normalized);
         Self {
-            text: text.to_owned(),
-            logical_lines: split_logical_lines(text),
+            text: normalized,
+            logical_lines,
         }
     }
 
@@ -856,6 +865,16 @@ fn push_unit(units: &mut Vec<AlignUnit>, unit: AlignUnit) {
     }
 
     units.push(unit);
+}
+
+/// Normalize line endings to LF, matching `editor_core`'s internal text model / `SnapshotGenerator`:
+/// CRLF (`\r\n`) and lone CR (`\r`) both become LF (`\n`).
+fn normalize_line_endings_to_lf(text: &str) -> String {
+    if text.contains('\r') {
+        text.replace("\r\n", "\n").replace('\r', "\n")
+    } else {
+        text.to_owned()
+    }
 }
 
 fn split_logical_lines(text: &str) -> Vec<String> {

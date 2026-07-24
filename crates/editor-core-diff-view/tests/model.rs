@@ -164,6 +164,28 @@ fn side_docs_cache_original_text_and_logical_lines() {
 }
 
 #[test]
+fn side_doc_normalizes_crlf_line_endings() {
+    // Regression (P1-6): CRLF used to leave a stray `\r` in logical lines while the projection's
+    // SnapshotGenerator produced clean cells, so model content and rendered content disagreed.
+    let side = SideDoc::from_text("a\r\nb\r\n");
+    assert_eq!(side.line_count(), 2);
+    assert_eq!(side.logical_line(0), Some("a"));
+    assert_eq!(side.logical_line(1), Some("b"));
+    assert_eq!(side.text(), "a\nb\n");
+}
+
+#[test]
+fn side_doc_normalizes_lone_cr_line_endings() {
+    // Regression (P1-6): a lone CR made the model see 1 line while SnapshotGenerator (which
+    // normalizes CR to LF) saw 2, so the extra line's content was silently dropped in projection.
+    let side = SideDoc::from_text("a\rb\n");
+    assert_eq!(side.line_count(), 2);
+    assert_eq!(side.logical_line(0), Some("a"));
+    assert_eq!(side.logical_line(1), Some("b"));
+    assert_eq!(side.text(), "a\nb\n");
+}
+
+#[test]
 fn empty_side_doc_has_no_logical_lines() {
     let side = SideDoc::from_text("");
     let model = DiffModel::from_before_after("", "", config(0));

@@ -212,8 +212,22 @@ pub fn find_prev(
     let limit_char = from_char.min(index.char_count());
     let limit_byte = index.char_to_byte(limit_char);
 
+    // Iterate over the *full* text (not a truncated slice) so anchors (`$`, `\b`, `\z`) and greedy
+    // quantifiers see the real trailing context, then keep the last match that ends at or before
+    // the boundary. Searching a `&text[..limit_byte]` slice would let those constructs match at the
+    // artificial slice end, yielding matches that do not exist in the full document.
     let mut last: Option<SearchMatch> = None;
-    for m in re.find_iter(&text[..limit_byte]) {
+    for m in re.find_iter(text) {
+        // Matches are yielded left-to-right; once one starts at/after the boundary, no later match
+        // can end before it either.
+        if m.start() >= limit_byte {
+            break;
+        }
+        // A match that crosses the boundary is not "before" `from_char`.
+        if m.end() > limit_byte {
+            continue;
+        }
+
         let start = index.byte_to_char(m.start());
         let end = index.byte_to_char(m.end());
         let candidate = SearchMatch { start, end };
@@ -285,4 +299,60 @@ pub fn is_match_exact(
     };
 
     Ok(next.start == range.start && next.end == range.end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn regex_opts() -> SearchOptions {
+        SearchOptions {
+            case_sensitive: true,
+            whole_word: false,
+            regex: true,
+        }
+    }
+
+    #[test]
+    fn find_prev_does_not_fabricate_end_anchor_match_at_slice_boundary() {
+        // Regression (P1-4): searching a `&text[..limit_byte]` slice let `$` match at the
+        // artificial slice end. In "foo\nbar", `o$` only matches the last `o` of "foo" (offset
+        // 2..3, end of line 0). With from_char=2 the slice would be "fo", where the truncated
+        // "o" sits at the slice end and `$` would falsely match [1,2). There is no match ending
+        // at/before offset 2, so the correct answer is None.
+        let m = find_prev("foo\nbar", "o$", regex_opts(), 2).unwrap();
+        assert_eq!(m, None);
+    }
+
+    #[test]
+    fn find_prev_finds_real_end_anchor_match_using_full_context() {
+        // The real `o$` match is [2,3) (the "o" at end of line 0). Searching from the end of the
+        // document must find it, proving `$` is evaluated against the true line boundary.
+        let text = "foo\nbar";
+        let m = find_prev(text, "o$", regex_opts(), text.chars().count())
+            .unwrap()
+            .expect("should find the end-of-line match");
+        assert_eq!((m.start, m.end), (2, 3));
+    }
+
+    #[test]
+    fn find_prev_does_not_truncate_greedy_match_crossing_boundary() {
+        // Greedy `a+` over "aaaa": the only match is [0,4). With from_char=2, a slice "aa" would
+        // wrongly yield [0,2). Since the real match crosses the boundary, the answer is None.
+        assert_eq!(find_prev("aaaa", "a+", regex_opts(), 2).unwrap(), None);
+        // From the end, the full greedy match is returned intact.
+        let m = find_prev("aaaa", "a+", regex_opts(), 4).unwrap().unwrap();
+        assert_eq!((m.start, m.end), (0, 4));
+    }
+
+    #[test]
+    fn find_prev_returns_last_match_before_boundary() {
+        // Plain (non-regex) search: "abcabcabc", query "abc". From offset 9 the last match is
+        // [6,9); from offset 6 it is [3,6).
+        let opts = SearchOptions::default();
+        let m = find_prev("abcabcabc", "abc", opts, 9).unwrap().unwrap();
+        assert_eq!((m.start, m.end), (6, 9));
+        let m = find_prev("abcabcabc", "abc", opts, 6).unwrap().unwrap();
+        assert_eq!((m.start, m.end), (3, 6));
+    }
 }
