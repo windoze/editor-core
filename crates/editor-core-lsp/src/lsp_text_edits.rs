@@ -186,6 +186,39 @@ pub fn workspace_edit_text_edits(workspace_edit: &Value) -> HashMap<String, Vec<
     out
 }
 
+/// Extract the expected document versions declared by a `WorkspaceEdit`'s `documentChanges`.
+///
+/// A `TextDocumentEdit` carries `textDocument.version`, the document version the server generated
+/// the edit against. This returns, per URI, the last non-null integer version seen. URIs that only
+/// appear under `changes` (the map form, which has no version) or whose version is `null` are
+/// absent from the map, meaning "no version constraint".
+pub fn workspace_edit_expected_versions(workspace_edit: &Value) -> HashMap<String, i32> {
+    let mut out = HashMap::<String, i32>::new();
+
+    if let Some(document_changes) = workspace_edit
+        .get("documentChanges")
+        .and_then(Value::as_array)
+    {
+        for change in document_changes {
+            let Some(text_document) = change.get("textDocument") else {
+                continue;
+            };
+            let Some(uri) = text_document.get("uri").and_then(Value::as_str) else {
+                continue;
+            };
+            // `edits` presence distinguishes a TextDocumentEdit from create/rename/delete ops.
+            if change.get("edits").is_none() {
+                continue;
+            }
+            if let Some(version) = text_document.get("version").and_then(Value::as_i64) {
+                out.insert(uri.to_string(), version as i32);
+            }
+        }
+    }
+
+    out
+}
+
 /// Summary of a `WorkspaceEdit` payload for UI previews.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceEditSummary {
@@ -279,6 +312,43 @@ mod tests {
         assert_eq!(by_uri.len(), 2);
         assert_eq!(by_uri.get("file:///a").unwrap().len(), 1);
         assert_eq!(by_uri.get("file:///b").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_workspace_edit_expected_versions_only_for_versioned_document_changes() {
+        let edit = json!({
+            "changes": {
+                // Map form has no version -> never constrained.
+                "file:///a": [
+                    { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "X" }
+                ]
+            },
+            "documentChanges": [
+                {
+                    "textDocument": { "uri": "file:///b", "version": 7 },
+                    "edits": [
+                        { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "Y" }
+                    ]
+                },
+                {
+                    // Null version -> no constraint.
+                    "textDocument": { "uri": "file:///c", "version": null },
+                    "edits": []
+                },
+                {
+                    // Rename op (no `edits`) must not contribute a version constraint.
+                    "kind": "rename",
+                    "oldUri": "file:///d",
+                    "newUri": "file:///e"
+                }
+            ]
+        });
+
+        let versions = workspace_edit_expected_versions(&edit);
+        assert_eq!(versions.get("file:///b"), Some(&7));
+        assert_eq!(versions.get("file:///a"), None);
+        assert_eq!(versions.get("file:///c"), None);
+        assert_eq!(versions.len(), 1);
     }
 
     #[test]

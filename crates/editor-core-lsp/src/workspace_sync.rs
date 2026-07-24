@@ -11,7 +11,10 @@
 use crate::editor::{LspContentChange, LspDocument, LspSession, LspSessionStartOptions};
 use crate::lsp_events::{LspEvent, LspNotification, LspServerRequestMode, LspServerRequestPolicy};
 use crate::lsp_sync::{DeltaCalculator, LspCoordinateConverter, LspPosition, LspRange, TextChange};
-use crate::lsp_text_edits::{LspTextEdit, char_offsets_for_lsp_range, workspace_edit_text_edits};
+use crate::lsp_text_edits::{
+    LspTextEdit, char_offsets_for_lsp_range, workspace_edit_expected_versions,
+    workspace_edit_text_edits,
+};
 use editor_core::{BufferId, LineIndex, TextDelta, TextEditSpec, Workspace};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -305,11 +308,29 @@ impl LspWorkspaceSync {
     /// This is a best-effort helper:
     /// - text edits are applied for any `uri` that is already open in the workspace
     /// - unknown URIs are reported in [`ApplyWorkspaceEditResult::skipped_uris`]
+    ///
+    /// If a `documentChanges` entry declares an expected `textDocument.version`, it is checked
+    /// against the session's tracked document version. Any mismatch rejects the *entire* edit
+    /// (all-or-nothing) so a stale edit is never partially applied to a document the user has
+    /// since changed.
     pub fn apply_workspace_edit(
         &mut self,
         workspace: &mut Workspace,
         workspace_edit: &Value,
     ) -> Result<ApplyWorkspaceEditResult, String> {
+        let expected_versions = workspace_edit_expected_versions(workspace_edit);
+        for (uri, expected) in &expected_versions {
+            if let Some(doc) = self.session.document_for_uri(uri)
+                && doc.version != *expected
+            {
+                return Err(format!(
+                    "workspace edit version conflict for uri={uri}: edit expects version {expected}, \
+                     document is at version {}",
+                    doc.version
+                ));
+            }
+        }
+
         let result = apply_workspace_edit_to_workspace(workspace, workspace_edit)?;
 
         // Keep our incremental calculators in sync with the applied edit.
