@@ -155,3 +155,69 @@ fn replace_units_pad_shorter_changed_side_with_column_change_kind() {
         ]
     );
 }
+
+/// P3-16: the O(1) cached row-mapping must agree with a brute-force linear scan (the previous
+/// implementation) for every side and every row, including spacer rows and wrapped segments.
+#[test]
+fn cached_row_mapping_matches_linear_scan_reference() {
+    // Reference implementations mirroring the pre-cache linear scans.
+    fn ref_unified_for_side(p: &DiffProjection, side: usize, side_row: usize) -> Option<usize> {
+        let mut current = 0usize;
+        for (unified, row) in p.rows().iter().enumerate() {
+            let has = row.slots().iter().any(|slot| match slot {
+                RowSlot::Line { side: s, change, gutter, .. } => {
+                    *s == side
+                        || (*change == DiffLineKind::Context
+                            && match side {
+                                0 => gutter.before_line.is_some(),
+                                1 => gutter.after_line.is_some(),
+                                _ => false,
+                            })
+                }
+                RowSlot::Spacer { .. } => false,
+            });
+            if has {
+                if current == side_row {
+                    return Some(unified);
+                }
+                current += 1;
+            }
+        }
+        None
+    }
+
+    // A projection with wraps (narrow width), a pure add, a pure remove, and context.
+    let model = model("你好\nremove me\nkeep\n", "你好\nkeep\nadd one\n");
+    let projection = DiffProjection::build(&model, DiffMode::SideBySide, &[3, 3]);
+
+    for side in 0..2 {
+        // side -> unified round-trips and matches the reference.
+        let mut side_row = 0;
+        loop {
+            let cached = projection.unified_row_for_side_visual_row(side, side_row);
+            let reference = ref_unified_for_side(&projection, side, side_row);
+            assert_eq!(cached, reference, "side={side} side_row={side_row}");
+            match cached {
+                Some(unified) => {
+                    // Inverse must map back.
+                    assert_eq!(
+                        projection.side_visual_row_for_unified_row(side, unified),
+                        Some(side_row)
+                    );
+                    side_row += 1;
+                }
+                None => break,
+            }
+        }
+
+        // Every unified row: cached inverse must be consistent with the forward map.
+        for unified in 0..projection.rows().len() {
+            if let Some(side_row) = projection.side_visual_row_for_unified_row(side, unified) {
+                assert_eq!(
+                    projection.unified_row_for_side_visual_row(side, side_row),
+                    Some(unified)
+                );
+            }
+        }
+    }
+}

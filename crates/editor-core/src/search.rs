@@ -128,6 +128,55 @@ fn compile_search_regex(query: &str, options: SearchOptions) -> Result<Regex, Se
         .map_err(SearchError::InvalidRegex)
 }
 
+/// A search query whose regex is compiled once and can be reused across many texts.
+///
+/// The one-shot free functions ([`find_all`], [`find_next`], …) recompile the regex on every
+/// call, which is wasteful when scanning many small texts (e.g. searching a file line-by-line, or
+/// many files). Compile once with [`CompiledSearch::new`] and call [`CompiledSearch::find_all`]
+/// repeatedly instead.
+#[derive(Debug, Clone)]
+pub struct CompiledSearch {
+    regex: Regex,
+    whole_word: bool,
+}
+
+impl CompiledSearch {
+    /// Compile `query` under `options` for repeated use.
+    ///
+    /// Returns [`SearchError::InvalidRegex`] if the query is an invalid regex (only possible when
+    /// `options.regex` is set).
+    pub fn new(query: &str, options: SearchOptions) -> Result<Self, SearchError> {
+        Ok(Self {
+            regex: compile_search_regex(query, options)?,
+            whole_word: options.whole_word,
+        })
+    }
+
+    /// Find all non-empty matches in `text` (character offsets, half-open ranges).
+    ///
+    /// Semantics match [`find_all`]; only the regex compilation is amortized.
+    pub fn find_all(&self, text: &str) -> Vec<SearchMatch> {
+        let index = CharIndex::new(text);
+        let mut matches: Vec<SearchMatch> = Vec::new();
+        for m in self.regex.find_iter(text) {
+            let start = index.byte_to_char(m.start());
+            let end = index.byte_to_char(m.end());
+            let candidate = SearchMatch { start, end };
+
+            if candidate.is_empty() {
+                continue;
+            }
+            if self.whole_word && !is_whole_word(text, &index, candidate) {
+                continue;
+            }
+
+            matches.push(candidate);
+        }
+
+        matches
+    }
+}
+
 fn is_word_char(ch: char) -> bool {
     ch == '_' || ch.is_alphanumeric()
 }
@@ -258,26 +307,7 @@ pub fn find_all(
         return Ok(Vec::new());
     }
 
-    let re = compile_search_regex(query, options)?;
-    let index = CharIndex::new(text);
-
-    let mut matches: Vec<SearchMatch> = Vec::new();
-    for m in re.find_iter(text) {
-        let start = index.byte_to_char(m.start());
-        let end = index.byte_to_char(m.end());
-        let candidate = SearchMatch { start, end };
-
-        if candidate.is_empty() {
-            continue;
-        }
-        if options.whole_word && !is_whole_word(text, &index, candidate) {
-            continue;
-        }
-
-        matches.push(candidate);
-    }
-
-    Ok(matches)
+    Ok(CompiledSearch::new(query, options)?.find_all(text))
 }
 
 /// Returns `true` if `range` exactly matches an occurrence of `query` in `text`.
