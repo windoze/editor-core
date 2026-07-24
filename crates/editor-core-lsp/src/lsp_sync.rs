@@ -2,7 +2,7 @@
 //!
 //! Translates editor changes into standard LSP JSON-RPC messages and handles UTF-16 coordinate conversions and semantic token parsing.
 
-use editor_core::{Interval, LineIndex, StyleId};
+use editor_core::{Interval, LineIndex, StyleId, TextDelta};
 use serde_json::Value;
 
 fn u64_to_u32_saturating(value: u64) -> u32 {
@@ -315,6 +315,59 @@ impl Default for DeltaCalculator {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Map a document-wide character offset to a `(line, char_in_line)` position, using the
+/// calculator's mirrored line contents.
+///
+/// Offsets past the end of the document clamp to end-of-document.
+pub(crate) fn position_for_char_offset(
+    calc: &DeltaCalculator,
+    mut offset: usize,
+) -> (usize, usize) {
+    let line_count = calc.line_count().max(1);
+    for line in 0..line_count {
+        let text = calc.get_line(line).unwrap_or("");
+        let len = text.chars().count();
+        if offset <= len {
+            return (line, offset);
+        }
+        offset = offset.saturating_sub(len + 1);
+    }
+
+    // Clamp to end-of-document.
+    let last_line = line_count.saturating_sub(1);
+    let last_len = calc.get_line(last_line).unwrap_or("").chars().count();
+    (last_line, last_len)
+}
+
+/// Convert a [`TextDelta`] into a sequence of LSP [`TextChange`]s, advancing `calc` by exactly one
+/// delta (each edit is applied to the mirror as its change is produced).
+///
+/// The delta's edits are expected in descending-offset order (as produced by
+/// `EditorStateManager::take_last_text_delta`), so applying each change in turn keeps earlier
+/// offsets valid.
+pub(crate) fn text_changes_for_text_delta(
+    calc: &mut DeltaCalculator,
+    delta: &TextDelta,
+) -> Vec<TextChange> {
+    let mut out = Vec::<TextChange>::with_capacity(delta.edits.len());
+
+    for edit in &delta.edits {
+        let (start_line, start_char) = position_for_char_offset(calc, edit.start);
+        let (end_line, end_char) = position_for_char_offset(calc, edit.end());
+        let change = calc.calculate_replace_change(
+            start_line,
+            start_char,
+            end_line,
+            end_char,
+            edit.inserted_text.as_str(),
+        );
+        calc.apply_change(&change);
+        out.push(change);
+    }
+
+    out
 }
 
 /// Semantic token type
