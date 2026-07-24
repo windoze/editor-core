@@ -11,6 +11,15 @@
 use serde_json::Value;
 use std::io::{self, BufRead, Write};
 
+/// Upper bound on a single message body (`Content-Length`). A hostile or buggy peer could
+/// otherwise make us pre-allocate an arbitrarily large buffer from an attacker-controlled header.
+/// 256 MiB is far above any realistic LSP payload.
+const MAX_CONTENT_LENGTH: usize = 256 * 1024 * 1024;
+
+/// Upper bound on a single header line length, to bound growth from a peer that never terminates
+/// a header line.
+const MAX_HEADER_LINE_LEN: usize = 64 * 1024;
+
 /// Write a single LSP JSON-RPC message to `writer`.
 pub fn write_lsp_message<W: Write>(writer: &mut W, value: &Value) -> io::Result<()> {
     let body =
@@ -38,6 +47,13 @@ pub fn read_lsp_message<R: BufRead>(reader: &mut R) -> io::Result<Option<Value>>
             return Ok(None);
         }
 
+        if line.len() > MAX_HEADER_LINE_LEN {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "LSP header line exceeds maximum length",
+            ));
+        }
+
         let trimmed = line.trim_end_matches(['\r', '\n']);
         if trimmed.is_empty() {
             break;
@@ -54,6 +70,13 @@ pub fn read_lsp_message<R: BufRead>(reader: &mut R) -> io::Result<Option<Value>>
     let len = content_length.ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidData, "Missing Content-Length header")
     })?;
+
+    if len > MAX_CONTENT_LENGTH {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Content-Length exceeds maximum allowed message size",
+        ));
+    }
 
     let mut body = vec![0u8; len];
     reader.read_exact(&mut body)?;

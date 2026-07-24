@@ -68,6 +68,19 @@ where
     }
 }
 
+/// Run a `void`-returning FFI operation under `catch_unwind`, updating the thread-local last-error
+/// slot. On success the error is cleared; on error (including a caught panic) the message is
+/// recorded. This prevents a panic from unwinding across the `extern "C"` boundary.
+fn ffi_void<F>(f: F)
+where
+    F: FnOnce() -> Result<(), String>,
+{
+    match ffi_catch(f) {
+        Ok(()) => clear_last_error(),
+        Err(err) => set_last_error_from_error(err),
+    }
+}
+
 fn make_c_string_ptr(mut s: String) -> *mut c_char {
     if s.contains('\0') {
         // CString forbids interior NUL. Keep it deterministic.
@@ -768,12 +781,10 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_sublime_set_syntax_path(
 /// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_sublime_disable(ui: *mut EditorUi) {
-    if ui.is_null() {
-        set_last_error_from_error(invalid_argument("ui is null"));
-        return;
-    }
-    unsafe { &mut *ui }.disable_sublime_syntax();
-    clear_last_error();
+    ffi_void(|| {
+        require_mut(ui, "ui")?.disable_sublime_syntax();
+        Ok(())
+    });
 }
 
 /// # Safety
@@ -935,12 +946,10 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_enable_query_pack(
 /// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_treesitter_disable(ui: *mut EditorUi) {
-    if ui.is_null() {
-        set_last_error_from_error(invalid_argument("ui is null"));
-        return;
-    }
-    unsafe { &mut *ui }.disable_treesitter();
-    clear_last_error();
+    ffi_void(|| {
+        require_mut(ui, "ui")?.disable_treesitter();
+        Ok(())
+    });
 }
 
 /// Enable an stdio LSP session for the current document.
@@ -1003,12 +1012,10 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_enable(
 /// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_disable(ui: *mut EditorUi) {
-    if ui.is_null() {
-        set_last_error_from_error(invalid_argument("ui is null"));
-        return;
-    }
-    unsafe { &mut *ui }.lsp_disable();
-    clear_last_error();
+    ffi_void(|| {
+        require_mut(ui, "ui")?.lsp_disable();
+        Ok(())
+    });
 }
 
 /// # Safety
@@ -2021,19 +2028,12 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(
     top_visual_row: u32,
     sub_row_offset: u32,
 ) {
-    if ui.is_null() {
-        set_last_error_from_error(invalid_argument("ui is null"));
-        return;
-    }
-    let ui = unsafe { &mut *ui };
-    let top_visual_row = match u32_to_usize(top_visual_row, "top_visual_row") {
-        Ok(row) => row,
-        Err(err) => {
-            set_last_error_from_error(err);
-            return;
-        }
-    };
-    ui.set_smooth_scroll_state(top_visual_row, (sub_row_offset.min(u16::MAX as u32)) as u16);
+    ffi_void(|| {
+        let ui = require_mut(ui, "ui")?;
+        let top_visual_row = u32_to_usize(top_visual_row, "top_visual_row")?;
+        ui.set_smooth_scroll_state(top_visual_row, (sub_row_offset.min(u16::MAX as u32)) as u16);
+        Ok(())
+    });
 }
 
 /// Reveal the primary caret by adjusting the viewport scroll position (best-effort).
@@ -3353,11 +3353,10 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_marked_text_ex(
 /// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_unmark_text(ui: *mut EditorUi) {
-    if ui.is_null() {
-        set_last_error_from_error(invalid_argument("ui is null"));
-        return;
-    }
-    unsafe { &mut *ui }.unmark_text();
+    ffi_void(|| {
+        require_mut(ui, "ui")?.unmark_text();
+        Ok(())
+    });
 }
 
 #[unsafe(no_mangle)]
@@ -3488,11 +3487,10 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_mouse_dragged(
 /// `ui` must be a valid pointer to an `EditorUi`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_mouse_up(ui: *mut EditorUi) {
-    if ui.is_null() {
-        set_last_error_from_error(invalid_argument("ui is null"));
-        return;
-    }
-    unsafe { &mut *ui }.mouse_up();
+    ffi_void(|| {
+        require_mut(ui, "ui")?.mouse_up();
+        Ok(())
+    });
 }
 
 /// Render the current visible viewport into an RGBA buffer.
@@ -4140,6 +4138,12 @@ mod tests {
     }
 
     fn set_test_treesitter_registry(ui: *mut EditorUi) {
+        // Keep the tree-sitter worker at normal priority in tests so a single grammar load/parse
+        // finishes within the bounded wait window (see editor-core-ui's QoS helper). Set here,
+        // before any worker is spawned by treesitter_set_language below.
+        // SAFETY: test-only; called on the main test thread before spawning the worker.
+        unsafe { std::env::set_var("EDITOR_CORE_DISABLE_TS_WORKER_QOS", "1") };
+
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../editor-core-treesitter/tests/fixtures/treesitter");
         let json = serde_json::json!({

@@ -100,6 +100,17 @@ impl RegexHighlighter {
             }
         }
 
+        // Rules are applied per-line and per-rule, so matches arrive interleaved. Sort into a
+        // deterministic (start, end, style) order and drop exact duplicates, so consumers get a
+        // stable, well-ordered interval stream instead of relying on match discovery order.
+        intervals.sort_by(|a, b| {
+            a.start
+                .cmp(&b.start)
+                .then(a.end.cmp(&b.end))
+                .then(a.style_id.cmp(&b.style_id))
+        });
+        intervals.dedup();
+
         intervals
     }
 

@@ -211,10 +211,19 @@ pub struct LspSessionStartOptions {
     pub initial_text: String,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum PendingLspRequest {
-    SemanticTokens { version: i32 },
-    FoldingRanges { version: i32 },
+    SemanticTokens { uri: String, version: i32 },
+    FoldingRanges { uri: String, version: i32 },
+}
+
+impl PendingLspRequest {
+    fn uri(&self) -> &str {
+        match self {
+            PendingLspRequest::SemanticTokens { uri, .. }
+            | PendingLspRequest::FoldingRanges { uri, .. } => uri,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -727,7 +736,9 @@ impl LspSession {
             return Ok(());
         }
 
-        self.document.version = self.document.version.saturating_add(1);
+        // Compute the next version but only commit it after the notification is sent, so a send
+        // failure does not leave the tracked version ahead of what the server actually received.
+        let next_version = self.document.version.saturating_add(1);
 
         let content_changes = changes
             .into_iter()
@@ -742,7 +753,7 @@ impl LspSession {
         let params = json!({
             "textDocument": {
                 "uri": self.document.uri.as_str(),
-                "version": self.document.version,
+                "version": next_version,
             },
             "contentChanges": content_changes,
         });
@@ -751,6 +762,7 @@ impl LspSession {
             return Err(format!("LSP didChange 失败，已禁用: {}", err));
         }
 
+        self.document.version = next_version;
         self.schedule_refresh(self.auto_refresh.delay);
         Ok(())
     }
@@ -801,8 +813,18 @@ impl LspSession {
         let prev = std::mem::replace(&mut self.document, next);
         self.extra_documents.insert(prev.uri.clone(), prev);
         self.clear_semantic_tokens_cache();
+        self.drop_pending_for_inactive_document();
         self.schedule_refresh(Duration::from_millis(0));
         Ok(())
+    }
+
+    /// Drop in-flight semantic-token / folding requests that target a document other than the
+    /// currently active one. Their late responses would otherwise be matched by version number
+    /// alone (versions are per-document and can collide) and applied to the wrong document, or
+    /// keep `maybe_refresh` from ever issuing a request for the new active document.
+    fn drop_pending_for_inactive_document(&mut self) {
+        let active = self.document.uri.clone();
+        self.pending.retain(|_, req| req.uri() == active);
     }
 
     /// Send `textDocument/didClose` for a document.
@@ -818,11 +840,16 @@ impl LspSession {
                 let next = self.extra_documents.remove(&next_uri).expect("checked");
                 self.document = next;
                 self.clear_semantic_tokens_cache();
+                self.drop_pending_for_inactive_document();
                 self.schedule_refresh(Duration::from_millis(0));
             }
         } else {
             self.extra_documents.remove(uri);
         }
+
+        // Drop any in-flight requests targeting the closed document regardless of which document
+        // is now active.
+        self.pending.retain(|_, req| req.uri() != uri);
 
         Ok(())
     }
@@ -1957,17 +1984,20 @@ impl LspSession {
         edits: &mut Vec<ProcessingEdit>,
     ) -> Result<(), String> {
         match pending {
-            PendingLspRequest::SemanticTokens { version } => {
-                if version != self.document.version {
+            PendingLspRequest::SemanticTokens { uri, version } => {
+                // Reject responses for a different document (versions are per-document and can
+                // collide across documents) or a stale version of the active document.
+                if uri != self.document.uri || version != self.document.version {
                     return Ok(());
                 }
 
                 let result = msg.get("result").cloned().unwrap_or(Value::Null);
                 self.handle_semantic_tokens_result(&result, line_index, edits);
             }
-            PendingLspRequest::FoldingRanges { version } => {
-                // Folding regions are line-indexed, so stale responses must not enter core state.
-                if version != self.document.version {
+            PendingLspRequest::FoldingRanges { uri, version } => {
+                // Folding regions are line-indexed, so stale/cross-document responses must not
+                // enter core state.
+                if uri != self.document.uri || version != self.document.version {
                     return Ok(());
                 }
 
@@ -1999,7 +2029,7 @@ impl LspSession {
             let has_pending_tokens = self.pending.values().any(|p| {
                     matches!(
                         p,
-                    PendingLspRequest::SemanticTokens { version, .. } if *version == self.document.version
+                    PendingLspRequest::SemanticTokens { uri, version } if *uri == doc_uri && *version == self.document.version
                     )
                 });
             if self.supports_semantic_tokens && !has_pending_tokens {
@@ -2025,6 +2055,7 @@ impl LspSession {
                         self.pending.insert(
                             id,
                             PendingLspRequest::SemanticTokens {
+                                uri: doc_uri.clone(),
                                 version: self.document.version,
                             },
                         );
@@ -2038,7 +2069,7 @@ impl LspSession {
             let has_pending_folds = self.pending.values().any(|p| {
                 matches!(
                     p,
-                    PendingLspRequest::FoldingRanges { version } if *version == self.document.version
+                    PendingLspRequest::FoldingRanges { uri, version } if *uri == doc_uri && *version == self.document.version
                 )
             });
             if self.supports_folding_range && !has_pending_folds {
@@ -2050,6 +2081,7 @@ impl LspSession {
                         self.pending.insert(
                             id,
                             PendingLspRequest::FoldingRanges {
+                                uri: doc_uri.clone(),
                                 version: self.document.version,
                             },
                         );
@@ -2319,4 +2351,105 @@ pub fn lsp_diagnostics_to_processing_edits(
     }
     out.push(ProcessingEdit::ReplaceDiagnostics { diagnostics });
     out
+}
+
+#[cfg(test)]
+mod pending_request_tests {
+    //! Regression tests for P1-7: pending semantic-token / folding requests are keyed by URI, so
+    //! switching or closing documents drops their in-flight requests (whose versions could
+    //! otherwise collide with another document's per-document version counter).
+    use super::*;
+    use std::process::{Command as ProcessCommand, Stdio};
+    use std::time::Duration;
+
+    const URI_A: &str = "file:///tmp/pending-a.rs";
+    const URI_B: &str = "file:///tmp/pending-b.rs";
+
+    fn idle_server() -> ProcessCommand {
+        // Answer `initialize`, then idle.
+        let script = "body='{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"capabilities\":{}}}'; \
+             printf 'Content-Length: %s\r\n\r\n%s' \"${#body}\" \"$body\"; sleep 30";
+        let mut cmd = ProcessCommand::new("/bin/sh");
+        cmd.arg("-c").arg(script).stderr(Stdio::null());
+        cmd
+    }
+
+    fn start_session() -> LspSession {
+        LspSession::start(LspSessionStartOptions {
+            cmd: idle_server(),
+            workspace_folders: Vec::new(),
+            initialize_params: json!({}),
+            initialize_timeout: Duration::from_secs(1),
+            document: LspDocument {
+                uri: URI_A.to_string(),
+                language_id: "rust".to_string(),
+                version: 1,
+            },
+            initial_text: "a\n".to_string(),
+        })
+        .expect("session starts")
+    }
+
+    #[test]
+    fn set_active_document_drops_pending_for_previous_document() {
+        let mut session = start_session();
+        session
+            .open_document(
+                LspDocument {
+                    uri: URI_B.to_string(),
+                    language_id: "rust".to_string(),
+                    version: 1,
+                },
+                "b\n".to_string(),
+            )
+            .expect("open second document");
+
+        // Simulate an in-flight semantic-tokens request against document A, version 1.
+        session.pending.insert(
+            42,
+            PendingLspRequest::SemanticTokens {
+                uri: URI_A.to_string(),
+                version: 1,
+            },
+        );
+
+        // Switching to B must discard A's in-flight request so a late, same-version response from
+        // A cannot be applied to B (and so maybe_refresh will issue a fresh request for B).
+        session.set_active_document(URI_B).expect("switch active");
+
+        assert!(
+            session.pending.values().all(|p| p.uri() == URI_B),
+            "pending requests for the previous document must be dropped"
+        );
+        assert!(!session.pending.contains_key(&42));
+    }
+
+    #[test]
+    fn close_document_drops_its_pending_requests() {
+        let mut session = start_session();
+        session
+            .open_document(
+                LspDocument {
+                    uri: URI_B.to_string(),
+                    language_id: "rust".to_string(),
+                    version: 1,
+                },
+                "b\n".to_string(),
+            )
+            .expect("open second document");
+
+        session.pending.insert(
+            7,
+            PendingLspRequest::FoldingRanges {
+                uri: URI_B.to_string(),
+                version: 1,
+            },
+        );
+
+        // Closing B (a non-active document) must drop its in-flight request.
+        session.close_document(URI_B).expect("close document");
+
+        assert!(!session.pending.contains_key(&7));
+        assert!(session.pending.values().all(|p| p.uri() != URI_B));
+    }
 }

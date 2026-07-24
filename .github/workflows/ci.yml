@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  test:
+    name: fmt + clippy + test (publish crates)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The publishable crates that CI can build without FFI/Skia system deps.
+      # ffi / render-skia / ui-ffi and their dependents are intentionally
+      # excluded here; they need native graphics/toolchain setup.
+      - name: Set crate selection
+        run: |
+          echo 'CRATES=-p editor-core-lsp -p editor-core-sublime -p editor-core-treesitter -p editor-core-diff -p editor-core-lang -p editor-core-highlight-simple' >> "$GITHUB_ENV"
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: rustfmt
+        run: cargo fmt --check ${{ env.CRATES }}
+
+      - name: clippy
+        run: cargo clippy ${{ env.CRATES }} --all-targets
+
+      - name: test
+        run: cargo test ${{ env.CRATES }}

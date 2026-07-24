@@ -30,7 +30,7 @@ fn assert_readonly_error(error: CommandError) {
 fn readonly_view_rejects_mutating_commands_and_allows_navigation() {
     let model = model("alpha\nbeta\n", "alpha\nbeta\n");
     let projection = side_by_side_projection(&model, [80, 80]);
-    let mut view = DiffColumnView::new(&model, &projection, 0, 0, 80);
+    let mut view = DiffColumnView::new(&model, &projection, 0, 0);
 
     let rejected_commands = [
         Command::Edit(EditCommand::Insert {
@@ -122,7 +122,7 @@ fn side_visual_and_unified_row_mapping_round_trips_with_spacers_and_wraps() {
 fn vertical_navigation_uses_side_coordinates_and_skips_spacer_rows() {
     let model = model("a\nc\n", "a\nb\nc\n");
     let projection = side_by_side_projection(&model, [80, 80]);
-    let mut before_view = DiffColumnView::new(&model, &projection, 0, 0, 80);
+    let mut before_view = DiffColumnView::new(&model, &projection, 0, 0);
 
     assert_eq!(before_view.cursor_side_visual_row(), Some(0));
     assert_eq!(before_view.cursor_unified_row(), Some(0));
@@ -140,11 +140,47 @@ fn vertical_navigation_uses_side_coordinates_and_skips_spacer_rows() {
 }
 
 #[test]
+fn view_width_is_derived_from_projection_so_cursor_mapping_stays_consistent() {
+    // Regression (P1-5): DiffColumnView used to take an independent viewport_width, which could
+    // differ from the width the projection wrapped at, silently desynchronizing
+    // cursor_side_visual_row (view's wrapping) from the projection's row axis. Now the view derives
+    // its width from the projection, so a long line wraps identically on both sides.
+
+    // Column width 3 wraps the 8-char first line ("abcdefgh") into multiple visual segments; the
+    // second line "Z" then lives on a later visual row within its own logical line.
+    let before = "abcdefgh\nZ\n";
+    let model = model(before, before);
+    let projection = side_by_side_projection(&model, [3, 3]);
+    let view = DiffColumnView::new(&model, &projection, 0, 0);
+
+    // The view must have adopted the projection's column width (3), not some default.
+    assert_eq!(view.editor().viewport_width(), 3);
+
+    // "abcdefgh" (8 cells at width 3) wraps into 3 visual segments (rows 0,1,2); "Z" is visual
+    // row 3 on this side. That side-visual-row must round-trip through the projection's axis.
+    let side_row = view
+        .editor()
+        .logical_position_to_visual(1, 0)
+        .expect("line 1 is visible")
+        .0;
+    assert_eq!(side_row, 3, "second logical line starts at side visual row 3");
+
+    let unified = view
+        .unified_row_for_side_visual_row(side_row)
+        .expect("side visual row maps onto the unified axis");
+    // The same side row must map back to itself (identical wrapping on both sides).
+    assert_eq!(
+        projection.side_visual_row_for_unified_row(0, unified),
+        Some(side_row)
+    );
+}
+
+#[test]
 fn side_by_side_column_views_project_rows_on_the_unified_axis() {
     let model = model("a\nc\n", "a\nb\nc\n");
     let projection = side_by_side_projection(&model, [80, 80]);
-    let before_view = DiffColumnView::new(&model, &projection, 0, 0, 80);
-    let after_view = DiffColumnView::new(&model, &projection, 1, 1, 80);
+    let before_view = DiffColumnView::new(&model, &projection, 0, 0);
+    let after_view = DiffColumnView::new(&model, &projection, 1, 1);
 
     assert_eq!(before_view.row_count(), projection.rows().len());
     assert_eq!(after_view.row_count(), projection.rows().len());

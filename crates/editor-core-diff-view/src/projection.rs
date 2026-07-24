@@ -27,6 +27,45 @@ pub struct DiffProjection {
     pub columns: usize,
     /// Unified visual row axis shared by all columns.
     pub rows: Vec<Row>,
+    /// The viewport width used to wrap each column. `column_widths.len() == columns`.
+    ///
+    /// A [`crate::DiffColumnView`] derives its editor's width from this so its wrapping always
+    /// matches the projected row axis; a mismatch would silently misalign cursor/row mapping.
+    pub column_widths: Vec<usize>,
+    /// Precomputed per-side row-mapping index (see [`SideRowMaps`]), so unified<->side row lookups
+    /// are O(1) instead of scanning `rows` on every call. Derived purely from `rows`.
+    side_maps: SideRowMaps,
+}
+
+/// Per-side mapping between the unified row axis and each side's own visual-row sequence.
+///
+/// For each side: `unified_to_side[u]` is `Some(side_row)` when unified row `u` carries a real
+/// line for that side, and `side_to_unified[k]` is the unified row of that side's `k`-th visual
+/// row. Both are pure functions of the projected rows.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct SideRowMaps {
+    unified_to_side: [Vec<Option<usize>>; 2],
+    side_to_unified: [Vec<usize>; 2],
+}
+
+impl SideRowMaps {
+    fn from_rows(rows: &[Row]) -> Self {
+        let mut maps = SideRowMaps::default();
+        for side in [BEFORE_SIDE, AFTER_SIDE] {
+            let unified_to_side = &mut maps.unified_to_side[side];
+            let side_to_unified = &mut maps.side_to_unified[side];
+            unified_to_side.reserve(rows.len());
+            for (unified_row, row) in rows.iter().enumerate() {
+                if row_has_side_visual_row(row, side) {
+                    unified_to_side.push(Some(side_to_unified.len()));
+                    side_to_unified.push(unified_row);
+                } else {
+                    unified_to_side.push(None);
+                }
+            }
+        }
+        maps
+    }
 }
 
 impl DiffProjection {
@@ -38,9 +77,25 @@ impl DiffProjection {
         }
     }
 
+    /// Assemble a projection from projected rows, precomputing the side row-mapping index.
+    fn from_parts(columns: usize, rows: Vec<Row>, column_widths: Vec<usize>) -> Self {
+        let side_maps = SideRowMaps::from_rows(&rows);
+        Self {
+            columns,
+            rows,
+            column_widths,
+            side_maps,
+        }
+    }
+
     /// Returns the number of projected columns.
     pub fn columns(&self) -> usize {
         self.columns
+    }
+
+    /// Returns the viewport width the given column was wrapped at, if the column exists.
+    pub fn column_width(&self, column: usize) -> Option<usize> {
+        self.column_widths.get(column).copied()
     }
 
     /// Returns the unified visual row axis.
@@ -54,17 +109,11 @@ impl DiffProjection {
         side: usize,
         side_visual_row: usize,
     ) -> Option<usize> {
-        let mut current_side_row = 0;
-        for (unified_row, row) in self.rows.iter().enumerate() {
-            if row_has_side_visual_row(row, side) {
-                if current_side_row == side_visual_row {
-                    return Some(unified_row);
-                }
-                current_side_row += 1;
-            }
-        }
-
-        None
+        self.side_maps
+            .side_to_unified
+            .get(side)?
+            .get(side_visual_row)
+            .copied()
     }
 
     /// Maps a unified row back to a side-local visual row when that side has a real line there.
@@ -73,18 +122,12 @@ impl DiffProjection {
         side: usize,
         unified_row: usize,
     ) -> Option<usize> {
-        let mut current_side_row = 0;
-        for (row_index, row) in self.rows.iter().enumerate() {
-            let has_side_row = row_has_side_visual_row(row, side);
-            if row_index == unified_row {
-                return has_side_row.then_some(current_side_row);
-            }
-            if has_side_row {
-                current_side_row += 1;
-            }
-        }
-
-        None
+        self.side_maps
+            .unified_to_side
+            .get(side)?
+            .get(unified_row)
+            .copied()
+            .flatten()
     }
 }
 
@@ -268,7 +311,7 @@ pub fn project_unified(model: &DiffModel, per_column_widths: &[usize]) -> DiffPr
         }
     }
 
-    DiffProjection { columns: 1, rows }
+    DiffProjection::from_parts(1, rows, vec![width])
 }
 
 fn project_side_by_side(model: &DiffModel, per_column_widths: &[usize]) -> DiffProjection {
@@ -282,7 +325,7 @@ fn project_side_by_side(model: &DiffModel, per_column_widths: &[usize]) -> DiffP
         push_aligned_unit_rows(&mut rows, columns, spacer_changes);
     }
 
-    DiffProjection { columns: 2, rows }
+    DiffProjection::from_parts(2, rows, widths.to_vec())
 }
 
 fn unified_width(per_column_widths: &[usize]) -> usize {

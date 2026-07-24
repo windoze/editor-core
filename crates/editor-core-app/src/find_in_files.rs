@@ -1,5 +1,5 @@
 use crate::read_utf8_file;
-use editor_core::search::{SearchError, SearchMatch, SearchOptions, find_all};
+use editor_core::search::{CompiledSearch, SearchError, SearchMatch, SearchOptions};
 use ignore::WalkBuilder;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -85,6 +85,10 @@ pub fn find_in_files(
         return Ok(Vec::new());
     }
 
+    // Compile the search once and reuse it for every line of every file, instead of recompiling
+    // the regex (and its automaton) on each `find_all` call.
+    let search = CompiledSearch::new(query, options)?;
+
     let walker = WalkBuilder::new(root)
         .hidden(true)
         .git_ignore(true)
@@ -124,7 +128,7 @@ pub fn find_in_files(
 
         let mut file_matches: Vec<FindInFilesLineMatch> = Vec::new();
         for (line_idx, line) in text.lines().enumerate() {
-            let ranges = find_all(line, query, options)?;
+            let ranges = search.find_all(line);
             if ranges.is_empty() {
                 continue;
             }

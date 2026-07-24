@@ -17,5 +17,5 @@ fn placeholder_types_are_constructible() {
     let _mode = DiffMode::Unified;
     let model = DiffModel::from_before_after("a\n", "a\n", LineDiffConfig::default());
     let projection = DiffProjection::build(&model, DiffMode::SideBySide, &[80, 80]);
-    let _view = DiffColumnView::new(&model, &projection, 0, 0, 80);
+    let _view = DiffColumnView::new(&model, &projection, 0, 0);
 }

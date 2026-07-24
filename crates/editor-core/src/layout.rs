@@ -282,37 +282,31 @@ fn calculate_wrap_points_char_with_tab_width(
     let mut wrap_points = Vec::new();
     let mut x_in_segment = 0usize;
     let mut x_in_line = 0usize;
+    // Whether the current visual segment already contains at least one character. A wrap is only
+    // valid once the current segment is non-empty; otherwise there is nowhere to move the character
+    // to (which would spin an oversized-first-char into an empty leading segment).
+    let mut segment_has_char = false;
 
     for (char_index, (byte_offset, ch)) in text.char_indices().enumerate() {
         let ch_width = cell_width_at(ch, x_in_line, tab_width);
 
-        // If adding this character would exceed the width limit
-        if x_in_segment + ch_width > viewport_width {
-            // Double-width characters cannot be split
-            // If remaining width cannot accommodate the double-width character, it should wrap intact to the next line
+        // Wrap only when this character genuinely does not fit *and* the current segment already
+        // holds a character. Zero-width characters (ch_width == 0, e.g. combining marks / ZWJ)
+        // never exceed the width, so they always stay attached to the base character on the same
+        // visual line rather than being split onto the next one. A single character wider than the
+        // viewport is placed as-is on its own segment instead of being pushed to an empty line.
+        if segment_has_char && x_in_segment + ch_width > viewport_width {
             wrap_points.push(WrapPoint {
                 char_index,
                 byte_offset,
             });
             x_in_segment = wrap_indent_cells;
-        } else {
-            // ok
         }
 
         x_in_segment = x_in_segment.saturating_add(ch_width);
         x_in_line = x_in_line.saturating_add(ch_width);
-
-        // If current width equals viewport width exactly, the next character should wrap
-        if x_in_segment == viewport_width {
-            // Check if there are more characters
-            if byte_offset + ch.len_utf8() < text.len() {
-                wrap_points.push(WrapPoint {
-                    char_index: char_index + 1,
-                    byte_offset: byte_offset + ch.len_utf8(),
-                });
-                x_in_segment = wrap_indent_cells;
-            }
-        }
+        // This character now occupies the (possibly newly started) segment.
+        segment_has_char = true;
     }
 
     wrap_points
@@ -868,6 +862,48 @@ mod tests {
         // So "你" should wrap intact to the next line
         assert_eq!(wraps.len(), 1);
         assert_eq!(wraps[0].char_index, 5); // Wrap before "你"
+    }
+
+    #[test]
+    fn test_zero_width_combining_mark_stays_with_base_char() {
+        // Regression (P3-18): a zero-width combining mark following the character that exactly
+        // fills the viewport must not be split onto its own visual line.
+        // "abcde" = 5 cells fills width 5; U+0301 (combining acute) has width 0 and must stay on
+        // the same visual line, so there is no wrap point.
+        let text = "abcde\u{0301}";
+        let wraps = calculate_wrap_points(text, 5);
+        assert_eq!(wraps.len(), 0, "combining mark must not force a wrap");
+
+        // A following real character does wrap normally.
+        let text2 = "abcde\u{0301}f";
+        let wraps2 = calculate_wrap_points(text2, 5);
+        assert_eq!(wraps2.len(), 1);
+        assert_eq!(wraps2[0].char_index, 6, "wrap before 'f', after the combining mark");
+    }
+
+    #[test]
+    fn test_oversized_first_char_does_not_create_empty_leading_segment() {
+        // Regression (P3-20): a character wider than the viewport must occupy the first segment
+        // rather than being wrapped to a new line (which would leave an empty leading segment and
+        // inflate the visual line count).
+        // "你" = 2 cells, viewport width = 1.
+        let single = calculate_wrap_points("你", 1);
+        assert_eq!(single.len(), 0, "a lone oversized char has no wrap point");
+        assert_eq!(VisualLineInfo::from_text("你", 1).visual_line_count, 1);
+
+        // Two oversized chars: the second wraps after the first (one wrap point), no empty
+        // leading segment.
+        let two = calculate_wrap_points("你好", 1);
+        assert_eq!(two.len(), 1);
+        assert_eq!(two[0].char_index, 1);
+    }
+
+    #[test]
+    fn test_exact_fit_does_not_emit_trailing_empty_wrap() {
+        // Regression (P2-17 family): a line that exactly fills the viewport with no following
+        // character must not emit a spurious wrap point / empty trailing visual line.
+        assert_eq!(calculate_wrap_points("12345", 5).len(), 0);
+        assert_eq!(VisualLineInfo::from_text("12345", 5).visual_line_count, 1);
     }
 
     #[test]

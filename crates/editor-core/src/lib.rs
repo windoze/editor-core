@@ -198,7 +198,7 @@ pub use layout::{
 pub use line_ending::LineEnding;
 pub use line_index::LineIndex;
 pub use processing::{DocumentProcessor, ProcessingEdit};
-pub use search::{SearchError, SearchMatch, SearchOptions};
+pub use search::{CompiledSearch, SearchError, SearchMatch, SearchOptions};
 pub use snapshot::{
     Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
     HeadlessGrid, HeadlessLine, MinimapGrid, MinimapLine, SnapshotGenerator,

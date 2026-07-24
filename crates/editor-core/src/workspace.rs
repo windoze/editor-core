@@ -181,6 +181,12 @@ struct BufferEntry {
     last_text_delta: Option<Arc<TextDelta>>,
     bookmarks: BookmarkSet,
     marks: MarkSet,
+    /// Deterministic baseline view config for new views into this buffer.
+    ///
+    /// Captured once from the buffer's initial executor state, so `create_view` does not inherit
+    /// whichever view most recently loaded its scratch state into the shared executor (which would
+    /// make new views' config depend on call order).
+    default_view_core: ViewCore,
 }
 
 struct ViewEntry {
@@ -347,6 +353,19 @@ fn apply_selection_delta(
         end,
         direction: selection_direction(start, end),
     }
+}
+
+/// Coalesce a freshly produced delta into a slot that may still hold a previously produced but
+/// not-yet-consumed delta.
+///
+/// A consumer that only reads the latest stored delta (e.g. LSP incremental sync, search anchor
+/// shifting) would otherwise lose the earlier edit when two edits happen between consumptions.
+/// Merging keeps the slot equivalent to "all edits since the last take".
+fn coalesce_delta_slot(slot: &mut Option<Arc<TextDelta>>, next: &Arc<TextDelta>) {
+    *slot = Some(match slot.take() {
+        Some(existing) => Arc::new(TextDelta::merge(&existing, next)),
+        None => next.clone(),
+    });
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -613,6 +632,8 @@ impl Workspace {
         self.next_buffer_id = self.next_buffer_id.saturating_add(1);
 
         let executor = CommandExecutor::new(text, viewport_width);
+        // Capture the pristine view config now, before any command mutates the shared executor.
+        let default_view_core = ViewCore::from_executor(&executor);
         let meta = BufferMetadata { uri: uri.clone() };
         self.buffers.insert(
             buffer_id,
@@ -623,6 +644,7 @@ impl Workspace {
                 last_text_delta: None,
                 bookmarks: BookmarkSet::default(),
                 marks: MarkSet::default(),
+                default_view_core,
             },
         );
 
@@ -701,21 +723,53 @@ impl Workspace {
     }
 
     /// Create a new view into an existing buffer.
+    ///
+    /// The new view starts from the buffer's deterministic default view config (see
+    /// [`BufferEntry::default_view_core`]) — independent of which view most recently executed a
+    /// command. To clone another view's config instead, use [`Workspace::create_view_from`].
     pub fn create_view(
         &mut self,
         buffer: BufferId,
         viewport_width: usize,
     ) -> Result<ViewId, WorkspaceError> {
-        let Some(buffer_entry) = self.buffers.get_mut(&buffer) else {
+        let Some(buffer_entry) = self.buffers.get(&buffer) else {
             return Err(WorkspaceError::BufferNotFound(buffer));
         };
+        let core = buffer_entry.default_view_core.clone();
+        Ok(self.insert_view_with_core(buffer, core, viewport_width))
+    }
 
-        // Create a view state by starting from the executor defaults, but overriding width and
-        // clearing selection/cursors.
-        let mut core = ViewCore::from_executor(&buffer_entry.executor);
+    /// Create a new view into the same buffer as `parent_view`, cloning that view's view-local
+    /// config (wrap mode, tab width, indentation, auto-pairs, …) but with an independent
+    /// cursor/selection and its own viewport width.
+    ///
+    /// This is the explicit "split / clone this view" operation, with predictable config
+    /// provenance (unlike deriving from shared executor scratch state).
+    pub fn create_view_from(
+        &mut self,
+        parent_view: ViewId,
+        viewport_width: usize,
+    ) -> Result<ViewId, WorkspaceError> {
+        let Some(parent) = self.views.get(&parent_view) else {
+            return Err(WorkspaceError::ViewNotFound(parent_view));
+        };
+        let buffer = parent.buffer;
+        let core = parent.core.clone();
+        Ok(self.insert_view_with_core(buffer, core, viewport_width))
+    }
+
+    /// Insert a new view for `buffer` from a base `ViewCore`, resetting cursor/selection/scroll and
+    /// applying `viewport_width`.
+    fn insert_view_with_core(
+        &mut self,
+        buffer: BufferId,
+        mut core: ViewCore,
+        viewport_width: usize,
+    ) -> ViewId {
         core.cursor_position = Position::new(0, 0);
         core.selection = None;
         core.secondary_selections.clear();
+        core.snippet_session = None;
         core.viewport_width = viewport_width.max(1);
         core.preferred_x_cells = None;
 
@@ -738,7 +792,7 @@ impl Workspace {
             },
         );
 
-        Ok(view_id)
+        view_id
     }
 
     /// Look up a buffer by uri.
@@ -1317,17 +1371,18 @@ impl Workspace {
 
         if buffer_text_changed || buffer_derived_changed {
             // Broadcast to all views of this buffer.
-            let delta_arc = delta.clone();
-            if let Some(delta_arc) = delta_arc {
-                buffer.last_text_delta = Some(delta_arc.clone());
+            //
+            // Coalesce (merge) into the delta slots rather than overwrite: a consumer that has not
+            // taken the previous delta yet must still observe this edit. A change without a text
+            // delta (e.g. a style-only change) must NOT clear an unconsumed text delta.
+            if let Some(delta_arc) = delta.clone() {
+                coalesce_delta_slot(&mut buffer.last_text_delta, &delta_arc);
                 for other in views.values_mut() {
                     if other.buffer != buffer_id {
                         continue;
                     }
-                    other.last_text_delta = Some(delta_arc.clone());
+                    coalesce_delta_slot(&mut other.last_text_delta, &delta_arc);
                 }
-            } else {
-                buffer.last_text_delta = None;
             }
 
             // Shift other views' cursor/selections through the delta (if any).
@@ -2388,14 +2443,16 @@ impl Workspace {
                 }
 
                 if let Some(ref delta_arc) = delta {
-                    buffer.last_text_delta = Some(delta_arc.clone());
+                    // Coalesce into the delta slots (see `coalesce_delta_slot`) so an unconsumed
+                    // delta from a prior edit is not lost.
+                    coalesce_delta_slot(&mut buffer.last_text_delta, delta_arc);
                     let new_index = buffer.executor.editor().line_index();
                     for view in self.views.values_mut() {
                         if view.buffer != buffer_id {
                             continue;
                         }
 
-                        view.last_text_delta = Some(delta_arc.clone());
+                        coalesce_delta_slot(&mut view.last_text_delta, delta_arc);
 
                         view.core.cursor_position = apply_position_delta(
                             &before_line_index,
@@ -2427,7 +2484,7 @@ impl Workspace {
                         );
                     }
                 } else {
-                    buffer.last_text_delta = None;
+                    // No text delta for this change; do not clear an unconsumed text delta.
                     for view in self.views.values_mut() {
                         if view.buffer == buffer_id {
                             Self::notify_view(view, StateChangeType::DocumentModified, None);
