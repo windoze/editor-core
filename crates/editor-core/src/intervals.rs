@@ -839,19 +839,22 @@ impl FoldingManager {
                 idx -= 1;
             }
 
-            for (i, region) in regions[idx..].iter().enumerate() {
+            for (relative_i, region) in regions[idx..].iter().enumerate() {
                 if region.start_line != start_line {
                     break;
                 }
                 if region.end_line <= region.start_line {
                     continue;
                 }
+                // `enumerate()` yields a slice-relative index; convert it back to an absolute
+                // index into `regions` so the later `get_mut` targets the correct region.
+                let absolute_i = idx + relative_i;
                 if region.end_line < best_end
                     || (region.end_line == best_end
                         && best_source.is_some_and(|(prev_is_user, _)| !prev_is_user && is_user))
                 {
                     best_end = region.end_line;
-                    best_source = Some((is_user, i));
+                    best_source = Some((is_user, absolute_i));
                 }
             }
         }
@@ -935,6 +938,17 @@ impl FoldingManager {
         }
 
         ranges
+    }
+
+    /// Total number of logical lines hidden by collapsed folds.
+    ///
+    /// Overlapping and nested collapsed regions are counted once (the hidden ranges are merged
+    /// first), so the result never exceeds the document's logical line count.
+    pub fn collapsed_hidden_line_count(&self) -> usize {
+        self.collapsed_hidden_ranges()
+            .into_iter()
+            .map(|(start, end)| end.saturating_sub(start))
+            .sum()
     }
 
     /// Get all fold regions
@@ -1304,6 +1318,57 @@ mod tests {
             .find(|r| r.start_line == 3 && r.end_line == 5)
             .unwrap();
         assert!(!inner_after.is_collapsed);
+    }
+
+    #[test]
+    fn test_toggle_region_starting_at_line_targets_correct_region() {
+        // Regression: `toggle_region_starting_at_line` used to store a slice-relative index and
+        // write it back as an absolute index, collapsing the wrong region when the target was not
+        // the first region in the source.
+        let mut manager = FoldingManager::new();
+        manager.add_region(FoldRegion::new(1, 3));
+        manager.add_region(FoldRegion::new(5, 8));
+        manager.add_region(FoldRegion::new(10, 15));
+
+        assert!(manager.toggle_region_starting_at_line(10));
+
+        let collapsed: Vec<usize> = manager
+            .user_regions()
+            .iter()
+            .filter(|r| r.is_collapsed)
+            .map(|r| r.start_line)
+            .collect();
+        assert_eq!(
+            collapsed,
+            vec![10],
+            "only the region starting at line 10 should be collapsed"
+        );
+
+        // Toggling the middle region must likewise only affect that region.
+        assert!(manager.toggle_region_starting_at_line(5));
+        let collapsed: Vec<usize> = manager
+            .user_regions()
+            .iter()
+            .filter(|r| r.is_collapsed)
+            .map(|r| r.start_line)
+            .collect();
+        assert_eq!(collapsed, vec![5, 10]);
+    }
+
+    #[test]
+    fn test_collapsed_hidden_line_count_dedups_nested_regions() {
+        // Regression: summing `end_line - start_line` per collapsed region double-counted nested
+        // folds and could exceed the document line count (underflowing the visible-line math).
+        let mut manager = FoldingManager::new();
+        let mut outer = FoldRegion::new(0, 10);
+        outer.collapse();
+        manager.add_region(outer);
+        let mut inner = FoldRegion::new(2, 5);
+        inner.collapse();
+        manager.add_region(inner);
+
+        // Hidden lines are the union of (1..=10), i.e. 10 lines — the inner region adds nothing.
+        assert_eq!(manager.collapsed_hidden_line_count(), 10);
     }
 
     #[test]

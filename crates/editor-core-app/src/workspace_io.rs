@@ -85,9 +85,15 @@ impl WorkspaceIo {
         buffer_id: BufferId,
         new_path: &Path,
     ) -> Result<(), WorkspaceIoError> {
+        // Write to disk *before* mutating any buffer state, so a failed write leaves the buffer's
+        // URI and dirty/clean status untouched (all-or-nothing Save As).
+        let text = ws.buffer_text_for_saving(buffer_id)?;
+        write_utf8_file_atomic(new_path, &text, self.io_options)?;
+
+        // Only after a successful write do we commit the new path and clear the dirty flag.
         let uri = path_to_file_uri(new_path);
         ws.set_buffer_uri(buffer_id, Some(uri))?;
-        self.save_buffer(ws, buffer_id)?;
+        ws.mark_saved_for_buffer(buffer_id)?;
         Ok(())
     }
 
@@ -192,5 +198,50 @@ mod tests {
         let meta = ws.buffer_metadata(opened.buffer_id).unwrap();
         assert!(meta.uri.as_deref().unwrap().starts_with("file://"));
         assert!(meta.uri.as_deref().unwrap().contains("b.txt"));
+    }
+
+    #[test]
+    fn save_as_failure_leaves_uri_and_dirty_state_unchanged() {
+        // Regression: `save_buffer_as` used to change the URI *before* writing, so a failed write
+        // left the buffer pointing at a path it was never saved to (and marked clean).
+        let temp = tempdir().unwrap();
+        let path_a = temp.path().join("a.txt");
+        std::fs::write(&path_a, "a\n").unwrap();
+
+        let mut ws = Workspace::new();
+        let opened = open_file_into_workspace(&mut ws, &path_a, 80).unwrap();
+        let original_uri = ws
+            .buffer_metadata(opened.buffer_id)
+            .unwrap()
+            .uri
+            .clone()
+            .unwrap();
+
+        // Make the buffer dirty.
+        ws.execute(
+            opened.view_id,
+            Command::Edit(EditCommand::Insert {
+                offset: 0,
+                text: "X".to_string(),
+            }),
+        )
+        .unwrap();
+        assert!(ws.buffer_is_modified(opened.buffer_id).unwrap());
+
+        // Target path is an existing directory -> the atomic write must fail.
+        let dir_target = temp.path().join("subdir");
+        std::fs::create_dir(&dir_target).unwrap();
+
+        let io = WorkspaceIo::default();
+        let result = io.save_buffer_as(&mut ws, opened.buffer_id, &dir_target);
+        assert!(result.is_err(), "saving onto a directory should fail");
+
+        // URI and dirty state must be untouched.
+        let meta = ws.buffer_metadata(opened.buffer_id).unwrap();
+        assert_eq!(meta.uri.as_deref(), Some(original_uri.as_str()));
+        assert!(
+            ws.buffer_is_modified(opened.buffer_id).unwrap(),
+            "buffer must remain dirty after a failed Save As"
+        );
     }
 }

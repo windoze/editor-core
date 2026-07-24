@@ -2270,11 +2270,14 @@ impl CommandExecutor {
         if start > max_offset {
             return Err(CommandError::InvalidOffset(start));
         }
-        if start + length > max_offset {
-            return Err(CommandError::InvalidRange {
+        let end = start
+            .checked_add(length)
+            .ok_or(CommandError::InvalidRange {
                 start,
-                end: start + length,
-            });
+                end: usize::MAX,
+            })?;
+        if end > max_offset {
+            return Err(CommandError::InvalidRange { start, end });
         }
 
         let before_selection = self.snapshot_selection_set();
@@ -2339,11 +2342,14 @@ impl CommandExecutor {
         if start > max_offset {
             return Err(CommandError::InvalidOffset(start));
         }
-        if start + length > max_offset {
-            return Err(CommandError::InvalidRange {
+        let end = start
+            .checked_add(length)
+            .ok_or(CommandError::InvalidRange {
                 start,
-                end: start + length,
-            });
+                end: usize::MAX,
+            })?;
+        if end > max_offset {
+            return Err(CommandError::InvalidRange { start, end });
         }
 
         if length == 0 && text.is_empty() {

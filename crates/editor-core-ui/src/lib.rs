@@ -241,10 +241,21 @@ enum TreeSitterWorkerEvent {
 }
 
 fn set_current_thread_qos_for_treesitter_worker() {
+    // Best effort: lower priority than the UI thread to avoid input jank / CPU spikes.
+    //
+    // Escape hatch: on some machines the UTILITY QoS class starves this worker badly enough that a
+    // single WASM grammar load + parse does not finish within a test's bounded wait window, making
+    // the async tree-sitter tests time out. Tests set `EDITOR_CORE_DISABLE_TS_WORKER_QOS=1` to keep
+    // the worker at normal priority. This is honored across crates (the env var is read at runtime),
+    // unlike a `cfg(test)` gate which only applies to the crate under test.
     #[cfg(target_os = "macos")]
-    unsafe {
-        // Best effort: lower priority than UI thread to avoid input jank / CPU spikes.
-        let _ = libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0);
+    {
+        if std::env::var_os("EDITOR_CORE_DISABLE_TS_WORKER_QOS").is_some() {
+            return;
+        }
+        unsafe {
+            let _ = libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0);
+        }
     }
 }
 
@@ -6185,6 +6196,12 @@ mod tests {
     }
 
     fn set_test_treesitter_registry(ui: &mut EditorUi) {
+        // Keep the tree-sitter worker at normal priority in tests so a single grammar load/parse
+        // finishes within the bounded wait window (see set_current_thread_qos_for_treesitter_worker).
+        // Set here, before any worker is spawned by set_treesitter_* below.
+        // SAFETY: test-only; called on the main test thread before spawning the worker.
+        unsafe { std::env::set_var("EDITOR_CORE_DISABLE_TS_WORKER_QOS", "1") };
+
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../editor-core-treesitter/tests/fixtures/treesitter");
 

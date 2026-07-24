@@ -894,13 +894,11 @@ impl EditorStateManager {
     pub fn get_folding_state(&self) -> FoldingState {
         let editor = self.executor.editor();
         let regions = editor.folding_manager().regions().to_vec();
-        let collapsed_line_count: usize = regions
-            .iter()
-            .filter(|r| r.is_collapsed)
-            .map(|r| r.end_line - r.start_line)
-            .sum();
+        // Count hidden lines by union of collapsed ranges so nested/overlapping folds are not
+        // double-counted (which could otherwise underflow `line_count - collapsed_line_count`).
+        let collapsed_line_count = editor.folding_manager().collapsed_hidden_line_count();
 
-        let visible_logical_lines = editor.line_count() - collapsed_line_count;
+        let visible_logical_lines = editor.line_count().saturating_sub(collapsed_line_count);
 
         FoldingState {
             regions,

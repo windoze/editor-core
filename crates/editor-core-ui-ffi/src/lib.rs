@@ -4140,6 +4140,12 @@ mod tests {
     }
 
     fn set_test_treesitter_registry(ui: *mut EditorUi) {
+        // Keep the tree-sitter worker at normal priority in tests so a single grammar load/parse
+        // finishes within the bounded wait window (see editor-core-ui's QoS helper). Set here,
+        // before any worker is spawned by treesitter_set_language below.
+        // SAFETY: test-only; called on the main test thread before spawning the worker.
+        unsafe { std::env::set_var("EDITOR_CORE_DISABLE_TS_WORKER_QOS", "1") };
+
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../editor-core-treesitter/tests/fixtures/treesitter");
         let json = serde_json::json!({
