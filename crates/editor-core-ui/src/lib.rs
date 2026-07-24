@@ -894,11 +894,13 @@ impl EditorUi {
 
     /// 为同一文档创建一个新的 view（光标/滚动独立，文本共享）。
     pub fn clone_view(&self, viewport_width_cells: usize) -> Result<Self, UiError> {
+        let parent_view = self.view_id;
         let view_id = {
             let mut doc = self.lock_doc();
-            let buffer_id = doc.buffer_id;
+            // Clone should mirror the current view's config; derive from it explicitly rather than
+            // relying on shared-executor scratch state.
             doc.ws
-                .create_view(buffer_id, viewport_width_cells.max(1))
+                .create_view_from(parent_view, viewport_width_cells.max(1))
                 .map_err(|e| UiError::Processor(format!("{e:?}")))?
         };
 

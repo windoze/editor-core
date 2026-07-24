@@ -415,6 +415,14 @@ impl JumpList {
     }
 }
 
+/// Classifies a view command for change detection: a bare `SetViewportWidth` can be a no-op
+/// (width unchanged), whereas other view-config commands mutate state unconditionally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ViewChangeKind {
+    ViewportWidthOnly,
+    Other,
+}
+
 /// Editor state manager
 ///
 /// `EditorStateManager` wraps the command executor ([`CommandExecutor`]) and its internal [`EditorCore`]
@@ -560,6 +568,14 @@ impl EditorStateManager {
             &command,
             Command::Edit(EditCommand::Backspace | EditCommand::DeleteForward)
         );
+        // A bare `SetViewportWidth` may be a no-op (width unchanged); every other view command
+        // that classifies as `ViewportChanged` mutates config unconditionally.
+        let command_kind = if matches!(&command, Command::View(ViewCommand::SetViewportWidth { .. }))
+        {
+            ViewChangeKind::ViewportWidthOnly
+        } else {
+            ViewChangeKind::Other
+        };
 
         // Detect changes for potential no-ops: when command execution succeeds but state doesn't change, version should not increment.
         let cursor_before = self.executor.editor().cursor_position();
@@ -586,7 +602,15 @@ impl EditorStateManager {
                             != secondary_before.as_slice()
                 }
                 StateChangeType::ViewportChanged => {
-                    self.executor.editor().viewport_width() != viewport_width_before
+                    // View-config setters (tab-key behavior, indentation, auto-pairs, word
+                    // boundaries, wrap mode/indent, tab width) mutate view-local state
+                    // unconditionally; they are not observable through `viewport_width` alone.
+                    // Only a bare `SetViewportWidth` is a potential no-op we can cheaply detect.
+                    if matches!(command_kind, ViewChangeKind::ViewportWidthOnly) {
+                        self.executor.editor().viewport_width() != viewport_width_before
+                    } else {
+                        true
+                    }
                 }
                 StateChangeType::DocumentModified => {
                     // EditCommand::Backspace / DeleteForward can be valid no-ops at boundaries.
@@ -669,22 +693,12 @@ impl EditorStateManager {
                 | CursorCommand::FindNext { .. }
                 | CursorCommand::FindPrev { .. },
             ) => Some(StateChangeType::SelectionChanged),
-            Command::View(
-                ViewCommand::SetViewportWidth { .. }
-                | ViewCommand::SetWrapMode { .. }
-                | ViewCommand::SetWrapIndent { .. }
-                | ViewCommand::SetTabWidth { .. },
-            ) => Some(StateChangeType::ViewportChanged),
-            Command::View(
-                ViewCommand::SetTabKeyBehavior { .. }
-                | ViewCommand::SetIndentationConfig { .. }
-                | ViewCommand::SetAutoPairsConfig { .. }
-                | ViewCommand::SetAutoPairsEnabled { .. }
-                | ViewCommand::SetWordBoundaryAsciiBoundaryChars { .. }
-                | ViewCommand::ResetWordBoundaryDefaults
-                | ViewCommand::ScrollTo { .. }
-                | ViewCommand::GetViewport { .. },
-            ) => None,
+            // `ScrollTo` is transient viewport positioning and `GetViewport` is a pure query;
+            // neither is a persisted state mutation. Every other view command changes view-local
+            // config (wrap, tab, indentation, auto-pairs, word boundaries) and must notify
+            // subscribers, matching `ViewCommand::is_mutating` and the `Workspace` execute path.
+            Command::View(ViewCommand::ScrollTo { .. } | ViewCommand::GetViewport { .. }) => None,
+            Command::View(_) => Some(StateChangeType::ViewportChanged),
             Command::Style(
                 StyleCommand::AddStyle { .. }
                 | StyleCommand::RemoveStyle { .. }

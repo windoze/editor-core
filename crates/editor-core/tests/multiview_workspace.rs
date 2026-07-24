@@ -1,6 +1,6 @@
 use editor_core::{
     Command, CursorCommand, EditCommand, OpenBufferResult, Position, StyleCommand,
-    ViewSmoothScrollState, Workspace,
+    ViewCommand, ViewSmoothScrollState, Workspace,
 };
 
 #[test]
@@ -187,4 +187,59 @@ fn style_change_does_not_clear_unconsumed_text_delta() {
         .expect("text delta must survive an interleaved style change");
     assert_eq!(delta.before_char_count, 4);
     assert_eq!(delta.after_char_count, 5);
+}
+
+/// C-6: `create_view` must yield the buffer's deterministic default config, independent of which
+/// view most recently executed a command (which used to leak into new views via shared executor
+/// scratch state).
+#[test]
+fn create_view_config_is_independent_of_last_active_view() {
+    let mut ws = Workspace::new();
+    let OpenBufferResult {
+        buffer_id,
+        view_id: view_a,
+    } = ws
+        .open_buffer(Some("file:///demo.txt".to_string()), "abc\n", 80)
+        .unwrap();
+
+    let default_tab_width = ws.tab_width_for_view(view_a).unwrap();
+    let custom_tab_width = default_tab_width + 3;
+
+    // Give view A a distinct tab width, then execute on A so its config loads into the shared
+    // executor.
+    ws.execute(
+        view_a,
+        Command::View(ViewCommand::SetTabWidth {
+            width: custom_tab_width,
+        }),
+    )
+    .unwrap();
+    ws.execute(
+        view_a,
+        Command::Cursor(CursorCommand::MoveTo { line: 0, column: 1 }),
+    )
+    .unwrap();
+    assert_eq!(ws.tab_width_for_view(view_a).unwrap(), custom_tab_width);
+
+    // A plain new view must NOT inherit view A's tab width; it gets the buffer default.
+    let view_c = ws.create_view(buffer_id, 80).unwrap();
+    assert_eq!(
+        ws.tab_width_for_view(view_c).unwrap(),
+        default_tab_width,
+        "create_view must use the deterministic default, not view A's scratch config"
+    );
+
+    // create_view_from(view_a) explicitly clones view A's config.
+    let view_d = ws.create_view_from(view_a, 80).unwrap();
+    assert_eq!(
+        ws.tab_width_for_view(view_d).unwrap(),
+        custom_tab_width,
+        "create_view_from must clone the parent view's config"
+    );
+
+    // Cursor/selection are still reset independently for the cloned view.
+    assert_eq!(
+        ws.cursor_position_for_view(view_d).unwrap(),
+        Position::new(0, 0)
+    );
 }
