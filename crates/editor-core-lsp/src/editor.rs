@@ -15,14 +15,15 @@ use crate::lsp_events::{
     LspServerRequestPolicy,
 };
 use crate::lsp_sync::{
-    LspCoordinateConverter, LspPosition, LspRange, canonical_semantic_token_modifier_bit,
-    canonical_semantic_token_type_index, encode_semantic_style_id, semantic_tokens_to_intervals,
+    DeltaCalculator, LspCoordinateConverter, LspPosition, LspRange, TextChange,
+    canonical_semantic_token_modifier_bit, canonical_semantic_token_type_index,
+    encode_semantic_style_id, semantic_tokens_to_intervals, text_changes_for_text_delta,
 };
 use crate::lsp_text_edits::{apply_text_edits, workspace_edit_text_edits_for_uri};
 use editor_core::processing::{DocumentProcessor, ProcessingEdit};
 use editor_core::{
     DecorationLayerId, Diagnostic, DiagnosticRange, DiagnosticSeverity, EditorStateManager,
-    FoldRegion, Interval, LineIndex, StyleId, StyleLayerId,
+    FoldRegion, Interval, LineIndex, StyleId, StyleLayerId, TextDelta,
 };
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -250,6 +251,11 @@ pub struct LspSession {
     document: LspDocument,
     extra_documents: HashMap<String, LspDocument>,
 
+    /// Mirror of the active document's text, kept in lockstep with what has been sent to the
+    /// server via `didChange`. Used to translate a [`TextDelta`] into LSP ranges without the
+    /// caller having to infer them. Only tracks the active document.
+    change_calculator: DeltaCalculator,
+
     server_command: String,
     server_args: Vec<String>,
     server_info: Option<LspServerInfo>,
@@ -354,6 +360,8 @@ impl LspSession {
 
         client.notify("initialized", json!({}))?;
 
+        let change_calculator = DeltaCalculator::from_text(&initial_text);
+
         client.notify(
             "textDocument/didOpen",
             json!({
@@ -370,6 +378,7 @@ impl LspSession {
             client,
             document,
             extra_documents: HashMap::new(),
+            change_calculator,
             server_command,
             server_args,
             server_info,
@@ -731,17 +740,37 @@ impl LspSession {
     }
 
     /// Send `textDocument/didChange` for the active document with multiple changes.
+    ///
+    /// On success the internal [`DeltaCalculator`] mirror is advanced by the same changes so it
+    /// stays aligned with the server regardless of whether callers drive edits through this manual
+    /// range API or through [`did_change_from_text_delta`](Self::did_change_from_text_delta).
     pub fn did_change_many(&mut self, changes: Vec<LspContentChange>) -> Result<(), String> {
         if changes.is_empty() {
             return Ok(());
         }
 
+        self.send_active_did_change(&changes)?;
+
+        // Keep the mirror in sync with what we just told the server (changes apply in order).
+        for change in &changes {
+            self.change_calculator.apply_change(&TextChange {
+                range: change.range,
+                text: change.text.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Send a `textDocument/didChange` for the active document without touching the internal
+    /// mirror. Callers are responsible for advancing `change_calculator` exactly once per change
+    /// set (either before or after calling this).
+    fn send_active_did_change(&mut self, changes: &[LspContentChange]) -> Result<(), String> {
         // Compute the next version but only commit it after the notification is sent, so a send
         // failure does not leave the tracked version ahead of what the server actually received.
         let next_version = self.document.version.saturating_add(1);
 
         let content_changes = changes
-            .into_iter()
+            .iter()
             .map(|change| {
                 json!({
                     "range": lsp_range_to_json(&change.range),
@@ -765,6 +794,51 @@ impl LspSession {
         self.document.version = next_version;
         self.schedule_refresh(self.auto_refresh.delay);
         Ok(())
+    }
+
+    /// Send `textDocument/didChange` for the active document from the [`TextDelta`] a single edit
+    /// actually produced.
+    ///
+    /// Unlike [`did_change_many`](Self::did_change_many) — which requires the caller to infer the
+    /// changed range — this consumes the result of
+    /// `EditorStateManager::take_last_text_delta()` directly, so multi-character deletions (e.g.
+    /// auto-pair deletion removing two characters at once), multi-cursor edits, and re-indentation
+    /// are all handled correctly.
+    ///
+    /// `delta.before_char_count` must equal the current mirror character count, i.e. the caller
+    /// must take and forward a delta after every edit without skipping any.
+    ///
+    /// The internal mirror only tracks the session's *active* document and is not reset when the
+    /// active document changes ([`set_active_document`](Self::set_active_document) /
+    /// [`open_document`](Self::open_document)). This method is therefore intended for
+    /// single-document sessions; for multi-document editing drive changes through
+    /// [`crate::workspace_sync::LspWorkspaceSync`], which keeps a per-URI mirror.
+    pub fn did_change_from_text_delta(&mut self, delta: &TextDelta) -> Result<(), String> {
+        if delta.is_empty() {
+            return Ok(());
+        }
+
+        debug_assert_eq!(
+            delta.before_char_count,
+            self.change_calculator.char_count(),
+            "TextDelta before_char_count must match the LSP mirror; a delta was skipped or applied out of order"
+        );
+
+        // `text_changes_for_text_delta` advances `change_calculator` by exactly one delta, so the
+        // send path below must not touch the mirror again. If the send then fails, the mirror is
+        // left one step ahead of the server — but a send failure means the server pipe is dead and
+        // the session is disabled (see `send_active_did_change`), so no further didChange follows
+        // and the drift is inert.
+        let changes = text_changes_for_text_delta(&mut self.change_calculator, delta);
+        let content_changes = changes
+            .into_iter()
+            .map(|c| LspContentChange {
+                range: c.range,
+                text: c.text,
+            })
+            .collect::<Vec<_>>();
+
+        self.send_active_did_change(&content_changes)
     }
 
     /// Send `textDocument/didOpen` for a new document and track its version.
