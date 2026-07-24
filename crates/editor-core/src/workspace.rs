@@ -349,6 +349,19 @@ fn apply_selection_delta(
     }
 }
 
+/// Coalesce a freshly produced delta into a slot that may still hold a previously produced but
+/// not-yet-consumed delta.
+///
+/// A consumer that only reads the latest stored delta (e.g. LSP incremental sync, search anchor
+/// shifting) would otherwise lose the earlier edit when two edits happen between consumptions.
+/// Merging keeps the slot equivalent to "all edits since the last take".
+fn coalesce_delta_slot(slot: &mut Option<Arc<TextDelta>>, next: &Arc<TextDelta>) {
+    *slot = Some(match slot.take() {
+        Some(existing) => Arc::new(TextDelta::merge(&existing, next)),
+        None => next.clone(),
+    });
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct BookmarkSet {
     anchors: Vec<TextAnchor>,
@@ -1317,17 +1330,18 @@ impl Workspace {
 
         if buffer_text_changed || buffer_derived_changed {
             // Broadcast to all views of this buffer.
-            let delta_arc = delta.clone();
-            if let Some(delta_arc) = delta_arc {
-                buffer.last_text_delta = Some(delta_arc.clone());
+            //
+            // Coalesce (merge) into the delta slots rather than overwrite: a consumer that has not
+            // taken the previous delta yet must still observe this edit. A change without a text
+            // delta (e.g. a style-only change) must NOT clear an unconsumed text delta.
+            if let Some(delta_arc) = delta.clone() {
+                coalesce_delta_slot(&mut buffer.last_text_delta, &delta_arc);
                 for other in views.values_mut() {
                     if other.buffer != buffer_id {
                         continue;
                     }
-                    other.last_text_delta = Some(delta_arc.clone());
+                    coalesce_delta_slot(&mut other.last_text_delta, &delta_arc);
                 }
-            } else {
-                buffer.last_text_delta = None;
             }
 
             // Shift other views' cursor/selections through the delta (if any).
@@ -2388,14 +2402,16 @@ impl Workspace {
                 }
 
                 if let Some(ref delta_arc) = delta {
-                    buffer.last_text_delta = Some(delta_arc.clone());
+                    // Coalesce into the delta slots (see `coalesce_delta_slot`) so an unconsumed
+                    // delta from a prior edit is not lost.
+                    coalesce_delta_slot(&mut buffer.last_text_delta, delta_arc);
                     let new_index = buffer.executor.editor().line_index();
                     for view in self.views.values_mut() {
                         if view.buffer != buffer_id {
                             continue;
                         }
 
-                        view.last_text_delta = Some(delta_arc.clone());
+                        coalesce_delta_slot(&mut view.last_text_delta, delta_arc);
 
                         view.core.cursor_position = apply_position_delta(
                             &before_line_index,
@@ -2427,7 +2443,7 @@ impl Workspace {
                         );
                     }
                 } else {
-                    buffer.last_text_delta = None;
+                    // No text delta for this change; do not clear an unconsumed text delta.
                     for view in self.views.values_mut() {
                         if view.buffer == buffer_id {
                             Self::notify_view(view, StateChangeType::DocumentModified, None);
