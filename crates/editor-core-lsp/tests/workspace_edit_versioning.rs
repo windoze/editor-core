@@ -26,9 +26,8 @@ fn shell_command(script: &str) -> ProcessCommand {
 
 /// A server that just answers `initialize` and then idles.
 fn idle_server_script() -> String {
-    let initialize = framed_message_script(
-        r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#,
-    );
+    let initialize =
+        framed_message_script(r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#);
     format!("{initialize}; sleep 30")
 }
 
