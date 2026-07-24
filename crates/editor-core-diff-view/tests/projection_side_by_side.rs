@@ -165,7 +165,12 @@ fn cached_row_mapping_matches_linear_scan_reference() {
         let mut current = 0usize;
         for (unified, row) in p.rows().iter().enumerate() {
             let has = row.slots().iter().any(|slot| match slot {
-                RowSlot::Line { side: s, change, gutter, .. } => {
+                RowSlot::Line {
+                    side: s,
+                    change,
+                    gutter,
+                    ..
+                } => {
                     *s == side
                         || (*change == DiffLineKind::Context
                             && match side {

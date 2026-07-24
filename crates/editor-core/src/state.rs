@@ -570,8 +570,10 @@ impl EditorStateManager {
         );
         // A bare `SetViewportWidth` may be a no-op (width unchanged); every other view command
         // that classifies as `ViewportChanged` mutates config unconditionally.
-        let command_kind = if matches!(&command, Command::View(ViewCommand::SetViewportWidth { .. }))
-        {
+        let command_kind = if matches!(
+            &command,
+            Command::View(ViewCommand::SetViewportWidth { .. })
+        ) {
             ViewChangeKind::ViewportWidthOnly
         } else {
             ViewChangeKind::Other

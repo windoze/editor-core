@@ -22,7 +22,11 @@ fn delete_with_overflowing_length_is_rejected() {
         matches!(err, CommandError::InvalidRange { start: 0, .. }),
         "expected InvalidRange, got {err:?}"
     );
-    assert_eq!(executor.editor().get_text(), before, "text must be unchanged");
+    assert_eq!(
+        executor.editor().get_text(),
+        before,
+        "text must be unchanged"
+    );
 }
 
 /// Same guard for `Replace`.
@@ -43,7 +47,11 @@ fn replace_with_overflowing_length_is_rejected() {
         matches!(err, CommandError::InvalidRange { start: 1, .. }),
         "expected InvalidRange, got {err:?}"
     );
-    assert_eq!(executor.editor().get_text(), before, "text must be unchanged");
+    assert_eq!(
+        executor.editor().get_text(),
+        before,
+        "text must be unchanged"
+    );
 }
 
 /// Nested collapsed folds must not double-count hidden lines, which previously underflowed

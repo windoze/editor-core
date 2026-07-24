@@ -1,6 +1,6 @@
 use editor_core::{
-    Command, CursorCommand, EditCommand, OpenBufferResult, Position, StyleCommand,
-    ViewCommand, ViewSmoothScrollState, Workspace,
+    Command, CursorCommand, EditCommand, OpenBufferResult, Position, StyleCommand, ViewCommand,
+    ViewSmoothScrollState, Workspace,
 };
 
 #[test]

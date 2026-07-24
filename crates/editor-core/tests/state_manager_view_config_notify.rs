@@ -36,7 +36,9 @@ fn set_tab_key_behavior_notifies_subscribers() {
 
 #[test]
 fn set_auto_pairs_enabled_notifies_subscribers() {
-    assert_notified(Command::View(ViewCommand::SetAutoPairsEnabled { enabled: true }));
+    assert_notified(Command::View(ViewCommand::SetAutoPairsEnabled {
+        enabled: true,
+    }));
 }
 
 #[test]

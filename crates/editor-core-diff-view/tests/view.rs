@@ -163,7 +163,10 @@ fn view_width_is_derived_from_projection_so_cursor_mapping_stays_consistent() {
         .logical_position_to_visual(1, 0)
         .expect("line 1 is visible")
         .0;
-    assert_eq!(side_row, 3, "second logical line starts at side visual row 3");
+    assert_eq!(
+        side_row, 3,
+        "second logical line starts at side visual row 3"
+    );
 
     let unified = view
         .unified_row_for_side_visual_row(side_row)

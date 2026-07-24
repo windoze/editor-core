@@ -878,7 +878,10 @@ mod tests {
         let text2 = "abcde\u{0301}f";
         let wraps2 = calculate_wrap_points(text2, 5);
         assert_eq!(wraps2.len(), 1);
-        assert_eq!(wraps2[0].char_index, 6, "wrap before 'f', after the combining mark");
+        assert_eq!(
+            wraps2[0].char_index, 6,
+            "wrap before 'f', after the combining mark"
+        );
     }
 
     #[test]
