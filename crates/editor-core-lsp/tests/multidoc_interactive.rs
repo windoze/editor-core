@@ -88,9 +88,11 @@ fn poll_until_signal(session: &mut LspSession, line_index: &LineIndex) -> Vec<Ls
         for event in session.drain_events() {
             match event {
                 LspEvent::Response(resp) => responses.push(resp),
-                LspEvent::Notification(
-                    editor_core_lsp::LspNotification::LogMessage(params),
-                ) if params.message == "replies-sent" => saw_signal = true,
+                LspEvent::Notification(editor_core_lsp::LspNotification::LogMessage(params))
+                    if params.message == "replies-sent" =>
+                {
+                    saw_signal = true
+                }
                 _ => {}
             }
         }

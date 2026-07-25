@@ -85,7 +85,10 @@ impl LspWorkspaceSync {
         ensure_workspace_apply_edit_is_deferred(&mut session);
 
         let mut calculators = HashMap::new();
-        calculators.insert(initial_uri.clone(), DeltaCalculator::from_text(&initial_text));
+        calculators.insert(
+            initial_uri.clone(),
+            DeltaCalculator::from_text(&initial_text),
+        );
 
         let mut derived = HashMap::new();
         derived.insert(initial_uri, DocDerivedState::default());
@@ -297,14 +300,13 @@ impl LspWorkspaceSync {
                 (!already_pending, state.sem_result_id.clone())
             };
             if needs_sem && self.session.supports_semantic_tokens() {
-                let id = if self.session.supports_semantic_tokens_delta()
-                    && prev_result_id.is_some()
-                {
-                    self.session
-                        .request_semantic_tokens_delta_for_uri(&uri, prev_result_id)?
-                } else {
-                    self.session.request_semantic_tokens_full_for_uri(&uri)?
-                };
+                let id =
+                    if self.session.supports_semantic_tokens_delta() && prev_result_id.is_some() {
+                        self.session
+                            .request_semantic_tokens_delta_for_uri(&uri, prev_result_id)?
+                    } else {
+                        self.session.request_semantic_tokens_full_for_uri(&uri)?
+                    };
                 self.derived.entry(uri.clone()).or_default().pending_sem = Some((id, version));
             }
 

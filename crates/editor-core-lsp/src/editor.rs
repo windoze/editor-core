@@ -1728,11 +1728,7 @@ impl LspSession {
     /// Document formatting (`textDocument/formatting`) for a specific document URI.
     ///
     /// `options` should follow LSP `FormattingOptions`.
-    pub fn request_formatting_for_uri(
-        &mut self,
-        uri: &str,
-        options: Value,
-    ) -> Result<u64, String> {
+    pub fn request_formatting_for_uri(&mut self, uri: &str, options: Value) -> Result<u64, String> {
         self.ensure_tracked(uri)?;
         self.request_for_uri(
             "textDocument/formatting",
@@ -1771,7 +1767,11 @@ impl LspSession {
         if let Some(obj) = params.as_object_mut() {
             obj.insert("options".to_string(), options);
         }
-        self.request_for_uri("textDocument/rangeFormatting", Some(uri.to_string()), params)
+        self.request_for_uri(
+            "textDocument/rangeFormatting",
+            Some(uri.to_string()),
+            params,
+        )
     }
 
     /// On-type formatting (`textDocument/onTypeFormatting`) for the active document.

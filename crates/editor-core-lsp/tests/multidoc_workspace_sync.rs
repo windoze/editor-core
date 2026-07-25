@@ -113,7 +113,8 @@ fn semantic_tokens_are_routed_per_uri_to_their_buffers() {
     // Poll until both responses have been routed and applied.
     for _ in 0..50 {
         sync.poll_workspace(&mut workspace).expect("poll workspace");
-        if first_row_has_style(&mut workspace, view_a) && first_row_has_style(&mut workspace, view_b)
+        if first_row_has_style(&mut workspace, view_a)
+            && first_row_has_style(&mut workspace, view_b)
         {
             break;
         }
