@@ -271,6 +271,13 @@ pub struct LspResponse {
     pub id: u64,
     /// Method name (if known / tracked by the session).
     pub method: String,
+    /// Source document URI for requests issued via a `*_for_uri` API.
+    ///
+    /// `None` for requests targeting the active document via the legacy no-URI methods, or for
+    /// workspace-level requests with no document association (e.g. `workspace/symbol`). This lets
+    /// consumers route a response to the correct document/view when a single session serves
+    /// multiple open documents.
+    pub uri: Option<String>,
     /// Result payload (if successful).
     pub result: Option<Value>,
     /// Error payload (if failed).
