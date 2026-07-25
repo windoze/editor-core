@@ -13,7 +13,7 @@ keywords = ["editor", "skia", "rendering"]
 categories = ["graphics", "text-editors"]
 
 [dependencies]
-editor-core = { version = "0.4.3", path = "../editor-core" }
+editor-core = { version = "0.5.0", path = "../editor-core" }
 thiserror = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -13,6 +13,6 @@ keywords = ["editor", "text-editor", "unicode", "lsp", "headless"]
 categories = ["text-editors", "text-processing"]
 
 [dependencies]
-editor-core = { version = "0.4.3", path = "../editor-core" }
+editor-core = { version = "0.5.0", path = "../editor-core" }
 regex = "1.11"
 
