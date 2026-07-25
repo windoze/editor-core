@@ -8,8 +8,13 @@
 //! - server `publishDiagnostics` can be routed into the correct document's derived state
 //! - `WorkspaceEdit` payloads can be applied across multiple open documents
 
-use crate::editor::{LspContentChange, LspDocument, LspSession, LspSessionStartOptions};
-use crate::lsp_events::{LspEvent, LspNotification, LspServerRequestMode, LspServerRequestPolicy};
+use crate::editor::{
+    LspContentChange, LspDocument, LspSession, LspSessionStartOptions,
+    folding_ranges_result_to_processing_edit, semantic_tokens_result_to_update,
+};
+use crate::lsp_events::{
+    LspEvent, LspNotification, LspResponse, LspServerRequestMode, LspServerRequestPolicy,
+};
 use crate::lsp_sync::{
     DeltaCalculator, LspCoordinateConverter, LspPosition, LspRange, TextChange,
     text_changes_for_text_delta,
@@ -44,10 +49,29 @@ pub struct AppliedWorkspaceEditDocument {
     pub lsp_changes: Vec<LspContentChange>,
 }
 
+/// Per-document derived-state bookkeeping for multi-document semantic tokens / folding.
+///
+/// The single-active-document auto-refresh in [`LspSession`] keeps one session-level semantic
+/// baseline; to drive N documents from one shared session we lift that baseline to a per-URI map
+/// here and route the (URI-tagged) responses back to the correct buffer.
+#[derive(Debug, Default, Clone)]
+struct DocDerivedState {
+    /// Baseline `resultId` for the next semantic-tokens delta request.
+    sem_result_id: Option<String>,
+    /// Baseline semantic-token data for delta application.
+    sem_data: Vec<u32>,
+    /// In-flight semantic-tokens request: `(request_id, document_version_at_request)`.
+    pending_sem: Option<(u64, i32)>,
+    /// In-flight folding-ranges request: `(request_id, document_version_at_request)`.
+    pending_fold: Option<(u64, i32)>,
+}
+
 /// A small helper that wires an [`LspSession`] to an [`editor_core::Workspace`].
 pub struct LspWorkspaceSync {
     session: LspSession,
     calculators: HashMap<String, DeltaCalculator>,
+    /// Per-URI derived state for multi-document semantic tokens / folding refresh.
+    derived: HashMap<String, DocDerivedState>,
     queued_events: Vec<LspEvent>,
     auto_apply_workspace_edits: bool,
 }
@@ -61,11 +85,15 @@ impl LspWorkspaceSync {
         ensure_workspace_apply_edit_is_deferred(&mut session);
 
         let mut calculators = HashMap::new();
-        calculators.insert(initial_uri, DeltaCalculator::from_text(&initial_text));
+        calculators.insert(initial_uri.clone(), DeltaCalculator::from_text(&initial_text));
+
+        let mut derived = HashMap::new();
+        derived.insert(initial_uri, DocDerivedState::default());
 
         Ok(Self {
             session,
             calculators,
+            derived,
             queued_events: Vec::new(),
             auto_apply_workspace_edits: true,
         })
@@ -82,6 +110,7 @@ impl LspWorkspaceSync {
         Self {
             session,
             calculators: HashMap::new(),
+            derived: HashMap::new(),
             queued_events: Vec::new(),
             auto_apply_workspace_edits: true,
         }
@@ -144,6 +173,7 @@ impl LspWorkspaceSync {
 
         self.calculators
             .insert(uri.clone(), DeltaCalculator::from_text(&text));
+        self.derived.entry(uri).or_default();
 
         Ok(())
     }
@@ -159,6 +189,7 @@ impl LspWorkspaceSync {
             self.session.close_document(&uri)?;
         }
         self.calculators.remove(&uri);
+        self.derived.remove(&uri);
         Ok(())
     }
 
@@ -242,6 +273,55 @@ impl LspWorkspaceSync {
         Ok(())
     }
 
+    /// Request semantic tokens + folding ranges for every tracked document, so a shared session
+    /// can drive derived state for all open documents (not just the active one).
+    ///
+    /// Semantic tokens use a per-URI delta baseline when available (falling back to a full
+    /// request). Responses are routed back to the correct buffer in [`Self::poll_workspace`].
+    /// Requests are skipped for a document that already has one in flight at the same version.
+    pub fn refresh_derived_state_for_all_documents(
+        &mut self,
+        workspace: &Workspace,
+    ) -> Result<(), String> {
+        let uris: Vec<String> = self.derived.keys().cloned().collect();
+        for uri in uris {
+            let Some(doc) = self.session.document_for_uri(&uri) else {
+                continue;
+            };
+            let version = doc.version;
+
+            // Semantic tokens: delta when we hold a baseline, else full.
+            let (needs_sem, prev_result_id) = {
+                let state = self.derived.entry(uri.clone()).or_default();
+                let already_pending = matches!(state.pending_sem, Some((_, v)) if v == version);
+                (!already_pending, state.sem_result_id.clone())
+            };
+            if needs_sem && self.session.supports_semantic_tokens() {
+                let id = if self.session.supports_semantic_tokens_delta()
+                    && prev_result_id.is_some()
+                {
+                    self.session
+                        .request_semantic_tokens_delta_for_uri(&uri, prev_result_id)?
+                } else {
+                    self.session.request_semantic_tokens_full_for_uri(&uri)?
+                };
+                self.derived.entry(uri.clone()).or_default().pending_sem = Some((id, version));
+            }
+
+            // Folding ranges.
+            let needs_fold = {
+                let state = self.derived.entry(uri.clone()).or_default();
+                !matches!(state.pending_fold, Some((_, v)) if v == version)
+            };
+            if needs_fold && self.session.supports_folding_range() {
+                let id = self.session.request_folding_ranges_for_uri(&uri)?;
+                self.derived.entry(uri.clone()).or_default().pending_fold = Some((id, version));
+            }
+        }
+        let _ = workspace;
+        Ok(())
+    }
+
     fn drain_and_handle_session_events(&mut self, workspace: &mut Workspace) -> Result<(), String> {
         let events = self.session.drain_events();
         for event in events {
@@ -266,9 +346,113 @@ impl LspWorkspaceSync {
                     self.session
                         .respond_to_server_request(request.id, response)?;
                 }
+                LspEvent::Response(response) if self.is_tracked_derived_response(&response) => {
+                    self.handle_derived_response(workspace, response)?;
+                }
                 other => self.queued_events.push(other),
             }
         }
+        Ok(())
+    }
+
+    /// Returns `true` if `response` corresponds to a semantic-tokens/folding request this wrapper
+    /// issued via [`Self::refresh_derived_state_for_all_documents`].
+    fn is_tracked_derived_response(&self, response: &LspResponse) -> bool {
+        let Some(uri) = response.uri.as_deref() else {
+            return false;
+        };
+        let Some(state) = self.derived.get(uri) else {
+            return false;
+        };
+        let id = response.id;
+        matches!(state.pending_sem, Some((pid, _)) if pid == id)
+            || matches!(state.pending_fold, Some((pid, _)) if pid == id)
+    }
+
+    /// Apply a URI-tagged semantic-tokens / folding response to its buffer, honoring the
+    /// document version recorded when the request was issued (stale responses are dropped).
+    fn handle_derived_response(
+        &mut self,
+        workspace: &mut Workspace,
+        response: LspResponse,
+    ) -> Result<(), String> {
+        let Some(uri) = response.uri.clone() else {
+            return Ok(());
+        };
+        let Some(state) = self.derived.get(&uri) else {
+            return Ok(());
+        };
+
+        let is_sem = matches!(state.pending_sem, Some((pid, _)) if pid == response.id);
+        let is_fold = matches!(state.pending_fold, Some((pid, _)) if pid == response.id);
+
+        // Version recorded at request time; drop if the document has since changed.
+        let request_version = if is_sem {
+            state.pending_sem.map(|(_, v)| v)
+        } else {
+            state.pending_fold.map(|(_, v)| v)
+        };
+
+        // Clear the in-flight marker regardless of outcome.
+        if let Some(state) = self.derived.get_mut(&uri) {
+            if is_sem {
+                state.pending_sem = None;
+            }
+            if is_fold {
+                state.pending_fold = None;
+            }
+        }
+
+        let Some(id) = workspace.buffer_id_for_uri(&uri) else {
+            return Ok(());
+        };
+        let current_version = self.session.document_for_uri(&uri).map(|d| d.version);
+        if request_version != current_version {
+            // Stale: the document changed after we issued the request. A newer refresh will follow.
+            return Ok(());
+        }
+
+        let result = response.result.unwrap_or(Value::Null);
+        let text = workspace
+            .buffer_text(id)
+            .map_err(|err| format!("Workspace buffer not found (id={}): {:?}", id.get(), err))?;
+        let line_index = LineIndex::from_text(&text);
+
+        if is_sem {
+            let baseline = self
+                .derived
+                .get(&uri)
+                .map(|s| s.sem_data.clone())
+                .unwrap_or_default();
+            if let Some(update) = semantic_tokens_result_to_update(
+                &result,
+                &baseline,
+                self.session.semantic_legend(),
+                &line_index,
+            ) {
+                if let Some(state) = self.derived.get_mut(&uri) {
+                    state.sem_result_id = update.result_id;
+                    state.sem_data = update.data;
+                }
+                if let Some(edit) = update.edit {
+                    workspace
+                        .apply_processing_edits(id, vec![edit])
+                        .map_err(|err| format!("apply semantic tokens edits 失败: {:?}", err))?;
+                }
+            } else if result.get("edits").and_then(Value::as_array).is_some() {
+                // Delta we couldn't apply (no/absent baseline); reset so the next refresh is full.
+                if let Some(state) = self.derived.get_mut(&uri) {
+                    state.sem_result_id = None;
+                    state.sem_data.clear();
+                }
+            }
+        } else if is_fold {
+            let edit = folding_ranges_result_to_processing_edit(&result);
+            workspace
+                .apply_processing_edits(id, vec![edit])
+                .map_err(|err| format!("apply folding edits 失败: {:?}", err))?;
+        }
+
         Ok(())
     }
 
