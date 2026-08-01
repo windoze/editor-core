@@ -8,6 +8,7 @@ mod headless;
 mod metal;
 mod state;
 mod style;
+mod text_runs;
 
 pub(crate) use font::FontVariant;
 use font::{FontSet, ShapedRunCache};
@@ -20,7 +21,10 @@ pub use state::SkiaRenderer;
 use super::*;
 use editor_core::{
     DOCUMENT_LINK_STYLE_ID, IME_MARKED_TEXT_STYLE_ID,
-    snapshot::{ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind, HeadlessGrid},
+    snapshot::{
+        ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
+        HeadlessGrid,
+    },
 };
 use skia_safe::Shaper;
 use skia_safe::shaper::run_handler::{Buffer, RunInfo};
