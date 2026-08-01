@@ -925,6 +925,12 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(diagnosticList.count, 1)
         XCTAssertEqual(diagnosticList[0]["message"] as? String, "value is unused")
         XCTAssertEqual(diagnosticList[0]["severity"] as? String, "warning")
+        let diagnosticsSnapshot = try ui.diagnosticsSnapshot()
+        XCTAssertEqual(diagnosticsSnapshot.diagnostics.count, 1)
+        XCTAssertEqual(diagnosticsSnapshot.diagnostics[0].message, "value is unused")
+        XCTAssertEqual(diagnosticsSnapshot.diagnostics[0].severity, .warning)
+        XCTAssertEqual(diagnosticsSnapshot.diagnostics[0].code, "unused")
+        XCTAssertEqual(diagnosticsSnapshot.diagnostics[0].source, "unit-test")
 
         let inlayHints = """
         [
@@ -944,6 +950,11 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(inlayDecorations.first?["text"] as? String, ": i32")
         let inlayKind = try XCTUnwrap(inlayDecorations.first?["kind"] as? [String: Any])
         XCTAssertEqual(inlayKind["kind"] as? String, "inlay_hint")
+        let decorationsSnapshot = try ui.decorationsSnapshot()
+        let typedInlayLayer = try XCTUnwrap(decorationsSnapshot.layers.first { $0.layer == 1 })
+        let typedInlay = try XCTUnwrap(typedInlayLayer.decorations.first)
+        XCTAssertEqual(typedInlay.text, ": i32")
+        XCTAssertEqual(typedInlay.kind, .object(["kind": .string("inlay_hint")]))
 
         let documentSymbols = """
         [
@@ -970,6 +981,11 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(symbolList.first?["name"] as? String, "main")
         let symbolKind = try XCTUnwrap(symbolList.first?["kind"] as? [String: Any])
         XCTAssertEqual(symbolKind["kind"] as? String, "function")
+        let symbolsSnapshot = try ui.documentSymbolsSnapshot()
+        let typedSymbol = try XCTUnwrap(symbolsSnapshot.symbols.first)
+        XCTAssertEqual(typedSymbol.name, "main")
+        XCTAssertEqual(typedSymbol.detail, "fn()")
+        XCTAssertEqual(typedSymbol.kind, .object(["kind": .string("function")]))
 
         try ui.lspApplySemanticTokens([0, 3, 4, 7, 0])
 
@@ -980,6 +996,12 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(semanticIntervals.first?["start"] as? Int, 3)
         XCTAssertEqual(semanticIntervals.first?["end"] as? Int, 7)
         XCTAssertEqual(semanticIntervals.first?["style_id"] as? Int, 0x0007_0000)
+        let styleSnapshot = try ui.styleIntervalsSnapshot(start: 0, end: 24)
+        let typedSemanticLayer = try XCTUnwrap(styleSnapshot.layers.first { $0.layer == 1 })
+        let typedSemanticInterval = try XCTUnwrap(typedSemanticLayer.intervals.first)
+        XCTAssertEqual(typedSemanticInterval.start, 3)
+        XCTAssertEqual(typedSemanticInterval.end, 7)
+        XCTAssertEqual(typedSemanticInterval.styleId, 0x0007_0000)
 
         let foldingRanges = """
         [
@@ -999,6 +1021,10 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && ($0["end_line"] as? Int) == 2
                 && ($0["is_collapsed"] as? Bool) == false
         })
+        let lspFoldingSnapshot = try ui.foldingRegionsSnapshot()
+        XCTAssertTrue(lspFoldingSnapshot.regions.contains {
+            $0.startLine == 0 && $0.endLine == 2 && $0.isCollapsed == false
+        })
 
         try ui.fold(startLine: 0, endLine: 2)
 
@@ -1008,6 +1034,10 @@ final class EditorCoreUIFFITests: XCTestCase {
             ($0["start_line"] as? Int) == 0
                 && ($0["end_line"] as? Int) == 2
                 && ($0["is_collapsed"] as? Bool) == true
+        })
+        let foldingSnapshot = try ui.foldingRegionsSnapshot()
+        XCTAssertTrue(foldingSnapshot.regions.contains {
+            $0.startLine == 0 && $0.endLine == 2 && $0.isCollapsed == true
         })
     }
 

@@ -1158,6 +1158,14 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    public func diagnosticsSnapshot() throws -> EcuDiagnosticsSnapshot {
+        try Self.decodeSnapshot(
+            EcuDiagnosticsSnapshot.self,
+            from: diagnosticsJSON(),
+            context: "editor_ui_diagnostics_snapshot"
+        )
+    }
+
     public func decorationsJSON() throws -> String {
         guard let ptr = editor_core_ui_ffi_editor_ui_decorations_json(handle) else {
             throw EditorCoreUIFFIError.ffiStatus(
@@ -1168,6 +1176,14 @@ public final class EditorUI {
         }
         defer { editor_core_ui_ffi_string_free(ptr) }
         return String(cString: ptr)
+    }
+
+    public func decorationsSnapshot() throws -> EcuDecorationsSnapshot {
+        try Self.decodeSnapshot(
+            EcuDecorationsSnapshot.self,
+            from: decorationsJSON(),
+            context: "editor_ui_decorations_snapshot"
+        )
     }
 
     public func documentSymbolsJSON() throws -> String {
@@ -1182,6 +1198,14 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    public func documentSymbolsSnapshot() throws -> EcuDocumentSymbolsSnapshot {
+        try Self.decodeSnapshot(
+            EcuDocumentSymbolsSnapshot.self,
+            from: documentSymbolsJSON(),
+            context: "editor_ui_document_symbols_snapshot"
+        )
+    }
+
     public func foldingRegionsJSON() throws -> String {
         guard let ptr = editor_core_ui_ffi_editor_ui_folding_regions_json(handle) else {
             throw EditorCoreUIFFIError.ffiStatus(
@@ -1194,6 +1218,14 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    public func foldingRegionsSnapshot() throws -> EcuFoldingRegionsSnapshot {
+        try Self.decodeSnapshot(
+            EcuFoldingRegionsSnapshot.self,
+            from: foldingRegionsJSON(),
+            context: "editor_ui_folding_regions_snapshot"
+        )
+    }
+
     public func styleIntervalsJSON(start: UInt32, end: UInt32) throws -> String {
         guard let ptr = editor_core_ui_ffi_editor_ui_style_intervals_json(handle, start, end) else {
             throw EditorCoreUIFFIError.ffiStatus(
@@ -1204,6 +1236,14 @@ public final class EditorUI {
         }
         defer { editor_core_ui_ffi_string_free(ptr) }
         return String(cString: ptr)
+    }
+
+    public func styleIntervalsSnapshot(start: UInt32, end: UInt32) throws -> EcuStyleIntervalsSnapshot {
+        try Self.decodeSnapshot(
+            EcuStyleIntervalsSnapshot.self,
+            from: styleIntervalsJSON(start: start, end: end),
+            context: "editor_ui_style_intervals_snapshot"
+        )
     }
 
     @discardableResult
@@ -1226,6 +1266,25 @@ public final class EditorUI {
             object[key] = value
         }
         return try executeCommandObject(object)
+    }
+
+    private static func decodeSnapshot<T: Decodable>(_ type: T.Type, from json: String, context: String) throws -> T {
+        guard let data = json.data(using: .utf8) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: context,
+                message: "snapshot JSON is not valid UTF-8"
+            )
+        }
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: context,
+                message: String(describing: error)
+            )
+        }
     }
 
     private static func jsonObject(for options: EcuSearchOptions) -> [String: Any] {

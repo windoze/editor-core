@@ -433,6 +433,281 @@ public struct EcuTextEdit: Equatable, Sendable {
     }
 }
 
+public indirect enum EcuJSONValue: Equatable, Sendable, Decodable {
+    case null
+    case bool(Bool)
+    case number(Double)
+    case string(String)
+    case array([EcuJSONValue])
+    case object([String: EcuJSONValue])
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([EcuJSONValue].self) {
+            self = .array(value)
+        } else {
+            self = .object(try container.decode([String: EcuJSONValue].self))
+        }
+    }
+}
+
+@frozen
+public struct EcuOffsetRange: Equatable, Sendable, Decodable {
+    public var start: UInt32
+    public var end: UInt32
+
+    public init(start: UInt32, end: UInt32) {
+        self.start = start
+        self.end = end
+    }
+}
+
+public enum EcuDiagnosticSeverity: String, Equatable, Sendable, Decodable {
+    case error
+    case warning
+    case information
+    case hint
+}
+
+@frozen
+public struct EcuDiagnostic: Equatable, Sendable, Decodable {
+    public var range: EcuOffsetRange
+    public var severity: EcuDiagnosticSeverity?
+    public var code: String?
+    public var source: String?
+    public var message: String
+    public var relatedInformationJSON: String?
+    public var dataJSON: String?
+
+    public init(
+        range: EcuOffsetRange,
+        severity: EcuDiagnosticSeverity?,
+        code: String?,
+        source: String?,
+        message: String,
+        relatedInformationJSON: String?,
+        dataJSON: String?
+    ) {
+        self.range = range
+        self.severity = severity
+        self.code = code
+        self.source = source
+        self.message = message
+        self.relatedInformationJSON = relatedInformationJSON
+        self.dataJSON = dataJSON
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case range
+        case severity
+        case code
+        case source
+        case message
+        case relatedInformationJSON = "related_information_json"
+        case dataJSON = "data_json"
+    }
+}
+
+@frozen
+public struct EcuDiagnosticsSnapshot: Equatable, Sendable, Decodable {
+    public var diagnostics: [EcuDiagnostic]
+
+    public init(diagnostics: [EcuDiagnostic]) {
+        self.diagnostics = diagnostics
+    }
+}
+
+public enum EcuDecorationPlacement: String, Equatable, Sendable, Decodable {
+    case before
+    case after
+    case aboveLine = "above_line"
+}
+
+@frozen
+public struct EcuDecoration: Equatable, Sendable, Decodable {
+    public var range: EcuOffsetRange
+    public var placement: EcuDecorationPlacement
+    public var kind: EcuJSONValue
+    public var text: String?
+    public var styles: [UInt32]
+    public var tooltip: String?
+    public var dataJSON: String?
+
+    public init(
+        range: EcuOffsetRange,
+        placement: EcuDecorationPlacement,
+        kind: EcuJSONValue,
+        text: String?,
+        styles: [UInt32],
+        tooltip: String?,
+        dataJSON: String?
+    ) {
+        self.range = range
+        self.placement = placement
+        self.kind = kind
+        self.text = text
+        self.styles = styles
+        self.tooltip = tooltip
+        self.dataJSON = dataJSON
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case range
+        case placement
+        case kind
+        case text
+        case styles
+        case tooltip
+        case dataJSON = "data_json"
+    }
+}
+
+@frozen
+public struct EcuDecorationLayerSnapshot: Equatable, Sendable, Decodable {
+    public var layer: UInt32
+    public var decorations: [EcuDecoration]
+
+    public init(layer: UInt32, decorations: [EcuDecoration]) {
+        self.layer = layer
+        self.decorations = decorations
+    }
+}
+
+@frozen
+public struct EcuDecorationsSnapshot: Equatable, Sendable, Decodable {
+    public var layers: [EcuDecorationLayerSnapshot]
+
+    public init(layers: [EcuDecorationLayerSnapshot]) {
+        self.layers = layers
+    }
+}
+
+@frozen
+public struct EcuDocumentSymbol: Equatable, Sendable, Decodable {
+    public var name: String
+    public var detail: String?
+    public var kind: EcuJSONValue
+    public var range: EcuOffsetRange
+    public var selectionRange: EcuOffsetRange
+    public var children: [EcuDocumentSymbol]
+    public var dataJSON: String?
+
+    public init(
+        name: String,
+        detail: String?,
+        kind: EcuJSONValue,
+        range: EcuOffsetRange,
+        selectionRange: EcuOffsetRange,
+        children: [EcuDocumentSymbol],
+        dataJSON: String?
+    ) {
+        self.name = name
+        self.detail = detail
+        self.kind = kind
+        self.range = range
+        self.selectionRange = selectionRange
+        self.children = children
+        self.dataJSON = dataJSON
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case detail
+        case kind
+        case range
+        case selectionRange = "selection_range"
+        case children
+        case dataJSON = "data_json"
+    }
+}
+
+@frozen
+public struct EcuDocumentSymbolsSnapshot: Equatable, Sendable, Decodable {
+    public var symbols: [EcuDocumentSymbol]
+
+    public init(symbols: [EcuDocumentSymbol]) {
+        self.symbols = symbols
+    }
+}
+
+@frozen
+public struct EcuFoldingRegion: Equatable, Sendable, Decodable {
+    public var startLine: UInt32
+    public var endLine: UInt32
+    public var isCollapsed: Bool
+    public var placeholder: String?
+
+    public init(startLine: UInt32, endLine: UInt32, isCollapsed: Bool, placeholder: String?) {
+        self.startLine = startLine
+        self.endLine = endLine
+        self.isCollapsed = isCollapsed
+        self.placeholder = placeholder
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case startLine = "start_line"
+        case endLine = "end_line"
+        case isCollapsed = "is_collapsed"
+        case placeholder
+    }
+}
+
+@frozen
+public struct EcuFoldingRegionsSnapshot: Equatable, Sendable, Decodable {
+    public var regions: [EcuFoldingRegion]
+
+    public init(regions: [EcuFoldingRegion]) {
+        self.regions = regions
+    }
+}
+
+@frozen
+public struct EcuStyleInterval: Equatable, Sendable, Decodable {
+    public var start: UInt32
+    public var end: UInt32
+    public var styleId: UInt32
+
+    public init(start: UInt32, end: UInt32, styleId: UInt32) {
+        self.start = start
+        self.end = end
+        self.styleId = styleId
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case start
+        case end
+        case styleId = "style_id"
+    }
+}
+
+@frozen
+public struct EcuStyleIntervalLayerSnapshot: Equatable, Sendable, Decodable {
+    public var layer: UInt32
+    public var intervals: [EcuStyleInterval]
+
+    public init(layer: UInt32, intervals: [EcuStyleInterval]) {
+        self.layer = layer
+        self.intervals = intervals
+    }
+}
+
+@frozen
+public struct EcuStyleIntervalsSnapshot: Equatable, Sendable, Decodable {
+    public var layers: [EcuStyleIntervalLayerSnapshot]
+
+    public init(layers: [EcuStyleIntervalLayerSnapshot]) {
+        self.layers = layers
+    }
+}
+
 // 注意：
 // - C 侧的 `EcuRgba8/EcuTheme/EcuStyleColors/EcuSelectionRange/EcuViewportState` 由 `CEditorCoreUIFFI`
 //   模块提供；Swift 侧仅做更易用的 wrapper（camelCase + Optional）。

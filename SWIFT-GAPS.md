@@ -117,6 +117,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 36 已完成：AttoEditor keymap 新增 arrow/navigation function-key token 解析，并为 `editor.move_lines_up` / `editor.move_lines_down` 建立 `super+ctrl+up/down` 默认绑定；Edit 菜单可通过同一 command id 显示并触发对应快捷键。
 - 2026-08-01 阶段 37 已完成：AttoEditor 主菜单新增独立 Selection 菜单分组，`select word/line`、`expand selection`、`add cursor above/below` 和 occurrence 命令继续复用统一 command id、keymap 与菜单 validation 路径。
 - 2026-08-01 阶段 38 已完成：AttoEditor toggle comment 不再只向 Rust core 传 line token；Swift 语言配置现在会向 `ToggleComment` command 传完整 `line` / `block_start` / `block_end` comment config，HTML/CSS/XML/Markdown 等 block-comment 语言可以走 core block comment 路径。
+- 2026-08-01 阶段 39 已完成：Swift `EditorCoreUIFFI` 在现有 derived-state JSON snapshot 之上新增 typed snapshot API，覆盖 diagnostics、decorations、document symbols、folding regions 和 style intervals，App/测试层不再必须到处手写 JSON 字典解析。
 
 ## 分层结论
 
@@ -261,19 +262,24 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 
 Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、semantic tokens、inlay hints、code lens、document links、document highlights、document symbols，以及 Tree-sitter/Sublime 产生的样式信息。
 
-阶段 5 已补齐 Swift UI binding 的主要可观测 API：
+阶段 5 已补齐 Swift UI binding 的主要可观测 JSON API，阶段 39 已在其上补齐基础 typed snapshot API：
 
 - `EditorUI.diagnosticsJSON()` 获取当前 diagnostics 列表。
 - `EditorUI.decorationsJSON()` 获取当前 decoration layers。
 - `EditorUI.documentSymbolsJSON()` 获取当前 document symbols。
 - `EditorUI.foldingRegionsJSON()` 获取当前 fold regions。
 - `EditorUI.styleIntervalsJSON(start:end:)` 获取当前 style layers 的样式区间。
+- `EditorUI.diagnosticsSnapshot()` 获取 typed diagnostics snapshot。
+- `EditorUI.decorationsSnapshot()` 获取 typed decoration layers snapshot。
+- `EditorUI.documentSymbolsSnapshot()` 获取 typed document symbols snapshot。
+- `EditorUI.foldingRegionsSnapshot()` 获取 typed folding regions snapshot。
+- `EditorUI.styleIntervalsSnapshot(start:end:)` 获取 typed style intervals snapshot。
 - `EditorUI.lspApplyDocumentSymbolsJSON(_:)` 可把 LSP document symbols result 写入 core outline。
 - `EditorUI.lspApplyFoldingRangesJSON(_:)` 可把 LSP folding ranges result 写入 core fold regions。
 
 剩余缺口已经从“Swift binding 拿不到”转为 App 层消费、模型化和统一控制：
 
-- Swift 侧目前仍以 JSON snapshot 为主，缺少 diagnostics、decorations、symbols、fold regions、style intervals 的高层 typed model。
+- Swift UI binding 已有 diagnostics、decorations、symbols、fold regions、style intervals 的基础 typed snapshot model；LSP 交互结果、WorkspaceEdit、hierarchy/color/linked-editing 等更深层结果仍需继续 typed model 化。
 - App 层没有一个统一的 derived-state store，供 outline、problems panel、minimap markers、gutter icons、status bar、测试断言共同使用。
 - App 层还没有统一的派生状态刷新策略、过期响应处理、增量更新通知和错误展示。
 
@@ -480,6 +486,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor command registry 已接入基础 group/requiresEditor/isEnabled 元数据，菜单、palette 和 `executeCommand(id:)` 共用同一启用状态。
 - 已完成：AttoEditor keymap 已支持 arrow/navigation function-key token，move lines up/down 已有默认 arrow-key 绑定。
 - 已完成：AttoEditor 主菜单已有独立 Selection 菜单分组，常用 selection/multicursor 命令复用统一 command id。
+- 已完成：Swift UI binding 已为 derived-state snapshots 提供基础 typed model。
 - 已完成：AttoEditor command palette 为一批 Sublime 基础编辑命令建立稳定 command id。
 - 已完成：为高频命令补 typed Swift convenience API。
 - 已完成：把 App command id 统一接入主菜单和初步用户可配置 keymap。
