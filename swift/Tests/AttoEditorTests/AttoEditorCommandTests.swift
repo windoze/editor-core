@@ -21,6 +21,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.move_lines_down"))
         XCTAssertTrue(ids.contains("editor.join_lines"))
         XCTAssertTrue(ids.contains("editor.split_line"))
+        XCTAssertTrue(ids.contains("editor.apply_snippet"))
         XCTAssertTrue(ids.contains("editor.snippet_next_placeholder"))
         XCTAssertTrue(ids.contains("editor.snippet_prev_placeholder"))
         XCTAssertTrue(ids.contains("editor.add_next_occurrence"))
@@ -365,6 +366,7 @@ final class AttoEditorCommandTests: XCTestCase {
 
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_document", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_selection", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.apply_snippet", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.snippet_next_placeholder", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.snippet_prev_placeholder", in: menu))
 
@@ -836,6 +838,27 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc.applyColorPresentationToActiveTab(presentation))
         XCTAssertEqual(try editorView.editor.text(), "let color = \"rgb(255, 0, 0)\"\n")
         XCTAssertTrue(window.title.contains("●"))
+    }
+
+    func testApplySnippetCommandUsesPrimarySelection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("snippet.txt")
+        try "".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 0, end: 0)], primaryIndex: 0)
+
+        XCTAssertTrue(vc.applySnippetInActiveTab("println!(${1:msg})$0"))
+        XCTAssertEqual(try editorView.editor.text(), "println!(msg)")
+        XCTAssertTrue(try editorView.editor.hasActiveSnippetSession())
     }
 
     func testPickDocumentColorResultOpensPickerAtColorRange() throws {

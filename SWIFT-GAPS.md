@@ -179,6 +179,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 97 已完成：AttoEditor status bar 的 active derived-state 摘要开始显示当前 code lens action 数量；由于 Rust UI 已在 LSP auxiliary refresh 中自动请求 code lens 并把结果应用为 decorations，App 层现在能通过既有 `updateStatusBar()` / async processing 回调消费自动刷新后的 code lens 状态。测试覆盖 `lspApplyCodeLensJSON` 后 derived snapshot 与状态栏 `Code Lens: N` 反馈。
 - 2026-08-02 阶段 98 已完成：AttoEditor workspace symbols parser 新增统一 kind 分组/稳定排序策略，按 Types、Functions、Values、Other 分组，再按名称、容器、URI 和位置排序；普通 workspace symbol 结果、增量查询结果和历史 snapshot 都消费同一个排序入口，quick panel command 也带有同一 kind group 元数据。测试覆盖 parser 层排序 tie-break 和 App 层 snapshot 顺序。
 - 2026-08-02 阶段 99 已完成：AttoEditor 新增 `lsp.pick_document_color` 命令和 Go 菜单入口；document color result 可进入直接 color picker 路径，单个颜色会直接打开 `NSColorPanel`，多个颜色先用色块 quick panel 选择目标，选中颜色变化后继续复用既有 `textDocument/colorPresentation` 请求和 apply 链路。测试覆盖命令/菜单注册，以及注入 picker 时的初始颜色和 range selection。
+- 2026-08-02 阶段 100 已完成：AttoEditor 新增通用 `editor.apply_snippet` App command 和 Edit 菜单入口；命令可通过输入框接收 editor-core snippet 字符串，并应用到当前 primary selection range，继续使用既有 `EditorUI.applySnippet` 和 snippet placeholder session。测试覆盖命令/菜单注册、文本插入和 active snippet session。
 
 ## 分层结论
 
@@ -220,7 +221,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | --- | --- | --- | --- | --- |
 | `TypeChar` | 有 | 有 | Swift headless/UI 都有 typed `typeChar(_:)`；`insertText` 单字符也会在 Rust UI 内部走 typing 路径 | headless/UI JSON 覆盖已对齐；App 显式 command id 仍按产品需要评估。 |
 | `ReplaceCoalescingUndo` / `ReplaceCoalescingUndoWithSelection` | 有 | 有 | Swift headless/UI 都有 typed `replaceCoalescingUndo` / `replaceCoalescingUndoWithSelection`；IME/marked text 路径内部也使用相关语义 | headless/UI command 覆盖已对齐。 |
-| `ApplySnippet` | 有 | 有 | Swift headless/UI 都有 typed `applySnippet`；Tab/Backtab 可在 snippet active 时切 placeholder；completion popup 可应用 snippet item | headless/UI command 覆盖已对齐。 |
+| `ApplySnippet` | 有 | 有 | Swift headless/UI 都有 typed `applySnippet`；AttoEditor 有通用 `editor.apply_snippet` command/menu，Tab/Backtab 可在 snippet active 时切 placeholder；completion popup 可应用 snippet item | App 显式 command 已补齐；headless/UI command 覆盖已对齐。 |
 | `SnippetNextPlaceholder` / `SnippetPrevPlaceholder` | 有 | 有 | Swift headless/UI 都有 typed `snippetNextPlaceholder` / `snippetPrevPlaceholder`，`insertTab` / `insertBacktab` 也内部支持；AttoEditor command palette 和菜单有 `editor.snippet_next_placeholder` / `editor.snippet_prev_placeholder` | App 显式 command 已补齐；headless/UI command 覆盖已对齐。 |
 | duplicate lines | 有 | 有 | Swift 有 typed `duplicateLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.duplicate_lines` | P0 接线和基础启用/禁用状态模型已补齐。 |
 | delete lines | 有 | 有 | Swift 有 typed `deleteLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.delete_lines` | P0 接线和基础启用/禁用状态模型已补齐。 |
@@ -615,7 +616,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | duplicate line | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
-| apply snippet | yes | yes, via JSON | yes | yes, via JSON | yes, typed + JSON | partial, completion apply + Tab/Backtab placeholder path + explicit placeholder commands; no generic apply-snippet command | yes |
+| apply snippet | yes | yes, via JSON | yes | yes, via JSON | yes, typed + JSON | yes, generic apply-snippet command + completion apply + Tab/Backtab placeholder path + explicit placeholder commands | yes |
 | add occurrence | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, default-options command palette/menu/keymap | yes |
 | selection/multicursor | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, common commands in command palette/menu; select line has default keymap | yes |
 | visual cursor movement | yes | yes | yes | yes, typed + JSON subset | yes, typed grapheme/word/row/page/line/doc + modify-selection | yes, `cursor.*` command palette matrix; default keyboard path remains AppKit text dispatch | yes |

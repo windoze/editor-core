@@ -594,6 +594,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
 
         commands.append(contentsOf: [
+            .init(id: "editor.apply_snippet", title: "Edit: Apply Snippet") { [weak self] in
+                self?.activeWindow()?.editorAreaController.promptApplySnippetInActiveTab()
+            },
             .init(id: "editor.toggle_line_comment", title: "Edit: Toggle Line Comment") { [weak self] in
                 self?.activeWindow()?.editorAreaController.toggleLineCommentInActiveTab()
             },

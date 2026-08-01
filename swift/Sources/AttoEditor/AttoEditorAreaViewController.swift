@@ -1538,6 +1538,68 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     @discardableResult
+    func applySnippetInActiveTab(_ snippet: String) -> Bool {
+        guard snippet.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let selections = try tab.editCore.editor.selections()
+            guard selections.ranges.isEmpty == false else {
+                NSSound.beep()
+                return false
+            }
+
+            let requestedPrimaryIndex = Int(selections.primaryIndex)
+            let primaryIndex = min(requestedPrimaryIndex, selections.ranges.count - 1)
+            let range = selections.ranges[primaryIndex]
+            _ = try tab.editCore.editor.applySnippet(start: range.start, end: range.end, snippet: snippet)
+            tab.editCore.layoutSubtreeIfNeeded()
+            try? tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.editorView.kickProcessingPoll()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            handleTabDidMutateDocumentText(tabID: tab.id)
+            updateStatusBar()
+            view.window?.makeFirstResponder(tab.editCore.editorView)
+            return true
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
+    func promptApplySnippetInActiveTab(initialSnippet: String = "") -> Bool {
+        guard activeTab != nil else {
+            NSSound.beep()
+            return false
+        }
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
+        field.stringValue = initialSnippet
+        field.placeholderString = "println!(${1:msg})$0"
+        field.selectText(nil)
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Apply Snippet"
+        alert.informativeText = "Enter an editor-core snippet string using $0 and ${1:name} placeholders."
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Cancel")
+        alert.accessoryView = field
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return false }
+        return applySnippetInActiveTab(field.stringValue)
+    }
+
+    @discardableResult
     func performCursorMovementCommand(_ command: CursorMovementCommand) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
