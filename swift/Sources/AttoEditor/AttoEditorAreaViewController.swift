@@ -607,6 +607,109 @@ final class AttoEditorAreaViewController: NSViewController {
 
     // MARK: - Editor commands
 
+    @discardableResult
+    func executeActiveEditorCommandJSON(_ commandJSON: String, treatsAsTextMutation: Bool? = nil) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        let isTextMutation = treatsAsTextMutation ?? Self.commandJSONIsTextMutation(commandJSON)
+
+        do {
+            _ = try tab.editCore.editor.executeCommandJSON(commandJSON)
+            tab.editCore.layoutSubtreeIfNeeded()
+            try? tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.editorView.kickProcessingPoll()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+
+            if isTextMutation {
+                handleTabDidMutateDocumentText(tabID: tab.id)
+            }
+
+            updateStatusBar()
+            view.window?.makeFirstResponder(tab.editCore.editorView)
+            return true
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
+    func toggleLineCommentInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        return executeActiveEditorCommandObject([
+            "kind": "edit",
+            "op": "toggle_comment",
+            "config": [
+                "line": Self.lineCommentToken(for: tab),
+            ],
+        ])
+    }
+
+    @discardableResult
+    func foldSelectionInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let startOffset = min(offsets.start, offsets.end)
+            let endOffset = max(offsets.start, offsets.end)
+            let effectiveEndOffset = endOffset > startOffset ? endOffset - 1 : endOffset
+            let start = try tab.editCore.editor.charOffsetToLogicalPosition(offset: startOffset)
+            let end = try tab.editCore.editor.charOffsetToLogicalPosition(offset: effectiveEndOffset)
+
+            guard end.line > start.line else {
+                NSSound.beep()
+                return false
+            }
+
+            return executeActiveEditorCommandJSON(
+                #"{"kind":"style","op":"fold","start_line":\#(start.line),"end_line":\#(end.line)}"#,
+                treatsAsTextMutation: false
+            )
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
+    func unfoldAtCursorInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+            return executeActiveEditorCommandJSON(
+                #"{"kind":"style","op":"unfold","start_line":\#(pos.line)}"#,
+                treatsAsTextMutation: false
+            )
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
+    func unfoldAllInActiveTab() -> Bool {
+        executeActiveEditorCommandJSON(
+            #"{"kind":"style","op":"unfold_all"}"#,
+            treatsAsTextMutation: false
+        )
+    }
+
     func moveToMatchingBracketInActiveTab() {
         guard let tab = activeTab else { return }
         tab.editCore.editorView.moveToMatchingBracket()
@@ -625,6 +728,48 @@ final class AttoEditorAreaViewController: NSViewController {
     func formatDocumentWithLspInActiveTab() {
         guard let tab = activeTab else { return }
         tab.editCore.editorView.formatDocumentWithLSP()
+    }
+
+    @discardableResult
+    private func executeActiveEditorCommandObject(_ object: [String: Any], treatsAsTextMutation: Bool? = nil) -> Bool {
+        do {
+            let data = try JSONSerialization.data(withJSONObject: object, options: [])
+            guard let json = String(data: data, encoding: .utf8) else {
+                NSSound.beep()
+                return false
+            }
+            return executeActiveEditorCommandJSON(json, treatsAsTextMutation: treatsAsTextMutation)
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private static func commandJSONIsTextMutation(_ commandJSON: String) -> Bool {
+        guard let data = commandJSON.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+              (obj["kind"] as? String) == "edit"
+        else {
+            return false
+        }
+        return (obj["op"] as? String) != "end_undo_group"
+    }
+
+    private static func lineCommentToken(for tab: AttoEditorTab) -> String {
+        let language = tab.syntaxLanguageId?.lowercased()
+        let ext = tab.fileURL.pathExtension.lowercased()
+        switch language ?? ext {
+        case "python", "py", "ruby", "rb", "shell", "bash", "sh", "zsh", "toml", "yaml", "yml", "make":
+            return "#"
+        case "lua":
+            return "--"
+        case "sql":
+            return "--"
+        case "lisp", "clojure", "clj", "scheme", "scm":
+            return ";"
+        default:
+            return "//"
+        }
     }
 
     // MARK: - Find / Replace

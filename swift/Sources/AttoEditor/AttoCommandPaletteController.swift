@@ -2,10 +2,18 @@ import AppKit
 import Foundation
 
 struct AttoCommandPaletteCommand {
+    let id: String
     let title: String
     let run: () -> Void
 
+    init(id: String, title: String, run: @escaping () -> Void) {
+        self.id = id
+        self.title = title
+        self.run = run
+    }
+
     init(title: String, run: @escaping () -> Void) {
+        self.id = title
         self.title = title
         self.run = run
     }

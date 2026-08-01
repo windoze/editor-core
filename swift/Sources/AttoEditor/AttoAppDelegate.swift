@@ -19,6 +19,27 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
     var ipcServer: AttoIpcServer?
     var createDefaultWindowOnLaunch: Bool = true
 
+    private struct StaticEditorJSONCommand {
+        let id: String
+        let title: String
+        let commandJSON: String
+    }
+
+    private static let staticEditorJSONCommands: [StaticEditorJSONCommand] = [
+        .init(id: "editor.duplicate_lines", title: "Edit: Duplicate Line", commandJSON: #"{"kind":"edit","op":"duplicate_lines"}"#),
+        .init(id: "editor.delete_lines", title: "Edit: Delete Line", commandJSON: #"{"kind":"edit","op":"delete_lines"}"#),
+        .init(id: "editor.move_lines_up", title: "Edit: Move Line Up", commandJSON: #"{"kind":"edit","op":"move_lines_up"}"#),
+        .init(id: "editor.move_lines_down", title: "Edit: Move Line Down", commandJSON: #"{"kind":"edit","op":"move_lines_down"}"#),
+        .init(id: "editor.join_lines", title: "Edit: Join Lines", commandJSON: #"{"kind":"edit","op":"join_lines"}"#),
+        .init(id: "editor.split_line", title: "Edit: Split Line", commandJSON: #"{"kind":"edit","op":"split_line"}"#),
+        .init(id: "editor.indent", title: "Edit: Indent", commandJSON: #"{"kind":"edit","op":"indent"}"#),
+        .init(id: "editor.outdent", title: "Edit: Outdent", commandJSON: #"{"kind":"edit","op":"outdent"}"#),
+        .init(id: "editor.delete_to_prev_tab_stop", title: "Edit: Delete to Previous Tab Stop", commandJSON: #"{"kind":"edit","op":"delete_to_prev_tab_stop"}"#),
+        .init(id: "view.wrap.none", title: "View: Word Wrap Off", commandJSON: #"{"kind":"view","op":"set_wrap_mode","mode":"none"}"#),
+        .init(id: "view.wrap.char", title: "View: Word Wrap by Character", commandJSON: #"{"kind":"view","op":"set_wrap_mode","mode":"char"}"#),
+        .init(id: "view.wrap.word", title: "View: Word Wrap by Word", commandJSON: #"{"kind":"view","op":"set_wrap_mode","mode":"word"}"#),
+    ]
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationCenter.default.addObserver(
             self,
@@ -235,56 +256,88 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func defaultCommands() -> [AttoCommandPaletteCommand] {
-        [
-            .init(title: "File: New File") { [weak self] in
+        var commands: [AttoCommandPaletteCommand] = [
+            .init(id: "file.new", title: "File: New File") { [weak self] in
                 self?.newFileMenuClicked(nil)
             },
-            .init(title: "File: Open Folder…") { [weak self] in
+            .init(id: "file.open_folder", title: "File: Open Folder…") { [weak self] in
                 self?.openFolderMenuClicked(nil)
             },
-            .init(title: "File: Open File…") { [weak self] in
+            .init(id: "file.open_file", title: "File: Open File…") { [weak self] in
                 self?.openFileMenuClicked(nil)
             },
-            .init(title: "File: Save") { [weak self] in
+            .init(id: "file.save", title: "File: Save") { [weak self] in
                 self?.saveMenuClicked(nil)
             },
-            .init(title: "Edit: Format Document") { [weak self] in
+            .init(id: "editor.format_document", title: "Edit: Format Document") { [weak self] in
                 self?.activeWindow()?.editorAreaController.formatDocumentWithLspInActiveTab()
             },
-            .init(title: "Edit: Find") { [weak self] in
+            .init(id: "editor.find", title: "Edit: Find") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showFindBar()
             },
-            .init(title: "Edit: Replace") { [weak self] in
+            .init(id: "editor.replace", title: "Edit: Replace") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showReplaceBar()
             },
-            .init(title: "View: Toggle Sidebar") { [weak self] in
+            .init(id: "view.toggle_sidebar", title: "View: Toggle Sidebar") { [weak self] in
                 self?.activeWindow()?.toggleSidebar()
             },
-            .init(title: "View: Toggle Minimap") { [weak self] in
+            .init(id: "view.toggle_minimap", title: "View: Toggle Minimap") { [weak self] in
                 self?.activeWindow()?.editorAreaController.toggleMinimapForActiveTab()
             },
-            .init(title: "AttoEditor: Command Palette") { [weak self] in
+            .init(id: "workbench.command_palette", title: "AttoEditor: Command Palette") { [weak self] in
                 self?.showCommandPalette()
             },
-            .init(title: "Go: Go to File…") { [weak self] in
+            .init(id: "go.file", title: "Go: Go to File…") { [weak self] in
                 self?.showQuickOpen()
             },
-            .init(title: "Search: Find in Files") { [weak self] in
+            .init(id: "search.find_in_files", title: "Search: Find in Files") { [weak self] in
                 self?.activeWindow()?.showFindInFilesSidebar()
             },
-            .init(title: "AttoEditor: Preferences…") { [weak self] in
+            .init(id: "workbench.preferences", title: "AttoEditor: Preferences…") { [weak self] in
                 self?.showPreferencesWindow()
             },
-            .init(title: "Go: Back") { [weak self] in
+            .init(id: "go.back", title: "Go: Back") { [weak self] in
                 self?.activeWindow()?.editorAreaController.jumpBackInActiveTab()
             },
-            .init(title: "Go: Forward") { [weak self] in
+            .init(id: "go.forward", title: "Go: Forward") { [weak self] in
                 self?.activeWindow()?.editorAreaController.jumpForwardInActiveTab()
             },
-            .init(title: "Go: Go to Matching Bracket") { [weak self] in
+            .init(id: "go.matching_bracket", title: "Go: Go to Matching Bracket") { [weak self] in
                 self?.activeWindow()?.editorAreaController.moveToMatchingBracketInActiveTab()
             },
         ]
+
+        commands.append(contentsOf: editorCommandPaletteCommands())
+        return commands
+    }
+
+    func _defaultCommandsForTesting() -> [AttoCommandPaletteCommand] {
+        defaultCommands()
+    }
+
+    private func editorCommandPaletteCommands() -> [AttoCommandPaletteCommand] {
+        var commands = Self.staticEditorJSONCommands.map { spec in
+            AttoCommandPaletteCommand(id: spec.id, title: spec.title) { [weak self] in
+                self?.activeWindow()?.editorAreaController.executeActiveEditorCommandJSON(spec.commandJSON)
+            }
+        }
+
+        commands.append(contentsOf: [
+            .init(id: "editor.toggle_line_comment", title: "Edit: Toggle Line Comment") { [weak self] in
+                self?.activeWindow()?.editorAreaController.toggleLineCommentInActiveTab()
+            },
+            .init(id: "editor.fold_selection", title: "Edit: Fold Selection") { [weak self] in
+                self?.activeWindow()?.editorAreaController.foldSelectionInActiveTab()
+            },
+            .init(id: "editor.unfold", title: "Edit: Unfold at Cursor") { [weak self] in
+                self?.activeWindow()?.editorAreaController.unfoldAtCursorInActiveTab()
+            },
+            .init(id: "editor.unfold_all", title: "Edit: Unfold All") { [weak self] in
+                self?.activeWindow()?.editorAreaController.unfoldAllInActiveTab()
+            },
+        ])
+
+        return commands
     }
 
     // MARK: - Preferences
