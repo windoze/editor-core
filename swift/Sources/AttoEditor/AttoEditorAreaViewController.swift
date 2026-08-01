@@ -78,6 +78,10 @@ final class AttoEditorAreaViewController: NSViewController {
         let kind: LspSymbolRequestKind
     }
 
+    private struct SignatureHelpRequestContext {
+        let tabID: UUID
+    }
+
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
@@ -91,6 +95,11 @@ final class AttoEditorAreaViewController: NSViewController {
     private var symbolContext: SymbolRequestContext?
     private var symbolPollTimer: DispatchSourceTimer?
     private var lspSymbolResultsController: AttoCommandPaletteController?
+
+    private var signatureHelpContext: SignatureHelpRequestContext?
+    private var signatureHelpPollTimer: DispatchSourceTimer?
+    private var signatureHelpPopover: NSPopover?
+    private var signatureHelpPopoverLabel: NSTextField?
 
     init(library: EditorCoreUIFFILibrary, theme: EditorCoreSkiaTheme, workspaceRootURL: URL) {
         self.library = library
@@ -321,6 +330,8 @@ final class AttoEditorAreaViewController: NSViewController {
 
         cancelHoverUI()
         cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
 
         tabs = []
         selectedTabID = nil
@@ -596,6 +607,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelHoverUI()
         cancelDefinitionUI()
         cancelSymbolUI()
+        cancelSignatureHelpUI()
 
         showTabContent(tab)
         refreshTabBar()
@@ -1141,6 +1153,9 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func handleTabDidMutateDocumentText(tabID: UUID) {
         guard let tab = tabs.first(where: { $0.id == tabID }) else { return }
+        if selectedTabID == tabID {
+            cancelSignatureHelpUI()
+        }
 
         let didUnpreview = tab.isPreview
         if tab.isPreview {
@@ -2126,6 +2141,154 @@ final class AttoEditorAreaViewController: NSViewController {
         return "\(indent)\(symbol.name)\(detail)\(kind)\(container) — \(location)"
     }
 
+    // MARK: - LSP signature help
+
+    @discardableResult
+    func showSignatureHelpInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
+
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+            _ = try tab.editCore.editor.lspRequestSignatureHelp(
+                logicalLine: pos.line,
+                logicalColumn: pos.column
+            )
+        } catch {
+            NSSound.beep()
+            return false
+        }
+
+        signatureHelpContext = SignatureHelpRequestContext(tabID: tab.id)
+        startSignatureHelpPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
+        return true
+    }
+
+    private func startSignatureHelpPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        signatureHelpPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.signatureHelpContext, ctx.tabID == tabID else {
+                self.cancelSignatureHelpUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelSignatureHelpUI()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelSignatureHelpUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastSignatureHelpResultJSON()
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            let text = AttoLspSignatureHelpFormatter.displayText(fromSignatureHelpResultJSON: json)
+            self.cancelSignatureHelpUI()
+            self.showSignatureHelpPopover(text: text, in: editorView)
+            timer.cancel()
+        }
+
+        signatureHelpPollTimer = timer
+        timer.resume()
+    }
+
+    private func showSignatureHelpPopover(text: String?, in editorView: EditorCoreSkiaView) {
+        guard let text else {
+            cancelSignatureHelpUI()
+            return
+        }
+
+        guard editorView.window != nil else { return }
+
+        let popover: NSPopover
+        if let existing = signatureHelpPopover {
+            popover = existing
+        } else {
+            let p = NSPopover()
+            p.behavior = .transient
+            p.animates = true
+
+            let vc = NSViewController()
+            let effect = NSVisualEffectView(frame: .zero)
+            effect.material = .hudWindow
+            effect.blendingMode = .withinWindow
+            effect.state = .active
+            effect.translatesAutoresizingMaskIntoConstraints = false
+
+            let label = NSTextField(wrappingLabelWithString: "")
+            label.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+            label.textColor = NSColor.labelColor
+            label.translatesAutoresizingMaskIntoConstraints = false
+
+            effect.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 10),
+                label.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -10),
+                label.topAnchor.constraint(equalTo: effect.topAnchor, constant: 8),
+                label.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -8),
+            ])
+
+            vc.view = effect
+            p.contentViewController = vc
+            signatureHelpPopover = p
+            signatureHelpPopoverLabel = label
+            popover = p
+        }
+
+        signatureHelpPopoverLabel?.stringValue = text
+        popover.contentSize = preferredHoverPopoverSize(text: text, font: signatureHelpPopoverLabel?.font)
+
+        if popover.isShown {
+            popover.performClose(nil)
+        }
+        popover.show(relativeTo: signatureHelpAnchorRect(in: editorView), of: editorView, preferredEdge: .maxY)
+    }
+
+    private func signatureHelpAnchorRect(in editorView: EditorCoreSkiaView) -> NSRect {
+        do {
+            let offsets = try editorView.editor.selectionOffsets()
+            let pt = try editorView.editor.charOffsetToViewPoint(offset: offsets.end)
+
+            let boundsSize = editorView.bounds.size
+            let backingSize = editorView.convertToBacking(boundsSize)
+            let sx = boundsSize.width > 0 ? (backingSize.width / boundsSize.width) : 1
+            let sy = boundsSize.height > 0 ? (backingSize.height / boundsSize.height) : 1
+
+            let xPt = CGFloat(pt.xPx) / max(1e-6, sx)
+            let yPt = CGFloat(pt.yPx) / max(1e-6, sy)
+            let hPt = max(1, CGFloat(pt.lineHeightPx) / max(1e-6, sy))
+            return NSRect(x: xPt, y: yPt, width: 1, height: hPt)
+        } catch {
+            return NSRect(x: 0, y: 0, width: 1, height: 1)
+        }
+    }
+
     // MARK: - LSP hover tooltip (AttoEditor UX)
 
     private func handleHover(info: EditorCoreSkiaHoverInfo, tabID: UUID) {
@@ -2307,6 +2470,13 @@ final class AttoEditorAreaViewController: NSViewController {
         symbolContext = nil
         lspSymbolResultsController?.hide()
         lspSymbolResultsController = nil
+    }
+
+    private func cancelSignatureHelpUI() {
+        signatureHelpPollTimer?.cancel()
+        signatureHelpPollTimer = nil
+        signatureHelpContext = nil
+        signatureHelpPopover?.performClose(nil)
     }
 }
 
