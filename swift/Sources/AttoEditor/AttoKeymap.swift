@@ -26,6 +26,7 @@ enum AttoKeymap {
         "editor.duplicate_lines": AttoKeyBinding(keyEquivalent: "d", modifiers: [.command, .shift]),
         "editor.delete_lines": AttoKeyBinding(keyEquivalent: "k", modifiers: [.command, .shift]),
         "editor.join_lines": AttoKeyBinding(keyEquivalent: "j", modifiers: [.command]),
+        "editor.select_line": AttoKeyBinding(keyEquivalent: "l", modifiers: [.command]),
         "editor.add_next_occurrence": AttoKeyBinding(keyEquivalent: "d", modifiers: [.command]),
         "editor.add_all_occurrences": AttoKeyBinding(keyEquivalent: "g", modifiers: [.command, .control]),
         "editor.toggle_line_comment": AttoKeyBinding(keyEquivalent: "/", modifiers: [.command]),

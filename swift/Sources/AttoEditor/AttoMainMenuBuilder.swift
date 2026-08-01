@@ -53,6 +53,13 @@ enum AttoMainMenuBuilder {
         editMenu.addItem(commandItem(title: "Snippet Previous Placeholder", commandID: "editor.snippet_prev_placeholder", appDelegate: appDelegate))
         editMenu.addItem(commandItem(title: "Toggle Line Comment", commandID: "editor.toggle_line_comment", appDelegate: appDelegate))
         editMenu.addItem(.separator())
+        editMenu.addItem(commandItem(title: "Select Word", commandID: "editor.select_word", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Select Line", commandID: "editor.select_line", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Expand Selection", commandID: "editor.expand_selection", appDelegate: appDelegate))
+        editMenu.addItem(.separator())
+        editMenu.addItem(commandItem(title: "Add Cursor Above", commandID: "editor.add_cursor_above", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Add Cursor Below", commandID: "editor.add_cursor_below", appDelegate: appDelegate))
+        editMenu.addItem(.separator())
         editMenu.addItem(commandItem(title: "Add Next Occurrence", commandID: "editor.add_next_occurrence", appDelegate: appDelegate))
         editMenu.addItem(commandItem(title: "Add All Occurrences", commandID: "editor.add_all_occurrences", appDelegate: appDelegate))
 

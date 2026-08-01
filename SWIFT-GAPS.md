@@ -108,6 +108,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 27 已完成：AttoEditor code action 主路径新增 kind/filter 产品化入口；`lsp.quick_fix`、`lsp.refactor`、`lsp.source_actions`、`lsp.organize_imports`、`lsp.fix_all` 已接入 command palette 和 Go 菜单，请求时发送 LSP `CodeActionContext.only`，响应后再按 `kind` 精确或前缀匹配做客户端过滤。
 - 2026-08-01 阶段 28 已完成：AttoEditor 为 snippet placeholder navigation 新增显式 App command id：`editor.snippet_next_placeholder` / `editor.snippet_prev_placeholder`，通过现有 UI JSON command dispatcher 调用 `snippet_next_placeholder` / `snippet_prev_placeholder`，并接入 command palette、Edit 菜单和命令注册测试；Tab/Backtab 仍保留为文本系统主路径。
 - 2026-08-01 阶段 29 已完成：AttoEditor 为多光标 occurrence 操作新增显式 App command id：`editor.add_next_occurrence` / `editor.add_all_occurrences`，通过 UI JSON command dispatcher 调用 `add_next_occurrence` / `add_all_occurrences` 默认 options，并接入 command palette、Edit 菜单、默认 keymap 和命令注册测试。
+- 2026-08-01 阶段 30 已完成：AttoEditor 为常用 selection / multicursor 操作新增稳定 App command id：`editor.select_word`、`editor.select_line`、`editor.expand_selection`、`editor.add_cursor_above`、`editor.add_cursor_below`，通过 UI JSON command dispatcher 调用对应 cursor command，并接入 command palette、Edit 菜单和命令注册测试；`editor.select_line` 已有默认 Cmd+L keymap。
 
 ## 分层结论
 
@@ -163,6 +164,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | `EndUndoGroup` | 有 | 有 | Swift 有 typed `endUndoGroup()` | App 层复合命令还未统一使用。 |
 | logical `MoveTo` / `MoveBy` | 有 | 有 | Swift 有 typed `moveTo(line:column:)` / `moveBy(deltaLine:deltaColumn:)`，也可通过 selection/conversion 间接达成 | 仍缺面向用户的参数化 App command。 |
 | visual movement commands | 有 | 有 | Swift 可通过 `executeCommandJSON` 调用，AppKit key handling 覆盖一部分 | 仍缺 App command coverage matrix。 |
+| selection / multicursor commands | 有 | 有 | Swift UI FFI 有 typed select word/line、expand selection、add cursor above/below，也可通过 UI JSON 调用；AttoEditor command palette 和菜单有 `editor.select_word` / `editor.select_line` / `editor.expand_selection` / `editor.add_cursor_above` / `editor.add_cursor_below` | 常用 App command 已补齐；仍缺完整 Selection 菜单分组、arrow-key keymap 解析和所有视觉移动命令矩阵。 |
 | `MoveToMatchingBracket` | 有 | headless FFI 缺 | Swift UI 有公开方法 | headless 和 UI command 面不一致。 |
 | add occurrence options | 有 | 有 | Swift typed `addNextOccurrence(options:)` / `addAllOccurrences(options:)` 已支持 options；AttoEditor command palette、菜单和 keymap 有 `editor.add_next_occurrence` / `editor.add_all_occurrences` 默认 options 入口 | 默认 App command/keymap 已补齐；仍缺 settings/search-options 接线。 |
 | `SetWrapMode` | 有 | 有 | Swift 有 typed `setWrapMode(_:)`；AttoEditor command palette、菜单和 keymap 有 wrap off/char/word | 仍缺 settings 接线。 |
@@ -456,6 +458,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：通过 `executeCommandJSON(_:)` 暴露 `applySnippet` 和 snippet placeholder navigation。
 - 已完成：AttoEditor 为 snippet placeholder navigation 建立显式 command id，并接入 command palette 和 Edit 菜单。
 - 已完成：AttoEditor 为 add next/all occurrence 建立显式 command id，并接入 command palette、Edit 菜单和默认 keymap。
+- 已完成：AttoEditor 为 select word/line、expand selection、add cursor above/below 建立显式 command id，并接入 command palette 和 Edit 菜单。
 - 已完成：AttoEditor command palette 为一批 Sublime 基础编辑命令建立稳定 command id。
 - 已完成：为高频命令补 typed Swift convenience API。
 - 已完成：把 App command id 统一接入主菜单和初步用户可配置 keymap。
@@ -511,6 +514,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | apply snippet | yes | no | yes | yes, via JSON | yes, typed + JSON | partial, completion apply + Tab/Backtab placeholder path + explicit placeholder commands; no generic apply-snippet command | yes |
 | add occurrence | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, default-options command palette/menu/keymap | yes |
+| selection/multicursor | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, common commands in command palette/menu; select line has default keymap | yes |
 | LSP completion | yes | partial helper | yes | yes, raw completion + resolve result | yes, raw completion + resolve result | yes, popup + auto trigger + incremental filter + commit-time resolve/current-doc apply | partial |
 | LSP symbols | yes | partial helper | yes | yes, raw JSON result | yes, raw JSON result | yes, document/workspace symbols quick panels | yes |
 | LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, prepareRename seed + input UI + menu/keymap + current-doc apply | partial |
