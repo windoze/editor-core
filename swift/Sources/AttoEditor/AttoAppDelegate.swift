@@ -502,6 +502,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.document_colors", title: "LSP: Document Colors") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showDocumentColorsInActiveTab()
             },
+            .init(id: "lsp.pick_document_color", title: "LSP: Pick Document Color") { [weak self] in
+                self?.activeWindow()?.editorAreaController.pickDocumentColorInActiveTab()
+            },
             .init(id: "lsp.refresh_folding_ranges", title: "LSP: Refresh Folding Ranges") { [weak self] in
                 self?.activeWindow()?.editorAreaController.refreshFoldingRangesInActiveTab()
             },

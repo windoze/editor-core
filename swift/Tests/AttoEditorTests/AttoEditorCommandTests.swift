@@ -75,6 +75,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.problems"))
         XCTAssertTrue(ids.contains("lsp.workspace_diagnostics"))
         XCTAssertTrue(ids.contains("lsp.document_colors"))
+        XCTAssertTrue(ids.contains("lsp.pick_document_color"))
         XCTAssertTrue(ids.contains("lsp.refresh_folding_ranges"))
         XCTAssertTrue(ids.contains("lsp.selection_range"))
         XCTAssertTrue(ids.contains("lsp.linked_editing"))
@@ -416,6 +417,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.problems", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_diagnostics", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.pick_document_color", in: menu))
     }
 
     func testWorkspaceDiagnosticsResultNavigatesWithoutPanelWindow() throws {
@@ -834,6 +836,50 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc.applyColorPresentationToActiveTab(presentation))
         XCTAssertEqual(try editorView.editor.text(), "let color = \"rgb(255, 0, 0)\"\n")
         XCTAssertTrue(window.title.contains("●"))
+    }
+
+    func testPickDocumentColorResultOpensPickerAtColorRange() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("pick-color.txt")
+        try "let color = \"#ff0000\"\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        var pickerWasOpened = false
+        vc._setDocumentColorPickerForTesting { initialColor in
+            pickerWasOpened = true
+            XCTAssertEqual(initialColor.redComponent, 1, accuracy: 0.001)
+            XCTAssertEqual(initialColor.greenComponent, 0, accuracy: 0.001)
+            XCTAssertEqual(initialColor.blueComponent, 0, accuracy: 0.001)
+            XCTAssertEqual(initialColor.alphaComponent, 1, accuracy: 0.001)
+            return nil
+        }
+        defer { vc._setDocumentColorPickerForTesting(nil) }
+
+        XCTAssertTrue(vc.pickDocumentColorResultJSONInActiveTab("""
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 13 },
+              "end": { "line": 0, "character": 20 }
+            },
+            "color": { "red": 1, "green": 0, "blue": 0, "alpha": 1 }
+          }
+        ]
+        """))
+
+        XCTAssertTrue(pickerWasOpened)
+        XCTAssertEqual(
+            try editorView.editor.selections().ranges,
+            [EcuSelectionRange(start: 13, end: 20)]
+        )
     }
 
     func testApplySelectionRangeResultExpandsActiveSelection() throws {

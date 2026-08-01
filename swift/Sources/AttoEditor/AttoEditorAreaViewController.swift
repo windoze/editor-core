@@ -101,6 +101,10 @@ final class AttoEditorAreaViewController: NSViewController {
         linkedEditingSession != nil
     }
 
+    func _setDocumentColorPickerForTesting(_ picker: ((NSColor) -> NSColor?)?) {
+        documentColorPickerForTesting = picker
+    }
+
     func _setActiveTabDirtyCacheForTesting(_ isDirty: Bool) {
         activeTab?.isDirty = isDirty
     }
@@ -377,15 +381,26 @@ final class AttoEditorAreaViewController: NSViewController {
         let selectionCount: Int
     }
 
+    private enum DocumentColorResultMode {
+        case presentations
+        case picker
+    }
+
     private struct DocumentColorRequestContext {
         let tabID: UUID
         let showFeedback: Bool
+        let mode: DocumentColorResultMode
     }
 
     private struct ColorPresentationRequestContext {
         let tabID: UUID
         let item: AttoLspDocumentColorParser.Item
         let showFeedback: Bool
+    }
+
+    private struct DocumentColorPanelContext {
+        let tabID: UUID
+        let item: AttoLspDocumentColorParser.Item
     }
 
     private struct WorkspaceDiagnosticsRequestContext {
@@ -472,6 +487,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var documentColorPollTimer: DispatchSourceTimer?
     private var colorPresentationContext: ColorPresentationRequestContext?
     private var colorPresentationPollTimer: DispatchSourceTimer?
+    private var documentColorPanelContext: DocumentColorPanelContext?
+    private var documentColorPickerForTesting: ((NSColor) -> NSColor?)?
 
     init(
         library: EditorCoreUIFFILibrary,
@@ -2245,6 +2262,19 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func showDocumentColorsInActiveTab(showFeedback: Bool = true) -> Bool {
+        requestDocumentColorsInActiveTab(mode: .presentations, showFeedback: showFeedback)
+    }
+
+    @discardableResult
+    func pickDocumentColorInActiveTab(showFeedback: Bool = true) -> Bool {
+        requestDocumentColorsInActiveTab(mode: .picker, showFeedback: showFeedback)
+    }
+
+    @discardableResult
+    private func requestDocumentColorsInActiveTab(
+        mode: DocumentColorResultMode,
+        showFeedback: Bool
+    ) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
             return false
@@ -2287,13 +2317,31 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
 
-        documentColorContext = DocumentColorRequestContext(tabID: tab.id, showFeedback: showFeedback)
+        documentColorContext = DocumentColorRequestContext(
+            tabID: tab.id,
+            showFeedback: showFeedback,
+            mode: mode
+        )
         startDocumentColorPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
         return true
     }
 
     @discardableResult
     func showDocumentColorResultJSONInActiveTab(_ json: String, showFeedback: Bool = false) -> Bool {
+        handleDocumentColorResultJSON(json, mode: .presentations, showFeedback: showFeedback)
+    }
+
+    @discardableResult
+    func pickDocumentColorResultJSONInActiveTab(_ json: String, showFeedback: Bool = false) -> Bool {
+        handleDocumentColorResultJSON(json, mode: .picker, showFeedback: showFeedback)
+    }
+
+    @discardableResult
+    private func handleDocumentColorResultJSON(
+        _ json: String,
+        mode: DocumentColorResultMode,
+        showFeedback: Bool
+    ) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
             return false
@@ -2312,7 +2360,12 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
 
-        showDocumentColorResults(items, tabID: tab.id)
+        switch mode {
+        case .presentations:
+            showDocumentColorResults(items, tabID: tab.id)
+        case .picker:
+            showDocumentColorPickerResults(items, tabID: tab.id)
+        }
         return true
     }
 
@@ -2340,6 +2393,32 @@ final class AttoEditorAreaViewController: NSViewController {
         )
         documentColorResultsController = controller
         controller.show(relativeTo: window, placeholder: "Filter document colors...")
+    }
+
+    private func showDocumentColorPickerResults(_ items: [AttoLspDocumentColorParser.Item], tabID: UUID) {
+        guard items.count > 1, let window = view.window else {
+            if let first = items.first {
+                _ = openDocumentColorPicker(for: first, tabID: tabID)
+            }
+            return
+        }
+
+        let commands = items.enumerated().map { idx, item in
+            AttoCommandPaletteCommand(
+                id: "lsp.pick_document_color.\(idx)",
+                title: "Pick \(AttoLspDocumentColorParser.displayTitle(for: item))",
+                swatchColor: nsColor(for: item.color)
+            ) { [weak self] in
+                _ = self?.openDocumentColorPicker(for: item, tabID: tabID)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.DocumentColorPicker",
+            commandsProvider: { commands }
+        )
+        documentColorResultsController = controller
+        controller.show(relativeTo: window, placeholder: "Pick document color...")
     }
 
     @discardableResult
@@ -2370,6 +2449,63 @@ final class AttoEditorAreaViewController: NSViewController {
             return requestColorPresentations(for: item, tabID: tabID, showFeedback: true)
         }
         return true
+    }
+
+    @discardableResult
+    private func openDocumentColorPicker(
+        for item: AttoLspDocumentColorParser.Item,
+        tabID: UUID
+    ) -> Bool {
+        guard selectDocumentColor(item, tabID: tabID, requestPresentations: false) else {
+            return false
+        }
+
+        let initialColor = nsColor(for: item.color)
+        if let documentColorPickerForTesting {
+            guard let pickedColor = documentColorPickerForTesting(initialColor) else {
+                return true
+            }
+            return handlePickedDocumentColor(pickedColor, item: item, tabID: tabID, showFeedback: true)
+        }
+
+        documentColorPanelContext = DocumentColorPanelContext(tabID: tabID, item: item)
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = true
+        panel.color = initialColor
+        panel.setTarget(self)
+        panel.setAction(#selector(documentColorPanelDidChange(_:)))
+        panel.orderFront(nil)
+        return true
+    }
+
+    @objc private func documentColorPanelDidChange(_ sender: NSColorPanel) {
+        guard let ctx = documentColorPanelContext else { return }
+        _ = handlePickedDocumentColor(sender.color, item: ctx.item, tabID: ctx.tabID, showFeedback: false)
+    }
+
+    @discardableResult
+    private func handlePickedDocumentColor(
+        _ pickedColor: NSColor,
+        item: AttoLspDocumentColorParser.Item,
+        tabID: UUID,
+        showFeedback: Bool
+    ) -> Bool {
+        guard let color = lspColor(for: pickedColor) else {
+            guard let tab = activeTab, tab.id == tabID else { return false }
+            if showFeedback {
+                showWorkspaceEditPopover(text: "Selected color could not be converted to RGB.", in: tab.editCore.editorView)
+            }
+            NSSound.beep()
+            return false
+        }
+
+        let pickedItem = AttoLspDocumentColorParser.Item(
+            range: item.range,
+            startLine: item.startLine,
+            startUTF16Character: item.startUTF16Character,
+            color: color
+        )
+        return requestColorPresentations(for: pickedItem, tabID: tabID, showFeedback: showFeedback)
     }
 
     @discardableResult
@@ -2464,8 +2600,9 @@ final class AttoEditorAreaViewController: NSViewController {
             guard let json else { return }
 
             let showFeedback = ctx.showFeedback
+            let mode = ctx.mode
             self.cancelDocumentColorRequestOnly()
-            _ = self.showDocumentColorResultJSONInActiveTab(json, showFeedback: showFeedback)
+            _ = self.handleDocumentColorResultJSON(json, mode: mode, showFeedback: showFeedback)
         }
 
         documentColorPollTimer = timer
@@ -2628,6 +2765,19 @@ final class AttoEditorAreaViewController: NSViewController {
             green: CGFloat(max(0, min(1, color.green))),
             blue: CGFloat(max(0, min(1, color.blue))),
             alpha: CGFloat(max(0, min(1, color.alpha)))
+        )
+    }
+
+    private func lspColor(for color: NSColor) -> AttoLspDocumentColorParser.Color? {
+        guard let rgb = color.usingColorSpace(.deviceRGB) ?? color.usingColorSpace(.sRGB) else {
+            return nil
+        }
+
+        return AttoLspDocumentColorParser.Color(
+            red: Double(max(0, min(1, rgb.redComponent))),
+            green: Double(max(0, min(1, rgb.greenComponent))),
+            blue: Double(max(0, min(1, rgb.blueComponent))),
+            alpha: Double(max(0, min(1, rgb.alphaComponent)))
         )
     }
 
@@ -7378,6 +7528,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func cancelDocumentColorUI() {
         cancelDocumentColorRequestOnly()
+        documentColorPanelContext = nil
         documentColorResultsController?.hide()
         documentColorResultsController = nil
         cancelColorPresentationUI()
