@@ -71,12 +71,27 @@ final class AttoEditorAreaViewController: NSViewController {
         let info: EditorCoreSkiaHoverInfo
     }
 
-    private enum LspLocationRequestKind {
+    enum LspLocationRequestKind {
         case definition
         case declaration
         case typeDefinition
         case implementation
         case references
+
+        var resultPlaceholder: String {
+            switch self {
+            case .definition:
+                return "Filter definitions..."
+            case .declaration:
+                return "Filter declarations..."
+            case .typeDefinition:
+                return "Filter type definitions..."
+            case .implementation:
+                return "Filter implementations..."
+            case .references:
+                return "Filter references..."
+            }
+        }
     }
 
     private enum LspSymbolRequestKind {
@@ -3065,7 +3080,7 @@ final class AttoEditorAreaViewController: NSViewController {
             guard let json else { return }
 
             self.cancelDefinitionUI()
-            self.handleLspLocationResultJSON(json, kind: ctx.kind)
+            _ = self.showLspLocationResultJSONInActiveTab(json, kind: ctx.kind)
             timer.cancel()
         }
 
@@ -3088,22 +3103,24 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
-    private func handleLspLocationResultJSON(_ json: String, kind: LspLocationRequestKind) {
+    @discardableResult
+    func showLspLocationResultJSONInActiveTab(_ json: String, kind: LspLocationRequestKind) -> Bool {
         let targets = AttoLspDefinitionParser.targets(fromLocationResultJSON: json)
         guard targets.isEmpty == false else {
             NSSound.beep()
-            return
+            return false
         }
 
-        if kind == .references, targets.count > 1 {
-            showLspLocationResults(targets)
-            return
+        if targets.count > 1 {
+            showLspLocationResults(targets, kind: kind)
+            return true
         }
 
         navigateToLspTarget(targets[0])
+        return true
     }
 
-    private func showLspLocationResults(_ targets: [AttoLspDefinitionParser.Target]) {
+    private func showLspLocationResults(_ targets: [AttoLspDefinitionParser.Target], kind: LspLocationRequestKind) {
         guard let window = view.window else {
             navigateToLspTarget(targets[0])
             return
@@ -3123,7 +3140,7 @@ final class AttoEditorAreaViewController: NSViewController {
             commandsProvider: { commands }
         )
         lspLocationResultsController = controller
-        controller.show(relativeTo: window, placeholder: "Filter LSP results...")
+        controller.show(relativeTo: window, placeholder: kind.resultPlaceholder)
     }
 
     private func displayTitle(for target: AttoLspDefinitionParser.Target) -> String {

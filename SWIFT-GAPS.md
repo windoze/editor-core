@@ -60,8 +60,8 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
-- 阶段 6 第二部分已让 references 多结果进入一个轻量可过滤结果 palette，单结果直接跳转；`AttoLspDefinitionParser` 新增多目标解析并补测试。
-- 阶段 6 尚未完成完整 references/locations panel、LSP typed result model 和更深层项目级命令模型。
+- 阶段 6 第二部分已让 references 多结果进入一个轻量可过滤结果 palette，单结果直接跳转；`AttoLspDefinitionParser` 新增多目标解析并补测试。阶段 57 已把 definition/declaration/type definition/implementation/references 的多结果处理统一到同一套 location results quick panel。
+- 阶段 6 尚未完成完整持久 references/locations panel、LSP typed result model 和更深层项目级命令模型。
 - 2026-08-01 阶段 7 第一部分已完成：AttoEditor 新增基础 `view.split_right` 命令，通过 `EditorUI.cloneView` 为当前 tab 创建共享 buffer 的第二个 AppKit pane；这部分是当前可用的过渡实现，不应继续扩展成 Swift 自有 workspace/tab 模型。
 - 2026-08-01 阶段 7 架构决策已更新：多文档、tab、workspace、project/session 级状态应使用 `editor-core` / `editor-core-ui` 一侧的 `Workspace` / `MultiDocumentEditorUi` 模型作为单一所有权来源，Swift 侧只做 AppKit 表现、命令转发、用户交互和持久化桥接；后续不在 Swift/AppKit 层新开一套长期独立的 workspace/tab/session 模型，也不继续给 Swift-only tab state 增加 preview/pin/dirty/close/search-all-tabs 等长期语义。
 - 阶段 7 第一部分已让 split pane 复用主编辑器 chrome/theme/preferences/LSP/hover/cmd-click hook，并新增 first-responder hook 跟踪 active pane；AttoEditor command palette、View 菜单和默认 keymap 已接入。
@@ -135,6 +135,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 54 已完成：AttoEditor 新增 `lsp.code_lens_actions` App 命令和 Go 菜单入口，可从 active derived-state decorations snapshot 中读取 core 已渲染的 code lens decorations，展示 Code Lens Actions quick panel；选择 action 后若已有 command 则走统一 `workspace/executeCommand` 路径，若缺 command 则先请求 `codeLens/resolve` 再执行。新增 `AttoLspCodeLensParser` typed model，覆盖 decoration `data_json` 中原始 lens payload、resolved lens command 和 command JSON 保留。
 - 2026-08-01 阶段 55 已完成：AttoEditor `WorkspaceEdit` App 应用路径新增本地未打开文件的 resource operations 支持，`AttoWorkspaceEditParser` 会把 `documentChanges` 中的 `create` / `rename` / `delete` 解析成 typed operations；应用层会在 workspace root 内对未打开的本地 `file://` 文件执行 create、rename、delete，并支持 create 后紧跟同文件 text edits。打开 tab 相关的 resource operations 仍跳过，等待 core-owned workspace/tab 事务统一处理。
 - 2026-08-02 阶段 56 已完成：AttoEditor 新增 `lsp.workspace_diagnostics` App 命令和 Go 菜单入口，可主动请求 `workspace/diagnostic`、轮询 raw result，用 `AttoLspWorkspaceDiagnosticsParser` typed model 解析 workspace diagnostic report、relatedDocuments、resultId 和 LSP UTF-16 ranges，并用 quick panel 展示跨文件 diagnostics；无 panel window 时可直接跳转第一个 diagnostic。当前仍只是 App 层结果面板，尚未把 workspace diagnostics 写入 core-owned project Problems store。
+- 2026-08-02 阶段 57 已完成：AttoEditor LSP location result 主路径不再只对 references 多结果展示 palette；definition、declaration、type definition、implementation 和 references 只要返回多个 target，都会进入统一 `AttoEditor.LSP.LocationResults` quick panel，并按请求类型显示对应 filter placeholder。单结果和无窗口 fallback 仍直接跳转。
 
 ## 分层结论
 
@@ -241,8 +242,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 
 仍缺产品化、结果 UI 或仍只停留在 raw API 的 LSP 能力：
 
-- declaration/type definition/implementation 的多结果导航 UI 仍较基础。
-- references 结果列表已有轻量 palette，但还不是完整结果面板。
+- definition/declaration/type definition/implementation/references 多结果已有统一 quick panel；仍缺完整持久 locations/references result panel、分组/排序和更深 typed result model。
 - completion popup 主路径、commit-time completion resolve、rich documentation/detail preview、commitCharacters 提交行为、server triggerCharacters 自动触发、本地增量过滤、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用，以及本地未打开文件 resource operations 已有；仍缺 core workspace-owned 跨文件事务和完整 typed result model。
 - signature help popup 主路径已有，并会按 server trigger/retrigger characters 自动弹出，active parameter 富格式高亮、typed result model 和手动请求空/错反馈已完成。
 - rename 主路径已有 App 输入 UI、prepareRename range/placeholder 默认名、当前文档 WorkspaceEdit 应用、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用，以及本地未打开文件 resource operations；仍缺打开 tab resource operations、core workspace-owned 跨文件事务和 typed result model。
@@ -519,7 +519,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 - completion commit-time resolve、rich documentation/detail preview、commitCharacters 提交行为、server triggerCharacters 自动触发、本地增量过滤、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用和本地未打开文件 resource operations 已完成；仍缺 core workspace-owned 跨文件事务和更完整 typed result model。
 - signature help server trigger/retrigger characters 自动触发、active parameter 富格式高亮、typed result model 和手动请求空/错反馈已完成。
-- references/implementation/declaration/type definition。
+- references/implementation/declaration/type definition 多结果 quick panel 已统一；仍缺持久 locations/references result panel、分组/排序和更深 typed result model。
 - rename prepareRename range/placeholder、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用和本地未打开文件 resource operations 已产品化；仍缺打开 tab resource operations、core workspace-owned 跨文件事务和 typed result model。
 - code action typed diagnostics context、kind/filter、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用、本地未打开文件 resource operations 和 command payload 执行结果/错误展示已完成；仍缺打开 tab resource operations、core workspace-owned 跨文件事务和 typed result model。
 - document/workspace symbols 持久面板和 workspace 增量查询。

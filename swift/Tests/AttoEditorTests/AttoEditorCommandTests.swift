@@ -319,6 +319,51 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(selections.primaryIndex, 0)
     }
 
+    func testImplementationMultiLocationResultUsesPanel() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("impl.swift")
+        try "func one() {}\nfunc two() {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(vc.showLspLocationResultJSONInActiveTab("""
+        [
+          {
+            "uri": "\(fileURL.absoluteString)",
+            "range": {
+              "start": { "line": 0, "character": 5 },
+              "end": { "line": 0, "character": 8 }
+            }
+          },
+          {
+            "uri": "\(fileURL.absoluteString)",
+            "range": {
+              "start": { "line": 1, "character": 5 },
+              "end": { "line": 1, "character": 8 }
+            }
+          }
+        ]
+        """, kind: .implementation))
+
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.LocationResults")
+        })
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.LSP.LocationResults"),
+                in: root
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter implementations...")
+    }
+
     func testApplyLinkedEditingRangeResultCreatesMulticursorSelections() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -965,6 +1010,18 @@ final class AttoEditorCommandTests: XCTestCase {
             out.append(contentsOf: findSubviews(of: type, in: child))
         }
         return out
+    }
+
+    private func findView(identifier: String, in root: NSView) -> NSView? {
+        if root.identifier?.rawValue == identifier {
+            return root
+        }
+        for child in root.subviews {
+            if let found = findView(identifier: identifier, in: child) {
+                return found
+            }
+        }
+        return nil
     }
 
     private func findMenuItem(commandID: String, in menu: NSMenu) -> NSMenuItem? {
