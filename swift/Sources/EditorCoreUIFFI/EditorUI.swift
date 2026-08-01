@@ -2189,4 +2189,17 @@ public final class EditorUI {
         defer { editor_core_ui_ffi_string_free(ptr) }
         return String(cString: ptr)
     }
+
+    /// Hit-test a view point and return the raw LSP `CodeLens` JSON payload (if present).
+    public func codeLensJSONAtViewPoint(xPx: Float, yPx: Float) throws -> String? {
+        var has: UInt8 = 0
+        var ptr: UnsafeMutablePointer<CChar>?
+        let status = editor_core_ui_ffi_editor_ui_get_code_lens_json_at_view_point(handle, xPx, yPx, &has, &ptr)
+        try library.ensureStatus(status, context: "editor_ui_get_code_lens_json_at_view_point")
+        guard has != 0, let ptr else {
+            return nil
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
 }

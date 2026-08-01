@@ -151,6 +151,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 70 已完成：AttoEditor 新增 `AttoRuntimeCompatibility` 启动期兼容性策略，启动时会读取 Swift UI FFI `runtimeInfo()` 并校验最低 UI ABI version 与必需 feature flags；ABI 过低、读取失败或缺少 JSON command dispatcher、typed derived snapshots、LSP interactive requests、LSP status snapshot、WorkspaceEdit application 时会在创建窗口前给出明确错误并退出。后续仍缺逐命令/逐面板的可选 feature 降级策略。
 - 2026-08-02 阶段 71 已完成：AttoEditor LSP definition/declaration/type definition/implementation/references 结果新增最近一次 `LspLocationResultSnapshot`，多结果 quick panel 和单结果导航都会记录排序后的 typed items；新增 `lsp.show_last_locations` command palette / Go 菜单入口，可重新打开最近一次 location/reference 结果面板或重新跳转单结果。后续仍缺完整持久 Locations/References panel、跨请求历史和更细 result lifecycle。
 - 2026-08-02 阶段 72 已完成：AttoEditor LSP document/workspace symbols 结果新增最近一次 `LspSymbolResultSnapshot`，结果 quick panel 会记录 typed symbols 与 placeholder；新增 `lsp.show_last_symbols` command palette / Go 菜单入口，可重新打开最近一次 symbols 结果。后续仍缺完整持久 Outline/Symbols panel、workspace symbol 增量查询和跨请求历史。
+- 2026-08-02 阶段 73 已完成：Rust `editor-core-ui`、C ABI 和 Swift `EditorUI` 新增 code lens view-point hit-test API，可从 above-line virtual text 精确返回原始 `CodeLens` JSON payload；`EditorCoreSkiaView` 新增 Cmd-click code lens host hook，AttoEditor 会解析命中的 lens 并复用现有 resolve / `workspace/executeCommand` 路径执行。测试覆盖 Rust FFI hit-test、Swift FFI hit-test 和 AppKit mouse event 的 Cmd-click 行为。后续仍缺 code lens 键盘定位、自动刷新订阅/状态反馈和通用 workspace command typed model。
 
 ## 分层结论
 
@@ -243,7 +244,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - semantic tokens 到 style intervals 的应用。
 - inlay hints。
 - code lens 派生显示。
-- AttoEditor App command/menu 已覆盖 active code lens actions quick panel；可消费 core code lens decorations 中保留的原始 lens JSON，必要时先 resolve 再执行 command。
+- AttoEditor App command/menu 已覆盖 active code lens actions quick panel；可消费 core code lens decorations 中保留的原始 lens JSON，必要时先 resolve 再执行 command；above-line code lens virtual text 也可通过 Cmd-click hit-test 直接执行。
 - document links hit-test。
 - document highlights。
 - document symbols result 到 core outline 的应用和 JSON 导出。
@@ -262,7 +263,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - signature help popup 主路径已有，并会按 server trigger/retrigger characters 自动弹出，active parameter 富格式高亮、typed result model 和手动请求空/错反馈已完成。
 - rename 主路径已有 App 输入 UI、prepareRename range/placeholder 默认名、当前文档 WorkspaceEdit 应用、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用，以及打开 tab / 本地未打开文件 resource operations；仍缺 core workspace-owned 跨文件事务和 typed result model。
 - code action 主路径已有 App quick panel、resolve、typed diagnostics context、kind/filter、当前文档 edit 应用、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用、打开 tab / 本地未打开文件 resource operations、command 执行和执行结果/错误 HUD；仍缺 core workspace-owned 跨文件事务和 typed result model。
-- code lens refresh、code lens resolve、active code lens actions quick panel 和 workspace command execution 的 Swift UI/App 路径已有；仍缺内联 code lens 点击/键盘定位、自动刷新状态反馈和通用 workspace command typed model。
+- code lens refresh、code lens resolve、active code lens actions quick panel、内联 Cmd-click hit-test 和 workspace command execution 的 Swift UI/App 路径已有；仍缺 code lens 键盘定位、自动刷新订阅/状态反馈和通用 workspace command typed model。
 - outline / document symbols 已有 quick panel 主路径，document symbols 展示已消费 typed derived-state snapshot，基础错误/超时/空结果反馈、最近结果 snapshot 和 reopen command 已补齐；仍缺持久 Outline panel、跨请求历史和更深层 result lifecycle model。
 - workspace symbols 已有查询输入框、quick panel 主路径、基础错误/超时/空结果反馈、最近结果 snapshot 和 reopen command，但还缺增量查询、持久结果面板和完整结果模型。
 - on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；显式 Swift binding 的 `EditorCoreLSPFormattingResult` typed outcome 已完成，自动 on-type 异步 response error 已进入 LSP status/detail，AttoEditor 会刷新 status 并对新的 failure detail 弹一次去重 HUD；Swift 已有 typed `lspStatusSnapshot()`，AttoEditor 的 LSP status/capabilities 行为路径也已迁到 typed snapshot。后续仍缺更通用的 LSP event stream、request lifecycle 和状态变更订阅模型。
@@ -546,7 +547,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - document/workspace symbols 基础错误/超时/空结果反馈、最近结果 snapshot 和 reopen command 已完成；仍缺持久面板、跨请求历史和 workspace 增量查询。
 - range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发、server trigger characters 自动触发路径、显式 Swift/App 错误展示和 formatting typed outcome 已完成；自动 on-type 异步 response error 已进入 LSP status/detail，并有 status refresh + 去重 HUD；Swift 已有 typed `lspStatusSnapshot()`，AttoEditor 的 LSP status/capabilities 行为路径也已迁到 typed snapshot。后续仍缺更通用的 LSP event stream、request lifecycle 和状态变更订阅模型。
 - folding ranges request/take/apply 到 fold state、App refresh 命令、typed capability gate、错误反馈、typed fold snapshot 和 status bar 折叠摘要已完成；仍缺更完整的 gutter fold marker 视觉回归和 result lifecycle model。
-- code lens refresh/resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；code lens 已有手动刷新入口、HUD 反馈、active actions quick panel 和 typed parser，selection range 已有 App expand-selection 命令和 typed candidate model，linked editing 已有 App multi-cursor selection 主路径，document color/color presentation 已有 App quick panel 和 edit apply 主路径，call/type hierarchy 已有基础 quick panel 导航和 typed parser，diagnostics 已有 active-tab Problems quick panel 和 workspace diagnostics quick panel；仍缺持久 project Problems store/panel、增量刷新和 core workspace-owned 归属。
+- code lens refresh/resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；code lens 已有手动刷新入口、HUD 反馈、active actions quick panel、inline Cmd-click 执行路径和 typed parser，selection range 已有 App expand-selection 命令和 typed candidate model，linked editing 已有 App multi-cursor selection 主路径，document color/color presentation 已有 App quick panel 和 edit apply 主路径，call/type hierarchy 已有基础 quick panel 导航和 typed parser，diagnostics 已有 active-tab Problems quick panel 和 workspace diagnostics quick panel；仍缺持久 project Problems store/panel、增量刷新和 core workspace-owned 归属。
 - LSP result panels 和错误展示。
 
 ### P1：统一多文档和分屏架构
@@ -594,7 +595,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand result envelope | partial, raw result + typed diagnostics context + kind filters + current-doc WorkspaceEdit apply + executeCommand result envelope | yes, quick panel/menu/keymap/typed diagnostics context/kind-filter commands/current-doc/cross-file text edits apply + opened/unopened local resource operations + command result/error HUD | partial |
 | LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply + trigger-character auto path | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers + formatting outcome | document + selection commands with no-edits/error HUD; on-type trigger-character auto path | partial |
 | LSP folding ranges | yes | partial helper | yes, request/take + apply to fold regions | yes, raw request/take + apply JSON | yes, raw request/take + apply JSON | partial, refresh command applies ranges and fold commands use current state | yes |
-| LSP advanced raw requests | yes | partial helper | yes, code lens refresh/resolve + selection/linked editing/diagnostics/color/hierarchy raw request/take | yes, raw request/take JSON | yes, raw request/take JSON | partial, code lens refresh/actions + selection range/linked editing/document colors/call hierarchy/type hierarchy/workspace diagnostics have App commands and quick panels; persistent project Problems still missing | partial |
+| LSP advanced raw requests | yes | partial helper | yes, code lens refresh/resolve + selection/linked editing/diagnostics/color/hierarchy raw request/take | yes, raw request/take JSON + code lens view-point hit-test | yes, raw request/take JSON + code lens hit-test wrapper | partial, code lens refresh/actions/inline Cmd-click + selection range/linked editing/document colors/call hierarchy/type hierarchy/workspace diagnostics have App commands and quick panels; persistent project Problems still missing | partial |
 | split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
 | workspace tabs/splits | yes, headless `Workspace` | partial `Workspace` wrapper | yes, `MultiDocumentEditorUi` | no | no, current Swift tabs are migration shims; future ownership must be core workspace | partial, transitional AppKit projection; new tab/workspace semantics must move to core-owned workspace first | partial |
 

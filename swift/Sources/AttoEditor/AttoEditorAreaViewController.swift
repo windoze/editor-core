@@ -2725,6 +2725,9 @@ final class AttoEditorAreaViewController: NSViewController {
         editCore.editorView.onCommandClick = { [weak self] ctx in
             self?.handleCommandClick(ctx: ctx, tabID: tabID) ?? false
         }
+        editCore.editorView.onCodeLensClick = { [weak self] json in
+            self?.handleCodeLensClick(json: json, tabID: tabID) ?? false
+        }
         editCore.editorView.onCommandHover = { [weak self] _ in
             guard let self else { return false }
             guard activeTab?.id == tabID else { return false }
@@ -4511,6 +4514,17 @@ final class AttoEditorAreaViewController: NSViewController {
         )
         codeLensResultsController = controller
         controller.show(relativeTo: window, placeholder: "Filter code lens actions...")
+    }
+
+    @discardableResult
+    private func handleCodeLensClick(json: String, tabID: UUID) -> Bool {
+        guard activeTab?.id == tabID else { return false }
+        guard let item = AttoLspCodeLensParser.item(fromCodeLensJSON: json) else {
+            NSSound.beep()
+            return false
+        }
+        cancelHoverUI()
+        return applyCodeLens(item)
     }
 
     @discardableResult

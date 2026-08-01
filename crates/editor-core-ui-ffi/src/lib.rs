@@ -5444,6 +5444,65 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_document_link_json_at_
     }
 }
 
+/// Hit-test a view point and return the raw LSP `CodeLens` JSON payload (if present).
+///
+/// - `out_has_lens` is set to 1 when a code lens is present.
+/// - `out_json_utf8` receives a newly allocated string that must be freed with
+///   `editor_core_ui_ffi_string_free` (or is set to NULL when no code lens is present).
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_has_lens` must be a valid pointer to a `u8`.
+/// `out_json_utf8` must be a valid pointer to a `*mut c_char`, or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_code_lens_json_at_view_point(
+    ui: *mut EditorUi,
+    x_px: c_float,
+    y_px: c_float,
+    out_has_lens: *mut u8,
+    out_json_utf8: *mut *mut c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_has_lens.is_null() {
+            return Err(invalid_argument("out_has_lens is null"));
+        }
+
+        unsafe {
+            *out_has_lens = 0;
+        }
+        if !out_json_utf8.is_null() {
+            unsafe {
+                *out_json_utf8 = ptr::null_mut();
+            }
+        }
+
+        let Some(json) = ui.code_lens_json_at_view_point_px(x_px, y_px) else {
+            return Ok(ECU_OK);
+        };
+
+        unsafe {
+            *out_has_lens = 1;
+        }
+
+        if out_json_utf8.is_null() {
+            return Ok(ECU_OK);
+        }
+
+        unsafe {
+            *out_json_utf8 = make_c_string_ptr(json);
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7208,6 +7267,96 @@ contexts:
 
         // Code lens is an above-line virtual text line inserted at the top => row=0, col=0.
         assert_eq!(pixel(&buf, 200, 5, 10), [1, 200, 2, 255]);
+
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+    }
+
+    #[test]
+    fn ffi_code_lens_hit_test_returns_payload_json() {
+        let initial = CString::new("line1\nline2\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
+            ECU_OK
+        );
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 400, 80, 1.0),
+            ECU_OK
+        );
+
+        let result = CString::new(
+            r#"[
+              {
+                "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+                "command": { "title": "Run tests", "command": "test.run", "arguments": [1] }
+              }
+            ]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_json(ui, result.as_ptr()),
+            ECU_OK
+        );
+
+        let mut has_lens: u8 = 0;
+        let mut json_ptr: *mut c_char = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_code_lens_json_at_view_point(
+                    ui,
+                    5.0,
+                    10.0,
+                    &mut has_lens,
+                    &mut json_ptr,
+                )
+            },
+            ECU_OK
+        );
+        assert_eq!(has_lens, 1);
+        assert!(!json_ptr.is_null());
+        let json = unsafe { CStr::from_ptr(json_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { editor_core_ui_ffi_string_free(json_ptr) };
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["command"]["title"], "Run tests");
+        assert_eq!(value["command"]["command"], "test.run");
+
+        has_lens = 9;
+        json_ptr = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_code_lens_json_at_view_point(
+                    ui,
+                    200.0,
+                    10.0,
+                    &mut has_lens,
+                    &mut json_ptr,
+                )
+            },
+            ECU_OK
+        );
+        assert_eq!(has_lens, 0);
+        assert!(json_ptr.is_null());
+
+        has_lens = 9;
+        json_ptr = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                editor_core_ui_ffi_editor_ui_get_code_lens_json_at_view_point(
+                    ui,
+                    5.0,
+                    30.0,
+                    &mut has_lens,
+                    &mut json_ptr,
+                )
+            },
+            ECU_OK
+        );
+        assert_eq!(has_lens, 0);
+        assert!(json_ptr.is_null());
 
         unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }

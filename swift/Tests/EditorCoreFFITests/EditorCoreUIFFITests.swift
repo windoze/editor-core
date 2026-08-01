@@ -1235,6 +1235,32 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(pixel(rgba, widthPx: 200, x: 5, y: 10), [1, 200, 2, 255])
     }
 
+    func testCodeLensHitTestReturnsPayloadJSON() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "line1\nline2\n", viewportWidthCells: 80)
+
+        try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 400, heightPx: 80, scale: 1)
+
+        let result = """
+        [
+          {
+            "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+            "command": { "title": "Run tests", "command": "test.run", "arguments": [1] }
+          }
+        ]
+        """
+        try ui.lspApplyCodeLensJSON(result)
+
+        let json = try ui.codeLensJSONAtViewPoint(xPx: 5, yPx: 10)
+        XCTAssertNotNil(json)
+        XCTAssertTrue(json?.contains(#""title":"Run tests""#) == true)
+        XCTAssertTrue(json?.contains(#""command":"test.run""#) == true)
+
+        XCTAssertNil(try ui.codeLensJSONAtViewPoint(xPx: 200, yPx: 10))
+        XCTAssertNil(try ui.codeLensJSONAtViewPoint(xPx: 5, yPx: 30))
+    }
+
     func testLspDocumentLinksAffectRendering() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         // Use a space in the link range so glyph rasterization does not affect the pixel sample.

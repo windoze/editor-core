@@ -119,6 +119,12 @@ public final class EditorCoreSkiaView: MTKView {
         NSWorkspace.shared.open(url)
     }
 
+    /// Called when Cmd-click hits LSP code lens virtual text.
+    ///
+    /// The payload is the raw `CodeLens` JSON returned by the Rust hit-test. Hosts should parse and
+    /// execute it, resolving the lens first when needed.
+    public var onCodeLensClick: ((String) -> Bool)?
+
     /// Called when the editor's viewport state (scroll position / total lines / viewport size) may have changed.
     ///
     /// Hosts can use this to keep native scrollbars in sync.
@@ -1536,6 +1542,10 @@ public final class EditorCoreSkiaView: MTKView {
             // Cmd+Click 依然保留给“文档链接 / go-to-definition”等 host 级 hook。
             // 但 Cmd+Option+Click 需要保留给 multi-cursor（避免与 cmd-click hook 冲突）。
             if flags.contains(.command), flags.contains(.option) == false {
+                if event.clickCount == 1, performCodeLensClickIfPresent(xPx: xPx, yPx: yPx) {
+                    return
+                }
+
                 if event.clickCount == 1, openDocumentLinkIfPresent(xPx: xPx, yPx: yPx) {
                     return
                 }
@@ -1588,6 +1598,21 @@ public final class EditorCoreSkiaView: MTKView {
             }
             onOpenURL(url)
             return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Try to execute an LSP code lens at the given view point (in backing pixels).
+    ///
+    /// Returns `true` when a code lens was found and the host handled it.
+    @discardableResult
+    public func performCodeLensClickIfPresent(xPx: Float, yPx: Float) -> Bool {
+        do {
+            guard let json = try editor.codeLensJSONAtViewPoint(xPx: xPx, yPx: yPx) else {
+                return false
+            }
+            return onCodeLensClick?(json) ?? false
         } catch {
             return false
         }

@@ -2279,6 +2279,67 @@ impl EditorUi {
         self.document_link_json_at_char_offset(off)
     }
 
+    /// Hit-test and return the raw LSP `CodeLens` JSON (if any) at the given view point.
+    ///
+    /// Code lens is rendered as above-line virtual text. Unlike document-link hit-testing, this
+    /// intentionally checks the composed virtual cells first so clicking the corresponding document
+    /// line start does not accidentally trigger a code lens anchored at the same offset.
+    pub fn code_lens_json_at_view_point_px(&mut self, x_px: f32, y_px: f32) -> Option<String> {
+        if !self.has_virtual_text_decorations() {
+            return None;
+        }
+
+        let (_start_composed, _row_count, grid) = self.composed_viewport_grid();
+        if grid.lines.is_empty() {
+            return None;
+        }
+
+        let (local_row, x_cells) = self.pixel_to_local_row_col(x_px, y_px);
+        let line = grid.lines.get(local_row)?;
+        if !matches!(line.kind, ComposedLineKind::VirtualAboveLine { .. }) {
+            return None;
+        }
+
+        let mut x = 0usize;
+        let mut anchor_offset: Option<usize> = None;
+        for cell in &line.cells {
+            let w = cell.width.max(1);
+            if x_cells < x.saturating_add(w) {
+                if let ComposedCellSource::Virtual { anchor_offset: off } = cell.source {
+                    anchor_offset = Some(off);
+                }
+                break;
+            }
+            x = x.saturating_add(w);
+        }
+        let anchor_offset = anchor_offset?;
+        let text: String = line.cells.iter().map(|cell| cell.ch).collect();
+
+        let doc = self.lock_doc();
+        let layer = doc
+            .ws
+            .buffer_decorations(self.buffer_id)
+            .ok()?
+            .get(&DecorationLayerId::CODE_LENS)?;
+
+        layer
+            .iter()
+            .filter(|d| {
+                d.kind == DecorationKind::CodeLens
+                    && d.placement == DecorationPlacement::AboveLine
+                    && d.range.start == anchor_offset
+            })
+            .find(|d| d.text.as_deref() == Some(text.as_str()))
+            .or_else(|| {
+                layer.iter().find(|d| {
+                    d.kind == DecorationKind::CodeLens
+                        && d.placement == DecorationPlacement::AboveLine
+                        && d.range.start == anchor_offset
+                })
+            })
+            .and_then(|d| d.data_json.clone())
+    }
+
     pub fn line_height_px(&self) -> f32 {
         self.render_config.line_height_px
     }
