@@ -1114,6 +1114,18 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelCodeActionUI()
         cancelFoldingRangesUI()
 
+        if let status = try? tab.editCore.editor.lspStatusSnapshot(),
+           AttoLspFoldingRangesSupport.availability(status: status) == .unsupported {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: AttoLspFoldingRangesSupport.unsupportedMessage,
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
         do {
             _ = try tab.editCore.editor.lspRequestFoldingRanges()
         } catch {
