@@ -32,6 +32,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private var findReplaceBarHeightConstraint: NSLayoutConstraint?
     private let contentHostView = NSView(frame: .zero)
     private let statusBarView = AttoStatusBarView()
+    private let derivedStateStore = AttoDerivedStateStore()
     private let emptyStateLabel = NSTextField(labelWithString: "Open a file to start editing")
 
     private var activeViewportObserver: EditorCoreSkiaView.ViewportStateObserverToken?
@@ -55,6 +56,14 @@ final class AttoEditorAreaViewController: NSViewController {
 
     var hasMultiplePanesForCommands: Bool {
         (activeTab?.panes.count ?? 0) > 1
+    }
+
+    func _activeDerivedStateForTesting() -> AttoDerivedStateSnapshot {
+        derivedStateStore.active
+    }
+
+    func _updateStatusBarForTesting() {
+        updateStatusBar()
     }
 
     private struct HoverRequestContext {
@@ -1315,6 +1324,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func updateStatusBar() {
         guard let tab = activeTab else {
+            derivedStateStore.clearActive()
             statusBarView.update(
                 leftText: nil,
                 languageId: nil,
@@ -1328,6 +1338,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         let editor = tab.editCore.editor
+        derivedStateStore.refreshActive(editor: editor)
 
         let (line1, col1): (UInt32, UInt32) = {
             do {
@@ -1456,7 +1467,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }()
 
         statusBarView.update(
-            leftText: nil,
+            leftText: derivedStateStore.active.problemsStatusText,
             languageId: tab.syntaxLanguageId,
             languageIsEnabled: true,
             lspText: lspText,

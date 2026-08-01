@@ -118,6 +118,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 37 已完成：AttoEditor 主菜单新增独立 Selection 菜单分组，`select word/line`、`expand selection`、`add cursor above/below` 和 occurrence 命令继续复用统一 command id、keymap 与菜单 validation 路径。
 - 2026-08-01 阶段 38 已完成：AttoEditor toggle comment 不再只向 Rust core 传 line token；Swift 语言配置现在会向 `ToggleComment` command 传完整 `line` / `block_start` / `block_end` comment config，HTML/CSS/XML/Markdown 等 block-comment 语言可以走 core block comment 路径。
 - 2026-08-01 阶段 39 已完成：Swift `EditorCoreUIFFI` 在现有 derived-state JSON snapshot 之上新增 typed snapshot API，覆盖 diagnostics、decorations、document symbols、folding regions 和 style intervals，App/测试层不再必须到处手写 JSON 字典解析。
+- 2026-08-01 阶段 40 已完成：AttoEditor 新增 active-tab derived-state store，使用 Swift typed snapshots 缓存 diagnostics、decorations、document symbols、folding regions 和 style intervals；status bar 开始消费该 store 显示 Problems 数量，测试可通过同一 store 做结构化断言。
 
 ## 分层结论
 
@@ -280,7 +281,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 剩余缺口已经从“Swift binding 拿不到”转为 App 层消费、模型化和统一控制：
 
 - Swift UI binding 已有 diagnostics、decorations、symbols、fold regions、style intervals 的基础 typed snapshot model；LSP 交互结果、WorkspaceEdit、hierarchy/color/linked-editing 等更深层结果仍需继续 typed model 化。
-- App 层没有一个统一的 derived-state store，供 outline、problems panel、minimap markers、gutter icons、status bar、测试断言共同使用。
+- App 层已有 active-tab derived-state store，status bar 和测试断言可以消费 diagnostics/decorations/symbols/folds/styles 的 typed snapshots；仍缺 workspace/project 级 store、增量刷新，以及 Problems panel、Outline、minimap markers、gutter diagnostic icons 的完整消费。
 - App 层还没有统一的派生状态刷新策略、过期响应处理、增量更新通知和错误展示。
 
 这会影响 Sublime 复刻中的这些功能：
@@ -487,6 +488,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor keymap 已支持 arrow/navigation function-key token，move lines up/down 已有默认 arrow-key 绑定。
 - 已完成：AttoEditor 主菜单已有独立 Selection 菜单分组，常用 selection/multicursor 命令复用统一 command id。
 - 已完成：Swift UI binding 已为 derived-state snapshots 提供基础 typed model。
+- 已完成：AttoEditor 已有 active-tab derived-state store，status bar 可显示 Problems 数量，测试可直接断言 active derived-state snapshot。
 - 已完成：AttoEditor command palette 为一批 Sublime 基础编辑命令建立稳定 command id。
 - 已完成：为高频命令补 typed Swift convenience API。
 - 已完成：把 App command id 统一接入主菜单和初步用户可配置 keymap。
