@@ -963,6 +963,41 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(dirtyItem.isDirty)
     }
 
+    func testWorkspaceEditResourceOperationUsesCoreDirtyWhenSwiftCacheIsStale() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("core-dirty-delete.txt")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+
+        vc._setActiveTabDirtyCacheForTesting(false)
+        XCTAssertTrue(vc._activeTabDirtyForDataLossDecisionForTesting())
+
+        vc._setActiveTabDirtyCacheForTesting(false)
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "delete",
+              "uri": "\(dirtyURL.absoluteString)"
+            }
+          ]
+        }
+        """
+
+        XCTAssertFalse(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+        let dirtyItem = try XCTUnwrap(vc.openFileItems().first { $0.url.standardizedFileURL == dirtyURL.standardizedFileURL })
+        XCTAssertTrue(dirtyItem.isDirty)
+    }
+
     func testShowProblemsUsesDerivedDiagnosticsAndNavigatesWithoutPanelWindow() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

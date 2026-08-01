@@ -84,6 +84,15 @@ final class AttoEditorAreaViewController: NSViewController {
         try coreDocuments?.searchAllTabs(query: query)
     }
 
+    func _setActiveTabDirtyCacheForTesting(_ isDirty: Bool) {
+        activeTab?.isDirty = isDirty
+    }
+
+    func _activeTabDirtyForDataLossDecisionForTesting() -> Bool {
+        guard let tab = activeTab else { return false }
+        return isTabDirtyForDataLossDecision(tab)
+    }
+
     private struct HoverRequestContext {
         let tabID: UUID
         let info: EditorCoreSkiaHoverInfo
@@ -735,6 +744,43 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    private func coreTabDirtyState(_ tab: AttoEditorTab) -> Bool? {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return nil }
+        do {
+            return try coreDocuments.isTabModified(coreTabID)
+        } catch {
+            NSLog("AttoEditor: core multi-document dirty query failed: %@", String(describing: error))
+            return nil
+        }
+    }
+
+    private func localTabDirtyState(_ tab: AttoEditorTab) -> Bool {
+        (try? tab.editCore.editor.isModified()) ?? tab.isDirty
+    }
+
+    @discardableResult
+    private func refreshTabDirtyState(_ tab: AttoEditorTab) -> Bool {
+        let localDirty = localTabDirtyState(tab)
+        guard let coreDirty = coreTabDirtyState(tab) else {
+            tab.isDirty = localDirty
+            return localDirty
+        }
+
+        let isDirty = coreDirty || localDirty
+        tab.isDirty = isDirty
+        return isDirty
+    }
+
+    private func refreshAllTabDirtyStates() {
+        for tab in tabs {
+            refreshTabDirtyState(tab)
+        }
+    }
+
+    private func isTabDirtyForDataLossDecision(_ tab: AttoEditorTab) -> Bool {
+        refreshTabDirtyState(tab)
+    }
+
     private func pinCoreTabIfPreview(_ tab: AttoEditorTab) {
         guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
         do {
@@ -818,7 +864,7 @@ final class AttoEditorAreaViewController: NSViewController {
             case .preview:
                 if let previewIdx = tabs.firstIndex(where: { $0.isPreview }) {
                     // Safety: never discard dirty state; pin the preview tab if it got edited.
-                    if tabs[previewIdx].isDirty {
+                    if isTabDirtyForDataLossDecision(tabs[previewIdx]) {
                         tabs[previewIdx].isPreview = false
                         pinCoreTabIfPreview(tabs[previewIdx])
                     } else {
@@ -871,11 +917,12 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func openFileItems() -> [OpenFileItem] {
         tabs.map { tab in
-            OpenFileItem(
+            let isDirty = refreshTabDirtyState(tab)
+            return OpenFileItem(
                 id: tab.id,
                 url: tab.fileURL,
                 title: tab.displayTitle,
-                isDirty: tab.isDirty,
+                isDirty: isDirty,
                 isPreview: tab.isPreview
             )
         }
@@ -953,7 +1000,7 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     func confirmClosingDirtyTabsIfNeeded() -> Bool {
-        let dirtyTabs = tabs.filter { $0.isDirty }
+        let dirtyTabs = tabs.filter { isTabDirtyForDataLossDecision($0) }
         guard dirtyTabs.isEmpty == false else { return true }
 
         let alert = NSAlert()
@@ -1029,7 +1076,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func saveAllDirtyTabs() -> Bool {
         for tab in tabs {
-            if tab.isDirty {
+            if isTabDirtyForDataLossDecision(tab) {
                 if saveTabWithSavePanelIfNeeded(tab) == false {
                     return false
                 }
@@ -1041,7 +1088,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private func closeTab(id: UUID) {
         guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
         let tab = tabs[idx]
-        if tab.isDirty {
+        if isTabDirtyForDataLossDecision(tab) {
             switch confirmCloseDirtyTab(tab) {
             case .cancel:
                 return
@@ -1101,6 +1148,7 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func refreshTabBar() {
+        refreshAllTabDirtyStates()
         tabBarView.updateTabs(
             tabs: tabs.map { .init(id: $0.id, title: $0.displayTitle, toolTip: $0.fileURL.path, isPreview: $0.isPreview) },
             selectedID: selectedTabID
@@ -2637,7 +2685,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         let name = tab.fileURL.lastPathComponent
-        if tab.isDirty {
+        if refreshTabDirtyState(tab) {
             win.title = "AttoEditor — ● \(name)"
         } else {
             win.title = "AttoEditor — \(name)"
@@ -5666,7 +5714,7 @@ final class AttoEditorAreaViewController: NSViewController {
             guard let url = workspaceFileURL(fromDocumentURI: op.uri) else { return false }
             if let tab = tabForFileURL(url) {
                 if op.ignoreIfExists { return true }
-                guard op.overwrite, tab.isDirty == false else { return false }
+                guard op.overwrite, isTabDirtyForDataLossDecision(tab) == false else { return false }
                 guard createWorkspaceFile(at: url, overwrite: true, ignoreIfExists: false) else { return false }
                 return replaceOpenTabText(tab, with: "", markSaved: true)
             }
@@ -5689,7 +5737,7 @@ final class AttoEditorAreaViewController: NSViewController {
             }
 
             if let targetTab, targetTab.id != oldTab?.id {
-                guard op.overwrite, targetTab.isDirty == false else { return false }
+                guard op.overwrite, isTabDirtyForDataLossDecision(targetTab) == false else { return false }
                 closeTab(id: targetTab.id)
             }
 
@@ -5714,7 +5762,7 @@ final class AttoEditorAreaViewController: NSViewController {
         case .delete(let op):
             guard let url = workspaceFileURL(fromDocumentURI: op.uri) else { return false }
             if let tab = tabForFileURL(url) {
-                guard tab.isDirty == false else { return false }
+                guard isTabDirtyForDataLossDecision(tab) == false else { return false }
                 guard deleteWorkspaceFile(
                     at: url,
                     recursive: op.recursive,
