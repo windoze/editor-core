@@ -20,6 +20,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var keySequences: [String: AttoKeySequence]
     private var keyBindingArguments: [String: AttoCommandArguments]
     private var pendingKeySequence: [AttoKeyBinding] = []
+    private var keySequenceTimeoutTimer: Timer?
+    private let keySequencePrefixTimeoutSeconds: TimeInterval
     private var keyEventMonitor: Any?
 
     var ipcServer: AttoIpcServer?
@@ -30,17 +32,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.keyBindings = keymap.bindings
         self.keySequences = keymap.sequences
         self.keyBindingArguments = keymap.arguments
+        self.keySequencePrefixTimeoutSeconds = 1.0
         super.init()
     }
 
     init(
         keyBindings: [String: AttoKeyBinding],
         keyBindingArguments: [String: AttoCommandArguments] = [:],
-        keySequences: [String: AttoKeySequence] = [:]
+        keySequences: [String: AttoKeySequence] = [:],
+        keySequencePrefixTimeoutSeconds: TimeInterval = 1.0
     ) {
         self.keyBindings = keyBindings
         self.keySequences = keySequences
         self.keyBindingArguments = keyBindingArguments
+        self.keySequencePrefixTimeoutSeconds = keySequencePrefixTimeoutSeconds
         super.init()
     }
 
@@ -265,6 +270,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             NSEvent.removeMonitor(keyEventMonitor)
             self.keyEventMonitor = nil
         }
+        clearPendingKeySequence()
         ipcServer?.stop()
     }
 
@@ -447,7 +453,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     @discardableResult
     func handleKeyDownEvent(_ event: NSEvent) -> Bool {
         guard let binding = AttoKeymap.binding(for: event) else {
-            pendingKeySequence = []
+            clearPendingKeySequence()
             return false
         }
         return handleKeyBinding(binding)
@@ -455,26 +461,62 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     @discardableResult
     private func handleKeyBinding(_ binding: AttoKeyBinding) -> Bool {
+        if pendingKeySequence.isEmpty == false, binding == AttoKeymap.parseBinding("escape") {
+            clearPendingKeySequence()
+            return true
+        }
+
         let candidate = pendingKeySequence + [binding]
         if let commandID = commandID(forKeySequence: candidate) {
-            pendingKeySequence = []
+            clearPendingKeySequence()
             return executeCommandUsingKeymapArguments(commandID: commandID)
         }
 
         if hasKeySequencePrefix(candidate) {
-            pendingKeySequence = candidate
+            setPendingKeySequence(candidate)
             return true
         }
 
         let hadPending = pendingKeySequence.isEmpty == false
-        pendingKeySequence = []
+        clearPendingKeySequence()
 
         if hadPending, hasKeySequencePrefix([binding]) {
-            pendingKeySequence = [binding]
+            setPendingKeySequence([binding])
             return true
         }
 
         return false
+    }
+
+    private func setPendingKeySequence(_ sequence: [AttoKeyBinding]) {
+        pendingKeySequence = sequence
+        restartKeySequenceTimeout()
+    }
+
+    private func clearPendingKeySequence() {
+        pendingKeySequence = []
+        keySequenceTimeoutTimer?.invalidate()
+        keySequenceTimeoutTimer = nil
+    }
+
+    private func restartKeySequenceTimeout() {
+        keySequenceTimeoutTimer?.invalidate()
+        keySequenceTimeoutTimer = nil
+
+        guard keySequencePrefixTimeoutSeconds > 0 else { return }
+        keySequenceTimeoutTimer = Timer.scheduledTimer(
+            timeInterval: keySequencePrefixTimeoutSeconds,
+            target: self,
+            selector: #selector(keySequenceTimeoutTimerFired(_:)),
+            userInfo: nil,
+            repeats: false
+        )
+        keySequenceTimeoutTimer?.tolerance = 0.05
+    }
+
+    @objc private func keySequenceTimeoutTimerFired(_ timer: Timer) {
+        _ = timer
+        clearPendingKeySequence()
     }
 
     private func commandID(forKeySequence bindings: [AttoKeyBinding]) -> String? {
@@ -738,6 +780,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     func _keySequenceForTesting(commandID: String) -> AttoKeySequence? {
         keySequences[commandID]
+    }
+
+    func _pendingKeySequenceForTesting() -> [AttoKeyBinding] {
+        pendingKeySequence
+    }
+
+    func _expirePendingKeySequenceForTesting() {
+        clearPendingKeySequence()
     }
 
     @discardableResult

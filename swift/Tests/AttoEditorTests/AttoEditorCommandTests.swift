@@ -628,6 +628,34 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(offsets.end, 4)
     }
 
+    func testKeymapChordPrefixCanExpireOrBeCancelled() throws {
+        let chord = AttoKeySequence(bindings: [
+            try XCTUnwrap(AttoKeymap.parseBinding("ctrl+k")),
+            try XCTUnwrap(AttoKeymap.parseBinding("ctrl+g")),
+        ])
+        let delegate = AttoAppDelegate(
+            keyBindings: [:],
+            keySequences: ["go.line": chord],
+            keySequencePrefixTimeoutSeconds: 0
+        )
+
+        XCTAssertTrue(delegate._handleKeyBindingForTesting(chord.bindings[0]))
+        XCTAssertEqual(delegate._pendingKeySequenceForTesting(), [chord.bindings[0]])
+
+        delegate._expirePendingKeySequenceForTesting()
+        XCTAssertTrue(delegate._pendingKeySequenceForTesting().isEmpty)
+        XCTAssertFalse(delegate._handleKeyBindingForTesting(chord.bindings[1]))
+        XCTAssertTrue(delegate._pendingKeySequenceForTesting().isEmpty)
+
+        XCTAssertTrue(delegate._handleKeyBindingForTesting(chord.bindings[0]))
+        XCTAssertEqual(delegate._pendingKeySequenceForTesting(), [chord.bindings[0]])
+
+        let escape = try XCTUnwrap(AttoKeymap.parseBinding("escape"))
+        XCTAssertTrue(delegate._handleKeyBindingForTesting(escape))
+        XCTAssertTrue(delegate._pendingKeySequenceForTesting().isEmpty)
+        XCTAssertFalse(delegate._handleKeyBindingForTesting(chord.bindings[1]))
+    }
+
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
         let delegate = AttoAppDelegate(
             keyBindings: [
