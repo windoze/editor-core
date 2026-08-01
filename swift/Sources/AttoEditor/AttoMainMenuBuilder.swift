@@ -134,6 +134,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Source Actions", commandID: "lsp.source_actions", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Organize Imports", commandID: "lsp.organize_imports", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Fix All", commandID: "lsp.fix_all", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Workspace Diagnostics", commandID: "lsp.workspace_diagnostics", appDelegate: appDelegate))
 
         return mainMenu
     }

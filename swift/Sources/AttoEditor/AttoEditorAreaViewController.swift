@@ -210,6 +210,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let showFeedback: Bool
     }
 
+    private struct WorkspaceDiagnosticsRequestContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
@@ -231,6 +236,9 @@ final class AttoEditorAreaViewController: NSViewController {
     private var hierarchyChildrenPollTimer: DispatchSourceTimer?
     private var hierarchyResultsController: AttoCommandPaletteController?
     private var problemsResultsController: AttoCommandPaletteController?
+    private var workspaceDiagnosticsContext: WorkspaceDiagnosticsRequestContext?
+    private var workspaceDiagnosticsPollTimer: DispatchSourceTimer?
+    private var workspaceDiagnosticsResultsController: AttoCommandPaletteController?
     private var documentColorResultsController: AttoCommandPaletteController?
     private var colorPresentationResultsController: AttoCommandPaletteController?
 
@@ -3757,6 +3765,155 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    // MARK: - Workspace diagnostics quick panel
+
+    @discardableResult
+    func showWorkspaceDiagnosticsInActiveTab(showFeedback: Bool = true) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                showWorkspaceEditPopover(text: "Workspace diagnostics require an active LSP server.", in: tab.editCore.editorView)
+            }
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelWorkspaceDiagnosticsUI()
+
+        do {
+            _ = try tab.editCore.editor.lspRequestWorkspaceDiagnostic(previousResultIdsJSON: "[]")
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Workspace diagnostics request failed.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        workspaceDiagnosticsContext = WorkspaceDiagnosticsRequestContext(tabID: tab.id, showFeedback: showFeedback)
+        startWorkspaceDiagnosticsPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
+        return true
+    }
+
+    @discardableResult
+    func showWorkspaceDiagnosticsResultJSONInActiveTab(_ json: String, showFeedback: Bool = false) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        let result = AttoLspWorkspaceDiagnosticsParser.parse(json)
+        guard result.diagnostics.isEmpty == false else {
+            if showFeedback {
+                showWorkspaceEditPopover(text: "No workspace diagnostics are available.", in: tab.editCore.editorView)
+            }
+            NSSound.beep()
+            return false
+        }
+
+        showWorkspaceDiagnosticResults(result.diagnostics)
+        return true
+    }
+
+    private func startWorkspaceDiagnosticsPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        workspaceDiagnosticsPollTimer?.cancel()
+
+        var remainingTicks = 80 // ~4s at 50ms; workspace diagnostics can fan out across files.
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.workspaceDiagnosticsContext, ctx.tabID == tabID else {
+                self.cancelWorkspaceDiagnosticsUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
+                self.cancelWorkspaceDiagnosticsUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(text: "Workspace diagnostics request timed out.", in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelWorkspaceDiagnosticsUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastWorkspaceDiagnosticResultJSON()
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            let showFeedback = ctx.showFeedback
+            self.workspaceDiagnosticsPollTimer?.cancel()
+            self.workspaceDiagnosticsPollTimer = nil
+            self.workspaceDiagnosticsContext = nil
+            _ = self.showWorkspaceDiagnosticsResultJSONInActiveTab(json, showFeedback: showFeedback)
+            timer.cancel()
+        }
+
+        workspaceDiagnosticsPollTimer = timer
+        timer.resume()
+    }
+
+    private func showWorkspaceDiagnosticResults(_ diagnostics: [AttoLspWorkspaceDiagnosticsParser.Diagnostic]) {
+        guard diagnostics.isEmpty == false else {
+            NSSound.beep()
+            return
+        }
+
+        guard let window = view.window else {
+            navigateToLspTarget(diagnostics[0].target)
+            return
+        }
+
+        let commands = diagnostics.enumerated().map { idx, diagnostic in
+            AttoCommandPaletteCommand(
+                id: "lsp.workspace_diagnostic.\(idx)",
+                title: displayTitle(for: diagnostic)
+            ) { [weak self] in
+                self?.navigateToLspTarget(diagnostic.target)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.WorkspaceDiagnostics",
+            commandsProvider: { commands }
+        )
+        workspaceDiagnosticsResultsController = controller
+        controller.show(relativeTo: window, placeholder: "Filter workspace diagnostics...")
+    }
+
+    private func displayTitle(for diagnostic: AttoLspWorkspaceDiagnosticsParser.Diagnostic) -> String {
+        let severity = diagnostic.severityLabel.map { "[\($0)] " } ?? ""
+        let code = diagnostic.code.map { " [\($0)]" } ?? ""
+        let source = diagnostic.source.map { " (\($0))" } ?? ""
+        let location = displayTitle(for: diagnostic.target)
+        return "\(severity)\(diagnostic.message)\(code)\(source) — \(location)"
+    }
+
     // MARK: - LSP completion
 
     @discardableResult
@@ -5640,6 +5797,7 @@ final class AttoEditorAreaViewController: NSViewController {
         lspSymbolResultsController?.hide()
         lspSymbolResultsController = nil
         cancelProblemsUI()
+        cancelWorkspaceDiagnosticsUI()
     }
 
     private func cancelHierarchyUI() {
@@ -5658,6 +5816,14 @@ final class AttoEditorAreaViewController: NSViewController {
     private func cancelProblemsUI() {
         problemsResultsController?.hide()
         problemsResultsController = nil
+    }
+
+    private func cancelWorkspaceDiagnosticsUI() {
+        workspaceDiagnosticsPollTimer?.cancel()
+        workspaceDiagnosticsPollTimer = nil
+        workspaceDiagnosticsContext = nil
+        workspaceDiagnosticsResultsController?.hide()
+        workspaceDiagnosticsResultsController = nil
     }
 
     private func cancelSignatureHelpUI() {
