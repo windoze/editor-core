@@ -19,13 +19,14 @@ use editor_core::{
     StyleLayerId, SymbolKind, ViewCommand,
 };
 use editor_core_lsp::{
-    DeltaCalculator, LspContentChange, LspDocument, LspEvent, LspNotification, LspSession,
-    LspSessionStartOptions, LspTextEdit, char_offsets_for_lsp_range, encode_semantic_style_id,
-    folding_ranges_result_to_processing_edit, lsp_code_lens_to_processing_edit,
-    lsp_diagnostics_to_processing_edits, lsp_document_highlights_to_processing_edit,
-    lsp_document_links_to_processing_edits, lsp_document_symbols_to_processing_edit,
-    lsp_inlay_hints_to_processing_edit, semantic_tokens_to_intervals, summarize_workspace_edit,
-    text_edits_from_value, workspace_edit_text_edits,
+    DeltaCalculator, LspContentChange, LspDocument, LspEvent, LspNotification, LspResponseError,
+    LspSession, LspSessionStartOptions, LspTextEdit, char_offsets_for_lsp_range,
+    encode_semantic_style_id, folding_ranges_result_to_processing_edit,
+    lsp_code_lens_to_processing_edit, lsp_diagnostics_to_processing_edits,
+    lsp_document_highlights_to_processing_edit, lsp_document_links_to_processing_edits,
+    lsp_document_symbols_to_processing_edit, lsp_inlay_hints_to_processing_edit,
+    semantic_tokens_to_intervals, summarize_workspace_edit, text_edits_from_value,
+    workspace_edit_text_edits,
 };
 use editor_core_render_skia::{
     FOLD_MARKER_COLLAPSED_STYLE_ID, FOLD_MARKER_EXPANDED_STYLE_ID, FoldMarker, FoldMarkerStyle,
@@ -903,6 +904,38 @@ impl LspResultSlot {
             "typeHierarchy/subtypes" => Some(Self::TypeHierarchySubtypes),
             _ => None,
         }
+    }
+}
+
+fn stored_lsp_error_result_json(slot: LspResultSlot, error: LspResponseError) -> Option<String> {
+    if slot != LspResultSlot::ExecuteCommand {
+        return None;
+    }
+
+    Some(
+        serde_json::json!({
+            "error": {
+                "code": error.code,
+                "message": error.message,
+                "data": error.data,
+            }
+        })
+        .to_string(),
+    )
+}
+
+fn stored_lsp_success_result_json(
+    slot: LspResultSlot,
+    result: serde_json::Value,
+) -> Option<String> {
+    if slot == LspResultSlot::ExecuteCommand {
+        return Some(serde_json::json!({ "result": result }).to_string());
+    }
+
+    if result.is_null() {
+        None
+    } else {
+        Some(result.to_string())
     }
 }
 
@@ -6462,8 +6495,12 @@ impl EditorUi {
                         continue;
                     }
 
-                    if resp.error.is_some() {
-                        doc.lsp_last_result_json.remove(&(view, slot));
+                    if let Some(error) = resp.error {
+                        if let Some(json) = stored_lsp_error_result_json(slot, error) {
+                            doc.lsp_last_result_json.insert((view, slot), json);
+                        } else {
+                            doc.lsp_last_result_json.remove(&(view, slot));
+                        }
                         continue;
                     }
 
@@ -6488,11 +6525,10 @@ impl EditorUi {
                         _ => {}
                     }
 
-                    if result.is_null() {
-                        doc.lsp_last_result_json.remove(&(view, slot));
+                    if let Some(json) = stored_lsp_success_result_json(slot, result) {
+                        doc.lsp_last_result_json.insert((view, slot), json);
                     } else {
-                        doc.lsp_last_result_json
-                            .insert((view, slot), result.to_string());
+                        doc.lsp_last_result_json.remove(&(view, slot));
                     }
                 }
                 continue;
@@ -7442,6 +7478,63 @@ mod tests {
 
     use editor_core::CursorCommand;
     use editor_core_treesitter::TreeSitterUpdateMode;
+
+    #[test]
+    fn execute_command_result_slot_stores_success_null_and_error_envelopes() {
+        let success = stored_lsp_success_result_json(
+            LspResultSlot::ExecuteCommand,
+            serde_json::json!({ "changed": true }),
+        )
+        .unwrap();
+        let success_json: serde_json::Value = serde_json::from_str(&success).unwrap();
+        assert_eq!(
+            success_json["result"],
+            serde_json::json!({ "changed": true })
+        );
+
+        let null =
+            stored_lsp_success_result_json(LspResultSlot::ExecuteCommand, serde_json::Value::Null)
+                .unwrap();
+        let null_json: serde_json::Value = serde_json::from_str(&null).unwrap();
+        assert!(null_json["result"].is_null());
+
+        let error = stored_lsp_error_result_json(
+            LspResultSlot::ExecuteCommand,
+            LspResponseError {
+                code: -32603,
+                message: "command failed".to_string(),
+                data: Some(serde_json::json!({ "detail": "boom" })),
+            },
+        )
+        .unwrap();
+        let error_json: serde_json::Value = serde_json::from_str(&error).unwrap();
+        assert_eq!(error_json["error"]["code"], -32603);
+        assert_eq!(error_json["error"]["message"], "command failed");
+        assert_eq!(
+            error_json["error"]["data"],
+            serde_json::json!({ "detail": "boom" })
+        );
+
+        assert_eq!(
+            stored_lsp_success_result_json(LspResultSlot::Hover, serde_json::json!("hover")),
+            Some("\"hover\"".to_string())
+        );
+        assert_eq!(
+            stored_lsp_success_result_json(LspResultSlot::Hover, serde_json::Value::Null),
+            None
+        );
+        assert_eq!(
+            stored_lsp_error_result_json(
+                LspResultSlot::Hover,
+                LspResponseError {
+                    code: -1,
+                    message: "ignored".to_string(),
+                    data: None,
+                }
+            ),
+            None
+        );
+    }
 
     #[test]
     fn lsp_processing_edit_apply_failure_records_status_and_returns_error() {

@@ -134,6 +134,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let item: AttoLspCodeActionParser.Item
     }
 
+    private struct ExecuteCommandRequestContext {
+        let tabID: UUID
+        let commandTitle: String
+    }
+
     private struct FoldingRangesRequestContext {
         let tabID: UUID
         let showFeedback: Bool
@@ -179,6 +184,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var codeActionResolveContext: CodeActionResolveContext?
     private var codeActionResolvePollTimer: DispatchSourceTimer?
     private var codeActionResultsController: AttoCommandPaletteController?
+    private var executeCommandContext: ExecuteCommandRequestContext?
+    private var executeCommandPollTimer: DispatchSourceTimer?
 
     private var foldingRangesContext: FoldingRangesRequestContext?
     private var foldingRangesPollTimer: DispatchSourceTimer?
@@ -3245,11 +3252,75 @@ final class AttoEditorAreaViewController: NSViewController {
 
         do {
             _ = try tab.editCore.editor.lspRequestExecuteCommand(commandJSON: commandJSON)
+            executeCommandContext = ExecuteCommandRequestContext(tabID: tab.id, commandTitle: command.title)
+            codeActionResultsController?.hide()
+            codeActionResultsController = nil
+            startExecuteCommandPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
             return true
         } catch {
             NSSound.beep()
             return false
         }
+    }
+
+    private func startExecuteCommandPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        executeCommandPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.executeCommandContext, ctx.tabID == tabID else {
+                self.cancelExecuteCommandUI()
+                timer.cancel()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.showWorkspaceEditPopover(
+                    text: AttoLspExecuteCommandFormatter.timeoutText(commandTitle: ctx.commandTitle),
+                    in: editorView
+                )
+                self.cancelExecuteCommandUI()
+                timer.cancel()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelExecuteCommandUI()
+                timer.cancel()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastExecuteCommandResultJSON()
+            } catch {
+                self.showWorkspaceEditPopover(
+                    text: "Command result could not be read.",
+                    in: editorView
+                )
+                self.cancelExecuteCommandUI()
+                timer.cancel()
+                return
+            }
+            guard let json else { return }
+
+            self.showWorkspaceEditPopover(
+                text: AttoLspExecuteCommandFormatter.displayText(
+                    forResultJSON: json,
+                    commandTitle: ctx.commandTitle
+                ),
+                in: editorView
+            )
+            self.cancelExecuteCommandUI()
+            timer.cancel()
+        }
+
+        executeCommandPollTimer = timer
+        timer.resume()
     }
 
     // MARK: - LSP rename
@@ -4167,6 +4238,14 @@ final class AttoEditorAreaViewController: NSViewController {
 
         codeActionResultsController?.hide()
         codeActionResultsController = nil
+
+        cancelExecuteCommandUI()
+    }
+
+    private func cancelExecuteCommandUI() {
+        executeCommandPollTimer?.cancel()
+        executeCommandPollTimer = nil
+        executeCommandContext = nil
     }
 
     private func cancelFoldingRangesUI() {
