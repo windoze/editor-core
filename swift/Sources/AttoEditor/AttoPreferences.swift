@@ -18,6 +18,7 @@ final class AttoPreferences: NSObject {
         static let fontFaces = "AttoEditor.preferences.fontFaces"
         static let fontSizePoints = "AttoEditor.preferences.fontSizePoints"
         static let ligaturesEnabled = "AttoEditor.preferences.ligaturesEnabled"
+        static let autoPairsEnabled = "AttoEditor.preferences.autoPairsEnabled"
         static let themeName = "AttoEditor.preferences.themeName"
     }
 
@@ -52,6 +53,16 @@ final class AttoPreferences: NSObject {
         return (env["ATTO_EDITOR_ENABLE_LIGATURES"] == "1") || (env["EDITOR_CORE_APPKIT_ENABLE_LIGATURES"] == "1")
     }
 
+    var effectiveAutoPairsEnabled: Bool {
+        if let stored = storedAutoPairsEnabled { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_AUTO_PAIRS"])
+            ?? Self.parseBoolEnv(env["EDITOR_CORE_APPKIT_AUTO_PAIRS"])
+        {
+            return parsed
+        }
+        return true
+    }
+
     var effectiveThemeName: String {
         if let stored = storedThemeName, stored.isEmpty == false { return stored }
 
@@ -79,6 +90,10 @@ final class AttoPreferences: NSObject {
         defaults.object(forKey: Keys.ligaturesEnabled) as? Bool
     }
 
+    var storedAutoPairsEnabled: Bool? {
+        defaults.object(forKey: Keys.autoPairsEnabled) as? Bool
+    }
+
     var storedThemeName: String? {
         guard let raw = defaults.string(forKey: Keys.themeName) else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -98,6 +113,16 @@ final class AttoPreferences: NSObject {
 
     func setLigaturesEnabled(_ enabled: Bool) {
         defaults.set(enabled, forKey: Keys.ligaturesEnabled)
+        postDidChange()
+    }
+
+    func setAutoPairsEnabled(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Keys.autoPairsEnabled)
+        postDidChange()
+    }
+
+    func clearAutoPairsEnabled() {
+        defaults.removeObject(forKey: Keys.autoPairsEnabled)
         postDidChange()
     }
 
@@ -189,6 +214,18 @@ final class AttoPreferences: NSObject {
     private static func normalizeFontSizePoints(_ v: Double) -> Double {
         guard v.isFinite else { return 13.0 }
         return min(max(v, 6.0), 72.0)
+    }
+
+    private static func parseBoolEnv(_ raw: String?) -> Bool? {
+        guard let raw else { return nil }
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "on":
+            return true
+        case "0", "false", "no", "off":
+            return false
+        default:
+            return nil
+        }
     }
 
     private func postDidChange() {

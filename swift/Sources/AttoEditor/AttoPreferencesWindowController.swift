@@ -259,6 +259,7 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
     private let fontSizeStepper = NSStepper(frame: .zero)
 
     private let ligaturesCheckbox = NSButton(checkboxWithTitle: "Enable ligatures", target: nil, action: nil)
+    private let autoPairsCheckbox = NSButton(checkboxWithTitle: "Enable auto pairs", target: nil, action: nil)
 
     private var isUpdatingFromModel: Bool = false
     private var forceReloadFontFacesTextView: Bool = false
@@ -394,6 +395,10 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         ligaturesCheckbox.action = #selector(ligaturesToggled(_:))
         stack.addArrangedSubview(ligaturesCheckbox)
 
+        autoPairsCheckbox.target = self
+        autoPairsCheckbox.action = #selector(autoPairsToggled(_:))
+        stack.addArrangedSubview(autoPairsCheckbox)
+
         // Layout
         view.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -436,6 +441,7 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         fontSizeStepper.doubleValue = size
 
         ligaturesCheckbox.state = prefs.effectiveLigaturesEnabled ? .on : .off
+        autoPairsCheckbox.state = prefs.effectiveAutoPairsEnabled ? .on : .off
     }
 
     // MARK: - Actions
@@ -484,6 +490,10 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
     @objc private func ligaturesToggled(_ sender: Any?) {
         prefs.setLigaturesEnabled(ligaturesCheckbox.state == .on)
+    }
+
+    @objc private func autoPairsToggled(_ sender: Any?) {
+        prefs.setAutoPairsEnabled(autoPairsCheckbox.state == .on)
     }
 
     // MARK: - NSTextViewDelegate

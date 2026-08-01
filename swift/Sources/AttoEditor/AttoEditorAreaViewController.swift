@@ -22,6 +22,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private let library: EditorCoreUIFFILibrary
     private var theme: EditorCoreSkiaTheme
     private var workspaceRootURL: URL
+    private let preferences: AttoPreferences
 
     private var tabs: [AttoEditorTab] = []
     private var selectedTabID: UUID?
@@ -156,10 +157,16 @@ final class AttoEditorAreaViewController: NSViewController {
     private var codeActionResolvePollTimer: DispatchSourceTimer?
     private var codeActionResultsController: AttoCommandPaletteController?
 
-    init(library: EditorCoreUIFFILibrary, theme: EditorCoreSkiaTheme, workspaceRootURL: URL) {
+    init(
+        library: EditorCoreUIFFILibrary,
+        theme: EditorCoreSkiaTheme,
+        workspaceRootURL: URL,
+        preferences: AttoPreferences = .shared
+    ) {
         self.library = library
         self.theme = theme
         self.workspaceRootURL = workspaceRootURL
+        self.preferences = preferences
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -314,10 +321,10 @@ final class AttoEditorAreaViewController: NSViewController {
     // MARK: - Preferences (editor rendering)
 
     func applyEditorPreferences() {
-        let prefs = AttoPreferences.shared
-        let fontFamiliesCSV = prefs.fontFamiliesCSVForApplying()
-        let ligaturesEnabled = prefs.effectiveLigaturesEnabled
-        let fontSizePoints = prefs.effectiveFontSizePoints
+        let fontFamiliesCSV = preferences.fontFamiliesCSVForApplying()
+        let ligaturesEnabled = preferences.effectiveLigaturesEnabled
+        let autoPairsEnabled = preferences.effectiveAutoPairsEnabled
+        let fontSizePoints = preferences.effectiveFontSizePoints
 
         for tab in tabs {
             for editCore in tab.panes {
@@ -332,6 +339,12 @@ final class AttoEditorAreaViewController: NSViewController {
                     try editCore.editor.setFontLigaturesEnabled(ligaturesEnabled)
                 } catch {
                     NSLog("AttoEditor: setFontLigaturesEnabled failed: %@", String(describing: error))
+                }
+
+                do {
+                    try editCore.editor.setAutoPairsEnabled(autoPairsEnabled)
+                } catch {
+                    NSLog("AttoEditor: setAutoPairsEnabled failed: %@", String(describing: error))
                 }
 
                 editCore.editorView.fontSizePoints = CGFloat(fontSizePoints)
@@ -1577,16 +1590,14 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func configureEditorChrome(_ editCore: EditCoreUI) throws {
-        let prefs = AttoPreferences.shared
-
         // 保持至少 6 个 cell 的 gutter（折叠标记 + 行号），但仍允许在超大文件时自动扩展。
         editCore.editorView.minimumGutterWidthCells = 6
         try editCore.editor.setWhitespaceRenderMode(.selection)
         try editCore.editor.setIndentGuidesEnabled(true)
-        try editCore.editor.setFontLigaturesEnabled(prefs.effectiveLigaturesEnabled)
-        editCore.editorView.fontSizePoints = CGFloat(prefs.effectiveFontSizePoints)
+        try editCore.editor.setFontLigaturesEnabled(preferences.effectiveLigaturesEnabled)
+        editCore.editorView.fontSizePoints = CGFloat(preferences.effectiveFontSizePoints)
         try editCore.applyTheme(theme)
-        try editCore.editor.setAutoPairsEnabled(true)
+        try editCore.editor.setAutoPairsEnabled(preferences.effectiveAutoPairsEnabled)
         try editCore.editor.setBracketMatchHighlightsEnabled(true)
     }
 

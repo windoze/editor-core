@@ -109,6 +109,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 28 已完成：AttoEditor 为 snippet placeholder navigation 新增显式 App command id：`editor.snippet_next_placeholder` / `editor.snippet_prev_placeholder`，通过现有 UI JSON command dispatcher 调用 `snippet_next_placeholder` / `snippet_prev_placeholder`，并接入 command palette、Edit 菜单和命令注册测试；Tab/Backtab 仍保留为文本系统主路径。
 - 2026-08-01 阶段 29 已完成：AttoEditor 为多光标 occurrence 操作新增显式 App command id：`editor.add_next_occurrence` / `editor.add_all_occurrences`，通过 UI JSON command dispatcher 调用 `add_next_occurrence` / `add_all_occurrences` 默认 options，并接入 command palette、Edit 菜单、默认 keymap 和命令注册测试。
 - 2026-08-01 阶段 30 已完成：AttoEditor 为常用 selection / multicursor 操作新增稳定 App command id：`editor.select_word`、`editor.select_line`、`editor.expand_selection`、`editor.add_cursor_above`、`editor.add_cursor_below`，通过 UI JSON command dispatcher 调用对应 cursor command，并接入 command palette、Edit 菜单和命令注册测试；`editor.select_line` 已有默认 Cmd+L keymap。
+- 2026-08-01 阶段 31 已完成：AttoEditor preferences 新增 `autoPairsEnabled` 持久化设置和 “Enable auto pairs” UI；新建 editor chrome 和已打开 panes 会从 `AttoPreferences.effectiveAutoPairsEnabled` 应用 `EditorUI.setAutoPairsEnabled(_:)`，并支持 `ATTO_EDITOR_AUTO_PAIRS` / `EDITOR_CORE_APPKIT_AUTO_PAIRS` 环境变量覆盖默认值。
 
 ## 分层结论
 
@@ -171,7 +172,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | `SetWrapIndent` | 有 | 有 | Swift 有 typed `setWrapIndent(_:)` | 仍缺 settings 接线。 |
 | `SetIndentationConfig` | 有 | 有 | Swift 有 typed `setIndentationConfig(_:)` | 仍缺语言配置接线。 |
 | `SetAutoPairsConfig` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `setAutoPairsConfig(_:)`；也有 enabled bool | headless 和 UI command 面仍不一致。 |
-| `SetAutoPairsEnabled` | 有 | UI JSON 有，headless FFI 缺 | Swift UI 有 bool，也可通过 `executeCommandJSON` 调用 | headless 和 UI command 面仍不一致。 |
+| `SetAutoPairsEnabled` | 有 | UI JSON 有，headless FFI 缺 | Swift UI 有 bool，也可通过 `executeCommandJSON` 调用；AttoEditor preferences 有持久化开关并会应用到新建和已打开 editor | App settings 接线已补齐；headless 和 UI command 面仍不一致。 |
 | fold / unfold / unfold all | 有 | 有 | Swift 有 typed `fold` / `unfold` / `unfoldAll`；AttoEditor command palette、菜单和 keymap 有 fold selection/unfold/unfold all；Swift UI binding 已可把 LSP folding ranges 应用到 core fold regions | P0 接线完成；仍缺 App 层 folding refresh/error UI 和 typed model。 |
 | bracket match highlight update/clear | 有 | UI JSON 有，headless FFI 缺 | Swift UI 有 enabled bool 和内部更新，也有 typed `updateBracketMatchHighlights` / `clearBracketMatchHighlights` | headless 和 UI command 面仍不一致。 |
 
@@ -459,6 +460,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor 为 snippet placeholder navigation 建立显式 command id，并接入 command palette 和 Edit 菜单。
 - 已完成：AttoEditor 为 add next/all occurrence 建立显式 command id，并接入 command palette、Edit 菜单和默认 keymap。
 - 已完成：AttoEditor 为 select word/line、expand selection、add cursor above/below 建立显式 command id，并接入 command palette 和 Edit 菜单。
+- 已完成：AttoEditor preferences 已接入 auto-pairs enabled 开关，并应用到新建和已打开 editor。
 - 已完成：AttoEditor command palette 为一批 Sublime 基础编辑命令建立稳定 command id。
 - 已完成：为高频命令补 typed Swift convenience API。
 - 已完成：把 App command id 统一接入主菜单和初步用户可配置 keymap。

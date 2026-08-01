@@ -109,4 +109,23 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertNil(prefs.storedThemeName)
         XCTAssertEqual(prefs.effectiveThemeName, AttoThemeManager.defaultThemeName)
     }
+
+    func testAutoPairsDefaultEnvAndStoredPreference() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        var prefs = AttoPreferences(defaults: defaults, env: [:])
+        XCTAssertNil(prefs.storedAutoPairsEnabled)
+        XCTAssertTrue(prefs.effectiveAutoPairsEnabled)
+
+        prefs = AttoPreferences(defaults: defaults, env: ["ATTO_EDITOR_AUTO_PAIRS": "0"])
+        XCTAssertFalse(prefs.effectiveAutoPairsEnabled)
+
+        prefs.setAutoPairsEnabled(true)
+        XCTAssertEqual(prefs.storedAutoPairsEnabled, true)
+        XCTAssertTrue(prefs.effectiveAutoPairsEnabled)
+
+        prefs.clearAutoPairsEnabled()
+        XCTAssertNil(prefs.storedAutoPairsEnabled)
+        XCTAssertFalse(prefs.effectiveAutoPairsEnabled)
+    }
 }
