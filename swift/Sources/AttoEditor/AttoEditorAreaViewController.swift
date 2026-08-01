@@ -3112,12 +3112,13 @@ final class AttoEditorAreaViewController: NSViewController {
             return
         }
 
-        let commands = targets.enumerated().map { idx, target in
+        let items = AttoLspDefinitionParser.locationItems(for: targets, workspaceRootURL: workspaceRootURL)
+        let commands = items.enumerated().map { idx, item in
             AttoCommandPaletteCommand(
                 id: "lsp.location.\(idx)",
-                title: displayTitle(for: target)
+                title: item.displayTitle
             ) { [weak self] in
-                self?.navigateToLspTarget(target)
+                self?.navigateToLspTarget(item.target)
             }
         }
 
@@ -3130,18 +3131,9 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func displayTitle(for target: AttoLspDefinitionParser.Target) -> String {
-        let location = ":\(target.line + 1):\(target.utf16Character + 1)"
-        guard let url = URL(string: target.uri), url.isFileURL else {
-            return "\(target.uri)\(location)"
-        }
-
-        let standardized = url.standardizedFileURL
-        let root = workspaceRootURL.standardizedFileURL.path
-        let path = standardized.path
-        if path.hasPrefix(root + "/") {
-            return "\(String(path.dropFirst(root.count + 1)))\(location)"
-        }
-        return "\(standardized.lastPathComponent)\(location)"
+        AttoLspDefinitionParser.locationItems(for: [target], workspaceRootURL: workspaceRootURL)
+            .first?
+            .displayTitle ?? "\(target.uri):\(target.line + 1):\(target.utf16Character + 1)"
     }
 
     private func navigateToLspTarget(_ target: AttoLspDefinitionParser.Target) {

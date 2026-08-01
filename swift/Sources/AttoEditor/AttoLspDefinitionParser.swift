@@ -7,6 +7,15 @@ enum AttoLspDefinitionParser {
         let utf16Character: Int
     }
 
+    struct LocationItem: Equatable {
+        let target: Target
+        let fileDisplayName: String
+
+        var displayTitle: String {
+            "\(fileDisplayName):\(target.line + 1):\(target.utf16Character + 1)"
+        }
+    }
+
     static func firstTarget(fromDefinitionResultJSON json: String) -> Target? {
         targets(fromLocationResultJSON: json).first
     }
@@ -17,6 +26,35 @@ enum AttoLspDefinitionParser {
         var out: [Target] = []
         appendTargets(from: root, into: &out)
         return out
+    }
+
+    static func locationItems(fromLocationResultJSON json: String, workspaceRootURL: URL) -> [LocationItem] {
+        locationItems(for: targets(fromLocationResultJSON: json), workspaceRootURL: workspaceRootURL)
+    }
+
+    static func locationItems(for targets: [Target], workspaceRootURL: URL) -> [LocationItem] {
+        let root = workspaceRootURL.standardizedFileURL.path
+        return targets.enumerated()
+            .map { index, target -> (index: Int, item: LocationItem, sortGroup: Int, sortPath: String) in
+                let display = fileDisplayNameAndSortKey(for: target.uri, workspaceRootPath: root)
+                return (
+                    index: index,
+                    item: LocationItem(target: target, fileDisplayName: display.name),
+                    sortGroup: display.group,
+                    sortPath: display.key
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.sortGroup != rhs.sortGroup { return lhs.sortGroup < rhs.sortGroup }
+                let pathCompare = lhs.sortPath.localizedStandardCompare(rhs.sortPath)
+                if pathCompare != .orderedSame { return pathCompare == .orderedAscending }
+                if lhs.item.target.line != rhs.item.target.line { return lhs.item.target.line < rhs.item.target.line }
+                if lhs.item.target.utf16Character != rhs.item.target.utf16Character {
+                    return lhs.item.target.utf16Character < rhs.item.target.utf16Character
+                }
+                return lhs.index < rhs.index
+            }
+            .map { $0.item }
     }
 
     /// Convert an LSP position (line + UTF-16 character) into an editor char offset (Unicode scalars).
@@ -83,6 +121,30 @@ enum AttoLspDefinitionParser {
         if let v = any as? Int { return v }
         if let n = any as? NSNumber { return n.intValue }
         return nil
+    }
+
+    private static func fileDisplayNameAndSortKey(
+        for uri: String,
+        workspaceRootPath root: String
+    ) -> (name: String, group: Int, key: String) {
+        guard let url = URL(string: uri), url.isFileURL else {
+            return (uri, 2, uri)
+        }
+
+        let standardized = url.standardizedFileURL
+        let path = standardized.path
+        if path == root {
+            return (standardized.lastPathComponent, 0, standardized.lastPathComponent)
+        }
+        if root == "/" {
+            let relative = String(path.dropFirst())
+            return (relative, 0, relative)
+        }
+        if path.hasPrefix(root + "/") {
+            let relative = String(path.dropFirst(root.count + 1))
+            return (relative, 0, relative)
+        }
+        return (standardized.lastPathComponent, 1, path)
     }
 
     private static func scalarOffsetFromUTF16(_ utf16: Int, in line: Substring) -> Int {
