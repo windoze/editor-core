@@ -152,6 +152,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 71 已完成：AttoEditor LSP definition/declaration/type definition/implementation/references 结果新增最近一次 `LspLocationResultSnapshot`，多结果 quick panel 和单结果导航都会记录排序后的 typed items；新增 `lsp.show_last_locations` command palette / Go 菜单入口，可重新打开最近一次 location/reference 结果面板或重新跳转单结果。后续仍缺完整持久 Locations/References panel、跨请求历史和更细 result lifecycle。
 - 2026-08-02 阶段 72 已完成：AttoEditor LSP document/workspace symbols 结果新增最近一次 `LspSymbolResultSnapshot`，结果 quick panel 会记录 typed symbols 与 placeholder；新增 `lsp.show_last_symbols` command palette / Go 菜单入口，可重新打开最近一次 symbols 结果。后续仍缺完整持久 Outline/Symbols panel、workspace symbol 增量查询和跨请求历史。
 - 2026-08-02 阶段 73 已完成：Rust `editor-core-ui`、C ABI 和 Swift `EditorUI` 新增 code lens view-point hit-test API，可从 above-line virtual text 精确返回原始 `CodeLens` JSON payload；`EditorCoreSkiaView` 新增 Cmd-click code lens host hook，AttoEditor 会解析命中的 lens 并复用现有 resolve / `workspace/executeCommand` 路径执行。测试覆盖 Rust FFI hit-test、Swift FFI hit-test 和 AppKit mouse event 的 Cmd-click 行为。后续仍缺 code lens 键盘定位、自动刷新订阅/状态反馈和通用 workspace command typed model。
+- 2026-08-02 阶段 74 已完成：把超长 crate root 拆成 module，保持原有行为和 ABI 不变。`editor-core-ui` 拆出 `editor_ui.rs` / `tests.rs`，`editor-core-ui-ffi` 拆出 `editor_ui_abi.rs` / `tests.rs`，`editor-core-render-skia` 拆出 `tests.rs`，`editor-core-ffi` 拆出 `json_bridge.rs`；原四个 `lib.rs` 总行数从 28161 降到 8327。已验证 `cargo build -p editor-core-ui -p editor-core-ui-ffi -p editor-core-render-skia -p editor-core-ffi`、四个相关 Rust 测试目标和 Swift FFI smoke。
 
 ## 分层结论
 
