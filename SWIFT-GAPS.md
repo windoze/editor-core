@@ -56,7 +56,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 5 已完成：Swift UI binding 新增派生状态 JSON snapshot API，覆盖 diagnostics、decorations、document symbols、folding regions、style intervals。
 - 阶段 5 已新增 `EditorUI.diagnosticsJSON()`、`decorationsJSON()`、`documentSymbolsJSON()`、`foldingRegionsJSON()`、`styleIntervalsJSON(start:end:)`，并新增 `lspApplyDocumentSymbolsJSON(_:)` 让 Swift UI 可把 LSP `textDocument/documentSymbol` result 写入 core outline。
 - 阶段 5 已用 Rust `cargo test -p editor-core-ui -p editor-core-ui-ffi` 和 Swift `swift test --filter EditorCoreUIFFITests` 覆盖，其中 Swift 新增测试验证 “LSP/processing 派生状态 -> Rust UI -> C ABI -> Swift” 的完整路径。
-- 阶段 5 尚未完成 App 层统一 derived-state store、Problems/Outline 面板、minimap markers、gutter diagnostic icons、状态栏消费和更高层 Swift typed model。
+- 阶段 5 后续缺口中，Swift typed model、active-tab derived-state store、status bar 消费和 Problems quick panel 已在阶段 39-41 补齐；仍缺 workspace/project 级 derived-state store、持久 Problems/Outline 面板、minimap markers、gutter diagnostic icons 和更深层 typed model。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
@@ -119,6 +119,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 38 已完成：AttoEditor toggle comment 不再只向 Rust core 传 line token；Swift 语言配置现在会向 `ToggleComment` command 传完整 `line` / `block_start` / `block_end` comment config，HTML/CSS/XML/Markdown 等 block-comment 语言可以走 core block comment 路径。
 - 2026-08-01 阶段 39 已完成：Swift `EditorCoreUIFFI` 在现有 derived-state JSON snapshot 之上新增 typed snapshot API，覆盖 diagnostics、decorations、document symbols、folding regions 和 style intervals，App/测试层不再必须到处手写 JSON 字典解析。
 - 2026-08-01 阶段 40 已完成：AttoEditor 新增 active-tab derived-state store，使用 Swift typed snapshots 缓存 diagnostics、decorations、document symbols、folding regions 和 style intervals；status bar 开始消费该 store 显示 Problems 数量，测试可通过同一 store 做结构化断言。
+- 2026-08-01 阶段 41 已完成：AttoEditor 新增 `lsp.problems` 命令、Go 菜单入口和 Problems quick panel，直接消费 active derived-state store 的 typed diagnostics；无 panel window 时可跳转到第一个 diagnostic，测试覆盖命令注册、菜单入口和 diagnostic range 导航。
 
 ## 分层结论
 
@@ -236,7 +237,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - folding ranges binding 已覆盖 request/take/apply 到 fold UI state；仍缺 App 层 refresh/error UI、折叠范围可视化和 typed model。
 - selection range raw request/take 已有；仍缺 App 层 expand-selection 产品化和 typed model。
 - linked editing raw request/take 已有；仍缺联动编辑 UI、编辑同步策略和 typed model。
-- document diagnostic pull / workspace diagnostic raw request/take 已有；仍缺 Problems panel 增量刷新、workspace 级归属和 typed model。
+- document diagnostic pull / workspace diagnostic raw request/take 已有；active-tab Problems quick panel 已消费 typed diagnostics；仍缺持久 Problems panel、增量刷新、workspace 级归属和更完整 typed model。
 - document color / color presentation raw request/take 已有；仍缺色块 UI、color picker、编辑应用和 typed model。
 - call hierarchy raw request/take 已有；仍缺 hierarchy panel、导航 UI 和 typed model。
 - type hierarchy raw request/take 已有；仍缺 hierarchy panel、导航 UI 和 typed model。
@@ -281,12 +282,12 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 剩余缺口已经从“Swift binding 拿不到”转为 App 层消费、模型化和统一控制：
 
 - Swift UI binding 已有 diagnostics、decorations、symbols、fold regions、style intervals 的基础 typed snapshot model；LSP 交互结果、WorkspaceEdit、hierarchy/color/linked-editing 等更深层结果仍需继续 typed model 化。
-- App 层已有 active-tab derived-state store，status bar 和测试断言可以消费 diagnostics/decorations/symbols/folds/styles 的 typed snapshots；仍缺 workspace/project 级 store、增量刷新，以及 Problems panel、Outline、minimap markers、gutter diagnostic icons 的完整消费。
+- App 层已有 active-tab derived-state store，status bar、Problems quick panel 和测试断言可以消费 diagnostics/decorations/symbols/folds/styles 的 typed snapshots；仍缺 workspace/project 级 store、增量刷新，以及持久 Problems panel、Outline、minimap markers、gutter diagnostic icons 的完整消费。
 - App 层还没有统一的派生状态刷新策略、过期响应处理、增量更新通知和错误展示。
 
 这会影响 Sublime 复刻中的这些功能：
 
-- Problems panel。
+- 持久 Problems panel / workspace problems。
 - Outline / symbol list。
 - Goto symbol。
 - Minimap 标记。
@@ -489,6 +490,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor 主菜单已有独立 Selection 菜单分组，常用 selection/multicursor 命令复用统一 command id。
 - 已完成：Swift UI binding 已为 derived-state snapshots 提供基础 typed model。
 - 已完成：AttoEditor 已有 active-tab derived-state store，status bar 可显示 Problems 数量，测试可直接断言 active derived-state snapshot。
+- 已完成：AttoEditor 已有 Problems quick panel，消费 active derived-state store 的 typed diagnostics 并支持跳转。
 - 已完成：AttoEditor command palette 为一批 Sublime 基础编辑命令建立稳定 command id。
 - 已完成：为高频命令补 typed Swift convenience API。
 - 已完成：把 App command id 统一接入主菜单和初步用户可配置 keymap。
@@ -504,7 +506,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - document/workspace symbols 持久面板和 workspace 增量查询。
 - range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发和 server trigger characters 自动触发路径已完成，仍缺错误展示和 typed result model。
 - folding ranges request/take/apply 到 fold state 已完成；仍缺 App 层 refresh/error UI、可视化和 typed model。
-- code lens resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；仍缺 App 层 UI 和 typed model。
+- code lens resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；diagnostics 已有 active-tab Problems quick panel，其他能力仍缺 App 层 UI 和 typed model。
 - LSP result panels 和错误展示。
 
 ### P1：统一多文档和分屏架构

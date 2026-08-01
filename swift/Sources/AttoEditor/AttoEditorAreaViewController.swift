@@ -149,6 +149,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private var symbolContext: SymbolRequestContext?
     private var symbolPollTimer: DispatchSourceTimer?
     private var lspSymbolResultsController: AttoCommandPaletteController?
+    private var problemsResultsController: AttoCommandPaletteController?
 
     private var signatureHelpContext: SignatureHelpRequestContext?
     private var signatureHelpPollTimer: DispatchSourceTimer?
@@ -2300,6 +2301,81 @@ final class AttoEditorAreaViewController: NSViewController {
         return "\(indent)\(symbol.name)\(detail)\(kind)\(container) — \(location)"
     }
 
+    // MARK: - Problems quick panel
+
+    @discardableResult
+    func showProblemsInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+
+        derivedStateStore.refreshActive(editor: tab.editCore.editor)
+        let diagnostics = derivedStateStore.active.diagnostics.diagnostics
+        guard diagnostics.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        guard let window = view.window else {
+            navigateToDiagnostic(diagnostics[0], in: tab)
+            return true
+        }
+
+        let commands = diagnostics.enumerated().map { idx, diagnostic in
+            AttoCommandPaletteCommand(
+                id: "lsp.problem.\(idx)",
+                title: displayTitle(for: diagnostic, in: tab)
+            ) { [weak self] in
+                guard let self, let current = self.activeTab, current.id == tab.id else { return }
+                self.navigateToDiagnostic(diagnostic, in: current)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(commandsProvider: { commands })
+        problemsResultsController = controller
+        controller.show(relativeTo: window, placeholder: "Filter problems...")
+        return true
+    }
+
+    private func displayTitle(for diagnostic: EcuDiagnostic, in tab: AttoEditorTab) -> String {
+        let location: String = {
+            do {
+                let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: diagnostic.range.start)
+                return "\(tab.fileURL.lastPathComponent):\(pos.line + 1):\(pos.column + 1)"
+            } catch {
+                return tab.fileURL.lastPathComponent
+            }
+        }()
+
+        let severity = diagnostic.severity.map { "[\($0.rawValue)] " } ?? ""
+        let source = diagnostic.source.map { " (\($0))" } ?? ""
+        return "\(severity)\(diagnostic.message)\(source) — \(location)"
+    }
+
+    private func navigateToDiagnostic(_ diagnostic: EcuDiagnostic, in tab: AttoEditorTab) {
+        do {
+            tab.editCore.layoutSubtreeIfNeeded()
+            let start = min(diagnostic.range.start, diagnostic.range.end)
+            let end = max(diagnostic.range.start, diagnostic.range.end)
+            let selectionEnd = start == end ? start : end
+            try tab.editCore.editor.setSelections([EcuSelectionRange(start: start, end: selectionEnd)], primaryIndex: 0)
+            try tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.needsDisplay = true
+            updateStatusBar()
+        } catch {
+            NSSound.beep()
+        }
+    }
+
     // MARK: - LSP completion
 
     @discardableResult
@@ -3709,6 +3785,12 @@ final class AttoEditorAreaViewController: NSViewController {
         symbolContext = nil
         lspSymbolResultsController?.hide()
         lspSymbolResultsController = nil
+        cancelProblemsUI()
+    }
+
+    private func cancelProblemsUI() {
+        problemsResultsController?.hide()
+        problemsResultsController = nil
     }
 
     private func cancelSignatureHelpUI() {

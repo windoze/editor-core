@@ -53,6 +53,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.source_actions"))
         XCTAssertTrue(ids.contains("lsp.organize_imports"))
         XCTAssertTrue(ids.contains("lsp.fix_all"))
+        XCTAssertTrue(ids.contains("lsp.problems"))
     }
 
     func testCommandRegistryCarriesMetadataAndAvailability() throws {
@@ -216,6 +217,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.source_actions", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.organize_imports", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.fix_all", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.problems", in: menu))
     }
 
     func testExecuteCommandUsesRegisteredCommandIDs() throws {
@@ -305,6 +307,51 @@ final class AttoEditorCommandTests: XCTestCase {
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
         XCTAssertEqual(try editorView.editor.text(), "aBc\n")
         XCTAssertTrue(window.title.contains("●"))
+    }
+
+    func testShowProblemsUsesDerivedDiagnosticsAndNavigatesWithoutPanelWindow() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("problems.txt")
+        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        let diagnostics = """
+        {
+          "uri": "\(fileURL.absoluteString)",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 1, "character": 1 },
+                "end": { "line": 1, "character": 2 }
+              },
+              "severity": 1,
+              "source": "unit-test",
+              "message": "second line problem"
+            }
+          ],
+          "version": 1
+        }
+        """
+        try editorView.editor.lspApplyDiagnosticsJSON(diagnostics)
+
+        XCTAssertTrue(vc.showProblemsInActiveTab())
+
+        let snapshot = vc._activeDerivedStateForTesting()
+        XCTAssertEqual(snapshot.diagnostics.diagnostics.count, 1)
+        XCTAssertEqual(snapshot.diagnostics.diagnostics[0].message, "second line problem")
+        XCTAssertEqual(snapshot.diagnostics.diagnostics[0].severity, .error)
+
+        let offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 5)
+        XCTAssertEqual(offsets.end, 6)
     }
 
     func testRenameCandidateUsesSelectionOrIdentifierAtCaret() throws {
