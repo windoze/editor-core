@@ -109,6 +109,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let duplicate = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "editor.duplicate_lines"))
         XCTAssertEqual(duplicate.macroPolicy, .recordable)
         XCTAssertEqual(duplicate.defaultPayloadJSON, #"{"kind":"edit","op":"duplicate_lines"}"#)
+        XCTAssertEqual(duplicate.requiredRuntimeFeatures, .jsonCommandDispatch)
         XCTAssertFalse(duplicate.isParameterized)
 
         let snippet = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "editor.apply_snippet"))
@@ -116,6 +117,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(snippet.parameters.map(\.name), ["snippet"])
         XCTAssertEqual(snippet.parameters.first?.kind, .string)
         XCTAssertTrue(snippet.parameters.first?.isRequired == true)
+        XCTAssertTrue(snippet.requiredRuntimeFeatures.isEmpty)
 
         let goLine = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "go.line"))
         XCTAssertEqual(goLine.macroPolicy, .recordableWithArguments)
@@ -123,6 +125,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(goLine.parameters[0].kind, .integer)
         XCTAssertEqual(goLine.parameters[0].minimumInteger, 1)
         XCTAssertEqual(goLine.parameters[1].defaultValue, .integer(1))
+        XCTAssertTrue(goLine.requiredRuntimeFeatures.isEmpty)
         XCTAssertEqual(
             try goLine.normalizedArguments(["line": .integer(42)]),
             ["line": .integer(42), "column": .integer(1)]
@@ -132,6 +135,7 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let workspaceSymbols = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "lsp.workspace_symbols"))
         XCTAssertEqual(workspaceSymbols.parameters.map(\.name), ["query"])
+        XCTAssertEqual(workspaceSymbols.requiredRuntimeFeatures, .lspInteractiveCommandRequirements)
         XCTAssertEqual(
             try workspaceSymbols.normalizedArguments([:]),
             ["query": .string("")]
@@ -140,9 +144,46 @@ final class AttoEditorCommandTests: XCTestCase {
         let rename = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "lsp.rename"))
         XCTAssertEqual(rename.parameters.map(\.name), ["newName"])
         XCTAssertEqual(rename.macroPolicy, .recordableWithArguments)
+        XCTAssertEqual(rename.requiredRuntimeFeatures, .lspWorkspaceEditCommandRequirements)
 
         let openFile = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "file.open_file"))
         XCTAssertEqual(openFile.macroPolicy, .promptRequired)
+    }
+
+    func testCommandRegistryDisablesCommandsForMissingOptionalRuntimeFeatures() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("runtime.txt")
+        try "a\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "editor.duplicate_lines"))
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "editor.apply_snippet"))
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "editor.format_document"))
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "lsp.workspace_symbols"))
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "lsp.rename"))
+
+        delegate._setRuntimeInfoForTesting(EditorCoreUIFFIRuntimeInfo(
+            abiVersion: AttoRuntimeCompatibility.minimumUIABIVersion,
+            version: "test",
+            features: AttoRuntimeCompatibility.requiredFeatures.reduce([]) { acc, required in
+                acc.union(required.feature)
+            }
+        ))
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "editor.duplicate_lines"))
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "editor.apply_snippet"))
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "editor.format_document"))
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "lsp.workspace_symbols"))
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "lsp.rename"))
+        XCTAssertFalse(delegate.executeCommand(id: "lsp.workspace_symbols", arguments: ["query": .string("A")]))
     }
 
     func testEditorCommandsAreDisabledWithoutActiveEditor() throws {

@@ -1,3 +1,4 @@
+import EditorCoreUIFFI
 import Foundation
 
 typealias AttoCommandArguments = [String: AttoCommandArgumentValue]
@@ -170,17 +171,20 @@ struct AttoCommandSchema: Equatable {
     let parameters: [AttoCommandParameterSchema]
     let macroPolicy: AttoCommandMacroPolicy
     let defaultPayloadJSON: String?
+    let requiredRuntimeFeatures: EditorCoreUIFFIFeatures
     let allowsUnknownArguments: Bool
 
     init(
         parameters: [AttoCommandParameterSchema] = [],
         macroPolicy: AttoCommandMacroPolicy = .notRecordable,
         defaultPayloadJSON: String? = nil,
+        requiredRuntimeFeatures: EditorCoreUIFFIFeatures = [],
         allowsUnknownArguments: Bool = false
     ) {
         self.parameters = parameters
         self.macroPolicy = macroPolicy
         self.defaultPayloadJSON = defaultPayloadJSON
+        self.requiredRuntimeFeatures = requiredRuntimeFeatures
         self.allowsUnknownArguments = allowsUnknownArguments
     }
 
@@ -249,4 +253,17 @@ extension Dictionary where Key == String, Value == AttoCommandArgumentValue {
     func integer(_ name: String) -> Int? {
         self[name]?.integerValue
     }
+}
+
+extension EditorCoreUIFFIFeatures {
+    static let lspInteractiveCommandRequirements: Self = [
+        .lspInteractiveRequests,
+        .lspStatusSnapshot,
+    ]
+
+    static let lspWorkspaceEditCommandRequirements: Self = [
+        .lspInteractiveRequests,
+        .lspStatusSnapshot,
+        .workspaceEditApplication,
+    ]
 }

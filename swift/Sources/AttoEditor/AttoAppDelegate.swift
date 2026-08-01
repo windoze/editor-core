@@ -43,7 +43,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             self.commandJSON = commandJSON
             self.schema = AttoCommandSchema(
                 macroPolicy: .recordable,
-                defaultPayloadJSON: commandJSON
+                defaultPayloadJSON: commandJSON,
+                requiredRuntimeFeatures: .jsonCommandDispatch
             )
         }
     }
@@ -139,7 +140,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                 help: "Workspace symbol search query sent to the LSP server."
             ),
         ],
-        macroPolicy: .recordableWithArguments
+        macroPolicy: .recordableWithArguments,
+        requiredRuntimeFeatures: .lspInteractiveCommandRequirements
     )
 
     private static let renameCommandSchema = AttoCommandSchema(
@@ -153,7 +155,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                 help: "Replacement symbol name passed to textDocument/rename."
             ),
         ],
-        macroPolicy: .recordableWithArguments
+        macroPolicy: .recordableWithArguments,
+        requiredRuntimeFeatures: .lspWorkspaceEditCommandRequirements
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -665,6 +668,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         runtimeCompatibilityReport
     }
 
+    func _setRuntimeInfoForTesting(_ runtimeInfo: EditorCoreUIFFIRuntimeInfo) {
+        runtimeCompatibilityReport = AttoRuntimeCompatibility.evaluate(runtimeInfo: runtimeInfo)
+    }
+
     func _createWindowForTesting(workspaceRootURL: URL) -> AttoWindowContext {
         createWindow(
             workspaceRootURL: workspaceRootURL,
@@ -769,7 +776,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             id: command.id,
             title: command.title,
             group: metadata.group,
-            isEnabled: commandIsEnabled(requirement: metadata.requirement),
+            isEnabled: commandIsEnabled(requirement: metadata.requirement, schema: metadata.schema),
             requiresEditor: metadata.requirement.requiresEditor,
             schema: metadata.schema,
             runWithArguments: command.runWithArguments
@@ -777,10 +784,15 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     }
 
     private func commandIsEnabled(commandID: String) -> Bool {
-        commandIsEnabled(requirement: commandMetadata(commandID: commandID, title: commandID).requirement)
+        let metadata = commandMetadata(commandID: commandID, title: commandID)
+        return commandIsEnabled(requirement: metadata.requirement, schema: metadata.schema)
     }
 
-    private func commandIsEnabled(requirement: CommandAvailabilityRequirement) -> Bool {
+    private func commandIsEnabled(requirement: CommandAvailabilityRequirement, schema: AttoCommandSchema) -> Bool {
+        guard runtimeSupports(schema.requiredRuntimeFeatures) else {
+            return false
+        }
+
         switch requirement {
         case .none:
             return true
@@ -793,6 +805,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         case .multipleTabs:
             return activeWindow()?.editorAreaController.hasMultipleTabsForCommands == true
         }
+    }
+
+    private func runtimeSupports(_ features: EditorCoreUIFFIFeatures) -> Bool {
+        guard features.isEmpty == false else { return true }
+        let supported = runtimeCompatibilityReport?.runtimeInfo?.features ?? library.featureFlags
+        return supported.contains(features)
     }
 
     private func commandMetadata(commandID: String, title: String) -> CommandMetadata {
@@ -867,6 +885,17 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return Self.workspaceSymbolsCommandSchema
         case "lsp.rename":
             return Self.renameCommandSchema
+        case "editor.format_document", "editor.format_selection":
+            return AttoCommandSchema(
+                macroPolicy: .notRecordable,
+                requiredRuntimeFeatures: .lspInteractiveCommandRequirements
+            )
+        case "lsp.code_actions", "lsp.quick_fix", "lsp.refactor", "lsp.source_actions",
+             "lsp.organize_imports", "lsp.fix_all":
+            return AttoCommandSchema(
+                macroPolicy: .notRecordable,
+                requiredRuntimeFeatures: .lspWorkspaceEditCommandRequirements
+            )
         case "file.open_folder", "file.open_file", "workbench.preferences", "go.file",
              "editor.find", "editor.replace", "workbench.command_palette":
             return AttoCommandSchema(macroPolicy: .promptRequired)
@@ -880,6 +909,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         default:
             if commandID.hasPrefix("cursor.") {
                 return AttoCommandSchema(macroPolicy: .recordable)
+            }
+            if commandID.hasPrefix("lsp.") {
+                return AttoCommandSchema(
+                    macroPolicy: .notRecordable,
+                    requiredRuntimeFeatures: .lspInteractiveCommandRequirements
+                )
             }
             if commandID == "editor.add_next_occurrence"
                 || commandID == "editor.add_all_occurrences"

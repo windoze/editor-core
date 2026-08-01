@@ -2,7 +2,7 @@ import EditorCoreUIFFI
 import Foundation
 
 struct AttoRuntimeCompatibility {
-    struct RequiredFeature: Equatable {
+    struct RuntimeFeature: Equatable {
         let feature: EditorCoreUIFFIFeatures
         let name: String
         let reason: String
@@ -11,7 +11,8 @@ struct AttoRuntimeCompatibility {
     struct Report: Equatable {
         let runtimeInfo: EditorCoreUIFFIRuntimeInfo?
         let minimumABIVersion: UInt32
-        let missingFeatures: [RequiredFeature]
+        let missingFeatures: [RuntimeFeature]
+        let missingOptionalFeatures: [RuntimeFeature]
         let loadError: String?
 
         var isCompatible: Bool {
@@ -43,6 +44,11 @@ struct AttoRuntimeCompatibility {
                 parts.append("Missing UI FFI features: \(names).")
             }
 
+            if missingOptionalFeatures.isEmpty == false {
+                let names = missingOptionalFeatures.map(\.name).joined(separator: ", ")
+                parts.append("Unavailable optional UI FFI features: \(names).")
+            }
+
             if parts.isEmpty {
                 return "UI FFI ABI \(runtimeInfo.abiVersion) is compatible."
             }
@@ -52,36 +58,39 @@ struct AttoRuntimeCompatibility {
 
     static let minimumUIABIVersion: UInt32 = 1
 
-    static let requiredFeatures: [RequiredFeature] = [
-        RequiredFeature(
+    static let requiredFeatures: [RuntimeFeature] = [
+        RuntimeFeature(
             feature: .jsonCommandDispatch,
             name: "JSON command dispatch",
             reason: "AttoEditor routes low-frequency editor commands through the UI JSON command dispatcher."
         ),
-        RequiredFeature(
+        RuntimeFeature(
             feature: .typedDerivedSnapshots,
             name: "typed derived snapshots",
             reason: "Status bar, panels, and tests consume typed diagnostics/decorations/symbol/folding snapshots."
         ),
-        RequiredFeature(
-            feature: .lspInteractiveRequests,
-            name: "LSP interactive requests",
-            reason: "LSP quick panels and editor commands depend on request/take APIs."
-        ),
-        RequiredFeature(
-            feature: .lspStatusSnapshot,
-            name: "LSP status snapshot",
-            reason: "Status bar and LSP capability gates consume typed status/capability snapshots."
-        ),
-        RequiredFeature(
-            feature: .workspaceEditApplication,
-            name: "WorkspaceEdit application",
-            reason: "Rename, code actions, completion resolve, and color presentations apply WorkspaceEdit payloads."
-        ),
-        RequiredFeature(
+        RuntimeFeature(
             feature: .multiDocumentUI,
             name: "multi-document UI",
             reason: "AttoEditor mirrors AppKit tabs and split panes into the core-owned MultiDocumentEditorUi model."
+        ),
+    ]
+
+    static let optionalFeatures: [RuntimeFeature] = [
+        RuntimeFeature(
+            feature: .lspInteractiveRequests,
+            name: "LSP interactive requests",
+            reason: "LSP quick panels and editor commands depend on request/take APIs; commands degrade when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .lspStatusSnapshot,
+            name: "LSP status snapshot",
+            reason: "Status bar and LSP capability gates consume typed status/capability snapshots; LSP commands degrade when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .workspaceEditApplication,
+            name: "WorkspaceEdit application",
+            reason: "Rename, code actions, completion resolve, and color presentations apply WorkspaceEdit payloads; edit-producing commands degrade when unavailable."
         ),
     ]
 
@@ -93,6 +102,7 @@ struct AttoRuntimeCompatibility {
                 runtimeInfo: nil,
                 minimumABIVersion: minimumUIABIVersion,
                 missingFeatures: requiredFeatures,
+                missingOptionalFeatures: optionalFeatures,
                 loadError: String(describing: error)
             )
         }
@@ -100,10 +110,12 @@ struct AttoRuntimeCompatibility {
 
     static func evaluate(runtimeInfo: EditorCoreUIFFIRuntimeInfo) -> Report {
         let missing = requiredFeatures.filter { runtimeInfo.supports($0.feature) == false }
+        let missingOptional = optionalFeatures.filter { runtimeInfo.supports($0.feature) == false }
         return Report(
             runtimeInfo: runtimeInfo,
             minimumABIVersion: minimumUIABIVersion,
             missingFeatures: missing,
+            missingOptionalFeatures: missingOptional,
             loadError: nil
         )
     }
