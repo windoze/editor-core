@@ -566,6 +566,288 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    @discardableResult
+    private func executeCommandObject(_ object: [String: Any]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [])
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: "editor_ui_encode_command_json",
+                message: "failed to encode command JSON as UTF-8"
+            )
+        }
+        return try executeCommandJSON(json)
+    }
+
+    @discardableResult
+    private func executeEditorCommand(kind: String, op: String, fields: [String: Any] = [:]) throws -> String {
+        var object: [String: Any] = ["kind": kind, "op": op]
+        for (key, value) in fields {
+            object[key] = value
+        }
+        return try executeCommandObject(object)
+    }
+
+    private static func jsonObject(for options: EcuSearchOptions) -> [String: Any] {
+        [
+            "case_sensitive": options.caseSensitive,
+            "whole_word": options.wholeWord,
+            "regex": options.regex,
+        ]
+    }
+
+    @discardableResult
+    public func replace(start: UInt32, length: UInt32, text: String) throws -> String {
+        try executeEditorCommand(
+            kind: "edit",
+            op: "replace",
+            fields: ["start": Int(start), "length": Int(length), "text": text]
+        )
+    }
+
+    @discardableResult
+    public func replaceCoalescingUndo(start: UInt32, length: UInt32, text: String) throws -> String {
+        try executeEditorCommand(
+            kind: "edit",
+            op: "replace_coalescing_undo",
+            fields: ["start": Int(start), "length": Int(length), "text": text]
+        )
+    }
+
+    @discardableResult
+    public func replaceCoalescingUndoWithSelection(
+        start: UInt32,
+        length: UInt32,
+        text: String,
+        selectionStart: UInt32,
+        selectionEnd: UInt32
+    ) throws -> String {
+        try executeEditorCommand(
+            kind: "edit",
+            op: "replace_coalescing_undo_with_selection",
+            fields: [
+                "start": Int(start),
+                "length": Int(length),
+                "text": text,
+                "selection_start": Int(selectionStart),
+                "selection_end": Int(selectionEnd),
+            ]
+        )
+    }
+
+    @discardableResult
+    public func typeChar(_ ch: String) throws -> String {
+        try executeEditorCommand(kind: "edit", op: "type_char", fields: ["ch": ch])
+    }
+
+    @discardableResult
+    public func insertNewline(autoIndent: Bool = false) throws -> String {
+        try executeEditorCommand(kind: "edit", op: "insert_newline", fields: ["auto_indent": autoIndent])
+    }
+
+    @discardableResult
+    public func indent() throws -> String {
+        try executeEditorCommand(kind: "edit", op: "indent")
+    }
+
+    @discardableResult
+    public func outdent() throws -> String {
+        try executeEditorCommand(kind: "edit", op: "outdent")
+    }
+
+    @discardableResult
+    public func duplicateLines() throws -> String {
+        try executeEditorCommand(kind: "edit", op: "duplicate_lines")
+    }
+
+    @discardableResult
+    public func deleteLines() throws -> String {
+        try executeEditorCommand(kind: "edit", op: "delete_lines")
+    }
+
+    @discardableResult
+    public func moveLinesUp() throws -> String {
+        try executeEditorCommand(kind: "edit", op: "move_lines_up")
+    }
+
+    @discardableResult
+    public func moveLinesDown() throws -> String {
+        try executeEditorCommand(kind: "edit", op: "move_lines_down")
+    }
+
+    @discardableResult
+    public func joinLines() throws -> String {
+        try executeEditorCommand(kind: "edit", op: "join_lines")
+    }
+
+    @discardableResult
+    public func splitLine() throws -> String {
+        try executeEditorCommand(kind: "edit", op: "split_line")
+    }
+
+    @discardableResult
+    public func toggleComment(_ config: EcuCommentConfig) throws -> String {
+        try executeEditorCommand(kind: "edit", op: "toggle_comment", fields: ["config": config.jsonObject])
+    }
+
+    @discardableResult
+    public func applyTextEdits(_ edits: [EcuTextEdit]) throws -> String {
+        try executeEditorCommand(
+            kind: "edit",
+            op: "apply_text_edits",
+            fields: ["edits": edits.map(\.jsonObject)]
+        )
+    }
+
+    @discardableResult
+    public func applySnippet(
+        start: UInt32,
+        end: UInt32,
+        snippet: String,
+        additionalEdits: [EcuTextEdit] = []
+    ) throws -> String {
+        try executeEditorCommand(
+            kind: "edit",
+            op: "apply_snippet",
+            fields: [
+                "start": Int(start),
+                "end": Int(end),
+                "snippet": snippet,
+                "additional_edits": additionalEdits.map(\.jsonObject),
+            ]
+        )
+    }
+
+    @discardableResult
+    public func deleteToPrevTabStop() throws -> String {
+        try executeEditorCommand(kind: "edit", op: "delete_to_prev_tab_stop")
+    }
+
+    @discardableResult
+    public func endUndoGroup() throws -> String {
+        try executeEditorCommand(kind: "edit", op: "end_undo_group")
+    }
+
+    @discardableResult
+    public func moveTo(line: UInt32, column: UInt32) throws -> String {
+        try executeEditorCommand(
+            kind: "cursor",
+            op: "move_to",
+            fields: ["line": Int(line), "column": Int(column)]
+        )
+    }
+
+    @discardableResult
+    public func moveBy(deltaLine: Int32, deltaColumn: Int32) throws -> String {
+        try executeEditorCommand(
+            kind: "cursor",
+            op: "move_by",
+            fields: ["delta_line": Int(deltaLine), "delta_column": Int(deltaColumn)]
+        )
+    }
+
+    @discardableResult
+    public func addNextOccurrence(options: EcuSearchOptions = EcuSearchOptions()) throws -> String {
+        try executeEditorCommand(
+            kind: "cursor",
+            op: "add_next_occurrence",
+            fields: ["options": Self.jsonObject(for: options)]
+        )
+    }
+
+    @discardableResult
+    public func addAllOccurrences(options: EcuSearchOptions = EcuSearchOptions()) throws -> String {
+        try executeEditorCommand(
+            kind: "cursor",
+            op: "add_all_occurrences",
+            fields: ["options": Self.jsonObject(for: options)]
+        )
+    }
+
+    @discardableResult
+    public func snippetNextPlaceholder() throws -> String {
+        try executeEditorCommand(kind: "cursor", op: "snippet_next_placeholder")
+    }
+
+    @discardableResult
+    public func snippetPrevPlaceholder() throws -> String {
+        try executeEditorCommand(kind: "cursor", op: "snippet_prev_placeholder")
+    }
+
+    @discardableResult
+    public func setViewportWidthCells(_ widthCells: UInt32) throws -> String {
+        try executeEditorCommand(
+            kind: "view",
+            op: "set_viewport_width",
+            fields: ["width": Int(widthCells)]
+        )
+    }
+
+    @discardableResult
+    public func setWrapMode(_ mode: EcuWrapMode) throws -> String {
+        try executeEditorCommand(kind: "view", op: "set_wrap_mode", fields: ["mode": mode.rawValue])
+    }
+
+    @discardableResult
+    public func setWrapIndent(_ indent: EcuWrapIndent) throws -> String {
+        try executeEditorCommand(kind: "view", op: "set_wrap_indent", fields: ["indent": indent.jsonObject])
+    }
+
+    @discardableResult
+    public func setIndentationConfig(_ config: EcuIndentationConfig) throws -> String {
+        try executeEditorCommand(
+            kind: "view",
+            op: "set_indentation_config",
+            fields: ["config": config.jsonObject]
+        )
+    }
+
+    @discardableResult
+    public func setAutoPairsConfig(_ config: EcuAutoPairsConfig) throws -> String {
+        try executeEditorCommand(
+            kind: "view",
+            op: "set_auto_pairs_config",
+            fields: ["config": config.jsonObject]
+        )
+    }
+
+    public func viewportJSON(startRow: UInt32, count: UInt32) throws -> String {
+        try executeEditorCommand(
+            kind: "view",
+            op: "get_viewport",
+            fields: ["start_row": Int(startRow), "count": Int(count)]
+        )
+    }
+
+    @discardableResult
+    public func fold(startLine: UInt32, endLine: UInt32) throws -> String {
+        try executeEditorCommand(
+            kind: "style",
+            op: "fold",
+            fields: ["start_line": Int(startLine), "end_line": Int(endLine)]
+        )
+    }
+
+    @discardableResult
+    public func unfold(startLine: UInt32) throws -> String {
+        try executeEditorCommand(kind: "style", op: "unfold", fields: ["start_line": Int(startLine)])
+    }
+
+    @discardableResult
+    public func unfoldAll() throws -> String {
+        try executeEditorCommand(kind: "style", op: "unfold_all")
+    }
+
+    @discardableResult
+    public func updateBracketMatchHighlights() throws -> String {
+        try executeEditorCommand(kind: "style", op: "update_bracket_match_highlights")
+    }
+
+    @discardableResult
+    public func clearBracketMatchHighlights() throws -> String {
+        try executeEditorCommand(kind: "style", op: "clear_bracket_match_highlights")
+    }
+
     public func insertTab() throws {
         let status = editor_core_ui_ffi_editor_ui_insert_tab(handle)
         try library.ensureStatus(status, context: "editor_ui_insert_tab")
@@ -1100,16 +1382,6 @@ public final class EditorUI {
     public func addCursorBelow() throws {
         let status = editor_core_ui_ffi_editor_ui_add_cursor_below(handle)
         try library.ensureStatus(status, context: "editor_ui_add_cursor_below")
-    }
-
-    public func addNextOccurrence() throws {
-        let status = editor_core_ui_ffi_editor_ui_add_next_occurrence(handle)
-        try library.ensureStatus(status, context: "editor_ui_add_next_occurrence")
-    }
-
-    public func addAllOccurrences() throws {
-        let status = editor_core_ui_ffi_editor_ui_add_all_occurrences(handle)
-        try library.ensureStatus(status, context: "editor_ui_add_all_occurrences")
     }
 
     public func selectWord() throws {

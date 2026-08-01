@@ -263,6 +263,176 @@ public struct EcuSearchOptions: Equatable, Sendable {
     var ffiRegex: UInt8 { regex ? 1 : 0 }
 }
 
+public enum EcuWrapMode: String, Equatable, Sendable {
+    case none
+    case char
+    case word
+}
+
+public enum EcuWrapIndent: Equatable, Sendable {
+    case none
+    case sameAsLineIndent
+    case fixedCells(UInt32)
+
+    var jsonObject: [String: Any] {
+        switch self {
+        case .none:
+            return ["kind": "none"]
+        case .sameAsLineIndent:
+            return ["kind": "same_as_line_indent"]
+        case let .fixedCells(cells):
+            return ["kind": "fixed_cells", "cells": Int(cells)]
+        }
+    }
+}
+
+public enum EcuIndentStyle: Equatable, Sendable {
+    case tabs
+    case spaces(width: UInt8)
+
+    var jsonObject: [String: Any] {
+        switch self {
+        case .tabs:
+            return ["kind": "tabs"]
+        case let .spaces(width):
+            return ["kind": "spaces", "width": Int(width)]
+        }
+    }
+}
+
+@frozen
+public struct EcuIndentationConfig: Equatable, Sendable {
+    public var style: EcuIndentStyle?
+    public var indentTriggers: [String]?
+    public var outdentTriggers: [String]?
+
+    public init(
+        style: EcuIndentStyle? = nil,
+        indentTriggers: [String]? = nil,
+        outdentTriggers: [String]? = nil
+    ) {
+        self.style = style
+        self.indentTriggers = indentTriggers
+        self.outdentTriggers = outdentTriggers
+    }
+
+    var jsonObject: [String: Any] {
+        var object: [String: Any] = [:]
+        if let style {
+            object["style"] = style.jsonObject
+        }
+        if let indentTriggers {
+            object["indent_triggers"] = indentTriggers
+        }
+        if let outdentTriggers {
+            object["outdent_triggers"] = outdentTriggers
+        }
+        return object
+    }
+}
+
+@frozen
+public struct EcuAutoPair: Equatable, Sendable {
+    public var open: String
+    public var close: String
+
+    public init(open: String, close: String) {
+        self.open = open
+        self.close = close
+    }
+
+    var jsonObject: [String: Any] {
+        ["open": open, "close": close]
+    }
+}
+
+@frozen
+public struct EcuAutoPairsConfig: Equatable, Sendable {
+    public var enabled: Bool?
+    public var pairs: [EcuAutoPair]?
+    public var wrapSelection: Bool?
+    public var skipOverClosing: Bool?
+    public var deletePair: Bool?
+
+    public init(
+        enabled: Bool? = nil,
+        pairs: [EcuAutoPair]? = nil,
+        wrapSelection: Bool? = nil,
+        skipOverClosing: Bool? = nil,
+        deletePair: Bool? = nil
+    ) {
+        self.enabled = enabled
+        self.pairs = pairs
+        self.wrapSelection = wrapSelection
+        self.skipOverClosing = skipOverClosing
+        self.deletePair = deletePair
+    }
+
+    var jsonObject: [String: Any] {
+        var object: [String: Any] = [:]
+        if let enabled {
+            object["enabled"] = enabled
+        }
+        if let pairs {
+            object["pairs"] = pairs.map(\.jsonObject)
+        }
+        if let wrapSelection {
+            object["wrap_selection"] = wrapSelection
+        }
+        if let skipOverClosing {
+            object["skip_over_closing"] = skipOverClosing
+        }
+        if let deletePair {
+            object["delete_pair"] = deletePair
+        }
+        return object
+    }
+}
+
+@frozen
+public struct EcuCommentConfig: Equatable, Sendable {
+    public var line: String?
+    public var blockStart: String?
+    public var blockEnd: String?
+
+    public init(line: String? = nil, blockStart: String? = nil, blockEnd: String? = nil) {
+        self.line = line
+        self.blockStart = blockStart
+        self.blockEnd = blockEnd
+    }
+
+    var jsonObject: [String: Any] {
+        var object: [String: Any] = [:]
+        if let line {
+            object["line"] = line
+        }
+        if let blockStart {
+            object["block_start"] = blockStart
+        }
+        if let blockEnd {
+            object["block_end"] = blockEnd
+        }
+        return object
+    }
+}
+
+@frozen
+public struct EcuTextEdit: Equatable, Sendable {
+    public var start: UInt32
+    public var end: UInt32
+    public var text: String
+
+    public init(start: UInt32, end: UInt32, text: String) {
+        self.start = start
+        self.end = end
+        self.text = text
+    }
+
+    var jsonObject: [String: Any] {
+        ["start": Int(start), "end": Int(end), "text": text]
+    }
+}
+
 // 注意：
 // - C 侧的 `EcuRgba8/EcuTheme/EcuStyleColors/EcuSelectionRange/EcuViewportState` 由 `CEditorCoreUIFFI`
 //   模块提供；Swift 侧仅做更易用的 wrapper（camelCase + Optional）。

@@ -322,6 +322,139 @@ final class EditorCoreUIFFITests: XCTestCase {
         }
     }
 
+    func testTypedCommandConvenienceAPIsCoverCoreEditingCommands() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "a\nb\n", viewportWidthCells: 80)
+            try ui.moveTo(line: 0, column: 0)
+            try ui.duplicateLines()
+            XCTAssertEqual(try ui.text(), "a\na\nb\n")
+
+            try ui.moveTo(line: 1, column: 0)
+            try ui.deleteLines()
+            XCTAssertEqual(try ui.text(), "a\nb\n")
+        }
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)
+            try ui.moveTo(line: 1, column: 0)
+            try ui.moveLinesUp()
+            XCTAssertEqual(try ui.text(), "b\na\nc\n")
+
+            try ui.moveTo(line: 0, column: 0)
+            try ui.moveLinesDown()
+            XCTAssertEqual(try ui.text(), "a\nb\nc\n")
+        }
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "a\nb\n", viewportWidthCells: 80)
+            try ui.moveTo(line: 0, column: 0)
+            try ui.joinLines()
+            XCTAssertEqual(try ui.text(), "a b\n")
+
+            try ui.moveTo(line: 0, column: 1)
+            try ui.splitLine()
+            XCTAssertEqual(try ui.text(), "a\n b\n")
+        }
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "let a = 1\n", viewportWidthCells: 80)
+            try ui.moveTo(line: 0, column: 0)
+            try ui.toggleComment(EcuCommentConfig(line: "//"))
+            XCTAssertEqual(try ui.text(), "// let a = 1\n")
+
+            try ui.toggleComment(EcuCommentConfig(line: "//"))
+            XCTAssertEqual(try ui.text(), "let a = 1\n")
+
+            try ui.applyTextEdits(
+                [
+                    EcuTextEdit(start: 0, end: 3, text: "var"),
+                    EcuTextEdit(start: 8, end: 9, text: "2"),
+                ]
+            )
+            XCTAssertEqual(try ui.text(), "var a = 2\n")
+
+            try ui.endUndoGroup()
+            try ui.undo()
+            XCTAssertEqual(try ui.text(), "let a = 1\n")
+        }
+    }
+
+    func testTypedCommandConvenienceAPIsCoverConfigSnippetAndFoldCommands() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "abcdef\nsecond\nthird\n", viewportWidthCells: 80)
+            try ui.setViewportWidthCells(4)
+            try ui.setWrapMode(.char)
+            try ui.setWrapIndent(.fixedCells(2))
+
+            let viewportJSON = try ui.viewportJSON(startRow: 0, count: 10)
+            let data = try XCTUnwrap(viewportJSON.data(using: .utf8))
+            let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: data, options: []) as? [String: Any])
+            XCTAssertEqual(obj["kind"] as? String, "viewport")
+            let viewport = try XCTUnwrap(obj["viewport"] as? [String: Any])
+            let lines = try XCTUnwrap(viewport["lines"] as? [[String: Any]])
+            XCTAssertTrue(lines.contains { ($0["is_wrapped_part"] as? Bool) == true && ($0["segment_x_start_cells"] as? Int) == 2 })
+
+            try ui.fold(startLine: 0, endLine: 2)
+            let foldedJSON = try ui.viewportJSON(startRow: 0, count: 10)
+            let foldedData = try XCTUnwrap(foldedJSON.data(using: .utf8))
+            let foldedObj = try XCTUnwrap(JSONSerialization.jsonObject(with: foldedData, options: []) as? [String: Any])
+            let foldedViewport = try XCTUnwrap(foldedObj["viewport"] as? [String: Any])
+            let foldedLines = try XCTUnwrap(foldedViewport["lines"] as? [[String: Any]])
+            XCTAssertTrue(foldedLines.contains { ($0["is_fold_placeholder_appended"] as? Bool) == true })
+
+            try ui.unfoldAll()
+            let unfoldedJSON = try ui.viewportJSON(startRow: 0, count: 10)
+            let unfoldedData = try XCTUnwrap(unfoldedJSON.data(using: .utf8))
+            let unfoldedObj = try XCTUnwrap(JSONSerialization.jsonObject(with: unfoldedData, options: []) as? [String: Any])
+            let unfoldedViewport = try XCTUnwrap(unfoldedObj["viewport"] as? [String: Any])
+            let unfoldedLines = try XCTUnwrap(unfoldedViewport["lines"] as? [[String: Any]])
+            XCTAssertFalse(unfoldedLines.contains { ($0["is_fold_placeholder_appended"] as? Bool) == true })
+        }
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "{", viewportWidthCells: 80)
+            try ui.setIndentationConfig(
+                EcuIndentationConfig(
+                    style: .spaces(width: 2),
+                    indentTriggers: ["{"],
+                    outdentTriggers: ["}"]
+                )
+            )
+            try ui.moveTo(line: 0, column: 1)
+            try ui.insertNewline(autoIndent: true)
+            XCTAssertEqual(try ui.text(), "{\n  ")
+        }
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)
+            try ui.setAutoPairsConfig(
+                EcuAutoPairsConfig(
+                    enabled: true,
+                    pairs: [EcuAutoPair(open: "<", close: ">")],
+                    wrapSelection: true,
+                    skipOverClosing: true,
+                    deletePair: true
+                )
+            )
+            try ui.typeChar("<")
+            XCTAssertEqual(try ui.text(), "<>")
+        }
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)
+            try ui.applySnippet(start: 0, end: 0, snippet: "println!(${1:msg})$0")
+            XCTAssertEqual(try ui.text(), "println!(msg)")
+            XCTAssertTrue(try ui.hasActiveSnippetSession())
+
+            try ui.snippetNextPlaceholder()
+            XCTAssertFalse(try ui.hasActiveSnippetSession())
+        }
+    }
+
     func testCloneViewSharesTextAndHasIndependentScrollState() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui1 = try EditorUI(
@@ -1056,6 +1189,17 @@ final class EditorCoreUIFFITests: XCTestCase {
 
         try ui.insertText("X")
         XCTAssertEqual(try ui.text(), "X X X\n")
+    }
+
+    func testAddAllOccurrencesAcceptsSearchOptions() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "foo Foo foo\n", viewportWidthCells: 80)
+
+        try ui.setSelections([EcuSelectionRange(start: 0, end: 3)], primaryIndex: 0)
+        try ui.addAllOccurrences(options: EcuSearchOptions(caseSensitive: false))
+
+        let sels = try ui.selections()
+        XCTAssertEqual(sels.ranges.count, 3)
     }
 
     func testAddCursorAboveAndClearSecondarySelections() throws {
