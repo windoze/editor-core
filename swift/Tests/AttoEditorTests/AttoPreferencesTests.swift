@@ -148,4 +148,25 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertNil(prefs.storedWrapMode)
         XCTAssertEqual(prefs.effectiveWrapMode, .word)
     }
+
+    func testWrapIndentDefaultEnvAndStoredPreference() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        var prefs = AttoPreferences(defaults: defaults, env: [:])
+        XCTAssertNil(prefs.storedWrapIndent)
+        XCTAssertEqual(prefs.effectiveWrapIndent, EcuWrapIndent.none)
+
+        prefs = AttoPreferences(defaults: defaults, env: ["ATTO_EDITOR_WRAP_INDENT": "same_as_line_indent"])
+        XCTAssertEqual(prefs.effectiveWrapIndent, .sameAsLineIndent)
+
+        prefs.setWrapIndent(.fixedCells(4))
+        XCTAssertEqual(prefs.storedWrapIndent, .fixedCells(4))
+        XCTAssertEqual(prefs.effectiveWrapIndent, .fixedCells(4))
+        XCTAssertEqual(AttoPreferences.wrapIndentStorageString(.fixedCells(4)), "fixed_cells:4")
+        XCTAssertEqual(AttoPreferences.parseWrapIndentString("fixed:2"), .fixedCells(2))
+
+        prefs.setWrapIndent(nil)
+        XCTAssertNil(prefs.storedWrapIndent)
+        XCTAssertEqual(prefs.effectiveWrapIndent, .sameAsLineIndent)
+    }
 }

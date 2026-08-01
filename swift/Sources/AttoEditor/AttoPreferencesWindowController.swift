@@ -260,6 +260,9 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
     private let fontSizeStepper = NSStepper(frame: .zero)
 
     private let wrapModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let wrapIndentPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let wrapIndentFixedField = NSTextField(string: "")
+    private let wrapIndentFixedStepper = NSStepper(frame: .zero)
 
     private let ligaturesCheckbox = NSButton(checkboxWithTitle: "Enable ligatures", target: nil, action: nil)
     private let autoPairsCheckbox = NSButton(checkboxWithTitle: "Enable auto pairs", target: nil, action: nil)
@@ -409,6 +412,40 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         wrapModePopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
         stack.addArrangedSubview(wrapModePopUp)
 
+        // Wrap indent
+        let wrapIndentLabel = NSTextField(labelWithString: "Wrap indent")
+        wrapIndentLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        stack.addArrangedSubview(wrapIndentLabel)
+
+        wrapIndentPopUp.addItem(withTitle: "None")
+        wrapIndentPopUp.item(at: 0)?.representedObject = "none"
+        wrapIndentPopUp.addItem(withTitle: "Same as Line Indent")
+        wrapIndentPopUp.item(at: 1)?.representedObject = "same_as_line_indent"
+        wrapIndentPopUp.addItem(withTitle: "Fixed Cells")
+        wrapIndentPopUp.item(at: 2)?.representedObject = "fixed_cells"
+        wrapIndentPopUp.target = self
+        wrapIndentPopUp.action = #selector(wrapIndentModeChanged(_:))
+        wrapIndentPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+
+        wrapIndentFixedField.delegate = self
+        wrapIndentFixedField.alignment = .right
+        wrapIndentFixedField.font = NSFont.systemFont(ofSize: 13)
+        wrapIndentFixedField.translatesAutoresizingMaskIntoConstraints = false
+        wrapIndentFixedField.widthAnchor.constraint(equalToConstant: 64).isActive = true
+
+        wrapIndentFixedStepper.minValue = 0
+        wrapIndentFixedStepper.maxValue = 80
+        wrapIndentFixedStepper.increment = 1
+        wrapIndentFixedStepper.translatesAutoresizingMaskIntoConstraints = false
+        wrapIndentFixedStepper.target = self
+        wrapIndentFixedStepper.action = #selector(wrapIndentFixedStepperChanged(_:))
+
+        let wrapIndentRow = NSStackView(views: [wrapIndentPopUp, wrapIndentFixedField, wrapIndentFixedStepper])
+        wrapIndentRow.orientation = .horizontal
+        wrapIndentRow.spacing = 8
+        wrapIndentRow.alignment = .centerY
+        stack.addArrangedSubview(wrapIndentRow)
+
         // Ligatures
         ligaturesCheckbox.target = self
         ligaturesCheckbox.action = #selector(ligaturesToggled(_:))
@@ -462,6 +499,7 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         ligaturesCheckbox.state = prefs.effectiveLigaturesEnabled ? .on : .off
         autoPairsCheckbox.state = prefs.effectiveAutoPairsEnabled ? .on : .off
         selectWrapMode(prefs.effectiveWrapMode)
+        selectWrapIndent(prefs.effectiveWrapIndent)
     }
 
     // MARK: - Actions
@@ -522,6 +560,31 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         prefs.setWrapMode(mode)
     }
 
+    @objc private func wrapIndentModeChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        let idx = wrapIndentPopUp.indexOfSelectedItem
+        guard idx >= 0,
+              let raw = wrapIndentPopUp.item(at: idx)?.representedObject as? String
+        else { return }
+
+        switch raw {
+        case "none":
+            prefs.setWrapIndent(EcuWrapIndent.none)
+        case "same_as_line_indent":
+            prefs.setWrapIndent(.sameAsLineIndent)
+        case "fixed_cells":
+            prefs.setWrapIndent(.fixedCells(currentWrapIndentFixedCells()))
+        default:
+            return
+        }
+    }
+
+    @objc private func wrapIndentFixedStepperChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        let cells = UInt32(max(0, min(80, wrapIndentFixedStepper.integerValue)))
+        prefs.setWrapIndent(.fixedCells(cells))
+    }
+
     @objc private func autoPairsToggled(_ sender: Any?) {
         prefs.setAutoPairsEnabled(autoPairsCheckbox.state == .on)
     }
@@ -539,10 +602,15 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
     func controlTextDidEndEditing(_ obj: Notification) {
         guard let field = obj.object as? NSTextField else { return }
-        guard field === fontSizeField else { return }
+        if field === fontSizeField {
+            let v = Double(field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) ?? prefs.effectiveFontSizePoints
+            prefs.setFontSizePoints(v)
+            return
+        }
 
-        let v = Double(field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) ?? prefs.effectiveFontSizePoints
-        prefs.setFontSizePoints(v)
+        if field === wrapIndentFixedField {
+            prefs.setWrapIndent(.fixedCells(currentWrapIndentFixedCells()))
+        }
     }
 
     // MARK: - Theme menu
@@ -604,5 +672,38 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
             }
         }
         wrapModePopUp.selectItem(at: 1)
+    }
+
+    private func selectWrapIndent(_ indent: EcuWrapIndent) {
+        let fixedCells: UInt32
+        switch indent {
+        case .none:
+            wrapIndentPopUp.selectItem(at: 0)
+            fixedCells = 2
+            setWrapIndentFixedControlsEnabled(false)
+        case .sameAsLineIndent:
+            wrapIndentPopUp.selectItem(at: 1)
+            fixedCells = 2
+            setWrapIndentFixedControlsEnabled(false)
+        case let .fixedCells(cells):
+            wrapIndentPopUp.selectItem(at: 2)
+            fixedCells = cells
+            setWrapIndentFixedControlsEnabled(true)
+        }
+
+        let clamped = UInt32(min(fixedCells, 80))
+        wrapIndentFixedField.stringValue = String(clamped)
+        wrapIndentFixedStepper.integerValue = Int(clamped)
+    }
+
+    private func currentWrapIndentFixedCells() -> UInt32 {
+        let raw = wrapIndentFixedField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsed = Int(raw) ?? wrapIndentFixedStepper.integerValue
+        return UInt32(max(0, min(80, parsed)))
+    }
+
+    private func setWrapIndentFixedControlsEnabled(_ enabled: Bool) {
+        wrapIndentFixedField.isEnabled = enabled
+        wrapIndentFixedStepper.isEnabled = enabled
     }
 }

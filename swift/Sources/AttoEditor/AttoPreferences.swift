@@ -21,6 +21,7 @@ final class AttoPreferences: NSObject {
         static let ligaturesEnabled = "AttoEditor.preferences.ligaturesEnabled"
         static let autoPairsEnabled = "AttoEditor.preferences.autoPairsEnabled"
         static let wrapMode = "AttoEditor.preferences.wrapMode"
+        static let wrapIndent = "AttoEditor.preferences.wrapIndent"
         static let themeName = "AttoEditor.preferences.themeName"
     }
 
@@ -75,6 +76,16 @@ final class AttoPreferences: NSObject {
         return .char
     }
 
+    var effectiveWrapIndent: EcuWrapIndent {
+        if let stored = storedWrapIndent { return stored }
+        if let parsed = Self.parseWrapIndentString(env["ATTO_EDITOR_WRAP_INDENT"])
+            ?? Self.parseWrapIndentString(env["EDITOR_CORE_APPKIT_WRAP_INDENT"])
+        {
+            return parsed
+        }
+        return .none
+    }
+
     var effectiveThemeName: String {
         if let stored = storedThemeName, stored.isEmpty == false { return stored }
 
@@ -109,6 +120,10 @@ final class AttoPreferences: NSObject {
     var storedWrapMode: EcuWrapMode? {
         guard let raw = defaults.string(forKey: Keys.wrapMode) else { return nil }
         return EcuWrapMode(rawValue: raw)
+    }
+
+    var storedWrapIndent: EcuWrapIndent? {
+        Self.parseWrapIndentString(defaults.string(forKey: Keys.wrapIndent))
     }
 
     var storedThemeName: String? {
@@ -148,6 +163,15 @@ final class AttoPreferences: NSObject {
             defaults.set(mode.rawValue, forKey: Keys.wrapMode)
         } else {
             defaults.removeObject(forKey: Keys.wrapMode)
+        }
+        postDidChange()
+    }
+
+    func setWrapIndent(_ indent: EcuWrapIndent?) {
+        if let indent {
+            defaults.set(Self.wrapIndentStorageString(indent), forKey: Keys.wrapIndent)
+        } else {
+            defaults.removeObject(forKey: Keys.wrapIndent)
         }
         postDidChange()
     }
@@ -257,6 +281,41 @@ final class AttoPreferences: NSObject {
     private static func parseWrapModeEnv(_ raw: String?) -> EcuWrapMode? {
         guard let raw else { return nil }
         return EcuWrapMode(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
+    static func wrapIndentStorageString(_ indent: EcuWrapIndent) -> String {
+        switch indent {
+        case .none:
+            return "none"
+        case .sameAsLineIndent:
+            return "same_as_line_indent"
+        case let .fixedCells(cells):
+            return "fixed_cells:\(cells)"
+        }
+    }
+
+    static func parseWrapIndentString(_ raw: String?) -> EcuWrapIndent? {
+        guard let raw else { return nil }
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard s.isEmpty == false else { return nil }
+
+        switch s {
+        case "none", "off":
+            return EcuWrapIndent.none
+        case "same_as_line_indent", "same-as-line-indent", "same":
+            return .sameAsLineIndent
+        default:
+            break
+        }
+
+        for prefix in ["fixed_cells:", "fixed-cells:", "fixed:"] {
+            guard s.hasPrefix(prefix) else { continue }
+            let rawNumber = String(s.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let cells = UInt32(rawNumber) else { return nil }
+            return .fixedCells(cells)
+        }
+
+        return nil
     }
 
     private func postDidChange() {

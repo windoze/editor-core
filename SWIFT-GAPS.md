@@ -111,6 +111,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 30 已完成：AttoEditor 为常用 selection / multicursor 操作新增稳定 App command id：`editor.select_word`、`editor.select_line`、`editor.expand_selection`、`editor.add_cursor_above`、`editor.add_cursor_below`，通过 UI JSON command dispatcher 调用对应 cursor command，并接入 command palette、Edit 菜单和命令注册测试；`editor.select_line` 已有默认 Cmd+L keymap。
 - 2026-08-01 阶段 31 已完成：AttoEditor preferences 新增 `autoPairsEnabled` 持久化设置和 “Enable auto pairs” UI；新建 editor chrome 和已打开 panes 会从 `AttoPreferences.effectiveAutoPairsEnabled` 应用 `EditorUI.setAutoPairsEnabled(_:)`，并支持 `ATTO_EDITOR_AUTO_PAIRS` / `EDITOR_CORE_APPKIT_AUTO_PAIRS` 环境变量覆盖默认值。
 - 2026-08-01 阶段 32 已完成：AttoEditor preferences 新增 `wrapMode` 持久化设置和 Word Wrap popup；新建 editor chrome 和已打开 panes 会从 `AttoPreferences.effectiveWrapMode` 应用 `EditorUI.setWrapMode(_:)`，并支持 `ATTO_EDITOR_WRAP_MODE` / `EDITOR_CORE_APPKIT_WRAP_MODE` 环境变量覆盖默认值。
+- 2026-08-01 阶段 33 已完成：AttoEditor preferences 新增 `wrapIndent` 持久化设置和 Wrap Indent popup/fixed-cells 输入；新建 editor chrome 和已打开 panes 会从 `AttoPreferences.effectiveWrapIndent` 应用 `EditorUI.setWrapIndent(_:)`，并支持 `ATTO_EDITOR_WRAP_INDENT` / `EDITOR_CORE_APPKIT_WRAP_INDENT` 环境变量覆盖默认值。
 
 ## 分层结论
 
@@ -170,7 +171,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | `MoveToMatchingBracket` | 有 | headless FFI 缺 | Swift UI 有公开方法 | headless 和 UI command 面不一致。 |
 | add occurrence options | 有 | 有 | Swift typed `addNextOccurrence(options:)` / `addAllOccurrences(options:)` 已支持 options；AttoEditor command palette、菜单和 keymap 有 `editor.add_next_occurrence` / `editor.add_all_occurrences` 默认 options 入口 | 默认 App command/keymap 已补齐；仍缺 settings/search-options 接线。 |
 | `SetWrapMode` | 有 | 有 | Swift 有 typed `setWrapMode(_:)`；AttoEditor command palette、菜单和 keymap 有 wrap off/char/word；preferences 有持久化 wrap mode 并会应用到新建和已打开 editor | App settings 接线已补齐。 |
-| `SetWrapIndent` | 有 | 有 | Swift 有 typed `setWrapIndent(_:)` | 仍缺 settings 接线。 |
+| `SetWrapIndent` | 有 | 有 | Swift 有 typed `setWrapIndent(_:)`；preferences 有持久化 wrap indent 并会应用到新建和已打开 editor | App settings 接线已补齐。 |
 | `SetIndentationConfig` | 有 | 有 | Swift 有 typed `setIndentationConfig(_:)` | 仍缺语言配置接线。 |
 | `SetAutoPairsConfig` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `setAutoPairsConfig(_:)`；也有 enabled bool | headless 和 UI command 面仍不一致。 |
 | `SetAutoPairsEnabled` | 有 | UI JSON 有，headless FFI 缺 | Swift UI 有 bool，也可通过 `executeCommandJSON` 调用；AttoEditor preferences 有持久化开关并会应用到新建和已打开 editor | App settings 接线已补齐；headless 和 UI command 面仍不一致。 |
@@ -468,6 +469,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor 为 select word/line、expand selection、add cursor above/below 建立显式 command id，并接入 command palette 和 Edit 菜单。
 - 已完成：AttoEditor preferences 已接入 auto-pairs enabled 开关，并应用到新建和已打开 editor。
 - 已完成：AttoEditor preferences 已接入 wrap mode 开关，并应用到新建和已打开 editor。
+- 已完成：AttoEditor preferences 已接入 wrap indent 设置，并应用到新建和已打开 editor。
 - 已完成：AttoEditor command palette 为一批 Sublime 基础编辑命令建立稳定 command id。
 - 已完成：为高频命令补 typed Swift convenience API。
 - 已完成：把 App command id 统一接入主菜单和初步用户可配置 keymap。
