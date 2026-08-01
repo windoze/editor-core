@@ -5438,7 +5438,62 @@ final class AttoEditorAreaViewController: NSViewController {
         return true
     }
 
-    private func showCodeLensResults(_ items: [AttoLspCodeLensParser.Item], tab: AttoEditorTab) {
+    @discardableResult
+    func showCodeLensActionsAtCursorInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelCodeLensUI()
+
+        derivedStateStore.refreshActive(editor: tab.editCore.editor)
+        let items = AttoLspCodeLensParser.items(fromDecorationsSnapshot: derivedStateStore.active.decorations)
+        let currentLineItems = codeLensItemsOnPrimaryCaretLine(items, in: tab)
+        guard currentLineItems.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        showCodeLensResults(
+            currentLineItems,
+            tab: tab,
+            placeholder: "Filter current-line code lens actions..."
+        )
+        return true
+    }
+
+    private func codeLensItemsOnPrimaryCaretLine(
+        _ items: [AttoLspCodeLensParser.Item],
+        in tab: AttoEditorTab
+    ) -> [AttoLspCodeLensParser.Item] {
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let caret = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+            return items.filter { item in
+                guard let pos = try? tab.editCore.editor.charOffsetToLogicalPosition(offset: item.range.start) else {
+                    return false
+                }
+                return pos.line == caret.line
+            }
+        } catch {
+            return []
+        }
+    }
+
+    private func showCodeLensResults(
+        _ items: [AttoLspCodeLensParser.Item],
+        tab: AttoEditorTab,
+        placeholder: String = "Filter code lens actions..."
+    ) {
         guard let window = view.window else {
             if let first = items.first {
                 _ = applyCodeLens(first)
@@ -5460,7 +5515,7 @@ final class AttoEditorAreaViewController: NSViewController {
             commandsProvider: { commands }
         )
         codeLensResultsController = controller
-        controller.show(relativeTo: window, placeholder: "Filter code lens actions...")
+        controller.show(relativeTo: window, placeholder: placeholder)
     }
 
     @discardableResult

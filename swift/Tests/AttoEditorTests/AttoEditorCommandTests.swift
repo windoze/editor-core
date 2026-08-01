@@ -65,6 +65,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.rename"))
         XCTAssertTrue(ids.contains("lsp.code_actions"))
         XCTAssertTrue(ids.contains("lsp.code_lens_actions"))
+        XCTAssertTrue(ids.contains("lsp.code_lens_at_cursor"))
         XCTAssertTrue(ids.contains("lsp.refresh_code_lens"))
         XCTAssertTrue(ids.contains("lsp.quick_fix"))
         XCTAssertTrue(ids.contains("lsp.refactor"))
@@ -182,6 +183,74 @@ final class AttoEditorCommandTests: XCTestCase {
         vc.openFile(url: fileURL, mode: .pinned)
 
         XCTAssertFalse(vc.refreshCodeLensInActiveTab(showFeedback: false))
+    }
+
+    func testCodeLensAtCursorFiltersActionsToCurrentLine() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("lens.swift")
+        let text = """
+        func one() {}
+        func two() {}
+        """
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.lspApplyCodeLensJSON("""
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 0 }
+            },
+            "command": { "title": "Run One", "command": "test.runOne" }
+          },
+          {
+            "range": {
+              "start": { "line": 1, "character": 0 },
+              "end": { "line": 1, "character": 0 }
+            },
+            "command": { "title": "Run Two", "command": "test.runTwo" }
+          }
+        ]
+        """)
+        let secondLineStart = UInt32("func one() {}\n".unicodeScalars.count)
+        try editorView.editor.setSelections(
+            [EcuSelectionRange(start: secondLineStart, end: secondLineStart)],
+            primaryIndex: 0
+        )
+
+        XCTAssertTrue(vc.showCodeLensActionsAtCursorInActiveTab())
+
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.CodeLens")
+        })
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.LSP.CodeLens"),
+                in: root
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter current-line code lens actions...")
+
+        let table = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.CodeLens"),
+                in: root
+            ) as? NSTableView
+        )
+        XCTAssertEqual(table.numberOfRows, 1)
+        let cell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(cell.textField?.stringValue.contains("Run Two") == true)
+        XCTAssertFalse(cell.textField?.stringValue.contains("Run One") == true)
     }
 
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
@@ -337,6 +406,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.rename", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.code_actions", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.code_lens_actions", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.code_lens_at_cursor", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_code_lens", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.quick_fix", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refactor", in: menu))
