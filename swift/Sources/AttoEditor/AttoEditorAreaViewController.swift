@@ -2857,15 +2857,8 @@ final class AttoEditorAreaViewController: NSViewController {
                     )
 
                     let supportsSemanticTokens: Bool = {
-                        guard let statusJSON = try? editCore.editor.lspStatusJSON() else { return false }
-                        guard let data = statusJSON.data(using: .utf8) else { return false }
-                        guard let obj = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-                            return false
-                        }
-                        guard let capabilities = obj["capabilities"] as? [String: Any] else { return false }
-                        if let v = capabilities["semantic_tokens"] as? Bool { return v }
-                        if let v = capabilities["semantic_tokens"] as? NSNumber { return v.boolValue }
-                        return false
+                        guard let status = try? editCore.editor.lspStatusSnapshot() else { return false }
+                        return status.capabilities?.semanticTokens == true
                     }()
 
                     if supportsSemanticTokens {
@@ -4139,17 +4132,8 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func completionItemResolveSupported(for editor: EditorUI) -> Bool {
-        guard let json = try? editor.lspStatusJSON(),
-              let data = json.data(using: .utf8),
-              let root = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-              let capabilities = root["capabilities"] as? [String: Any],
-              let value = capabilities["completion_item_resolve"]
-        else {
-            return true
-        }
-        if let bool = value as? Bool { return bool }
-        if let number = value as? NSNumber { return number.boolValue }
-        return true
+        guard let status = try? editor.lspStatusSnapshot() else { return true }
+        return status.capabilities?.completionItemResolve ?? true
     }
 
     private func startCompletionResolvePollTimer(tabID: UUID) {
@@ -5595,15 +5579,15 @@ final class AttoEditorAreaViewController: NSViewController {
     private func handleCommittedTextForLspTriggers(_ text: String, tabID: UUID) {
         guard let tab = activeTab, tab.id == tabID else { return }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else { return }
-        guard let status = try? tab.editCore.editor.lspStatusJSON() else { return }
+        guard let status = try? tab.editCore.editor.lspStatusSnapshot() else { return }
         let shouldShowSignatureHelp = AttoLspSignatureHelpTrigger.shouldTrigger(
             committedText: text,
-            lspStatusJSON: status
+            lspStatus: status
         )
 
         if AttoLspCompletionTrigger.shouldTrigger(
             committedText: text,
-            lspStatusJSON: status
+            lspStatus: status
         ), shouldShowSignatureHelp == false {
             _ = showCompletionsInActiveTab(beepOnFailure: false)
         }

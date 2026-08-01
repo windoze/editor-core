@@ -1,4 +1,5 @@
 import XCTest
+import EditorCoreUIFFI
 @testable import AttoEditor
 
 final class AttoLspCompletionTriggerTests: XCTestCase {
@@ -22,6 +23,24 @@ final class AttoLspCompletionTriggerTests: XCTestCase {
         XCTAssertFalse(AttoLspCompletionTrigger.shouldTrigger(committedText: "a", lspStatusJSON: json))
         XCTAssertFalse(AttoLspCompletionTrigger.shouldTrigger(committedText: "./", lspStatusJSON: json))
         XCTAssertFalse(AttoLspCompletionTrigger.shouldTrigger(committedText: ";", lspStatusJSON: json))
+    }
+
+    func testCompletionTriggerUsesTypedStatus() {
+        let status = EcuLspStatusSnapshot(
+            availability: .enabled,
+            state: .ready,
+            server: nil,
+            activity: nil,
+            detail: nil,
+            capabilities: EcuLspCapabilities(
+                completion: .init(supported: true, triggerCharacters: [".", "/"], allCommitCharacters: [";"])
+            )
+        )
+
+        XCTAssertTrue(AttoLspCompletionTrigger.shouldTrigger(committedText: ".", lspStatus: status))
+        XCTAssertTrue(AttoLspCompletionTrigger.shouldTrigger(committedText: "/", lspStatus: status))
+        XCTAssertFalse(AttoLspCompletionTrigger.shouldTrigger(committedText: ";", lspStatus: status))
+        XCTAssertFalse(AttoLspCompletionTrigger.shouldTrigger(committedText: "./", lspStatus: status))
     }
 
     func testCompletionTriggerIgnoresMissingOrInvalidStatus() throws {

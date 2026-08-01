@@ -1,4 +1,5 @@
 import Foundation
+import EditorCoreUIFFI
 @testable import AttoEditor
 import XCTest
 
@@ -121,6 +122,24 @@ final class AttoLspSignatureHelpFormatterTests: XCTestCase {
         XCTAssertTrue(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: ",", lspStatusJSON: json))
         XCTAssertFalse(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: "a", lspStatusJSON: json))
         XCTAssertFalse(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: "(),", lspStatusJSON: json))
+    }
+
+    func testSignatureHelpTriggerUsesTypedStatus() {
+        let status = EcuLspStatusSnapshot(
+            availability: .enabled,
+            state: .ready,
+            server: nil,
+            activity: nil,
+            detail: nil,
+            capabilities: EcuLspCapabilities(
+                signatureHelp: .init(supported: true, triggerCharacters: ["("], retriggerCharacters: [","])
+            )
+        )
+
+        XCTAssertTrue(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: "(", lspStatus: status))
+        XCTAssertTrue(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: ",", lspStatus: status))
+        XCTAssertFalse(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: "a", lspStatus: status))
+        XCTAssertFalse(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: "(),", lspStatus: status))
     }
 
     func testSignatureHelpTriggerIgnoresMissingOrInvalidStatus() throws {
