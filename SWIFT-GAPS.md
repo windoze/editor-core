@@ -412,9 +412,15 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 当前仓库已经有 Sublime 相关 crate 和 Swift/App 集成，但“复刻 Sublime Text”需要更宽的产品面。这里的 Sublime 兼容范围明确不包含继续扩展 `.sublime-syntax` 语法定义兼容性：AttoEditor 的主路线是 Tree-sitter + LSP，`editor-core-sublime` 现有 syntax 支持只作为已有文件/主题生态的基线能力保留，不作为 P0/P1/P2 的新增功能目标。后续 Sublime 兼容审计应聚焦 settings、keymap、theme、package resource、command/panel 行为和编辑器交互语义，而不是补齐未公开规范的 syntax 细节。
 
+语法/语言能力路线边界：
+
+- `editor-core-sublime` 当前已经支持的 Sublime syntax 加载和解析能力视为既有基线；Swift 路径只需要确保这条基线能力可达、可配置、不会回退。
+- 不新增 Sublime syntax 覆盖率目标，不建立 `.sublime-syntax` 兼容矩阵，也不把未公开规范的 syntax 细节纳入 Swift gaps 验收。
+- AttoEditor 后续新增的语言语义、结构化高亮、符号、诊断、导航和智能编辑能力优先经由 Tree-sitter 与 LSP 产品化。
+
 已具备或部分具备：
 
-- Sublime syntax 相关解析/加载路径。
+- Sublime syntax 相关解析/加载路径，仅作为现有 `editor-core-sublime` 基线保留。
 - Sublime/JSON theme 相关路径。
 - Tree-sitter 语法高亮路径。
 - 基础 tab、sidebar、minimap、find/replace。
