@@ -2845,10 +2845,10 @@ final class AttoEditorAreaViewController: NSViewController {
         endOffset: UInt32,
         onlyKinds: [String]
     ) -> String {
-        let diagnosticsJSON = (try? editor.diagnosticsJSON()) ?? #"{"diagnostics":[]}"#
+        derivedStateStore.refreshActive(editor: editor)
         let text = (try? editor.text()) ?? ""
         return AttoLspCodeActionContext.contextJSON(
-            diagnosticsJSON: diagnosticsJSON,
+            diagnostics: derivedStateStore.active.diagnostics,
             documentText: text,
             selectionStart: startOffset,
             selectionEnd: endOffset,

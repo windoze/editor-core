@@ -1,6 +1,23 @@
+import EditorCoreUIFFI
 import Foundation
 
 enum AttoLspCodeActionContext {
+    static func contextJSON(
+        diagnostics snapshot: EcuDiagnosticsSnapshot,
+        documentText: String,
+        selectionStart: UInt32,
+        selectionEnd: UInt32,
+        onlyKinds: [String] = []
+    ) -> String {
+        let diagnostics = lspDiagnostics(
+            diagnostics: snapshot.diagnostics,
+            documentText: documentText,
+            selectionStart: selectionStart,
+            selectionEnd: selectionEnd
+        )
+        return contextJSON(diagnostics: diagnostics, onlyKinds: onlyKinds)
+    }
+
     static func contextJSON(
         diagnosticsJSON: String,
         documentText: String,
@@ -14,12 +31,55 @@ enum AttoLspCodeActionContext {
             selectionStart: selectionStart,
             selectionEnd: selectionEnd
         )
+        return contextJSON(diagnostics: diagnostics, onlyKinds: onlyKinds)
+    }
+
+    private static func contextJSON(diagnostics: [[String: Any]], onlyKinds: [String]) -> String {
         var context: [String: Any] = ["diagnostics": diagnostics]
         let only = onlyKinds.filter { $0.isEmpty == false }
         if only.isEmpty == false {
             context["only"] = only
         }
         return jsonString(context) ?? #"{"diagnostics":[]}"#
+    }
+
+    static func lspDiagnostics(
+        diagnostics: [EcuDiagnostic],
+        documentText: String,
+        selectionStart: UInt32,
+        selectionEnd: UInt32
+    ) -> [[String: Any]] {
+        let selection = normalizedRange(selectionStart, selectionEnd)
+        return diagnostics.compactMap { diagnostic in
+            let diagnosticRange = normalizedRange(diagnostic.range.start, diagnostic.range.end)
+            guard intersectsOrContainsCaret(diagnosticRange, selection) else { return nil }
+
+            var out: [String: Any] = [
+                "range": [
+                    "start": lspPosition(in: documentText, charOffset: diagnosticRange.start),
+                    "end": lspPosition(in: documentText, charOffset: diagnosticRange.end),
+                ],
+                "message": diagnostic.message,
+            ]
+
+            if let severity = lspSeverity(diagnostic.severity) {
+                out["severity"] = severity
+            }
+            if let code = diagnostic.code {
+                out["code"] = code
+            }
+            if let source = diagnostic.source {
+                out["source"] = source
+            }
+            if let relatedInformation = jsonValue(fromJSONString: diagnostic.relatedInformationJSON) {
+                out["relatedInformation"] = relatedInformation
+            }
+            if let data = jsonValue(fromJSONString: diagnostic.dataJSON) {
+                out["data"] = data
+            }
+
+            return out
+        }
     }
 
     static func lspDiagnostics(
@@ -120,6 +180,16 @@ enum AttoLspCodeActionContext {
         case "information": return 3
         case "hint": return 4
         default: return nil
+        }
+    }
+
+    private static func lspSeverity(_ value: EcuDiagnosticSeverity?) -> Int? {
+        switch value {
+        case .error: return 1
+        case .warning: return 2
+        case .information: return 3
+        case .hint: return 4
+        case .none: return nil
         }
     }
 

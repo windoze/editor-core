@@ -1,32 +1,33 @@
 @testable import AttoEditor
+import EditorCoreUIFFI
 import XCTest
 
 final class AttoLspCodeActionContextTests: XCTestCase {
     func testCodeActionContextIncludesDiagnosticsIntersectingCaret() throws {
-        let diagnosticsJSON = """
-        {
-          "diagnostics": [
-            {
-              "range": { "start": 4, "end": 6 },
-              "severity": "warning",
-              "code": "unused",
-              "source": "unit-test",
-              "message": "emoji is unused",
-              "related_information_json": "[{\\"message\\":\\"related\\"}]",
-              "data_json": "{\\"fix_id\\":7}"
-            },
-            {
-              "range": { "start": 10, "end": 14 },
-              "severity": "error",
-              "message": "outside selection"
-            }
-          ]
-        }
-        """
+        let snapshot = EcuDiagnosticsSnapshot(diagnostics: [
+            EcuDiagnostic(
+                range: EcuOffsetRange(start: 4, end: 6),
+                severity: .warning,
+                code: "unused",
+                source: "unit-test",
+                message: "emoji is unused",
+                relatedInformationJSON: #"[{"message":"related"}]"#,
+                dataJSON: #"{"fix_id":7}"#
+            ),
+            EcuDiagnostic(
+                range: EcuOffsetRange(start: 10, end: 14),
+                severity: .error,
+                code: nil,
+                source: nil,
+                message: "outside selection",
+                relatedInformationJSON: nil,
+                dataJSON: nil
+            ),
+        ])
 
         let context = try object(
             AttoLspCodeActionContext.contextJSON(
-                diagnosticsJSON: diagnosticsJSON,
+                diagnostics: snapshot,
                 documentText: "let 😀x\nnext\n",
                 selectionStart: 5,
                 selectionEnd: 5
@@ -56,21 +57,21 @@ final class AttoLspCodeActionContextTests: XCTestCase {
     }
 
     func testCodeActionContextFiltersDiagnosticsOutsideSelection() throws {
-        let diagnosticsJSON = """
-        {
-          "diagnostics": [
-            {
-              "range": { "start": 8, "end": 12 },
-              "severity": 1,
-              "message": "outside selection"
-            }
-          ]
-        }
-        """
+        let snapshot = EcuDiagnosticsSnapshot(diagnostics: [
+            EcuDiagnostic(
+                range: EcuOffsetRange(start: 8, end: 12),
+                severity: .error,
+                code: nil,
+                source: nil,
+                message: "outside selection",
+                relatedInformationJSON: nil,
+                dataJSON: nil
+            ),
+        ])
 
         let context = try object(
             AttoLspCodeActionContext.contextJSON(
-                diagnosticsJSON: diagnosticsJSON,
+                diagnostics: snapshot,
                 documentText: "let value\n",
                 selectionStart: 0,
                 selectionEnd: 3
@@ -96,7 +97,7 @@ final class AttoLspCodeActionContextTests: XCTestCase {
     func testCodeActionContextIncludesOnlyKindsWhenRequested() throws {
         let context = try object(
             AttoLspCodeActionContext.contextJSON(
-                diagnosticsJSON: #"{"diagnostics":[]}"#,
+                diagnostics: EcuDiagnosticsSnapshot(diagnostics: []),
                 documentText: "",
                 selectionStart: 0,
                 selectionEnd: 0,
