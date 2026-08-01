@@ -157,18 +157,19 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 76 已完成：继续拆 `crates/editor-core-ui/src/editor_ui.rs`、`crates/editor-core-render-skia/src/lib.rs`、`crates/editor-core-ffi/src/lib.rs` 三个阶段 75 后仍偏长的文件，保持 Rust API、C ABI 和 Swift binding 行为不变。`editor_ui.rs` 拆出 selection、coordinate/hit-test、appearance/search、syntax、viewport、editing/input、rendering 子模块，root 降到 568 行；`editor-core-render-skia` 将 `SkiaRenderer`、font/shaping cache 和绘制 helper 拆入 `renderer.rs`，root 降到 333 行；`editor-core-ffi` 将 ABI 函数组拆成 `editor_state_abi.rs`、`workspace_abi.rs`、`lsp_abi.rs`、`processors_abi.rs`、`binary_abi.rs`，root 降到 717 行。已验证 `cargo build -p editor-core-ui-ffi -p editor-core-ffi`、`cargo test -p editor-core-ui --lib`、`cargo test -p editor-core-render-skia --lib`、`cargo test -p editor-core-ffi`，以及 Swift headless/UI FFI smoke。
 - 2026-08-02 阶段 77 已完成：继续拆本轮指定的七个长文件，保持 Rust API、C ABI、Swift binding 和行为不变。`editor-core-render-skia/src/renderer.rs` 现在作为 53 行入口，拆出 `font`、`font_loading`、`geometry`、`drawing`、`style`、`decoration`、`headless`、`composed`、`metal`；`editor-core-ui/src/editor_ui/lsp.rs` 拆出 lifecycle、sync、processing、formatting、apply、requests，并把 requests 再按 common/navigation/completion/actions/document/hierarchy 分组；`editor-core-ui-ffi/src/editor_ui_abi/lsp.rs` 和 `editing.rs` 拆成 ABI 分组模块，LSP requests 再按 common/navigation/completion/actions/document/hierarchy_workspace 分组；`editor-core-ui/src/lib.rs` 拆出 JSON helper、shared LSP session/result slot、render helper 和 Tree-sitter worker；`editor-core-ffi/src/json_bridge.rs` 拆出 parse/value/input，input 再按 primitives/commands/processing 分组；`editor-core-ui/src/editor_ui/editing.rs` 拆成 text、movement、IME/mouse。已验证 `cargo build -p editor-core-ui -p editor-core-ui-ffi -p editor-core-render-skia -p editor-core-ffi`、`cargo test -p editor-core-render-skia --lib`、`cargo test -p editor-core-ui --lib`、`cargo test -p editor-core-ui-ffi --lib`、`cargo test -p editor-core-ffi`，以及 Swift smoke `TypedAPITests/testDocumentStatsAndVersionBump` 和 `EditorCoreUIFFITests/testCodeLensHitTestReturnsPayloadJSON`。
 - 2026-08-02 阶段 78 已完成：补齐 headless FFI JSON command plane 相对 UI command JSON 的一批缺口，保持 C ABI 函数表不变，通过 JSON schema 扩展暴露 `type_char`、coalescing replace、`apply_snippet`、snippet placeholder navigation、`move_to_matching_bracket`、auto-pairs config/enabled 和 bracket-match highlight update/clear。Swift `EditorCoreFFI.EditorState` 新增对应 typed convenience API，并新增 `EcfTextEdit`、`EcfAutoPair`、`EcfAutoPairsConfig` DTO。已验证 `cargo test -p editor-core-ffi`、`swift test --package-path swift --filter EditorStateJSONCommandBridgeTests` 和 `swift test --package-path swift --filter TypedAPITests`。
+- 2026-08-02 阶段 79 已完成：Swift `EditorCoreFFI.Workspace` 也补上阶段 78 新增 headless JSON command plane 的 typed convenience API，覆盖 `typeChar`、coalescing replace、`applySnippet`、snippet placeholder navigation、`moveToMatchingBracket`、auto-pairs config/enabled 和 bracket-match highlight update/clear。这个阶段只关闭单 view/headless workspace command wrapper 缺口；App 级 tab/split/session/project/LSP lifecycle ownership 仍必须迁移到 core-owned workspace 模型。已验证 `swift test --package-path swift --filter WorkspaceAdditionalTests`。
 
 ## 分层结论
 
 ### 1. Headless core 到 headless Swift FFI
 
-`editor-core-ffi` 通过 JSON command plane 暴露了不少核心命令，Swift `EditorState.executeJSON(_:)` 和 `Workspace.executeJSON(viewId:commandJSON:)` 可以使用这条路径。
+`editor-core-ffi` 通过 JSON command plane 暴露了不少核心命令，Swift `EditorState.executeJSON(_:)` 和 `Workspace.executeJSON(viewId:commandJSON:)` 可以使用这条路径。阶段 78/79 已把 `type_char`、snippet、auto-pairs、bracket matching/highlights 和 coalescing replace 这批 view-local command 补成 `EditorState` / `Workspace` 两侧的 Swift typed convenience API。
 
 主要问题：
 
 - JSON 命令面不是 `editor-core` 全量枚举的一比一映射。
 - 一些低频但对 Sublime 兼容很关键的命令没有进 `editor-core-ffi`。
-- Swift headless wrapper 有 JSON escape hatch，但高层 Swift 类型化 API 不完整。
+- Swift headless wrapper 有 JSON escape hatch；高层 Swift 类型化 API 已覆盖主要基础编辑 command 缺口，但还不是 `editor-core` / workspace / LSP lifecycle 的全量 typed 投影。
 
 ### 2. `editor-core-ui` 到 Swift `EditorUI`
 
@@ -350,7 +351,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 - `editor-core` / `editor-core-ui` 侧 workspace / multi-document 模型还没有成为 Swift 产品层的单一状态源；这是后续多文档/tab/workspace 工作的首要架构缺口。
 - `MultiDocumentEditorUi` 没有通过 FFI/Swift 暴露。
-- `EditorCoreFFI.Workspace` 只暴露了部分 headless command 能力，还缺 App 级 open/close/select/pin/split/session/project/LSP lifecycle 契约。
+- `EditorCoreFFI.Workspace` 已覆盖一批 view-local headless command typed wrapper，包括 type-char、snippet、auto-pairs、bracket matching/highlights 和 coalescing replace；但还缺 App 级 open/close/select/pin/split/session/project/LSP lifecycle 契约。
 - AttoEditor 当前 Swift tab 系统和 Rust UI multi-document 系统没有统一；后续应迁移为 core workspace state 的投影，而不是在 Swift 侧继续维护独立模型或给 Swift-only tab state 继续加语义。
 - 新增 tab/workspace 功能时，缺口不应通过给 Swift `Tab` / `EditorArea` 增加新的 ownership 字段来补；如果 core workspace 还没有对应语义，应先补 Rust 侧 command/query/event，再补 FFI 和 Swift wrapper。
 - Swift 侧仍需要 UI state，但只能保存表现层状态，例如当前 responder、panel 展开状态、AppKit selection/focus glue、窗口几何和临时 drag/drop 交互；文档集合、tab 顺序、active tab、split tree、dirty state、preview/pin、关闭策略和跨文档搜索结果归属应来自 core workspace。
@@ -602,7 +603,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | LSP folding ranges | yes | partial helper | yes, request/take + apply to fold regions | yes, raw request/take + apply JSON | yes, raw request/take + apply JSON | partial, refresh command applies ranges and fold commands use current state | yes |
 | LSP advanced raw requests | yes | partial helper | yes, code lens refresh/resolve + selection/linked editing/diagnostics/color/hierarchy raw request/take | yes, raw request/take JSON + code lens view-point hit-test | yes, raw request/take JSON + code lens hit-test wrapper | partial, code lens refresh/actions/inline Cmd-click + selection range/linked editing/document colors/call hierarchy/type hierarchy/workspace diagnostics have App commands and quick panels; persistent project Problems still missing | partial |
 | split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
-| workspace tabs/splits | yes, headless `Workspace` | partial `Workspace` wrapper | yes, `MultiDocumentEditorUi` | no | no, current Swift tabs are migration shims; future ownership must be core workspace | partial, transitional AppKit projection; new tab/workspace semantics must move to core-owned workspace first | partial |
+| workspace tabs/splits | yes, headless `Workspace` | partial `Workspace` wrapper with view-local command conveniences | yes, `MultiDocumentEditorUi` | no | no, current Swift tabs are migration shims; future ownership must be core workspace | partial, transitional AppKit projection; new tab/workspace semantics must move to core-owned workspace first | partial |
 
 这类矩阵应该作为 PR checklist 使用：新增 core 能力时，明确是否需要同步 FFI、Swift wrapper、App command 和测试。
 

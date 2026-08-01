@@ -7,6 +7,11 @@ final class WorkspaceAdditionalTests: XCTestCase {
         try JSONTestHelpers.decode(CommandResultJSON.self, from: json)
     }
 
+    private func bufferText(_ ws: Workspace, bufferId: UInt64) throws -> String {
+        let obj = try JSONTestHelpers.object(try ws.bufferTextJSON(bufferId: bufferId))
+        return try XCTUnwrap(obj["text"] as? String)
+    }
+
     func testWorkspaceExecuteJSONSupportsCursorViewAndStyleOps() throws {
         let library = try EditorCoreFFITestSupport.shared.loadLibrary()
         let ws = try Workspace(library: library)
@@ -45,6 +50,67 @@ final class WorkspaceAdditionalTests: XCTestCase {
         XCTAssertTrue((bufText["text"] as? String)?.contains("Z") ?? false)
     }
 
+    func testWorkspaceTypedConvenienceCoversUiParityCommands() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+
+        do {
+            let ws = try Workspace(library: library)
+            let opened = try ws.openBuffer(uri: "file:///ws-typing.txt", text: "(x)", viewportWidth: 20)
+
+            try ws.setAutoPairsConfig(
+                viewId: opened.viewId,
+                EcfAutoPairsConfig(
+                    enabled: true,
+                    pairs: [EcfAutoPair(open: "<", close: ">")]
+                )
+            )
+            try ws.moveTo(viewId: opened.viewId, line: 0, column: 3)
+            try ws.typeChar(viewId: opened.viewId, "<")
+            XCTAssertEqual(try bufferText(ws, bufferId: opened.bufferId), "(x)<>")
+
+            try ws.moveTo(viewId: opened.viewId, line: 0, column: 0)
+            try ws.moveToMatchingBracket(viewId: opened.viewId)
+            try ws.insertText(viewId: opened.viewId, "!")
+            XCTAssertEqual(try bufferText(ws, bufferId: opened.bufferId), "(x!)<>")
+
+            try ws.updateBracketMatchHighlights(viewId: opened.viewId)
+            try ws.clearBracketMatchHighlights(viewId: opened.viewId)
+        }
+
+        do {
+            let ws = try Workspace(library: library)
+            let opened = try ws.openBuffer(uri: "file:///ws-snippet.txt", text: "", viewportWidth: 20)
+
+            try ws.applySnippet(
+                viewId: opened.viewId,
+                start: 0,
+                end: 0,
+                snippet: "println!(${1:msg})$0"
+            )
+            XCTAssertEqual(try bufferText(ws, bufferId: opened.bufferId), "println!(msg)")
+            try ws.snippetNextPlaceholder(viewId: opened.viewId)
+            try ws.snippetPrevPlaceholder(viewId: opened.viewId)
+        }
+
+        do {
+            let ws = try Workspace(library: library)
+            let opened = try ws.openBuffer(uri: "file:///ws-coalescing.txt", text: "abc", viewportWidth: 20)
+
+            try ws.replaceCoalescingUndo(viewId: opened.viewId, start: 0, length: 1, text: "A")
+            XCTAssertEqual(try bufferText(ws, bufferId: opened.bufferId), "Abc")
+
+            try ws.replaceCoalescingUndoWithSelection(
+                viewId: opened.viewId,
+                start: 1,
+                length: 1,
+                text: "B",
+                selectionStart: 1,
+                selectionEnd: 2
+            )
+            XCTAssertEqual(try bufferText(ws, bufferId: opened.bufferId), "ABc")
+        }
+    }
+
     func testWorkspaceErrorsAndNotFoundReturnValues() throws {
         let library = try EditorCoreFFITestSupport.shared.loadLibrary()
         let ws = try Workspace(library: library)
@@ -65,4 +131,3 @@ final class WorkspaceAdditionalTests: XCTestCase {
         }
     }
 }
-
