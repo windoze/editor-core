@@ -97,6 +97,10 @@ final class AttoEditorAreaViewController: NSViewController {
         try coreDocuments?.searchAllTabs(query: query)
     }
 
+    func _linkedEditingSessionIsActiveForTesting() -> Bool {
+        linkedEditingSession != nil
+    }
+
     func _setActiveTabDirtyCacheForTesting(_ isDirty: Bool) {
         activeTab?.isDirty = isDirty
     }
@@ -368,6 +372,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let showFeedback: Bool
     }
 
+    private struct LinkedEditingSession {
+        let tabID: UUID
+        let selectionCount: Int
+    }
+
     private struct DocumentColorRequestContext {
         let tabID: UUID
         let showFeedback: Bool
@@ -458,6 +467,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private var selectionRangePollTimer: DispatchSourceTimer?
     private var linkedEditingContext: LinkedEditingRequestContext?
     private var linkedEditingPollTimer: DispatchSourceTimer?
+    private var linkedEditingSession: LinkedEditingSession?
     private var documentColorContext: DocumentColorRequestContext?
     private var documentColorPollTimer: DispatchSourceTimer?
     private var colorPresentationContext: ColorPresentationRequestContext?
@@ -1485,6 +1495,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         let isTextMutation = treatsAsTextMutation ?? Self.commandJSONIsTextMutation(commandJSON)
+        let mayChangeSelection = Self.commandJSONMayChangeSelection(commandJSON)
 
         do {
             _ = try tab.editCore.editor.executeCommandJSON(commandJSON)
@@ -1496,6 +1507,8 @@ final class AttoEditorAreaViewController: NSViewController {
 
             if isTextMutation {
                 handleTabDidMutateDocumentText(tabID: tab.id)
+            } else if mayChangeSelection {
+                handleTabDidChangeSelection(tabID: tab.id, causedByTextMutation: false)
             }
 
             updateStatusBar()
@@ -1522,6 +1535,7 @@ final class AttoEditorAreaViewController: NSViewController {
             tab.editCore.editorView.kickProcessingPoll()
             tab.editCore.editorView.needsDisplay = true
             tab.editCore.needsDisplay = true
+            handleTabDidChangeSelection(tabID: tab.id, causedByTextMutation: false)
             updateStatusBar()
             tab.editCore.focusEditor()
             return true
@@ -2149,6 +2163,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 result.ranges,
                 primaryIndex: result.primaryIndex(containing: effectiveCaretOffset)
             )
+            linkedEditingSession = LinkedEditingSession(tabID: tab.id, selectionCount: result.ranges.count)
             tab.editCore.layoutSubtreeIfNeeded()
             try? tab.editCore.editor.revealPrimaryCaret()
             tab.editCore.editorView.needsDisplay = true
@@ -2727,6 +2742,15 @@ final class AttoEditorAreaViewController: NSViewController {
         return (obj["op"] as? String) != "end_undo_group"
     }
 
+    private static func commandJSONMayChangeSelection(_ commandJSON: String) -> Bool {
+        guard let data = commandJSON.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
+        else {
+            return false
+        }
+        return (obj["kind"] as? String) == "cursor"
+    }
+
     // MARK: - Find / Replace
 
     func showFindBar() {
@@ -3001,6 +3025,31 @@ final class AttoEditorAreaViewController: NSViewController {
         if didUnpreview {
             notifySessionStateChanged()
         }
+
+        handleTabDidChangeSelection(tabID: tabID, causedByTextMutation: true)
+    }
+
+    private func handleTabDidChangeSelection(tabID: UUID, causedByTextMutation: Bool) {
+        guard let session = linkedEditingSession, session.tabID == tabID else { return }
+        guard selectedTabID == tabID,
+              let tab = tabs.first(where: { $0.id == tabID })
+        else {
+            linkedEditingSession = nil
+            return
+        }
+
+        if causedByTextMutation {
+            guard let selections = try? tab.editCore.editor.selections(),
+                  selections.ranges.count == session.selectionCount,
+                  selections.ranges.count > 1
+            else {
+                linkedEditingSession = nil
+                return
+            }
+            linkedEditingSession = LinkedEditingSession(tabID: tabID, selectionCount: selections.ranges.count)
+        } else {
+            linkedEditingSession = nil
+        }
     }
 
     private func attachStatusObserver(to editorView: EditorCoreSkiaView) {
@@ -3246,6 +3295,7 @@ final class AttoEditorAreaViewController: NSViewController {
             tab.editCore.layoutSubtreeIfNeeded()
             tab.editCore.editorView.needsDisplay = true
             tab.editCore.needsDisplay = true
+            handleTabDidChangeSelection(tabID: tab.id, causedByTextMutation: false)
             updateStatusBar()
             tab.editCore.focusEditor()
             return true
@@ -3374,6 +3424,9 @@ final class AttoEditorAreaViewController: NSViewController {
         }
         editCore.onDidCommitText = { [weak self] text in
             self?.handleCommittedTextForLspTriggers(text, tabID: tabID)
+        }
+        editCore.onDidChangeSelection = { [weak self] causedByTextMutation in
+            self?.handleTabDidChangeSelection(tabID: tabID, causedByTextMutation: causedByTextMutation)
         }
         editCore.onDidApplyAsyncProcessing = { [weak self] in
             guard let self else { return }
@@ -7318,6 +7371,7 @@ final class AttoEditorAreaViewController: NSViewController {
         linkedEditingPollTimer?.cancel()
         linkedEditingPollTimer = nil
         linkedEditingContext = nil
+        linkedEditingSession = nil
     }
 
     private func cancelDocumentColorUI() {

@@ -708,6 +708,7 @@ final class AttoEditorCommandTests: XCTestCase {
             ]
         )
         XCTAssertEqual(selections.primaryIndex, 1)
+        XCTAssertTrue(vc._linkedEditingSessionIsActiveForTesting())
     }
 
     func testApplyLinkedEditingRangeResultRejectsWordPatternMismatch() throws {
@@ -747,6 +748,54 @@ final class AttoEditorCommandTests: XCTestCase {
         let selections = try editorView.editor.selections()
         XCTAssertEqual(selections.ranges, [EcuSelectionRange(start: 0, end: 0)])
         XCTAssertEqual(selections.primaryIndex, 0)
+        XCTAssertFalse(vc._linkedEditingSessionIsActiveForTesting())
+    }
+
+    func testLinkedEditingSessionPersistsAcrossTextMutationAndExitsOnNavigation() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("linked-session.txt")
+        try "foo + foo\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 7, end: 7)], primaryIndex: 0)
+
+        let json = """
+        {
+          "ranges": [
+            {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 3 }
+            },
+            {
+              "start": { "line": 0, "character": 6 },
+              "end": { "line": 0, "character": 9 }
+            }
+          ],
+          "wordPattern": "[A-Za-z]+"
+        }
+        """
+
+        XCTAssertTrue(vc.applyLinkedEditingRangeResultJSONToActiveTab(json, caretOffset: 7))
+        XCTAssertTrue(vc._linkedEditingSessionIsActiveForTesting())
+
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"view","op":"set_wrap_mode","mode":"word"}"#))
+        XCTAssertTrue(vc._linkedEditingSessionIsActiveForTesting())
+
+        editorView.insertText("b", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        XCTAssertEqual(try editorView.editor.text(), "b + b\n")
+        XCTAssertTrue(vc._linkedEditingSessionIsActiveForTesting())
+
+        XCTAssertTrue(vc.performCursorMovementCommand(.moveLeft))
+        XCTAssertFalse(vc._linkedEditingSessionIsActiveForTesting())
     }
 
     func testApplyColorPresentationMutatesActiveDocument() throws {

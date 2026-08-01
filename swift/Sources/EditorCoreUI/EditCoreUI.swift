@@ -62,6 +62,11 @@ public final class EditCoreUI: NSView {
         set { editorView.onDidCommitText = newValue }
     }
 
+    public var onDidChangeSelection: ((_ causedByTextMutation: Bool) -> Void)? {
+        get { editorView.onDidChangeSelection }
+        set { editorView.onDidChangeSelection = newValue }
+    }
+
     public var onHover: ((EditorCoreSkiaHoverInfo) -> Void)? {
         get { editorView.onHover }
         set { editorView.onHover = newValue }

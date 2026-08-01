@@ -144,6 +144,13 @@ public final class EditorCoreSkiaView: MTKView {
     /// and do not call this hook until the system commits text through `insertText`.
     public var onDidCommitText: ((String) -> Void)?
 
+    /// Called after the selection/caret may have changed.
+    ///
+    /// `causedByTextMutation` is `true` when the selection moved as part of an edit, such as typing,
+    /// paste, delete, undo/redo, or formatting. Hosts can use this to distinguish normal linked
+    /// multi-cursor continuation from explicit navigation/click selection changes.
+    public var onDidChangeSelection: ((_ causedByTextMutation: Bool) -> Void)?
+
     /// Called when the mouse hovers over a new character offset in the document.
     ///
     /// Hosts can use this to present hover UI (tooltip/popover/inspector).
@@ -523,6 +530,12 @@ public final class EditorCoreSkiaView: MTKView {
         updateGutterWidthIfNeeded()
         startProcessingPoll()
         onDidMutateDocumentText?()
+    }
+
+    private func notifySelectionDidChange(causedByTextMutation: Bool) {
+        cachedSelectedRange = nil
+        invalidateIMECharacterCoordinates()
+        onDidChangeSelection?(causedByTextMutation)
     }
 
     @discardableResult
@@ -1579,6 +1592,7 @@ public final class EditorCoreSkiaView: MTKView {
         } catch {
             NSSound.beep()
         }
+        notifySelectionDidChange(causedByTextMutation: false)
         requestRedraw()
         invalidateIMECharacterCoordinates()
         notifyViewportStateDidChange()
@@ -1644,6 +1658,7 @@ public final class EditorCoreSkiaView: MTKView {
         } catch {
             NSSound.beep()
         }
+        notifySelectionDidChange(causedByTextMutation: false)
         requestRedraw()
         invalidateIMECharacterCoordinates()
         notifyViewportStateDidChange()
@@ -1801,6 +1816,7 @@ public final class EditorCoreSkiaView: MTKView {
         do {
             try editor.commitText(text)
             didMutateDocumentText()
+            notifySelectionDidChange(causedByTextMutation: true)
             onDidCommitText?(text)
             if perfDebugEnabled {
                 let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
@@ -1869,6 +1885,7 @@ public final class EditorCoreSkiaView: MTKView {
                 replaceLen: replaceLen
             )
             didMutateDocumentText()
+            notifySelectionDidChange(causedByTextMutation: true)
             if perfDebugEnabled {
                 let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
                 perfSetMarkedCount += 1
@@ -1904,6 +1921,7 @@ public final class EditorCoreSkiaView: MTKView {
         updateViewportIfNeeded()
         let t0 = perfDebugEnabled ? CFAbsoluteTimeGetCurrent() : 0
         var didEditText = false
+        var didChangeSelection = false
         do {
             switch selector {
             case #selector(copy(_:)):
@@ -1920,6 +1938,7 @@ public final class EditorCoreSkiaView: MTKView {
                 } else {
                     try editor.moveGraphemeLeft()
                 }
+                didChangeSelection = true
             case #selector(moveRight(_:)):
                 let sel = try editor.selectionOffsets()
                 if sel.start != sel.end {
@@ -1927,85 +1946,120 @@ public final class EditorCoreSkiaView: MTKView {
                 } else {
                     try editor.moveGraphemeRight()
                 }
+                didChangeSelection = true
             case #selector(moveWordLeft(_:)):
                 let sel = try editor.selectionOffsets()
                 if sel.start != sel.end {
                     try editor.setSelections([EcuSelectionRange(start: sel.start, end: sel.start)], primaryIndex: 0)
                 }
                 try editor.moveWordLeft()
+                didChangeSelection = true
             case #selector(moveWordRight(_:)):
                 let sel = try editor.selectionOffsets()
                 if sel.start != sel.end {
                     try editor.setSelections([EcuSelectionRange(start: sel.end, end: sel.end)], primaryIndex: 0)
                 }
                 try editor.moveWordRight()
+                didChangeSelection = true
             case #selector(moveToBeginningOfLine(_:)):
                 try editor.moveToVisualLineStart()
+                didChangeSelection = true
             case #selector(moveToEndOfLine(_:)):
                 try editor.moveToVisualLineEnd()
+                didChangeSelection = true
             case #selector(moveToLeftEndOfLine(_:)):
                 // Some keybindings (Home / Cmd+Left in certain layouts) map to the bidi-aware variants.
                 try editor.moveToVisualLineStart()
+                didChangeSelection = true
             case #selector(moveToRightEndOfLine(_:)):
                 try editor.moveToVisualLineEnd()
+                didChangeSelection = true
             case #selector(moveToBeginningOfDocument(_:)):
                 try editor.moveToDocumentStart()
+                didChangeSelection = true
             case #selector(moveToEndOfDocument(_:)):
                 try editor.moveToDocumentEnd()
+                didChangeSelection = true
             case #selector(scrollToBeginningOfDocument(_:)):
                 // Home key in some contexts is dispatched as a "scroll" action.
                 // We treat it as a caret move for editor behavior consistency.
                 try editor.moveToDocumentStart()
+                didChangeSelection = true
             case #selector(scrollToEndOfDocument(_:)):
                 try editor.moveToDocumentEnd()
+                didChangeSelection = true
             case #selector(pageUp(_:)):
                 try editor.moveVisualByPages(-1)
+                didChangeSelection = true
             case #selector(pageDown(_:)):
                 try editor.moveVisualByPages(1)
+                didChangeSelection = true
             case #selector(scrollPageUp(_:)):
                 try editor.moveVisualByPages(-1)
+                didChangeSelection = true
             case #selector(scrollPageDown(_:)):
                 try editor.moveVisualByPages(1)
+                didChangeSelection = true
             case #selector(moveUp(_:)):
                 try editor.moveVisualByRows(-1)
+                didChangeSelection = true
             case #selector(moveDown(_:)):
                 try editor.moveVisualByRows(1)
+                didChangeSelection = true
             case #selector(moveLeftAndModifySelection(_:)):
                 try editor.moveGraphemeLeftAndModifySelection()
+                didChangeSelection = true
             case #selector(moveRightAndModifySelection(_:)):
                 try editor.moveGraphemeRightAndModifySelection()
+                didChangeSelection = true
             case #selector(moveWordLeftAndModifySelection(_:)):
                 try editor.moveWordLeftAndModifySelection()
+                didChangeSelection = true
             case #selector(moveWordRightAndModifySelection(_:)):
                 try editor.moveWordRightAndModifySelection()
+                didChangeSelection = true
             case #selector(moveToBeginningOfLineAndModifySelection(_:)):
                 try editor.moveToVisualLineStartAndModifySelection()
+                didChangeSelection = true
             case #selector(moveToEndOfLineAndModifySelection(_:)):
                 try editor.moveToVisualLineEndAndModifySelection()
+                didChangeSelection = true
             case #selector(moveToLeftEndOfLineAndModifySelection(_:)):
                 try editor.moveToVisualLineStartAndModifySelection()
+                didChangeSelection = true
             case #selector(moveToRightEndOfLineAndModifySelection(_:)):
                 try editor.moveToVisualLineEndAndModifySelection()
+                didChangeSelection = true
             case #selector(moveToBeginningOfDocumentAndModifySelection(_:)):
                 try editor.moveToDocumentStartAndModifySelection()
+                didChangeSelection = true
             case #selector(moveToEndOfDocumentAndModifySelection(_:)):
                 try editor.moveToDocumentEndAndModifySelection()
+                didChangeSelection = true
             case Selector(("scrollToBeginningOfDocumentAndModifySelection:")):
                 try editor.moveToDocumentStartAndModifySelection()
+                didChangeSelection = true
             case Selector(("scrollToEndOfDocumentAndModifySelection:")):
                 try editor.moveToDocumentEndAndModifySelection()
+                didChangeSelection = true
             case #selector(pageUpAndModifySelection(_:)):
                 try editor.moveVisualByPagesAndModifySelection(-1)
+                didChangeSelection = true
             case #selector(pageDownAndModifySelection(_:)):
                 try editor.moveVisualByPagesAndModifySelection(1)
+                didChangeSelection = true
             case Selector(("scrollPageUpAndModifySelection:")):
                 try editor.moveVisualByPagesAndModifySelection(-1)
+                didChangeSelection = true
             case Selector(("scrollPageDownAndModifySelection:")):
                 try editor.moveVisualByPagesAndModifySelection(1)
+                didChangeSelection = true
             case #selector(moveUpAndModifySelection(_:)):
                 try editor.moveVisualByRowsAndModifySelection(-1)
+                didChangeSelection = true
             case #selector(moveDownAndModifySelection(_:)):
                 try editor.moveVisualByRowsAndModifySelection(1)
+                didChangeSelection = true
             case #selector(deleteBackward(_:)):
                 try editor.backspace()
                 didEditText = true
@@ -2025,10 +2079,12 @@ public final class EditorCoreSkiaView: MTKView {
                 let wasSnippet = try editor.hasActiveSnippetSession()
                 try editor.insertTab()
                 didEditText = !wasSnippet
+                didChangeSelection = true
             case #selector(insertBacktab(_:)):
                 let wasSnippet = try editor.hasActiveSnippetSession()
                 try editor.insertBacktab()
                 didEditText = !wasSnippet
+                didChangeSelection = true
             case #selector(cancelOperation(_:)):
                 // Escape: cancel marked text / composition (restore original replaced range).
                 let marked = try editor.markedRange()
@@ -2050,6 +2106,9 @@ public final class EditorCoreSkiaView: MTKView {
         }
         if didEditText {
             didMutateDocumentText()
+        }
+        if didChangeSelection || didEditText {
+            notifySelectionDidChange(causedByTextMutation: didEditText)
         }
         if perfDebugEnabled {
             let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
@@ -2076,6 +2135,7 @@ public final class EditorCoreSkiaView: MTKView {
             NSSound.beep()
             return
         }
+        notifySelectionDidChange(causedByTextMutation: false)
         requestRedraw()
         invalidateIMECharacterCoordinates()
         notifyViewportStateDidChange()
@@ -2092,6 +2152,7 @@ public final class EditorCoreSkiaView: MTKView {
             NSSound.beep()
             return
         }
+        notifySelectionDidChange(causedByTextMutation: false)
         requestRedraw()
         invalidateIMECharacterCoordinates()
         notifyViewportStateDidChange()
@@ -2108,6 +2169,7 @@ public final class EditorCoreSkiaView: MTKView {
             NSSound.beep()
             return
         }
+        notifySelectionDidChange(causedByTextMutation: false)
         requestRedraw()
         invalidateIMECharacterCoordinates()
         notifyViewportStateDidChange()
@@ -2149,6 +2211,7 @@ public final class EditorCoreSkiaView: MTKView {
             )
             if didApply {
                 didMutateDocumentText()
+                notifySelectionDidChange(causedByTextMutation: true)
             }
         } catch {
             return .failed(error.localizedDescription)
@@ -2196,6 +2259,7 @@ public final class EditorCoreSkiaView: MTKView {
             )
             if didApply {
                 didMutateDocumentText()
+                notifySelectionDidChange(causedByTextMutation: true)
             }
         } catch {
             return .failed(error.localizedDescription)
@@ -2247,6 +2311,7 @@ public final class EditorCoreSkiaView: MTKView {
             )
             if didApply {
                 didMutateDocumentText()
+                notifySelectionDidChange(causedByTextMutation: true)
             }
         } catch {
             return .failed(error.localizedDescription)
@@ -2275,6 +2340,7 @@ public final class EditorCoreSkiaView: MTKView {
             }
             let end = UInt32(text.unicodeScalars.count)
             try editor.setSelections([EcuSelectionRange(start: 0, end: end)], primaryIndex: 0)
+            notifySelectionDidChange(causedByTextMutation: false)
         } catch {
             NSSound.beep()
         }
@@ -2290,6 +2356,7 @@ public final class EditorCoreSkiaView: MTKView {
         do {
             try editor.undo()
             didMutateDocumentText()
+            notifySelectionDidChange(causedByTextMutation: true)
         } catch {
             NSSound.beep()
         }
@@ -2305,6 +2372,7 @@ public final class EditorCoreSkiaView: MTKView {
         do {
             try editor.redo()
             didMutateDocumentText()
+            notifySelectionDidChange(causedByTextMutation: true)
         } catch {
             NSSound.beep()
         }
@@ -2338,6 +2406,7 @@ public final class EditorCoreSkiaView: MTKView {
             pasteboard.setString(text, forType: .string)
             try editor.deleteSelectionsOnly()
             didMutateDocumentText()
+            notifySelectionDidChange(causedByTextMutation: true)
             requestRedraw()
             invalidateIMECharacterCoordinates()
             notifyViewportStateDidChange()
@@ -2355,6 +2424,7 @@ public final class EditorCoreSkiaView: MTKView {
         do {
             try editor.pasteText(text)
             didMutateDocumentText()
+            notifySelectionDidChange(causedByTextMutation: true)
         } catch {
             NSSound.beep()
         }
