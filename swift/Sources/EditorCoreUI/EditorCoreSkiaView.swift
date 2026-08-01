@@ -181,9 +181,11 @@ public final class EditorCoreSkiaView: MTKView {
     /// This is enabled by default because it is an important discoverability affordance.
     public var commandHoverLinkFeedbackEnabled: Bool = true
 
-    /// Called when async derived-state processing (e.g. Tree-sitter) applied new edits.
+    /// Called when async derived-state processing applied edits or a short poll window finishes.
     ///
-    /// This is primarily useful for tests and for hosts that want explicit "derived state updated" signals.
+    /// This is primarily useful for tests and for hosts that want explicit derived-state/status
+    /// update signals. A poll window can finish without applied edits when an async provider only
+    /// changed status, such as an LSP request error.
     public var onDidApplyAsyncProcessing: (() -> Void)?
 
     // MARK: - Caret appearance (width + blinking)
@@ -623,6 +625,8 @@ public final class EditorCoreSkiaView: MTKView {
                 requestRedraw()
                 invalidateIMECharacterCoordinates()
                 notifyViewportStateDidChange()
+            }
+            if r.applied || (r.pending == false && alwaysPollProcessing == false) {
                 onDidApplyAsyncProcessing?()
             }
             if r.pending == false, alwaysPollProcessing == false {

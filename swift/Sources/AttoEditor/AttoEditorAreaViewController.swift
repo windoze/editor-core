@@ -34,6 +34,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private let statusBarView = AttoStatusBarView()
     private let derivedStateStore = AttoDerivedStateStore()
     private let emptyStateLabel = NSTextField(labelWithString: "Open a file to start editing")
+    private var lastPresentedLspFailureDetail: String?
 
     private var activeViewportObserver: EditorCoreSkiaView.ViewportStateObserverToken?
 
@@ -2466,63 +2467,13 @@ final class AttoEditorAreaViewController: NSViewController {
 
             do {
                 let raw = try editor.lspStatusJSON()
-                guard let data = raw.data(using: .utf8),
-                      let obj = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
-                else {
-                    return (try? editor.lspIsEnabled()) == true ? "LSP: on" : "LSP: off"
+                let display = AttoLspStatusFormatter.display(statusJSON: raw, fallbackEnabled: isEnabled)
+                if let detail = display.failureDetail {
+                    presentLspFailureDetailIfNeeded(detail, editorView: tab.editCore.editorView)
+                } else {
+                    lastPresentedLspFailureDetail = nil
                 }
-
-                let state = (obj["state"] as? String) ?? "disabled"
-                let detail = obj["detail"] as? String
-
-                var name: String? = nil
-                if let server = obj["server"] as? [String: Any] {
-                    name = server["name"] as? String
-                    if name == nil {
-                        name = server["command"] as? String
-                    }
-                }
-
-                var title: String? = nil
-                var pct: String? = nil
-                if let activity = obj["activity"] as? [String: Any] {
-                    title = activity["title"] as? String
-                    if let p = activity["percentage"] as? UInt {
-                        pct = "\(p)%"
-                    } else if let p = activity["percentage"] as? Int {
-                        pct = "\(p)%"
-                    } else if let p = activity["percentage"] as? Double {
-                        pct = "\(Int(p))%"
-                    }
-                }
-
-                let prefix: String = {
-                    if let name, name.isEmpty == false {
-                        return "LSP \(name):"
-                    }
-                    return "LSP:"
-                }()
-
-                switch state {
-                case "ready":
-                    return "\(prefix) Ready"
-                case "indexing":
-                    let t = (title?.isEmpty == false) ? title! : "Indexing"
-                    if let pct { return "\(prefix) \(t) \(pct)" }
-                    return "\(prefix) \(t)"
-                case "busy":
-                    let t = (title?.isEmpty == false) ? title! : "Busy"
-                    if let pct { return "\(prefix) \(t) \(pct)" }
-                    return "\(prefix) \(t)"
-                case "failed":
-                    // Keep it short: show the detailed reason in logs only.
-                    if let detail, detail.isEmpty == false {
-                        NSLog("AttoEditor: LSP status failed: %@", detail)
-                    }
-                    return "\(prefix) Failed"
-                default:
-                    return "\(prefix) Off"
-                }
+                return display.text
             } catch {
                 // Best-effort: never break status bar rendering because of FFI errors.
                 return (try? editor.lspIsEnabled()) == true ? "LSP: on" : "LSP: off"
@@ -6017,6 +5968,16 @@ final class AttoEditorAreaViewController: NSViewController {
             popover.performClose(nil)
         }
         popover.show(relativeTo: rect, of: editorView, preferredEdge: .maxY)
+    }
+
+    private func presentLspFailureDetailIfNeeded(_ detail: String, editorView: EditorCoreSkiaView) {
+        let trimmed = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return }
+        guard editorView.window != nil else { return }
+        guard lastPresentedLspFailureDetail != trimmed else { return }
+        lastPresentedLspFailureDetail = trimmed
+        NSLog("AttoEditor: LSP status failed: %@", trimmed)
+        showWorkspaceEditPopover(text: "LSP failed.\n\(trimmed)", in: editorView)
     }
 
     private func showWorkspaceEditPopover(text: String, in editorView: EditorCoreSkiaView) {
