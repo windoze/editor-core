@@ -144,6 +144,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let showFeedback: Bool
     }
 
+    private struct SelectionRangeRequestContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
@@ -189,6 +194,8 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private var foldingRangesContext: FoldingRangesRequestContext?
     private var foldingRangesPollTimer: DispatchSourceTimer?
+    private var selectionRangeContext: SelectionRangeRequestContext?
+    private var selectionRangePollTimer: DispatchSourceTimer?
 
     init(
         library: EditorCoreUIFFILibrary,
@@ -1113,6 +1120,182 @@ final class AttoEditorAreaViewController: NSViewController {
             return 0
         }
         return (root as? [Any])?.count
+    }
+
+    @discardableResult
+    func expandSelectionWithLspInActiveTab(showFeedback: Bool = true) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Selection range is unavailable.\nLSP is not enabled for this document.",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        let positionsJSON: String
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+            let data = try JSONSerialization.data(
+                withJSONObject: [["line": Int(pos.line), "column": Int(pos.column)]],
+                options: []
+            )
+            guard let json = String(data: data, encoding: .utf8) else {
+                NSSound.beep()
+                return false
+            }
+            positionsJSON = json
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Selection range position could not be computed.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelFoldingRangesUI()
+        cancelSelectionRangeUI()
+
+        do {
+            _ = try tab.editCore.editor.lspRequestSelectionRange(positionsJSON: positionsJSON)
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Selection range request failed.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        selectionRangeContext = SelectionRangeRequestContext(tabID: tab.id, showFeedback: showFeedback)
+        startSelectionRangePollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
+        return true
+    }
+
+    @discardableResult
+    func applySelectionRangeResultJSONToActiveTab(_ json: String, showFeedback: Bool = false) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let text = try tab.editCore.editor.text()
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let candidates = AttoLspSelectionRangeParser.candidates(
+                fromResultJSON: json,
+                documentText: text
+            )
+            guard let candidate = AttoLspSelectionRangeParser.nextCandidate(
+                from: candidates,
+                currentStart: offsets.start,
+                currentEnd: offsets.end
+            ) else {
+                if showFeedback {
+                    showWorkspaceEditPopover(
+                        text: "No larger selection range is available.",
+                        in: tab.editCore.editorView
+                    )
+                }
+                NSSound.beep()
+                return false
+            }
+
+            try tab.editCore.editor.setSelections(
+                [EcuSelectionRange(start: candidate.start, end: candidate.end)],
+                primaryIndex: 0
+            )
+            tab.editCore.layoutSubtreeIfNeeded()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            updateStatusBar()
+            tab.editCore.editorView.window?.makeFirstResponder(tab.editCore.editorView)
+            return true
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Selection range could not be applied.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private func startSelectionRangePollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        selectionRangePollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.selectionRangeContext, ctx.tabID == tabID else {
+                self.cancelSelectionRangeUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
+                self.cancelSelectionRangeUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(text: "Selection range request timed out.", in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelSelectionRangeUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastSelectionRangeResultJSON()
+            } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelSelectionRangeUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(
+                        text: "Selection range failed.\n\(error.localizedDescription)",
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+            guard let json else { return }
+
+            let showFeedback = ctx.showFeedback
+            self.cancelSelectionRangeUI()
+            _ = self.applySelectionRangeResultJSONToActiveTab(json, showFeedback: showFeedback)
+        }
+
+        selectionRangePollTimer = timer
+        timer.resume()
     }
 
     func moveToMatchingBracketInActiveTab() {
@@ -4252,6 +4435,12 @@ final class AttoEditorAreaViewController: NSViewController {
         foldingRangesPollTimer?.cancel()
         foldingRangesPollTimer = nil
         foldingRangesContext = nil
+    }
+
+    private func cancelSelectionRangeUI() {
+        selectionRangePollTimer?.cancel()
+        selectionRangePollTimer = nil
+        selectionRangeContext = nil
     }
 }
 

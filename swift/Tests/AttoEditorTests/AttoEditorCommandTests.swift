@@ -55,6 +55,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.fix_all"))
         XCTAssertTrue(ids.contains("lsp.problems"))
         XCTAssertTrue(ids.contains("lsp.refresh_folding_ranges"))
+        XCTAssertTrue(ids.contains("lsp.selection_range"))
     }
 
     func testCommandRegistryCarriesMetadataAndAvailability() throws {
@@ -233,6 +234,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "editor.select_word", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.select_line", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.expand_selection", in: selectionMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.selection_range", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.add_cursor_above", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.add_cursor_below", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.add_next_occurrence", in: selectionMenu))
@@ -258,6 +260,51 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.organize_imports", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.fix_all", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.problems", in: menu))
+    }
+
+    func testApplySelectionRangeResultExpandsActiveSelection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("selection.txt")
+        try "let value = call(arg)\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 17, end: 20)], primaryIndex: 0)
+
+        let resultJSON = """
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 17 },
+              "end": { "line": 0, "character": 20 }
+            },
+            "parent": {
+              "range": {
+                "start": { "line": 0, "character": 12 },
+                "end": { "line": 0, "character": 21 }
+              },
+              "parent": {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 21 }
+                }
+              }
+            }
+          }
+        ]
+        """
+
+        XCTAssertTrue(vc.applySelectionRangeResultJSONToActiveTab(resultJSON))
+        let offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 12)
+        XCTAssertEqual(offsets.end, 21)
     }
 
     func testExecuteCommandUsesRegisteredCommandIDs() throws {

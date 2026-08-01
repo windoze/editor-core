@@ -64,6 +64,7 @@ enum AttoMainMenuBuilder {
         selectionMenu.addItem(commandItem(title: "Select Word", commandID: "editor.select_word", appDelegate: appDelegate))
         selectionMenu.addItem(commandItem(title: "Select Line", commandID: "editor.select_line", appDelegate: appDelegate))
         selectionMenu.addItem(commandItem(title: "Expand Selection", commandID: "editor.expand_selection", appDelegate: appDelegate))
+        selectionMenu.addItem(commandItem(title: "Expand Selection with LSP", commandID: "lsp.selection_range", appDelegate: appDelegate))
         selectionMenu.addItem(.separator())
         selectionMenu.addItem(commandItem(title: "Add Cursor Above", commandID: "editor.add_cursor_above", appDelegate: appDelegate))
         selectionMenu.addItem(commandItem(title: "Add Cursor Below", commandID: "editor.add_cursor_below", appDelegate: appDelegate))
