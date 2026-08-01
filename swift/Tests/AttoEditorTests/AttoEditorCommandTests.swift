@@ -425,6 +425,33 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(resolved["go.line"], AttoKeymap.parseBinding("ctrl+g"))
     }
 
+    func testKeymapParsesExtendedSublimeStyleKeyNames() throws {
+        let literalPlus = try XCTUnwrap(AttoKeymap.parseBinding("cmd++"))
+        XCTAssertEqual(literalPlus.keyEquivalent, "+")
+        XCTAssertEqual(literalPlus.modifiers.intersection(.deviceIndependentFlagsMask), [.command])
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+plus"), literalPlus)
+
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+minus")?.keyEquivalent, "-")
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+equal")?.keyEquivalent, "=")
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+comma")?.keyEquivalent, ",")
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+period")?.keyEquivalent, ".")
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+slash"), AttoKeymap.parseBinding("cmd+/"))
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+backslash")?.keyEquivalent, "\\")
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+semicolon")?.keyEquivalent, ";")
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+quote")?.keyEquivalent, "'")
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+grave")?.keyEquivalent, "`")
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+left_bracket"), AttoKeymap.parseBinding("cmd+["))
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+right-bracket"), AttoKeymap.parseBinding("cmd+]"))
+
+        let delete = try XCTUnwrap(AttoKeymap.parseBinding("super+delete"))
+        XCTAssertEqual(delete.modifiers.intersection(.deviceIndependentFlagsMask), [.command])
+        XCTAssertEqual(AttoKeymap.displayText(forKeyEquivalent: delete.keyEquivalent), "delete")
+        XCTAssertEqual(AttoKeymap.displayText(forKeyEquivalent: try XCTUnwrap(AttoKeymap.parseBinding("insert")).keyEquivalent), "insert")
+        XCTAssertEqual(AttoKeymap.displayText(forKeyEquivalent: try XCTUnwrap(AttoKeymap.parseBinding("clear")).keyEquivalent), "clear")
+        XCTAssertEqual(AttoKeymap.displayText(forKeyEquivalent: try XCTUnwrap(AttoKeymap.parseBinding("help")).keyEquivalent), "help")
+        XCTAssertEqual(AttoKeymap.displayText(forKeyEquivalent: try XCTUnwrap(AttoKeymap.parseBinding("begin")).keyEquivalent), "begin")
+    }
+
     func testKeymapContextConditionsFilterBindingsAndResolveUserConflicts() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -490,6 +517,77 @@ final class AttoEditorCommandTests: XCTestCase {
             $0.keptCommand == "editor.duplicate_lines" && $0.shadowedCommand == "file.new"
         })
         XCTAssertEqual(conflict.binding, AttoKeymap.parseBinding("cmd+1"))
+    }
+
+    func testKeymapContextRegexMatchAndContainsHaveDistinctSemantics() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let keymapURL = tempDir.appendingPathComponent("keymap.json")
+        try """
+        [
+          {
+            "key": "cmd+5",
+            "command": "test.regex_full",
+            "context": [
+              { "key": "selector", "operator": "regex_match", "operand": "source\\\\.swift meta\\\\.function" }
+            ]
+          },
+          {
+            "key": "cmd+6",
+            "command": "test.regex_full_partial_reject",
+            "context": [
+              { "key": "selector", "operator": "regex_match", "operand": "source\\\\.swift" }
+            ]
+          },
+          {
+            "key": "cmd+7",
+            "command": "test.regex_contains",
+            "context": [
+              { "key": "selector", "operator": "regex_contains", "operand": "meta\\\\.function" }
+            ]
+          },
+          {
+            "key": "cmd+8",
+            "command": "test.not_regex_contains",
+            "context": [
+              { "key": "selector", "operator": "not_regex_contains", "operand": "text\\\\.plain" }
+            ]
+          },
+          {
+            "key": "cmd+9",
+            "command": "test.not_regex_contains_reject",
+            "context": [
+              { "key": "selector", "operator": "not_regex_contains", "operand": "meta\\\\.function" }
+            ]
+          },
+          {
+            "key": "cmd+0",
+            "command": "test.not_regex_match",
+            "context": [
+              { "key": "selector", "operator": "not_regex_match", "operand": "source\\\\.swift" }
+            ]
+          }
+        ]
+        """.write(to: keymapURL, atomically: true, encoding: .utf8)
+
+        let env = [AttoKeymap.userKeymapEnv: keymapURL.path]
+        let globalOnly = AttoKeymap.resolvedKeymap(env: env)
+        XCTAssertNil(globalOnly.bindings["test.regex_full"])
+        XCTAssertNil(globalOnly.bindings["test.regex_contains"])
+
+        let context = AttoKeymapContext(values: [
+            "selector": .string("source.swift meta.function"),
+        ])
+        let resolution = AttoKeymap.resolvedKeymap(env: env, context: context)
+        XCTAssertEqual(resolution.bindings["test.regex_full"], AttoKeymap.parseBinding("cmd+5"))
+        XCTAssertNil(resolution.bindings["test.regex_full_partial_reject"])
+        XCTAssertEqual(resolution.bindings["test.regex_contains"], AttoKeymap.parseBinding("cmd+7"))
+        XCTAssertEqual(resolution.bindings["test.not_regex_contains"], AttoKeymap.parseBinding("cmd+8"))
+        XCTAssertNil(resolution.bindings["test.not_regex_contains_reject"])
+        XCTAssertEqual(resolution.bindings["test.not_regex_match"], AttoKeymap.parseBinding("cmd+0"))
     }
 
     func testKeymapUserBindingShadowsConflictingDefaultShortcut() throws {

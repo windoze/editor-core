@@ -190,6 +190,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 108 已完成：AttoEditor keymap 用户条目支持基础多键序列（chord）解析和 App 层 key-down dispatcher。多键序列不再占用菜单单键 shortcut，AppDelegate 会维护 pending prefix，完整序列命中后复用统一 command path 和 keymap `args`。测试覆盖 `["ctrl+k", "ctrl+g"]` 触发参数化 `go.line`。
 - 2026-08-02 阶段 109 已完成：AttoEditor keymap chord dispatcher 新增 pending prefix 超时和 Escape 取消行为。prefix 成立时会启动短超时，命中、失败、超时或 Escape 都会清理 pending sequence，避免 chord prefix 永久吞键。测试覆盖手动过期和 Escape 取消后第二键不再触发命令。
 - 2026-08-02 阶段 110 已完成：AttoEditor keymap chord prefix 现在会在状态栏左侧显示 `Keys: ...` 短提示，并在完整命中、失败、超时或 Escape 取消时清空，恢复原 derived-state 摘要。测试覆盖 prefix 提示出现、命中清空、手动过期清空和 Escape 清空。
+- 2026-08-02 阶段 111 已完成：AttoEditor keymap 解析扩展 Sublime 风格键名和 context operator。键名新增字面 `+`、命名标点、forward delete / insert / begin / clear / help 等 token；context 新增 `regex_contains` / `not_regex_contains`，并让 `regex_match` / `not_regex_match` 按整串匹配语义与 contains 区分。测试覆盖扩展键名、function-key display text、缺失 context 不匹配、整串 regex match 和 contains/not-contains 差异。
 
 ## 分层结论
 
@@ -477,7 +478,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - `.sublime-color-scheme` 兼容覆盖率。
 - `.tmTheme` 兼容覆盖率。
 - Sublime settings scope 继承规则。
-- keymap 文件已有基础 JSON 解析、`context` 条件过滤、快捷键冲突解析、`args` 执行路由、基础多键序列 dispatcher、prefix 状态栏提示、prefix 超时和 Escape 取消；仍缺完整 Sublime keymap 的所有上下文 key/operator 语义和跨平台键名兼容矩阵。
+- keymap 文件已有基础 JSON 解析、`context` 条件过滤、快捷键冲突解析、`args` 执行路由、基础多键序列 dispatcher、prefix 状态栏提示、prefix 超时和 Escape 取消；键名兼容已覆盖常见 modifier、arrow/function key、命名标点、字面 `+`、forward delete / insert / begin / clear / help，context operator 已覆盖 `equal` / `not_equal` / `regex_match` / `not_regex_match` / `regex_contains` / `not_regex_contains`。仍缺完整 Sublime keymap 的所有动态 context key、`match_all` 多 selection 语义和更完整跨平台键名兼容矩阵。
 - snippets。
 - macros。
 - build systems。
@@ -574,6 +575,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor keymap 已支持基础多键序列解析和 App 层 dispatcher，多键序列命中后复用统一 command id 和 typed arguments 执行路径。
 - 已完成：AttoEditor keymap chord prefix 已支持超时清理和 Escape 取消，避免未完成 chord 长期拦截后续按键。
 - 已完成：AttoEditor keymap chord prefix 已有状态栏可见提示，并会在命中、失败、超时或 Escape 后恢复状态栏左侧原摘要。
+- 已完成：AttoEditor keymap 已补一批 Sublime 风格键名 token、字面 `+` 和 regex contains/full-match context operator 语义。
 - 已完成：AttoEditor command palette 已用 `cursor.*` 覆盖 grapheme/word、visual row/page、visual line/document start/end 及对应 modify-selection 视觉移动命令矩阵。
 - 已完成：AttoEditor 主菜单已有独立 Selection 菜单分组，常用 selection/multicursor 命令复用统一 command id。
 - 已完成：Swift UI binding 已为 derived-state snapshots 提供基础 typed model。

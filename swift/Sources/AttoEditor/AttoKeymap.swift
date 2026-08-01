@@ -208,10 +208,15 @@ enum AttoKeymap {
     }
 
     static func parseBinding(_ raw: String) -> AttoKeyBinding? {
-        let parts = raw
-            .split(separator: "+")
+        let normalizedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let usesLiteralPlusKey = normalizedRaw.hasSuffix("+")
+        var parts = normalizedRaw
+            .split(separator: "+", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { $0.isEmpty == false }
+        if usesLiteralPlusKey {
+            parts.append("plus")
+        }
 
         guard parts.isEmpty == false else { return nil }
 
@@ -275,6 +280,42 @@ enum AttoKeymap {
             return "\u{1b}"
         case "backspace":
             return "\u{7f}"
+        case "delete", "del", "forwarddelete", "forward_delete", "forward-delete":
+            return functionKey(NSDeleteFunctionKey)
+        case "insert", "ins":
+            return functionKey(NSInsertFunctionKey)
+        case "begin":
+            return functionKey(NSBeginFunctionKey)
+        case "clear":
+            return functionKey(NSClearLineFunctionKey)
+        case "help":
+            return functionKey(NSHelpFunctionKey)
+        case "plus", "add":
+            return "+"
+        case "minus", "hyphen":
+            return "-"
+        case "equal", "equals":
+            return "="
+        case "comma":
+            return ","
+        case "period", "dot":
+            return "."
+        case "slash", "forwardslash", "forward_slash", "forward-slash":
+            return "/"
+        case "backslash", "back_slash", "back-slash":
+            return "\\"
+        case "semicolon":
+            return ";"
+        case "quote", "apostrophe", "singlequote", "single_quote", "single-quote":
+            return "'"
+        case "doublequote", "double_quote", "double-quote", "quotedbl":
+            return "\""
+        case "grave", "backquote", "back_quote", "back-quote", "graveaccent", "grave_accent", "grave-accent":
+            return "`"
+        case "leftbracket", "left_bracket", "left-bracket", "openbracket", "open_bracket", "open-bracket":
+            return "["
+        case "rightbracket", "right_bracket", "right-bracket", "closebracket", "close_bracket", "close-bracket":
+            return "]"
         case "up", "arrowup", "up_arrow", "up-arrow":
             return functionKey(NSUpArrowFunctionKey)
         case "down", "arrowdown", "down_arrow", "down-arrow":
@@ -328,6 +369,16 @@ enum AttoKeymap {
             return "escape"
         case "\u{7f}":
             return "backspace"
+        case functionKey(NSDeleteFunctionKey):
+            return "delete"
+        case functionKey(NSInsertFunctionKey):
+            return "insert"
+        case functionKey(NSBeginFunctionKey):
+            return "begin"
+        case functionKey(NSClearLineFunctionKey):
+            return "clear"
+        case functionKey(NSHelpFunctionKey):
+            return "help"
         case functionKey(NSUpArrowFunctionKey):
             return "up"
         case functionKey(NSDownArrowFunctionKey):
@@ -556,6 +607,8 @@ private struct AttoKeymapCondition: Decodable, Equatable {
         case notEqual
         case regexMatch
         case notRegexMatch
+        case regexContains
+        case notRegexContains
         case unknown(String)
 
         init(rawValue: String?) {
@@ -568,6 +621,10 @@ private struct AttoKeymapCondition: Decodable, Equatable {
                 self = .regexMatch
             case "not_regex_match":
                 self = .notRegexMatch
+            case "regex_contains":
+                self = .regexContains
+            case "not_regex_contains":
+                self = .notRegexContains
             case .some(let raw):
                 self = .unknown(raw)
             }
@@ -599,21 +656,42 @@ private struct AttoKeymapCondition: Decodable, Equatable {
         case .notEqual:
             return actual != operand
         case .regexMatch:
-            return regexMatches(actual: actual, operand: operand)
+            return regexMatches(actual: actual, operand: operand, mode: .full)
         case .notRegexMatch:
-            return regexMatches(actual: actual, operand: operand) == false
+            return regexMatches(actual: actual, operand: operand, mode: .full) == false
+        case .regexContains:
+            return regexMatches(actual: actual, operand: operand, mode: .contains)
+        case .notRegexContains:
+            return regexMatches(actual: actual, operand: operand, mode: .contains) == false
         case .unknown:
             return false
         }
     }
 
-    private func regexMatches(actual: AttoKeymapContextValue, operand: AttoKeymapContextValue) -> Bool {
+    private enum RegexMatchMode {
+        case full
+        case contains
+    }
+
+    private func regexMatches(
+        actual: AttoKeymapContextValue,
+        operand: AttoKeymapContextValue,
+        mode: RegexMatchMode
+    ) -> Bool {
         guard let actualString = actual.stringValue,
               let pattern = operand.stringValue,
               let regex = try? NSRegularExpression(pattern: pattern, options: [])
         else { return false }
         let range = NSRange(actualString.startIndex..<actualString.endIndex, in: actualString)
-        return regex.firstMatch(in: actualString, options: [], range: range) != nil
+        guard let match = regex.firstMatch(in: actualString, options: [], range: range) else {
+            return false
+        }
+        switch mode {
+        case .full:
+            return match.range.location == range.location && match.range.length == range.length
+        case .contains:
+            return true
+        }
     }
 }
 
