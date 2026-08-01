@@ -4079,7 +4079,8 @@ final class AttoEditorAreaViewController: NSViewController {
         return symbols.enumerated().map { idx, symbol in
             AttoCommandPaletteCommand(
                 id: "lsp.workspace_symbol_search.\(idx)",
-                title: displayTitle(for: symbol)
+                title: displayTitle(for: symbol),
+                group: AttoLspSymbolParser.kindGroupLabel(for: symbol)
             ) { [weak self] in
                 self?.openWorkspaceSymbolSearchResult(symbol, symbols: symbols, query: query)
             }
@@ -4456,7 +4457,8 @@ final class AttoEditorAreaViewController: NSViewController {
         let commands = symbols.enumerated().map { idx, symbol in
             AttoCommandPaletteCommand(
                 id: "lsp.symbol.\(idx)",
-                title: displayTitle(for: symbol)
+                title: displayTitle(for: symbol),
+                group: AttoLspSymbolParser.kindGroupLabel(for: symbol)
             ) { [weak self] in
                 self?.navigateToLspTarget(symbol.target)
             }

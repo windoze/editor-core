@@ -22,6 +22,48 @@ enum AttoLspSymbolParser {
         return out
     }
 
+    static func sortedWorkspaceSymbols(_ symbols: [Symbol]) -> [Symbol] {
+        symbols.enumerated()
+            .sorted { lhs, rhs in
+                let lhsGroup = symbolKindGroup(for: lhs.element.kindLabel)
+                let rhsGroup = symbolKindGroup(for: rhs.element.kindLabel)
+                if lhsGroup.rank != rhsGroup.rank {
+                    return lhsGroup.rank < rhsGroup.rank
+                }
+
+                let nameCompare = normalizedSortKey(lhs.element.name)
+                    .localizedStandardCompare(normalizedSortKey(rhs.element.name))
+                if nameCompare != .orderedSame {
+                    return nameCompare == .orderedAscending
+                }
+
+                let containerCompare = normalizedSortKey(lhs.element.containerName ?? "")
+                    .localizedStandardCompare(normalizedSortKey(rhs.element.containerName ?? ""))
+                if containerCompare != .orderedSame {
+                    return containerCompare == .orderedAscending
+                }
+
+                let pathCompare = normalizedSortKey(lhs.element.target.uri)
+                    .localizedStandardCompare(normalizedSortKey(rhs.element.target.uri))
+                if pathCompare != .orderedSame {
+                    return pathCompare == .orderedAscending
+                }
+
+                if lhs.element.target.line != rhs.element.target.line {
+                    return lhs.element.target.line < rhs.element.target.line
+                }
+                if lhs.element.target.utf16Character != rhs.element.target.utf16Character {
+                    return lhs.element.target.utf16Character < rhs.element.target.utf16Character
+                }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
+    }
+
+    static func kindGroupLabel(for symbol: Symbol) -> String {
+        symbolKindGroup(for: symbol.kindLabel).label
+    }
+
     static func documentSymbols(
         snapshot: EcuDocumentSymbolsSnapshot,
         documentURI: String,
@@ -54,7 +96,7 @@ enum AttoLspSymbolParser {
                 depth: 0
             ))
         }
-        return out
+        return sortedWorkspaceSymbols(out)
     }
 
     private static func appendDocumentSymbol(
@@ -219,6 +261,26 @@ enum AttoLspSymbolParser {
         }
 
         return (line, utf16Column)
+    }
+
+    private static func normalizedSortKey(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: .current
+        )
+    }
+
+    private static func symbolKindGroup(for kindLabel: String?) -> (rank: Int, label: String) {
+        switch normalizedSortKey(kindLabel ?? "") {
+        case "file", "module", "namespace", "package", "class", "interface", "struct", "enum", "type parameter":
+            return (0, "Types")
+        case "constructor", "method", "function", "operator":
+            return (1, "Functions")
+        case "property", "field", "variable", "constant", "enum member":
+            return (2, "Values")
+        default:
+            return (3, "Other")
+        }
     }
 
     private static let lspKindLabels: [Int: String] = [

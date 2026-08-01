@@ -153,12 +153,86 @@ final class AttoLspSymbolParserTests: XCTestCase {
         let symbols = AttoLspSymbolParser.workspaceSymbols(fromResultJSON: json)
 
         XCTAssertEqual(symbols.count, 2)
-        XCTAssertEqual(symbols[0].name, "open_project")
-        XCTAssertEqual(symbols[0].detail, "fn")
-        XCTAssertEqual(symbols[0].kindLabel, "function")
-        XCTAssertEqual(symbols[0].target, .init(uri: "file:///tmp/project.rs", line: 7, utf16Character: 2))
-        XCTAssertEqual(symbols[1].name, "Project")
-        XCTAssertEqual(symbols[1].kindLabel, "struct")
-        XCTAssertEqual(symbols[1].target, .init(uri: "file:///tmp/project.rs", line: 0, utf16Character: 0))
+        XCTAssertEqual(symbols[0].name, "Project")
+        XCTAssertEqual(symbols[0].kindLabel, "struct")
+        XCTAssertEqual(symbols[0].target, .init(uri: "file:///tmp/project.rs", line: 0, utf16Character: 0))
+        XCTAssertEqual(symbols[1].name, "open_project")
+        XCTAssertEqual(symbols[1].detail, "fn")
+        XCTAssertEqual(symbols[1].kindLabel, "function")
+        XCTAssertEqual(symbols[1].target, .init(uri: "file:///tmp/project.rs", line: 7, utf16Character: 2))
+    }
+
+    func testWorkspaceSymbolsAreGroupedAndStablySorted() throws {
+        let json = """
+        [
+          {
+            "name": "zeta",
+            "kind": 12,
+            "containerName": "B",
+            "location": {
+              "uri": "file:///tmp/b.swift",
+              "range": {
+                "start": { "line": 5, "character": 2 },
+                "end": { "line": 5, "character": 6 }
+              }
+            }
+          },
+          {
+            "name": "count",
+            "kind": 13,
+            "containerName": "A",
+            "location": {
+              "uri": "file:///tmp/a.swift",
+              "range": {
+                "start": { "line": 0, "character": 4 },
+                "end": { "line": 0, "character": 9 }
+              }
+            }
+          },
+          {
+            "name": "App",
+            "kind": 5,
+            "containerName": "Z",
+            "location": { "uri": "file:///tmp/z.swift" }
+          },
+          {
+            "name": "alpha",
+            "kind": 12,
+            "containerName": "A",
+            "location": {
+              "uri": "file:///tmp/a.swift",
+              "range": {
+                "start": { "line": 1, "character": 2 },
+                "end": { "line": 1, "character": 7 }
+              }
+            }
+          },
+          {
+            "name": "alpha",
+            "kind": 12,
+            "containerName": "A",
+            "location": {
+              "uri": "file:///tmp/a.swift",
+              "range": {
+                "start": { "line": 0, "character": 2 },
+                "end": { "line": 0, "character": 7 }
+              }
+            }
+          }
+        ]
+        """
+
+        let symbols = AttoLspSymbolParser.workspaceSymbols(fromResultJSON: json)
+
+        XCTAssertEqual(symbols.map(\.name), ["App", "alpha", "alpha", "zeta", "count"])
+        XCTAssertEqual(symbols.map { AttoLspSymbolParser.kindGroupLabel(for: $0) }, [
+            "Types",
+            "Functions",
+            "Functions",
+            "Functions",
+            "Values",
+        ])
+        XCTAssertEqual(symbols[1].target, .init(uri: "file:///tmp/a.swift", line: 0, utf16Character: 2))
+        XCTAssertEqual(symbols[2].target, .init(uri: "file:///tmp/a.swift", line: 1, utf16Character: 2))
     }
 }

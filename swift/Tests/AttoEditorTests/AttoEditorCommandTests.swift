@@ -604,7 +604,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(searchField.placeholderString, "Filter workspace symbols...")
 
         let snapshot = try XCTUnwrap(vc._lastLspSymbolResultForTesting())
-        XCTAssertEqual(snapshot.symbols.map(\.name), ["openProject", "Project"])
+        XCTAssertEqual(snapshot.symbols.map(\.name), ["Project", "openProject"])
         XCTAssertEqual(snapshot.placeholder, "Filter workspace symbols...")
 
         panel.close()
