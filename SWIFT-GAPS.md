@@ -131,6 +131,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 50 已完成：AttoEditor 新增 `lsp.selection_range` App 命令和 Selection 菜单入口，可请求 `textDocument/selectionRange`，轮询 raw result 后用 `AttoLspSelectionRangeParser` typed candidate model 选择下一个严格包含当前选区的范围并应用到 active tab；LSP 未启用、请求失败、超时、空结果和应用失败会通过 editor HUD/蜂鸣反馈。
 - 2026-08-01 阶段 51 已完成：AttoEditor 新增 `lsp.document_colors` App 命令和 Go 菜单入口，可请求 `textDocument/documentColor`，用带色块的 quick panel 展示颜色位置；选择颜色后会请求 `textDocument/colorPresentation`，展示 presentation 列表，并能把带 `textEdit` / `additionalTextEdits` 的 presentation 应用到当前文档。新增 `AttoLspDocumentColorParser` typed model，覆盖 LSP UTF-16 range、RGBA、presentation edit 解析和测试。
 - 2026-08-01 阶段 52 已完成：AttoEditor 新增 `lsp.linked_editing` App 命令和 Selection 菜单入口，可请求 `textDocument/linkedEditingRange`，用 `AttoLspLinkedEditingParser` typed model 解析 linked ranges，并把结果应用成多个 selection ranges；当前基础同步编辑策略是复用 core multi-cursor/selection replacement，让用户在 linked ranges 被选中后直接输入即可同时替换这些范围。
+- 2026-08-01 阶段 53 已完成：AttoEditor 新增 call/type hierarchy 基础 App 主路径，命令覆盖 `lsp.call_hierarchy_incoming`、`lsp.call_hierarchy_outgoing`、`lsp.type_hierarchy_supertypes`、`lsp.type_hierarchy_subtypes`，Go 菜单可触发 prepare hierarchy 请求、选择多个 prepare root、轮询 incoming/outgoing 或 supertypes/subtypes 结果，并用 quick panel 导航到对应 LSP target。新增 `AttoLspHierarchyParser` typed model，覆盖 prepare item、incoming/outgoing call、type hierarchy item、opaque `data` request payload 保留和测试。
 
 ## 分层结论
 
@@ -214,6 +215,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - definition。
 - declaration / type definition / implementation / references / completion / completion item resolve / signature help / prepare rename / rename / code action / code action resolve / code lens resolve / document symbols / workspace symbols / folding ranges / selection range / linked editing range / pull diagnostics / document color / color presentation / call hierarchy / type hierarchy 的 Swift UI raw async request/take API。
 - AttoEditor App command/menu 已覆盖 go to definition/declaration/type definition/implementation/find references，其中 references 多结果有轻量可过滤结果 palette。
+- AttoEditor App command/menu 已覆盖 call hierarchy incoming/outgoing 和 type hierarchy supertypes/subtypes 的基础 quick panel 导航主路径。
 - AttoEditor App command/menu 已覆盖 completion popup 主路径。
 - AttoEditor App completion popup commit 路径已覆盖 `completionItem/resolve`，可把 resolved item 的 `textEdit`、`additionalTextEdits` 和 snippet payload 应用到当前文档；resolve 不可用或超时时会回退到原始 item。
 - AttoEditor App command/menu 已覆盖 signature help popup 主路径。
@@ -250,8 +252,8 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - linked editing raw request/take 已有；App 层 `lsp.linked_editing` 主路径、typed parser 和基于 multi-cursor selections 的基础同步编辑策略已完成；仍缺自动 linked-editing session 生命周期、wordPattern 校验、退出条件和更完整 result lifecycle model。
 - document diagnostic pull / workspace diagnostic raw request/take 已有；active-tab Problems quick panel 已消费 typed diagnostics；仍缺持久 Problems panel、增量刷新、workspace 级归属和更完整 typed model。
 - document color / color presentation raw request/take 已有；App 层 `lsp.document_colors` 主路径、色块 quick panel、color presentation apply 和 typed parser 已完成；仍缺直接 color picker、持久颜色面板、多文档/workspace 颜色聚合和更完整 result lifecycle model。
-- call hierarchy raw request/take 已有；仍缺 hierarchy panel、导航 UI 和 typed model。
-- type hierarchy raw request/take 已有；仍缺 hierarchy panel、导航 UI 和 typed model。
+- call hierarchy raw request/take、基础 App 命令、prepare root 选择、incoming/outgoing quick panel 导航和 typed parser 已有；仍缺树状 hierarchy 持久面板、层级展开/刷新、跨文件结果聚合和更完整 result lifecycle model。
+- type hierarchy raw request/take、基础 App 命令、prepare root 选择、supertypes/subtypes quick panel 导航和 typed parser 已有；仍缺树状 hierarchy 持久面板、层级展开/刷新、跨文件结果聚合和更完整 result lifecycle model。
 - references/locations 结果列表 UI。
 - request cancellation、debounce、超时和错误展示策略。
 
@@ -518,7 +520,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - document/workspace symbols 持久面板和 workspace 增量查询。
 - range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发和 server trigger characters 自动触发路径已完成，仍缺错误展示和 typed result model。
 - folding ranges request/take/apply 到 fold state、App refresh 命令和错误反馈已完成；仍缺可视化和更完整 typed model。
-- code lens resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；selection range 已有 App expand-selection 命令和 typed candidate model，linked editing 已有 App multi-cursor selection 主路径，document color/color presentation 已有 App quick panel 和 edit apply 主路径，diagnostics 已有 active-tab Problems quick panel，其余能力仍缺 App 层 UI 和 typed model。
+- code lens resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；selection range 已有 App expand-selection 命令和 typed candidate model，linked editing 已有 App multi-cursor selection 主路径，document color/color presentation 已有 App quick panel 和 edit apply 主路径，call/type hierarchy 已有基础 quick panel 导航和 typed parser，diagnostics 已有 active-tab Problems quick panel；code lens action UI 和 workspace diagnostic/project 级 UI 仍缺 App 层产品化。
 - LSP result panels 和错误展示。
 
 ### P1：统一多文档和分屏架构
@@ -566,7 +568,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand result envelope | partial, raw result + typed diagnostics context + kind filters + current-doc WorkspaceEdit apply + executeCommand result envelope | yes, quick panel/menu/keymap/typed diagnostics context/kind-filter commands/current-doc/cross-file text edits apply + command result/error HUD | partial |
 | LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply + trigger-character auto path | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers | document + selection commands; on-type trigger-character auto path | partial |
 | LSP folding ranges | yes | partial helper | yes, request/take + apply to fold regions | yes, raw request/take + apply JSON | yes, raw request/take + apply JSON | partial, refresh command applies ranges and fold commands use current state | yes |
-| LSP advanced raw requests | yes | partial helper | yes, code lens resolve + selection/linked editing/diagnostics/color/hierarchy raw request/take | yes, raw request/take JSON | yes, raw request/take JSON | partial, selection range/linked editing/document colors have App commands; others need product UI | partial |
+| LSP advanced raw requests | yes | partial helper | yes, code lens resolve + selection/linked editing/diagnostics/color/hierarchy raw request/take | yes, raw request/take JSON | yes, raw request/take JSON | partial, selection range/linked editing/document colors/call hierarchy/type hierarchy have App commands; code lens and workspace diagnostics need product UI | partial |
 | split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
 | workspace tabs/splits | yes, headless `Workspace` | partial `Workspace` wrapper | yes, `MultiDocumentEditorUi` | no | no, current Swift tabs are migration shims; future ownership must be core workspace | partial, transitional AppKit projection; new tab/workspace semantics must move to core-owned workspace first | partial |
 

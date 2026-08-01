@@ -401,6 +401,18 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.find_references", title: "LSP: Find References") { [weak self] in
                 self?.activeWindow()?.editorAreaController.findReferencesInActiveTab()
             },
+            .init(id: "lsp.call_hierarchy_incoming", title: "LSP: Incoming Calls") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showIncomingCallsInActiveTab()
+            },
+            .init(id: "lsp.call_hierarchy_outgoing", title: "LSP: Outgoing Calls") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showOutgoingCallsInActiveTab()
+            },
+            .init(id: "lsp.type_hierarchy_supertypes", title: "LSP: Supertypes") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showTypeSupertypesInActiveTab()
+            },
+            .init(id: "lsp.type_hierarchy_subtypes", title: "LSP: Subtypes") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showTypeSubtypesInActiveTab()
+            },
             .init(id: "lsp.rename", title: "LSP: Rename Symbol") { [weak self] in
                 self?.activeWindow()?.editorAreaController.promptRenameSymbolInActiveTab()
             },

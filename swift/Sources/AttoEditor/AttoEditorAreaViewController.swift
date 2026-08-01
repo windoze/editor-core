@@ -84,6 +84,35 @@ final class AttoEditorAreaViewController: NSViewController {
         case workspace(query: String)
     }
 
+    private enum LspHierarchyRequestKind {
+        case callIncoming
+        case callOutgoing
+        case typeSupertypes
+        case typeSubtypes
+
+        var isCallHierarchy: Bool {
+            switch self {
+            case .callIncoming, .callOutgoing:
+                return true
+            case .typeSupertypes, .typeSubtypes:
+                return false
+            }
+        }
+
+        var resultPlaceholder: String {
+            switch self {
+            case .callIncoming:
+                return "Filter incoming calls..."
+            case .callOutgoing:
+                return "Filter outgoing calls..."
+            case .typeSupertypes:
+                return "Filter supertypes..."
+            case .typeSubtypes:
+                return "Filter subtypes..."
+            }
+        }
+    }
+
     private struct DefinitionRequestContext {
         let tabID: UUID
         let logicalLine: UInt32
@@ -94,6 +123,16 @@ final class AttoEditorAreaViewController: NSViewController {
     private struct SymbolRequestContext {
         let tabID: UUID
         let kind: LspSymbolRequestKind
+    }
+
+    private struct HierarchyPrepareContext {
+        let tabID: UUID
+        let kind: LspHierarchyRequestKind
+    }
+
+    private struct HierarchyChildrenContext {
+        let tabID: UUID
+        let kind: LspHierarchyRequestKind
     }
 
     private struct SignatureHelpRequestContext {
@@ -181,6 +220,11 @@ final class AttoEditorAreaViewController: NSViewController {
     private var symbolContext: SymbolRequestContext?
     private var symbolPollTimer: DispatchSourceTimer?
     private var lspSymbolResultsController: AttoCommandPaletteController?
+    private var hierarchyPrepareContext: HierarchyPrepareContext?
+    private var hierarchyPreparePollTimer: DispatchSourceTimer?
+    private var hierarchyChildrenContext: HierarchyChildrenContext?
+    private var hierarchyChildrenPollTimer: DispatchSourceTimer?
+    private var hierarchyResultsController: AttoCommandPaletteController?
     private var problemsResultsController: AttoCommandPaletteController?
     private var documentColorResultsController: AttoCommandPaletteController?
     private var colorPresentationResultsController: AttoCommandPaletteController?
@@ -482,6 +526,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelRenameUI()
         cancelDefinitionUI()
         cancelSymbolUI()
+        cancelHierarchyUI()
         cancelSignatureHelpUI()
         cancelCompletionUI()
         cancelCodeActionUI()
@@ -761,6 +806,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelHoverUI()
         cancelDefinitionUI()
         cancelSymbolUI()
+        cancelHierarchyUI()
         cancelRenameUI()
         cancelSignatureHelpUI()
         cancelCompletionUI()
@@ -1022,6 +1068,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelHoverUI()
         cancelDefinitionUI()
         cancelSymbolUI()
+        cancelHierarchyUI()
         cancelSignatureHelpUI()
         cancelCompletionUI()
         cancelRenameUI()
@@ -1192,6 +1239,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelHoverUI()
         cancelDefinitionUI()
         cancelSymbolUI()
+        cancelHierarchyUI()
         cancelSignatureHelpUI()
         cancelCompletionUI()
         cancelRenameUI()
@@ -1362,6 +1410,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelHoverUI()
         cancelDefinitionUI()
         cancelSymbolUI()
+        cancelHierarchyUI()
         cancelSignatureHelpUI()
         cancelCompletionUI()
         cancelRenameUI()
@@ -1529,6 +1578,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelHoverUI()
         cancelDefinitionUI()
         cancelSymbolUI()
+        cancelHierarchyUI()
         cancelSignatureHelpUI()
         cancelCompletionUI()
         cancelRenameUI()
@@ -2926,6 +2976,8 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         cancelHoverUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
         cancelRenameUI()
         cancelCodeActionUI()
 
@@ -3155,6 +3207,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelHoverUI()
         cancelDefinitionUI()
         cancelSymbolUI()
+        cancelHierarchyUI()
         cancelRenameUI()
         cancelCodeActionUI()
 
@@ -3290,6 +3343,332 @@ final class AttoEditorAreaViewController: NSViewController {
         let container = symbol.containerName.map { " — \($0)" } ?? ""
         let location = displayTitle(for: symbol.target)
         return "\(indent)\(symbol.name)\(detail)\(kind)\(container) — \(location)"
+    }
+
+    // MARK: - LSP hierarchy quick panels
+
+    @discardableResult
+    func showIncomingCallsInActiveTab() -> Bool {
+        requestLspHierarchyAtPrimaryCaret(kind: .callIncoming)
+    }
+
+    @discardableResult
+    func showOutgoingCallsInActiveTab() -> Bool {
+        requestLspHierarchyAtPrimaryCaret(kind: .callOutgoing)
+    }
+
+    @discardableResult
+    func showTypeSupertypesInActiveTab() -> Bool {
+        requestLspHierarchyAtPrimaryCaret(kind: .typeSupertypes)
+    }
+
+    @discardableResult
+    func showTypeSubtypesInActiveTab() -> Bool {
+        requestLspHierarchyAtPrimaryCaret(kind: .typeSubtypes)
+    }
+
+    private func requestLspHierarchyAtPrimaryCaret(kind: LspHierarchyRequestKind) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            NSSound.beep()
+            return false
+        }
+
+        let position: (line: UInt32, column: UInt32)
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            position = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+        } catch {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelFoldingRangesUI()
+        cancelSelectionRangeUI()
+        cancelLinkedEditingUI()
+        cancelDocumentColorUI()
+
+        do {
+            if kind.isCallHierarchy {
+                _ = try tab.editCore.editor.lspRequestPrepareCallHierarchy(
+                    logicalLine: position.line,
+                    logicalColumn: position.column
+                )
+            } else {
+                _ = try tab.editCore.editor.lspRequestPrepareTypeHierarchy(
+                    logicalLine: position.line,
+                    logicalColumn: position.column
+                )
+            }
+        } catch {
+            cancelHierarchyUI()
+            NSSound.beep()
+            return false
+        }
+
+        hierarchyPrepareContext = HierarchyPrepareContext(tabID: tab.id, kind: kind)
+        startHierarchyPreparePollTimer(tabID: tab.id)
+        return true
+    }
+
+    private func startHierarchyPreparePollTimer(tabID: UUID) {
+        hierarchyPreparePollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.hierarchyPrepareContext, ctx.tabID == tabID else {
+                self.cancelHierarchyUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelHierarchyUI()
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelHierarchyUI()
+                return
+            }
+
+            let json: String?
+            do {
+                if ctx.kind.isCallHierarchy {
+                    json = try tab.editCore.editor.lspTakeLastPrepareCallHierarchyResultJSON()
+                } else {
+                    json = try tab.editCore.editor.lspTakeLastPrepareTypeHierarchyResultJSON()
+                }
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            self.hierarchyPreparePollTimer?.cancel()
+            self.hierarchyPreparePollTimer = nil
+            self.hierarchyPrepareContext = nil
+            self.handleHierarchyPrepareResultJSON(json, kind: ctx.kind, tab: tab)
+            timer.cancel()
+        }
+
+        hierarchyPreparePollTimer = timer
+        timer.resume()
+    }
+
+    private func handleHierarchyPrepareResultJSON(
+        _ json: String,
+        kind: LspHierarchyRequestKind,
+        tab: AttoEditorTab
+    ) {
+        let items = kind.isCallHierarchy
+            ? AttoLspHierarchyParser.prepareCallItems(fromResultJSON: json)
+            : AttoLspHierarchyParser.prepareTypeItems(fromResultJSON: json)
+        guard items.isEmpty == false else {
+            cancelHierarchyUI()
+            NSSound.beep()
+            return
+        }
+
+        if items.count == 1 {
+            _ = requestHierarchyChildren(for: items[0], kind: kind, tab: tab)
+            return
+        }
+
+        showHierarchyRootResults(items, kind: kind, tab: tab)
+    }
+
+    private func showHierarchyRootResults(
+        _ items: [AttoLspHierarchyParser.Item],
+        kind: LspHierarchyRequestKind,
+        tab: AttoEditorTab
+    ) {
+        guard let window = view.window else {
+            if let first = items.first {
+                _ = requestHierarchyChildren(for: first, kind: kind, tab: tab)
+            }
+            return
+        }
+
+        let commands = items.enumerated().map { idx, item in
+            AttoCommandPaletteCommand(
+                id: "lsp.hierarchy.root.\(idx)",
+                title: displayTitle(for: item)
+            ) { [weak self, weak tab] in
+                guard let self, let tab, self.activeTab?.id == tab.id else { return }
+                _ = self.requestHierarchyChildren(for: item, kind: kind, tab: tab)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.HierarchyRoots",
+            commandsProvider: { commands }
+        )
+        hierarchyResultsController = controller
+        controller.show(relativeTo: window, placeholder: "Filter hierarchy roots...")
+    }
+
+    @discardableResult
+    private func requestHierarchyChildren(
+        for item: AttoLspHierarchyParser.Item,
+        kind: LspHierarchyRequestKind,
+        tab: AttoEditorTab
+    ) -> Bool {
+        hierarchyResultsController?.hide()
+        hierarchyResultsController = nil
+
+        do {
+            switch kind {
+            case .callIncoming:
+                _ = try tab.editCore.editor.lspRequestCallHierarchyIncomingCalls(itemJSON: item.requestJSON)
+            case .callOutgoing:
+                _ = try tab.editCore.editor.lspRequestCallHierarchyOutgoingCalls(itemJSON: item.requestJSON)
+            case .typeSupertypes:
+                _ = try tab.editCore.editor.lspRequestTypeHierarchySupertypes(itemJSON: item.requestJSON)
+            case .typeSubtypes:
+                _ = try tab.editCore.editor.lspRequestTypeHierarchySubtypes(itemJSON: item.requestJSON)
+            }
+        } catch {
+            cancelHierarchyUI()
+            NSSound.beep()
+            return false
+        }
+
+        hierarchyChildrenContext = HierarchyChildrenContext(tabID: tab.id, kind: kind)
+        startHierarchyChildrenPollTimer(tabID: tab.id)
+        return true
+    }
+
+    private func startHierarchyChildrenPollTimer(tabID: UUID) {
+        hierarchyChildrenPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.hierarchyChildrenContext, ctx.tabID == tabID else {
+                self.cancelHierarchyUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelHierarchyUI()
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelHierarchyUI()
+                return
+            }
+
+            let json: String?
+            do {
+                switch ctx.kind {
+                case .callIncoming:
+                    json = try tab.editCore.editor.lspTakeLastCallHierarchyIncomingCallsResultJSON()
+                case .callOutgoing:
+                    json = try tab.editCore.editor.lspTakeLastCallHierarchyOutgoingCallsResultJSON()
+                case .typeSupertypes:
+                    json = try tab.editCore.editor.lspTakeLastTypeHierarchySupertypesResultJSON()
+                case .typeSubtypes:
+                    json = try tab.editCore.editor.lspTakeLastTypeHierarchySubtypesResultJSON()
+                }
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            self.hierarchyChildrenPollTimer?.cancel()
+            self.hierarchyChildrenPollTimer = nil
+            self.hierarchyChildrenContext = nil
+            _ = self.showHierarchyResultJSONInActiveTab(json, kind: ctx.kind)
+            timer.cancel()
+        }
+
+        hierarchyChildrenPollTimer = timer
+        timer.resume()
+    }
+
+    @discardableResult
+    private func showHierarchyResultJSONInActiveTab(_ json: String, kind: LspHierarchyRequestKind) -> Bool {
+        let entries: [AttoLspHierarchyParser.Entry]
+        switch kind {
+        case .callIncoming:
+            entries = AttoLspHierarchyParser.incomingCalls(fromResultJSON: json)
+        case .callOutgoing:
+            entries = AttoLspHierarchyParser.outgoingCalls(fromResultJSON: json)
+        case .typeSupertypes, .typeSubtypes:
+            entries = AttoLspHierarchyParser.typeHierarchyEntries(fromResultJSON: json)
+        }
+
+        return showHierarchyResults(entries, placeholder: kind.resultPlaceholder)
+    }
+
+    @discardableResult
+    private func showHierarchyResults(
+        _ entries: [AttoLspHierarchyParser.Entry],
+        placeholder: String
+    ) -> Bool {
+        guard entries.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        guard let window = view.window else {
+            navigateToLspTarget(entries[0].target)
+            return true
+        }
+
+        let commands = entries.enumerated().map { idx, entry in
+            AttoCommandPaletteCommand(
+                id: "lsp.hierarchy.\(idx)",
+                title: displayTitle(for: entry)
+            ) { [weak self] in
+                self?.navigateToLspTarget(entry.target)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.HierarchyResults",
+            commandsProvider: { commands }
+        )
+        hierarchyResultsController = controller
+        controller.show(relativeTo: window, placeholder: placeholder)
+        return true
+    }
+
+    private func displayTitle(for item: AttoLspHierarchyParser.Item) -> String {
+        let detail = item.detail.map { " \($0)" } ?? ""
+        let kind = item.kindLabel.map { " [\($0)]" } ?? ""
+        let location = displayTitle(for: item.target)
+        return "\(item.name)\(detail)\(kind) — \(location)"
+    }
+
+    private func displayTitle(for entry: AttoLspHierarchyParser.Entry) -> String {
+        let detail = entry.detail.map { " \($0)" } ?? ""
+        let kind = entry.kindLabel.map { " [\($0)]" } ?? ""
+        let ranges = entry.relatedRangeCount.map { count in
+            count == 1 ? " (1 range)" : " (\(count) ranges)"
+        } ?? ""
+        let location = displayTitle(for: entry.target)
+        return "\(entry.name)\(detail)\(kind)\(ranges) — \(location)"
     }
 
     // MARK: - Problems quick panel
@@ -4966,6 +5345,19 @@ final class AttoEditorAreaViewController: NSViewController {
         lspSymbolResultsController?.hide()
         lspSymbolResultsController = nil
         cancelProblemsUI()
+    }
+
+    private func cancelHierarchyUI() {
+        hierarchyPreparePollTimer?.cancel()
+        hierarchyPreparePollTimer = nil
+        hierarchyPrepareContext = nil
+
+        hierarchyChildrenPollTimer?.cancel()
+        hierarchyChildrenPollTimer = nil
+        hierarchyChildrenContext = nil
+
+        hierarchyResultsController?.hide()
+        hierarchyResultsController = nil
     }
 
     private func cancelProblemsUI() {
