@@ -56,4 +56,45 @@ final class AttoLspLinkedEditingParserTests: XCTestCase {
             documentText: "foo"
         ))
     }
+
+    func testResultRejectsRangesThatDoNotShareCurrentText() {
+        XCTAssertNil(AttoLspLinkedEditingParser.result(
+            fromLinkedEditingRangeResultJSON: """
+            {
+              "ranges": [
+                {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 3 }
+                },
+                {
+                  "start": { "line": 0, "character": 6 },
+                  "end": { "line": 0, "character": 9 }
+                }
+              ]
+            }
+            """,
+            documentText: "foo + bar"
+        ))
+    }
+
+    func testResultRejectsRangesThatDoNotMatchWordPattern() {
+        XCTAssertNil(AttoLspLinkedEditingParser.result(
+            fromLinkedEditingRangeResultJSON: """
+            {
+              "ranges": [
+                {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 3 }
+                },
+                {
+                  "start": { "line": 0, "character": 6 },
+                  "end": { "line": 0, "character": 9 }
+                }
+              ],
+              "wordPattern": "[A-Za-z]+"
+            }
+            """,
+            documentText: "123 + 123"
+        ))
+    }
 }

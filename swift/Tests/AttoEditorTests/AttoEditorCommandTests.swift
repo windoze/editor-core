@@ -710,6 +710,45 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(selections.primaryIndex, 1)
     }
 
+    func testApplyLinkedEditingRangeResultRejectsWordPatternMismatch() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("linked-mismatch.txt")
+        try "123 + 123\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 0, end: 0)], primaryIndex: 0)
+
+        let json = """
+        {
+          "ranges": [
+            {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 3 }
+            },
+            {
+              "start": { "line": 0, "character": 6 },
+              "end": { "line": 0, "character": 9 }
+            }
+          ],
+          "wordPattern": "[A-Za-z]+"
+        }
+        """
+
+        XCTAssertFalse(vc.applyLinkedEditingRangeResultJSONToActiveTab(json, caretOffset: 0))
+
+        let selections = try editorView.editor.selections()
+        XCTAssertEqual(selections.ranges, [EcuSelectionRange(start: 0, end: 0)])
+        XCTAssertEqual(selections.primaryIndex, 0)
+    }
+
     func testApplyColorPresentationMutatesActiveDocument() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

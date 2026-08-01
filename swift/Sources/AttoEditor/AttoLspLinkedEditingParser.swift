@@ -35,7 +35,11 @@ enum AttoLspLinkedEditingParser {
         guard ranges.isEmpty == false else {
             return nil
         }
-        return Result(ranges: ranges, wordPattern: object["wordPattern"] as? String)
+        let wordPattern = object["wordPattern"] as? String
+        guard rangesAreConsistent(ranges, documentText: documentText, wordPattern: wordPattern) else {
+            return nil
+        }
+        return Result(ranges: ranges, wordPattern: wordPattern)
     }
 
     private static func selectionRanges(from any: Any?, documentText: String) -> [EcuSelectionRange] {
@@ -85,5 +89,52 @@ enum AttoLspLinkedEditingParser {
         if let value = any as? Int { return value }
         if let number = any as? NSNumber { return number.intValue }
         return nil
+    }
+
+    private static func rangesAreConsistent(
+        _ ranges: [EcuSelectionRange],
+        documentText: String,
+        wordPattern: String?
+    ) -> Bool {
+        guard let texts = selectedTexts(for: ranges, documentText: documentText) else {
+            return false
+        }
+        guard let first = texts.first, first.isEmpty == false else {
+            return false
+        }
+        guard texts.allSatisfy({ $0 == first }) else {
+            return false
+        }
+        return texts.allSatisfy { matchesWordPattern($0, wordPattern: wordPattern) }
+    }
+
+    private static func selectedTexts(for ranges: [EcuSelectionRange], documentText: String) -> [String]? {
+        let scalars = Array(documentText.unicodeScalars)
+        var out: [String] = []
+        for range in ranges {
+            let start = Int(min(range.start, range.end))
+            let end = Int(max(range.start, range.end))
+            guard start >= 0, end <= scalars.count, start <= end else {
+                return nil
+            }
+            out.append(String(String.UnicodeScalarView(scalars[start..<end])))
+        }
+        return out
+    }
+
+    private static func matchesWordPattern(_ text: String, wordPattern: String?) -> Bool {
+        guard let wordPattern = wordPattern?.trimmingCharacters(in: .whitespacesAndNewlines),
+              wordPattern.isEmpty == false
+        else {
+            return true
+        }
+        guard let regex = try? NSRegularExpression(pattern: wordPattern, options: []) else {
+            return true
+        }
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        guard let match = regex.firstMatch(in: text, options: [], range: range) else {
+            return false
+        }
+        return match.range.location == 0 && match.range.length == range.length
     }
 }
