@@ -31,6 +31,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.go_to_type_definition"))
         XCTAssertTrue(ids.contains("lsp.go_to_implementation"))
         XCTAssertTrue(ids.contains("lsp.find_references"))
+        XCTAssertTrue(ids.contains("lsp.document_symbols"))
+        XCTAssertTrue(ids.contains("lsp.workspace_symbols"))
     }
 
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
@@ -92,6 +94,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "editor.fold_selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.go_to_definition", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.find_references", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.document_symbols", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_symbols", in: menu))
     }
 
     func testExecuteCommandUsesRegisteredCommandIDs() throws {

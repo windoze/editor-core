@@ -61,11 +61,21 @@ final class AttoEditorAreaViewController: NSViewController {
         case references
     }
 
+    private enum LspSymbolRequestKind {
+        case document
+        case workspace(query: String)
+    }
+
     private struct DefinitionRequestContext {
         let tabID: UUID
         let logicalLine: UInt32
         let logicalColumn: UInt32
         let kind: LspLocationRequestKind
+    }
+
+    private struct SymbolRequestContext {
+        let tabID: UUID
+        let kind: LspSymbolRequestKind
     }
 
     private var hoverContext: HoverRequestContext?
@@ -77,6 +87,10 @@ final class AttoEditorAreaViewController: NSViewController {
     private var definitionContext: DefinitionRequestContext?
     private var definitionPollTimer: DispatchSourceTimer?
     private var lspLocationResultsController: AttoCommandPaletteController?
+
+    private var symbolContext: SymbolRequestContext?
+    private var symbolPollTimer: DispatchSourceTimer?
+    private var lspSymbolResultsController: AttoCommandPaletteController?
 
     init(library: EditorCoreUIFFILibrary, theme: EditorCoreSkiaTheme, workspaceRootURL: URL) {
         self.library = library
@@ -581,6 +595,7 @@ final class AttoEditorAreaViewController: NSViewController {
         updateAlwaysPollProcessingForSelectedTab()
         cancelHoverUI()
         cancelDefinitionUI()
+        cancelSymbolUI()
 
         showTabContent(tab)
         refreshTabBar()
@@ -1965,6 +1980,152 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    // MARK: - LSP symbols quick panels
+
+    @discardableResult
+    func showDocumentSymbolsInActiveTab() -> Bool {
+        requestLspSymbols(kind: .document)
+    }
+
+    @discardableResult
+    func showWorkspaceSymbolsInActiveTab(query: String = "") -> Bool {
+        requestLspSymbols(kind: .workspace(query: query))
+    }
+
+    private func requestLspSymbols(kind: LspSymbolRequestKind) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+
+        symbolContext = SymbolRequestContext(tabID: tab.id, kind: kind)
+
+        do {
+            switch kind {
+            case .document:
+                _ = try tab.editCore.editor.lspRequestDocumentSymbols()
+            case .workspace(let query):
+                _ = try tab.editCore.editor.lspRequestWorkspaceSymbols(query: query)
+            }
+        } catch {
+            cancelSymbolUI()
+            NSSound.beep()
+            return false
+        }
+
+        startSymbolPollTimer(tabID: tab.id)
+        return true
+    }
+
+    private func startSymbolPollTimer(tabID: UUID) {
+        symbolPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.symbolContext, ctx.tabID == tabID else {
+                self.cancelSymbolUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelSymbolUI()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelSymbolUI()
+                return
+            }
+
+            let json: String?
+            do {
+                switch ctx.kind {
+                case .document:
+                    json = try tab.editCore.editor.lspTakeLastDocumentSymbolsResultJSON()
+                case .workspace:
+                    json = try tab.editCore.editor.lspTakeLastWorkspaceSymbolsResultJSON()
+                }
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            self.cancelSymbolUI()
+            self.handleLspSymbolResultJSON(json, kind: ctx.kind, tab: tab)
+            timer.cancel()
+        }
+
+        symbolPollTimer = timer
+        timer.resume()
+    }
+
+    private func handleLspSymbolResultJSON(_ json: String, kind: LspSymbolRequestKind, tab: AttoEditorTab) {
+        let symbols: [AttoLspSymbolParser.Symbol]
+        let placeholder: String
+
+        switch kind {
+        case .document:
+            try? tab.editCore.editor.lspApplyDocumentSymbolsJSON(json)
+            symbols = AttoLspSymbolParser.documentSymbols(
+                fromResultJSON: json,
+                documentURI: tab.fileURL.absoluteString
+            )
+            placeholder = "Filter document symbols..."
+
+        case .workspace:
+            symbols = AttoLspSymbolParser.workspaceSymbols(fromResultJSON: json)
+            placeholder = "Filter workspace symbols..."
+        }
+
+        showLspSymbolResults(symbols, placeholder: placeholder)
+    }
+
+    private func showLspSymbolResults(_ symbols: [AttoLspSymbolParser.Symbol], placeholder: String) {
+        guard symbols.isEmpty == false else {
+            NSSound.beep()
+            return
+        }
+
+        guard let window = view.window else {
+            navigateToLspTarget(symbols[0].target)
+            return
+        }
+
+        let commands = symbols.enumerated().map { idx, symbol in
+            AttoCommandPaletteCommand(
+                id: "lsp.symbol.\(idx)",
+                title: displayTitle(for: symbol)
+            ) { [weak self] in
+                self?.navigateToLspTarget(symbol.target)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(commandsProvider: { commands })
+        lspSymbolResultsController = controller
+        controller.show(relativeTo: window, placeholder: placeholder)
+    }
+
+    private func displayTitle(for symbol: AttoLspSymbolParser.Symbol) -> String {
+        let indent = String(repeating: "  ", count: symbol.depth)
+        let detail = symbol.detail.map { " \($0)" } ?? ""
+        let kind = symbol.kindLabel.map { " [\($0)]" } ?? ""
+        let container = symbol.containerName.map { " — \($0)" } ?? ""
+        let location = displayTitle(for: symbol.target)
+        return "\(indent)\(symbol.name)\(detail)\(kind)\(container) — \(location)"
+    }
+
     // MARK: - LSP hover tooltip (AttoEditor UX)
 
     private func handleHover(info: EditorCoreSkiaHoverInfo, tabID: UUID) {
@@ -2138,6 +2299,14 @@ final class AttoEditorAreaViewController: NSViewController {
         definitionContext = nil
         lspLocationResultsController?.hide()
         lspLocationResultsController = nil
+    }
+
+    private func cancelSymbolUI() {
+        symbolPollTimer?.cancel()
+        symbolPollTimer = nil
+        symbolContext = nil
+        lspSymbolResultsController?.hide()
+        lspSymbolResultsController = nil
     }
 }
 

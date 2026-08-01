@@ -31,7 +31,7 @@ Swift 侧已经具备以下基础能力：
 - `EditorCoreUIFFI.EditorUI` 暴露了较完整的“编辑器视图主路径”API，包括打开文本、插入/删除、搜索替换、撤销重做、选择、鼠标输入、IME、渲染 RGBA/Metal、主题、Tree-sitter、Sublime syntax、部分 LSP、minimap、gutter、bookmark、jump history、document link hit-test 等。
 - `EditorCoreUI` / `AttoEditor` 已有 AppKit 组件级 XCTest，能用 `NSWindow`、`NSEvent` 和 view API 驱动交互。
 - 2026-08-01 本地验证过：
-  - `swift test --filter AttoEditorTests` 通过，44 个测试。
+  - `swift test --filter AttoEditorTests` 通过，47 个测试。
   - `swift test --filter EditorCoreUITests` 通过，64 个测试。
   - `swift test --filter EditorCoreUIFFITests` 通过，45 个测试。
 
@@ -63,6 +63,8 @@ Swift 侧已经具备以下基础能力：
 - 阶段 7 第一部分已让 split pane 复用主编辑器 chrome/theme/preferences/LSP/hover/cmd-click hook，并新增 first-responder hook 跟踪 active pane；AttoEditor command palette、View 菜单和默认 keymap 已接入。
 - 阶段 7 第二部分已完成基础 pane 操作命令：`view.focus_next_pane`、`view.focus_previous_pane`、`view.close_pane`，并用 AppKit 组件测试覆盖 active pane 对 close target 的影响。
 - 阶段 7 尚未完成 pane move、分屏布局 session restore、拖拽 tab 到 split、Rust `MultiDocumentEditorUi` 的 Swift FFI 投影、跨 tab search-all-tabs 产品化。
+- 2026-08-01 阶段 8 已完成：AttoEditor 新增 LSP document/workspace symbols quick panel 主路径，命令 `lsp.document_symbols` / `lsp.workspace_symbols` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspSymbolParser`，覆盖 DocumentSymbol、SymbolInformation、WorkspaceSymbol 常见结果形态。
+- 阶段 8 尚未完成 symbols 的持久面板、workspace symbol 增量查询/输入面板、结果分组/排序策略和错误展示。
 
 ## 分层结论
 
@@ -164,8 +166,8 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - rename / prepare rename。
 - code action / code action resolve / execute command。
 - code lens resolve / command execution。
-- outline / document symbols UI。
-- workspace symbols quick panel。
+- outline / document symbols 已有 quick panel 主路径，但还缺持久 Outline panel。
+- workspace symbols 已有 quick panel 主路径，但还缺增量查询/输入面板和完整结果模型。
 - range formatting。
 - on-type formatting。
 - semantic tokens refresh / delta 策略。
@@ -268,6 +270,8 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - Preferences。
 - Jump Back / Forward。
 - Matching Bracket。
+- LSP location commands。
+- LSP document/workspace symbols quick panels。
 
 主要缺口：
 
@@ -438,6 +442,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | duplicate line | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | apply snippet | yes | no | yes | yes, via JSON | yes, typed + JSON | partial, Tab/Backtab placeholder path only | yes |
+| LSP symbols | yes | partial helper | yes | yes, raw JSON result | yes, raw JSON result | yes, document/workspace symbols quick panels | yes |
 | LSP rename | yes | partial helper | partial | no | no | no | no |
 | split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
 

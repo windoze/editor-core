@@ -79,6 +79,8 @@ enum AttoMainMenuBuilder {
         goMenuItem.submenu = goMenu
         goMenu.addItem(commandItem(title: "Go to File...", commandID: "go.file", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Command Palette...", commandID: "workbench.command_palette", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Document Symbols...", commandID: "lsp.document_symbols", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Workspace Symbols...", commandID: "lsp.workspace_symbols", appDelegate: appDelegate))
         goMenu.addItem(.separator())
         goMenu.addItem(commandItem(title: "Back", commandID: "go.back", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Forward", commandID: "go.forward", appDelegate: appDelegate))

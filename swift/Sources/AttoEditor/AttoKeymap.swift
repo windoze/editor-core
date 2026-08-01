@@ -38,6 +38,8 @@ enum AttoKeymap {
         "view.wrap.word": AttoKeyBinding(keyEquivalent: "z", modifiers: [.option]),
         "workbench.command_palette": AttoKeyBinding(keyEquivalent: "p", modifiers: [.command, .shift]),
         "go.file": AttoKeyBinding(keyEquivalent: "p", modifiers: [.command]),
+        "lsp.document_symbols": AttoKeyBinding(keyEquivalent: "r", modifiers: [.command]),
+        "lsp.workspace_symbols": AttoKeyBinding(keyEquivalent: "r", modifiers: [.command, .shift]),
         "go.matching_bracket": AttoKeyBinding(keyEquivalent: "m", modifiers: [.control]),
         "search.find_in_files": AttoKeyBinding(keyEquivalent: "f", modifiers: [.command, .shift]),
         "workbench.preferences": AttoKeyBinding(keyEquivalent: ",", modifiers: [.command]),
