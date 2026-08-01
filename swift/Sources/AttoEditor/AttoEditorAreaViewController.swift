@@ -2660,10 +2660,13 @@ final class AttoEditorAreaViewController: NSViewController {
 
         do {
             let offsets = try tab.editCore.editor.selectionOffsets()
+            let start = min(offsets.start, offsets.end)
+            let end = max(offsets.start, offsets.end)
+            let contextJSON = codeActionContextJSON(editor: tab.editCore.editor, startOffset: start, endOffset: end)
             _ = try tab.editCore.editor.lspRequestCodeAction(
-                startOffset: min(offsets.start, offsets.end),
-                endOffset: max(offsets.start, offsets.end),
-                contextJSON: codeActionContextJSON()
+                startOffset: start,
+                endOffset: end,
+                contextJSON: contextJSON
             )
             codeActionContext = CodeActionRequestContext(tabID: tab.id)
             startCodeActionPollTimer(tabID: tab.id)
@@ -2675,8 +2678,15 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
-    private func codeActionContextJSON() -> String {
-        #"{"diagnostics":[]}"#
+    private func codeActionContextJSON(editor: EditorUI, startOffset: UInt32, endOffset: UInt32) -> String {
+        let diagnosticsJSON = (try? editor.diagnosticsJSON()) ?? #"{"diagnostics":[]}"#
+        let text = (try? editor.text()) ?? ""
+        return AttoLspCodeActionContext.contextJSON(
+            diagnosticsJSON: diagnosticsJSON,
+            documentText: text,
+            selectionStart: startOffset,
+            selectionEnd: endOffset
+        )
     }
 
     private func startCodeActionPollTimer(tabID: UUID) {
