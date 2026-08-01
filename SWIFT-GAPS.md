@@ -31,7 +31,7 @@ Swift 侧已经具备以下基础能力：
 - `EditorCoreUIFFI.EditorUI` 暴露了较完整的“编辑器视图主路径”API，包括打开文本、插入/删除、搜索替换、撤销重做、选择、鼠标输入、IME、渲染 RGBA/Metal、主题、Tree-sitter、Sublime syntax、部分 LSP、minimap、gutter、bookmark、jump history、document link hit-test 等。
 - `EditorCoreUI` / `AttoEditor` 已有 AppKit 组件级 XCTest，能用 `NSWindow`、`NSEvent` 和 view API 驱动交互。
 - 2026-08-01 本地验证过：
-  - `swift test --filter AttoEditorTests` 通过，43 个测试。
+  - `swift test --filter AttoEditorTests` 通过，44 个测试。
   - `swift test --filter EditorCoreUITests` 通过，64 个测试。
   - `swift test --filter EditorCoreUIFFITests` 通过，45 个测试。
 
@@ -61,7 +61,8 @@ Swift 侧已经具备以下基础能力：
 - 阶段 6 尚未完成 completion popup、signature help popup、document/workspace symbols quick panel、rename/code action 主路径、完整 references/locations panel 和 typed result model。
 - 2026-08-01 阶段 7 第一部分已完成：多文档/分屏架构明确采用 Swift-owned tabs/splits，Rust 继续提供 per-buffer/per-view `EditorUI` 能力；AttoEditor 新增基础 `view.split_right` 命令，通过 `EditorUI.cloneView` 为当前 tab 创建共享 buffer 的第二个 AppKit pane。
 - 阶段 7 第一部分已让 split pane 复用主编辑器 chrome/theme/preferences/LSP/hover/cmd-click hook，并新增 first-responder hook 跟踪 active pane；AttoEditor command palette、View 菜单和默认 keymap 已接入。
-- 阶段 7 尚未完成 pane close/move/focus traversal、分屏布局 session restore、拖拽 tab 到 split、Rust `MultiDocumentEditorUi` 的 Swift FFI 投影、跨 tab search-all-tabs 产品化。
+- 阶段 7 第二部分已完成基础 pane 操作命令：`view.focus_next_pane`、`view.focus_previous_pane`、`view.close_pane`，并用 AppKit 组件测试覆盖 active pane 对 close target 的影响。
+- 阶段 7 尚未完成 pane move、分屏布局 session restore、拖拽 tab 到 split、Rust `MultiDocumentEditorUi` 的 Swift FFI 投影、跨 tab search-all-tabs 产品化。
 
 ## 分层结论
 
@@ -237,7 +238,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 - `MultiDocumentEditorUi` 没有通过 FFI/Swift 暴露。
 - AttoEditor 的 tab 系统和 Rust UI 的 multi-document 系统没有统一。
-- App 层只有基础 split-right，还没有 pane close/move/focus traversal、拖拽 tab 到 split、layout restore 等完整 split pane 产品语义。
+- App 层已有基础 split-right、focus next/previous pane、close pane；还没有 pane move、拖拽 tab 到 split、layout restore 等完整 split pane 产品语义。
 - `cloneView` 是底层能力；当前已接入基础 split layout 和 active pane focus tracking，但还不等于完整 tab movement、关闭语义、状态恢复。
 - workspace/project 级 LSP 同步、全局搜索、recent files、session restore 与 tab 模型之间缺统一归属。
 
@@ -407,7 +408,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 ### P1：统一多文档和分屏架构
 
 - 已明确采用 Swift-owned tabs/splits；Rust `MultiDocumentEditorUi` 暂不作为 Swift 产品层 ownership。
-- 继续产品化 split panes：pane close/move/focus traversal、split layout restore、拖拽 tab 到 split。
+- 继续产品化 split panes：pane move、split layout restore、拖拽 tab 到 split。
 - 统一 session restore、preview tab、pin tab、dirty state、close semantics。
 - 明确 project/workspace 与 LSP server lifecycle 的归属。
 
@@ -438,7 +439,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | apply snippet | yes | no | yes | yes, via JSON | yes, typed + JSON | partial, Tab/Backtab placeholder path only | yes |
 | LSP rename | yes | partial helper | partial | no | no | no | no |
-| split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, `view.split_right` | yes |
+| split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
 
 这类矩阵应该作为 PR checklist 使用：新增 core 能力时，明确是否需要同步 FFI、Swift wrapper、App command 和测试。
 

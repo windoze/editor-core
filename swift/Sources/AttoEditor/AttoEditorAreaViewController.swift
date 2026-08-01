@@ -658,6 +658,57 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    @discardableResult
+    func focusNextPaneInActiveTab() -> Bool {
+        focusPaneInActiveTab(delta: 1)
+    }
+
+    @discardableResult
+    func focusPreviousPaneInActiveTab() -> Bool {
+        focusPaneInActiveTab(delta: -1)
+    }
+
+    @discardableResult
+    func closeActivePane() -> Bool {
+        guard let tab = activeTab, tab.panes.count > 1 else {
+            NSSound.beep()
+            return false
+        }
+
+        let idx = max(0, min(tab.activePaneIndex, tab.panes.count - 1))
+        let pane = tab.panes.remove(at: idx)
+        pane.removeFromSuperview()
+        tab.activePaneIndex = min(idx, tab.panes.count - 1)
+
+        let activePane = tab.editCore
+        showTabContent(tab)
+        attachStatusObserver(to: activePane.editorView)
+        updateAlwaysPollProcessingForSelectedTab()
+        updateStatusBar()
+        activePane.focusEditor()
+        return true
+    }
+
+    @discardableResult
+    private func focusPaneInActiveTab(delta: Int) -> Bool {
+        guard let tab = activeTab, tab.panes.count > 1 else {
+            NSSound.beep()
+            return false
+        }
+
+        let count = tab.panes.count
+        let current = max(0, min(tab.activePaneIndex, count - 1))
+        let next = (current + delta + count) % count
+        tab.activePaneIndex = next
+
+        let activePane = tab.editCore
+        attachStatusObserver(to: activePane.editorView)
+        updateAlwaysPollProcessingForSelectedTab()
+        updateStatusBar()
+        activePane.focusEditor()
+        return true
+    }
+
     // MARK: - Editor commands
 
     @discardableResult

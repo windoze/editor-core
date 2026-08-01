@@ -23,6 +23,9 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.unfold_all"))
         XCTAssertTrue(ids.contains("view.wrap.word"))
         XCTAssertTrue(ids.contains("view.split_right"))
+        XCTAssertTrue(ids.contains("view.focus_next_pane"))
+        XCTAssertTrue(ids.contains("view.focus_previous_pane"))
+        XCTAssertTrue(ids.contains("view.close_pane"))
         XCTAssertTrue(ids.contains("lsp.go_to_definition"))
         XCTAssertTrue(ids.contains("lsp.go_to_declaration"))
         XCTAssertTrue(ids.contains("lsp.go_to_type_definition"))
@@ -83,6 +86,9 @@ final class AttoEditorCommandTests: XCTestCase {
 
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "view.focus_next_pane", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "view.focus_previous_pane", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "view.close_pane", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.fold_selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.go_to_definition", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.find_references", in: menu))
@@ -177,6 +183,35 @@ final class AttoEditorCommandTests: XCTestCase {
         editorViews[0].mouseDown(with: mouseDown)
         XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"?"}"#))
         XCTAssertEqual(try editorViews[0].editor.text(), "?!abc")
+    }
+
+    func testPaneFocusAndCloseCommandsUseActivePane() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("panes.txt")
+        try "abc".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(vc.splitActiveTabRight())
+        vc.view.layoutSubtreeIfNeeded()
+        let editorViews = findSubviews(of: EditorCoreSkiaView.self, in: vc.view)
+        XCTAssertEqual(editorViews.count, 2)
+
+        XCTAssertTrue(vc.focusPreviousPaneInActiveTab())
+        XCTAssertTrue(vc.focusNextPaneInActiveTab())
+        XCTAssertTrue(vc.closeActivePane())
+        vc.view.layoutSubtreeIfNeeded()
+
+        let remaining = findSubviews(of: EditorCoreSkiaView.self, in: vc.view)
+        XCTAssertEqual(remaining.count, 1)
+        XCTAssertTrue(remaining[0] === editorViews[0])
+        XCTAssertFalse(vc.closeActivePane())
     }
 
     private func makeEditorArea(workspaceRootURL: URL) -> AttoEditorAreaViewController {

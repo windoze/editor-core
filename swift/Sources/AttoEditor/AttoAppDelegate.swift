@@ -316,6 +316,15 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(id: "view.split_right", title: "View: Split Right") { [weak self] in
                 self?.activeWindow()?.editorAreaController.splitActiveTabRight()
             },
+            .init(id: "view.focus_next_pane", title: "View: Focus Next Pane") { [weak self] in
+                self?.activeWindow()?.editorAreaController.focusNextPaneInActiveTab()
+            },
+            .init(id: "view.focus_previous_pane", title: "View: Focus Previous Pane") { [weak self] in
+                self?.activeWindow()?.editorAreaController.focusPreviousPaneInActiveTab()
+            },
+            .init(id: "view.close_pane", title: "View: Close Pane") { [weak self] in
+                self?.activeWindow()?.editorAreaController.closeActivePane()
+            },
             .init(id: "workbench.command_palette", title: "AttoEditor: Command Palette") { [weak self] in
                 self?.showCommandPalette()
             },
