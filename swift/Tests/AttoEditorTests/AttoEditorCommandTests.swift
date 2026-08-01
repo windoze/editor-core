@@ -22,6 +22,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.unfold"))
         XCTAssertTrue(ids.contains("editor.unfold_all"))
         XCTAssertTrue(ids.contains("view.wrap.word"))
+        XCTAssertTrue(ids.contains("view.split_right"))
         XCTAssertTrue(ids.contains("lsp.go_to_definition"))
         XCTAssertTrue(ids.contains("lsp.go_to_declaration"))
         XCTAssertTrue(ids.contains("lsp.go_to_type_definition"))
@@ -81,6 +82,7 @@ final class AttoEditorCommandTests: XCTestCase {
         )
 
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.fold_selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.go_to_definition", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.find_references", in: menu))
@@ -133,6 +135,50 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "# print(1)\n")
     }
 
+    func testSplitRightCreatesSharedDocumentPane() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("split.txt")
+        try "abc".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertEqual(findSubviews(of: EditorCoreSkiaView.self, in: vc.view).count, 1)
+        XCTAssertTrue(vc.splitActiveTabRight())
+        vc.view.layoutSubtreeIfNeeded()
+
+        let editorViews = findSubviews(of: EditorCoreSkiaView.self, in: vc.view)
+        XCTAssertEqual(editorViews.count, 2)
+
+        try editorViews[1].editor.insertText("!")
+        XCTAssertEqual(try editorViews[0].editor.text(), "!abc")
+        XCTAssertEqual(try editorViews[1].editor.text(), "!abc")
+
+        let clickPoint = editorViews[0].convert(NSPoint(x: 5, y: 5), to: nil)
+        guard let mouseDown = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: clickPoint,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1.0
+        ) else {
+            XCTFail("Unable to construct split pane mouseDown event")
+            return
+        }
+        editorViews[0].mouseDown(with: mouseDown)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"?"}"#))
+        XCTAssertEqual(try editorViews[0].editor.text(), "?!abc")
+    }
+
     private func makeEditorArea(workspaceRootURL: URL) -> AttoEditorAreaViewController {
         AttoEditorAreaViewController(
             library: EditorCoreUIFFILibrary(),
@@ -163,6 +209,17 @@ final class AttoEditorCommandTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    private func findSubviews<T: NSView>(of type: T.Type, in root: NSView) -> [T] {
+        var out: [T] = []
+        if let v = root as? T {
+            out.append(v)
+        }
+        for child in root.subviews {
+            out.append(contentsOf: findSubviews(of: type, in: child))
+        }
+        return out
     }
 
     private func findMenuItem(commandID: String, in menu: NSMenu) -> NSMenuItem? {

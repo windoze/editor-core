@@ -242,21 +242,23 @@ final class AttoEditorAreaViewController: NSViewController {
         let fontSizePoints = prefs.effectiveFontSizePoints
 
         for tab in tabs {
-            // Font families: empty CSV means "reset to default" (Skia renderer falls back).
-            do {
-                try tab.editCore.editor.setFontFamiliesCSV(fontFamiliesCSV)
-            } catch {
-                NSLog("AttoEditor: setFontFamiliesCSV failed: %@", String(describing: error))
-            }
+            for editCore in tab.panes {
+                // Font families: empty CSV means "reset to default" (Skia renderer falls back).
+                do {
+                    try editCore.editor.setFontFamiliesCSV(fontFamiliesCSV)
+                } catch {
+                    NSLog("AttoEditor: setFontFamiliesCSV failed: %@", String(describing: error))
+                }
 
-            do {
-                try tab.editCore.editor.setFontLigaturesEnabled(ligaturesEnabled)
-            } catch {
-                NSLog("AttoEditor: setFontLigaturesEnabled failed: %@", String(describing: error))
-            }
+                do {
+                    try editCore.editor.setFontLigaturesEnabled(ligaturesEnabled)
+                } catch {
+                    NSLog("AttoEditor: setFontLigaturesEnabled failed: %@", String(describing: error))
+                }
 
-            tab.editCore.editorView.fontSizePoints = CGFloat(fontSizePoints)
-            tab.editCore.editorView.needsDisplay = true
+                editCore.editorView.fontSizePoints = CGFloat(fontSizePoints)
+                editCore.editorView.needsDisplay = true
+            }
         }
     }
 
@@ -270,10 +272,12 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         for tab in tabs {
-            do {
-                try tab.editCore.applyTheme(theme)
-            } catch {
-                NSLog("AttoEditor: applyTheme failed: %@", String(describing: error))
+            for editCore in tab.panes {
+                do {
+                    try editCore.applyTheme(theme)
+                } catch {
+                    NSLog("AttoEditor: applyTheme failed: %@", String(describing: error))
+                }
             }
         }
     }
@@ -609,10 +613,49 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func toggleMinimapForActiveTab() {
         guard let tab = activeTab else { return }
-        tab.editCore.showsMinimap.toggle()
-        tab.editCore.needsLayout = true
-        tab.editCore.needsDisplay = true
+        let nextValue = tab.editCore.showsMinimap == false
+        for editCore in tab.panes {
+            editCore.showsMinimap = nextValue
+            editCore.needsLayout = true
+            editCore.needsDisplay = true
+        }
         notifySessionStateChanged()
+    }
+
+    // MARK: - Split panes
+
+    @discardableResult
+    func splitActiveTabRight() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let editor = try tab.editCore.editor.cloneView(viewportWidthCells: 120)
+            let pane = try EditCoreUI(
+                editor: editor,
+                fontFamiliesCSV: AttoPreferences.shared.fontFamiliesCSVForNewViews(),
+                showsMinimap: tab.editCore.showsMinimap,
+                minimapPlacement: .rightOfScrollbar
+            )
+
+            try configureEditorChrome(pane)
+            configureEditCoreHooks(pane, tabID: tab.id)
+
+            tab.panes.append(pane)
+            tab.activePaneIndex = tab.panes.count - 1
+            showTabContent(tab)
+            attachStatusObserver(to: pane.editorView)
+            updateAlwaysPollProcessingForSelectedTab()
+            updateStatusBar()
+            pane.focusEditor()
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: split active tab failed: %@", String(describing: error))
+            return false
+        }
     }
 
     // MARK: - Editor commands
@@ -1055,7 +1098,9 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func updateAlwaysPollProcessingForSelectedTab() {
         for tab in tabs {
-            tab.editCore.alwaysPollProcessing = false
+            for editCore in tab.panes {
+                editCore.alwaysPollProcessing = false
+            }
         }
 
         guard let tab = activeTab else { return }
@@ -1323,7 +1368,20 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func showTabContent(_ tab: AttoEditorTab) {
         contentHostView.subviews.forEach { $0.removeFromSuperview() }
-        let container = tab.editCore
+        let container: NSView
+        if tab.panes.count == 1 {
+            container = tab.editCore
+        } else {
+            let splitView = NSSplitView(frame: .zero)
+            splitView.isVertical = true
+            splitView.dividerStyle = .thin
+            for pane in tab.panes {
+                pane.translatesAutoresizingMaskIntoConstraints = false
+                splitView.addArrangedSubview(pane)
+            }
+            container = splitView
+        }
+
         container.translatesAutoresizingMaskIntoConstraints = false
         contentHostView.addSubview(container)
         NSLayoutConstraint.activate([
@@ -1332,6 +1390,64 @@ final class AttoEditorAreaViewController: NSViewController {
             container.topAnchor.constraint(equalTo: contentHostView.topAnchor),
             container.bottomAnchor.constraint(equalTo: contentHostView.bottomAnchor),
         ])
+    }
+
+    private func configureEditorChrome(_ editCore: EditCoreUI) throws {
+        let prefs = AttoPreferences.shared
+
+        // 保持至少 6 个 cell 的 gutter（折叠标记 + 行号），但仍允许在超大文件时自动扩展。
+        editCore.editorView.minimumGutterWidthCells = 6
+        try editCore.editor.setWhitespaceRenderMode(.selection)
+        try editCore.editor.setIndentGuidesEnabled(true)
+        try editCore.editor.setFontLigaturesEnabled(prefs.effectiveLigaturesEnabled)
+        editCore.editorView.fontSizePoints = CGFloat(prefs.effectiveFontSizePoints)
+        try editCore.applyTheme(theme)
+        try editCore.editor.setAutoPairsEnabled(true)
+        try editCore.editor.setBracketMatchHighlightsEnabled(true)
+    }
+
+    private func configureEditCoreHooks(_ editCore: EditCoreUI, tabID: UUID) {
+        editCore.onDidMutateDocumentText = { [weak self] in
+            self?.handleTabDidMutateDocumentText(tabID: tabID)
+        }
+        editCore.onDidApplyAsyncProcessing = { [weak self] in
+            guard let self else { return }
+            // Async processing updates (LSP diagnostics/semantic tokens, etc.) can change status
+            // bar info even without any user input.
+            guard self.activeTab?.id == tabID else { return }
+            self.updateStatusBar()
+        }
+        editCore.onHover = { [weak self] info in
+            self?.handleHover(info: info, tabID: tabID)
+        }
+        editCore.onHoverExit = { [weak self] in
+            self?.handleHoverExit(tabID: tabID)
+        }
+        editCore.editorView.onDidBecomeFirstResponder = { [weak self, weak editCore] in
+            guard let self, let editCore else { return }
+            self.setActivePane(editCore, tabID: tabID)
+        }
+        editCore.editorView.onCommandClick = { [weak self] ctx in
+            self?.handleCommandClick(ctx: ctx, tabID: tabID) ?? false
+        }
+        editCore.editorView.onCommandHover = { [weak self] _ in
+            guard let self else { return false }
+            guard activeTab?.id == tabID else { return false }
+            guard let tab = activeTab else { return false }
+            // Only show Cmd-hover "clickable" affordance when Cmd-click is expected to resolve via LSP.
+            return (try? tab.editCore.editor.lspIsEnabled()) == true
+        }
+    }
+
+    private func setActivePane(_ editCore: EditCoreUI, tabID: UUID) {
+        guard selectedTabID == tabID else { return }
+        guard let tab = tabs.first(where: { $0.id == tabID }) else { return }
+        guard let idx = tab.panes.firstIndex(where: { $0 === editCore }) else { return }
+
+        tab.activePaneIndex = idx
+        attachStatusObserver(to: editCore.editorView)
+        updateAlwaysPollProcessingForSelectedTab()
+        updateStatusBar()
     }
 
     // MARK: - Tab creation
@@ -1356,18 +1472,7 @@ final class AttoEditorAreaViewController: NSViewController {
             minimapPlacement: .rightOfScrollbar
         )
 
-        // VSCode-like defaults.
-        // 保持至少 6 个 cell 的 gutter（折叠标记 + 行号），但仍允许在超大文件时自动扩展。
-        editCore.editorView.minimumGutterWidthCells = 6
-        // Visual aids enabled by default in AttoEditor MVP.
-        try editCore.editor.setWhitespaceRenderMode(.selection)
-        try editCore.editor.setIndentGuidesEnabled(true)
-        try editCore.editor.setFontLigaturesEnabled(prefs.effectiveLigaturesEnabled)
-        editCore.editorView.fontSizePoints = CGFloat(prefs.effectiveFontSizePoints)
-        try editCore.applyTheme(theme)
-        // Enable baseline editor UX by default.
-        try editCore.editor.setAutoPairsEnabled(true)
-        try editCore.editor.setBracketMatchHighlightsEnabled(true)
+        try configureEditorChrome(editCore)
 
         // Tree-sitter registry (best-effort).
         loadTreeSitterRegistryCacheIfNeeded()
@@ -1392,32 +1497,7 @@ final class AttoEditorAreaViewController: NSViewController {
             syntaxLanguageId: syntaxLanguageId,
             editCore: editCore
         )
-        editCore.onDidMutateDocumentText = { [weak self] in
-            self?.handleTabDidMutateDocumentText(tabID: tabId)
-        }
-        editCore.onDidApplyAsyncProcessing = { [weak self] in
-            guard let self else { return }
-            // Async processing updates (LSP diagnostics/semantic tokens, etc.) can change status
-            // bar info even without any user input.
-            guard self.activeTab?.id == tabId else { return }
-            self.updateStatusBar()
-        }
-        editCore.onHover = { [weak self] info in
-            self?.handleHover(info: info, tabID: tabId)
-        }
-        editCore.onHoverExit = { [weak self] in
-            self?.handleHoverExit(tabID: tabId)
-        }
-        editCore.editorView.onCommandClick = { [weak self] ctx in
-            self?.handleCommandClick(ctx: ctx, tabID: tabId) ?? false
-        }
-        editCore.editorView.onCommandHover = { [weak self] _ in
-            guard let self else { return false }
-            guard activeTab?.id == tabId else { return false }
-            guard let tab = activeTab else { return false }
-            // Only show Cmd-hover "clickable" affordance when Cmd-click is expected to resolve via LSP.
-            return (try? tab.editCore.editor.lspIsEnabled()) == true
-        }
+        configureEditCoreHooks(editCore, tabID: tabId)
         return tab
     }
 
@@ -2047,7 +2127,12 @@ private final class AttoEditorTab {
     var isPreview: Bool
     var isDirty: Bool
     var syntaxLanguageId: String?
-    let editCore: EditCoreUI
+    var panes: [EditCoreUI]
+    var activePaneIndex: Int
+
+    var editCore: EditCoreUI {
+        panes[max(0, min(activePaneIndex, panes.count - 1))]
+    }
 
     var displayTitle: String {
         let name = fileURL.lastPathComponent
@@ -2072,7 +2157,8 @@ private final class AttoEditorTab {
         self.isPreview = isPreview
         self.isDirty = isDirty
         self.syntaxLanguageId = syntaxLanguageId
-        self.editCore = editCore
+        self.panes = [editCore]
+        self.activePaneIndex = 0
     }
 }
 

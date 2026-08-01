@@ -31,7 +31,7 @@ Swift 侧已经具备以下基础能力：
 - `EditorCoreUIFFI.EditorUI` 暴露了较完整的“编辑器视图主路径”API，包括打开文本、插入/删除、搜索替换、撤销重做、选择、鼠标输入、IME、渲染 RGBA/Metal、主题、Tree-sitter、Sublime syntax、部分 LSP、minimap、gutter、bookmark、jump history、document link hit-test 等。
 - `EditorCoreUI` / `AttoEditor` 已有 AppKit 组件级 XCTest，能用 `NSWindow`、`NSEvent` 和 view API 驱动交互。
 - 2026-08-01 本地验证过：
-  - `swift test --filter AttoEditorTests` 通过，42 个测试。
+  - `swift test --filter AttoEditorTests` 通过，43 个测试。
   - `swift test --filter EditorCoreUITests` 通过，64 个测试。
   - `swift test --filter EditorCoreUIFFITests` 通过，45 个测试。
 
@@ -59,6 +59,9 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
 - 阶段 6 第二部分已让 references 多结果进入一个轻量可过滤结果 palette，单结果直接跳转；`AttoLspDefinitionParser` 新增多目标解析并补测试。
 - 阶段 6 尚未完成 completion popup、signature help popup、document/workspace symbols quick panel、rename/code action 主路径、完整 references/locations panel 和 typed result model。
+- 2026-08-01 阶段 7 第一部分已完成：多文档/分屏架构明确采用 Swift-owned tabs/splits，Rust 继续提供 per-buffer/per-view `EditorUI` 能力；AttoEditor 新增基础 `view.split_right` 命令，通过 `EditorUI.cloneView` 为当前 tab 创建共享 buffer 的第二个 AppKit pane。
+- 阶段 7 第一部分已让 split pane 复用主编辑器 chrome/theme/preferences/LSP/hover/cmd-click hook，并新增 first-responder hook 跟踪 active pane；AttoEditor command palette、View 菜单和默认 keymap 已接入。
+- 阶段 7 尚未完成 pane close/move/focus traversal、分屏布局 session restore、拖拽 tab 到 split、Rust `MultiDocumentEditorUi` 的 Swift FFI 投影、跨 tab search-all-tabs 产品化。
 
 ## 分层结论
 
@@ -228,14 +231,14 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - `EditorCoreFFI.Workspace` 暴露了一部分 headless workspace 能力。
 - `editor-core-ui` 有 `MultiDocumentEditorUi`，包含 tab、preview tab、pin、close、split、search all tabs 等能力。
 - Swift `EditorUI.cloneView` 可以创建共享 buffer 的额外 view。
-- AttoEditor App 当前主要在 Swift 层维护 tabs，每个 tab 持有自己的编辑器实例。
+- AttoEditor App 当前在 Swift 层维护 tabs；每个 tab 持有一个或多个 `EditCoreUI` pane，基础 split-right 通过 `EditorUI.cloneView` 共享同一 buffer。
 
 主要缺口：
 
 - `MultiDocumentEditorUi` 没有通过 FFI/Swift 暴露。
 - AttoEditor 的 tab 系统和 Rust UI 的 multi-document 系统没有统一。
-- App 层尚未产品化 split pane。
-- `cloneView` 是底层能力，不等于完整 split layout、focus、tab movement、关闭语义、状态恢复。
+- App 层只有基础 split-right，还没有 pane close/move/focus traversal、拖拽 tab 到 split、layout restore 等完整 split pane 产品语义。
+- `cloneView` 是底层能力；当前已接入基础 split layout 和 active pane focus tracking，但还不等于完整 tab movement、关闭语义、状态恢复。
 - workspace/project 级 LSP 同步、全局搜索、recent files、session restore 与 tab 模型之间缺统一归属。
 
 这里需要先做架构决策：
@@ -243,7 +246,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 方案 A：多文档、tab、split、project、session 都由 Swift App 层拥有，Rust 只提供 per-buffer/per-view editor UI。
 - 方案 B：把 `MultiDocumentEditorUi` 暴露到 Swift，Rust UI wrapper 拥有 tab/split/search all tabs 等模型。
 
-当前状态更接近方案 A，但还保留了 Rust 侧 `MultiDocumentEditorUi` 未使用能力。长期混用会让功能覆盖、测试和状态同步变复杂。
+当前明确采用方案 A：Swift App 层拥有 tab/split/project/session，Rust 只提供 per-buffer/per-view editor UI。Rust 侧 `MultiDocumentEditorUi` 仍是未暴露能力；如果未来要改用方案 B，需要成体系地迁移 ownership，而不是和 Swift-owned 模型长期混用。
 
 ## AttoEditor App 命令系统缺口
 
@@ -403,8 +406,8 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 ### P1：统一多文档和分屏架构
 
-- 明确采用 Swift-owned tabs/splits 还是 Rust `MultiDocumentEditorUi`。
-- 产品化 split panes。
+- 已明确采用 Swift-owned tabs/splits；Rust `MultiDocumentEditorUi` 暂不作为 Swift 产品层 ownership。
+- 继续产品化 split panes：pane close/move/focus traversal、split layout restore、拖拽 tab 到 split。
 - 统一 session restore、preview tab、pin tab、dirty state、close semantics。
 - 明确 project/workspace 与 LSP server lifecycle 的归属。
 
@@ -435,7 +438,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | apply snippet | yes | no | yes | yes, via JSON | yes, typed + JSON | partial, Tab/Backtab placeholder path only | yes |
 | LSP rename | yes | partial helper | partial | no | no | no | no |
-| split view | partial | no | yes | no | low-level clone only | no | no |
+| split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, `view.split_right` | yes |
 
 这类矩阵应该作为 PR checklist 使用：新增 core 能力时，明确是否需要同步 FFI、Swift wrapper、App command 和测试。
 

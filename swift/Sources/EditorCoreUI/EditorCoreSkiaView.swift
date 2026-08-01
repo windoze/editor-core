@@ -142,6 +142,11 @@ public final class EditorCoreSkiaView: MTKView {
     /// - When not provided, the view falls back to a conservative default (`onCommandClick != nil`).
     public var onCommandHover: ((EditorCoreSkiaContextMenuContext) -> Bool)?
 
+    /// Called after the view becomes first responder.
+    ///
+    /// Hosts with multiple editor views for the same document use this to track the active pane.
+    public var onDidBecomeFirstResponder: (() -> Void)?
+
     /// Enable/disable Cmd-hover visual feedback (underline + pointing-hand cursor).
     ///
     /// This is enabled by default because it is an important discoverability affordance.
@@ -614,6 +619,7 @@ public final class EditorCoreSkiaView: MTKView {
         let ok = super.becomeFirstResponder()
         if ok {
             updateCaretBlinkTimer()
+            onDidBecomeFirstResponder?()
         }
         return ok
     }
@@ -1484,6 +1490,7 @@ public final class EditorCoreSkiaView: MTKView {
         dismissHoverUIForUserAction()
 
         window?.makeFirstResponder(self)
+        onDidBecomeFirstResponder?()
         let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
             windowPoint: event.locationInWindow,
             view: self

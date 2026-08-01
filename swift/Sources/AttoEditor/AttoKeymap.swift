@@ -31,6 +31,7 @@ enum AttoKeymap {
         "editor.unfold_all": AttoKeyBinding(keyEquivalent: "]", modifiers: [.command, .option, .shift]),
         "view.toggle_sidebar": AttoKeyBinding(keyEquivalent: "b", modifiers: [.command]),
         "view.toggle_minimap": AttoKeyBinding(keyEquivalent: "m", modifiers: [.command]),
+        "view.split_right": AttoKeyBinding(keyEquivalent: "2", modifiers: [.command, .option]),
         "view.wrap.word": AttoKeyBinding(keyEquivalent: "z", modifiers: [.option]),
         "workbench.command_palette": AttoKeyBinding(keyEquivalent: "p", modifiers: [.command, .shift]),
         "go.file": AttoKeyBinding(keyEquivalent: "p", modifiers: [.command]),

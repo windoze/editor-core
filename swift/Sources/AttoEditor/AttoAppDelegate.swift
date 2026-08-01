@@ -313,6 +313,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(id: "view.toggle_minimap", title: "View: Toggle Minimap") { [weak self] in
                 self?.activeWindow()?.editorAreaController.toggleMinimapForActiveTab()
             },
+            .init(id: "view.split_right", title: "View: Split Right") { [weak self] in
+                self?.activeWindow()?.editorAreaController.splitActiveTabRight()
+            },
             .init(id: "workbench.command_palette", title: "AttoEditor: Command Palette") { [weak self] in
                 self?.showCommandPalette()
             },

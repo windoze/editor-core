@@ -56,6 +56,7 @@ enum AttoMainMenuBuilder {
         viewMenuItem.submenu = viewMenu
         viewMenu.addItem(commandItem(title: "Toggle Sidebar", commandID: "view.toggle_sidebar", appDelegate: appDelegate))
         viewMenu.addItem(commandItem(title: "Toggle Minimap", commandID: "view.toggle_minimap", appDelegate: appDelegate))
+        viewMenu.addItem(commandItem(title: "Split Right", commandID: "view.split_right", appDelegate: appDelegate))
         viewMenu.addItem(.separator())
         let wrapMenuItem = NSMenuItem(title: "Word Wrap", action: nil, keyEquivalent: "")
         let wrapMenu = NSMenu(title: "Word Wrap")
