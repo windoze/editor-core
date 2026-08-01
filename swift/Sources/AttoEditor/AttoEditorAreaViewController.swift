@@ -71,6 +71,10 @@ final class AttoEditorAreaViewController: NSViewController {
         lastLspLocationResultSnapshot
     }
 
+    func _lastLspSymbolResultForTesting() -> LspSymbolResultSnapshot? {
+        lastLspSymbolResultSnapshot
+    }
+
     private struct HoverRequestContext {
         let tabID: UUID
         let info: EditorCoreSkiaHoverInfo
@@ -121,6 +125,11 @@ final class AttoEditorAreaViewController: NSViewController {
             case .workspace(let query): return query
             }
         }
+    }
+
+    struct LspSymbolResultSnapshot: Equatable {
+        let symbols: [AttoLspSymbolParser.Symbol]
+        let placeholder: String
     }
 
     private enum LspHierarchyRequestKind {
@@ -275,6 +284,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private var symbolContext: SymbolRequestContext?
     private var symbolPollTimer: DispatchSourceTimer?
     private var lspSymbolResultsController: AttoCommandPaletteController?
+    private var lastLspSymbolResultSnapshot: LspSymbolResultSnapshot?
     private var hierarchyPrepareContext: HierarchyPrepareContext?
     private var hierarchyPreparePollTimer: DispatchSourceTimer?
     private var hierarchyChildrenContext: HierarchyChildrenContext?
@@ -3350,7 +3360,7 @@ final class AttoEditorAreaViewController: NSViewController {
             guard let json else { return }
 
             self.cancelSymbolUI()
-            self.handleLspSymbolResultJSON(json, kind: ctx.kind, tab: tab)
+            _ = self.handleLspSymbolResultJSON(json, kind: ctx.kind, tab: tab)
             timer.cancel()
         }
 
@@ -3358,7 +3368,35 @@ final class AttoEditorAreaViewController: NSViewController {
         timer.resume()
     }
 
-    private func handleLspSymbolResultJSON(_ json: String, kind: LspSymbolRequestKind, tab: AttoEditorTab) {
+    @discardableResult
+    func showDocumentSymbolResultJSONInActiveTab(_ json: String) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        return handleLspSymbolResultJSON(json, kind: .document, tab: tab)
+    }
+
+    @discardableResult
+    func showWorkspaceSymbolResultJSONInActiveTab(_ json: String, query: String = "") -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        return handleLspSymbolResultJSON(json, kind: .workspace(query: query), tab: tab)
+    }
+
+    @discardableResult
+    func showLastLspSymbolResults() -> Bool {
+        guard let snapshot = lastLspSymbolResultSnapshot, snapshot.symbols.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+        showLspSymbolResults(snapshot.symbols, placeholder: snapshot.placeholder)
+        return true
+    }
+
+    private func handleLspSymbolResultJSON(_ json: String, kind: LspSymbolRequestKind, tab: AttoEditorTab) -> Bool {
         let symbols: [AttoLspSymbolParser.Symbol]
         let placeholder: String
 
@@ -3393,10 +3431,12 @@ final class AttoEditorAreaViewController: NSViewController {
                 in: tab.editCore.editorView
             )
             NSSound.beep()
-            return
+            return false
         }
 
+        lastLspSymbolResultSnapshot = LspSymbolResultSnapshot(symbols: symbols, placeholder: placeholder)
         showLspSymbolResults(symbols, placeholder: placeholder)
+        return true
     }
 
     private func showLspSymbolResults(_ symbols: [AttoLspSymbolParser.Symbol], placeholder: String) {

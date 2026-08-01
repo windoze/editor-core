@@ -49,6 +49,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.type_hierarchy_subtypes"))
         XCTAssertTrue(ids.contains("lsp.document_symbols"))
         XCTAssertTrue(ids.contains("lsp.workspace_symbols"))
+        XCTAssertTrue(ids.contains("lsp.show_last_symbols"))
         XCTAssertTrue(ids.contains("lsp.completion"))
         XCTAssertTrue(ids.contains("lsp.signature_help"))
         XCTAssertTrue(ids.contains("lsp.rename"))
@@ -282,6 +283,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.type_hierarchy_subtypes", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_symbols", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.completion", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.signature_help", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.rename", in: menu))
@@ -401,6 +403,72 @@ final class AttoEditorCommandTests: XCTestCase {
             ) as? NSSearchField
         )
         XCTAssertEqual(reopenedSearchField.placeholderString, "Filter implementations...")
+    }
+
+    func testWorkspaceSymbolResultCanBeReopened() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("symbols.swift")
+        try "func openProject() {}\nstruct Project {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(vc.showWorkspaceSymbolResultJSONInActiveTab("""
+        [
+          {
+            "name": "openProject",
+            "kind": 12,
+            "location": {
+              "uri": "\(fileURL.absoluteString)",
+              "range": {
+                "start": { "line": 0, "character": 5 },
+                "end": { "line": 0, "character": 16 }
+              }
+            }
+          },
+          {
+            "name": "Project",
+            "kind": 23,
+            "location": { "uri": "\(fileURL.absoluteString)" }
+          }
+        ]
+        """, query: "Project"))
+
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.SymbolResults")
+        })
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.LSP.SymbolResults"),
+                in: root
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter workspace symbols...")
+
+        let snapshot = try XCTUnwrap(vc._lastLspSymbolResultForTesting())
+        XCTAssertEqual(snapshot.symbols.map(\.name), ["openProject", "Project"])
+        XCTAssertEqual(snapshot.placeholder, "Filter workspace symbols...")
+
+        panel.close()
+        XCTAssertTrue(vc.showLastLspSymbolResults())
+
+        let reopenedPanel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.SymbolResults")
+        })
+        let reopenedRoot = try XCTUnwrap(reopenedPanel.contentView)
+        let reopenedSearchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.LSP.SymbolResults"),
+                in: reopenedRoot
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(reopenedSearchField.placeholderString, "Filter workspace symbols...")
     }
 
     func testApplyLinkedEditingRangeResultCreatesMulticursorSelections() throws {
