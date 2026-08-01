@@ -11,6 +11,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let ids = Set(delegate._defaultCommandsForTesting().map(\.id))
 
         XCTAssertTrue(ids.contains("editor.duplicate_lines"))
+        XCTAssertTrue(ids.contains("file.close_tab"))
         XCTAssertTrue(ids.contains("editor.delete_lines"))
         XCTAssertTrue(ids.contains("editor.move_lines_up"))
         XCTAssertTrue(ids.contains("editor.move_lines_down"))
@@ -21,6 +22,67 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.unfold"))
         XCTAssertTrue(ids.contains("editor.unfold_all"))
         XCTAssertTrue(ids.contains("view.wrap.word"))
+    }
+
+    func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let keymapURL = tempDir.appendingPathComponent("keymap.json")
+        try """
+        [
+          { "keys": ["cmd+shift+l"], "command": "editor.duplicate_lines" },
+          { "key": "super+/", "command": "editor.toggle_line_comment" }
+        ]
+        """.write(to: keymapURL, atomically: true, encoding: .utf8)
+
+        let env = [AttoKeymap.userKeymapEnv: keymapURL.path]
+        let user = AttoKeymap.loadUserBindings(env: env)
+        XCTAssertEqual(user["editor.duplicate_lines"]?.keyEquivalent, "l")
+        XCTAssertEqual(
+            user["editor.duplicate_lines"]?.modifiers.intersection(.deviceIndependentFlagsMask),
+            [.command, .shift]
+        )
+        XCTAssertEqual(user["editor.toggle_line_comment"]?.keyEquivalent, "/")
+        XCTAssertEqual(
+            user["editor.toggle_line_comment"]?.modifiers.intersection(.deviceIndependentFlagsMask),
+            [.command]
+        )
+
+        let resolved = AttoKeymap.resolvedBindings(env: env)
+        XCTAssertEqual(resolved["editor.duplicate_lines"]?.keyEquivalent, "l")
+        XCTAssertEqual(resolved["file.save"]?.keyEquivalent, "s")
+    }
+
+    func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
+        let delegate = AttoAppDelegate(
+            keyBindings: [
+                "editor.duplicate_lines": AttoKeyBinding(keyEquivalent: "l", modifiers: [.command, .shift]),
+            ]
+        )
+        let menu = AttoMainMenuBuilder.build(appDelegate: delegate)
+
+        let item = try XCTUnwrap(findMenuItem(commandID: "editor.duplicate_lines", in: menu))
+        XCTAssertEqual(item.representedObject as? String, "editor.duplicate_lines")
+        XCTAssertEqual(item.identifier?.rawValue, "AttoCommand.editor.duplicate_lines")
+        XCTAssertEqual(item.action, #selector(AttoAppDelegate.commandMenuItemClicked(_:)))
+        XCTAssertTrue((item.target as AnyObject) === delegate)
+        XCTAssertEqual(item.keyEquivalent, "l")
+        XCTAssertEqual(
+            item.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask),
+            [.command, .shift]
+        )
+
+        XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.fold_selection", in: menu))
+    }
+
+    func testExecuteCommandUsesRegisteredCommandIDs() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        XCTAssertTrue(delegate.executeCommand(id: "editor.duplicate_lines"))
+        XCTAssertFalse(delegate.executeCommand(id: "missing.command"))
     }
 
     func testActiveEditorCommandJSONMutatesTextAndDirtyState() throws {
@@ -90,6 +152,18 @@ final class AttoEditorCommandTests: XCTestCase {
         if let v = root as? T { return v }
         for child in root.subviews {
             if let found = findSubview(of: type, in: child) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private func findMenuItem(commandID: String, in menu: NSMenu) -> NSMenuItem? {
+        for item in menu.items {
+            if item.representedObject as? String == commandID {
+                return item
+            }
+            if let submenu = item.submenu, let found = findMenuItem(commandID: commandID, in: submenu) {
                 return found
             }
         }

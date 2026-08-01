@@ -15,9 +15,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
 
     private var windows: [AttoWindowContext] = []
     private var activeWindowID: UUID?
+    private var keyBindings: [String: AttoKeyBinding]
 
     var ipcServer: AttoIpcServer?
     var createDefaultWindowOnLaunch: Bool = true
+
+    override init() {
+        self.keyBindings = AttoKeymap.resolvedBindings()
+        super.init()
+    }
+
+    init(keyBindings: [String: AttoKeyBinding]) {
+        self.keyBindings = keyBindings
+        super.init()
+    }
 
     private struct StaticEditorJSONCommand {
         let id: String
@@ -243,6 +254,21 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         showPreferencesWindow()
     }
 
+    @objc func commandMenuItemClicked(_ sender: Any?) {
+        let commandID: String?
+        if let item = sender as? NSMenuItem {
+            commandID = item.representedObject as? String
+        } else {
+            commandID = sender as? String
+        }
+
+        guard let commandID else {
+            NSSound.beep()
+            return
+        }
+        executeCommand(id: commandID)
+    }
+
     // MARK: - Command palette integration
 
     private func showCommandPalette() {
@@ -268,6 +294,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             },
             .init(id: "file.save", title: "File: Save") { [weak self] in
                 self?.saveMenuClicked(nil)
+            },
+            .init(id: "file.close_tab", title: "File: Close Tab") { [weak self] in
+                self?.closeTabMenuClicked(nil)
             },
             .init(id: "editor.format_document", title: "Edit: Format Document") { [weak self] in
                 self?.activeWindow()?.editorAreaController.formatDocumentWithLspInActiveTab()
@@ -313,6 +342,25 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
 
     func _defaultCommandsForTesting() -> [AttoCommandPaletteCommand] {
         defaultCommands()
+    }
+
+    func _keyBindingForTesting(commandID: String) -> AttoKeyBinding? {
+        keyBinding(forCommandID: commandID)
+    }
+
+    @discardableResult
+    func executeCommand(id commandID: String) -> Bool {
+        guard let command = defaultCommands().first(where: { $0.id == commandID }) else {
+            NSSound.beep()
+            NSLog("AttoEditor: unknown command id %@", commandID)
+            return false
+        }
+        command.run()
+        return true
+    }
+
+    func keyBinding(forCommandID commandID: String) -> AttoKeyBinding? {
+        keyBindings[commandID]
     }
 
     private func editorCommandPaletteCommands() -> [AttoCommandPaletteCommand] {

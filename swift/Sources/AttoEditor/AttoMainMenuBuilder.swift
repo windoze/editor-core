@@ -1,0 +1,99 @@
+import AppKit
+import Foundation
+
+@MainActor
+enum AttoMainMenuBuilder {
+    static func build(appDelegate: AttoAppDelegate) -> NSMenu {
+        let mainMenu = NSMenu()
+
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+        let appMenu = NSMenu()
+        appMenuItem.submenu = appMenu
+        appMenu.addItem(withTitle: "About AttoEditor", action: nil, keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(commandItem(title: "Preferences...", commandID: "workbench.preferences", appDelegate: appDelegate))
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit AttoEditor", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
+        let fileMenuItem = NSMenuItem()
+        mainMenu.addItem(fileMenuItem)
+        let fileMenu = NSMenu(title: "File")
+        fileMenuItem.submenu = fileMenu
+        fileMenu.addItem(commandItem(title: "New File", commandID: "file.new", appDelegate: appDelegate))
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(commandItem(title: "Open Folder...", commandID: "file.open_folder", appDelegate: appDelegate))
+        fileMenu.addItem(commandItem(title: "Open File...", commandID: "file.open_file", appDelegate: appDelegate))
+        fileMenu.addItem(commandItem(title: "Save", commandID: "file.save", appDelegate: appDelegate))
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(commandItem(title: "Close Tab", commandID: "file.close_tab", appDelegate: appDelegate))
+
+        let editMenuItem = NSMenuItem()
+        mainMenu.addItem(editMenuItem)
+        let editMenu = NSMenu(title: "Edit")
+        editMenuItem.submenu = editMenu
+        editMenu.addItem(commandItem(title: "Find...", commandID: "editor.find", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Replace...", commandID: "editor.replace", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Find in Files...", commandID: "search.find_in_files", appDelegate: appDelegate))
+        editMenu.addItem(.separator())
+        editMenu.addItem(commandItem(title: "Format Document", commandID: "editor.format_document", appDelegate: appDelegate))
+        editMenu.addItem(.separator())
+        editMenu.addItem(commandItem(title: "Duplicate Line", commandID: "editor.duplicate_lines", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Delete Line", commandID: "editor.delete_lines", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Move Line Up", commandID: "editor.move_lines_up", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Move Line Down", commandID: "editor.move_lines_down", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Join Lines", commandID: "editor.join_lines", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Split Line", commandID: "editor.split_line", appDelegate: appDelegate))
+        editMenu.addItem(.separator())
+        editMenu.addItem(commandItem(title: "Indent", commandID: "editor.indent", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Outdent", commandID: "editor.outdent", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Delete to Previous Tab Stop", commandID: "editor.delete_to_prev_tab_stop", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Toggle Line Comment", commandID: "editor.toggle_line_comment", appDelegate: appDelegate))
+
+        let viewMenuItem = NSMenuItem()
+        mainMenu.addItem(viewMenuItem)
+        let viewMenu = NSMenu(title: "View")
+        viewMenuItem.submenu = viewMenu
+        viewMenu.addItem(commandItem(title: "Toggle Sidebar", commandID: "view.toggle_sidebar", appDelegate: appDelegate))
+        viewMenu.addItem(commandItem(title: "Toggle Minimap", commandID: "view.toggle_minimap", appDelegate: appDelegate))
+        viewMenu.addItem(.separator())
+        let wrapMenuItem = NSMenuItem(title: "Word Wrap", action: nil, keyEquivalent: "")
+        let wrapMenu = NSMenu(title: "Word Wrap")
+        wrapMenu.addItem(commandItem(title: "Off", commandID: "view.wrap.none", appDelegate: appDelegate))
+        wrapMenu.addItem(commandItem(title: "By Character", commandID: "view.wrap.char", appDelegate: appDelegate))
+        wrapMenu.addItem(commandItem(title: "By Word", commandID: "view.wrap.word", appDelegate: appDelegate))
+        wrapMenuItem.submenu = wrapMenu
+        viewMenu.addItem(wrapMenuItem)
+        viewMenu.addItem(.separator())
+        viewMenu.addItem(commandItem(title: "Fold Selection", commandID: "editor.fold_selection", appDelegate: appDelegate))
+        viewMenu.addItem(commandItem(title: "Unfold at Cursor", commandID: "editor.unfold", appDelegate: appDelegate))
+        viewMenu.addItem(commandItem(title: "Unfold All", commandID: "editor.unfold_all", appDelegate: appDelegate))
+
+        let goMenuItem = NSMenuItem()
+        mainMenu.addItem(goMenuItem)
+        let goMenu = NSMenu(title: "Go")
+        goMenuItem.submenu = goMenu
+        goMenu.addItem(commandItem(title: "Go to File...", commandID: "go.file", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Command Palette...", commandID: "workbench.command_palette", appDelegate: appDelegate))
+        goMenu.addItem(.separator())
+        goMenu.addItem(commandItem(title: "Back", commandID: "go.back", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Forward", commandID: "go.forward", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Go to Matching Bracket", commandID: "go.matching_bracket", appDelegate: appDelegate))
+
+        return mainMenu
+    }
+
+    private static func commandItem(title: String, commandID: String, appDelegate: AttoAppDelegate) -> NSMenuItem {
+        let binding = appDelegate.keyBinding(forCommandID: commandID)
+        let item = NSMenuItem(
+            title: title,
+            action: #selector(AttoAppDelegate.commandMenuItemClicked(_:)),
+            keyEquivalent: binding?.keyEquivalent ?? ""
+        )
+        item.keyEquivalentModifierMask = binding?.modifiers ?? []
+        item.target = appDelegate
+        item.representedObject = commandID
+        item.identifier = NSUserInterfaceItemIdentifier("AttoCommand.\(commandID)")
+        return item
+    }
+}

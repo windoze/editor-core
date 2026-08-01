@@ -31,7 +31,7 @@ Swift 侧已经具备以下基础能力：
 - `EditorCoreUIFFI.EditorUI` 暴露了较完整的“编辑器视图主路径”API，包括打开文本、插入/删除、搜索替换、撤销重做、选择、鼠标输入、IME、渲染 RGBA/Metal、主题、Tree-sitter、Sublime syntax、部分 LSP、minimap、gutter、bookmark、jump history、document link hit-test 等。
 - `EditorCoreUI` / `AttoEditor` 已有 AppKit 组件级 XCTest，能用 `NSWindow`、`NSEvent` 和 view API 驱动交互。
 - 2026-08-01 本地验证过：
-  - `swift test --filter AttoEditorTests` 通过，38 个测试。
+  - `swift test --filter AttoEditorTests` 通过，41 个测试。
   - `swift test --filter EditorCoreUITests` 通过，64 个测试。
   - `swift test --filter EditorCoreUIFFITests` 通过，44 个测试。
 
@@ -48,6 +48,8 @@ Swift 侧已经具备以下基础能力：
 - 阶段 2 尚未完成主菜单接线、用户可配置 keymap、命令启用/禁用状态模型。
 - 2026-08-01 阶段 3 已完成：Swift `EditorCoreUIFFI` 新增高频 command DTO 和 typed convenience API，内部统一走 `executeCommandJSON(_:)`。
 - 阶段 3 已覆盖 replace coalescing、type char、insert newline with auto-indent、line commands、toggle comment、apply text edits、apply snippet、snippet placeholder navigation、move to/by、occurrence options、wrap mode/indent、indentation config、auto-pairs config、viewport query、fold/unfold、bracket highlight update/clear。
+- 2026-08-01 阶段 4 已完成：AttoEditor 主菜单改为通过 command id 调用统一命令入口，新增 `AttoKeymap` 解析默认/用户 keymap，并让菜单快捷键使用同一组 command id。
+- 阶段 4 已覆盖 P0 基础编辑命令、wrap/fold 命令、file/search/go/view/workbench 命令的菜单接线；其中常用命令已有默认 key binding，其余命令可通过 `~/Library/Application Support/codes.unwritten.attoeditor/keymap.json` 或 `ATTO_EDITOR_KEYMAP_PATH` 覆盖 key binding。
 
 ## 分层结论
 
@@ -63,7 +65,7 @@ Swift 侧已经具备以下基础能力：
 
 ### 2. `editor-core-ui` 到 Swift `EditorUI`
 
-`editor-core-ui` 本身比 Swift `EditorUI` 暴露更多能力。阶段 1 已经补上 Swift UI 通用 JSON dispatcher，因此很多 core/FFI 已有能力现在可以到达 Swift `EditorUI`；阶段 3 已为高频命令补上 Swift typed convenience API。但 AttoEditor App 命令系统、菜单和 keymap 仍未完整接线。
+`editor-core-ui` 本身比 Swift `EditorUI` 暴露更多能力。阶段 1 已经补上 Swift UI 通用 JSON dispatcher，因此很多 core/FFI 已有能力现在可以到达 Swift `EditorUI`；阶段 3 已为高频命令补上 Swift typed convenience API；阶段 4 已把 P0 App 命令接入主菜单和默认/用户 keymap。但 AttoEditor App 命令系统在启用状态、参数、上下文和 LSP/项目命令覆盖上仍未完整。
 
 主要问题：
 
@@ -90,27 +92,27 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | `TypeChar` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `typeChar(_:)`，`insertText` 单字符也会在 Rust UI 内部走 typing 路径 | 仍缺 App command id；headless FFI 覆盖仍不一致。 |
 | `ReplaceCoalescingUndo` / `ReplaceCoalescingUndoWithSelection` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `replaceCoalescingUndo` / `replaceCoalescingUndoWithSelection`；IME/marked text 路径内部也使用相关语义 | headless FFI 覆盖仍不一致。 |
 | `ApplySnippet` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `applySnippet`；Tab/Backtab 可在 snippet active 时切 placeholder | 仍缺 completion UI 接线；headless FFI 覆盖仍不一致。 |
-| `SnippetNextPlaceholder` / `SnippetPrevPlaceholder` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `snippetNextPlaceholder` / `snippetPrevPlaceholder`，`insertTab` / `insertBacktab` 也内部支持 | 仍缺 App command/keymap 绑定。 |
-| duplicate lines | 有 | 有 | Swift 有 typed `duplicateLines()`；AttoEditor command palette 有 `editor.duplicate_lines` | 仍缺菜单和 keymap 接线。 |
-| delete lines | 有 | 有 | Swift 有 typed `deleteLines()`；AttoEditor command palette 有 `editor.delete_lines` | 仍缺菜单和 keymap 接线。 |
-| move lines up/down | 有 | 有 | Swift 有 typed `moveLinesUp()` / `moveLinesDown()`；AttoEditor command palette 有 `editor.move_lines_up/down` | 仍缺菜单和 keymap 接线。 |
-| join lines | 有 | 有 | Swift 有 typed `joinLines()`；AttoEditor command palette 有 `editor.join_lines` | 仍缺菜单和 keymap 接线。 |
-| split line | 有 | 有 | Swift 有 typed `splitLine()`；AttoEditor command palette 有 `editor.split_line` | 仍缺菜单和 keymap 接线。 |
-| toggle comment | 有 | 有 | Swift 有 typed `toggleComment(_:)`；AttoEditor command palette 有 `editor.toggle_line_comment` 并按文件类型选择基础 line token | 仍缺完整语言 comment config 桥接、菜单和 keymap 接线。 |
+| `SnippetNextPlaceholder` / `SnippetPrevPlaceholder` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `snippetNextPlaceholder` / `snippetPrevPlaceholder`，`insertTab` / `insertBacktab` 也内部支持 | 仍缺显式 App command；当前主要由 Tab/Backtab 主路径触发。 |
+| duplicate lines | 有 | 有 | Swift 有 typed `duplicateLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.duplicate_lines` | P0 接线完成；仍缺启用/禁用状态模型。 |
+| delete lines | 有 | 有 | Swift 有 typed `deleteLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.delete_lines` | P0 接线完成；仍缺启用/禁用状态模型。 |
+| move lines up/down | 有 | 有 | Swift 有 typed `moveLinesUp()` / `moveLinesDown()`；AttoEditor command palette、菜单有 `editor.move_lines_up/down` | P0 菜单接线完成；默认 keymap 仍未给 arrow-key 形式建模。 |
+| join lines | 有 | 有 | Swift 有 typed `joinLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.join_lines` | P0 接线完成；仍缺启用/禁用状态模型。 |
+| split line | 有 | 有 | Swift 有 typed `splitLine()`；AttoEditor command palette 和菜单有 `editor.split_line` | P0 菜单接线完成；可配置 keymap 可覆盖。 |
+| toggle comment | 有 | 有 | Swift 有 typed `toggleComment(_:)`；AttoEditor command palette、菜单和 keymap 有 `editor.toggle_line_comment` 并按文件类型选择基础 line token | 仍缺完整语言 comment config 桥接。 |
 | general `ApplyTextEdits` | 有 | 有 | Swift 有 typed `applyTextEdits(_:)`；Rust UI 也有 LSP text edit apply helper | LSP completion、code action、rename、format 仍需要产品化接线。 |
-| `DeleteToPrevTabStop` | 有 | 有 | Swift 有 typed `deleteToPrevTabStop()`；AttoEditor command palette 有 `editor.delete_to_prev_tab_stop` | 仍缺菜单和 keymap 接线。 |
-| explicit indent/outdent commands | 有 | 有 | Swift 有 typed `indent()` / `outdent()`；Tab/Backtab 主路径可用；AttoEditor command palette 有 `editor.indent/outdent` | 仍缺菜单和 keymap 接线。 |
+| `DeleteToPrevTabStop` | 有 | 有 | Swift 有 typed `deleteToPrevTabStop()`；AttoEditor command palette 和菜单有 `editor.delete_to_prev_tab_stop` | P0 菜单接线完成；可配置 keymap 可覆盖。 |
+| explicit indent/outdent commands | 有 | 有 | Swift 有 typed `indent()` / `outdent()`；Tab/Backtab 主路径可用；AttoEditor command palette 和菜单有 `editor.indent/outdent` | P0 菜单接线完成；Tab/Backtab 仍走文本系统主路径。 |
 | `EndUndoGroup` | 有 | 有 | Swift 有 typed `endUndoGroup()` | App 层复合命令还未统一使用。 |
-| logical `MoveTo` / `MoveBy` | 有 | 有 | Swift 有 typed `moveTo(line:column:)` / `moveBy(deltaLine:deltaColumn:)`，也可通过 selection/conversion 间接达成 | 仍缺可配置 key binding。 |
+| logical `MoveTo` / `MoveBy` | 有 | 有 | Swift 有 typed `moveTo(line:column:)` / `moveBy(deltaLine:deltaColumn:)`，也可通过 selection/conversion 间接达成 | 仍缺面向用户的参数化 App command。 |
 | visual movement commands | 有 | 有 | Swift 可通过 `executeCommandJSON` 调用，AppKit key handling 覆盖一部分 | 仍缺 App command coverage matrix。 |
 | `MoveToMatchingBracket` | 有 | headless FFI 缺 | Swift UI 有公开方法 | headless 和 UI command 面不一致。 |
-| add occurrence options | 有 | 有 | Swift typed `addNextOccurrence(options:)` / `addAllOccurrences(options:)` 已支持 options | 仍缺 keymap/settings 接线。 |
-| `SetWrapMode` | 有 | 有 | Swift 有 typed `setWrapMode(_:)`；AttoEditor command palette 有 wrap off/char/word | 仍缺 settings/keymap 接线。 |
+| add occurrence options | 有 | 有 | Swift typed `addNextOccurrence(options:)` / `addAllOccurrences(options:)` 已支持 options | 仍缺 App command/settings 接线。 |
+| `SetWrapMode` | 有 | 有 | Swift 有 typed `setWrapMode(_:)`；AttoEditor command palette、菜单和 keymap 有 wrap off/char/word | 仍缺 settings 接线。 |
 | `SetWrapIndent` | 有 | 有 | Swift 有 typed `setWrapIndent(_:)` | 仍缺 settings 接线。 |
 | `SetIndentationConfig` | 有 | 有 | Swift 有 typed `setIndentationConfig(_:)` | 仍缺语言配置接线。 |
 | `SetAutoPairsConfig` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `setAutoPairsConfig(_:)`；也有 enabled bool | headless 和 UI command 面仍不一致。 |
 | `SetAutoPairsEnabled` | 有 | UI JSON 有，headless FFI 缺 | Swift UI 有 bool，也可通过 `executeCommandJSON` 调用 | headless 和 UI command 面仍不一致。 |
-| fold / unfold / unfold all | 有 | 有 | Swift 有 typed `fold` / `unfold` / `unfoldAll`；AttoEditor command palette 有 fold selection/unfold/unfold all | 仍缺菜单和 keymap 接线。 |
+| fold / unfold / unfold all | 有 | 有 | Swift 有 typed `fold` / `unfold` / `unfoldAll`；AttoEditor command palette、菜单和 keymap 有 fold selection/unfold/unfold all | P0 接线完成；仍缺 LSP folding ranges 产品化通道。 |
 | bracket match highlight update/clear | 有 | UI JSON 有，headless FFI 缺 | Swift UI 有 enabled bool 和内部更新，也有 typed `updateBracketMatchHighlights` / `clearBracketMatchHighlights` | headless 和 UI command 面仍不一致。 |
 
 建议不要为每个低频命令都新增一个独立 C ABI 函数。更合理的方向是：
@@ -250,10 +252,10 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 主要缺口：
 
 - command registry 仍较轻量，还没有命令启用/禁用状态、参数模型和分组元数据。
-- command palette 已覆盖一批 Sublime 基础编辑命令，但 LSP/项目级命令仍不完整。
-- 菜单、快捷键、command palette、测试还没有完全统一 command id。
+- command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令，但 LSP/项目级命令仍不完整。
+- P0 菜单、command palette、keymap 和测试已开始统一使用 command id；更深层的命令上下文、参数化命令和冲突解析仍缺。
 - 一些 core/LSP 命令仍没有 App 命令入口。
-- 没有 Sublime 风格可配置 keymap。
+- 已有初步用户 keymap 文件，但还不是完整 Sublime keymap 兼容实现。
 - 没有 Sublime 风格 settings scopes。
 - 没有宏录制/回放。
 - 没有 build systems。
@@ -262,7 +264,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 建议 App 层先建立命令注册表：
 
-- 每个命令有稳定 id，例如 `editor.duplicateLine`、`editor.toggleComment`、`lsp.rename`。
+- 每个命令有稳定 id，例如 `editor.duplicate_lines`、`editor.toggle_line_comment`、`lsp.rename`。
 - 命令声明 title、默认 key binding、是否需要 editor focus、是否支持 selection、多光标语义。
 - 菜单、command palette、keymap 和 UI 测试都调用同一命令入口。
 - 底层实现可以调用 typed Swift API，也可以调用 UI JSON command dispatcher。
@@ -285,7 +287,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - `.sublime-color-scheme` 兼容覆盖率。
 - `.tmTheme` 兼容覆盖率。
 - Sublime settings scope 继承规则。
-- keymap 文件格式和冲突解析。
+- keymap 文件已有初步 JSON 解析；仍缺完整 Sublime keymap 条件、上下文和冲突解析。
 - snippets。
 - macros。
 - build systems。
@@ -366,7 +368,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：通过 `executeCommandJSON(_:)` 暴露 `applySnippet` 和 snippet placeholder navigation。
 - 已完成：AttoEditor command palette 为一批 Sublime 基础编辑命令建立稳定 command id。
 - 已完成：为高频命令补 typed Swift convenience API。
-- 待完成：把 App command id 统一接入主菜单和用户可配置 keymap。
+- 已完成：把 App command id 统一接入主菜单和初步用户可配置 keymap。
 - 为这些命令补 AppKit 操作测试和结构化状态测试。
 
 ### P1：补 LSP 产品主路径
@@ -392,7 +394,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 ### P2：深化 Sublime 兼容
 
 - settings scopes。
-- keymap 文件。
+- 完整 Sublime keymap 文件兼容。
 - snippets/macros/build systems。
 - package resource loading。
 - command palette 覆盖。
@@ -412,8 +414,8 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 | Feature | Core | core FFI | UI Rust | UI FFI | Swift `EditorUI` | Atto command | Tests |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| duplicate line | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette | yes |
-| toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette | yes |
+| duplicate line | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
+| toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | apply snippet | yes | no | yes | yes, via JSON | yes, typed + JSON | partial, Tab/Backtab placeholder path only | yes |
 | LSP rename | yes | partial helper | partial | no | no | no | no |
 | split view | partial | no | yes | no | low-level clone only | no | no |
