@@ -230,7 +230,7 @@ this workspace (per your request).
     - rename (`textDocument/rename`) UX helpers (preview, conflict detection)
     - references (`textDocument/references`)
     - code actions (`textDocument/codeAction`) + apply helpers (incl. commands)
-    - on-type formatting product trigger policy and formatting error UI
+    - formatting error UI / typed result model
   - Implemented via:
     - Requests exist in `editor_core_lsp::LspSession` (`request_signature_help`, `request_references`,
       `request_rename`, `request_code_action`, `request_formatting`, ...)
@@ -242,6 +242,7 @@ this workspace (per your request).
     - UI/FFI turnkey formatting:
       - `editor-core-ui::EditorUi::lsp_format_document(...)` (blocking request + apply)
       - `editor-core-ui::EditorUi::lsp_format_range(...)` / `lsp_format_on_type(...)`
+      - Rust UI automatic `textDocument/onTypeFormatting` trigger for server-declared trigger characters on single-character typing
       - Swift `EditorUI.lspFormatDocument(...)`, `lspFormatRange(...)`, `lspFormatOnType(...)`
       - AttoEditor commands “Edit: Format Document” and “Edit: Format Selection”
 

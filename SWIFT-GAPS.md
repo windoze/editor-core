@@ -83,6 +83,9 @@ Swift 侧已经具备以下基础能力：
 - 阶段 13 已新增 `EditorUi.lsp_format_range(...)` / `lsp_format_on_type(...)`、C ABI `editor_core_ui_ffi_editor_ui_lsp_format_range` / `editor_core_ui_ffi_editor_ui_lsp_format_on_type`、Swift `EditorUI.lspFormatRange(...)` / `lspFormatOnType(...)`，以及 `EditorCoreSkiaView.formatRangeWithLSP(...)` / `formatOnTypeWithLSP(...)`。
 - 阶段 13 已让 AttoEditor App 新增 `editor.format_selection` 主路径，接入 command palette、Edit 菜单和默认 keymap；选区为空时不向 LSP 发 range formatting 请求。
 - 阶段 13 尚未完成 on-type formatting 的完整产品触发策略（除 Rust UI 已有的换行触发路径外，还缺按 server trigger characters 自动触发）、格式化错误展示、跨文件 WorkspaceEdit 产品化和 typed result model。
+- 2026-08-01 阶段 14 已完成：Rust UI `insert_text` 单字符 typing 路径会按 LSP server `documentOnTypeFormattingProvider` 宣告的 `firstTriggerCharacter` / `moreTriggerCharacter` 自动触发 `textDocument/onTypeFormatting`；粘贴和多字符 IME commit 仍保持批量插入语义，不触发 on-type formatting。
+- 阶段 14 已用 fake LSP server 单测覆盖：单字符 paste 不触发、非 trigger typing 不触发、server trigger typing 会发送 `textDocument/onTypeFormatting` 并携带正确 `ch`。
+- 阶段 14 尚未完成格式化错误展示、跨文件 WorkspaceEdit 产品化和 formatting typed result model。
 
 ## 分层结论
 
@@ -193,7 +196,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - code lens resolve / command execution。
 - outline / document symbols 已有 quick panel 主路径，但还缺持久 Outline panel。
 - workspace symbols 已有 quick panel 主路径，但还缺增量查询/输入面板和完整结果模型。
-- on-type formatting 已有 explicit binding 和换行触发基础路径；仍缺完整 trigger characters 自动触发策略、错误展示和 typed result model。
+- on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；仍缺错误展示和 typed result model。
 - semantic tokens refresh / delta 策略。
 - folding ranges request 到 fold UI 的完整通道。
 - selection range。
@@ -434,7 +437,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - rename prepareRename range/placeholder、跨文件 WorkspaceEdit 应用/预览和 typed result model。
 - code action kind/filter/diagnostics context 产品化、跨文件 WorkspaceEdit 应用/预览、执行结果/错误展示和 typed result model。
 - document/workspace symbols 持久面板和 workspace 增量查询。
-- range formatting Swift/App 主路径已完成；on-type formatting binding 和基础触发路径已完成，仍缺完整 trigger characters 自动触发策略、错误展示和 typed result model。
+- range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发和 server trigger characters 自动触发路径已完成，仍缺错误展示和 typed result model。
 - folding ranges。
 - linked editing。
 - LSP result panels 和错误展示。
@@ -478,7 +481,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | LSP symbols | yes | partial helper | yes | yes, raw JSON result | yes, raw JSON result | yes, document/workspace symbols quick panels | yes |
 | LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, input UI + menu/keymap + current-doc apply | partial |
 | LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand | partial, raw result + current-doc WorkspaceEdit apply + executeCommand | yes, quick panel/menu/keymap/current-doc apply | partial |
-| LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers | document + selection commands; on-type basic trigger path | partial |
+| LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply + trigger-character auto path | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers | document + selection commands; on-type trigger-character auto path | partial |
 | split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
 | workspace tabs/splits | yes, headless `Workspace` | partial `Workspace` wrapper | yes, `MultiDocumentEditorUi` | no | no, current Swift tabs are transitional | partial, Swift-owned prototype | partial |
 

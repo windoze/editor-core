@@ -4289,18 +4289,23 @@ impl EditorUi {
             self.ensure_primary_caret_visible_after_edit();
             return Ok(());
         }
+        let mut typed_trigger: Option<String> = None;
         if let Some(ch) = (text.chars().count() == 1)
             .then(|| text.chars().next())
             .flatten()
             && ch != '\t'
         {
             self.exec_core(Command::Edit(EditCommand::TypeChar { ch }))?;
+            typed_trigger = Some(ch.to_string());
         } else {
             self.exec_core(Command::Edit(EditCommand::InsertText {
                 text: text.to_string(),
             }))?;
         }
         self.refresh_processing()?;
+        if let Some(trigger) = typed_trigger {
+            let _ = self.maybe_request_lsp_on_type_formatting(trigger.as_str());
+        }
         self.ensure_primary_caret_visible_after_edit();
         Ok(())
     }
@@ -7006,6 +7011,57 @@ mod tests {
 
         ui.set_treesitter_registry_json(&json).unwrap();
     }
+
+    fn shell_quote(raw: &str) -> String {
+        format!("'{}'", raw.replace('\'', "'\\''"))
+    }
+
+    fn unique_temp_path(label: &str) -> std::path::PathBuf {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "editor-core-ui-{label}-{}-{stamp}.log",
+            std::process::id()
+        ))
+    }
+
+    fn lsp_capture_server_script(
+        capture_path: &std::path::Path,
+        capabilities: serde_json::Value,
+    ) -> String {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": { "capabilities": capabilities },
+        })
+        .to_string();
+        format!(
+            "body={}; printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${{#body}}\" \"$body\"; cat > {}",
+            shell_quote(&body),
+            shell_quote(capture_path.to_string_lossy().as_ref())
+        )
+    }
+
+    fn captured_lsp_stdin(path: &std::path::Path) -> String {
+        std::fs::read_to_string(path).unwrap_or_default()
+    }
+
+    fn wait_for_captured_lsp_stdin(path: &std::path::Path, needle: &str) -> String {
+        for _ in 0..100 {
+            let captured = captured_lsp_stdin(path);
+            if captured.contains(needle) {
+                return captured;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!(
+            "timed out waiting for LSP stdin to contain {needle:?}; captured: {}",
+            captured_lsp_stdin(path)
+        );
+    }
+
     use editor_core::CursorCommand;
     use editor_core_treesitter::TreeSitterUpdateMode;
 
@@ -7067,6 +7123,55 @@ mod tests {
                 .is_some_and(|detail| detail.contains("LSP session is not available")),
             "unexpected LSP status: {status}"
         );
+    }
+
+    #[test]
+    fn ui_lsp_on_type_formatting_triggers_for_server_declared_single_chars() {
+        let capture_path = unique_temp_path("on-type-formatting");
+        let capabilities = serde_json::json!({
+            "documentOnTypeFormattingProvider": {
+                "firstTriggerCharacter": ";",
+                "moreTriggerCharacter": ["}"]
+            }
+        });
+        let script = lsp_capture_server_script(&capture_path, capabilities);
+        let args = vec!["-c".to_string(), script];
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root_uri = format!("file:///tmp/editor-core-ui-on-type-{stamp}");
+        let doc_uri = format!("{root_uri}/main.rs");
+
+        let mut ui = EditorUi::new("let value = 1", 80);
+        ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+            .unwrap();
+
+        ui.paste_text(";").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        let captured_after_paste = captured_lsp_stdin(&capture_path);
+        assert!(
+            !captured_after_paste.contains("textDocument/onTypeFormatting"),
+            "paste_text must not trigger on-type formatting; captured: {captured_after_paste}"
+        );
+
+        ui.insert_text("a").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        let captured_after_non_trigger = captured_lsp_stdin(&capture_path);
+        assert!(
+            !captured_after_non_trigger.contains("textDocument/onTypeFormatting"),
+            "non-trigger typing must not request on-type formatting; captured: {captured_after_non_trigger}"
+        );
+
+        ui.insert_text(";").unwrap();
+        let captured = wait_for_captured_lsp_stdin(&capture_path, "textDocument/onTypeFormatting");
+        assert!(
+            captured.contains("\"ch\":\";\""),
+            "on-type formatting request should carry trigger ';'; captured: {captured}"
+        );
+
+        ui.lsp_disable();
+        let _ = std::fs::remove_file(capture_path);
     }
 
     #[test]
