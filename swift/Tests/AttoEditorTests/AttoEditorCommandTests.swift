@@ -51,6 +51,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.go_to_implementation"))
         XCTAssertTrue(ids.contains("lsp.find_references"))
         XCTAssertTrue(ids.contains("lsp.show_last_locations"))
+        XCTAssertTrue(ids.contains("lsp.show_location_history"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_incoming"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_outgoing"))
         XCTAssertTrue(ids.contains("lsp.type_hierarchy_supertypes"))
@@ -58,6 +59,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.document_symbols"))
         XCTAssertTrue(ids.contains("lsp.workspace_symbols"))
         XCTAssertTrue(ids.contains("lsp.show_last_symbols"))
+        XCTAssertTrue(ids.contains("lsp.show_symbol_history"))
         XCTAssertTrue(ids.contains("lsp.completion"))
         XCTAssertTrue(ids.contains("lsp.signature_help"))
         XCTAssertTrue(ids.contains("lsp.rename"))
@@ -302,6 +304,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.go_to_definition", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.find_references", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_locations", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_location_history", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.call_hierarchy_incoming", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.call_hierarchy_outgoing", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.type_hierarchy_supertypes", in: menu))
@@ -309,6 +312,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_symbols", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_symbol_history", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.completion", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.signature_help", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.rename", in: menu))
@@ -428,6 +432,40 @@ final class AttoEditorCommandTests: XCTestCase {
             ) as? NSSearchField
         )
         XCTAssertEqual(reopenedSearchField.placeholderString, "Filter implementations...")
+
+        reopenedPanel.close()
+        XCTAssertTrue(vc.showLspLocationResultJSONInActiveTab("""
+        {
+          "uri": "\(fileURL.absoluteString)",
+          "range": {
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 3 }
+          }
+        }
+        """, kind: .definition))
+        XCTAssertEqual(vc._lspLocationResultHistoryForTesting().map(\.kind), [.implementation, .definition])
+
+        XCTAssertTrue(vc.showLspLocationHistory())
+        let historyPanel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.LocationHistory")
+        })
+        let historyRoot = try XCTUnwrap(historyPanel.contentView)
+        let historySearchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.LSP.LocationHistory"),
+                in: historyRoot
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(historySearchField.placeholderString, "Filter location history...")
+        let historyTable = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.LocationHistory"),
+                in: historyRoot
+            ) as? NSTableView
+        )
+        XCTAssertEqual(historyTable.numberOfRows, 2)
+        let firstCell = try XCTUnwrap(historyTable.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(firstCell.textField?.stringValue.contains("Definitions") == true)
     }
 
     func testWorkspaceSymbolResultCanBeReopened() throws {
@@ -494,6 +532,48 @@ final class AttoEditorCommandTests: XCTestCase {
             ) as? NSSearchField
         )
         XCTAssertEqual(reopenedSearchField.placeholderString, "Filter workspace symbols...")
+
+        reopenedPanel.close()
+        XCTAssertTrue(vc.showWorkspaceSymbolResultJSONInActiveTab("""
+        [
+          {
+            "name": "openProject",
+            "kind": 12,
+            "location": {
+              "uri": "\(fileURL.absoluteString)",
+              "range": {
+                "start": { "line": 0, "character": 5 },
+                "end": { "line": 0, "character": 16 }
+              }
+            }
+          }
+        ]
+        """, query: "Open"))
+
+        let history = vc._lspSymbolResultHistoryForTesting()
+        XCTAssertEqual(history.map(\.title), ["Workspace Symbols: Project", "Workspace Symbols: Open"])
+
+        XCTAssertTrue(vc.showLspSymbolHistory())
+        let historyPanel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.SymbolHistory")
+        })
+        let historyRoot = try XCTUnwrap(historyPanel.contentView)
+        let historySearchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.LSP.SymbolHistory"),
+                in: historyRoot
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(historySearchField.placeholderString, "Filter symbol history...")
+        let historyTable = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.SymbolHistory"),
+                in: historyRoot
+            ) as? NSTableView
+        )
+        XCTAssertEqual(historyTable.numberOfRows, 2)
+        let firstCell = try XCTUnwrap(historyTable.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(firstCell.textField?.stringValue.contains("Workspace Symbols: Open") == true)
     }
 
     func testApplyLinkedEditingRangeResultCreatesMulticursorSelections() throws {

@@ -448,6 +448,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.show_last_locations", title: "LSP: Show Last Locations") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showLastLspLocationResults()
             },
+            .init(id: "lsp.show_location_history", title: "LSP: Show Location History") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspLocationHistory()
+            },
             .init(id: "lsp.call_hierarchy_incoming", title: "LSP: Incoming Calls") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showIncomingCallsInActiveTab()
             },
@@ -513,6 +516,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             },
             .init(id: "lsp.show_last_symbols", title: "LSP: Show Last Symbols") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showLastLspSymbolResults()
+            },
+            .init(id: "lsp.show_symbol_history", title: "LSP: Show Symbol History") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspSymbolHistory()
             },
             .init(id: "lsp.completion", title: "LSP: Completion") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showCompletionsInActiveTab()
