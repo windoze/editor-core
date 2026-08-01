@@ -168,6 +168,66 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertEqual(table.numberOfRows, 1)
     }
 
+    func testLspLocationPanelExposesStableIdentifiersAndFiltersRows() throws {
+        let fileURL = URL(fileURLWithPath: "/tmp/location-panel.swift")
+        let snapshot = AttoEditorAreaViewController.LspLocationResultSnapshot(
+            kind: .references,
+            items: [
+                AttoLspDefinitionParser.LocationItem(
+                    target: AttoLspDefinitionParser.Target(uri: fileURL.absoluteString, line: 0, utf16Character: 1),
+                    fileDisplayName: "location-panel.swift"
+                ),
+                AttoLspDefinitionParser.LocationItem(
+                    target: AttoLspDefinitionParser.Target(uri: fileURL.absoluteString, line: 8, utf16Character: 3),
+                    fileDisplayName: "location-panel.swift"
+                ),
+            ]
+        )
+
+        var openedTargets: [AttoLspDefinitionParser.Target] = []
+        let controller = AttoLspLocationPanelController { target in
+            openedTargets.append(target)
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 520),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 520))
+        window.makeKeyAndOrderFront(nil)
+
+        XCTAssertTrue(controller.show(relativeTo: window, snapshot: snapshot))
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        XCTAssertEqual(panel.identifier?.rawValue, AttoAccessibilityID.lspLocationPanel)
+        XCTAssertEqual(panel.title, "References (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspLocationPanelRoot, in: root))
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspLocationPanelSearchField, in: root) as? NSSearchField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspLocationPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspLocationPanelScrollView, in: root))
+        XCTAssertEqual(searchField.placeholderString, "Filter references...")
+        XCTAssertEqual(table.numberOfRows, 2)
+
+        searchField.stringValue = ":9:"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 1)
+
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(openedTargets, [snapshot.items[1].target])
+        XCTAssertTrue(controller.isVisible)
+    }
+
     func testCompletionPopupExposesStableIdentifiers() throws {
         let items = AttoLspCompletionParser.items(
             fromCompletionResultJSON: #"{"items":[{"label":"print","kind":3,"detail":"fn"}]}"#

@@ -141,6 +141,18 @@ final class AttoEditorAreaViewController: NSViewController {
         lspLocationResultHistory
     }
 
+    func _lspLocationPanelSnapshotForTesting() -> LspLocationResultSnapshot? {
+        lspLocationPanelController?.currentSnapshot
+    }
+
+    func _lspLocationPanelRowCountForTesting() -> Int {
+        lspLocationPanelController?.rowCount ?? 0
+    }
+
+    func _lspLocationPanelIsVisibleForTesting() -> Bool {
+        lspLocationPanelController?.isVisible == true
+    }
+
     func _lastLspSymbolResultForTesting() -> LspSymbolResultSnapshot? {
         lastLspSymbolResultSnapshot
     }
@@ -479,6 +491,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private var definitionContext: DefinitionRequestContext?
     private var definitionPollTimer: DispatchSourceTimer?
     private var lspLocationResultsController: AttoCommandPaletteController?
+    private var lspLocationPanelController: AttoLspLocationPanelController?
     private var lastLspLocationResultSnapshot: LspLocationResultSnapshot?
     private var lspLocationResultHistory: [LspLocationResultSnapshot] = []
 
@@ -4242,12 +4255,29 @@ final class AttoEditorAreaViewController: NSViewController {
         return true
     }
 
+    @discardableResult
+    func showLspLocationPanel() -> Bool {
+        guard let snapshot = lastLspLocationResultSnapshot, snapshot.items.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+        guard let window = view.window else {
+            return openLspLocationSnapshot(snapshot)
+        }
+        let controller = lspLocationPanelController ?? AttoLspLocationPanelController { [weak self] target in
+            self?.navigateToLspTarget(target)
+        }
+        lspLocationPanelController = controller
+        return controller.show(relativeTo: window, snapshot: snapshot)
+    }
+
     private func recordLspLocationResultSnapshot(_ snapshot: LspLocationResultSnapshot) {
         lastLspLocationResultSnapshot = snapshot
         lspLocationResultHistory.append(snapshot)
         if lspLocationResultHistory.count > Self.maxLspResultHistoryEntries {
             lspLocationResultHistory.removeFirst(lspLocationResultHistory.count - Self.maxLspResultHistoryEntries)
         }
+        lspLocationPanelController?.update(snapshot: snapshot)
     }
 
     @discardableResult

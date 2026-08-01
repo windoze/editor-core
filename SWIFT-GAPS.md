@@ -62,7 +62,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
 - 阶段 6 第二部分已让 references 多结果进入一个轻量可过滤结果 palette，单结果直接跳转；`AttoLspDefinitionParser` 新增多目标解析并补测试。阶段 57 已把 definition/declaration/type definition/implementation/references 的多结果处理统一到同一套 location results quick panel。
-- 阶段 6 尚未完成完整持久 references/locations panel、LSP typed result model 和更深层项目级命令模型。
+- 阶段 6 后续缺口中，基础持久在线 references/locations panel 已在阶段 114 补齐；仍缺 LSP typed result model、更深层 result lifecycle 和项目级命令模型。
 - 2026-08-01 阶段 7 第一部分已完成：AttoEditor 新增基础 `view.split_right` 命令，通过 `EditorUI.cloneView` 为当前 tab 创建共享 buffer 的第二个 AppKit pane；这部分是当前可用的过渡实现，不应继续扩展成 Swift 自有 workspace/tab 模型。
 - 2026-08-01 阶段 7 架构决策已更新：多文档、tab、workspace、project/session 级状态应使用 `editor-core` / `editor-core-ui` 一侧的 `Workspace` / `MultiDocumentEditorUi` 模型作为单一所有权来源，Swift 侧只做 AppKit 表现、命令转发、用户交互和持久化桥接；后续不在 Swift/AppKit 层新开一套长期独立的 workspace/tab/session 模型，也不继续给 Swift-only tab state 增加 preview/pin/dirty/close/search-all-tabs 等长期语义。
 - 阶段 7 第一部分已让 split pane 复用主编辑器 chrome/theme/preferences/LSP/hover/cmd-click hook，并新增 first-responder hook 跟踪 active pane；AttoEditor command palette、View 菜单和默认 keymap 已接入。
@@ -142,7 +142,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 60 已完成：Swift/App 显式 formatting 路径新增 `EditorCoreLSPFormattingResult` typed outcome，document/range/on-type formatting binding 可区分 applied、no edits、LSP unavailable 和 failed；AttoEditor 的显式 Format Document / Format Selection 现在会用 HUD 展示 no edits、不可用和错误原因，旧 Bool API 继续兼容。自动 on-type 异步 response error 仍需后续通过 Rust status/event 路径产品化。
 - 2026-08-02 阶段 61 已完成：Rust UI 的自动 `textDocument/onTypeFormatting` 异步 response error 不再静默丢弃，会记录到 `lsp_status_json.detail`；AttoEditor 现有 status bar 路径会显示 `LSP: Failed` 并把 detail 写入日志。后续仍缺面向自动 on-type 错误的去重 HUD/event 通道。
 - 2026-08-02 阶段 62 已完成：AttoEditor 新增可测试的 `AttoLspStatusFormatter`，统一解析 `lsp_status_json` 的 status bar 文案和 failure detail；`EditorCoreSkiaView` 的短 async processing poll window 即使没有 applied edits，也会在结束时通知宿主刷新 status，AttoEditor 会对新的 LSP failed detail 弹一次去重 HUD。
-- 2026-08-02 阶段 63 已完成：AttoEditor LSP location 多结果新增可测试的 `LocationItem` 展示模型，quick panel 结果会按 workspace-relative 路径、行列位置稳定排序，并保留非 `file://` URI / workspace 外文件的显示兜底。阶段 71 已补最近一次 location/reference snapshot 和 reopen command；后续仍缺完整持久 Locations/References panel 和更深层 result lifecycle model。
+- 2026-08-02 阶段 63 已完成：AttoEditor LSP location 多结果新增可测试的 `LocationItem` 展示模型，quick panel 结果会按 workspace-relative 路径、行列位置稳定排序，并保留非 `file://` URI / workspace 外文件的显示兜底。阶段 71 已补最近一次 location/reference snapshot 和 reopen command，阶段 91 已补 bounded history，阶段 114 已补基础持久在线 Locations/References panel；后续仍缺更深层 result lifecycle model。
 - 2026-08-02 阶段 64 已完成：Swift `EditorUI` 新增 `lspStatusSnapshot()` typed model，覆盖 availability/state/server/activity/detail 和 completion/signature/capability 摘要；AttoEditor status bar 现在消费 typed snapshot 而不是在 App 层直接解析 raw JSON。后续仍缺通用 LSP event stream、request lifecycle 和状态变更订阅模型。
 - 2026-08-02 阶段 65 已完成：AttoEditor LSP capabilities 消费也迁到 typed `EcuLspStatusSnapshot`：semantic tokens engine selection、completion item resolve 支持判断，以及 completion/signature trigger characters 自动触发都不再在 App 行为路径直接解析 raw status JSON；JSON helper 仅保留兼容入口和测试覆盖。
 - 2026-08-02 阶段 66 已完成：AttoEditor status bar 左侧 derived-state 摘要开始消费 typed `EcuFoldingRegionsSnapshot`，当 active tab 存在已折叠 region 时显示 `Folded: N`；`SWIFT-GAPS.md` 同步校准 folding 缺口，typed fold region model 不再列为缺失项。
@@ -150,7 +150,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 68 已完成：AttoEditor document/workspace symbols 请求新增统一反馈文案；LSP 未启用、请求失败、poll/take 失败、超时和空结果都会通过 editor HUD 给出明确原因，不再只蜂鸣或静默取消。
 - 2026-08-02 阶段 69 已完成：`editor-core-ui-ffi` 新增 UI ABI version 与 feature flags C ABI，Swift `EditorCoreUIFFILibrary` 暴露 `abiVersion`、`featureFlags` 和 `runtimeInfo()` typed facade，覆盖 JSON command dispatcher、typed derived snapshots、LSP interactive requests、LSP status snapshot、WorkspaceEdit application 等 coarse feature probes；SwiftPM Rust build plugin 改为显式 input/output `buildCommand`，避免 ABI/header 变更后继续链接旧 staticlib。
 - 2026-08-02 阶段 70 已完成：AttoEditor 新增 `AttoRuntimeCompatibility` 启动期兼容性策略，启动时会读取 Swift UI FFI `runtimeInfo()` 并校验最低 UI ABI version 与当时定义的必需 feature flags；ABI 过低、读取失败或缺少基础必需能力时会在创建窗口前给出明确错误并退出。阶段 105 已把 LSP / WorkspaceEdit 能力改为可选 feature 并接入命令级降级。
-- 2026-08-02 阶段 71 已完成：AttoEditor LSP definition/declaration/type definition/implementation/references 结果新增最近一次 `LspLocationResultSnapshot`，多结果 quick panel 和单结果导航都会记录排序后的 typed items；新增 `lsp.show_last_locations` command palette / Go 菜单入口，可重新打开最近一次 location/reference 结果面板或重新跳转单结果。阶段 91 已补 bounded in-memory history；后续仍缺完整持久 Locations/References panel 和更细 result lifecycle。
+- 2026-08-02 阶段 71 已完成：AttoEditor LSP definition/declaration/type definition/implementation/references 结果新增最近一次 `LspLocationResultSnapshot`，多结果 quick panel 和单结果导航都会记录排序后的 typed items；新增 `lsp.show_last_locations` command palette / Go 菜单入口，可重新打开最近一次 location/reference 结果面板或重新跳转单结果。阶段 91 已补 bounded in-memory history，阶段 114 已补基础持久在线 Locations/References panel；后续仍缺更细 result lifecycle。
 - 2026-08-02 阶段 72 已完成：AttoEditor LSP document/workspace symbols 结果新增最近一次 `LspSymbolResultSnapshot`，结果 quick panel 会记录 typed symbols 与 placeholder；新增 `lsp.show_last_symbols` command palette / Go 菜单入口，可重新打开最近一次 symbols 结果。阶段 91 已补 bounded in-memory history，阶段 93 已补 workspace symbol 增量查询；后续仍缺完整持久 Outline/Symbols panel 和更深 result lifecycle。
 - 2026-08-02 阶段 73 已完成：Rust `editor-core-ui`、C ABI 和 Swift `EditorUI` 新增 code lens view-point hit-test API，可从 above-line virtual text 精确返回原始 `CodeLens` JSON payload；`EditorCoreSkiaView` 新增 Cmd-click code lens host hook，AttoEditor 会解析命中的 lens 并复用现有 resolve / `workspace/executeCommand` 路径执行。测试覆盖 Rust FFI hit-test、Swift FFI hit-test 和 AppKit mouse event 的 Cmd-click 行为。阶段 94 已补当前行键盘定位命令，阶段 97 已补自动辅助刷新消费和状态栏数量反馈；后续仍缺通用 workspace command typed model。
 - 2026-08-02 阶段 74 已完成：把超长 crate root 拆成 module，保持原有行为和 ABI 不变。`editor-core-ui` 拆出 `editor_ui.rs` / `tests.rs`，`editor-core-ui-ffi` 拆出 `editor_ui_abi.rs` / `tests.rs`，`editor-core-render-skia` 拆出 `tests.rs`，`editor-core-ffi` 拆出 `json_bridge.rs`；原四个 `lib.rs` 总行数从 28161 降到 8327。已验证 `cargo build -p editor-core-ui -p editor-core-ui-ffi -p editor-core-render-skia -p editor-core-ffi`、四个相关 Rust 测试目标和 Swift FFI smoke。
@@ -193,6 +193,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 111 已完成：AttoEditor keymap 解析扩展 Sublime 风格键名和 context operator。键名新增字面 `+`、命名标点、forward delete / insert / begin / clear / help 等 token；context 新增 `regex_contains` / `not_regex_contains`，并让 `regex_match` / `not_regex_match` 按整串匹配语义与 contains 区分。测试覆盖扩展键名、function-key display text、缺失 context 不匹配、整串 regex match 和 contains/not-contains 差异。
 - 2026-08-02 阶段 112 已完成：AttoEditor keymap context resolver 支持 Sublime 风格 `match_all` 多值上下文语义。`AttoKeymapContextValue` 新增 list 值，condition 在 list 上默认 any-match，`match_all: true` 时要求所有值都匹配；测试覆盖多 selection 风格的 `selection_empty` 和 selector regex 条件。
 - 2026-08-02 阶段 113 已完成：AttoEditor App key-down dispatcher 现在会按 active editor 状态动态解析 keymap context，而不是只使用启动时空 context 的缓存结果。运行时 context 注入 `has_active_editor`、`selection_empty`、`num_selections`、`has_multiple_selections`、`selector`、`syntax`、`file_name`、`file_extension`、dirty/tab/pane 摘要；local key monitor 现在可按当前 context 触发单键 binding 和 chord，并使用同一动态 keymap 的 `args`。测试覆盖无 active editor 不命中、active `.swift` 非空选区命中、selector/file extension context 和动态 args 执行。
+- 2026-08-02 阶段 114 已完成：AttoEditor 新增持久在线的 LSP Locations/References panel，和一次性 quick panel 分离。location/reference 结果现在会记录到可重复显示的 `AttoLspLocationPanelController`，panel 带过滤框、稳定 accessibility identifiers、可在打开状态下随新结果更新，并通过 `lsp.show_locations_panel` command / Go 菜单入口重新打开最后结果；测试覆盖 command 注册、panel identifiers/filtering、快照保持和新结果自动刷新。
 
 ## 分层结论
 
@@ -299,7 +300,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 
 仍缺产品化、结果 UI 或仍只停留在 raw API 的 LSP 能力：
 
-- definition/declaration/type definition/implementation/references 多结果已有统一 quick panel，展示 item model、稳定排序、最近结果 snapshot、reopen command 和 bounded in-memory history command 已完成；仍缺完整持久 locations/references result panel 和更深层 result lifecycle model。
+- definition/declaration/type definition/implementation/references 多结果已有统一 quick panel，展示 item model、稳定排序、最近结果 snapshot、reopen command、bounded in-memory history command 和基础持久在线 Locations/References panel；仍缺更深层 result lifecycle model、项目级归属和更完整刷新/过期策略。
 - completion popup 主路径、commit-time completion resolve、rich documentation/detail preview、commitCharacters 提交行为、server triggerCharacters 自动触发、本地增量过滤、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用，以及打开 tab / 本地未打开文件 resource operations 已有；仍缺 core workspace-owned 跨文件事务和完整 typed result model。
 - signature help popup 主路径已有，并会按 server trigger/retrigger characters 自动弹出，active parameter 富格式高亮、typed result model 和手动请求空/错反馈已完成。
 - rename 主路径已有 App 输入 UI、prepareRename range/placeholder 默认名、当前文档 WorkspaceEdit 应用、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用，以及打开 tab / 本地未打开文件 resource operations；仍缺 core workspace-owned 跨文件事务和 typed result model。
@@ -316,7 +317,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - document color / color presentation raw request/take 已有；App 层 `lsp.document_colors` 主路径、色块 quick panel、直接 color picker、color presentation apply 和 typed parser 已完成；仍缺持久颜色面板、多文档/workspace 颜色聚合和更完整 result lifecycle model。
 - call hierarchy raw request/take、基础 App 命令、prepare root 选择、incoming/outgoing quick panel 导航和 typed parser 已有；仍缺树状 hierarchy 持久面板、层级展开/刷新、跨文件结果聚合和更完整 result lifecycle model。
 - type hierarchy raw request/take、基础 App 命令、prepare root 选择、supertypes/subtypes quick panel 导航和 typed parser 已有；仍缺树状 hierarchy 持久面板、层级展开/刷新、跨文件结果聚合和更完整 result lifecycle model。
-- references/locations 结果列表 UI。
+- references/locations 已有 quick panel、history 和基础持久在线结果 panel；仍缺更深层 result lifecycle model。
 - request cancellation、debounce、超时和错误展示策略。
 
 其中一部分能力在 `EditorCoreFFI.LSPBridge` 中有数据转换函数，但这不等于 AttoEditor 已经有完整产品路径。完整路径至少需要：
@@ -594,7 +595,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 - completion commit-time resolve、rich documentation/detail preview、commitCharacters 提交行为、server triggerCharacters 自动触发、本地增量过滤、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用和打开 tab / 本地未打开文件 resource operations 已完成；仍缺 core workspace-owned 跨文件事务和更完整 typed result model。
 - signature help server trigger/retrigger characters 自动触发、active parameter 富格式高亮、typed result model 和手动请求空/错反馈已完成。
-- references/implementation/declaration/type definition 多结果 quick panel 已统一，展示 item model、稳定排序、最近结果 snapshot、reopen command 和 bounded in-memory history command 已完成；仍缺持久 locations/references result panel 和更深层 result lifecycle model。
+- references/implementation/declaration/type definition 多结果 quick panel 已统一，展示 item model、稳定排序、最近结果 snapshot、reopen command、bounded in-memory history command 和基础持久在线 Locations/References panel；仍缺更深层 result lifecycle model、项目级归属和更完整刷新/过期策略。
 - rename prepareRename range/placeholder、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用和打开 tab / 本地未打开文件 resource operations 已产品化；仍缺 core workspace-owned 跨文件事务和 typed result model。
 - code action typed diagnostics context、kind/filter、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用、打开 tab / 本地未打开文件 resource operations 和 command payload 执行结果/错误展示已完成；仍缺 core workspace-owned 跨文件事务和 typed result model。
 - document/workspace symbols 基础错误/超时/空结果反馈、最近结果 snapshot、reopen command、bounded in-memory history command、workspace symbols 增量查询面板和 kind 分组/稳定排序已完成；仍缺持久 Outline/Symbols 面板和更深 result lifecycle model。

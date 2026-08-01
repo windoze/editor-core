@@ -91,6 +91,14 @@ enum AttoAccessibilityID {
     static let completionRow = "AttoEditor.Completion.Row"
     static let completionRowTitle = "AttoEditor.Completion.RowTitle"
 
+    static let lspLocationPanel = "AttoEditor.LSP.LocationPanel.Panel"
+    static let lspLocationPanelRoot = "AttoEditor.LSP.LocationPanel.Root"
+    static let lspLocationPanelSearchField = "AttoEditor.LSP.LocationPanel.SearchField"
+    static let lspLocationPanelTable = "AttoEditor.LSP.LocationPanel.Table"
+    static let lspLocationPanelScrollView = "AttoEditor.LSP.LocationPanel.ScrollView"
+    static let lspLocationPanelRow = "AttoEditor.LSP.LocationPanel.Row"
+    static let lspLocationPanelRowTitle = "AttoEditor.LSP.LocationPanel.RowTitle"
+
     static func commandMenuItem(_ commandID: String) -> String {
         "AttoCommand.\(commandID)"
     }
@@ -127,4 +135,3 @@ enum AttoAccessibilityID {
         "\(prefix).RowTitle"
     }
 }
-

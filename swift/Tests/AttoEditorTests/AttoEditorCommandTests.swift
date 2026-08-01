@@ -53,6 +53,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.find_references"))
         XCTAssertTrue(ids.contains("lsp.show_last_locations"))
         XCTAssertTrue(ids.contains("lsp.show_location_history"))
+        XCTAssertTrue(ids.contains("lsp.show_locations_panel"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_incoming"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_outgoing"))
         XCTAssertTrue(ids.contains("lsp.type_hierarchy_supertypes"))
@@ -1096,6 +1097,29 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(snapshot.kind, .implementation)
         XCTAssertEqual(snapshot.items.count, 2)
 
+        XCTAssertTrue(vc.showLspLocationPanel())
+        let persistentPanel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.lspLocationPanel
+        })
+        XCTAssertEqual(persistentPanel.title, "Implementations (2)")
+        let persistentRoot = try XCTUnwrap(persistentPanel.contentView)
+        let persistentSearchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.lspLocationPanelSearchField,
+                in: persistentRoot
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(persistentSearchField.placeholderString, "Filter implementations...")
+        let persistentTable = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.lspLocationPanelTable,
+                in: persistentRoot
+            ) as? NSTableView
+        )
+        XCTAssertEqual(persistentTable.numberOfRows, 2)
+        XCTAssertEqual(vc._lspLocationPanelSnapshotForTesting(), snapshot)
+        XCTAssertTrue(vc._lspLocationPanelIsVisibleForTesting())
+
         panel.close()
         XCTAssertTrue(vc.showLastLspLocationResults())
 
@@ -1122,6 +1146,9 @@ final class AttoEditorCommandTests: XCTestCase {
         }
         """, kind: .definition))
         XCTAssertEqual(vc._lspLocationResultHistoryForTesting().map(\.kind), [.implementation, .definition])
+        let updatedPanelSnapshot = try XCTUnwrap(vc._lspLocationPanelSnapshotForTesting())
+        XCTAssertEqual(updatedPanelSnapshot.kind, .definition)
+        XCTAssertEqual(vc._lspLocationPanelRowCountForTesting(), 1)
 
         XCTAssertTrue(vc.showLspLocationHistory())
         let historyPanel = try XCTUnwrap(window.childWindows?.first {
