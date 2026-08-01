@@ -115,35 +115,13 @@ final class AttoEditorAreaViewController: NSViewController {
         let item: AttoLspCodeActionParser.Item
     }
 
-    private struct WorkspaceEditApplyResult {
-        let applied: Bool
-        let skippedURIs: [String]
-
-        init(json: String) {
-            guard let data = json.data(using: .utf8),
-                  let obj = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any]
-            else {
-                applied = false
-                skippedURIs = []
-                return
-            }
-
-            if let v = obj["applied"] as? Bool {
-                applied = v
-            } else if let v = obj["applied"] as? NSNumber {
-                applied = v.boolValue
-            } else {
-                applied = false
-            }
-            skippedURIs = obj["skipped_uris"] as? [String] ?? []
-        }
-    }
-
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
     private var hoverPopover: NSPopover?
     private var hoverPopoverLabel: NSTextField?
+    private var workspaceEditPopover: NSPopover?
+    private var workspaceEditPopoverLabel: NSTextField?
 
     private var definitionContext: DefinitionRequestContext?
     private var definitionPollTimer: DispatchSourceTimer?
@@ -2998,8 +2976,9 @@ final class AttoEditorAreaViewController: NSViewController {
                 workspaceEditJSON,
                 documentURI: targetURI
             )
-            let result = WorkspaceEditApplyResult(json: resultJSON)
+            let result = AttoWorkspaceEditApplyResult(json: resultJSON)
             guard result.applied else {
+                showWorkspaceEditSummaryIfNeeded(result, editorView: tab.editCore.editorView)
                 if result.skippedURIs.isEmpty == false {
                     NSLog(
                         "AttoEditor: WorkspaceEdit did not target active document; skipped URIs: %@",
@@ -3024,12 +3003,21 @@ final class AttoEditorAreaViewController: NSViewController {
             tab.editCore.needsDisplay = true
             handleTabDidMutateDocumentText(tabID: tab.id)
             updateStatusBar()
+            showWorkspaceEditSummaryIfNeeded(result, editorView: tab.editCore.editorView)
             view.window?.makeFirstResponder(tab.editCore.editorView)
             return true
         } catch {
             NSSound.beep()
             return false
         }
+    }
+
+    private func showWorkspaceEditSummaryIfNeeded(
+        _ result: AttoWorkspaceEditApplyResult,
+        editorView: EditorCoreSkiaView
+    ) {
+        guard let text = AttoWorkspaceEditApplyResult.displayText(for: result) else { return }
+        showWorkspaceEditPopover(text: text, in: editorView)
     }
 
     private func startRenamePreparePollTimer(tabID: UUID) {
@@ -3525,6 +3513,53 @@ final class AttoEditorAreaViewController: NSViewController {
             popover.performClose(nil)
         }
         popover.show(relativeTo: rect, of: editorView, preferredEdge: .maxY)
+    }
+
+    private func showWorkspaceEditPopover(text: String, in editorView: EditorCoreSkiaView) {
+        guard editorView.window != nil else { return }
+
+        let popover: NSPopover
+        if let existing = workspaceEditPopover {
+            popover = existing
+        } else {
+            let p = NSPopover()
+            p.behavior = .transient
+            p.animates = true
+
+            let vc = NSViewController()
+            let effect = NSVisualEffectView(frame: .zero)
+            effect.material = .hudWindow
+            effect.blendingMode = .withinWindow
+            effect.state = .active
+            effect.translatesAutoresizingMaskIntoConstraints = false
+
+            let label = NSTextField(wrappingLabelWithString: "")
+            label.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+            label.textColor = NSColor.labelColor
+            label.translatesAutoresizingMaskIntoConstraints = false
+
+            effect.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 10),
+                label.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -10),
+                label.topAnchor.constraint(equalTo: effect.topAnchor, constant: 8),
+                label.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -8),
+            ])
+
+            vc.view = effect
+            p.contentViewController = vc
+            workspaceEditPopover = p
+            workspaceEditPopoverLabel = label
+            popover = p
+        }
+
+        workspaceEditPopoverLabel?.stringValue = text
+        popover.contentSize = preferredHoverPopoverSize(text: text, font: workspaceEditPopoverLabel?.font)
+
+        if popover.isShown {
+            popover.performClose(nil)
+        }
+        popover.show(relativeTo: caretAnchorRect(in: editorView), of: editorView, preferredEdge: .maxY)
     }
 
     private func preferredHoverPopoverSize(text: String, font: NSFont?) -> NSSize {
