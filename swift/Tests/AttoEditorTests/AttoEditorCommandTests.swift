@@ -19,6 +19,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.move_lines_down"))
         XCTAssertTrue(ids.contains("editor.join_lines"))
         XCTAssertTrue(ids.contains("editor.split_line"))
+        XCTAssertTrue(ids.contains("editor.snippet_next_placeholder"))
+        XCTAssertTrue(ids.contains("editor.snippet_prev_placeholder"))
         XCTAssertTrue(ids.contains("editor.toggle_line_comment"))
         XCTAssertTrue(ids.contains("editor.fold_selection"))
         XCTAssertTrue(ids.contains("editor.unfold"))
@@ -123,6 +125,8 @@ final class AttoEditorCommandTests: XCTestCase {
 
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_document", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_selection", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.snippet_next_placeholder", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.snippet_prev_placeholder", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.focus_next_pane", in: menu))

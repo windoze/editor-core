@@ -106,6 +106,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 25 已完成：AttoEditor 新增 `AttoWorkspaceEditApplyResult` typed summary，消费 Swift UI binding 返回的 `applied_uri` / `applied_edit_count` / `skipped_uris` / `documents`，rename/code action/completion 当前文档 WorkspaceEdit 应用后会在存在跨文件 skipped URI 时显示 HUD 摘要；WorkspaceEdit 完全不命中 active document 时也会显示受影响文件摘要后保持不应用。
 - 2026-08-01 阶段 26 已完成：AttoEditor code action 请求不再固定发送空 `diagnostics` context；新增 `AttoLspCodeActionContext`，从 Swift UI `diagnosticsJSON()` 读取当前 buffer diagnostics，按 code action selection/caret range 过滤，把 core char-offset range 转成 LSP UTF-16 `Diagnostic.range`，并保留 severity/code/source/message/relatedInformation/data 后发送给 `textDocument/codeAction`。
 - 2026-08-01 阶段 27 已完成：AttoEditor code action 主路径新增 kind/filter 产品化入口；`lsp.quick_fix`、`lsp.refactor`、`lsp.source_actions`、`lsp.organize_imports`、`lsp.fix_all` 已接入 command palette 和 Go 菜单，请求时发送 LSP `CodeActionContext.only`，响应后再按 `kind` 精确或前缀匹配做客户端过滤。
+- 2026-08-01 阶段 28 已完成：AttoEditor 为 snippet placeholder navigation 新增显式 App command id：`editor.snippet_next_placeholder` / `editor.snippet_prev_placeholder`，通过现有 UI JSON command dispatcher 调用 `snippet_next_placeholder` / `snippet_prev_placeholder`，并接入 command palette、Edit 菜单和命令注册测试；Tab/Backtab 仍保留为文本系统主路径。
 
 ## 分层结论
 
@@ -148,7 +149,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | `TypeChar` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `typeChar(_:)`，`insertText` 单字符也会在 Rust UI 内部走 typing 路径 | 仍缺 App command id；headless FFI 覆盖仍不一致。 |
 | `ReplaceCoalescingUndo` / `ReplaceCoalescingUndoWithSelection` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `replaceCoalescingUndo` / `replaceCoalescingUndoWithSelection`；IME/marked text 路径内部也使用相关语义 | headless FFI 覆盖仍不一致。 |
 | `ApplySnippet` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `applySnippet`；Tab/Backtab 可在 snippet active 时切 placeholder；completion popup 可应用 snippet item | headless FFI 覆盖仍不一致。 |
-| `SnippetNextPlaceholder` / `SnippetPrevPlaceholder` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `snippetNextPlaceholder` / `snippetPrevPlaceholder`，`insertTab` / `insertBacktab` 也内部支持 | 仍缺显式 App command；当前主要由 Tab/Backtab 主路径触发。 |
+| `SnippetNextPlaceholder` / `SnippetPrevPlaceholder` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `snippetNextPlaceholder` / `snippetPrevPlaceholder`，`insertTab` / `insertBacktab` 也内部支持；AttoEditor command palette 和菜单有 `editor.snippet_next_placeholder` / `editor.snippet_prev_placeholder` | App 显式 command 已补齐；headless FFI 覆盖仍不一致。 |
 | duplicate lines | 有 | 有 | Swift 有 typed `duplicateLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.duplicate_lines` | P0 接线完成；仍缺启用/禁用状态模型。 |
 | delete lines | 有 | 有 | Swift 有 typed `deleteLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.delete_lines` | P0 接线完成；仍缺启用/禁用状态模型。 |
 | move lines up/down | 有 | 有 | Swift 有 typed `moveLinesUp()` / `moveLinesDown()`；AttoEditor command palette、菜单有 `editor.move_lines_up/down` | P0 菜单接线完成；默认 keymap 仍未给 arrow-key 形式建模。 |
@@ -452,6 +453,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：通过 `executeCommandJSON(_:)` 暴露 duplicate/delete/move lines、join/split line、toggle comment、fold/unfold、wrap mode、wrap indent、indentation config。
 - 已完成：通过 `executeCommandJSON(_:)` 暴露 general `applyTextEdits`。
 - 已完成：通过 `executeCommandJSON(_:)` 暴露 `applySnippet` 和 snippet placeholder navigation。
+- 已完成：AttoEditor 为 snippet placeholder navigation 建立显式 command id，并接入 command palette 和 Edit 菜单。
 - 已完成：AttoEditor command palette 为一批 Sublime 基础编辑命令建立稳定 command id。
 - 已完成：为高频命令补 typed Swift convenience API。
 - 已完成：把 App command id 统一接入主菜单和初步用户可配置 keymap。
@@ -505,7 +507,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | duplicate line | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
-| apply snippet | yes | no | yes | yes, via JSON | yes, typed + JSON | partial, Tab/Backtab placeholder path only | yes |
+| apply snippet | yes | no | yes | yes, via JSON | yes, typed + JSON | partial, completion apply + Tab/Backtab placeholder path + explicit placeholder commands; no generic apply-snippet command | yes |
 | LSP completion | yes | partial helper | yes | yes, raw completion + resolve result | yes, raw completion + resolve result | yes, popup + auto trigger + incremental filter + commit-time resolve/current-doc apply | partial |
 | LSP symbols | yes | partial helper | yes | yes, raw JSON result | yes, raw JSON result | yes, document/workspace symbols quick panels | yes |
 | LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, prepareRename seed + input UI + menu/keymap + current-doc apply | partial |

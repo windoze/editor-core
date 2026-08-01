@@ -49,6 +49,8 @@ enum AttoMainMenuBuilder {
         editMenu.addItem(commandItem(title: "Indent", commandID: "editor.indent", appDelegate: appDelegate))
         editMenu.addItem(commandItem(title: "Outdent", commandID: "editor.outdent", appDelegate: appDelegate))
         editMenu.addItem(commandItem(title: "Delete to Previous Tab Stop", commandID: "editor.delete_to_prev_tab_stop", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Snippet Next Placeholder", commandID: "editor.snippet_next_placeholder", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Snippet Previous Placeholder", commandID: "editor.snippet_prev_placeholder", appDelegate: appDelegate))
         editMenu.addItem(commandItem(title: "Toggle Line Comment", commandID: "editor.toggle_line_comment", appDelegate: appDelegate))
 
         let viewMenuItem = NSMenuItem()
