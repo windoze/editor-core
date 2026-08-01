@@ -80,6 +80,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private struct SignatureHelpRequestContext {
         let tabID: UUID
+        let showEmptyResults: Bool
     }
 
     private struct CompletionRequestContext {
@@ -3035,21 +3036,27 @@ final class AttoEditorAreaViewController: NSViewController {
             return
         }
 
-        _ = showSignatureHelpInActiveTab(beepOnFailure: false)
+        _ = showSignatureHelpInActiveTab(beepOnFailure: false, showEmptyResults: false)
     }
 
     @discardableResult
     func showSignatureHelpInActiveTab() -> Bool {
-        showSignatureHelpInActiveTab(beepOnFailure: true)
+        showSignatureHelpInActiveTab(beepOnFailure: true, showEmptyResults: true)
     }
 
     @discardableResult
-    private func showSignatureHelpInActiveTab(beepOnFailure: Bool) -> Bool {
+    private func showSignatureHelpInActiveTab(beepOnFailure: Bool, showEmptyResults: Bool) -> Bool {
         guard let tab = activeTab else {
             if beepOnFailure { NSSound.beep() }
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showEmptyResults {
+                showSignatureHelpPopover(
+                    display: AttoLspSignatureHelpFormatter.messageDisplay("Signature help is unavailable.\nLSP is not enabled for this document."),
+                    in: tab.editCore.editorView
+                )
+            }
             if beepOnFailure { NSSound.beep() }
             return false
         }
@@ -3069,11 +3076,20 @@ final class AttoEditorAreaViewController: NSViewController {
                 logicalColumn: pos.column
             )
         } catch {
+            if showEmptyResults {
+                showSignatureHelpPopover(
+                    display: AttoLspSignatureHelpFormatter.messageDisplay("Signature help request failed.\n\(error.localizedDescription)"),
+                    in: tab.editCore.editorView
+                )
+            }
             if beepOnFailure { NSSound.beep() }
             return false
         }
 
-        signatureHelpContext = SignatureHelpRequestContext(tabID: tab.id)
+        signatureHelpContext = SignatureHelpRequestContext(
+            tabID: tab.id,
+            showEmptyResults: showEmptyResults
+        )
         startSignatureHelpPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
         return true
     }
@@ -3092,7 +3108,14 @@ final class AttoEditorAreaViewController: NSViewController {
             }
 
             if remainingTicks <= 0 {
+                let showEmptyResults = ctx.showEmptyResults
                 self.cancelSignatureHelpUI()
+                if showEmptyResults {
+                    self.showSignatureHelpPopover(
+                        display: AttoLspSignatureHelpFormatter.messageDisplay("Signature help timed out."),
+                        in: editorView
+                    )
+                }
                 return
             }
             remainingTicks -= 1
@@ -3106,11 +3129,21 @@ final class AttoEditorAreaViewController: NSViewController {
             do {
                 json = try tab.editCore.editor.lspTakeLastSignatureHelpResultJSON()
             } catch {
+                let showEmptyResults = ctx.showEmptyResults
+                self.cancelSignatureHelpUI()
+                if showEmptyResults {
+                    self.showSignatureHelpPopover(
+                        display: AttoLspSignatureHelpFormatter.messageDisplay("Signature help failed.\n\(error.localizedDescription)"),
+                        in: editorView
+                    )
+                }
+                timer.cancel()
                 return
             }
             guard let json else { return }
 
             let display = AttoLspSignatureHelpFormatter.display(fromSignatureHelpResultJSON: json)
+                ?? (ctx.showEmptyResults ? AttoLspSignatureHelpFormatter.messageDisplay("No signature help is available here.") : nil)
             self.cancelSignatureHelpUI()
             self.showSignatureHelpPopover(display: display, in: editorView)
             timer.cancel()

@@ -1,6 +1,28 @@
 import Foundation
 
 enum AttoLspSignatureHelpFormatter {
+    struct SignatureHelp {
+        let signatures: [Signature]
+        let activeSignature: Int
+        let activeParameter: Int?
+    }
+
+    struct Signature {
+        let label: String
+        let documentation: String?
+        let parameters: [Parameter]
+        let activeParameter: Int?
+    }
+
+    struct Parameter {
+        let label: ParameterLabel
+    }
+
+    enum ParameterLabel: Equatable {
+        case string(String)
+        case utf16Range(NSRange)
+    }
+
     struct Display {
         let text: String
         let activeParameterRanges: [NSRange]
@@ -11,6 +33,11 @@ enum AttoLspSignatureHelpFormatter {
     }
 
     static func display(fromSignatureHelpResultJSON json: String) -> Display? {
+        guard let help = parse(fromSignatureHelpResultJSON: json) else { return nil }
+        return display(from: help)
+    }
+
+    static func parse(fromSignatureHelpResultJSON json: String) -> SignatureHelp? {
         guard let data = json.data(using: .utf8) else { return nil }
         guard let root = try? JSONSerialization.jsonObject(with: data, options: []) else { return nil }
         guard !(root is NSNull) else { return nil }
@@ -19,18 +46,33 @@ enum AttoLspSignatureHelpFormatter {
             return nil
         }
 
-        let activeSignature = clamp(
-            intValue(dict["activeSignature"]) ?? 0,
-            lower: 0,
-            upper: signatures.count - 1
+        let parsedSignatures = signatures.compactMap(parseSignature(_:))
+        guard parsedSignatures.isEmpty == false else { return nil }
+        return SignatureHelp(
+            signatures: parsedSignatures,
+            activeSignature: clamp(
+                intValue(dict["activeSignature"]) ?? 0,
+                lower: 0,
+                upper: parsedSignatures.count - 1
+            ),
+            activeParameter: intValue(dict["activeParameter"])
         )
-        let sig = signatures[activeSignature]
-        guard let label = sig["label"] as? String, label.isEmpty == false else { return nil }
+    }
+
+    static func display(from help: SignatureHelp) -> Display? {
+        guard help.signatures.isEmpty == false else { return nil }
+        let activeSignature = clamp(
+            help.activeSignature,
+            lower: 0,
+            upper: help.signatures.count - 1
+        )
+        let sig = help.signatures[activeSignature]
+        let label = sig.label
 
         var text = label
         var activeParameterRanges: [NSRange] = []
 
-        if let activeParam = activeParameterDisplay(signature: sig, help: dict) {
+        if let activeParam = activeParameterDisplay(signature: sig, help: help) {
             if let signatureRange = activeParam.signatureRange {
                 activeParameterRanges.append(signatureRange)
             }
@@ -44,11 +86,15 @@ enum AttoLspSignatureHelpFormatter {
             ))
         }
 
-        if let documentation = markdownText(sig["documentation"]) {
+        if let documentation = sig.documentation {
             text += "\n\n\(documentation)"
         }
 
         return Display(text: text, activeParameterRanges: activeParameterRanges)
+    }
+
+    static func messageDisplay(_ message: String) -> Display {
+        Display(text: message, activeParameterRanges: [])
     }
 
     private struct ParameterDisplay {
@@ -56,34 +102,61 @@ enum AttoLspSignatureHelpFormatter {
         let signatureRange: NSRange?
     }
 
-    private static func activeParameterDisplay(signature sig: [String: Any], help: [String: Any]) -> ParameterDisplay? {
-        guard let params = sig["parameters"] as? [[String: Any]], params.isEmpty == false else {
+    private static func activeParameterDisplay(signature sig: Signature, help: SignatureHelp) -> ParameterDisplay? {
+        guard sig.parameters.isEmpty == false else {
             return nil
         }
 
         let idx = clamp(
-            intValue(sig["activeParameter"]) ?? intValue(help["activeParameter"]) ?? 0,
+            sig.activeParameter ?? help.activeParameter ?? 0,
             lower: 0,
-            upper: params.count - 1
+            upper: sig.parameters.count - 1
         )
-        let param = params[idx]
+        let param = sig.parameters[idx]
 
-        if let label = param["label"] as? String, label.isEmpty == false {
-            let signatureRange = (sig["label"] as? String)
-                .flatMap { sigLabel in sigLabel.range(of: label).map { NSRange($0, in: sigLabel) } }
+        switch param.label {
+        case let .string(label):
+            let signatureRange = sig.label.range(of: label).map { NSRange($0, in: sig.label) }
             return ParameterDisplay(text: label, signatureRange: signatureRange)
+        case let .utf16Range(range):
+            guard let substring = substringUTF16(
+                sig.label,
+                start: range.location,
+                end: range.location + range.length
+            ) else { return nil }
+            return ParameterDisplay(text: substring.text, signatureRange: substring.range)
         }
+    }
 
-        if let range = param["label"] as? [Any],
+    private static func parseSignature(_ dict: [String: Any]) -> Signature? {
+        guard let label = dict["label"] as? String, label.isEmpty == false else { return nil }
+        let parameters = (dict["parameters"] as? [[String: Any]] ?? [])
+            .compactMap(parseParameter(_:))
+        return Signature(
+            label: label,
+            documentation: markdownText(dict["documentation"]),
+            parameters: parameters,
+            activeParameter: intValue(dict["activeParameter"])
+        )
+    }
+
+    private static func parseParameter(_ dict: [String: Any]) -> Parameter? {
+        guard let label = parameterLabel(dict["label"]) else { return nil }
+        return Parameter(label: label)
+    }
+
+    private static func parameterLabel(_ any: Any?) -> ParameterLabel? {
+        if let label = any as? String, label.isEmpty == false {
+            return .string(label)
+        }
+        if let range = any as? [Any],
            range.count == 2,
            let start = intValue(range[0]),
            let end = intValue(range[1]),
-           let sigLabel = sig["label"] as? String
+           end > start
         {
-            guard let substring = substringUTF16(sigLabel, start: start, end: end) else { return nil }
-            return ParameterDisplay(text: substring.text, signatureRange: substring.range)
+            return .utf16Range(NSRange(location: start, length: end - start))
         }
-
         return nil
     }
 

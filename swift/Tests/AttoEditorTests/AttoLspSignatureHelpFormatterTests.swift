@@ -27,6 +27,15 @@ final class AttoLspSignatureHelpFormatterTests: XCTestCase {
         }
         """
 
+        let model = try XCTUnwrap(AttoLspSignatureHelpFormatter.parse(fromSignatureHelpResultJSON: json))
+        XCTAssertEqual(model.activeSignature, 1)
+        XCTAssertEqual(model.activeParameter, 0)
+        XCTAssertEqual(model.signatures.count, 2)
+        XCTAssertEqual(model.signatures[1].label, "open(path: String, mode: Mode)")
+        XCTAssertEqual(model.signatures[1].documentation, "Open a file.")
+        XCTAssertEqual(model.signatures[1].parameters.count, 2)
+        XCTAssertEqual(model.signatures[1].parameters[0].label, .utf16Range(NSRange(location: 5, length: 12)))
+
         let display = try XCTUnwrap(AttoLspSignatureHelpFormatter.display(fromSignatureHelpResultJSON: json))
         let text = display.text
         XCTAssertTrue(text.contains("open(path: String, mode: Mode)"))
@@ -83,6 +92,14 @@ final class AttoLspSignatureHelpFormatterTests: XCTestCase {
     func testSignatureHelpReturnsNilForNullOrEmptyResult() throws {
         XCTAssertNil(AttoLspSignatureHelpFormatter.displayText(fromSignatureHelpResultJSON: "null"))
         XCTAssertNil(AttoLspSignatureHelpFormatter.displayText(fromSignatureHelpResultJSON: #"{"signatures":[]}"#))
+        XCTAssertNil(AttoLspSignatureHelpFormatter.parse(fromSignatureHelpResultJSON: "null"))
+        XCTAssertNil(AttoLspSignatureHelpFormatter.parse(fromSignatureHelpResultJSON: #"{"signatures":[]}"#))
+    }
+
+    func testSignatureHelpMessageDisplayHasNoHighlightRanges() throws {
+        let display = AttoLspSignatureHelpFormatter.messageDisplay("No signature help is available here.")
+        XCTAssertEqual(display.text, "No signature help is available here.")
+        XCTAssertTrue(display.activeParameterRanges.isEmpty)
     }
 
     func testSignatureHelpTriggerUsesServerDeclaredCharacters() throws {
