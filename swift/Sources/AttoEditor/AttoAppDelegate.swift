@@ -785,6 +785,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.problems", title: "LSP: Problems") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showProblemsInActiveTab()
             },
+            .init(id: "lsp.show_problems_panel", title: "LSP: Show Problems Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showProblemsPanelInActiveTab()
+            },
             .init(id: "lsp.workspace_diagnostics", title: "LSP: Workspace Diagnostics") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showWorkspaceDiagnosticsInActiveTab()
             },

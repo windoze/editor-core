@@ -54,6 +54,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.show_last_locations"))
         XCTAssertTrue(ids.contains("lsp.show_location_history"))
         XCTAssertTrue(ids.contains("lsp.show_locations_panel"))
+        XCTAssertTrue(ids.contains("lsp.show_problems_panel"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_incoming"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_outgoing"))
         XCTAssertTrue(ids.contains("lsp.type_hierarchy_supertypes"))
@@ -983,6 +984,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.find_references", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_locations", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_location_history", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_problems_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.call_hierarchy_incoming", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.call_hierarchy_outgoing", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.type_hierarchy_supertypes", in: menu))
@@ -2202,6 +2204,90 @@ final class AttoEditorCommandTests: XCTestCase {
         let offsets = try editorView.editor.selectionOffsets()
         XCTAssertEqual(offsets.start, 5)
         XCTAssertEqual(offsets.end, 6)
+    }
+
+    func testProblemsPanelUsesDerivedDiagnosticsAndRefreshesWithStatusUpdate() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("problems-panel.txt")
+        try "abc\ndef\nghi\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.lspApplyDiagnosticsJSON("""
+        {
+          "uri": "\(fileURL.absoluteString)",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 3 }
+              },
+              "severity": 1,
+              "source": "unit-test",
+              "message": "first line problem"
+            },
+            {
+              "range": {
+                "start": { "line": 1, "character": 1 },
+                "end": { "line": 1, "character": 2 }
+              },
+              "severity": 2,
+              "source": "unit-test",
+              "message": "second line warning"
+            }
+          ],
+          "version": 1
+        }
+        """)
+
+        XCTAssertTrue(vc.showProblemsPanelInActiveTab())
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.problemsPanel
+        })
+        XCTAssertEqual(panel.title, "Problems (2)")
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.problemsPanelSearchField, in: root) as? NSSearchField
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter problems...")
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.problemsPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertEqual(table.numberOfRows, 2)
+        XCTAssertEqual(vc._problemsPanelDiagnosticsForTesting().map(\.message), [
+            "first line problem",
+            "second line warning",
+        ])
+        XCTAssertTrue(vc._problemsPanelIsVisibleForTesting())
+
+        try editorView.editor.lspApplyDiagnosticsJSON("""
+        {
+          "uri": "\(fileURL.absoluteString)",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 2, "character": 0 },
+                "end": { "line": 2, "character": 3 }
+              },
+              "severity": 1,
+              "source": "unit-test",
+              "message": "third line problem"
+            }
+          ],
+          "version": 2
+        }
+        """)
+        vc._updateStatusBarForTesting()
+        XCTAssertEqual(panel.title, "Problems (1)")
+        XCTAssertEqual(vc._problemsPanelDiagnosticsForTesting().map(\.message), ["third line problem"])
+        XCTAssertEqual(vc._problemsPanelRowCountForTesting(), 1)
     }
 
     func testRenameCandidateUsesSelectionOrIdentifierAtCaret() throws {

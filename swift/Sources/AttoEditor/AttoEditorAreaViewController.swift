@@ -173,6 +173,18 @@ final class AttoEditorAreaViewController: NSViewController {
         lspSymbolResultHistory
     }
 
+    func _problemsPanelDiagnosticsForTesting() -> [EcuDiagnostic] {
+        problemsPanelController?.currentDiagnostics ?? []
+    }
+
+    func _problemsPanelRowCountForTesting() -> Int {
+        problemsPanelController?.rowCount ?? 0
+    }
+
+    func _problemsPanelIsVisibleForTesting() -> Bool {
+        problemsPanelController?.isVisible == true
+    }
+
     func _coreMultiDocumentSnapshotForTesting() throws -> EcuMultiDocumentSnapshot? {
         try coreDocuments?.snapshot()
     }
@@ -525,6 +537,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private var hierarchyChildrenPollTimer: DispatchSourceTimer?
     private var hierarchyResultsController: AttoCommandPaletteController?
     private var problemsResultsController: AttoCommandPaletteController?
+    private var problemsPanelController: AttoProblemsPanelController?
     private var workspaceDiagnosticsContext: WorkspaceDiagnosticsRequestContext?
     private var workspaceDiagnosticsPollTimer: DispatchSourceTimer?
     private var workspaceDiagnosticsResultsController: AttoCommandPaletteController?
@@ -3411,6 +3424,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private func updateStatusBar() {
         guard let tab = activeTab else {
             derivedStateStore.clearActive()
+            problemsPanelController?.update(diagnostics: [])
             statusBarView.update(
                 leftText: transientStatusText,
                 languageId: nil,
@@ -3425,6 +3439,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         let editor = tab.editCore.editor
         derivedStateStore.refreshActive(editor: editor)
+        problemsPanelController?.update(diagnostics: derivedStateStore.active.diagnostics.diagnostics)
 
         let (line1, col1): (UInt32, UInt32) = {
             do {
@@ -5237,6 +5252,49 @@ final class AttoEditorAreaViewController: NSViewController {
         problemsResultsController = controller
         controller.show(relativeTo: window, placeholder: "Filter problems...")
         return true
+    }
+
+    @discardableResult
+    func showProblemsPanelInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        problemsResultsController?.hide()
+        problemsResultsController = nil
+
+        derivedStateStore.refreshActive(editor: tab.editCore.editor)
+        let diagnostics = derivedStateStore.active.diagnostics.diagnostics
+
+        guard let window = view.window else {
+            if let first = diagnostics.first {
+                navigateToDiagnostic(first, in: tab)
+                return true
+            }
+            NSSound.beep()
+            return false
+        }
+
+        let controller = problemsPanelController ?? AttoProblemsPanelController(
+            titleForDiagnostic: { [weak self] diagnostic in
+                guard let self, let tab = self.activeTab else { return diagnostic.message }
+                return self.displayTitle(for: diagnostic, in: tab)
+            },
+            onOpen: { [weak self] diagnostic in
+                guard let self, let tab = self.activeTab else { return }
+                self.navigateToDiagnostic(diagnostic, in: tab)
+            }
+        )
+        problemsPanelController = controller
+        return controller.show(relativeTo: window, diagnostics: diagnostics)
     }
 
     private func displayTitle(for diagnostic: EcuDiagnostic, in tab: AttoEditorTab) -> String {
