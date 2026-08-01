@@ -756,6 +756,7 @@ final class AttoEditorAreaViewController: NSViewController {
             )
 
             try configureEditorChrome(pane)
+            applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
             configureEditCoreHooks(pane, tabID: tab.id)
 
             tab.panes.append(pane)
@@ -866,7 +867,10 @@ final class AttoEditorAreaViewController: NSViewController {
             "kind": "edit",
             "op": "toggle_comment",
             "config": [
-                "line": Self.lineCommentToken(for: tab),
+                "line": AttoLanguageConfiguration.lineCommentToken(
+                    fileURL: tab.fileURL,
+                    syntaxLanguageId: tab.syntaxLanguageId
+                ),
             ],
         ])
     }
@@ -1010,23 +1014,6 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
         return (obj["op"] as? String) != "end_undo_group"
-    }
-
-    private static func lineCommentToken(for tab: AttoEditorTab) -> String {
-        let language = tab.syntaxLanguageId?.lowercased()
-        let ext = tab.fileURL.pathExtension.lowercased()
-        switch language ?? ext {
-        case "python", "py", "ruby", "rb", "shell", "bash", "sh", "zsh", "toml", "yaml", "yml", "make":
-            return "#"
-        case "lua":
-            return "--"
-        case "sql":
-            return "--"
-        case "lisp", "clojure", "clj", "scheme", "scm":
-            return ";"
-        default:
-            return "//"
-        }
     }
 
     // MARK: - Find / Replace
@@ -1485,6 +1472,7 @@ final class AttoEditorAreaViewController: NSViewController {
             tab.editCore.editor.treeSitterDisable()
             tab.editCore.editor.sublimeDisable()
             tab.syntaxLanguageId = nil
+            applyLanguageConfiguration(for: tab)
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
             tab.editCore.editorView.needsDisplay = true
@@ -1510,6 +1498,7 @@ final class AttoEditorAreaViewController: NSViewController {
         do {
             try tab.editCore.editor.treeSitterEnableLanguage(lang)
             tab.syntaxLanguageId = lang
+            applyLanguageConfiguration(for: tab)
             tab.editCore.editorView.kickProcessingPoll()
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
@@ -1617,6 +1606,21 @@ final class AttoEditorAreaViewController: NSViewController {
         try editCore.editor.setBracketMatchHighlightsEnabled(true)
     }
 
+    private func applyLanguageConfiguration(for tab: AttoEditorTab) {
+        for editCore in tab.panes {
+            applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: editCore)
+        }
+    }
+
+    private func applyLanguageConfiguration(fileURL: URL, syntaxLanguageId: String?, to editCore: EditCoreUI) {
+        let config = AttoLanguageConfiguration.indentationConfig(fileURL: fileURL, syntaxLanguageId: syntaxLanguageId)
+        do {
+            _ = try editCore.editor.setIndentationConfig(config)
+        } catch {
+            NSLog("AttoEditor: setIndentationConfig failed for %@: %@", fileURL.path, String(describing: error))
+        }
+    }
+
     private func configureEditCoreHooks(_ editCore: EditCoreUI, tabID: UUID) {
         editCore.onDidMutateDocumentText = { [weak self] in
             self?.handleTabDidMutateDocumentText(tabID: tabID)
@@ -1700,6 +1704,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         // Syntax support (best-effort): LSP -> Tree-sitter -> Sublime `.sublime-syntax`.
         let syntaxLanguageId = configureSyntaxSupport(for: url, editCore: editCore)
+        applyLanguageConfiguration(fileURL: url, syntaxLanguageId: syntaxLanguageId, to: editCore)
 
         let tabId = UUID()
         let tab = AttoEditorTab(
@@ -3939,6 +3944,111 @@ private enum AttoLspLanguageId {
         case "md", "markdown": return "markdown"
         default:
             return nil
+        }
+    }
+}
+
+private enum AttoLanguageConfiguration {
+    static func indentationConfig(fileURL: URL, syntaxLanguageId: String?) -> EcuIndentationConfig {
+        let language = languageKey(fileURL: fileURL, syntaxLanguageId: syntaxLanguageId)
+        return EcuIndentationConfig(
+            style: indentStyle(for: language),
+            indentTriggers: indentTriggers(for: language),
+            outdentTriggers: outdentTriggers(for: language)
+        )
+    }
+
+    static func lineCommentToken(fileURL: URL, syntaxLanguageId: String?) -> String {
+        let language = languageKey(fileURL: fileURL, syntaxLanguageId: syntaxLanguageId)
+        switch language {
+        case "python", "ruby", "shell", "bash", "sh", "zsh", "toml", "yaml", "makefile", "make":
+            return "#"
+        case "lua", "sql", "haskell":
+            return "--"
+        case "lisp", "clojure", "scheme":
+            return ";"
+        default:
+            return "//"
+        }
+    }
+
+    private static func languageKey(fileURL: URL, syntaxLanguageId: String?) -> String {
+        if let syntaxLanguageId {
+            let language = syntaxLanguageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if language.isEmpty == false {
+                return normalizeLanguageAlias(language)
+            }
+        }
+
+        let ext = fileURL.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let guessed = AttoLspLanguageId.guess(forExtension: ext) {
+            return normalizeLanguageAlias(guessed.lowercased())
+        }
+        return normalizeLanguageAlias(ext)
+    }
+
+    private static func normalizeLanguageAlias(_ raw: String) -> String {
+        switch raw {
+        case "py":
+            return "python"
+        case "rb":
+            return "ruby"
+        case "js":
+            return "javascript"
+        case "jsx":
+            return "javascriptreact"
+        case "ts":
+            return "typescript"
+        case "tsx":
+            return "typescriptreact"
+        case "yml":
+            return "yaml"
+        case "sh":
+            return "shell"
+        case "zsh":
+            return "shell"
+        case "bash":
+            return "shell"
+        case "clj":
+            return "clojure"
+        case "scm":
+            return "scheme"
+        case "mk", "make":
+            return "makefile"
+        default:
+            return raw
+        }
+    }
+
+    private static func indentStyle(for language: String) -> EcuIndentStyle {
+        switch language {
+        case "go", "makefile":
+            return .tabs
+        case "javascript", "javascriptreact", "typescript", "typescriptreact",
+             "json", "jsonc", "yaml", "html", "css", "scss", "sass", "vue":
+            return .spaces(width: 2)
+        default:
+            return .spaces(width: 4)
+        }
+    }
+
+    private static func indentTriggers(for language: String) -> [String] {
+        switch language {
+        case "python", "ruby", "yaml":
+            return [":"]
+        case "toml", "markdown", "makefile":
+            return []
+        default:
+            return ["{", "[", "(", ":"]
+        }
+    }
+
+    private static func outdentTriggers(for language: String) -> [String] {
+        switch language {
+        case "python", "ruby", "yaml", "toml", "markdown", "makefile":
+            return []
+        default:
+            return ["}", "]", ")"]
         }
     }
 }
