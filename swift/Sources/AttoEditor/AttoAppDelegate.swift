@@ -17,17 +17,21 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var windows: [AttoWindowContext] = []
     private var activeWindowID: UUID?
     private var keyBindings: [String: AttoKeyBinding]
+    private var keyBindingArguments: [String: AttoCommandArguments]
 
     var ipcServer: AttoIpcServer?
     var createDefaultWindowOnLaunch: Bool = true
 
     override init() {
-        self.keyBindings = AttoKeymap.resolvedBindings()
+        let keymap = AttoKeymap.resolvedKeymap()
+        self.keyBindings = keymap.bindings
+        self.keyBindingArguments = keymap.arguments
         super.init()
     }
 
-    init(keyBindings: [String: AttoKeyBinding]) {
+    init(keyBindings: [String: AttoKeyBinding], keyBindingArguments: [String: AttoCommandArguments] = [:]) {
         self.keyBindings = keyBindings
+        self.keyBindingArguments = keyBindingArguments
         super.init()
     }
 
@@ -403,7 +407,11 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             NSSound.beep()
             return
         }
-        executeCommand(id: commandID)
+        if let arguments = keyBindingArguments[commandID] {
+            executeCommand(id: commandID, arguments: arguments)
+        } else {
+            executeCommand(id: commandID)
+        }
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -646,6 +654,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     func _keyBindingForTesting(commandID: String) -> AttoKeyBinding? {
         keyBinding(forCommandID: commandID)
+    }
+
+    func _keyBindingArgumentsForTesting(commandID: String) -> AttoCommandArguments? {
+        keyBindingArguments[commandID]
     }
 
     func _commandIsEnabledForTesting(commandID: String) -> Bool {

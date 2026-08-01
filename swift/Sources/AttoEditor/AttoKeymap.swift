@@ -44,6 +44,7 @@ struct AttoKeymapConflict: Equatable {
 
 struct AttoKeymapResolution: Equatable {
     let bindings: [String: AttoKeyBinding]
+    let arguments: [String: AttoCommandArguments]
     let conflicts: [AttoKeymapConflict]
 }
 
@@ -118,7 +119,7 @@ enum AttoKeymap {
             guard let bindingText = entry.bindingText,
                   let binding = parseBinding(bindingText)
             else { continue }
-            resolver.apply(command: entry.command, binding: binding)
+            resolver.apply(command: entry.command, binding: binding, arguments: entry.args)
         }
         return resolver.resolution()
     }
@@ -133,7 +134,7 @@ enum AttoKeymap {
             guard let bindingText = entry.bindingText,
                   let binding = parseBinding(bindingText)
             else { continue }
-            resolver.apply(command: entry.command, binding: binding)
+            resolver.apply(command: entry.command, binding: binding, arguments: entry.args)
         }
         return resolver.resolution().bindings
     }
@@ -274,10 +275,11 @@ enum AttoKeymap {
 
     private struct BindingResolver {
         private var bindings: [String: AttoKeyBinding] = [:]
+        private var arguments: [String: AttoCommandArguments] = [:]
         private var ownersByBinding: [BindingKey: String] = [:]
         private var conflicts: [AttoKeymapConflict] = []
 
-        mutating func apply(command: String, binding: AttoKeyBinding) {
+        mutating func apply(command: String, binding: AttoKeyBinding, arguments newArguments: AttoCommandArguments? = nil) {
             let bindingKey = BindingKey(binding)
 
             if let oldBinding = bindings[command] {
@@ -289,6 +291,7 @@ enum AttoKeymap {
 
             if let shadowed = ownersByBinding[bindingKey], shadowed != command {
                 bindings.removeValue(forKey: shadowed)
+                arguments.removeValue(forKey: shadowed)
                 conflicts.append(AttoKeymapConflict(
                     binding: binding,
                     keptCommand: command,
@@ -297,11 +300,16 @@ enum AttoKeymap {
             }
 
             bindings[command] = binding
+            if let newArguments {
+                arguments[command] = newArguments
+            } else {
+                arguments.removeValue(forKey: command)
+            }
             ownersByBinding[bindingKey] = command
         }
 
         func resolution() -> AttoKeymapResolution {
-            AttoKeymapResolution(bindings: bindings, conflicts: conflicts)
+            AttoKeymapResolution(bindings: bindings, arguments: arguments, conflicts: conflicts)
         }
     }
 }
@@ -331,6 +339,7 @@ private struct UserKeymapEntry: Decodable {
     var keys: [String]?
     var key: String?
     var command: String
+    var args: AttoCommandArguments?
     var context: [AttoKeymapCondition]?
 
     var bindingText: String? {

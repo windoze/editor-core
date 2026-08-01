@@ -516,6 +516,64 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(conflict.binding, AttoKeymap.parseBinding("cmd+s"))
     }
 
+    func testKeymapArgsRouteThroughMenuCommandExecution() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let keymapURL = tempDir.appendingPathComponent("keymap.json")
+        try """
+        [
+          {
+            "key": "ctrl+g",
+            "command": "go.line",
+            "args": { "line": 2, "column": 3 }
+          },
+          {
+            "key": "cmd+shift+x",
+            "command": "editor.apply_snippet",
+            "args": { "snippet": "X$0", "unknown": { "nested": true } }
+          }
+        ]
+        """.write(to: keymapURL, atomically: true, encoding: .utf8)
+
+        let env = [AttoKeymap.userKeymapEnv: keymapURL.path]
+        let resolution = AttoKeymap.resolvedKeymap(env: env)
+        XCTAssertEqual(resolution.bindings["go.line"], AttoKeymap.parseBinding("ctrl+g"))
+        XCTAssertEqual(
+            resolution.arguments["go.line"],
+            ["line": .integer(2), "column": .integer(3)]
+        )
+        XCTAssertEqual(resolution.arguments["editor.apply_snippet"]?["snippet"], .string("X$0"))
+        XCTAssertEqual(resolution.arguments["editor.apply_snippet"]?["unknown"], .json(#"{"nested":true}"#))
+
+        let delegate = AttoAppDelegate(
+            keyBindings: resolution.bindings,
+            keyBindingArguments: resolution.arguments
+        )
+        XCTAssertEqual(delegate._keyBindingArgumentsForTesting(commandID: "go.line"), [
+            "line": .integer(2),
+            "column": .integer(3),
+        ])
+
+        let fileURL = tempDir.appendingPathComponent("keymap-args.txt")
+        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+
+        let menu = AttoMainMenuBuilder.build(appDelegate: delegate)
+        let goLineItem = try XCTUnwrap(findMenuItem(commandID: "go.line", in: menu))
+        delegate.commandMenuItemClicked(goLineItem)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        let offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 6)
+        XCTAssertEqual(offsets.end, 6)
+    }
+
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
         let delegate = AttoAppDelegate(
             keyBindings: [

@@ -36,6 +36,95 @@ enum AttoCommandArgumentValue: Equatable {
     }
 }
 
+extension AttoCommandArgumentValue: Decodable {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .json("null")
+            return
+        }
+        if let value = try? container.decode(Bool.self) {
+            self = .boolean(value)
+            return
+        }
+        if let value = try? container.decode(Int.self) {
+            self = .integer(value)
+            return
+        }
+        if let value = try? container.decode(Double.self) {
+            self = .number(value)
+            return
+        }
+        if let value = try? container.decode(String.self) {
+            self = .string(value)
+            return
+        }
+
+        let jsonValue = try AttoCommandArgumentJSONValue(from: decoder)
+        self = .json(jsonValue.jsonString)
+    }
+}
+
+private enum AttoCommandArgumentJSONValue: Encodable, Decodable {
+    case null
+    case bool(Bool)
+    case number(Double)
+    case string(String)
+    case array([AttoCommandArgumentJSONValue])
+    case object([String: AttoCommandArgumentJSONValue])
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([AttoCommandArgumentJSONValue].self) {
+            self = .array(value)
+        } else if let value = try? container.decode([String: AttoCommandArgumentJSONValue].self) {
+            self = .object(value)
+        } else {
+            throw DecodingError.typeMismatch(
+                AttoCommandArgumentJSONValue.self,
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "unsupported command argument JSON value")
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .null:
+            try container.encodeNil()
+        case .bool(let value):
+            try container.encode(value)
+        case .number(let value):
+            try container.encode(value)
+        case .string(let value):
+            try container.encode(value)
+        case .array(let values):
+            try container.encode(values)
+        case .object(let values):
+            try container.encode(values)
+        }
+    }
+
+    var jsonString: String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(self),
+              let string = String(data: data, encoding: .utf8)
+        else {
+            return "null"
+        }
+        return string
+    }
+}
+
 enum AttoCommandParameterKind: String, Equatable {
     case string
     case integer
