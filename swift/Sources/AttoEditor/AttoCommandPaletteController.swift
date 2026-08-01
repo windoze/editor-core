@@ -44,6 +44,7 @@ struct AttoCommandPaletteCommand {
 @MainActor
 final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
     private let commandsProvider: () -> [AttoCommandPaletteCommand]
+    private let accessibilityPrefix: String
 
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
@@ -53,7 +54,11 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
     private var allCommands: [AttoCommandPaletteCommand] = []
     private var filteredCommands: [AttoCommandPaletteCommand] = []
 
-    init(commandsProvider: @escaping () -> [AttoCommandPaletteCommand]) {
+    init(
+        accessibilityPrefix: String = "AttoEditor.CommandPalette",
+        commandsProvider: @escaping () -> [AttoCommandPaletteCommand]
+    ) {
+        self.accessibilityPrefix = accessibilityPrefix
         self.commandsProvider = commandsProvider
         super.init()
     }
@@ -103,8 +108,14 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.delegate = self
+        panel.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPalettePanel(prefix: accessibilityPrefix)
+        )
 
         let root = NSView(frame: .zero)
+        root.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPaletteRoot(prefix: accessibilityPrefix)
+        )
         root.wantsLayer = true
         root.layer?.cornerRadius = 8
         root.layer?.backgroundColor = NSColor(attoHex: 0x252526, alpha: 0.98).cgColor
@@ -112,6 +123,9 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         panel.contentView = root
 
         searchField.placeholderString = "Type a command…"
+        searchField.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPaletteSearchField(prefix: accessibilityPrefix)
+        )
         searchField.focusRingType = .none
         searchField.font = NSFont.systemFont(ofSize: 14)
         searchField.textColor = NSColor(attoHex: 0xFFFFFF)
@@ -131,10 +145,16 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         tableView.focusRingType = .none
         tableView.doubleAction = #selector(doubleClicked(_:))
         tableView.target = self
+        tableView.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPaletteTable(prefix: accessibilityPrefix)
+        )
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
+        scrollView.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPaletteScrollView(prefix: accessibilityPrefix)
+        )
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(searchField)
@@ -209,11 +229,14 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         guard row >= 0, row < filteredCommands.count else { return nil }
         let cmd = filteredCommands[row]
 
-        let id = NSUserInterfaceItemIdentifier("cell")
+        let id = NSUserInterfaceItemIdentifier(AttoAccessibilityID.commandPaletteRow(prefix: accessibilityPrefix))
         let cell = tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView ?? NSTableCellView()
         cell.identifier = id
 
         let label = cell.textField ?? NSTextField(labelWithString: "")
+        label.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPaletteRowTitle(prefix: accessibilityPrefix)
+        )
         label.font = NSFont.systemFont(ofSize: 13)
         label.textColor = cmd.isEnabled ? NSColor(attoHex: 0xD4D4D4) : NSColor(attoHex: 0x777777)
         label.lineBreakMode = .byTruncatingTail

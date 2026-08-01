@@ -45,6 +45,7 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
 
     override func loadView() {
         view = NSView(frame: .zero)
+        view.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFiles)
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor(attoHex: 0x252526).cgColor
     }
@@ -54,9 +55,11 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
 
         headerLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
         headerLabel.textColor = NSColor(attoHex: 0xBBBBBB)
+        headerLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesHeader)
         headerLabel.translatesAutoresizingMaskIntoConstraints = false
 
         queryField.placeholderString = "Search"
+        queryField.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesQueryField)
         queryField.controlSize = .small
         queryField.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         queryField.focusRingType = .none
@@ -64,6 +67,7 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         queryField.translatesAutoresizingMaskIntoConstraints = false
 
         scopeControl.controlSize = .small
+        scopeControl.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesScopeControl)
         scopeControl.selectedSegment = Scope.openedFiles.rawValue
         scopeControl.target = self
         scopeControl.action = #selector(scopeChanged(_:))
@@ -72,6 +76,7 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         statusLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         statusLabel.textColor = NSColor(attoHex: 0xB5B5B5)
         statusLabel.lineBreakMode = .byTruncatingMiddle
+        statusLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesStatusLabel)
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.stringValue = "Type to search…"
 
@@ -92,10 +97,12 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         tableView.focusRingType = .none
         tableView.doubleAction = #selector(resultDoubleClicked(_:))
         tableView.target = self
+        tableView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesTable)
 
         scrollView.documentView = tableView
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
+        scrollView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesScrollView)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(headerLabel)
@@ -262,11 +269,12 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         guard row >= 0, row < results.count else { return nil }
         let r = results[row]
 
-        let id = NSUserInterfaceItemIdentifier("cell")
+        let id = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesRow)
         let cell = tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView ?? NSTableCellView()
         cell.identifier = id
 
         let textField = cell.textField ?? NSTextField(labelWithString: "")
+        textField.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesRowTitle)
         textField.font = NSFont.systemFont(ofSize: 12, weight: .regular)
         textField.textColor = NSColor(attoHex: 0xCCCCCC)
         textField.lineBreakMode = .byTruncatingMiddle

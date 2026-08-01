@@ -7,6 +7,7 @@ enum AttoMainMenuBuilder {
         let mainMenu = NSMenu()
 
         let appMenuItem = NSMenuItem()
+        appMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("App"))
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
@@ -17,6 +18,7 @@ enum AttoMainMenuBuilder {
         appMenu.addItem(withTitle: "Quit AttoEditor", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let fileMenuItem = NSMenuItem()
+        fileMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("File"))
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
         fileMenuItem.submenu = fileMenu
@@ -29,6 +31,7 @@ enum AttoMainMenuBuilder {
         fileMenu.addItem(commandItem(title: "Close Tab", commandID: "file.close_tab", appDelegate: appDelegate))
 
         let editMenuItem = NSMenuItem()
+        editMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("Edit"))
         mainMenu.addItem(editMenuItem)
         let editMenu = NSMenu(title: "Edit")
         editMenuItem.submenu = editMenu
@@ -54,6 +57,7 @@ enum AttoMainMenuBuilder {
         editMenu.addItem(commandItem(title: "Toggle Line Comment", commandID: "editor.toggle_line_comment", appDelegate: appDelegate))
 
         let selectionMenuItem = NSMenuItem()
+        selectionMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("Selection"))
         mainMenu.addItem(selectionMenuItem)
         let selectionMenu = NSMenu(title: "Selection")
         selectionMenuItem.submenu = selectionMenu
@@ -68,6 +72,7 @@ enum AttoMainMenuBuilder {
         selectionMenu.addItem(commandItem(title: "Add All Occurrences", commandID: "editor.add_all_occurrences", appDelegate: appDelegate))
 
         let viewMenuItem = NSMenuItem()
+        viewMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("View"))
         mainMenu.addItem(viewMenuItem)
         let viewMenu = NSMenu(title: "View")
         viewMenuItem.submenu = viewMenu
@@ -79,6 +84,7 @@ enum AttoMainMenuBuilder {
         viewMenu.addItem(commandItem(title: "Close Pane", commandID: "view.close_pane", appDelegate: appDelegate))
         viewMenu.addItem(.separator())
         let wrapMenuItem = NSMenuItem(title: "Word Wrap", action: nil, keyEquivalent: "")
+        wrapMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("WordWrap"))
         let wrapMenu = NSMenu(title: "Word Wrap")
         wrapMenu.addItem(commandItem(title: "Off", commandID: "view.wrap.none", appDelegate: appDelegate))
         wrapMenu.addItem(commandItem(title: "By Character", commandID: "view.wrap.char", appDelegate: appDelegate))
@@ -91,6 +97,7 @@ enum AttoMainMenuBuilder {
         viewMenu.addItem(commandItem(title: "Unfold All", commandID: "editor.unfold_all", appDelegate: appDelegate))
 
         let goMenuItem = NSMenuItem()
+        goMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("Go"))
         mainMenu.addItem(goMenuItem)
         let goMenu = NSMenu(title: "Go")
         goMenuItem.submenu = goMenu
@@ -132,7 +139,7 @@ enum AttoMainMenuBuilder {
         item.keyEquivalentModifierMask = binding?.modifiers ?? []
         item.target = appDelegate
         item.representedObject = commandID
-        item.identifier = NSUserInterfaceItemIdentifier("AttoCommand.\(commandID)")
+        item.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.commandMenuItem(commandID))
         return item
     }
 }

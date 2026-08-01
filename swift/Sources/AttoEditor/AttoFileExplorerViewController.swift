@@ -25,6 +25,7 @@ final class AttoFileExplorerViewController: NSViewController, NSOutlineViewDataS
 
     override func loadView() {
         view = NSView(frame: .zero)
+        view.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.fileExplorer)
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor(attoHex: 0x252526).cgColor
     }
@@ -34,6 +35,7 @@ final class AttoFileExplorerViewController: NSViewController, NSOutlineViewDataS
 
         headerLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
         headerLabel.textColor = NSColor(attoHex: 0xBBBBBB)
+        headerLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.fileExplorerHeader)
         headerLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
@@ -48,10 +50,12 @@ final class AttoFileExplorerViewController: NSViewController, NSOutlineViewDataS
         outlineView.focusRingType = .none
         outlineView.doubleAction = #selector(doubleClicked(_:))
         outlineView.target = self
+        outlineView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.fileExplorerOutline)
 
         scrollView.documentView = outlineView
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
+        scrollView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.fileExplorerScrollView)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(headerLabel)
@@ -165,11 +169,12 @@ final class AttoFileExplorerViewController: NSViewController, NSOutlineViewDataS
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let node = item as? AttoFileNode else { return nil }
 
-        let id = NSUserInterfaceItemIdentifier("cell")
+        let id = NSUserInterfaceItemIdentifier(AttoAccessibilityID.fileExplorerRow)
         let cell = outlineView.makeView(withIdentifier: id, owner: self) as? NSTableCellView ?? NSTableCellView()
         cell.identifier = id
 
         let textField = cell.textField ?? NSTextField(labelWithString: "")
+        textField.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.fileExplorerRowTitle)
         textField.font = NSFont.systemFont(ofSize: 12)
         textField.textColor = NSColor(attoHex: 0xCCCCCC)
         textField.lineBreakMode = .byTruncatingMiddle

@@ -123,6 +123,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 42 已完成：AttoEditor code action diagnostics context 主路径改为消费 active derived-state store 的 typed `EcuDiagnosticsSnapshot`，`AttoLspCodeActionContext` 新增 typed diagnostics 输入并保留旧 JSON 兼容入口，减少 App 层手写 diagnostics JSON 解析。
 - 2026-08-01 阶段 43 已完成：AttoEditor document symbols quick panel 在 LSP result 写入 core outline 后，优先从 active derived-state store 的 typed `EcuDocumentSymbolsSnapshot` 构建展示和导航项；raw result JSON parser 只作为兜底，测试覆盖 typed snapshot、嵌套 depth、kind label 和 UTF-16 column 转换。
 - 2026-08-01 阶段 44 已完成：AttoEditor `lsp.workspace_symbols` App 命令改为先显示查询输入框，再发起 workspace/symbol 请求；原 `showWorkspaceSymbolsInActiveTab(query:)` 保留给程序化调用和测试，空 active editor 时不会弹框。
+- 2026-08-01 阶段 45 已完成：AttoEditor 为主菜单、editor chrome、tab bar/tab chip、find/replace、status bar、sidebar、file/opened/search side panels、command/quick/LSP quick panels 和 completion popup 增加稳定 AppKit `identifier`；新增 `AttoAccessibilityIdentifierTests`，为后续 `XCUIApplication` 黑盒 smoke test 和视觉/布局自动化提供可定位的 UI 元素基线。
 
 ## 分层结论
 
@@ -438,7 +439,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - caret、selection、find highlight、diagnostic underline、inlay hint、fold marker 的像素级覆盖。
 - 多窗口/分屏视觉回归。
 - 黑盒 `XCUIApplication` 测试 target。
-- accessibility identifiers / menu item identifiers。
+- 基础 menu item / AppKit view identifiers 已有；仍缺把这些 identifiers 接到黑盒 `XCUIApplication` smoke test 和视觉布局测试矩阵中。
 - CI 上可重复的 macOS UI test 环境。
 
 推荐测试分层：
@@ -534,6 +535,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 ### P2：视觉回归和黑盒自动化
 
+- 已完成：主菜单、核心 editor chrome、tab bar、find/replace、status bar、sidebar、quick panel 和 completion popup 已有基础稳定 AppKit identifiers，并有组件测试覆盖。
 - 建立 golden screenshot 测试工具。
 - 引入 fixtures，覆盖主题、字体、Unicode、多光标、折叠、diagnostics、minimap。
 - 补 `XCUIApplication` smoke tests。

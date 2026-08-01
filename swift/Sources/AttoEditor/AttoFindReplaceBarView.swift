@@ -65,6 +65,7 @@ final class AttoFindReplaceBarView: NSView {
 
         super.init(frame: frameRect)
 
+        identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findReplaceBar)
         wantsLayer = true
         layer?.backgroundColor = NSColor(attoHex: 0x252526).cgColor
         bottomBorderLayer.backgroundColor = NSColor(attoHex: 0x1E1E1E).cgColor
@@ -77,6 +78,7 @@ final class AttoFindReplaceBarView: NSView {
         rootStack.translatesAutoresizingMaskIntoConstraints = false
 
         searchField.placeholderString = "Find"
+        searchField.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findSearchField)
         searchField.controlSize = .small
         searchField.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         searchField.focusRingType = .none
@@ -84,6 +86,7 @@ final class AttoFindReplaceBarView: NSView {
         NSLayoutConstraint.activate([searchField.widthAnchor.constraint(greaterThanOrEqualToConstant: 220)])
 
         replaceField.placeholderString = "Replace"
+        replaceField.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findReplaceField)
         replaceField.controlSize = .small
         replaceField.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         replaceField.focusRingType = .none
@@ -95,18 +98,28 @@ final class AttoFindReplaceBarView: NSView {
             b.controlSize = .small
             b.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         }
+        caseSensitiveButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findCaseSensitiveButton)
+        wholeWordButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findWholeWordButton)
+        regexButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findRegexButton)
         caseSensitiveButton.state = .on
 
         matchCountLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         matchCountLabel.textColor = NSColor(attoHex: 0xB5B5B5)
+        matchCountLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findMatchCountLabel)
 
         for b in [findPrevButton, findNextButton, clearButton, replaceCurrentButton, replaceAllButton] {
             b.bezelStyle = .rounded
             b.controlSize = .small
         }
+        findPrevButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findPreviousButton)
+        findNextButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findNextButton)
+        clearButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findClearButton)
+        replaceCurrentButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findReplaceCurrentButton)
+        replaceAllButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findReplaceAllButton)
         replaceAllButton.title = "All"
 
         closeButton.isBordered = false
+        closeButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findCloseButton)
         closeButton.contentTintColor = NSColor(attoHex: 0x9A9A9A)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
 
@@ -179,4 +192,3 @@ private extension NSColor {
         self.init(red: r, green: g, blue: b, alpha: alpha)
     }
 }
-

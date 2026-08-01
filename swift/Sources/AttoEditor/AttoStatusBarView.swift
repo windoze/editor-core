@@ -27,6 +27,7 @@ final class AttoStatusBarView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
+        identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBar)
         wantsLayer = true
         // Sublime-ish: neutral dark status bar (avoid VSCode blue).
         layer?.backgroundColor = NSColor(attoHex: 0x2B2B2B).cgColor
@@ -37,9 +38,11 @@ final class AttoStatusBarView: NSView {
         leftLabel.textColor = NSColor(attoHex: 0xB5B5B5)
         leftLabel.lineBreakMode = .byTruncatingMiddle
         leftLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        leftLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarLeftLabel)
         leftLabel.translatesAutoresizingMaskIntoConstraints = false
 
         languagePopUp.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        languagePopUp.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarLanguagePopUp)
         languagePopUp.controlSize = .small
         languagePopUp.isBordered = false
         languagePopUp.contentTintColor = NSColor(attoHex: 0xB5B5B5)
@@ -52,10 +55,14 @@ final class AttoStatusBarView: NSView {
             l.textColor = NSColor(attoHex: 0xB5B5B5)
             l.translatesAutoresizingMaskIntoConstraints = false
         }
+        positionLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarPositionLabel)
+        selectionLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarSelectionLabel)
+        fileSizeLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarFileSizeLabel)
 
         lspLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         lspLabel.textColor = NSColor(attoHex: 0xB5B5B5)
         lspLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        lspLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarLspLabel)
         lspLabel.translatesAutoresizingMaskIntoConstraints = false
 
         leftStack.orientation = .horizontal

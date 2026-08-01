@@ -89,8 +89,10 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.delegate = self
+        panel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.completionPanel)
 
         let root = NSView(frame: .zero)
+        root.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.completionRoot)
         root.wantsLayer = true
         root.layer?.cornerRadius = 6
         root.layer?.backgroundColor = NSColor(attoHex: 0x252526, alpha: 0.98).cgColor
@@ -124,14 +126,17 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         tableView.onCancel = { [weak self] in
             self?.hide()
         }
+        tableView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.completionTable)
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
+        scrollView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.completionScrollView)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         previewTextView.isEditable = false
         previewTextView.isSelectable = true
+        previewTextView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.completionPreview)
         previewTextView.drawsBackground = false
         previewTextView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         previewTextView.textColor = NSColor(attoHex: 0xD4D4D4)
@@ -149,6 +154,7 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         previewScrollView.documentView = previewTextView
         previewScrollView.hasVerticalScroller = true
         previewScrollView.drawsBackground = false
+        previewScrollView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.completionPreviewScrollView)
         previewScrollView.translatesAutoresizingMaskIntoConstraints = false
 
         let separator = NSBox()
@@ -209,11 +215,12 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard row >= 0, row < visibleItems.count else { return nil }
 
-        let id = NSUserInterfaceItemIdentifier("completion-cell")
+        let id = NSUserInterfaceItemIdentifier(AttoAccessibilityID.completionRow)
         let cell = tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView ?? NSTableCellView()
         cell.identifier = id
 
         let label = cell.textField ?? NSTextField(labelWithString: "")
+        label.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.completionRowTitle)
         label.font = NSFont.systemFont(ofSize: 12)
         label.textColor = NSColor(attoHex: 0xD4D4D4)
         label.lineBreakMode = .byTruncatingTail

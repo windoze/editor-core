@@ -32,6 +32,7 @@ final class AttoTabBarView: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.tabBar)
         wantsLayer = true
         // Sublime-ish: darker chrome than the editor background.
         layer?.backgroundColor = NSColor(attoHex: 0x2B2B2B).cgColor
@@ -68,6 +69,7 @@ final class AttoTabBarView: NSView {
         scrollView.horizontalScrollElasticity = .allowed
         scrollView.verticalScrollElasticity = .none
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.tabBarScrollView)
 
         if let image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: "More Tabs")?
             .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
@@ -81,6 +83,7 @@ final class AttoTabBarView: NSView {
         overflowButton.target = self
         overflowButton.action = #selector(overflowClicked(_:))
         overflowButton.toolTip = "Tabs"
+        overflowButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.tabBarOverflowButton)
         overflowButton.translatesAutoresizingMaskIntoConstraints = false
         overflowButton.isHidden = true
 
@@ -140,6 +143,7 @@ final class AttoTabBarView: NSView {
             let label = NSTextField(labelWithString: "No file open")
             label.font = NSFont.systemFont(ofSize: 12)
             label.textColor = NSColor(attoHex: 0x8A8A8A)
+            label.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.tabBarEmptyLabel)
             stackView.addArrangedSubview(label)
             updateOverflowButtonVisibility()
             return
@@ -289,6 +293,7 @@ private final class AttoTabChipView: NSView {
         }
         super.init(frame: .zero)
 
+        identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.tabChip(id))
         wantsLayer = true
         layer?.cornerRadius = 4
         layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
@@ -302,6 +307,7 @@ private final class AttoTabChipView: NSView {
         self.toolTip = toolTip
 
         titleLabel.stringValue = title
+        titleLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.tabTitle(id))
         let baseFont = NSFont.systemFont(ofSize: 12, weight: selected ? .medium : .regular)
         titleLabel.font = isPreview
             ? NSFontManager.shared.convert(baseFont, toHaveTrait: .italicFontMask)
@@ -316,6 +322,7 @@ private final class AttoTabChipView: NSView {
         closeButton.contentTintColor = selected ? NSColor(attoHex: 0xD0D0D0) : NSColor(attoHex: 0x9A9A9A)
         closeButton.target = self
         closeButton.action = #selector(closeClicked(_:))
+        closeButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.tabCloseButton(id))
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         closeButton.isHidden = selected ? false : true
 

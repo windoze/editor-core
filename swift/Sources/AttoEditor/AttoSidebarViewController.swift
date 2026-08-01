@@ -37,6 +37,7 @@ final class AttoSidebarViewController: NSViewController {
 
     override func loadView() {
         view = NSView(frame: .zero)
+        view.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.sidebar)
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor(attoHex: 0x252526).cgColor
     }
@@ -48,9 +49,11 @@ final class AttoSidebarViewController: NSViewController {
         tabBarView.layer?.backgroundColor = NSColor(attoHex: 0x2B2B2B).cgColor
         bottomBorderLayer.backgroundColor = NSColor(attoHex: 0x1E1E1E).cgColor
         tabBarView.layer?.addSublayer(bottomBorderLayer)
+        tabBarView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.sidebarTabBar)
         tabBarView.translatesAutoresizingMaskIntoConstraints = false
 
         tabControl.controlSize = .small
+        tabControl.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.sidebarTabControl)
         tabControl.selectedSegment = Tab.fileExplorer.rawValue
         tabControl.target = self
         tabControl.action = #selector(tabChanged(_:))
@@ -60,6 +63,7 @@ final class AttoSidebarViewController: NSViewController {
         tabControl.setToolTip("Find in Files", forSegment: Tab.findInFiles.rawValue)
 
         contentHostView.translatesAutoresizingMaskIntoConstraints = false
+        contentHostView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.sidebarContentHost)
 
         view.addSubview(tabBarView)
         tabBarView.addSubview(tabControl)

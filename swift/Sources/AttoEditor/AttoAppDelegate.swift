@@ -110,12 +110,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
 
         commandPaletteController = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.CommandPalette",
             commandsProvider: { [weak self] in
                 self?.defaultCommands() ?? []
             }
         )
 
         quickOpenController = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.QuickOpen",
             commandsProvider: { [weak self] in
                 self?.quickOpenCommands() ?? []
             }

@@ -194,6 +194,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
     override func loadView() {
         view = NSView(frame: .zero)
+        view.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorArea)
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor(ecuRgba8: theme.editorBackground).cgColor
     }
@@ -237,12 +238,14 @@ final class AttoEditorAreaViewController: NSViewController {
         findReplaceBarView.closeButton.action = #selector(closeFindBarClicked(_:))
 
         contentHostView.translatesAutoresizingMaskIntoConstraints = false
+        contentHostView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorContentHost)
         contentHostView.wantsLayer = true
         contentHostView.layer?.backgroundColor = NSColor(ecuRgba8: theme.editorBackground).cgColor
 
         emptyStateLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         emptyStateLabel.textColor = NSColor(attoHex: 0x8A8A8A)
         emptyStateLabel.alignment = .center
+        emptyStateLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorEmptyState)
         emptyStateLabel.translatesAutoresizingMaskIntoConstraints = false
 
         statusBarView.translatesAutoresizingMaskIntoConstraints = false
@@ -1725,6 +1728,8 @@ final class AttoEditorAreaViewController: NSViewController {
         applyLanguageConfiguration(fileURL: url, syntaxLanguageId: syntaxLanguageId, to: editCore)
 
         let tabId = UUID()
+        editCore.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorPane(tabId))
+        editCore.editorView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorView(tabId))
         let tab = AttoEditorTab(
             id: tabId,
             fileURL: url,
@@ -2102,7 +2107,10 @@ final class AttoEditorAreaViewController: NSViewController {
             }
         }
 
-        let controller = AttoCommandPaletteController(commandsProvider: { commands })
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.LocationResults",
+            commandsProvider: { commands }
+        )
         lspLocationResultsController = controller
         controller.show(relativeTo: window, placeholder: "Filter LSP results...")
     }
@@ -2324,7 +2332,10 @@ final class AttoEditorAreaViewController: NSViewController {
             }
         }
 
-        let controller = AttoCommandPaletteController(commandsProvider: { commands })
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.SymbolResults",
+            commandsProvider: { commands }
+        )
         lspSymbolResultsController = controller
         controller.show(relativeTo: window, placeholder: placeholder)
     }
@@ -2377,7 +2388,10 @@ final class AttoEditorAreaViewController: NSViewController {
             }
         }
 
-        let controller = AttoCommandPaletteController(commandsProvider: { commands })
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.Problems",
+            commandsProvider: { commands }
+        )
         problemsResultsController = controller
         controller.show(relativeTo: window, placeholder: "Filter problems...")
         return true
@@ -2961,7 +2975,10 @@ final class AttoEditorAreaViewController: NSViewController {
             }
         }
 
-        let controller = AttoCommandPaletteController(commandsProvider: { commands })
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.CodeActions",
+            commandsProvider: { commands }
+        )
         codeActionResultsController = controller
         controller.show(relativeTo: window, placeholder: "Filter code actions...")
     }
