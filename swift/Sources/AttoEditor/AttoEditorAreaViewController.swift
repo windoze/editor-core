@@ -874,12 +874,10 @@ final class AttoEditorAreaViewController: NSViewController {
         return executeActiveEditorCommandObject([
             "kind": "edit",
             "op": "toggle_comment",
-            "config": [
-                "line": AttoLanguageConfiguration.lineCommentToken(
-                    fileURL: tab.fileURL,
-                    syntaxLanguageId: tab.syntaxLanguageId
-                ),
-            ],
+            "config": AttoLanguageConfiguration.commentConfig(
+                fileURL: tab.fileURL,
+                syntaxLanguageId: tab.syntaxLanguageId
+            ).jsonObject,
         ])
     }
 
@@ -3957,6 +3955,32 @@ private enum AttoLspLanguageId {
 }
 
 private enum AttoLanguageConfiguration {
+    struct CommentConfiguration {
+        var line: String?
+        var blockStart: String?
+        var blockEnd: String?
+
+        var jsonObject: [String: String] {
+            var out: [String: String] = [:]
+            if let line { out["line"] = line }
+            if let blockStart { out["block_start"] = blockStart }
+            if let blockEnd { out["block_end"] = blockEnd }
+            return out
+        }
+
+        static func line(_ token: String) -> Self {
+            Self(line: token, blockStart: nil, blockEnd: nil)
+        }
+
+        static func block(_ start: String, _ end: String) -> Self {
+            Self(line: nil, blockStart: start, blockEnd: end)
+        }
+
+        static func lineAndBlock(_ line: String, _ start: String, _ end: String) -> Self {
+            Self(line: line, blockStart: start, blockEnd: end)
+        }
+    }
+
     static func indentationConfig(fileURL: URL, syntaxLanguageId: String?) -> EcuIndentationConfig {
         let language = languageKey(fileURL: fileURL, syntaxLanguageId: syntaxLanguageId)
         return EcuIndentationConfig(
@@ -3966,17 +3990,23 @@ private enum AttoLanguageConfiguration {
         )
     }
 
-    static func lineCommentToken(fileURL: URL, syntaxLanguageId: String?) -> String {
+    static func commentConfig(fileURL: URL, syntaxLanguageId: String?) -> CommentConfiguration {
         let language = languageKey(fileURL: fileURL, syntaxLanguageId: syntaxLanguageId)
         switch language {
         case "python", "ruby", "shell", "bash", "sh", "zsh", "toml", "yaml", "makefile", "make":
-            return "#"
+            return .line("#")
         case "lua", "sql", "haskell":
-            return "--"
+            return .line("--")
         case "lisp", "clojure", "scheme":
-            return ";"
+            return .line(";")
+        case "html", "xml", "markdown":
+            return .block("<!--", "-->")
+        case "css":
+            return .block("/*", "*/")
+        case "scss", "sass":
+            return .lineAndBlock("//", "/*", "*/")
         default:
-            return "//"
+            return .lineAndBlock("//", "/*", "*/")
         }
     }
 
