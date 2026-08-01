@@ -367,6 +367,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(id: "lsp.workspace_symbols", title: "LSP: Workspace Symbols") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showWorkspaceSymbolsInActiveTab()
             },
+            .init(id: "lsp.completion", title: "LSP: Completion") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showCompletionsInActiveTab()
+            },
             .init(id: "lsp.signature_help", title: "LSP: Signature Help") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showSignatureHelpInActiveTab()
             },

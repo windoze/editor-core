@@ -33,6 +33,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.find_references"))
         XCTAssertTrue(ids.contains("lsp.document_symbols"))
         XCTAssertTrue(ids.contains("lsp.workspace_symbols"))
+        XCTAssertTrue(ids.contains("lsp.completion"))
         XCTAssertTrue(ids.contains("lsp.signature_help"))
     }
 
@@ -66,6 +67,11 @@ final class AttoEditorCommandTests: XCTestCase {
         let resolved = AttoKeymap.resolvedBindings(env: env)
         XCTAssertEqual(resolved["editor.duplicate_lines"]?.keyEquivalent, "l")
         XCTAssertEqual(resolved["file.save"]?.keyEquivalent, "s")
+        XCTAssertEqual(resolved["lsp.completion"]?.keyEquivalent, " ")
+        XCTAssertEqual(
+            resolved["lsp.completion"]?.modifiers.intersection(.deviceIndependentFlagsMask),
+            [.control]
+        )
         XCTAssertEqual(resolved["lsp.signature_help"]?.keyEquivalent, " ")
         XCTAssertEqual(
             resolved["lsp.signature_help"]?.modifiers.intersection(.deviceIndependentFlagsMask),
@@ -102,6 +108,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.find_references", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_symbols", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.completion", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.signature_help", in: menu))
     }
 

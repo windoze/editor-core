@@ -81,6 +81,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Command Palette...", commandID: "workbench.command_palette", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Document Symbols...", commandID: "lsp.document_symbols", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Workspace Symbols...", commandID: "lsp.workspace_symbols", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Completion", commandID: "lsp.completion", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Signature Help", commandID: "lsp.signature_help", appDelegate: appDelegate))
         goMenu.addItem(.separator())
         goMenu.addItem(commandItem(title: "Back", commandID: "go.back", appDelegate: appDelegate))

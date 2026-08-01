@@ -31,7 +31,7 @@ Swift 侧已经具备以下基础能力：
 - `EditorCoreUIFFI.EditorUI` 暴露了较完整的“编辑器视图主路径”API，包括打开文本、插入/删除、搜索替换、撤销重做、选择、鼠标输入、IME、渲染 RGBA/Metal、主题、Tree-sitter、Sublime syntax、部分 LSP、minimap、gutter、bookmark、jump history、document link hit-test 等。
 - `EditorCoreUI` / `AttoEditor` 已有 AppKit 组件级 XCTest，能用 `NSWindow`、`NSEvent` 和 view API 驱动交互。
 - 2026-08-01 本地验证过：
-  - `swift test --filter AttoEditorTests` 通过，50 个测试。
+  - `swift test --filter AttoEditorTests` 通过，55 个测试。
   - `swift test --filter EditorCoreUITests` 通过，64 个测试。
   - `swift test --filter EditorCoreUIFFITests` 通过，45 个测试。
 
@@ -58,7 +58,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
 - 阶段 6 第二部分已让 references 多结果进入一个轻量可过滤结果 palette，单结果直接跳转；`AttoLspDefinitionParser` 新增多目标解析并补测试。
-- 阶段 6 尚未完成 completion popup、rename/code action 主路径、完整 references/locations panel 和 typed result model。
+- 阶段 6 尚未完成 rename/code action 主路径、完整 references/locations panel 和 typed result model。
 - 2026-08-01 阶段 7 第一部分已完成：多文档/分屏架构明确采用 Swift-owned tabs/splits，Rust 继续提供 per-buffer/per-view `EditorUI` 能力；AttoEditor 新增基础 `view.split_right` 命令，通过 `EditorUI.cloneView` 为当前 tab 创建共享 buffer 的第二个 AppKit pane。
 - 阶段 7 第一部分已让 split pane 复用主编辑器 chrome/theme/preferences/LSP/hover/cmd-click hook，并新增 first-responder hook 跟踪 active pane；AttoEditor command palette、View 菜单和默认 keymap 已接入。
 - 阶段 7 第二部分已完成基础 pane 操作命令：`view.focus_next_pane`、`view.focus_previous_pane`、`view.close_pane`，并用 AppKit 组件测试覆盖 active pane 对 close target 的影响。
@@ -67,6 +67,8 @@ Swift 侧已经具备以下基础能力：
 - 阶段 8 尚未完成 symbols 的持久面板、workspace symbol 增量查询/输入面板、结果分组/排序策略和错误展示。
 - 2026-08-01 阶段 9 已完成：AttoEditor 新增 LSP signature help popup 主路径，命令 `lsp.signature_help` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspSignatureHelpFormatter`，覆盖 SignatureHelp、activeSignature、activeParameter、ParameterInformation string/range label 和 documentation 常见结果形态。
 - 阶段 9 尚未完成 signature help trigger characters / 自动弹出、active parameter 富格式高亮、typed result model 和空结果/错误展示。
+- 2026-08-01 阶段 10 已完成：AttoEditor 新增 LSP completion popup 主路径，命令 `lsp.completion` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspCompletionParser` 和 caret-anchored completion list，覆盖 CompletionList/CompletionItem、TextEdit、InsertReplaceEdit insert range、additionalTextEdits、snippet insertion 和 fallback identifier-prefix replacement。
+- 阶段 10 尚未完成 completionItem/resolve、commit characters、自动触发/增量过滤、跨文件 workspace edit、rich documentation/detail preview 和更完整的 typed result model。
 
 ## 分层结论
 
@@ -108,7 +110,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | --- | --- | --- | --- | --- |
 | `TypeChar` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `typeChar(_:)`，`insertText` 单字符也会在 Rust UI 内部走 typing 路径 | 仍缺 App command id；headless FFI 覆盖仍不一致。 |
 | `ReplaceCoalescingUndo` / `ReplaceCoalescingUndoWithSelection` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `replaceCoalescingUndo` / `replaceCoalescingUndoWithSelection`；IME/marked text 路径内部也使用相关语义 | headless FFI 覆盖仍不一致。 |
-| `ApplySnippet` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `applySnippet`；Tab/Backtab 可在 snippet active 时切 placeholder | 仍缺 completion UI 接线；headless FFI 覆盖仍不一致。 |
+| `ApplySnippet` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `applySnippet`；Tab/Backtab 可在 snippet active 时切 placeholder；completion popup 可应用 snippet item | headless FFI 覆盖仍不一致。 |
 | `SnippetNextPlaceholder` / `SnippetPrevPlaceholder` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `snippetNextPlaceholder` / `snippetPrevPlaceholder`，`insertTab` / `insertBacktab` 也内部支持 | 仍缺显式 App command；当前主要由 Tab/Backtab 主路径触发。 |
 | duplicate lines | 有 | 有 | Swift 有 typed `duplicateLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.duplicate_lines` | P0 接线完成；仍缺启用/禁用状态模型。 |
 | delete lines | 有 | 有 | Swift 有 typed `deleteLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.delete_lines` | P0 接线完成；仍缺启用/禁用状态模型。 |
@@ -116,7 +118,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | join lines | 有 | 有 | Swift 有 typed `joinLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.join_lines` | P0 接线完成；仍缺启用/禁用状态模型。 |
 | split line | 有 | 有 | Swift 有 typed `splitLine()`；AttoEditor command palette 和菜单有 `editor.split_line` | P0 菜单接线完成；可配置 keymap 可覆盖。 |
 | toggle comment | 有 | 有 | Swift 有 typed `toggleComment(_:)`；AttoEditor command palette、菜单和 keymap 有 `editor.toggle_line_comment` 并按文件类型选择基础 line token | 仍缺完整语言 comment config 桥接。 |
-| general `ApplyTextEdits` | 有 | 有 | Swift 有 typed `applyTextEdits(_:)`；Rust UI 也有 LSP text edit apply helper | LSP completion、code action、rename、format 仍需要产品化接线。 |
+| general `ApplyTextEdits` | 有 | 有 | Swift 有 typed `applyTextEdits(_:)`；Rust UI 也有 LSP text edit apply helper；completion popup 可应用 textEdit/additionalTextEdits | LSP code action、rename 等仍需要产品化接线。 |
 | `DeleteToPrevTabStop` | 有 | 有 | Swift 有 typed `deleteToPrevTabStop()`；AttoEditor command palette 和菜单有 `editor.delete_to_prev_tab_stop` | P0 菜单接线完成；可配置 keymap 可覆盖。 |
 | explicit indent/outdent commands | 有 | 有 | Swift 有 typed `indent()` / `outdent()`；Tab/Backtab 主路径可用；AttoEditor command palette 和菜单有 `editor.indent/outdent` | P0 菜单接线完成；Tab/Backtab 仍走文本系统主路径。 |
 | `EndUndoGroup` | 有 | 有 | Swift 有 typed `endUndoGroup()` | App 层复合命令还未统一使用。 |
@@ -149,6 +151,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - definition。
 - declaration / type definition / implementation / references / completion / signature help / document symbols / workspace symbols 的 Swift UI raw async request/take API。
 - AttoEditor App command/menu 已覆盖 go to definition/declaration/type definition/implementation/find references，其中 references 多结果有轻量可过滤结果 palette。
+- AttoEditor App command/menu 已覆盖 completion popup 主路径。
 - AttoEditor App command/menu 已覆盖 signature help popup 主路径。
 - format。
 - diagnostics 派生状态应用。
@@ -164,7 +167,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 
 - declaration/type definition/implementation 的多结果导航 UI 仍较基础。
 - references 结果列表已有轻量 palette，但还不是完整结果面板。
-- completion popup、completion resolve、commit characters、additional text edits、snippet insertion。
+- completion popup 主路径已有；仍缺 completion resolve、commit characters、自动触发/增量过滤、rich documentation/detail preview 和 workspace edit。
 - signature help popup 主路径已有；仍缺 trigger characters / 自动弹出、active parameter 富格式高亮和 typed result model。
 - rename / prepare rename。
 - code action / code action resolve / execute command。
@@ -275,12 +278,13 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - Matching Bracket。
 - LSP location commands。
 - LSP document/workspace symbols quick panels。
+- LSP completion popup。
 - LSP signature help popup。
 
 主要缺口：
 
 - command registry 仍较轻量，还没有命令启用/禁用状态、参数模型和分组元数据。
-- command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令；LSP location、symbols quick panels 和 signature help 主路径已接入，但 completion/code action/rename 等 LSP/项目级命令仍不完整。
+- command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令；LSP location、symbols quick panels、completion popup 和 signature help 主路径已接入，但 code action/rename 等 LSP/项目级命令仍不完整。
 - P0 菜单、command palette、keymap 和测试已开始统一使用 command id；更深层的命令上下文、参数化命令和冲突解析仍缺。
 - 一些 core/LSP 命令仍没有 App 命令入口。
 - 已有初步用户 keymap 文件，但还不是完整 Sublime keymap 兼容实现。
@@ -402,7 +406,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 ### P1：补 LSP 产品主路径
 
-- completion popup。
+- completion resolve、commit characters 和自动触发。
 - signature help 自动触发和富格式高亮。
 - references/implementation/declaration/type definition。
 - rename。

@@ -82,6 +82,12 @@ final class AttoEditorAreaViewController: NSViewController {
         let tabID: UUID
     }
 
+    private struct CompletionRequestContext {
+        let tabID: UUID
+        let fallbackStart: UInt32
+        let fallbackEnd: UInt32
+    }
+
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
@@ -100,6 +106,10 @@ final class AttoEditorAreaViewController: NSViewController {
     private var signatureHelpPollTimer: DispatchSourceTimer?
     private var signatureHelpPopover: NSPopover?
     private var signatureHelpPopoverLabel: NSTextField?
+
+    private var completionContext: CompletionRequestContext?
+    private var completionPollTimer: DispatchSourceTimer?
+    private var completionListController: AttoCompletionListController?
 
     init(library: EditorCoreUIFFILibrary, theme: EditorCoreSkiaTheme, workspaceRootURL: URL) {
         self.library = library
@@ -332,6 +342,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelDefinitionUI()
         cancelSymbolUI()
         cancelSignatureHelpUI()
+        cancelCompletionUI()
 
         tabs = []
         selectedTabID = nil
@@ -608,6 +619,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelDefinitionUI()
         cancelSymbolUI()
         cancelSignatureHelpUI()
+        cancelCompletionUI()
 
         showTabContent(tab)
         refreshTabBar()
@@ -1155,6 +1167,7 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let tab = tabs.first(where: { $0.id == tabID }) else { return }
         if selectedTabID == tabID {
             cancelSignatureHelpUI()
+            cancelCompletionUI()
         }
 
         let didUnpreview = tab.isPreview
@@ -2141,6 +2154,162 @@ final class AttoEditorAreaViewController: NSViewController {
         return "\(indent)\(symbol.name)\(detail)\(kind)\(container) — \(location)"
     }
 
+    // MARK: - LSP completion
+
+    @discardableResult
+    func showCompletionsInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let text = try tab.editCore.editor.text()
+            let fallback: (start: UInt32, end: UInt32) = {
+                let start = min(offsets.start, offsets.end)
+                let end = max(offsets.start, offsets.end)
+                if start != end {
+                    return (start, end)
+                }
+                return AttoLspCompletionParser.identifierFallbackRange(in: text, caretOffset: offsets.end)
+            }()
+            let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+            _ = try tab.editCore.editor.lspRequestCompletion(
+                logicalLine: pos.line,
+                logicalColumn: pos.column
+            )
+
+            completionContext = CompletionRequestContext(
+                tabID: tab.id,
+                fallbackStart: fallback.start,
+                fallbackEnd: fallback.end
+            )
+            startCompletionPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
+            return true
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private func startCompletionPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        completionPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.completionContext, ctx.tabID == tabID else {
+                self.cancelCompletionUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelCompletionUI()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelCompletionUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastCompletionResultJSON()
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            let items = AttoLspCompletionParser.items(fromCompletionResultJSON: json)
+            self.completionPollTimer?.cancel()
+            self.completionPollTimer = nil
+            self.completionContext = nil
+            self.showCompletionList(items: items, context: ctx, editorView: editorView)
+            timer.cancel()
+        }
+
+        completionPollTimer = timer
+        timer.resume()
+    }
+
+    private func showCompletionList(
+        items: [AttoLspCompletionParser.Item],
+        context: CompletionRequestContext,
+        editorView: EditorCoreSkiaView
+    ) {
+        guard items.isEmpty == false else {
+            cancelCompletionUI()
+            NSSound.beep()
+            return
+        }
+        guard editorView.window != nil else { return }
+
+        let controller = AttoCompletionListController()
+        completionListController = controller
+        controller.show(
+            items: items,
+            relativeTo: editorView,
+            anchorRect: caretAnchorRect(in: editorView)
+        ) { [weak self] item in
+            self?.applyCompletion(item, context: context)
+        }
+    }
+
+    private func applyCompletion(_ item: AttoLspCompletionParser.Item, context: CompletionRequestContext) {
+        guard let tab = activeTab, tab.id == context.tabID else { return }
+
+        do {
+            let text = try tab.editCore.editor.text()
+            guard let plan = AttoLspCompletionParser.applicationPlan(
+                for: item,
+                documentText: text,
+                fallbackStart: context.fallbackStart,
+                fallbackEnd: context.fallbackEnd
+            ) else {
+                NSSound.beep()
+                return
+            }
+
+            if plan.isSnippet {
+                _ = try tab.editCore.editor.applySnippet(
+                    start: plan.start,
+                    end: plan.end,
+                    snippet: plan.text,
+                    additionalEdits: plan.additionalEdits
+                )
+            } else {
+                let edits = [EcuTextEdit(start: plan.start, end: plan.end, text: plan.text)] + plan.additionalEdits
+                _ = try tab.editCore.editor.applyTextEdits(edits)
+            }
+
+            tab.editCore.layoutSubtreeIfNeeded()
+            try? tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.editorView.kickProcessingPoll()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            handleTabDidMutateDocumentText(tabID: tab.id)
+            updateStatusBar()
+            view.window?.makeFirstResponder(tab.editCore.editorView)
+        } catch {
+            NSSound.beep()
+        }
+    }
+
     // MARK: - LSP signature help
 
     @discardableResult
@@ -2267,10 +2436,10 @@ final class AttoEditorAreaViewController: NSViewController {
         if popover.isShown {
             popover.performClose(nil)
         }
-        popover.show(relativeTo: signatureHelpAnchorRect(in: editorView), of: editorView, preferredEdge: .maxY)
+        popover.show(relativeTo: caretAnchorRect(in: editorView), of: editorView, preferredEdge: .maxY)
     }
 
-    private func signatureHelpAnchorRect(in editorView: EditorCoreSkiaView) -> NSRect {
+    private func caretAnchorRect(in editorView: EditorCoreSkiaView) -> NSRect {
         do {
             let offsets = try editorView.editor.selectionOffsets()
             let pt = try editorView.editor.charOffsetToViewPoint(offset: offsets.end)
@@ -2477,6 +2646,14 @@ final class AttoEditorAreaViewController: NSViewController {
         signatureHelpPollTimer = nil
         signatureHelpContext = nil
         signatureHelpPopover?.performClose(nil)
+    }
+
+    private func cancelCompletionUI() {
+        completionPollTimer?.cancel()
+        completionPollTimer = nil
+        completionContext = nil
+        completionListController?.hide()
+        completionListController = nil
     }
 }
 
