@@ -21,6 +21,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.split_line"))
         XCTAssertTrue(ids.contains("editor.snippet_next_placeholder"))
         XCTAssertTrue(ids.contains("editor.snippet_prev_placeholder"))
+        XCTAssertTrue(ids.contains("editor.add_next_occurrence"))
+        XCTAssertTrue(ids.contains("editor.add_all_occurrences"))
         XCTAssertTrue(ids.contains("editor.toggle_line_comment"))
         XCTAssertTrue(ids.contains("editor.fold_selection"))
         XCTAssertTrue(ids.contains("editor.unfold"))
@@ -102,6 +104,16 @@ final class AttoEditorCommandTests: XCTestCase {
             resolved["editor.format_selection"]?.modifiers.intersection(.deviceIndependentFlagsMask),
             [.option, .shift]
         )
+        XCTAssertEqual(resolved["editor.add_next_occurrence"]?.keyEquivalent, "d")
+        XCTAssertEqual(
+            resolved["editor.add_next_occurrence"]?.modifiers.intersection(.deviceIndependentFlagsMask),
+            [.command]
+        )
+        XCTAssertEqual(resolved["editor.add_all_occurrences"]?.keyEquivalent, "g")
+        XCTAssertEqual(
+            resolved["editor.add_all_occurrences"]?.modifiers.intersection(.deviceIndependentFlagsMask),
+            [.command, .control]
+        )
     }
 
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
@@ -127,6 +139,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.snippet_next_placeholder", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.snippet_prev_placeholder", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.add_next_occurrence", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.add_all_occurrences", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.focus_next_pane", in: menu))

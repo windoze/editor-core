@@ -52,6 +52,9 @@ enum AttoMainMenuBuilder {
         editMenu.addItem(commandItem(title: "Snippet Next Placeholder", commandID: "editor.snippet_next_placeholder", appDelegate: appDelegate))
         editMenu.addItem(commandItem(title: "Snippet Previous Placeholder", commandID: "editor.snippet_prev_placeholder", appDelegate: appDelegate))
         editMenu.addItem(commandItem(title: "Toggle Line Comment", commandID: "editor.toggle_line_comment", appDelegate: appDelegate))
+        editMenu.addItem(.separator())
+        editMenu.addItem(commandItem(title: "Add Next Occurrence", commandID: "editor.add_next_occurrence", appDelegate: appDelegate))
+        editMenu.addItem(commandItem(title: "Add All Occurrences", commandID: "editor.add_all_occurrences", appDelegate: appDelegate))
 
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)

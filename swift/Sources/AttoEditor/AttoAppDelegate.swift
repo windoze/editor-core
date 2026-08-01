@@ -48,6 +48,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         .init(id: "editor.delete_to_prev_tab_stop", title: "Edit: Delete to Previous Tab Stop", commandJSON: #"{"kind":"edit","op":"delete_to_prev_tab_stop"}"#),
         .init(id: "editor.snippet_next_placeholder", title: "Edit: Snippet Next Placeholder", commandJSON: #"{"kind":"cursor","op":"snippet_next_placeholder"}"#),
         .init(id: "editor.snippet_prev_placeholder", title: "Edit: Snippet Previous Placeholder", commandJSON: #"{"kind":"cursor","op":"snippet_prev_placeholder"}"#),
+        .init(id: "editor.add_next_occurrence", title: "Edit: Add Next Occurrence", commandJSON: #"{"kind":"cursor","op":"add_next_occurrence"}"#),
+        .init(id: "editor.add_all_occurrences", title: "Edit: Add All Occurrences", commandJSON: #"{"kind":"cursor","op":"add_all_occurrences"}"#),
         .init(id: "view.wrap.none", title: "View: Word Wrap Off", commandJSON: #"{"kind":"view","op":"set_wrap_mode","mode":"none"}"#),
         .init(id: "view.wrap.char", title: "View: Word Wrap by Character", commandJSON: #"{"kind":"view","op":"set_wrap_mode","mode":"char"}"#),
         .init(id: "view.wrap.word", title: "View: Word Wrap by Word", commandJSON: #"{"kind":"view","op":"set_wrap_mode","mode":"word"}"#),
