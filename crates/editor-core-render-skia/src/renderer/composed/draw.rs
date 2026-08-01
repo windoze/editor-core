@@ -17,31 +17,9 @@ impl SkiaRenderer {
         theme: &RenderTheme,
         row_range: Option<(usize, usize)>,
     ) -> Result<(), RenderError> {
-        let mut bg_paint = Paint::default();
-        bg_paint.set_anti_alias(false);
-        bg_paint.set_color(rgba_to_skia_color(theme.background));
-        canvas.draw_paint(&bg_paint);
-
-        let gutter_x = config.padding_x_px;
-        let gutter_w_px = config.gutter_width_cells as f32 * config.cell_width_px;
-        let text_origin_x = gutter_x + gutter_w_px;
-
-        if config.gutter_width_cells > 0 && gutter_w_px > 0.0 {
-            let gutter_bg =
-                resolve_style_background(GUTTER_BACKGROUND_STYLE_ID, theme, theme.background);
-            let rect = Rect::from_xywh(gutter_x, 0.0, gutter_w_px, config.height_px as f32);
-            let mut paint = Paint::default();
-            paint.set_anti_alias(false);
-            paint.set_color(rgba_to_skia_color(gutter_bg));
-            canvas.draw_rect(rect, &paint);
-
-            let sep = resolve_style_foreground(GUTTER_SEPARATOR_STYLE_ID, theme, theme.foreground);
-            let sep_rect = Rect::from_xywh(text_origin_x, 0.0, 1.0, config.height_px as f32);
-            let mut sep_paint = Paint::default();
-            sep_paint.set_anti_alias(false);
-            sep_paint.set_color(rgba_to_skia_color(sep));
-            canvas.draw_rect(sep_rect, &sep_paint);
-        }
+        draw_canvas_background(canvas, theme);
+        let (gutter_x, _gutter_w_px, text_origin_x) = gutter_metrics(config);
+        draw_gutter_background(canvas, config, theme);
 
         let total_rows = grid.lines.len();
         let (row_start, row_end) = row_range.unwrap_or((0, total_rows));
@@ -176,21 +154,14 @@ impl SkiaRenderer {
                     );
                 }
 
-                // Line number text (best-effort; tests should not depend on glyph rasterization).
-                let gutter_fg =
-                    resolve_style_foreground(GUTTER_FOREGROUND_STYLE_ID, theme, theme.foreground);
-                let mut paint = Paint::default();
-                paint.set_anti_alias(false);
-                paint.set_color(rgba_to_skia_color(gutter_fg));
-
-                let line_no = (logical_line + 1).to_string();
-                let marker_cells = fold_marker_column_cells(&config);
-                let x_px = gutter_x + config.cell_width_px * marker_cells as f32; // leave cells for fold marker
-                canvas.draw_str(
-                    line_no,
-                    Point::new(x_px, baseline_y),
-                    self.normal_primary_font(),
-                    &paint,
+                draw_gutter_line_number(
+                    self,
+                    canvas,
+                    logical_line,
+                    gutter_x,
+                    baseline_y,
+                    config,
+                    theme,
                 );
             }
 
@@ -208,54 +179,12 @@ impl SkiaRenderer {
                         }
                     }
 
-                    let tab_w = config.tab_width_cells.max(1);
-                    let levels = indent_cells / tab_w;
-                    if levels > 0 {
-                        let guide_color = resolve_style_foreground_or_background(
-                            INDENT_GUIDE_STYLE_ID,
-                            theme,
-                            default_indent_guide_color(theme),
-                        );
-                        let mut paint = Paint::default();
-                        paint.set_anti_alias(false);
-                        paint.set_color(rgba_to_skia_color(guide_color));
-
-                        for level in 1..=levels {
-                            // Place the guide on the boundary *between* indentation levels,
-                            // i.e. right after a tabstop width.
-                            let boundary_cells = level.saturating_mul(tab_w);
-                            let x_px = (text_origin_x
-                                + boundary_cells as f32 * config.cell_width_px)
-                                .round();
-                            let rect = Rect::from_xywh(x_px, y_top, 1.0, config.line_height_px);
-                            canvas.draw_rect(rect, &paint);
-                        }
-                    }
+                    draw_indent_guides(canvas, indent_cells, text_origin_x, y_top, config, theme);
                 }
 
                 let whitespace_mode = config.whitespace_render_mode;
-                let draw_whitespace = match whitespace_mode {
-                    WhitespaceRenderMode::None => false,
-                    WhitespaceRenderMode::Selection => !sel_ranges.is_empty(),
-                    WhitespaceRenderMode::All => true,
-                };
-                if draw_whitespace {
-                    let marker_color = resolve_style_foreground_or_background(
-                        WHITESPACE_STYLE_ID,
-                        theme,
-                        default_whitespace_marker_color(theme),
-                    );
-
-                    let mut dot_paint = Paint::default();
-                    dot_paint.set_anti_alias(true);
-                    dot_paint.set_color(rgba_to_skia_color(marker_color));
-
-                    let mut stroke_paint = Paint::default();
-                    stroke_paint.set_anti_alias(true);
-                    stroke_paint.set_color(rgba_to_skia_color(marker_color));
-                    stroke_paint.set_style(skia_safe::paint::Style::Stroke);
-                    stroke_paint.set_stroke_width(1.0);
-
+                if should_draw_whitespace_markers(whitespace_mode, !sel_ranges.is_empty()) {
+                    let (dot_paint, stroke_paint) = whitespace_marker_paints(theme);
                     let mut marker_x_cells: u32 = 0;
                     for cell in &line.cells {
                         let w_cells = cell.width as u32;
@@ -279,42 +208,16 @@ impl SkiaRenderer {
                         if selected {
                             let x_px = text_origin_x + marker_x_cells as f32 * config.cell_width_px;
                             let w_px = w_cells as f32 * config.cell_width_px;
-                            let cy = y_top + config.line_height_px * 0.5;
-
-                            if cell.ch == ' ' {
-                                let cx = x_px + w_px * 0.5;
-                                let r = (config.cell_width_px.min(config.line_height_px) * 0.10)
-                                    .max(1.0);
-                                canvas.draw_circle(Point::new(cx, cy), r, &dot_paint);
-                            } else if cell.ch == '\t' {
-                                let pad = (config.cell_width_px * 0.15).min(w_px * 0.25);
-                                let x0 = x_px + pad;
-                                let x1 = (x_px + w_px - pad).max(x0 + 1.0);
-                                let head = (config.cell_width_px.min(config.line_height_px) * 0.20)
-                                    .max(2.0);
-                                let shaft_end = (x1 - head).max(x0);
-
-                                canvas.draw_line(
-                                    Point::new(x0, cy),
-                                    Point::new(shaft_end, cy),
-                                    &stroke_paint,
-                                );
-                                canvas.draw_line(
-                                    Point::new(shaft_end, cy),
-                                    Point::new(x1, cy),
-                                    &stroke_paint,
-                                );
-                                canvas.draw_line(
-                                    Point::new(x1, cy),
-                                    Point::new(x1 - head, cy - head * 0.6),
-                                    &stroke_paint,
-                                );
-                                canvas.draw_line(
-                                    Point::new(x1, cy),
-                                    Point::new(x1 - head, cy + head * 0.6),
-                                    &stroke_paint,
-                                );
-                            }
+                            draw_whitespace_marker_cell(
+                                canvas,
+                                cell.ch,
+                                x_px,
+                                w_px,
+                                y_top,
+                                config,
+                                &dot_paint,
+                                &stroke_paint,
+                            );
                         }
 
                         marker_x_cells = marker_x_cells.saturating_add(w_cells);

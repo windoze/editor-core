@@ -27,13 +27,11 @@ use editor_core::{
     },
 };
 use skia_safe::Shaper;
-use skia_safe::shaper::run_handler::{Buffer, RunInfo};
-use skia_safe::shaper::{Feature, RunHandler};
+use skia_safe::shaper::Feature;
 use skia_safe::{
     AlphaType, Color, ColorSpace, ColorType, Font, FontHinting, FontMgr, FontStyle, FourByteTag,
     GlyphId, ImageInfo, Paint, Point, Rect, surfaces,
 };
-use std::collections::{HashMap, VecDeque};
 use std::ffi::c_void;
 
 #[cfg(target_os = "macos")]
