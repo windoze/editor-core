@@ -1995,6 +1995,42 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_json(
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(
+    ui: *mut EditorUi,
+    workspace_edit_json_utf8: *const c_char,
+    document_uri_utf8: *const c_char,
+) -> *mut c_char {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let workspace_edit_json =
+            require_cstr(workspace_edit_json_utf8, "workspace_edit_json_utf8")?
+                .to_str()
+                .map_err(|_| "workspace_edit_json_utf8 is not valid UTF-8".to_string())?;
+        let document_uri = if document_uri_utf8.is_null() {
+            None
+        } else {
+            Some(
+                require_cstr(document_uri_utf8, "document_uri_utf8")?
+                    .to_str()
+                    .map_err(|_| "document_uri_utf8 is not valid UTF-8".to_string())?,
+            )
+        };
+        ui.lsp_apply_workspace_edit_json(workspace_edit_json, document_uri)
+            .map(make_c_string_ptr)
+            .map_err(map_ui_error)
+    }) {
+        Ok(ptr) => {
+            clear_last_error();
+            ptr
+        }
+        Err(err) => {
+            set_last_error(err);
+            ptr::null_mut()
+        }
+    }
+}
+
 /// # Safety
 ///
 /// `ui` must be a valid pointer to an `EditorUi`.
@@ -6889,6 +6925,60 @@ contexts:
 
         // Highlighted cell at col=1 => x in [10..20]
         assert_eq!(pixel(&buf, 200, 15, 10), [1, 200, 2, 255]);
+
+        unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+    }
+
+    #[test]
+    fn ffi_lsp_apply_workspace_edit_json_applies_current_document() {
+        let initial = CString::new("abc\n").unwrap();
+        let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+        assert!(!ui.is_null());
+
+        let workspace_edit = CString::new(
+            r#"{
+                "changes": {
+                    "file:///test.rs": [
+                        { "range": { "start": { "line": 0, "character": 1 }, "end": { "line": 0, "character": 2 } }, "newText": "B" }
+                    ],
+                    "file:///other.rs": [
+                        { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "X" }
+                    ]
+                }
+            }"#,
+        )
+        .unwrap();
+        let uri = CString::new("file:///test.rs").unwrap();
+
+        let result_ptr = editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(
+            ui,
+            workspace_edit.as_ptr(),
+            uri.as_ptr(),
+        );
+        assert!(!result_ptr.is_null());
+        let result_json = unsafe { CStr::from_ptr(result_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { editor_core_ui_ffi_string_free(result_ptr) };
+
+        let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
+        assert_eq!(result["applied"], true);
+        assert_eq!(result["applied_uri"], "file:///test.rs");
+        assert_eq!(result["applied_edit_count"], 1);
+        assert_eq!(
+            result["skipped_uris"],
+            serde_json::json!(["file:///other.rs"])
+        );
+
+        let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+        assert!(!text_ptr.is_null());
+        let text = unsafe { CStr::from_ptr(text_ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { editor_core_ui_ffi_string_free(text_ptr) };
+        assert_eq!(text, "aBc\n");
 
         unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
     }

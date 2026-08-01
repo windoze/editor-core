@@ -581,6 +581,27 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_lsp_apply_document_symbols_json")
     }
 
+    @discardableResult
+    public func lspApplyWorkspaceEditJSON(_ workspaceEditJSON: String, documentURI: String? = nil) throws -> String {
+        let ptr: UnsafeMutablePointer<CChar>? = workspaceEditJSON.withCString { editPtr in
+            if let documentURI {
+                return documentURI.withCString { uriPtr in
+                    editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(handle, editPtr, uriPtr)
+                }
+            }
+            return editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(handle, editPtr, nil)
+        }
+        guard let ptr else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_lsp_apply_workspace_edit_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
     public func lspApplySemanticTokens(_ data: [UInt32]) throws {
         let status = data.withUnsafeBufferPointer { ptr in
             editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(handle, ptr.baseAddress, UInt32(ptr.count))

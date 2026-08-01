@@ -20,11 +20,12 @@ use editor_core::{
 };
 use editor_core_lsp::{
     DeltaCalculator, LspContentChange, LspDocument, LspEvent, LspNotification, LspSession,
-    LspSessionStartOptions, char_offsets_for_lsp_range, encode_semantic_style_id,
+    LspSessionStartOptions, LspTextEdit, char_offsets_for_lsp_range, encode_semantic_style_id,
     lsp_code_lens_to_processing_edit, lsp_diagnostics_to_processing_edits,
     lsp_document_highlights_to_processing_edit, lsp_document_links_to_processing_edits,
     lsp_document_symbols_to_processing_edit, lsp_inlay_hints_to_processing_edit,
-    semantic_tokens_to_intervals, text_edits_from_value,
+    semantic_tokens_to_intervals, summarize_workspace_edit, text_edits_from_value,
+    workspace_edit_text_edits,
 };
 use editor_core_render_skia::{
     FOLD_MARKER_COLLAPSED_STYLE_ID, FOLD_MARKER_EXPANDED_STYLE_ID, FoldMarker, FoldMarkerStyle,
@@ -2985,9 +2986,7 @@ impl EditorUi {
             LspResultSlot::Rename,
             line,
             column,
-            |lsp, line_index, line, column| {
-                lsp.request_rename(line_index, line, column, new_name)
-            },
+            |lsp, line_index, line, column| lsp.request_rename(line_index, line, column, new_name),
         )
     }
 
@@ -3465,6 +3464,70 @@ impl EditorUi {
         value: &serde_json::Value,
     ) -> Result<bool, UiError> {
         let edits = text_edits_from_value(value);
+        self.lsp_apply_lsp_text_edits(buffer_id, &edits)
+    }
+
+    pub fn lsp_apply_workspace_edit_json(
+        &mut self,
+        workspace_edit_json: &str,
+        document_uri: Option<&str>,
+    ) -> Result<String, UiError> {
+        let value: serde_json::Value = serde_json::from_str(workspace_edit_json)
+            .map_err(|e| UiError::Processor(e.to_string()))?;
+
+        let (buffer_id, current_uri) = {
+            let doc = self.lock_doc();
+            let uri = document_uri
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .or_else(|| doc.lsp_document_uri.clone())
+                .ok_or_else(|| UiError::Processor("document URI missing".to_string()))?;
+            (doc.buffer_id, uri)
+        };
+
+        let by_uri = workspace_edit_text_edits(&value);
+        let target_edits = by_uri
+            .get(current_uri.as_str())
+            .cloned()
+            .unwrap_or_default();
+        let applied = self.lsp_apply_lsp_text_edits(buffer_id, &target_edits)?;
+
+        let mut skipped_uris = by_uri
+            .keys()
+            .filter(|uri| uri.as_str() != current_uri.as_str())
+            .cloned()
+            .collect::<Vec<_>>();
+        skipped_uris.sort();
+
+        let summary = summarize_workspace_edit(&value);
+        let documents = summary
+            .documents
+            .into_iter()
+            .map(|doc| {
+                serde_json::json!({
+                    "uri": doc.uri,
+                    "edit_count": doc.edit_count,
+                    "has_overlapping_edits": doc.has_overlapping_edits,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        Ok(serde_json::json!({
+            "applied": applied,
+            "applied_uri": current_uri,
+            "applied_edit_count": target_edits.len(),
+            "skipped_uris": skipped_uris,
+            "documents": documents,
+        })
+        .to_string())
+    }
+
+    fn lsp_apply_lsp_text_edits(
+        &mut self,
+        buffer_id: BufferId,
+        edits: &[LspTextEdit],
+    ) -> Result<bool, UiError> {
         if edits.is_empty() {
             return Ok(false);
         }
@@ -8831,5 +8894,36 @@ fn main() {
         let applied = ui.lsp_apply_text_edits_json(edits).unwrap();
         assert!(applied);
         assert_eq!(ui.text(), "XaBc\n");
+    }
+
+    #[test]
+    fn ui_lsp_apply_workspace_edit_json_applies_current_uri_and_reports_skips() {
+        let mut ui = EditorUi::new("abc\n", 80);
+
+        let edit = r#"{
+            "changes": {
+                "file:///test.rs": [
+                    { "range": { "start": { "line": 0, "character": 1 }, "end": { "line": 0, "character": 2 } }, "newText": "B" }
+                ],
+                "file:///other.rs": [
+                    { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "X" }
+                ]
+            }
+        }"#;
+
+        let result_json = ui
+            .lsp_apply_workspace_edit_json(edit, Some("file:///test.rs"))
+            .unwrap();
+        assert_eq!(ui.text(), "aBc\n");
+
+        let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
+        assert_eq!(result["applied"], true);
+        assert_eq!(result["applied_uri"], "file:///test.rs");
+        assert_eq!(result["applied_edit_count"], 1);
+        assert_eq!(
+            result["skipped_uris"],
+            serde_json::json!(["file:///other.rs"])
+        );
+        assert_eq!(result["documents"].as_array().unwrap().len(), 2);
     }
 }

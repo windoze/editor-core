@@ -300,10 +300,18 @@ EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8, uint32
 EditorUi* editor_core_ui_ffi_editor_ui_clone_view(EditorUi* ui, uint32_t viewport_width_cells);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_hover(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_set_tab_width(EditorUi* ui, uint32_t width_cells);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(EditorUi* ui, const char* workspace_edit_json_utf8, const char* document_uri_utf8);
 char* editor_core_ui_ffi_editor_ui_minimap_json(EditorUi* ui, uint32_t start_visual_row, uint32_t count);
 int32_t editor_core_ui_ffi_editor_ui_render_rgba(EditorUi* ui, uint8_t* out_buf, uint32_t out_cap, uint32_t* out_len);
 int32_t editor_core_ui_ffi_editor_ui_get_selections(EditorUi* ui, EcuSelectionRange* out_ranges, uint32_t out_cap, uint32_t* out_len, uint32_t* out_primary_index);
 ```
+
+`editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json` is a pre-v1 JSON/control-plane
+surface for rename/code-action style payloads. It applies `TextEdit`s that target the supplied
+document URI, or the UI's current LSP document URI when the argument is null/empty, and returns an
+allocated JSON summary with `applied`, `applied_uri`, `applied_edit_count`, `skipped_uris`, and
+per-document edit counts/conflict hints. The caller owns the returned string and must release it
+with the UI FFI string free function.
 
 All public array counts (`style_count`, `font_count`, `decoration_count`, `range_count`, `data_len`, `out_cap`) are `uint32_t`; Rust checks conversion to internal `usize` and validates Rust slice length limits before constructing slices.
 

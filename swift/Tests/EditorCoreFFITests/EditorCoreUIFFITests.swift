@@ -984,6 +984,54 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(pixel(rgba, widthPx: 200, x: 15, y: 10), [1, 200, 2, 255])
     }
 
+    func testLspApplyWorkspaceEditJSONAppliesCurrentDocumentAndReportsSkippedURIs() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc\n", viewportWidthCells: 80)
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "file:///test.rs": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "B"
+              }
+            ],
+            "file:///other.rs": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "X"
+              }
+            ]
+          }
+        }
+        """
+
+        let result = try JSONTestHelpers.object(
+            try ui.lspApplyWorkspaceEditJSON(workspaceEdit, documentURI: "file:///test.rs")
+        )
+
+        XCTAssertEqual(try ui.text(), "aBc\n")
+        XCTAssertEqual(result["applied"] as? Bool, true)
+        XCTAssertEqual(result["applied_uri"] as? String, "file:///test.rs")
+        XCTAssertEqual(result["applied_edit_count"] as? Int, 1)
+        XCTAssertEqual(result["skipped_uris"] as? [String], ["file:///other.rs"])
+
+        let documents = try XCTUnwrap(result["documents"] as? [[String: Any]])
+        XCTAssertEqual(documents.count, 2)
+        XCTAssertTrue(documents.contains {
+            ($0["uri"] as? String) == "file:///test.rs"
+                && ($0["edit_count"] as? Int) == 1
+                && ($0["has_overlapping_edits"] as? Bool) == false
+        })
+    }
+
     func testLspInlayHintsAffectRendering() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         // Use a space in the inlay hint label so glyph rasterization does not affect the pixel sample.

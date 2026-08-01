@@ -334,6 +334,11 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_json(
     EditorUi* ui,
     const char* document_symbols_result_json_utf8
 );
+char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(
+    EditorUi* ui,
+    const char* workspace_edit_json_utf8,
+    const char* document_uri_utf8
+);
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(EditorUi* ui,
                                                                const uint32_t* data,
                                                                uint32_t data_len);
