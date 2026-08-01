@@ -6486,10 +6486,16 @@ impl EditorUi {
                 return Ok(false);
             }
         };
+        applied |= self.handle_lsp_events(events)?;
+        Ok(applied)
+    }
+
+    fn handle_lsp_events(&mut self, events: Vec<LspEvent>) -> Result<bool, UiError> {
         if events.is_empty() {
-            return Ok(applied);
+            return Ok(false);
         }
 
+        let mut applied = false;
         // Avoid re-entrant locking: collect text edits while holding the doc lock and apply
         // them after releasing it.
         let mut on_type_formatting_results: Vec<serde_json::Value> = Vec::new();
@@ -6618,8 +6624,12 @@ impl EditorUi {
                         if doc.text_version != version {
                             continue;
                         }
-                        if resp.error.is_some() {
-                            continue;
+                        if let Some(error) = resp.error {
+                            doc.lsp_fail(format!(
+                                "LSP on-type formatting failed: {} (code {})",
+                                error.message, error.code
+                            ));
+                            return Ok(false);
                         }
 
                         let result = resp.result.unwrap_or(serde_json::Value::Null);
@@ -7645,6 +7655,55 @@ mod tests {
             status["detail"]
                 .as_str()
                 .is_some_and(|detail| detail.contains("LSP session is not available")),
+            "unexpected LSP status: {status}"
+        );
+    }
+
+    #[test]
+    fn on_type_formatting_response_error_records_lsp_status() {
+        let mut ui = EditorUi::new("abc", 80);
+        let request_id = 42;
+        let view_id = ui.view_id;
+        {
+            let mut doc = ui.lock_doc();
+            doc.lsp_last_cmd = Some("fake-lsp".to_string());
+            let version = doc.text_version;
+            doc.lsp_client_requests.insert(
+                request_id,
+                LspClientRequest::OnTypeFormatting {
+                    view: view_id,
+                    version,
+                },
+            );
+            doc.lsp_latest_on_type_formatting_request_id
+                .insert(view_id, request_id);
+        }
+
+        let applied = ui
+            .handle_lsp_events(vec![LspEvent::Response(editor_core_lsp::LspResponse {
+                id: request_id,
+                method: "textDocument/onTypeFormatting".to_string(),
+                uri: None,
+                result: None,
+                error: Some(LspResponseError {
+                    code: -32603,
+                    message: "formatter exploded".to_string(),
+                    data: None,
+                }),
+            })])
+            .unwrap();
+        assert!(!applied);
+
+        let status: serde_json::Value =
+            serde_json::from_str(ui.lsp_status_json().as_str()).unwrap();
+        assert_eq!(status["availability"], "failed");
+        assert_eq!(status["state"], "failed");
+        assert!(
+            status["detail"].as_str().is_some_and(|detail| {
+                detail.contains("LSP on-type formatting failed")
+                    && detail.contains("formatter exploded")
+                    && detail.contains("-32603")
+            }),
             "unexpected LSP status: {status}"
         );
     }
