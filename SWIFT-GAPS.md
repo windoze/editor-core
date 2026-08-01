@@ -187,6 +187,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 105 已完成：AttoEditor runtime compatibility 将启动必需 feature 与可选 feature 拆分，`LSP interactive requests`、`LSP status snapshot` 和 `WorkspaceEdit application` 缺失时不再阻止基础编辑器启动，而是记录为 optional gap；`AttoCommandSchema.requiredRuntimeFeatures` 接入 command registry，菜单 validation、command palette disabled state 和 `executeCommand(id:)` 会统一禁用缺少 runtime 支持的 LSP/formatting/WorkspaceEdit 命令，同时保留基础编辑命令可用。测试覆盖 optional feature 报告和 active editor 下命令级降级。
 - 2026-08-02 阶段 106 已完成：AttoEditor keymap 解析新增 Sublime 风格 `context` 条件过滤和确定性冲突解析。用户 keymap entry 现在支持 `equal` / `not_equal` / `regex_match` / `not_regex_match` 条件，`resolvedKeymap(...)` 会返回最终 bindings 与 conflicts，同一快捷键冲突时采用“后出现的匹配项获胜并移除旧 command binding”的规则，避免菜单层保留重复 shortcut。测试覆盖 context 匹配、regex 条件、用户条目互相冲突、用户条目 shadow 默认快捷键。
 - 2026-08-02 阶段 107 已完成：AttoEditor keymap 用户条目支持解码 Sublime 风格 `args`，`AttoKeymapResolution` 会携带 command arguments，AppDelegate 的菜单/shortcut command 路径会在存在 args 时调用 `executeCommand(id:arguments:)`。测试覆盖 `go.line` 参数路由、`editor.apply_snippet` 参数解析和 nested JSON 参数保留。
+- 2026-08-02 阶段 108 已完成：AttoEditor keymap 用户条目支持基础多键序列（chord）解析和 App 层 key-down dispatcher。多键序列不再占用菜单单键 shortcut，AppDelegate 会维护 pending prefix，完整序列命中后复用统一 command path 和 keymap `args`。测试覆盖 `["ctrl+k", "ctrl+g"]` 触发参数化 `go.line`。
 
 ## 分层结论
 
@@ -427,7 +428,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 主要缺口：
 
-- command registry 已有基础命令启用/禁用状态、分组元数据、参数 schema、runtime feature requirement、宏录制策略和静态 editor-core JSON payload 元数据；keymap 已有基础 context 条件过滤、快捷键冲突解析和 `args` 执行路由。仍缺更完整的插件/宏运行时、命令上下文模型和多键序列。
+- command registry 已有基础命令启用/禁用状态、分组元数据、参数 schema、runtime feature requirement、宏录制策略和静态 editor-core JSON payload 元数据；keymap 已有基础 context 条件过滤、快捷键冲突解析、`args` 执行路由和多键序列 dispatcher。仍缺更完整的插件/宏运行时、命令上下文模型和完整 Sublime keymap 语义矩阵。
 - command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令；LSP location、symbols quick panels、completion popup、signature help、rename 和 code action 主路径已接入，但更深层 LSP/项目级命令仍不完整。
 - P0 菜单、command palette、keymap 和测试已开始统一使用 command id；基础参数化命令可通过 typed arguments 执行，但更深层的命令上下文、插件/宏回放策略和 keymap 冲突解析仍缺。
 - 一些 core/LSP 命令仍没有 App 命令入口。
@@ -474,7 +475,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - `.sublime-color-scheme` 兼容覆盖率。
 - `.tmTheme` 兼容覆盖率。
 - Sublime settings scope 继承规则。
-- keymap 文件已有基础 JSON 解析、`context` 条件过滤、快捷键冲突解析和 `args` 执行路由；仍缺完整 Sublime keymap 多键序列、所有上下文 key/operator 语义和跨平台键名兼容矩阵。
+- keymap 文件已有基础 JSON 解析、`context` 条件过滤、快捷键冲突解析、`args` 执行路由和基础多键序列 dispatcher；仍缺完整 Sublime keymap 的 prefix 超时/提示细节、所有上下文 key/operator 语义和跨平台键名兼容矩阵。
 - snippets。
 - macros。
 - build systems。
@@ -568,6 +569,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor keymap 已支持 arrow/navigation function-key token，move lines up/down 已有默认 arrow-key 绑定。
 - 已完成：AttoEditor keymap 已支持基础 `context` 条件过滤和快捷键冲突解析，`resolvedKeymap(...)` 可暴露 conflicts 供测试和后续 UI/诊断使用。
 - 已完成：AttoEditor keymap 已支持用户条目 `args` 解码，并能通过菜单/shortcut command 路径调用 `executeCommand(id:arguments:)` 执行参数化命令。
+- 已完成：AttoEditor keymap 已支持基础多键序列解析和 App 层 dispatcher，多键序列命中后复用统一 command id 和 typed arguments 执行路径。
 - 已完成：AttoEditor command palette 已用 `cursor.*` 覆盖 grapheme/word、visual row/page、visual line/document start/end 及对应 modify-selection 视觉移动命令矩阵。
 - 已完成：AttoEditor 主菜单已有独立 Selection 菜单分组，常用 selection/multicursor 命令复用统一 command id。
 - 已完成：Swift UI binding 已为 derived-state snapshots 提供基础 typed model。

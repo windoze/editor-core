@@ -17,7 +17,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var windows: [AttoWindowContext] = []
     private var activeWindowID: UUID?
     private var keyBindings: [String: AttoKeyBinding]
+    private var keySequences: [String: AttoKeySequence]
     private var keyBindingArguments: [String: AttoCommandArguments]
+    private var pendingKeySequence: [AttoKeyBinding] = []
+    private var keyEventMonitor: Any?
 
     var ipcServer: AttoIpcServer?
     var createDefaultWindowOnLaunch: Bool = true
@@ -25,12 +28,18 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     override init() {
         let keymap = AttoKeymap.resolvedKeymap()
         self.keyBindings = keymap.bindings
+        self.keySequences = keymap.sequences
         self.keyBindingArguments = keymap.arguments
         super.init()
     }
 
-    init(keyBindings: [String: AttoKeyBinding], keyBindingArguments: [String: AttoCommandArguments] = [:]) {
+    init(
+        keyBindings: [String: AttoKeyBinding],
+        keyBindingArguments: [String: AttoCommandArguments] = [:],
+        keySequences: [String: AttoKeySequence] = [:]
+    ) {
         self.keyBindings = keyBindings
+        self.keySequences = keySequences
         self.keyBindingArguments = keyBindingArguments
         super.init()
     }
@@ -174,6 +183,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         guard validateRuntimeCompatibilityBeforeLaunch() else {
             return
         }
+        installKeyEventMonitorIfNeeded()
 
         let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
             ?? CGRect(origin: .zero, size: AttoWindowSizing.preferredContentSize)
@@ -251,7 +261,22 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                 self?.makeSessionSnapshot()
             })
         }
+        if let keyEventMonitor {
+            NSEvent.removeMonitor(keyEventMonitor)
+            self.keyEventMonitor = nil
+        }
         ipcServer?.stop()
+    }
+
+    private func installKeyEventMonitorIfNeeded() {
+        guard keyEventMonitor == nil else { return }
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            let handled = MainActor.assumeIsolated {
+                self.handleKeyDownEvent(event)
+            }
+            return handled ? nil : event
+        }
     }
 
     private func validateRuntimeCompatibilityBeforeLaunch(logSuccess: Bool = true) -> Bool {
@@ -407,10 +432,61 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             NSSound.beep()
             return
         }
+        executeCommandUsingKeymapArguments(commandID: commandID)
+    }
+
+    @discardableResult
+    private func executeCommandUsingKeymapArguments(commandID: String) -> Bool {
         if let arguments = keyBindingArguments[commandID] {
             executeCommand(id: commandID, arguments: arguments)
         } else {
             executeCommand(id: commandID)
+        }
+    }
+
+    @discardableResult
+    func handleKeyDownEvent(_ event: NSEvent) -> Bool {
+        guard let binding = AttoKeymap.binding(for: event) else {
+            pendingKeySequence = []
+            return false
+        }
+        return handleKeyBinding(binding)
+    }
+
+    @discardableResult
+    private func handleKeyBinding(_ binding: AttoKeyBinding) -> Bool {
+        let candidate = pendingKeySequence + [binding]
+        if let commandID = commandID(forKeySequence: candidate) {
+            pendingKeySequence = []
+            return executeCommandUsingKeymapArguments(commandID: commandID)
+        }
+
+        if hasKeySequencePrefix(candidate) {
+            pendingKeySequence = candidate
+            return true
+        }
+
+        let hadPending = pendingKeySequence.isEmpty == false
+        pendingKeySequence = []
+
+        if hadPending, hasKeySequencePrefix([binding]) {
+            pendingKeySequence = [binding]
+            return true
+        }
+
+        return false
+    }
+
+    private func commandID(forKeySequence bindings: [AttoKeyBinding]) -> String? {
+        keySequences.first { _, sequence in
+            sequence.bindings == bindings
+        }?.key
+    }
+
+    private func hasKeySequencePrefix(_ bindings: [AttoKeyBinding]) -> Bool {
+        keySequences.values.contains { sequence in
+            guard sequence.bindings.count > bindings.count else { return false }
+            return Array(sequence.bindings.prefix(bindings.count)) == bindings
         }
     }
 
@@ -658,6 +734,15 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     func _keyBindingArgumentsForTesting(commandID: String) -> AttoCommandArguments? {
         keyBindingArguments[commandID]
+    }
+
+    func _keySequenceForTesting(commandID: String) -> AttoKeySequence? {
+        keySequences[commandID]
+    }
+
+    @discardableResult
+    func _handleKeyBindingForTesting(_ binding: AttoKeyBinding) -> Bool {
+        handleKeyBinding(binding)
     }
 
     func _commandIsEnabledForTesting(commandID: String) -> Bool {

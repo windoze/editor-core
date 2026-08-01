@@ -11,6 +11,14 @@ struct AttoKeyBinding: Equatable {
     }
 }
 
+struct AttoKeySequence: Equatable {
+    var bindings: [AttoKeyBinding]
+
+    var isChord: Bool {
+        bindings.count > 1
+    }
+}
+
 enum AttoKeymapContextValue: Equatable {
     case bool(Bool)
     case string(String)
@@ -42,10 +50,18 @@ struct AttoKeymapConflict: Equatable {
     let shadowedCommand: String
 }
 
+struct AttoKeymapSequenceConflict: Equatable {
+    let sequence: AttoKeySequence
+    let keptCommand: String
+    let shadowedCommand: String
+}
+
 struct AttoKeymapResolution: Equatable {
     let bindings: [String: AttoKeyBinding]
+    let sequences: [String: AttoKeySequence]
     let arguments: [String: AttoCommandArguments]
     let conflicts: [AttoKeymapConflict]
+    let sequenceConflicts: [AttoKeymapSequenceConflict]
 }
 
 enum AttoKeymap {
@@ -116,10 +132,9 @@ enum AttoKeymap {
             resolver.apply(command: command, binding: binding)
         }
         for entry in loadUserEntries(fileManager: fileManager, env: env, context: context) {
-            guard let bindingText = entry.bindingText,
-                  let binding = parseBinding(bindingText)
+            guard let sequence = parseSequence(entry.bindingSequenceTexts)
             else { continue }
-            resolver.apply(command: entry.command, binding: binding, arguments: entry.args)
+            resolver.apply(command: entry.command, sequence: sequence, arguments: entry.args)
         }
         return resolver.resolution()
     }
@@ -131,8 +146,8 @@ enum AttoKeymap {
     ) -> [String: AttoKeyBinding] {
         var resolver = BindingResolver()
         for entry in loadUserEntries(fileManager: fileManager, env: env, context: context) {
-            guard let bindingText = entry.bindingText,
-                  let binding = parseBinding(bindingText)
+            guard let sequence = parseSequence(entry.bindingSequenceTexts), sequence.isChord == false,
+                  let binding = sequence.bindings.first
             else { continue }
             resolver.apply(command: entry.command, binding: binding, arguments: entry.args)
         }
@@ -205,6 +220,31 @@ enum AttoKeymap {
         return AttoKeyBinding(keyEquivalent: key, modifiers: modifiers)
     }
 
+    static func parseSequence(_ raw: [String]) -> AttoKeySequence? {
+        guard raw.isEmpty == false else { return nil }
+        let bindings = raw.compactMap { parseBinding($0) }
+        guard bindings.count == raw.count else { return nil }
+        return AttoKeySequence(bindings: bindings)
+    }
+
+    static func binding(for event: NSEvent) -> AttoKeyBinding? {
+        guard event.type == .keyDown else { return nil }
+        guard let raw = event.charactersIgnoringModifiers ?? event.characters,
+              raw.isEmpty == false
+        else { return nil }
+
+        let keyEquivalent: String
+        if raw.count == 1, raw.unicodeScalars.first?.value ?? 0 < 0xF700 {
+            keyEquivalent = raw.lowercased()
+        } else {
+            keyEquivalent = raw
+        }
+
+        var modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        modifiers.remove(.capsLock)
+        return AttoKeyBinding(keyEquivalent: keyEquivalent, modifiers: modifiers)
+    }
+
     private static func keyEquivalent(for token: String) -> String {
         switch token {
         case "space":
@@ -273,21 +313,28 @@ enum AttoKeymap {
         }
     }
 
+    private struct SequenceKey: Hashable {
+        let bindings: [BindingKey]
+
+        init(_ sequence: AttoKeySequence) {
+            self.bindings = sequence.bindings.map(BindingKey.init)
+        }
+    }
+
     private struct BindingResolver {
         private var bindings: [String: AttoKeyBinding] = [:]
+        private var sequences: [String: AttoKeySequence] = [:]
         private var arguments: [String: AttoCommandArguments] = [:]
         private var ownersByBinding: [BindingKey: String] = [:]
+        private var ownersBySequence: [SequenceKey: String] = [:]
         private var conflicts: [AttoKeymapConflict] = []
+        private var sequenceConflicts: [AttoKeymapSequenceConflict] = []
 
         mutating func apply(command: String, binding: AttoKeyBinding, arguments newArguments: AttoCommandArguments? = nil) {
             let bindingKey = BindingKey(binding)
 
-            if let oldBinding = bindings[command] {
-                let oldKey = BindingKey(oldBinding)
-                if ownersByBinding[oldKey] == command {
-                    ownersByBinding.removeValue(forKey: oldKey)
-                }
-            }
+            removeExistingBinding(for: command)
+            removeExistingSequence(for: command)
 
             if let shadowed = ownersByBinding[bindingKey], shadowed != command {
                 bindings.removeValue(forKey: shadowed)
@@ -308,8 +355,61 @@ enum AttoKeymap {
             ownersByBinding[bindingKey] = command
         }
 
+        mutating func apply(command: String, sequence: AttoKeySequence, arguments newArguments: AttoCommandArguments? = nil) {
+            if sequence.isChord == false, let binding = sequence.bindings.first {
+                apply(command: command, binding: binding, arguments: newArguments)
+                return
+            }
+
+            let sequenceKey = SequenceKey(sequence)
+            removeExistingBinding(for: command)
+            removeExistingSequence(for: command)
+
+            if let shadowed = ownersBySequence[sequenceKey], shadowed != command {
+                sequences.removeValue(forKey: shadowed)
+                arguments.removeValue(forKey: shadowed)
+                sequenceConflicts.append(AttoKeymapSequenceConflict(
+                    sequence: sequence,
+                    keptCommand: command,
+                    shadowedCommand: shadowed
+                ))
+            }
+
+            sequences[command] = sequence
+            if let newArguments {
+                arguments[command] = newArguments
+            } else {
+                arguments.removeValue(forKey: command)
+            }
+            ownersBySequence[sequenceKey] = command
+        }
+
+        private mutating func removeExistingBinding(for command: String) {
+            if let oldBinding = bindings.removeValue(forKey: command) {
+                let oldKey = BindingKey(oldBinding)
+                if ownersByBinding[oldKey] == command {
+                    ownersByBinding.removeValue(forKey: oldKey)
+                }
+            }
+        }
+
+        private mutating func removeExistingSequence(for command: String) {
+            if let oldSequence = sequences.removeValue(forKey: command) {
+                let oldKey = SequenceKey(oldSequence)
+                if ownersBySequence[oldKey] == command {
+                    ownersBySequence.removeValue(forKey: oldKey)
+                }
+            }
+        }
+
         func resolution() -> AttoKeymapResolution {
-            AttoKeymapResolution(bindings: bindings, arguments: arguments, conflicts: conflicts)
+            AttoKeymapResolution(
+                bindings: bindings,
+                sequences: sequences,
+                arguments: arguments,
+                conflicts: conflicts,
+                sequenceConflicts: sequenceConflicts
+            )
         }
     }
 }
@@ -345,6 +445,12 @@ private struct UserKeymapEntry: Decodable {
     var bindingText: String? {
         if let first = keys?.first { return first }
         return key
+    }
+
+    var bindingSequenceTexts: [String] {
+        if let keys, keys.isEmpty == false { return keys }
+        if let key { return [key] }
+        return []
     }
 
     func applies(to keymapContext: AttoKeymapContext) -> Bool {

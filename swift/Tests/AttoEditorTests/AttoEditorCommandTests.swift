@@ -574,6 +574,60 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(offsets.end, 6)
     }
 
+    func testKeymapChordSequencesDispatchThroughCommandPath() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let keymapURL = tempDir.appendingPathComponent("keymap.json")
+        try """
+        [
+          {
+            "keys": ["ctrl+k", "ctrl+g"],
+            "command": "go.line",
+            "args": { "line": 2, "column": 1 }
+          }
+        ]
+        """.write(to: keymapURL, atomically: true, encoding: .utf8)
+
+        let env = [AttoKeymap.userKeymapEnv: keymapURL.path]
+        let resolution = AttoKeymap.resolvedKeymap(env: env)
+        let chord = AttoKeySequence(bindings: [
+            try XCTUnwrap(AttoKeymap.parseBinding("ctrl+k")),
+            try XCTUnwrap(AttoKeymap.parseBinding("ctrl+g")),
+        ])
+        XCTAssertNil(resolution.bindings["go.line"])
+        XCTAssertEqual(resolution.sequences["go.line"], chord)
+        XCTAssertEqual(resolution.arguments["go.line"], ["line": .integer(2), "column": .integer(1)])
+
+        let delegate = AttoAppDelegate(
+            keyBindings: resolution.bindings,
+            keyBindingArguments: resolution.arguments,
+            keySequences: resolution.sequences
+        )
+        XCTAssertNil(delegate._keyBindingForTesting(commandID: "go.line"))
+        XCTAssertEqual(delegate._keySequenceForTesting(commandID: "go.line"), chord)
+
+        let fileURL = tempDir.appendingPathComponent("keymap-chord.txt")
+        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        XCTAssertEqual(try editorView.editor.selectionOffsets().start, 0)
+
+        XCTAssertTrue(delegate._handleKeyBindingForTesting(chord.bindings[0]))
+        XCTAssertEqual(try editorView.editor.selectionOffsets().start, 0)
+
+        XCTAssertTrue(delegate._handleKeyBindingForTesting(chord.bindings[1]))
+        let offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 4)
+        XCTAssertEqual(offsets.end, 4)
+    }
+
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
         let delegate = AttoAppDelegate(
             keyBindings: [
