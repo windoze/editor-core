@@ -41,6 +41,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("view.move_pane_left"))
         XCTAssertTrue(ids.contains("view.move_pane_right"))
         XCTAssertTrue(ids.contains("view.close_pane"))
+        XCTAssertTrue(ids.contains("go.line"))
         XCTAssertTrue(ids.contains("lsp.go_to_definition"))
         XCTAssertTrue(ids.contains("lsp.go_to_declaration"))
         XCTAssertTrue(ids.contains("lsp.go_to_type_definition"))
@@ -235,6 +236,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(resolved["editor.move_lines_down"], AttoKeymap.parseBinding("super+ctrl+down"))
         XCTAssertEqual(resolved["file.move_tab_left"], AttoKeymap.parseBinding("super+shift+["))
         XCTAssertEqual(resolved["file.move_tab_right"], AttoKeymap.parseBinding("super+shift+]"))
+        XCTAssertEqual(resolved["go.line"], AttoKeymap.parseBinding("ctrl+g"))
     }
 
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
@@ -286,6 +288,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "view.close_pane", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.fold_selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_folding_ranges", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "go.line", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.go_to_definition", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.find_references", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_locations", in: menu))
@@ -1198,6 +1201,41 @@ final class AttoEditorCommandTests: XCTestCase {
         try editorView.editor.insertNewline(autoIndent: true)
 
         XCTAssertEqual(try editorView.editor.text(), "{\n  ")
+    }
+
+    func testGoToLineCommandParsesInputAndMovesCaret() throws {
+        XCTAssertEqual(
+            AttoEditorAreaViewController.parseGoToLineTarget("3:2"),
+            AttoEditorAreaViewController.GoToLineTarget(line1: 3, column1: 2)
+        )
+        XCTAssertEqual(
+            AttoEditorAreaViewController.parseGoToLineTarget("4"),
+            AttoEditorAreaViewController.GoToLineTarget(line1: 4, column1: 1)
+        )
+        XCTAssertNil(AttoEditorAreaViewController.parseGoToLineTarget("0:1"))
+        XCTAssertNil(AttoEditorAreaViewController.parseGoToLineTarget("3:"))
+        XCTAssertNil(AttoEditorAreaViewController.parseGoToLineTarget("abc"))
+
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("goto-line.txt")
+        try "aa\nbb\ncc\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertTrue(vc.goToLineInActiveTab(input: "3:2"))
+        let offsets = try editorView.editor.selectionOffsets()
+        let pos = try editorView.editor.charOffsetToLogicalPosition(offset: offsets.end)
+        XCTAssertEqual(pos.line, 2)
+        XCTAssertEqual(pos.column, 1)
+
+        XCTAssertFalse(vc.goToLineInActiveTab(input: "x:y"))
     }
 
     func testCoreMultiDocumentMirrorTracksTabsAndPanes() throws {

@@ -412,6 +412,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "go.file", title: "Go: Go to File…") { [weak self] in
                 self?.showQuickOpen()
             },
+            .init(id: "go.line", title: "Go: Go to Line…") { [weak self] in
+                self?.activeWindow()?.editorAreaController.promptGoToLineInActiveTab()
+            },
             .init(id: "search.find_in_files", title: "Search: Find in Files") { [weak self] in
                 self?.activeWindow()?.showFindInFilesSidebar()
             },
@@ -664,6 +667,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                     || commandID.hasPrefix("view.wrap.")
                     || commandID == "view.toggle_minimap"
                     || commandID == "view.split_right"
+                    || commandID == "go.line"
                     || commandID == "go.back"
                     || commandID == "go.forward"
                     || commandID == "go.matching_bracket"

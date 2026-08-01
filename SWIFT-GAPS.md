@@ -168,6 +168,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 86 已完成：`MultiDocumentEditorUi` 新增同一 tab 内 view reorder API，UI FFI/header/Swift `MultiDocumentEditorUI` wrapper 暴露 `moveView`；AttoEditor 新增 `view.move_pane_left` / `view.move_pane_right` 命令、View 菜单和默认 keymap，执行时先移动 core multi-document view，再重排 AppKit panes。测试覆盖 Rust view-local selection identity、C ABI/Swift wrapper、Atto AppKit pane 顺序和 core snapshot active view index 同步。
 - 2026-08-02 阶段 87 已完成：AttoEditor 新增 core-backed dirty 查询/同步 helper，关闭单 tab、关闭窗口前的保存全部、preview tab 复用、WorkspaceEdit create/rename/delete resource operation 等可能丢弃或覆盖用户内容的保护条件都会优先消费 `MultiDocumentEditorUI.isTabModified`；Swift `tab.isDirty` 保留为 AppKit 标题/tab bar 展示缓存，并用本地 `EditorUI.isModified` 做保守兜底。测试覆盖 Swift dirty cache 被故意置 stale false 时，core dirty snapshot 仍会阻止 WorkspaceEdit 删除打开 tab。
 - 2026-08-02 阶段 88 已完成：`MultiDocumentEditorUi` 新增显式 `tab_order` 和 `move_tab_index`，`tab_ids()`、snapshot、search-all-tabs 和 close-tabs-to-right 都按 core tab order 工作；UI FFI/header/Swift `MultiDocumentEditorUI` wrapper 暴露 `moveTab`，SwiftPM C target stamp 已 bump。AttoEditor 新增 `file.move_tab_left` / `file.move_tab_right` 命令、File 菜单、默认 keymap 和多 tab availability，执行时先移动 core tab order，再重排 AppKit tabs。测试覆盖 Rust core order、C ABI、Swift wrapper、Atto AppKit open-file 顺序和 core snapshot 顺序同步。
+- 2026-08-02 阶段 89 已完成：AttoEditor 新增用户可调用的 `go.line` 主路径，用 `EditorUI.moveTo(line:column:)` 执行 core logical `MoveTo`，支持 `line` / `line:column` / `line,column` 输入格式，并接入 command palette、Go 菜单和默认 `ctrl+g` keymap。测试覆盖命令注册、菜单/keymap 接线、输入解析和 caret 目标位置。
 
 ## 分层结论
 
@@ -221,7 +222,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | `DeleteToPrevTabStop` | 有 | 有 | Swift 有 typed `deleteToPrevTabStop()`；AttoEditor command palette 和菜单有 `editor.delete_to_prev_tab_stop` | P0 菜单接线完成；可配置 keymap 可覆盖。 |
 | explicit indent/outdent commands | 有 | 有 | Swift 有 typed `indent()` / `outdent()`；Tab/Backtab 主路径可用；AttoEditor command palette 和菜单有 `editor.indent/outdent` | P0 菜单接线完成；Tab/Backtab 仍走文本系统主路径。 |
 | `EndUndoGroup` | 有 | 有 | Swift 有 typed `endUndoGroup()` | App 层复合命令还未统一使用。 |
-| logical `MoveTo` / `MoveBy` | 有 | 有 | Swift 有 typed `moveTo(line:column:)` / `moveBy(deltaLine:deltaColumn:)`，也可通过 selection/conversion 间接达成 | 仍缺面向用户的参数化 App command。 |
+| logical `MoveTo` / `MoveBy` | 有 | 有 | Swift 有 typed `moveTo(line:column:)` / `moveBy(deltaLine:deltaColumn:)`；AttoEditor 已有 `go.line` 参数化 App command，接入 command palette、Go 菜单和默认 `ctrl+g` keymap | `MoveTo` 主路径已产品化；`MoveBy` 参数化用户命令仍按产品需要评估。 |
 | visual movement commands | 有 | 有 | Swift 可通过 `executeCommandJSON` 调用，AppKit key handling 覆盖一部分 | 仍缺 App command coverage matrix。 |
 | selection / multicursor commands | 有 | 有 | Swift UI FFI 有 typed select word/line、expand selection、add cursor above/below，也可通过 UI JSON 调用；AttoEditor command palette 和 Selection 菜单有 `editor.select_word` / `editor.select_line` / `editor.expand_selection` / `editor.add_cursor_above` / `editor.add_cursor_below`；keymap 已支持 arrow/navigation function-key token | 常用 App command 和 Selection 菜单分组已补齐；仍缺所有视觉移动命令矩阵。 |
 | `MoveToMatchingBracket` | 有 | 有 | Swift headless/UI 都有公开方法 | headless/UI command 覆盖已对齐。 |

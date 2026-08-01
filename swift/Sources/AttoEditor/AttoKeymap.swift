@@ -48,6 +48,7 @@ enum AttoKeymap {
         "view.wrap.word": AttoKeyBinding(keyEquivalent: "z", modifiers: [.option]),
         "workbench.command_palette": AttoKeyBinding(keyEquivalent: "p", modifiers: [.command, .shift]),
         "go.file": AttoKeyBinding(keyEquivalent: "p", modifiers: [.command]),
+        "go.line": AttoKeyBinding(keyEquivalent: "g", modifiers: [.control]),
         "lsp.document_symbols": AttoKeyBinding(keyEquivalent: "r", modifiers: [.command]),
         "lsp.workspace_symbols": AttoKeyBinding(keyEquivalent: "r", modifiers: [.command, .shift]),
         "lsp.completion": AttoKeyBinding(keyEquivalent: " ", modifiers: [.control]),

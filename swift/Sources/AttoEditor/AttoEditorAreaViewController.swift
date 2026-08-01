@@ -130,6 +130,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let items: [AttoLspDefinitionParser.LocationItem]
     }
 
+    struct GoToLineTarget: Equatable {
+        let line1: Int
+        let column1: Int
+    }
+
     private enum LspSymbolRequestKind {
         case document
         case workspace(query: String)
@@ -2972,6 +2977,86 @@ final class AttoEditorAreaViewController: NSViewController {
         } catch {
             NSSound.beep()
         }
+    }
+
+    static func parseGoToLineTarget(_ raw: String) -> GoToLineTarget? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return nil }
+
+        let parts = trimmed
+            .split(omittingEmptySubsequences: false) { ch in ch == ":" || ch == "," }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard parts.count == 1 || parts.count == 2 else { return nil }
+        guard let line1 = Int(parts[0]), line1 > 0 else { return nil }
+
+        let column1: Int
+        if parts.count == 2 {
+            guard let parsedColumn = Int(parts[1]), parsedColumn > 0 else { return nil }
+            column1 = parsedColumn
+        } else {
+            column1 = 1
+        }
+
+        return GoToLineTarget(line1: line1, column1: column1)
+    }
+
+    @discardableResult
+    func goToLineInActiveTab(input: String) -> Bool {
+        guard let target = Self.parseGoToLineTarget(input) else {
+            NSSound.beep()
+            return false
+        }
+        return goToLineInActiveTab(line1: target.line1, column1: target.column1)
+    }
+
+    @discardableResult
+    func goToLineInActiveTab(line1: Int, column1: Int = 1) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        let line0 = UInt32(clamping: max(1, line1) - 1)
+        let column0 = UInt32(clamping: max(1, column1) - 1)
+        do {
+            _ = try tab.editCore.editor.moveTo(line: line0, column: column0)
+            try? tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.layoutSubtreeIfNeeded()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            updateStatusBar()
+            tab.editCore.focusEditor()
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: go to line failed: %@", String(describing: error))
+            return false
+        }
+    }
+
+    @discardableResult
+    func promptGoToLineInActiveTab(initialInput: String = "") -> Bool {
+        guard activeTab != nil else {
+            NSSound.beep()
+            return false
+        }
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        field.stringValue = initialInput
+        field.placeholderString = "Line or line:column"
+        field.selectText(nil)
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Go to Line"
+        alert.informativeText = "Enter a 1-based line number, optionally followed by :column."
+        alert.addButton(withTitle: "Go")
+        alert.addButton(withTitle: "Cancel")
+        alert.accessoryView = field
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return false }
+        return goToLineInActiveTab(input: field.stringValue)
     }
 
     private static func charOffsetForLineColumn1(text: String, line1: Int, column1: Int) -> UInt32 {

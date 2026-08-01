@@ -109,6 +109,7 @@ enum AttoMainMenuBuilder {
         let goMenu = NSMenu(title: "Go")
         goMenuItem.submenu = goMenu
         goMenu.addItem(commandItem(title: "Go to File...", commandID: "go.file", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Go to Line...", commandID: "go.line", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Command Palette...", commandID: "workbench.command_palette", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Problems...", commandID: "lsp.problems", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Document Symbols...", commandID: "lsp.document_symbols", appDelegate: appDelegate))
