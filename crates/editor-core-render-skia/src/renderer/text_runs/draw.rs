@@ -1,44 +1,11 @@
-use super::decoration::*;
-use super::style::*;
-use super::text_run_buffer::*;
-use super::*;
-
-pub(super) trait RenderTextCell {
-    fn ch(&self) -> char;
-    fn width(&self) -> usize;
-    fn styles(&self) -> &[u32];
-}
-
-impl RenderTextCell for editor_core::snapshot::Cell {
-    fn ch(&self) -> char {
-        self.ch
-    }
-
-    fn width(&self) -> usize {
-        self.width
-    }
-
-    fn styles(&self) -> &[u32] {
-        self.styles.as_slice()
-    }
-}
-
-impl RenderTextCell for ComposedCell {
-    fn ch(&self) -> char {
-        self.ch
-    }
-
-    fn width(&self) -> usize {
-        self.width
-    }
-
-    fn styles(&self) -> &[u32] {
-        self.styles.as_slice()
-    }
-}
+use super::super::decoration::*;
+use super::super::style::*;
+use super::super::text_run_buffer::*;
+use super::super::*;
+use super::RenderTextCell;
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn draw_text_runs_for_cells<C: RenderTextCell>(
+pub(in crate::renderer) fn draw_text_runs_for_cells<C: RenderTextCell>(
     renderer: &mut SkiaRenderer,
     canvas: &skia_safe::Canvas,
     cells: &[C],
