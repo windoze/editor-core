@@ -57,6 +57,11 @@ public final class EditCoreUI: NSView {
         set { editorView.onDidMutateDocumentText = newValue }
     }
 
+    public var onDidCommitText: ((String) -> Void)? {
+        get { editorView.onDidCommitText }
+        set { editorView.onDidCommitText = newValue }
+    }
+
     public var onHover: ((EditorCoreSkiaHoverInfo) -> Void)? {
         get { editorView.onHover }
         set { editorView.onHover = newValue }

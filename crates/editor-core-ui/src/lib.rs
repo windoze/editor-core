@@ -72,6 +72,31 @@ fn value_offset_range(start: usize, end: usize) -> serde_json::Value {
     serde_json::json!({ "start": start, "end": end })
 }
 
+fn lsp_signature_help_capability_json(capabilities: &serde_json::Value) -> serde_json::Value {
+    let provider = capabilities.get("signatureHelpProvider");
+    let trigger_characters = lsp_string_array(provider.and_then(|p| p.get("triggerCharacters")));
+    let retrigger_characters =
+        lsp_string_array(provider.and_then(|p| p.get("retriggerCharacters")));
+
+    serde_json::json!({
+        "supported": provider.is_some(),
+        "trigger_characters": trigger_characters,
+        "retrigger_characters": retrigger_characters,
+    })
+}
+
+fn lsp_string_array(value: Option<&serde_json::Value>) -> Vec<String> {
+    value
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(ToString::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn parse_lsp_formatting_options(
     formatting_options_json: &str,
 ) -> Result<serde_json::Value, UiError> {
@@ -2790,6 +2815,7 @@ impl EditorUi {
                             "completion_item_resolve": s.capabilities.completion_item_resolve,
                             "folding_ranges": s.capabilities.folding_ranges,
                             "on_type_formatting": s.capabilities.on_type_formatting,
+                            "signature_help": lsp_signature_help_capability_json(session.server_capabilities()),
                         }));
                     } else {
                         availability = "failed";
@@ -7461,6 +7487,44 @@ mod tests {
                 .is_some_and(|detail| detail.contains("LSP session is not available")),
             "unexpected LSP status: {status}"
         );
+    }
+
+    #[test]
+    fn lsp_status_reports_signature_help_trigger_characters() {
+        let capture_path = unique_temp_path("signature-help-status");
+        let capabilities = serde_json::json!({
+            "signatureHelpProvider": {
+                "triggerCharacters": ["(", ","],
+                "retriggerCharacters": [")"]
+            }
+        });
+        let script = lsp_capture_server_script(&capture_path, capabilities);
+        let args = vec!["-c".to_string(), script];
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root_uri = format!("file:///tmp/editor-core-ui-signature-help-{stamp}");
+        let doc_uri = format!("{root_uri}/main.rs");
+
+        let mut ui = EditorUi::new("fn main() {}", 80);
+        ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+            .unwrap();
+
+        let status: serde_json::Value =
+            serde_json::from_str(ui.lsp_status_json().as_str()).unwrap();
+        assert_eq!(status["capabilities"]["signature_help"]["supported"], true);
+        assert_eq!(
+            status["capabilities"]["signature_help"]["trigger_characters"],
+            serde_json::json!(["(", ","])
+        );
+        assert_eq!(
+            status["capabilities"]["signature_help"]["retrigger_characters"],
+            serde_json::json!([")"])
+        );
+
+        ui.lsp_disable();
+        let _ = std::fs::remove_file(capture_path);
     }
 
     #[test]

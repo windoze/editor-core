@@ -93,6 +93,8 @@ Swift 侧已经具备以下基础能力：
 - 阶段 16 已新增 `EditorUi`、C ABI 和 Swift `EditorUI` 对应 API；这些能力目前仍停留在 raw JSON result 层，App 层 panel/popup/inline UI、typed model、错误展示和 cross-file/workspace 结果产品化仍未完成。
 - 2026-08-01 阶段 17 已完成：AttoEditor App 的 `lsp.rename` 弹窗接入 `textDocument/prepareRename`，会优先使用 server 返回的 `placeholder` 或 `range` 文本作为默认 rename 名称；支持 LSP `Range`、`{ range, placeholder }` 和 `{ defaultBehavior: true }` 返回形态。
 - 阶段 17 已新增 `AttoLspRenameSupport.DialogSeed` / `dialogSeed(...)`，按 LSP UTF-16 line/character range 从当前文档提取 rename 文本，并在 prepareRename 无响应或不可解析时回退到当前选区/identifier 逻辑；仍缺跨文件 WorkspaceEdit 预览/应用和 rename typed result model。
+- 2026-08-01 阶段 18 已完成：Rust UI `lsp_status_json()` 暴露 server `signatureHelpProvider.triggerCharacters` / `retriggerCharacters`，Swift `EditorCoreSkiaView` 新增 finalized commit text hook，AttoEditor 会在输入命中 server 声明的 signature help trigger/retrigger 字符时自动请求并弹出 signature help；粘贴/多字符 commit 和未声明能力的 server 不触发。
+- 阶段 18 尚未完成 active parameter 富格式高亮、signature help typed result model 和空结果/错误展示。
 
 ## 分层结论
 
@@ -198,7 +200,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - declaration/type definition/implementation 的多结果导航 UI 仍较基础。
 - references 结果列表已有轻量 palette，但还不是完整结果面板。
 - completion popup 主路径和 commit-time completion resolve 已有；仍缺 commit characters、自动触发/增量过滤、rich documentation/detail preview 和 completion/code action 中的完整 workspace edit 产品化。
-- signature help popup 主路径已有；仍缺 trigger characters / 自动弹出、active parameter 富格式高亮和 typed result model。
+- signature help popup 主路径已有，并会按 server trigger/retrigger characters 自动弹出；仍缺 active parameter 富格式高亮、typed result model 和空结果/错误展示。
 - rename 主路径已有 App 输入 UI、prepareRename range/placeholder 默认名、当前文档 WorkspaceEdit 应用；仍缺跨文件应用/预览和 typed result model。
 - code action 主路径已有 App quick panel、resolve、当前文档 edit 应用和 command 执行；仍缺 code action kind/filter/diagnostics context 产品化、跨文件应用/预览、执行结果/错误展示和 typed result model。
 - code lens resolve 和 workspace command execution 的 Swift UI binding 已有；仍缺 App 层 code lens action UI、执行结果/错误展示和 typed model。
@@ -444,7 +446,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 ### P1：补 LSP 产品主路径
 
 - completion commit-time resolve 已完成；仍缺 commit characters、自动触发/增量过滤和 rich documentation/detail preview。
-- signature help 自动触发和富格式高亮。
+- signature help server trigger/retrigger characters 自动触发已完成；仍缺 active parameter 富格式高亮、typed result model 和空结果/错误展示。
 - references/implementation/declaration/type definition。
 - rename prepareRename range/placeholder 已产品化；仍缺跨文件 WorkspaceEdit 应用/预览和 typed result model。
 - code action kind/filter/diagnostics context 产品化、跨文件 WorkspaceEdit 应用/预览、执行结果/错误展示和 typed result model。

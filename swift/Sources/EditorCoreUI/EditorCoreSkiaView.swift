@@ -109,6 +109,12 @@ public final class EditorCoreSkiaView: MTKView {
     /// - trigger external indexing, etc.
     public var onDidMutateDocumentText: (() -> Void)?
 
+    /// Called after committed text mutates the document through `insertText`.
+    ///
+    /// This is only for finalized text commits. IME marked/preedit updates use `setMarkedText`
+    /// and do not call this hook until the system commits text through `insertText`.
+    public var onDidCommitText: ((String) -> Void)?
+
     /// Called when the mouse hovers over a new character offset in the document.
     ///
     /// Hosts can use this to present hover UI (tooltip/popover/inspector).
@@ -1743,6 +1749,7 @@ public final class EditorCoreSkiaView: MTKView {
         do {
             try editor.commitText(text)
             didMutateDocumentText()
+            onDidCommitText?(text)
             if perfDebugEnabled {
                 let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
                 perfInsertTextCount += 1

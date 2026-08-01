@@ -58,4 +58,36 @@ final class AttoLspSignatureHelpFormatterTests: XCTestCase {
         XCTAssertNil(AttoLspSignatureHelpFormatter.displayText(fromSignatureHelpResultJSON: "null"))
         XCTAssertNil(AttoLspSignatureHelpFormatter.displayText(fromSignatureHelpResultJSON: #"{"signatures":[]}"#))
     }
+
+    func testSignatureHelpTriggerUsesServerDeclaredCharacters() throws {
+        let json = """
+        {
+          "availability": "enabled",
+          "state": "ready",
+          "capabilities": {
+            "signature_help": {
+              "supported": true,
+              "trigger_characters": ["("],
+              "retrigger_characters": [","]
+            }
+          }
+        }
+        """
+
+        XCTAssertTrue(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: "(", lspStatusJSON: json))
+        XCTAssertTrue(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: ",", lspStatusJSON: json))
+        XCTAssertFalse(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: "a", lspStatusJSON: json))
+        XCTAssertFalse(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: "(),", lspStatusJSON: json))
+    }
+
+    func testSignatureHelpTriggerIgnoresMissingOrInvalidStatus() throws {
+        XCTAssertFalse(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: "(", lspStatusJSON: "{}"))
+        XCTAssertFalse(AttoLspSignatureHelpTrigger.shouldTrigger(committedText: "(", lspStatusJSON: "not json"))
+        XCTAssertFalse(
+            AttoLspSignatureHelpTrigger.shouldTrigger(
+                committedText: "(",
+                lspStatusJSON: #"{"capabilities":{"signature_help":{"supported":false,"trigger_characters":["("]}}}"#
+            )
+        )
+    }
 }

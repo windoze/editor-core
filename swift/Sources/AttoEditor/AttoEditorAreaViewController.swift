@@ -1607,6 +1607,9 @@ final class AttoEditorAreaViewController: NSViewController {
         editCore.onDidMutateDocumentText = { [weak self] in
             self?.handleTabDidMutateDocumentText(tabID: tabID)
         }
+        editCore.onDidCommitText = { [weak self] text in
+            self?.handleCommittedTextForLspTriggers(text, tabID: tabID)
+        }
         editCore.onDidApplyAsyncProcessing = { [weak self] in
             guard let self else { return }
             // Async processing updates (LSP diagnostics/semantic tokens, etc.) can change status
@@ -3021,14 +3024,33 @@ final class AttoEditorAreaViewController: NSViewController {
 
     // MARK: - LSP signature help
 
+    private func handleCommittedTextForLspTriggers(_ text: String, tabID: UUID) {
+        guard let tab = activeTab, tab.id == tabID else { return }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else { return }
+        guard let status = try? tab.editCore.editor.lspStatusJSON() else { return }
+        guard AttoLspSignatureHelpTrigger.shouldTrigger(
+            committedText: text,
+            lspStatusJSON: status
+        ) else {
+            return
+        }
+
+        _ = showSignatureHelpInActiveTab(beepOnFailure: false)
+    }
+
     @discardableResult
     func showSignatureHelpInActiveTab() -> Bool {
+        showSignatureHelpInActiveTab(beepOnFailure: true)
+    }
+
+    @discardableResult
+    private func showSignatureHelpInActiveTab(beepOnFailure: Bool) -> Bool {
         guard let tab = activeTab else {
-            NSSound.beep()
+            if beepOnFailure { NSSound.beep() }
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
-            NSSound.beep()
+            if beepOnFailure { NSSound.beep() }
             return false
         }
 
@@ -3047,7 +3069,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 logicalColumn: pos.column
             )
         } catch {
-            NSSound.beep()
+            if beepOnFailure { NSSound.beep() }
             return false
         }
 
