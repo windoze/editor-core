@@ -43,6 +43,7 @@ enum AttoKeymap {
         "lsp.completion": AttoKeyBinding(keyEquivalent: " ", modifiers: [.control]),
         "lsp.signature_help": AttoKeyBinding(keyEquivalent: " ", modifiers: [.control, .shift]),
         "lsp.rename": AttoKeyBinding(keyEquivalent: functionKey(NSF2FunctionKey), modifiers: []),
+        "lsp.code_actions": AttoKeyBinding(keyEquivalent: ".", modifiers: [.command]),
         "go.matching_bracket": AttoKeyBinding(keyEquivalent: "m", modifiers: [.control]),
         "search.find_in_files": AttoKeyBinding(keyEquivalent: "f", modifiers: [.command, .shift]),
         "workbench.preferences": AttoKeyBinding(keyEquivalent: ",", modifiers: [.command]),

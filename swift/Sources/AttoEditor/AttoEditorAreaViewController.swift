@@ -93,6 +93,15 @@ final class AttoEditorAreaViewController: NSViewController {
         let documentURI: String
     }
 
+    private struct CodeActionRequestContext {
+        let tabID: UUID
+    }
+
+    private struct CodeActionResolveContext {
+        let tabID: UUID
+        let item: AttoLspCodeActionParser.Item
+    }
+
     private struct WorkspaceEditApplyResult {
         let applied: Bool
         let skippedURIs: [String]
@@ -142,6 +151,12 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private var renameContext: RenameRequestContext?
     private var renamePollTimer: DispatchSourceTimer?
+
+    private var codeActionContext: CodeActionRequestContext?
+    private var codeActionPollTimer: DispatchSourceTimer?
+    private var codeActionResolveContext: CodeActionResolveContext?
+    private var codeActionResolvePollTimer: DispatchSourceTimer?
+    private var codeActionResultsController: AttoCommandPaletteController?
 
     init(library: EditorCoreUIFFILibrary, theme: EditorCoreSkiaTheme, workspaceRootURL: URL) {
         self.library = library
@@ -376,6 +391,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelSymbolUI()
         cancelSignatureHelpUI()
         cancelCompletionUI()
+        cancelCodeActionUI()
 
         tabs = []
         selectedTabID = nil
@@ -654,6 +670,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelRenameUI()
         cancelSignatureHelpUI()
         cancelCompletionUI()
+        cancelCodeActionUI()
 
         showTabContent(tab)
         refreshTabBar()
@@ -1870,6 +1887,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         cancelHoverUI()
         cancelRenameUI()
+        cancelCodeActionUI()
 
         definitionContext = DefinitionRequestContext(
             tabID: tabID,
@@ -2069,6 +2087,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelDefinitionUI()
         cancelSymbolUI()
         cancelRenameUI()
+        cancelCodeActionUI()
 
         symbolContext = SymbolRequestContext(tabID: tab.id, kind: kind)
 
@@ -2209,6 +2228,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelSignatureHelpUI()
         cancelCompletionUI()
         cancelRenameUI()
+        cancelCodeActionUI()
 
         do {
             let offsets = try tab.editCore.editor.selectionOffsets()
@@ -2347,6 +2367,231 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    // MARK: - LSP code actions
+
+    @discardableResult
+    func showCodeActionsInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            _ = try tab.editCore.editor.lspRequestCodeAction(
+                startOffset: min(offsets.start, offsets.end),
+                endOffset: max(offsets.start, offsets.end),
+                contextJSON: codeActionContextJSON()
+            )
+            codeActionContext = CodeActionRequestContext(tabID: tab.id)
+            startCodeActionPollTimer(tabID: tab.id)
+            return true
+        } catch {
+            cancelCodeActionUI()
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private func codeActionContextJSON() -> String {
+        #"{"diagnostics":[]}"#
+    }
+
+    private func startCodeActionPollTimer(tabID: UUID) {
+        codeActionPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.codeActionContext, ctx.tabID == tabID else {
+                self.cancelCodeActionUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelCodeActionUI()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelCodeActionUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastCodeActionResultJSON()
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            let items = AttoLspCodeActionParser.items(fromCodeActionResultJSON: json)
+            self.codeActionPollTimer?.cancel()
+            self.codeActionPollTimer = nil
+            self.codeActionContext = nil
+            self.showCodeActionResults(items)
+            timer.cancel()
+        }
+
+        codeActionPollTimer = timer
+        timer.resume()
+    }
+
+    private func showCodeActionResults(_ items: [AttoLspCodeActionParser.Item]) {
+        guard items.isEmpty == false else {
+            cancelCodeActionUI()
+            NSSound.beep()
+            return
+        }
+
+        guard let window = view.window else {
+            _ = applyCodeAction(items[0])
+            return
+        }
+
+        let commands = items.enumerated().map { idx, item in
+            AttoCommandPaletteCommand(
+                id: "lsp.code_action.\(idx)",
+                title: AttoLspCodeActionParser.displayTitle(for: item)
+            ) { [weak self] in
+                _ = self?.applyCodeAction(item)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(commandsProvider: { commands })
+        codeActionResultsController = controller
+        controller.show(relativeTo: window, placeholder: "Filter code actions...")
+    }
+
+    @discardableResult
+    private func applyCodeAction(_ item: AttoLspCodeActionParser.Item, allowResolve: Bool = true) -> Bool {
+        guard item.disabledReason == nil else {
+            NSSound.beep()
+            return false
+        }
+
+        var didApply = false
+        if let editJSON = AttoLspCodeActionParser.editJSON(for: item) {
+            didApply = applyWorkspaceEditJSONToActiveTab(editJSON) || didApply
+        }
+
+        if let command = item.command {
+            didApply = requestExecuteCodeActionCommand(command) || didApply
+        }
+
+        if didApply {
+            return true
+        }
+
+        guard allowResolve, item.isLegacyCommand == false else {
+            NSSound.beep()
+            return false
+        }
+        return requestCodeActionResolve(item)
+    }
+
+    private func requestCodeActionResolve(_ item: AttoLspCodeActionParser.Item) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard let actionJSON = AttoLspCodeActionParser.rawJSON(for: item) else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            _ = try tab.editCore.editor.lspRequestCodeActionResolve(actionJSON: actionJSON)
+            codeActionResolveContext = CodeActionResolveContext(tabID: tab.id, item: item)
+            codeActionResultsController?.hide()
+            codeActionResultsController = nil
+            startCodeActionResolvePollTimer(tabID: tab.id)
+            return true
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private func startCodeActionResolvePollTimer(tabID: UUID) {
+        codeActionResolvePollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.codeActionResolveContext, ctx.tabID == tabID else {
+                self.cancelCodeActionUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelCodeActionUI()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelCodeActionUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastCodeActionResolveResultJSON()
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            self.codeActionResolvePollTimer?.cancel()
+            self.codeActionResolvePollTimer = nil
+            self.codeActionResolveContext = nil
+            let resolved = AttoLspCodeActionParser.item(fromCodeActionJSON: json) ?? ctx.item
+            _ = self.applyCodeAction(resolved, allowResolve: false)
+            timer.cancel()
+        }
+
+        codeActionResolvePollTimer = timer
+        timer.resume()
+    }
+
+    private func requestExecuteCodeActionCommand(_ command: AttoLspCodeActionParser.Command) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard let commandJSON = AttoLspCodeActionParser.commandJSON(for: command) else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            _ = try tab.editCore.editor.lspRequestExecuteCommand(commandJSON: commandJSON)
+            return true
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
     // MARK: - LSP rename
 
     @discardableResult
@@ -2402,6 +2647,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelSignatureHelpUI()
         cancelCompletionUI()
         cancelRenameUI()
+        cancelCodeActionUI()
 
         do {
             let offsets = try tab.editCore.editor.selectionOffsets()
@@ -2545,6 +2791,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelSymbolUI()
         cancelSignatureHelpUI()
         cancelRenameUI()
+        cancelCodeActionUI()
 
         do {
             let offsets = try tab.editCore.editor.selectionOffsets()
@@ -2878,6 +3125,19 @@ final class AttoEditorAreaViewController: NSViewController {
         renamePollTimer?.cancel()
         renamePollTimer = nil
         renameContext = nil
+    }
+
+    private func cancelCodeActionUI() {
+        codeActionPollTimer?.cancel()
+        codeActionPollTimer = nil
+        codeActionContext = nil
+
+        codeActionResolvePollTimer?.cancel()
+        codeActionResolvePollTimer = nil
+        codeActionResolveContext = nil
+
+        codeActionResultsController?.hide()
+        codeActionResultsController = nil
     }
 }
 

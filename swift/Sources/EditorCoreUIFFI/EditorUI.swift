@@ -459,6 +459,21 @@ public final class EditorUI {
         }
     }
 
+    public func lspRequestExecuteCommand(commandJSON: String) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = commandJSON.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_lsp_request_execute_command(handle, cstr, &out)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_execute_command")
+        return out
+    }
+
+    public func lspTakeLastExecuteCommandResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_execute_command_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_execute_command_json(handle, has, ptr)
+        }
+    }
+
     public func lspRequestDocumentSymbols() throws -> UInt64 {
         var out: UInt64 = 0
         let status = editor_core_ui_ffi_editor_ui_lsp_request_document_symbols(handle, &out)

@@ -94,6 +94,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Go to Implementation", commandID: "lsp.go_to_implementation", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Find References", commandID: "lsp.find_references", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Rename Symbol", commandID: "lsp.rename", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Code Actions", commandID: "lsp.code_actions", appDelegate: appDelegate))
 
         return mainMenu
     }

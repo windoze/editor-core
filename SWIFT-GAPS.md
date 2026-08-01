@@ -31,9 +31,11 @@ Swift 侧已经具备以下基础能力：
 - `EditorCoreUIFFI.EditorUI` 暴露了较完整的“编辑器视图主路径”API，包括打开文本、插入/删除、搜索替换、撤销重做、选择、鼠标输入、IME、渲染 RGBA/Metal、主题、Tree-sitter、Sublime syntax、部分 LSP、minimap、gutter、bookmark、jump history、document link hit-test 等。
 - `EditorCoreUI` / `AttoEditor` 已有 AppKit 组件级 XCTest，能用 `NSWindow`、`NSEvent` 和 view API 驱动交互。
 - 2026-08-01 本地验证过：
-  - `swift test --filter AttoEditorTests` 通过，55 个测试。
+  - `cargo test -p editor-core-ui -p editor-core-ui-ffi` 通过。
+  - `swift test --package-path swift` 通过，205 个测试。
+  - `swift test --filter AttoEditorTests` 通过，60 个测试。
   - `swift test --filter EditorCoreUITests` 通过，64 个测试。
-  - `swift test --filter EditorCoreUIFFITests` 通过，45 个测试。
+  - `swift test --filter EditorCoreUIFFITests` 通过，46 个测试。
 
 这说明当前 Swift 路径不是“不可用”，而是“主流程可用、完整能力映射不足”。
 
@@ -58,7 +60,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
 - 阶段 6 第二部分已让 references 多结果进入一个轻量可过滤结果 palette，单结果直接跳转；`AttoLspDefinitionParser` 新增多目标解析并补测试。
-- 阶段 6 尚未完成 rename/code action 主路径、完整 references/locations panel 和 typed result model。
+- 阶段 6 尚未完成完整 references/locations panel、LSP typed result model 和更深层项目级命令模型。
 - 2026-08-01 阶段 7 第一部分已完成：AttoEditor 新增基础 `view.split_right` 命令，通过 `EditorUI.cloneView` 为当前 tab 创建共享 buffer 的第二个 AppKit pane；这部分是当前可用的过渡实现，不应继续扩展成 Swift 自有 workspace/tab 模型。
 - 2026-08-01 阶段 7 架构决策已更新：多文档、tab、workspace、project/session 级状态应使用 `editor-core` / `editor-core-ui` 一侧的 `Workspace` / `MultiDocumentEditorUi` 模型作为单一所有权来源，Swift 侧只做 AppKit 表现、命令转发、用户交互和持久化桥接。
 - 阶段 7 第一部分已让 split pane 复用主编辑器 chrome/theme/preferences/LSP/hover/cmd-click hook，并新增 first-responder hook 跟踪 active pane；AttoEditor command palette、View 菜单和默认 keymap 已接入。
@@ -73,7 +75,8 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 11 已完成：Swift UI binding 新增 rename / prepare rename / code action / code action resolve 的 raw async request/take API，覆盖 Rust `editor-core-lsp` 已有的 `textDocument/prepareRename`、`textDocument/rename`、`textDocument/codeAction` 和 `codeAction/resolve` 请求路径。
 - 2026-08-01 阶段 11 第二部分已完成：Swift UI binding 新增 `lspApplyWorkspaceEditJSON(_:documentURI:)`，通过 UI FFI 把 `WorkspaceEdit` 中命中当前文档 URI 的 `TextEdit` 应用到当前 buffer，并返回 applied/skipped/documents summary，覆盖 rename/code action 返回 edit 后的当前文档应用基础链路。
 - 2026-08-01 阶段 11 第三部分已完成：AttoEditor App 新增 `lsp.rename` 主路径，包含 command palette、Go 菜单、F2 keymap、rename 输入框、候选名预填、LSP rename request/poll，以及把返回的当前文档 WorkspaceEdit 应用到 active tab 并标记 dirty。
-- 阶段 11 尚未完成跨文件 WorkspaceEdit 应用/预览、code action quick panel、resolve 后自动应用 edit/command、workspace/executeCommand，以及相关 typed result model。
+- 2026-08-01 阶段 11 第四部分已完成：Swift UI binding 新增 `workspace/executeCommand` raw request/take API；AttoEditor App 新增 `lsp.code_actions` 主路径，包含 command palette、Go 菜单、Cmd+. keymap、code action quick panel、`codeAction/resolve` 轮询、当前文档 WorkspaceEdit 应用和 command payload 执行。
+- 阶段 11 尚未完成跨文件 WorkspaceEdit 应用/预览、code action kind/filter/diagnostics context 产品化、执行结果/错误展示，以及相关 typed result model。
 
 ## 分层结论
 
@@ -168,6 +171,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - document symbols result 到 core outline 的应用和 JSON 导出。
 - WorkspaceEdit 中当前文档 `TextEdit` 的 Swift UI binding 应用，并返回跨 URI skip/summary 信息。
 - AttoEditor App command/menu/keymap 已覆盖 `lsp.rename` 主路径，可输入新名称、请求 LSP rename 并应用当前文档 WorkspaceEdit。
+- AttoEditor App command/menu/keymap 已覆盖 `lsp.code_actions` 主路径，可展示 code action quick panel、resolve action、应用当前文档 edit 并发起 `workspace/executeCommand`。
 - `LSPBridge` 中有若干 JSON/DTO 转换 helper。
 
 仍缺产品化、结果 UI 或仍只停留在 raw API 的 LSP 能力：
@@ -177,7 +181,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - completion popup 主路径已有；仍缺 completion resolve、commit characters、自动触发/增量过滤、rich documentation/detail preview 和 completion/code action 中的完整 workspace edit 产品化。
 - signature help popup 主路径已有；仍缺 trigger characters / 自动弹出、active parameter 富格式高亮和 typed result model。
 - rename 主路径已有 App 输入 UI 和当前文档 WorkspaceEdit 应用；仍缺 prepareRename range/placeholder 产品化、跨文件应用/预览和 typed result model。
-- code action / code action resolve raw API 已有；当前文档 WorkspaceEdit 可通过 Swift UI binding 应用，但仍缺 App quick panel、resolve 后自动应用 edit/command、跨文件应用/预览和 workspace/executeCommand。
+- code action 主路径已有 App quick panel、resolve、当前文档 edit 应用和 command 执行；仍缺 code action kind/filter/diagnostics context 产品化、跨文件应用/预览、执行结果/错误展示和 typed result model。
 - code lens resolve / command execution。
 - outline / document symbols 已有 quick panel 主路径，但还缺持久 Outline panel。
 - workspace symbols 已有 quick panel 主路径，但还缺增量查询/输入面板和完整结果模型。
@@ -421,7 +425,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - signature help 自动触发和富格式高亮。
 - references/implementation/declaration/type definition。
 - rename prepareRename range/placeholder、跨文件 WorkspaceEdit 应用/预览和 typed result model。
-- code action quick panel、resolve 后自动应用 edit/command、workspace/executeCommand。
+- code action kind/filter/diagnostics context 产品化、跨文件 WorkspaceEdit 应用/预览、执行结果/错误展示和 typed result model。
 - document/workspace symbols 持久面板和 workspace 增量查询。
 - range/on-type formatting。
 - folding ranges。
@@ -465,7 +469,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | apply snippet | yes | no | yes | yes, via JSON | yes, typed + JSON | partial, Tab/Backtab placeholder path only | yes |
 | LSP symbols | yes | partial helper | yes | yes, raw JSON result | yes, raw JSON result | yes, document/workspace symbols quick panels | yes |
 | LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, input UI + menu/keymap + current-doc apply | partial |
-| LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | no quick panel/apply command | partial |
+| LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand | partial, raw result + current-doc WorkspaceEdit apply + executeCommand | yes, quick panel/menu/keymap/current-doc apply | partial |
 | split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
 | workspace tabs/splits | yes, headless `Workspace` | partial `Workspace` wrapper | yes, `MultiDocumentEditorUi` | no | no, current Swift tabs are transitional | partial, Swift-owned prototype | partial |
 

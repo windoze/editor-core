@@ -36,6 +36,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.completion"))
         XCTAssertTrue(ids.contains("lsp.signature_help"))
         XCTAssertTrue(ids.contains("lsp.rename"))
+        XCTAssertTrue(ids.contains("lsp.code_actions"))
     }
 
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
@@ -82,6 +83,11 @@ final class AttoEditorCommandTests: XCTestCase {
             [.control, .shift]
         )
         XCTAssertEqual(resolved["lsp.rename"]?.keyEquivalent, AttoKeymap.parseBinding("f2")?.keyEquivalent)
+        XCTAssertEqual(resolved["lsp.code_actions"]?.keyEquivalent, ".")
+        XCTAssertEqual(
+            resolved["lsp.code_actions"]?.modifiers.intersection(.deviceIndependentFlagsMask),
+            [.command]
+        )
     }
 
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
@@ -116,6 +122,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.completion", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.signature_help", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.rename", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.code_actions", in: menu))
     }
 
     func testExecuteCommandUsesRegisteredCommandIDs() throws {

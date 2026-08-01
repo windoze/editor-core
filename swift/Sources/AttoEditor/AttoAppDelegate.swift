@@ -364,6 +364,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(id: "lsp.rename", title: "LSP: Rename Symbol") { [weak self] in
                 self?.activeWindow()?.editorAreaController.promptRenameSymbolInActiveTab()
             },
+            .init(id: "lsp.code_actions", title: "LSP: Code Actions") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showCodeActionsInActiveTab()
+            },
             .init(id: "lsp.document_symbols", title: "LSP: Document Symbols") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showDocumentSymbolsInActiveTab()
             },

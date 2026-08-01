@@ -670,6 +670,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertThrowsError(try ui.lspRequestRename(logicalLine: 0, logicalColumn: 0, newName: "world"))
         XCTAssertThrowsError(try ui.lspRequestCodeAction(startOffset: 0, endOffset: 0))
         XCTAssertThrowsError(try ui.lspRequestCodeActionResolve(actionJSON: #"{"title":"Fix"}"#))
+        XCTAssertThrowsError(try ui.lspRequestExecuteCommand(commandJSON: #"{"command":"server.fix","arguments":[]}"#))
         XCTAssertThrowsError(try ui.lspRequestDocumentSymbols())
         XCTAssertThrowsError(try ui.lspRequestWorkspaceSymbols(query: "hello"))
 
@@ -685,6 +686,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertNil(try ui.lspTakeLastRenameResultJSON())
         XCTAssertNil(try ui.lspTakeLastCodeActionResultJSON())
         XCTAssertNil(try ui.lspTakeLastCodeActionResolveResultJSON())
+        XCTAssertNil(try ui.lspTakeLastExecuteCommandResultJSON())
         XCTAssertNil(try ui.lspTakeLastDocumentSymbolsResultJSON())
         XCTAssertNil(try ui.lspTakeLastWorkspaceSymbolsResultJSON())
     }
