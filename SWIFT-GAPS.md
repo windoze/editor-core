@@ -29,7 +29,7 @@ Swift 侧已经具备以下基础能力：
 - 当前 App 是 AppKit + Skia/Metal 自绘架构，不是 SwiftUI view tree。
 - `EditorCoreFFI.EditorState` 和 `EditorCoreFFI.Workspace` 暴露了 headless core 的一部分 JSON command 能力。
 - `EditorCoreUIFFI.EditorUI` 暴露了较完整的“编辑器视图主路径”API，包括打开文本、插入/删除、搜索替换、撤销重做、选择、鼠标输入、IME、渲染 RGBA/Metal、主题、Tree-sitter、Sublime syntax、部分 LSP、minimap、gutter、bookmark、jump history、document link hit-test 等。
-- `EditorCoreUIFFI.MultiDocumentEditorUI` 已能访问 Rust `MultiDocumentEditorUi` 的基础 tab/preview/pin/close/split/search-all-tabs 模型。
+- `EditorCoreUIFFI.MultiDocumentEditorUI` 已能访问 Rust `MultiDocumentEditorUi` 的基础 tab/preview/pin/close/split/search-all-tabs 模型，并能同步 tab 文本、保存/dirty 状态。
 - AttoEditor 当前的 Swift tabs/splits 仍是过渡层；它们可以承载现有 UI 表现，但后续多文档、tab、workspace、session 语义应迁移为 core workspace state 的投影。
 - `EditorCoreUI` / `AttoEditor` 已有 AppKit 组件级 XCTest，能用 `NSWindow`、`NSEvent` 和 view API 驱动交互。
 - 2026-08-01 本地验证过：
@@ -67,7 +67,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 7 架构决策已更新：多文档、tab、workspace、project/session 级状态应使用 `editor-core` / `editor-core-ui` 一侧的 `Workspace` / `MultiDocumentEditorUi` 模型作为单一所有权来源，Swift 侧只做 AppKit 表现、命令转发、用户交互和持久化桥接；后续不在 Swift/AppKit 层新开一套长期独立的 workspace/tab/session 模型，也不继续给 Swift-only tab state 增加 preview/pin/dirty/close/search-all-tabs 等长期语义。
 - 阶段 7 第一部分已让 split pane 复用主编辑器 chrome/theme/preferences/LSP/hover/cmd-click hook，并新增 first-responder hook 跟踪 active pane；AttoEditor command palette、View 菜单和默认 keymap 已接入。
 - 阶段 7 第二部分已完成基础 pane 操作命令：`view.focus_next_pane`、`view.focus_previous_pane`、`view.close_pane`，并用 AppKit 组件测试覆盖 active pane 对 close target 的影响。
-- 阶段 7 后续缺口中，`MultiDocumentEditorUi` 基础 Swift FFI 投影已在阶段 80 补齐，AttoEditor tab/pane lifecycle 到 core multi-document mirror 的迁移起点已在阶段 81 补齐；仍缺完整 session/search-all-tabs/project/LSP lifecycle 迁移、pane move、分屏布局 session restore、拖拽 tab 到 split、dirty/close semantics 统一。
+- 阶段 7 后续缺口中，`MultiDocumentEditorUi` 基础 Swift FFI 投影已在阶段 80 补齐，AttoEditor tab/pane lifecycle 到 core multi-document mirror 的迁移起点已在阶段 81 补齐，编辑文本/dirty/search-all-tabs 基础同步已在阶段 83 补齐；仍缺完整 session/project/LSP lifecycle 迁移、pane move、分屏布局 session restore、拖拽 tab 到 split、dirty/close semantics 最终统一。
 - 2026-08-01 阶段 8 已完成：AttoEditor 新增 LSP document/workspace symbols quick panel 主路径，命令 `lsp.document_symbols` / `lsp.workspace_symbols` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspSymbolParser`，覆盖 DocumentSymbol、SymbolInformation、WorkspaceSymbol 常见结果形态。
 - 阶段 8 尚未完成 symbols 的完整持久面板、workspace symbol 增量查询/输入面板、结果分组/排序策略和更深层 result lifecycle model；基础错误/超时/空结果反馈已在阶段 68 补齐，最近结果 snapshot 和 reopen command 已在阶段 72 补齐。
 - 2026-08-01 阶段 9 已完成：AttoEditor 新增 LSP signature help popup 主路径，命令 `lsp.signature_help` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspSignatureHelpFormatter`，覆盖 SignatureHelp、activeSignature、activeParameter、ParameterInformation string/range label 和 documentation 常见结果形态。
@@ -162,6 +162,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 80 已完成：`editor-core-ui-ffi` 新增 `MultiDocumentEditorUi` 基础 C ABI 和 feature flag，Swift `EditorCoreUIFFI.MultiDocumentEditorUI` 新增 typed wrapper，覆盖 open/open-preview、active tab、snapshot、set title、pin、close/close-others/close-right、split/view count/active view index 和 search-all-tabs。这个阶段让 core-owned 多文档模型第一次通过 Swift UI FFI 可达；AttoEditor 现有 Swift tabs/splits 迁移为该模型的 AppKit 投影仍未完成。已验证 `cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`、`cargo build -p editor-core-ui-ffi --release` 和 `swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`。
 - 2026-08-02 阶段 81 已完成：AttoEditor window/editor area 初始化 core `MultiDocumentEditorUI` mirror，并把 AppKit tab 的 open/open-preview reuse、select、pin、close、split/focus/close pane lifecycle 同步到 Rust `MultiDocumentEditorUi` snapshot；UI FFI/Swift wrapper 同时补上 close-view API，Atto 启动期 runtime feature gate 现在要求 multi-document UI。这个阶段仍是迁移期投影：实际编辑文本、dirty state、session restore、search-all-tabs 和 project/LSP lifecycle 还没有完全改为 core-owned。已验证 `cargo test -p editor-core-ui --test multi_document_ui_tests`、`cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`、`cargo build -p editor-core-ui-ffi --release`、`swift test --package-path swift --filter AttoEditorCommandTests/testCoreMultiDocumentMirrorTracksTabsAndPanes`、`swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`、`swift test --package-path swift --filter AttoRuntimeCompatibilityTests` 以及受影响 split/pane 测试。
 - 2026-08-02 阶段 82 已完成：继续收尾阶段 77 后留下的薄入口文件和 `editor-core-ui` crate root，保持 Rust API、C ABI、Swift binding 和行为不变。`editor-core-ui/src/lib.rs` 现在只保留模块入口和 re-export，错误、主题/损坏矩形、内部 prelude、`EditorUi`/`EditorUiDoc`/IME/search/mouse/render cache 状态拆入 `lib/error.rs`、`lib/theme.rs`、`lib/prelude.rs`、`lib/state.rs`；`editor-core-render-skia/src/renderer.rs` 改为 `renderer/mod.rs`，`SkiaRenderer` / Metal state 拆入 `renderer/state.rs`；`editor_ui/lsp.rs`、`editor_ui/editing.rs`、`editor_ui_abi/lsp.rs`、`editor_ui_abi/editing.rs` 和 `editor-core-ffi/src/json_bridge.rs` 统一改成目录 `mod.rs` 入口。已验证 `cargo fmt`、`cargo build -p editor-core-render-skia -p editor-core-ui -p editor-core-ui-ffi -p editor-core-ffi`、`cargo test -p editor-core-render-skia -p editor-core-ui -p editor-core-ui-ffi -p editor-core-ffi` 和 `git diff --check`。
+- 2026-08-02 阶段 83 已完成：`MultiDocumentEditorUi` 新增 tab 文本替换、文本读取、dirty 查询和 mark-saved API；UI FFI/header/Swift `MultiDocumentEditorUI` wrapper 暴露对应接口，snapshot 增加 `is_modified`。AttoEditor 在活动 tab 文本 mutation、保存和 WorkspaceEdit 打开 tab 文本替换/resource operation 后同步 core multi-document mirror，因此 core `searchAllTabs` 能搜到 AppKit 当前编辑文本，保存后 core dirty snapshot 也会清零。这个阶段仍是迁移期同步，不代表 session/project/LSP lifecycle 或关闭策略已经完全 core-owned。已验证 `cargo build -p editor-core-ui -p editor-core-ui-ffi`、`cargo test -p editor-core-ui --test multi_document_ui_tests`、`cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`、`swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch` 和 `swift test --package-path swift --filter AttoEditorCommandTests/testCoreMultiDocumentMirrorTracksEditedTextDirtyAndSearch`。
 
 ## 分层结论
 
@@ -355,7 +356,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 主要缺口：
 
 - `editor-core` / `editor-core-ui` 侧 workspace / multi-document 模型还没有成为 Swift 产品层的单一状态源；这是后续多文档/tab/workspace 工作的首要架构缺口。
-- `MultiDocumentEditorUi` 已通过 UI FFI/Swift 暴露基础 tab/preview/pin/close/split/search-all-tabs API；AttoEditor 已开始把 tab/pane lifecycle 同步到 core mirror。仍缺实际编辑文本同步、session/project/LSP lifecycle 等更高层 workspace 契约，以及完整 AttoEditor 迁移。
+- `MultiDocumentEditorUi` 已通过 UI FFI/Swift 暴露基础 tab/preview/pin/close/split/search-all-tabs API；AttoEditor 已开始把 tab/pane lifecycle、活动文本、保存/dirty 状态同步到 core mirror。仍缺 session/project/LSP lifecycle 等更高层 workspace 契约，以及完整 AttoEditor 迁移。
 - `EditorCoreFFI.Workspace` 已覆盖一批 view-local headless command typed wrapper，包括 type-char、snippet、auto-pairs、bracket matching/highlights 和 coalescing replace；但还缺 App 级 open/close/select/pin/split/session/project/LSP lifecycle 契约。
 - AttoEditor 当前 Swift tab 系统已经有迁移期 core multi-document mirror，但 AppKit tabs 仍是主要 UI 数据结构；后续应继续迁移为 core workspace state 的投影，而不是在 Swift 侧继续维护独立模型或给 Swift-only tab state 继续加语义。
 - 新增 tab/workspace 功能时，缺口不应通过给 Swift `Tab` / `EditorArea` 增加新的 ownership 字段来补；如果 core workspace 还没有对应语义，应先补 Rust 侧 command/query/event，再补 FFI 和 Swift wrapper。
@@ -564,7 +565,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 ### P1：统一多文档和分屏架构
 
 - 明确采用 core-owned workspace：`editor-core` / `editor-core-ui` 的 `Workspace` / `MultiDocumentEditorUi` 是多文档、tab、split、project/session 的状态来源。
-- `MultiDocumentEditorUi` 基础 FFI/Swift 投影已完成，覆盖 open/select/close/pin/preview/split/search-all-tabs；AttoEditor tab/pane lifecycle 已开始同步到 core mirror；仍缺编辑文本同步、session/project/LSP lifecycle 等更高层 workspace API。
+- `MultiDocumentEditorUi` 基础 FFI/Swift 投影已完成，覆盖 open/select/close/pin/preview/split/search-all-tabs、tab 文本同步和 dirty/saved snapshot；AttoEditor tab/pane lifecycle 与编辑文本已开始同步到 core mirror；仍缺 session/project/LSP lifecycle 等更高层 workspace API。
 - 将 AttoEditor 现有 Swift tabs/splits 迁移为 core workspace state 的 AppKit 投影，而不是继续维护独立 workspace/tab/session model；新增字段时要区分“UI 表现缓存”和“文档/workspace 所有权状态”。
 - 继续产品化 split panes：pane move、split layout restore、拖拽 tab 到 split，但新增命令和状态归属必须先落在 core workspace 模型，然后通过 FFI/Swift wrapper 驱动 AppKit 表现。
 - 统一 session restore、preview tab、pin tab、dirty state、close semantics。
@@ -608,7 +609,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | LSP folding ranges | yes | partial helper | yes, request/take + apply to fold regions | yes, raw request/take + apply JSON | yes, raw request/take + apply JSON | partial, refresh command applies ranges and fold commands use current state | yes |
 | LSP advanced raw requests | yes | partial helper | yes, code lens refresh/resolve + selection/linked editing/diagnostics/color/hierarchy raw request/take | yes, raw request/take JSON + code lens view-point hit-test | yes, raw request/take JSON + code lens hit-test wrapper | partial, code lens refresh/actions/inline Cmd-click + selection range/linked editing/document colors/call hierarchy/type hierarchy/workspace diagnostics have App commands and quick panels; persistent project Problems still missing | partial |
 | split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
-| workspace tabs/splits | yes, headless `Workspace` | partial `Workspace` wrapper with view-local command conveniences | yes, `MultiDocumentEditorUi` | yes, basic `MultiDocumentEditorUi` ABI + close-view | partial `MultiDocumentEditorUI` wrapper; Atto tab/pane lifecycle mirrors core snapshot but editing/session/search ownership is still transitional | partial, transitional AppKit projection; new tab/workspace semantics must move to core-owned workspace first | partial |
+| workspace tabs/splits | yes, headless `Workspace` | partial `Workspace` wrapper with view-local command conveniences | yes, `MultiDocumentEditorUi` | yes, `MultiDocumentEditorUi` ABI + close-view + text/dirty sync | partial `MultiDocumentEditorUI` wrapper; Atto tab/pane lifecycle and edited text mirror core snapshot/search, but session/project/LSP ownership is still transitional | partial, transitional AppKit projection; new tab/workspace semantics must move to core-owned workspace first | partial |
 
 这类矩阵应该作为 PR checklist 使用：新增 core 能力时，明确是否需要同步 FFI、Swift wrapper、App command 和测试。
 

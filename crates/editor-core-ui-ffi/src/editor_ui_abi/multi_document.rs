@@ -24,6 +24,9 @@ fn multi_document_snapshot_value(
                 "title": multi.tab_title(tab_id),
                 "is_preview": multi.is_preview_tab(tab_id).unwrap_or(false),
                 "is_active": multi.active_tab_id() == Some(tab_id),
+                "is_modified": multi
+                    .is_tab_modified(tab_id)
+                    .map_err(|err| err.to_string())?,
                 "view_count": view_count,
                 "active_view_index": active_view_index,
             }))
@@ -166,6 +169,99 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_snapshot_json(
             set_last_error_from_error(err);
             ptr::null_mut()
         }
+    }
+}
+
+/// Return the active view text for a tab.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_tab_text(
+    multi: *mut MultiDocumentEditorUi,
+    tab_id: u64,
+) -> *mut c_char {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        multi
+            .tab_text(tab_id_from_raw(tab_id))
+            .map_err(map_ui_error)
+    }) {
+        Ok(text) => {
+            clear_last_error();
+            make_c_string_ptr(text)
+        }
+        Err(err) => {
+            set_last_error_from_error(err);
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Replace the active view text for a tab.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_replace_tab_text(
+    multi: *mut MultiDocumentEditorUi,
+    tab_id: u64,
+    text_utf8: *const c_char,
+    mark_saved: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let text = require_str(text_utf8, "text_utf8")?;
+        multi
+            .replace_tab_text(tab_id_from_raw(tab_id), text, mark_saved != 0)
+            .map_err(map_ui_error)?;
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Return whether a tab's active view is modified.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_is_tab_modified(
+    multi: *mut MultiDocumentEditorUi,
+    tab_id: u64,
+    out_modified: *mut u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let out_modified = require_out_mut(out_modified, "out_modified")?;
+        *out_modified = u8::from(
+            multi
+                .is_tab_modified(tab_id_from_raw(tab_id))
+                .map_err(map_ui_error)?,
+        );
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Mark a tab's active view as saved.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_mark_tab_saved(
+    multi: *mut MultiDocumentEditorUi,
+    tab_id: u64,
+) -> c_int {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        multi
+            .mark_tab_saved(tab_id_from_raw(tab_id))
+            .map_err(map_ui_error)?;
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
     }
 }
 

@@ -105,6 +105,14 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(try multi.splitTab(beta, viewportWidthCells: 80), 1)
         try multi.setActiveViewIndex(tabId: beta, viewIndex: 0)
 
+        try multi.replaceTabText(tabId: beta, text: "beta mirror", markSaved: false)
+        XCTAssertEqual(try multi.tabText(tabId: beta), "beta mirror")
+        XCTAssertTrue(try multi.isTabModified(beta))
+        try multi.markTabSaved(beta)
+        XCTAssertFalse(try multi.isTabModified(beta))
+        try multi.replaceTabText(tabId: beta, text: "beta saved mirror", markSaved: true)
+        XCTAssertFalse(try multi.isTabModified(beta))
+
         let preview = try multi.openPreviewTab(text: "preview one", viewportWidthCells: 80)
         let reusedPreview = try multi.openPreviewTab(text: "preview two", viewportWidthCells: 80)
         XCTAssertEqual(reusedPreview, preview)
@@ -113,14 +121,14 @@ final class EditorCoreUIFFITests: XCTestCase {
         try multi.pinTab(preview)
         XCTAssertFalse(try multi.isPreviewTab(preview))
 
-        let results = try multi.searchAllTabs(query: "world")
-        XCTAssertEqual(results.map(\.tabId).sorted(), [alpha, beta].sorted())
-        XCTAssertEqual(results.flatMap(\.matches).count, 2)
+        let results = try multi.searchAllTabs(query: "mirror")
+        XCTAssertEqual(results.map(\.tabId), [beta])
+        XCTAssertEqual(results.flatMap(\.matches).count, 1)
 
         let snapshot = try multi.snapshot()
         XCTAssertEqual(snapshot.activeTabId, beta)
         XCTAssertEqual(snapshot.tabs.count, 3)
-        XCTAssertTrue(snapshot.tabs.contains { $0.id == beta && $0.title == "Beta" && $0.viewCount == 2 })
+        XCTAssertTrue(snapshot.tabs.contains { $0.id == beta && $0.title == "Beta" && $0.viewCount == 2 && $0.isModified == false })
         XCTAssertTrue(snapshot.tabs.contains { $0.id == preview && $0.isPreview == false })
 
         XCTAssertEqual(try multi.closeTabsToRight(of: beta), 1)

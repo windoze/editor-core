@@ -122,6 +122,44 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     );
     assert_eq!(view_index, 1);
 
+    let replacement = CString::new("beta mirror").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_replace_tab_text(multi, beta_id, replacement.as_ptr(), 0,),
+        ECU_OK
+    );
+    let beta_text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, beta_id);
+    assert!(!beta_text_ptr.is_null());
+    let beta_text = unsafe { std::ffi::CStr::from_ptr(beta_text_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(beta_text_ptr) };
+    assert_eq!(beta_text, "beta mirror");
+    let mut modified: u8 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_is_tab_modified(multi, beta_id, &mut modified),
+        ECU_OK
+    );
+    assert_eq!(modified, 1);
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_mark_tab_saved(multi, beta_id),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_is_tab_modified(multi, beta_id, &mut modified),
+        ECU_OK
+    );
+    assert_eq!(modified, 0);
+    let saved = CString::new("beta saved mirror").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_replace_tab_text(multi, beta_id, saved.as_ptr(), 1),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_is_tab_modified(multi, beta_id, &mut modified),
+        ECU_OK
+    );
+    assert_eq!(modified, 0);
+
     let preview1 = CString::new("preview one").unwrap();
     let preview2 = CString::new("preview two").unwrap();
     let mut preview_id: u64 = 0;
@@ -161,7 +199,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     );
     assert_eq!(is_preview, 0);
 
-    let query = CString::new("world").unwrap();
+    let query = CString::new("mirror").unwrap();
     let search_ptr =
         editor_core_ui_ffi_multi_document_search_all_tabs_json(multi, query.as_ptr(), 1, 0, 0);
     assert!(!search_ptr.is_null());
@@ -170,7 +208,9 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         .into_owned();
     unsafe { editor_core_ui_ffi_string_free(search_ptr) };
     let search_value: serde_json::Value = serde_json::from_str(&search_json).unwrap();
-    assert_eq!(search_value["results"].as_array().unwrap().len(), 2);
+    let search_results = search_value["results"].as_array().unwrap();
+    assert_eq!(search_results.len(), 1);
+    assert_eq!(search_results[0]["tab_id"], beta_id);
 
     let snapshot_ptr = editor_core_ui_ffi_multi_document_snapshot_json(multi);
     assert!(!snapshot_ptr.is_null());
@@ -182,8 +222,9 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     assert_eq!(snapshot["active_tab_id"], beta_id);
     let tabs = snapshot["tabs"].as_array().unwrap();
     assert!(
-        tabs.iter()
-            .any(|tab| tab["id"] == beta_id && tab["title"] == "Beta")
+        tabs.iter().any(|tab| tab["id"] == beta_id
+            && tab["title"] == "Beta"
+            && tab["is_modified"] == false)
     );
     assert!(
         tabs.iter()

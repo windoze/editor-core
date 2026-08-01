@@ -279,6 +279,74 @@ impl MultiDocumentEditorUi {
         self.tabs.get_mut(&tab_id)?.active_view_mut()
     }
 
+    fn tab_entry(&self, tab_id: TabId) -> Result<&TabEntry, UiError> {
+        self.tabs
+            .get(&tab_id)
+            .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))
+    }
+
+    fn tab_entry_mut(&mut self, tab_id: TabId) -> Result<&mut TabEntry, UiError> {
+        self.tabs
+            .get_mut(&tab_id)
+            .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))
+    }
+
+    /// Return the active view text for a tab.
+    pub fn tab_text(&self, tab_id: TabId) -> Result<String, UiError> {
+        let tab = self.tab_entry(tab_id)?;
+        Ok(tab
+            .active_view()
+            .ok_or_else(|| UiError::Processor("tab has no views".to_string()))?
+            .text())
+    }
+
+    /// Return whether the active view for a tab is modified.
+    pub fn is_tab_modified(&self, tab_id: TabId) -> Result<bool, UiError> {
+        let tab = self.tab_entry(tab_id)?;
+        Ok(tab
+            .active_view()
+            .ok_or_else(|| UiError::Processor("tab has no views".to_string()))?
+            .is_modified())
+    }
+
+    /// Replace a tab's full text in the active view.
+    ///
+    /// This is intended for native UI mirrors that currently own text input but still need the
+    /// core multi-document model to stay searchable and dirty-aware during migration.
+    pub fn replace_tab_text(
+        &mut self,
+        tab_id: TabId,
+        text: &str,
+        mark_saved: bool,
+    ) -> Result<(), UiError> {
+        let tab = self.tab_entry_mut(tab_id)?;
+        let view = tab
+            .active_view_mut()
+            .ok_or_else(|| UiError::Processor("tab has no views".to_string()))?;
+        let length = view.text().chars().count();
+        let text_json = serde_json::to_string(text).map_err(|err| {
+            UiError::Processor(format!("failed to encode replacement text: {err}"))
+        })?;
+        let command_json = format!(
+            r#"{{"kind":"edit","op":"replace","start":0,"length":{},"text":{}}}"#,
+            length, text_json
+        );
+        view.execute_command_json(command_json.as_str())?;
+        if mark_saved {
+            view.mark_saved();
+        }
+        Ok(())
+    }
+
+    /// Mark a tab's active view as saved.
+    pub fn mark_tab_saved(&mut self, tab_id: TabId) -> Result<(), UiError> {
+        let tab = self.tab_entry_mut(tab_id)?;
+        tab.active_view_mut()
+            .ok_or_else(|| UiError::Processor("tab has no views".to_string()))?
+            .mark_saved();
+        Ok(())
+    }
+
     /// Create a split pane within a tab by cloning the active view.
     ///
     /// Returns the new view index within the tab.

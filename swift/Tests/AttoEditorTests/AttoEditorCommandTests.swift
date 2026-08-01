@@ -1206,6 +1206,40 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNil(snapshot.activeTabId)
     }
 
+    func testCoreMultiDocumentMirrorTracksEditedTextDirtyAndSearch() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("mirror.txt")
+        try "alpha".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        var snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        let tabId = try XCTUnwrap(snapshot.activeTabId)
+        var tabSnapshot = try XCTUnwrap(snapshot.tabs.first { $0.id == tabId })
+        XCTAssertFalse(tabSnapshot.isModified)
+
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":" needle"}"#))
+
+        let results = try XCTUnwrap(vc._coreMultiDocumentSearchForTesting(query: "needle"))
+        XCTAssertEqual(results.map(\.tabId), [tabId])
+        XCTAssertEqual(results.flatMap(\.matches).count, 1)
+
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        tabSnapshot = try XCTUnwrap(snapshot.tabs.first { $0.id == tabId })
+        XCTAssertTrue(tabSnapshot.isModified)
+
+        vc.saveActiveTab()
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        tabSnapshot = try XCTUnwrap(snapshot.tabs.first { $0.id == tabId })
+        XCTAssertFalse(tabSnapshot.isModified)
+    }
+
     func testSplitRightCreatesSharedDocumentPane() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

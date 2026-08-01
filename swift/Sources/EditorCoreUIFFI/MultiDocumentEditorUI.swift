@@ -6,6 +6,7 @@ public struct EcuMultiDocumentTabSnapshot: Decodable, Equatable, Sendable {
     public let title: String?
     public let isPreview: Bool
     public let isActive: Bool
+    public let isModified: Bool
     public let viewCount: UInt32
     public let activeViewIndex: UInt32
 
@@ -14,6 +15,7 @@ public struct EcuMultiDocumentTabSnapshot: Decodable, Equatable, Sendable {
         case title
         case isPreview = "is_preview"
         case isActive = "is_active"
+        case isModified = "is_modified"
         case viewCount = "view_count"
         case activeViewIndex = "active_view_index"
     }
@@ -194,6 +196,42 @@ public final class MultiDocumentEditorUI {
         let status = editor_core_ui_ffi_multi_document_view_count(handle, tabId, &count)
         try library.ensureStatus(status, context: "multi_document_view_count")
         return count
+    }
+
+    public func tabText(tabId: UInt64) throws -> String {
+        guard let ptr = editor_core_ui_ffi_multi_document_tab_text(handle, tabId) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "multi_document_tab_text",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func replaceTabText(tabId: UInt64, text: String, markSaved: Bool = false) throws {
+        let status = text.withCString { textPtr in
+            editor_core_ui_ffi_multi_document_replace_tab_text(
+                handle,
+                tabId,
+                textPtr,
+                markSaved ? 1 : 0
+            )
+        }
+        try library.ensureStatus(status, context: "multi_document_replace_tab_text")
+    }
+
+    public func isTabModified(_ tabId: UInt64) throws -> Bool {
+        var raw: UInt8 = 0
+        let status = editor_core_ui_ffi_multi_document_is_tab_modified(handle, tabId, &raw)
+        try library.ensureStatus(status, context: "multi_document_is_tab_modified")
+        return raw != 0
+    }
+
+    public func markTabSaved(_ tabId: UInt64) throws {
+        let status = editor_core_ui_ffi_multi_document_mark_tab_saved(handle, tabId)
+        try library.ensureStatus(status, context: "multi_document_mark_tab_saved")
     }
 
     public func searchAllTabsJSON(query: String, options: EcuSearchOptions = EcuSearchOptions()) throws -> String {

@@ -80,6 +80,10 @@ final class AttoEditorAreaViewController: NSViewController {
         try coreDocuments?.snapshot()
     }
 
+    func _coreMultiDocumentSearchForTesting(query: String) throws -> [EcuTabSearchResult]? {
+        try coreDocuments?.searchAllTabs(query: query)
+    }
+
     private struct HoverRequestContext {
         let tabID: UUID
         let info: EditorCoreSkiaHoverInfo
@@ -709,6 +713,16 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    private func syncCoreTabText(_ tab: AttoEditorTab, markSaved: Bool) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+        do {
+            let text = try tab.editCore.editor.text()
+            try coreDocuments.replaceTabText(tabId: coreTabID, text: text, markSaved: markSaved)
+        } catch {
+            NSLog("AttoEditor: core multi-document text sync failed: %@", String(describing: error))
+        }
+    }
+
     private func pinCoreTabIfPreview(_ tab: AttoEditorTab) {
         guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
         do {
@@ -918,6 +932,7 @@ final class AttoEditorAreaViewController: NSViewController {
             tab.isUntitled = false
             tab.isDirty = false
             tab.isPreview = false
+            syncCoreTabText(tab, markSaved: true)
             pinCoreTabIfPreview(tab)
             updateCoreTabTitle(tab)
             refreshTabBar()
@@ -2518,6 +2533,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         tab.isDirty = (try? tab.editCore.editor.isModified()) ?? true
+        syncCoreTabText(tab, markSaved: tab.isDirty == false)
         if didUnpreview {
             pinCoreTabIfPreview(tab)
         }
@@ -5680,6 +5696,7 @@ final class AttoEditorAreaViewController: NSViewController {
             } else {
                 tab.isDirty = (try? tab.editCore.editor.isModified()) ?? true
             }
+            syncCoreTabText(tab, markSaved: markSaved || tab.isDirty == false)
             refreshTabAfterWorkspaceResourceOperation(tab)
             return true
         } catch {
@@ -5700,6 +5717,7 @@ final class AttoEditorAreaViewController: NSViewController {
             pane.needsDisplay = true
             applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
         }
+        updateCoreTabTitle(tab)
         refreshTabBar()
         updateWindowTitle()
         updateStatusBar()

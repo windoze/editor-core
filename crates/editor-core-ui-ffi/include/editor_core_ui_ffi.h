@@ -191,6 +191,17 @@ int32_t editor_core_ui_ffi_multi_document_close_view_index(MultiDocumentEditorUi
 int32_t editor_core_ui_ffi_multi_document_view_count(MultiDocumentEditorUi* multi,
                                                      uint64_t tab_id,
                                                      uint32_t* out_view_count);
+char* editor_core_ui_ffi_multi_document_tab_text(MultiDocumentEditorUi* multi,
+                                                 uint64_t tab_id);
+int32_t editor_core_ui_ffi_multi_document_replace_tab_text(MultiDocumentEditorUi* multi,
+                                                           uint64_t tab_id,
+                                                           const char* text_utf8,
+                                                           uint8_t mark_saved);
+int32_t editor_core_ui_ffi_multi_document_is_tab_modified(MultiDocumentEditorUi* multi,
+                                                          uint64_t tab_id,
+                                                          uint8_t* out_modified);
+int32_t editor_core_ui_ffi_multi_document_mark_tab_saved(MultiDocumentEditorUi* multi,
+                                                         uint64_t tab_id);
 char* editor_core_ui_ffi_multi_document_search_all_tabs_json(MultiDocumentEditorUi* multi,
                                                              const char* query_utf8,
                                                              uint8_t case_sensitive,

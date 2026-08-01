@@ -82,6 +82,31 @@ fn multi_document_ui_can_search_across_tabs() {
 }
 
 #[test]
+fn multi_document_ui_can_replace_tab_text_and_track_dirty_state() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let tab = ui.open_tab("hello world\n", 80);
+
+    ui.replace_tab_text(tab, "hello mirror\n", false).unwrap();
+
+    assert_eq!(ui.tab_text(tab).unwrap(), "hello mirror\n");
+    assert!(ui.is_tab_modified(tab).unwrap());
+
+    let results = ui
+        .search_all_tabs("mirror", SearchOptions::default())
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].tab_id, tab);
+    assert_eq!(results[0].matches.len(), 1);
+
+    ui.mark_tab_saved(tab).unwrap();
+    assert!(!ui.is_tab_modified(tab).unwrap());
+
+    ui.replace_tab_text(tab, "saved mirror\n", true).unwrap();
+    assert_eq!(ui.tab_text(tab).unwrap(), "saved mirror\n");
+    assert!(!ui.is_tab_modified(tab).unwrap());
+}
+
+#[test]
 fn multi_document_ui_preview_tabs_are_reused_until_pinned_or_modified() {
     let mut ui = MultiDocumentEditorUi::new();
 
