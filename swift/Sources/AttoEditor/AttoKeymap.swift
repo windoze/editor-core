@@ -41,6 +41,7 @@ enum AttoKeymapContextValue: Equatable {
     case bool(Bool)
     case string(String)
     case number(Double)
+    case list([AttoKeymapContextValue])
 
     var stringValue: String? {
         switch self {
@@ -50,6 +51,8 @@ enum AttoKeymapContextValue: Equatable {
             return value
         case .number(let value):
             return String(value)
+        case .list:
+            return nil
         }
     }
 }
@@ -634,11 +637,13 @@ private struct AttoKeymapCondition: Decodable, Equatable {
     var key: String
     var op: Operator
     var operand: AttoKeymapContextValue
+    var matchAll: Bool
 
     private enum CodingKeys: String, CodingKey {
         case key
         case op = "operator"
         case operand
+        case matchAll = "match_all"
     }
 
     init(from decoder: Decoder) throws {
@@ -646,10 +651,22 @@ private struct AttoKeymapCondition: Decodable, Equatable {
         self.key = try container.decode(String.self, forKey: .key)
         self.op = Operator(rawValue: try container.decodeIfPresent(String.self, forKey: .op))
         self.operand = (try? container.decode(AttoKeymapContextValue.self, forKey: .operand)) ?? .bool(true)
+        self.matchAll = (try? container.decode(Bool.self, forKey: .matchAll)) ?? false
     }
 
     func matches(_ context: AttoKeymapContext) -> Bool {
         guard let actual = context.values[key] else { return false }
+        if case .list(let values) = actual {
+            guard values.isEmpty == false else { return false }
+            if matchAll {
+                return values.allSatisfy { matchesSingleValue($0) }
+            }
+            return values.contains { matchesSingleValue($0) }
+        }
+        return matchesSingleValue(actual)
+    }
+
+    private func matchesSingleValue(_ actual: AttoKeymapContextValue) -> Bool {
         switch op {
         case .equal:
             return actual == operand
@@ -708,6 +725,10 @@ extension AttoKeymapContextValue: Decodable {
         }
         if let value = try? container.decode(String.self) {
             self = .string(value)
+            return
+        }
+        if let value = try? container.decode([AttoKeymapContextValue].self) {
+            self = .list(value)
             return
         }
         throw DecodingError.typeMismatch(

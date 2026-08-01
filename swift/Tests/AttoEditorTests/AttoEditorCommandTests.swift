@@ -590,6 +590,74 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(resolution.bindings["test.not_regex_match"], AttoKeymap.parseBinding("cmd+0"))
     }
 
+    func testKeymapContextMatchAllEvaluatesMultiValueContexts() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let keymapURL = tempDir.appendingPathComponent("keymap.json")
+        try """
+        [
+          {
+            "key": "cmd+1",
+            "command": "test.any_nonempty_selection",
+            "context": [
+              { "key": "selection_empty", "operator": "equal", "operand": false }
+            ]
+          },
+          {
+            "key": "cmd+2",
+            "command": "test.all_nonempty_selection",
+            "context": [
+              { "key": "selection_empty", "operator": "equal", "operand": false, "match_all": true }
+            ]
+          },
+          {
+            "key": "cmd+3",
+            "command": "test.all_source_selector",
+            "context": [
+              { "key": "selector", "operator": "regex_contains", "operand": "source\\\\.swift", "match_all": true }
+            ]
+          },
+          {
+            "key": "cmd+4",
+            "command": "test.all_not_string_selector",
+            "context": [
+              { "key": "selector", "operator": "not_regex_contains", "operand": "string\\\\.quoted", "match_all": true }
+            ]
+          }
+        ]
+        """.write(to: keymapURL, atomically: true, encoding: .utf8)
+
+        let env = [AttoKeymap.userKeymapEnv: keymapURL.path]
+        let mixedContext = AttoKeymapContext(values: [
+            "selection_empty": .list([.bool(false), .bool(true)]),
+            "selector": .list([
+                .string("source.swift"),
+                .string("source.swift string.quoted"),
+            ]),
+        ])
+        let mixedResolution = AttoKeymap.resolvedKeymap(env: env, context: mixedContext)
+        XCTAssertEqual(mixedResolution.bindings["test.any_nonempty_selection"], AttoKeymap.parseBinding("cmd+1"))
+        XCTAssertNil(mixedResolution.bindings["test.all_nonempty_selection"])
+        XCTAssertEqual(mixedResolution.bindings["test.all_source_selector"], AttoKeymap.parseBinding("cmd+3"))
+        XCTAssertNil(mixedResolution.bindings["test.all_not_string_selector"])
+
+        let allContext = AttoKeymapContext(values: [
+            "selection_empty": .list([.bool(false), .bool(false)]),
+            "selector": .list([
+                .string("source.swift"),
+                .string("source.swift meta.function"),
+            ]),
+        ])
+        let allResolution = AttoKeymap.resolvedKeymap(env: env, context: allContext)
+        XCTAssertEqual(allResolution.bindings["test.any_nonempty_selection"], AttoKeymap.parseBinding("cmd+1"))
+        XCTAssertEqual(allResolution.bindings["test.all_nonempty_selection"], AttoKeymap.parseBinding("cmd+2"))
+        XCTAssertEqual(allResolution.bindings["test.all_source_selector"], AttoKeymap.parseBinding("cmd+3"))
+        XCTAssertEqual(allResolution.bindings["test.all_not_string_selector"], AttoKeymap.parseBinding("cmd+4"))
+    }
+
     func testKeymapUserBindingShadowsConflictingDefaultShortcut() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
