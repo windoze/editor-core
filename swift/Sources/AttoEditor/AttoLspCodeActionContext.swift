@@ -5,7 +5,8 @@ enum AttoLspCodeActionContext {
         diagnosticsJSON: String,
         documentText: String,
         selectionStart: UInt32,
-        selectionEnd: UInt32
+        selectionEnd: UInt32,
+        onlyKinds: [String] = []
     ) -> String {
         let diagnostics = lspDiagnostics(
             diagnosticsJSON: diagnosticsJSON,
@@ -13,7 +14,12 @@ enum AttoLspCodeActionContext {
             selectionStart: selectionStart,
             selectionEnd: selectionEnd
         )
-        return jsonString(["diagnostics": diagnostics]) ?? #"{"diagnostics":[]}"#
+        var context: [String: Any] = ["diagnostics": diagnostics]
+        let only = onlyKinds.filter { $0.isEmpty == false }
+        if only.isEmpty == false {
+            context["only"] = only
+        }
+        return jsonString(context) ?? #"{"diagnostics":[]}"#
     }
 
     static func lspDiagnostics(

@@ -72,4 +72,30 @@ final class AttoLspCodeActionParserTests: XCTestCase {
             "Cannot fix  [quickfix, disabled: not applicable]"
         )
     }
+
+    func testFilteredItemsMatchKindPrefixes() throws {
+        let json = """
+        [
+          { "title": "Quick fix", "kind": "quickfix" },
+          { "title": "Extract", "kind": "refactor.extract" },
+          { "title": "Organize", "kind": "source.organizeImports" },
+          { "title": "Legacy", "command": "server.run" }
+        ]
+        """
+
+        let items = AttoLspCodeActionParser.items(fromCodeActionResultJSON: json)
+        XCTAssertEqual(
+            AttoLspCodeActionParser.filteredItems(items, onlyKinds: ["refactor"]).map(\.title),
+            ["Extract"]
+        )
+        XCTAssertEqual(
+            AttoLspCodeActionParser.filteredItems(items, onlyKinds: ["source.organizeImports"]).map(\.title),
+            ["Organize"]
+        )
+        XCTAssertEqual(
+            AttoLspCodeActionParser.filteredItems(items, onlyKinds: ["quickfix", "source"]).map(\.title),
+            ["Quick fix", "Organize"]
+        )
+        XCTAssertEqual(AttoLspCodeActionParser.filteredItems(items, onlyKinds: []).count, 4)
+    }
 }

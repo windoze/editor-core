@@ -55,6 +55,17 @@ enum AttoLspCodeActionParser {
         return "\(item.title)  [\(suffix.joined(separator: ", "))]"
     }
 
+    static func filteredItems(_ items: [Item], onlyKinds: [String]) -> [Item] {
+        let filters = onlyKinds.filter { $0.isEmpty == false }
+        guard filters.isEmpty == false else { return items }
+        return items.filter { item in
+            guard let kind = item.kind, kind.isEmpty == false else { return false }
+            return filters.contains { filter in
+                kind == filter || kind.hasPrefix(filter + ".")
+            }
+        }
+    }
+
     static func rawJSON(for item: Item) -> String? {
         jsonString(item.object)
     }

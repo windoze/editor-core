@@ -77,7 +77,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 11 第二部分已完成：Swift UI binding 新增 `lspApplyWorkspaceEditJSON(_:documentURI:)`，通过 UI FFI 把 `WorkspaceEdit` 中命中当前文档 URI 的 `TextEdit` 应用到当前 buffer，并返回 applied/skipped/documents summary，覆盖 rename/code action 返回 edit 后的当前文档应用基础链路。
 - 2026-08-01 阶段 11 第三部分已完成：AttoEditor App 新增 `lsp.rename` 主路径，包含 command palette、Go 菜单、F2 keymap、rename 输入框、候选名预填、LSP rename request/poll，以及把返回的当前文档 WorkspaceEdit 应用到 active tab 并标记 dirty。
 - 2026-08-01 阶段 11 第四部分已完成：Swift UI binding 新增 `workspace/executeCommand` raw request/take API；AttoEditor App 新增 `lsp.code_actions` 主路径，包含 command palette、Go 菜单、Cmd+. keymap、code action quick panel、`codeAction/resolve` 轮询、当前文档 WorkspaceEdit 应用和 command payload 执行。
-- 阶段 11 后续缺口中，跨文件 WorkspaceEdit 摘要预览已在阶段 25 补齐，code action diagnostics context 已在阶段 26 补齐；仍缺跨文件 WorkspaceEdit 真正应用、code action kind/filter 产品化、执行结果/错误展示，以及相关 typed result model。
+- 阶段 11 后续缺口中，跨文件 WorkspaceEdit 摘要预览已在阶段 25 补齐，code action diagnostics context 已在阶段 26 补齐，code action kind/filter 产品化已在阶段 27 补齐；仍缺跨文件 WorkspaceEdit 真正应用、执行结果/错误展示，以及相关 typed result model。
 - 2026-08-01 阶段 12 已完成：Swift UI binding 新增 `completionItem/resolve` raw request/take API；AttoEditor completion popup 在 commit 时会先请求 resolve，使用 resolved CompletionItem 中的 `textEdit` / `additionalTextEdits` / snippet payload，resolve 不可用或超时时回退到原始 completion item。
 - 阶段 12 后续缺口中，rich documentation/detail preview 已在阶段 21 补齐，commitCharacters 提交行为已在阶段 22 补齐，server triggerCharacters 自动触发已在阶段 23 补齐，增量过滤已在阶段 24 补齐，跨文件 WorkspaceEdit 摘要预览已在阶段 25 补齐；仍缺跨文件 workspace edit 真正应用和更完整的 typed result model。
 - 2026-08-01 阶段 13 已完成：Swift UI binding 新增 LSP range/on-type formatting 的阻塞 turnkey API，覆盖 Rust `editor-core-lsp` 已有的 `textDocument/rangeFormatting` 和 `textDocument/onTypeFormatting` 请求路径，并复用 `editor-core-ui` 的 LSP `TextEdit` 应用逻辑。
@@ -105,6 +105,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 24 已完成：AttoEditor completion popup 在打开后会保留 server 返回的完整候选集；普通文本输入和 Backspace 会转发到 editor buffer，并按当前 caret 相对原 replacement start 的 prefix 使用 LSP `filterText` / label 本地增量过滤候选，过滤为空或 caret 离开原 prefix range 时关闭 popup。
 - 2026-08-01 阶段 25 已完成：AttoEditor 新增 `AttoWorkspaceEditApplyResult` typed summary，消费 Swift UI binding 返回的 `applied_uri` / `applied_edit_count` / `skipped_uris` / `documents`，rename/code action/completion 当前文档 WorkspaceEdit 应用后会在存在跨文件 skipped URI 时显示 HUD 摘要；WorkspaceEdit 完全不命中 active document 时也会显示受影响文件摘要后保持不应用。
 - 2026-08-01 阶段 26 已完成：AttoEditor code action 请求不再固定发送空 `diagnostics` context；新增 `AttoLspCodeActionContext`，从 Swift UI `diagnosticsJSON()` 读取当前 buffer diagnostics，按 code action selection/caret range 过滤，把 core char-offset range 转成 LSP UTF-16 `Diagnostic.range`，并保留 severity/code/source/message/relatedInformation/data 后发送给 `textDocument/codeAction`。
+- 2026-08-01 阶段 27 已完成：AttoEditor code action 主路径新增 kind/filter 产品化入口；`lsp.quick_fix`、`lsp.refactor`、`lsp.source_actions`、`lsp.organize_imports`、`lsp.fix_all` 已接入 command palette 和 Go 菜单，请求时发送 LSP `CodeActionContext.only`，响应后再按 `kind` 精确或前缀匹配做客户端过滤。
 
 ## 分层结论
 
@@ -201,7 +202,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - folding ranges result 到 core fold regions 的应用和 JSON 导出。
 - WorkspaceEdit 中当前文档 `TextEdit` 的 Swift UI binding 应用，并返回跨 URI skip/summary 信息。
 - AttoEditor App command/menu/keymap 已覆盖 `lsp.rename` 主路径，可输入新名称、请求 LSP rename 并应用当前文档 WorkspaceEdit。
-- AttoEditor App command/menu/keymap 已覆盖 `lsp.code_actions` 主路径，可携带当前 diagnostics context、展示 code action quick panel、resolve action、应用当前文档 edit、展示跨文件 WorkspaceEdit 摘要并发起 `workspace/executeCommand`。
+- AttoEditor App command/menu/keymap 已覆盖 `lsp.code_actions` 主路径，可携带当前 diagnostics context、展示 code action quick panel、resolve action、应用当前文档 edit、展示跨文件 WorkspaceEdit 摘要并发起 `workspace/executeCommand`；Quick Fix / Refactor / Source Action / Organize Imports / Fix All 已通过 `CodeActionContext.only` 和客户端 kind 前缀过滤产品化。
 - Swift UI binding 已覆盖 document/range/on-type formatting 的阻塞请求和当前文档 `TextEdit` 应用；AttoEditor App command/menu 已覆盖 `editor.format_document`，command/menu/keymap 已覆盖 `editor.format_selection` 主路径。
 - `LSPBridge` 中有若干 JSON/DTO 转换 helper。
 
@@ -212,7 +213,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - completion popup 主路径、commit-time completion resolve、rich documentation/detail preview、commitCharacters 提交行为、server triggerCharacters 自动触发、本地增量过滤和跨文件 WorkspaceEdit 摘要预览已有；仍缺 completion/code action 中的完整跨文件 WorkspaceEdit 应用。
 - signature help popup 主路径已有，并会按 server trigger/retrigger characters 自动弹出，active parameter 富格式高亮、typed result model 和手动请求空/错反馈已完成。
 - rename 主路径已有 App 输入 UI、prepareRename range/placeholder 默认名、当前文档 WorkspaceEdit 应用和跨文件 WorkspaceEdit 摘要预览；仍缺跨文件真正应用和 typed result model。
-- code action 主路径已有 App quick panel、resolve、diagnostics context、当前文档 edit 应用、跨文件 WorkspaceEdit 摘要预览和 command 执行；仍缺 code action kind/filter 产品化、跨文件真正应用、执行结果/错误展示和 typed result model。
+- code action 主路径已有 App quick panel、resolve、diagnostics context、kind/filter、当前文档 edit 应用、跨文件 WorkspaceEdit 摘要预览和 command 执行；仍缺跨文件真正应用、执行结果/错误展示和 typed result model。
 - code lens resolve 和 workspace command execution 的 Swift UI binding 已有；仍缺 App 层 code lens action UI、执行结果/错误展示和 typed model。
 - outline / document symbols 已有 quick panel 主路径，但还缺持久 Outline panel。
 - workspace symbols 已有 quick panel 主路径，但还缺增量查询/输入面板和完整结果模型。
@@ -462,7 +463,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - signature help server trigger/retrigger characters 自动触发、active parameter 富格式高亮、typed result model 和手动请求空/错反馈已完成。
 - references/implementation/declaration/type definition。
 - rename prepareRename range/placeholder 和跨文件 WorkspaceEdit 摘要预览已产品化；仍缺跨文件 WorkspaceEdit 真正应用和 typed result model。
-- code action diagnostics context 和跨文件 WorkspaceEdit 摘要预览已完成；仍缺 kind/filter 产品化、跨文件 WorkspaceEdit 真正应用、执行结果/错误展示和 typed result model。
+- code action diagnostics context、kind/filter 和跨文件 WorkspaceEdit 摘要预览已完成；仍缺跨文件 WorkspaceEdit 真正应用、执行结果/错误展示和 typed result model。
 - document/workspace symbols 持久面板和 workspace 增量查询。
 - range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发和 server trigger characters 自动触发路径已完成，仍缺错误展示和 typed result model。
 - folding ranges request/take/apply 到 fold state 已完成；仍缺 App 层 refresh/error UI、可视化和 typed model。
@@ -508,7 +509,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | LSP completion | yes | partial helper | yes | yes, raw completion + resolve result | yes, raw completion + resolve result | yes, popup + auto trigger + incremental filter + commit-time resolve/current-doc apply | partial |
 | LSP symbols | yes | partial helper | yes | yes, raw JSON result | yes, raw JSON result | yes, document/workspace symbols quick panels | yes |
 | LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, prepareRename seed + input UI + menu/keymap + current-doc apply | partial |
-| LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand | partial, raw result + diagnostics context + current-doc WorkspaceEdit apply + executeCommand | yes, quick panel/menu/keymap/diagnostics context/current-doc apply/cross-file summary | partial |
+| LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand | partial, raw result + diagnostics context + kind filters + current-doc WorkspaceEdit apply + executeCommand | yes, quick panel/menu/keymap/diagnostics context/kind-filter commands/current-doc apply/cross-file summary | partial |
 | LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply + trigger-character auto path | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers | document + selection commands; on-type trigger-character auto path | partial |
 | LSP folding ranges | yes | partial helper | yes, request/take + apply to fold regions | yes, raw request/take + apply JSON | yes, raw request/take + apply JSON | partial, fold commands use current state | yes |
 | LSP advanced raw requests | yes | partial helper | yes, code lens resolve + selection/linked editing/diagnostics/color/hierarchy raw request/take | yes, raw request/take JSON | yes, raw request/take JSON | no, needs product UI | partial |

@@ -93,6 +93,20 @@ final class AttoLspCodeActionContextTests: XCTestCase {
         XCTAssertTrue(diagnostics.isEmpty)
     }
 
+    func testCodeActionContextIncludesOnlyKindsWhenRequested() throws {
+        let context = try object(
+            AttoLspCodeActionContext.contextJSON(
+                diagnosticsJSON: #"{"diagnostics":[]}"#,
+                documentText: "",
+                selectionStart: 0,
+                selectionEnd: 0,
+                onlyKinds: ["quickfix", "", "source.organizeImports"]
+            )
+        )
+
+        XCTAssertEqual(context["only"] as? [String], ["quickfix", "source.organizeImports"])
+    }
+
     private func object(_ json: String) throws -> [String: Any] {
         let data = try XCTUnwrap(json.data(using: .utf8))
         return try XCTUnwrap(

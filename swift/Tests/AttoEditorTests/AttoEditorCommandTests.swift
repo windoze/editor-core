@@ -39,6 +39,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.signature_help"))
         XCTAssertTrue(ids.contains("lsp.rename"))
         XCTAssertTrue(ids.contains("lsp.code_actions"))
+        XCTAssertTrue(ids.contains("lsp.quick_fix"))
+        XCTAssertTrue(ids.contains("lsp.refactor"))
+        XCTAssertTrue(ids.contains("lsp.source_actions"))
+        XCTAssertTrue(ids.contains("lsp.organize_imports"))
+        XCTAssertTrue(ids.contains("lsp.fix_all"))
     }
 
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
@@ -132,6 +137,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.signature_help", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.rename", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.code_actions", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.quick_fix", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.refactor", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.source_actions", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.organize_imports", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.fix_all", in: menu))
     }
 
     func testExecuteCommandUsesRegisteredCommandIDs() throws {

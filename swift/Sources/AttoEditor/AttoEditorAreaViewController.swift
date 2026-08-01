@@ -108,6 +108,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private struct CodeActionRequestContext {
         let tabID: UUID
+        let onlyKinds: [String]
     }
 
     private struct CodeActionResolveContext {
@@ -2641,6 +2642,36 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func showCodeActionsInActiveTab() -> Bool {
+        showCodeActionsInActiveTab(onlyKinds: [])
+    }
+
+    @discardableResult
+    func showQuickFixesInActiveTab() -> Bool {
+        showCodeActionsInActiveTab(onlyKinds: ["quickfix"])
+    }
+
+    @discardableResult
+    func showRefactorActionsInActiveTab() -> Bool {
+        showCodeActionsInActiveTab(onlyKinds: ["refactor"])
+    }
+
+    @discardableResult
+    func showSourceActionsInActiveTab() -> Bool {
+        showCodeActionsInActiveTab(onlyKinds: ["source"])
+    }
+
+    @discardableResult
+    func organizeImportsInActiveTab() -> Bool {
+        showCodeActionsInActiveTab(onlyKinds: ["source.organizeImports"])
+    }
+
+    @discardableResult
+    func fixAllInActiveTab() -> Bool {
+        showCodeActionsInActiveTab(onlyKinds: ["source.fixAll"])
+    }
+
+    @discardableResult
+    private func showCodeActionsInActiveTab(onlyKinds: [String]) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
             return false
@@ -2662,13 +2693,18 @@ final class AttoEditorAreaViewController: NSViewController {
             let offsets = try tab.editCore.editor.selectionOffsets()
             let start = min(offsets.start, offsets.end)
             let end = max(offsets.start, offsets.end)
-            let contextJSON = codeActionContextJSON(editor: tab.editCore.editor, startOffset: start, endOffset: end)
+            let contextJSON = codeActionContextJSON(
+                editor: tab.editCore.editor,
+                startOffset: start,
+                endOffset: end,
+                onlyKinds: onlyKinds
+            )
             _ = try tab.editCore.editor.lspRequestCodeAction(
                 startOffset: start,
                 endOffset: end,
                 contextJSON: contextJSON
             )
-            codeActionContext = CodeActionRequestContext(tabID: tab.id)
+            codeActionContext = CodeActionRequestContext(tabID: tab.id, onlyKinds: onlyKinds)
             startCodeActionPollTimer(tabID: tab.id)
             return true
         } catch {
@@ -2678,14 +2714,20 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
-    private func codeActionContextJSON(editor: EditorUI, startOffset: UInt32, endOffset: UInt32) -> String {
+    private func codeActionContextJSON(
+        editor: EditorUI,
+        startOffset: UInt32,
+        endOffset: UInt32,
+        onlyKinds: [String]
+    ) -> String {
         let diagnosticsJSON = (try? editor.diagnosticsJSON()) ?? #"{"diagnostics":[]}"#
         let text = (try? editor.text()) ?? ""
         return AttoLspCodeActionContext.contextJSON(
             diagnosticsJSON: diagnosticsJSON,
             documentText: text,
             selectionStart: startOffset,
-            selectionEnd: endOffset
+            selectionEnd: endOffset,
+            onlyKinds: onlyKinds
         )
     }
 
@@ -2721,7 +2763,10 @@ final class AttoEditorAreaViewController: NSViewController {
             }
             guard let json else { return }
 
-            let items = AttoLspCodeActionParser.items(fromCodeActionResultJSON: json)
+            let items = AttoLspCodeActionParser.filteredItems(
+                AttoLspCodeActionParser.items(fromCodeActionResultJSON: json),
+                onlyKinds: ctx.onlyKinds
+            )
             self.codeActionPollTimer?.cancel()
             self.codeActionPollTimer = nil
             self.codeActionContext = nil

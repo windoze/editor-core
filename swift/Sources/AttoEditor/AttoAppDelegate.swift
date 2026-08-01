@@ -370,6 +370,21 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(id: "lsp.code_actions", title: "LSP: Code Actions") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showCodeActionsInActiveTab()
             },
+            .init(id: "lsp.quick_fix", title: "LSP: Quick Fixes") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showQuickFixesInActiveTab()
+            },
+            .init(id: "lsp.refactor", title: "LSP: Refactor Actions") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showRefactorActionsInActiveTab()
+            },
+            .init(id: "lsp.source_actions", title: "LSP: Source Actions") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showSourceActionsInActiveTab()
+            },
+            .init(id: "lsp.organize_imports", title: "LSP: Organize Imports") { [weak self] in
+                self?.activeWindow()?.editorAreaController.organizeImportsInActiveTab()
+            },
+            .init(id: "lsp.fix_all", title: "LSP: Fix All") { [weak self] in
+                self?.activeWindow()?.editorAreaController.fixAllInActiveTab()
+            },
             .init(id: "lsp.document_symbols", title: "LSP: Document Symbols") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showDocumentSymbolsInActiveTab()
             },
