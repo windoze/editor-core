@@ -6,12 +6,16 @@ mod font_loading;
 mod geometry;
 mod headless;
 mod metal;
+mod state;
 mod style;
 
 pub(crate) use font::FontVariant;
 use font::{FontSet, ShapedRunCache};
 #[cfg(test)]
 pub(crate) use font_loading::{make_configured_font, normalize_font_family_name};
+#[cfg(target_os = "macos")]
+use state::SkiaMetalState;
+pub use state::SkiaRenderer;
 
 use super::*;
 use editor_core::{
@@ -30,24 +34,3 @@ use std::ffi::c_void;
 
 #[cfg(target_os = "macos")]
 use skia_safe::gpu;
-
-#[cfg(target_os = "macos")]
-#[derive(Debug)]
-struct SkiaMetalState {
-    _backend_context: gpu::mtl::BackendContext,
-    context: gpu::DirectContext,
-}
-
-#[derive(Debug)]
-pub struct SkiaRenderer {
-    pub(crate) fonts_normal: FontSet,
-    fonts_bold: FontSet,
-    fonts_italic: FontSet,
-    fonts_bold_italic: FontSet,
-    font_families: Vec<String>,
-    font_size: f32,
-    shaper: Shaper,
-    shaped_run_cache: ShapedRunCache,
-    #[cfg(target_os = "macos")]
-    metal: Option<SkiaMetalState>,
-}
