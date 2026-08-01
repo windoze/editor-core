@@ -673,6 +673,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertThrowsError(try ui.lspRequestCodeActionResolve(actionJSON: #"{"title":"Fix"}"#))
         XCTAssertThrowsError(try ui.lspRequestExecuteCommand(commandJSON: #"{"command":"server.fix","arguments":[]}"#))
         XCTAssertThrowsError(try ui.lspRequestDocumentSymbols())
+        XCTAssertThrowsError(try ui.lspRequestFoldingRanges())
         XCTAssertThrowsError(try ui.lspRequestWorkspaceSymbols(query: "hello"))
         XCTAssertThrowsError(try ui.lspFormatDocument())
         XCTAssertThrowsError(try ui.lspFormatRange(startOffset: 0, endOffset: 1))
@@ -693,6 +694,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertNil(try ui.lspTakeLastCodeActionResolveResultJSON())
         XCTAssertNil(try ui.lspTakeLastExecuteCommandResultJSON())
         XCTAssertNil(try ui.lspTakeLastDocumentSymbolsResultJSON())
+        XCTAssertNil(try ui.lspTakeLastFoldingRangesResultJSON())
         XCTAssertNil(try ui.lspTakeLastWorkspaceSymbolsResultJSON())
     }
 
@@ -952,6 +954,25 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(semanticIntervals.first?["start"] as? Int, 3)
         XCTAssertEqual(semanticIntervals.first?["end"] as? Int, 7)
         XCTAssertEqual(semanticIntervals.first?["style_id"] as? Int, 0x0007_0000)
+
+        let foldingRanges = """
+        [
+          {
+            "startLine": 0,
+            "endLine": 2,
+            "kind": "region"
+          }
+        ]
+        """
+        try ui.lspApplyFoldingRangesJSON(foldingRanges)
+
+        let lspFolding = try JSONTestHelpers.object(try ui.foldingRegionsJSON())
+        let lspRegions = try XCTUnwrap(lspFolding["regions"] as? [[String: Any]])
+        XCTAssertTrue(lspRegions.contains {
+            ($0["start_line"] as? Int) == 0
+                && ($0["end_line"] as? Int) == 2
+                && ($0["is_collapsed"] as? Bool) == false
+        })
 
         try ui.fold(startLine: 0, endLine: 2)
 

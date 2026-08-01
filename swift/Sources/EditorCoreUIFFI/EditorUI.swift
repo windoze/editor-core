@@ -502,6 +502,19 @@ public final class EditorUI {
         }
     }
 
+    public func lspRequestFoldingRanges() throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_folding_ranges")
+        return out
+    }
+
+    public func lspTakeLastFoldingRangesResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_folding_ranges_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json(handle, has, ptr)
+        }
+    }
+
     public func lspRequestWorkspaceSymbols(query: String) throws -> UInt64 {
         var out: UInt64 = 0
         let status = query.withCString { cstr in
@@ -687,6 +700,13 @@ public final class EditorUI {
             editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_json(handle, cstr)
         }
         try library.ensureStatus(status, context: "editor_ui_lsp_apply_document_symbols_json")
+    }
+
+    public func lspApplyFoldingRangesJSON(_ foldingRangesResultJSON: String) throws {
+        let status = foldingRangesResultJSON.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_apply_folding_ranges_json")
     }
 
     @discardableResult

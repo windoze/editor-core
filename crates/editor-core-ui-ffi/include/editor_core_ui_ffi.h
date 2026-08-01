@@ -306,6 +306,11 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_symbols(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_document_symbols_json(EditorUi* ui,
                                                                          uint8_t* out_has_result,
                                                                          char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges(EditorUi* ui,
+                                                                uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json(EditorUi* ui,
+                                                                       uint8_t* out_has_result,
+                                                                       char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_workspace_symbols(EditorUi* ui,
                                                                    const char* query_utf8,
                                                                    uint64_t* out_request_id);
@@ -338,7 +343,7 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_format_on_type(
     uint8_t* out_applied
 );
 
-// LSP-derived state ingestion (diagnostics + semantic tokens).
+// LSP-derived state ingestion.
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json(
     EditorUi* ui,
     const char* publish_diagnostics_json_utf8
@@ -362,6 +367,10 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_json(
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_json(
     EditorUi* ui,
     const char* document_symbols_result_json_utf8
+);
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json(
+    EditorUi* ui,
+    const char* folding_ranges_result_json_utf8
 );
 char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(
     EditorUi* ui,

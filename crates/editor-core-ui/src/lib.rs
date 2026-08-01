@@ -21,11 +21,11 @@ use editor_core::{
 use editor_core_lsp::{
     DeltaCalculator, LspContentChange, LspDocument, LspEvent, LspNotification, LspSession,
     LspSessionStartOptions, LspTextEdit, char_offsets_for_lsp_range, encode_semantic_style_id,
-    lsp_code_lens_to_processing_edit, lsp_diagnostics_to_processing_edits,
-    lsp_document_highlights_to_processing_edit, lsp_document_links_to_processing_edits,
-    lsp_document_symbols_to_processing_edit, lsp_inlay_hints_to_processing_edit,
-    semantic_tokens_to_intervals, summarize_workspace_edit, text_edits_from_value,
-    workspace_edit_text_edits,
+    folding_ranges_result_to_processing_edit, lsp_code_lens_to_processing_edit,
+    lsp_diagnostics_to_processing_edits, lsp_document_highlights_to_processing_edit,
+    lsp_document_links_to_processing_edits, lsp_document_symbols_to_processing_edit,
+    lsp_inlay_hints_to_processing_edit, semantic_tokens_to_intervals, summarize_workspace_edit,
+    text_edits_from_value, workspace_edit_text_edits,
 };
 use editor_core_render_skia::{
     FOLD_MARKER_COLLAPSED_STYLE_ID, FOLD_MARKER_EXPANDED_STYLE_ID, FoldMarker, FoldMarkerStyle,
@@ -769,6 +769,7 @@ enum LspResultSlot {
     ExecuteCommand,
     DocumentSymbols,
     WorkspaceSymbols,
+    FoldingRanges,
 }
 
 impl LspResultSlot {
@@ -790,6 +791,7 @@ impl LspResultSlot {
             "workspace/executeCommand" => Some(Self::ExecuteCommand),
             "textDocument/documentSymbol" => Some(Self::DocumentSymbols),
             "workspace/symbol" => Some(Self::WorkspaceSymbols),
+            "textDocument/foldingRange" => Some(Self::FoldingRanges),
             _ => None,
         }
     }
@@ -3133,6 +3135,16 @@ impl EditorUi {
         self.lsp_take_last_result_json(LspResultSlot::WorkspaceSymbols)
     }
 
+    pub fn lsp_request_folding_ranges(&mut self) -> Result<u64, UiError> {
+        self.lsp_request_document_result(LspResultSlot::FoldingRanges, |lsp| {
+            lsp.request_folding_ranges()
+        })
+    }
+
+    pub fn lsp_take_last_folding_ranges_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::FoldingRanges)
+    }
+
     fn maybe_request_lsp_on_type_formatting(&mut self, ch: &str) -> Result<bool, UiError> {
         self.flush_lsp_did_change_from_delta();
 
@@ -3752,6 +3764,17 @@ impl EditorUi {
         let edit = self.with_line_index(|line_index| {
             lsp_document_symbols_to_processing_edit(line_index, &result_value)
         })?;
+        self.apply_processing_edits([edit])?;
+        Ok(())
+    }
+
+    /// Apply LSP folding range result payload (`FoldingRange[] | null`) to core fold regions.
+    ///
+    /// The caller should pass the raw `result` JSON from `textDocument/foldingRange`.
+    pub fn lsp_apply_folding_ranges_json(&mut self, result_json: &str) -> Result<(), UiError> {
+        let result_value: serde_json::Value =
+            serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        let edit = folding_ranges_result_to_processing_edit(&result_value);
         self.apply_processing_edits([edit])?;
         Ok(())
     }
@@ -6097,17 +6120,24 @@ impl EditorUi {
                     }
 
                     let result = resp.result.unwrap_or(serde_json::Value::Null);
-                    if slot == LspResultSlot::DocumentSymbols {
-                        let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
-                            Ok(line_index) => {
-                                lsp_document_symbols_to_processing_edit(line_index, &result)
-                            }
-                            Err(_) => {
-                                doc.lsp_fail("LSP buffer line index unavailable");
-                                return Ok(false);
-                            }
-                        };
-                        applied |= doc.apply_lsp_processing_edits([edit])?;
+                    match slot {
+                        LspResultSlot::DocumentSymbols => {
+                            let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
+                                Ok(line_index) => {
+                                    lsp_document_symbols_to_processing_edit(line_index, &result)
+                                }
+                                Err(_) => {
+                                    doc.lsp_fail("LSP buffer line index unavailable");
+                                    return Ok(false);
+                                }
+                            };
+                            applied |= doc.apply_lsp_processing_edits([edit])?;
+                        }
+                        LspResultSlot::FoldingRanges => {
+                            let edit = folding_ranges_result_to_processing_edit(&result);
+                            applied |= doc.apply_lsp_processing_edits([edit])?;
+                        }
+                        _ => {}
                     }
 
                     if result.is_null() {

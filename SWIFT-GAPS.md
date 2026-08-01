@@ -86,6 +86,9 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 14 已完成：Rust UI `insert_text` 单字符 typing 路径会按 LSP server `documentOnTypeFormattingProvider` 宣告的 `firstTriggerCharacter` / `moreTriggerCharacter` 自动触发 `textDocument/onTypeFormatting`；粘贴和多字符 IME commit 仍保持批量插入语义，不触发 on-type formatting。
 - 阶段 14 已用 fake LSP server 单测覆盖：单字符 paste 不触发、非 trigger typing 不触发、server trigger typing 会发送 `textDocument/onTypeFormatting` 并携带正确 `ch`。
 - 阶段 14 尚未完成格式化错误展示、跨文件 WorkspaceEdit 产品化和 formatting typed result model。
+- 2026-08-01 阶段 15 已完成：Swift UI binding 新增 LSP folding ranges request/take/apply 通道，覆盖 Rust `editor-core-lsp` 已有的 `textDocument/foldingRange` 请求路径和 `ProcessingEdit::ReplaceFoldingRegions` 应用路径。
+- 阶段 15 已新增 `EditorUi.lsp_request_folding_ranges()` / `lsp_apply_folding_ranges_json(...)`、C ABI `editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges` / `editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json` / `editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json`、Swift `EditorUI.lspRequestFoldingRanges()` / `lspTakeLastFoldingRangesResultJSON()` / `lspApplyFoldingRangesJSON(_:)`。
+- 阶段 15 已让手动 `textDocument/foldingRange` result 可以写入 core fold regions，并通过 `foldingRegionsJSON()` 被 Swift 读取；仍缺 App 层 folding refresh/error UI 和 fold region typed model。
 
 ## 分层结论
 
@@ -148,7 +151,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | `SetIndentationConfig` | 有 | 有 | Swift 有 typed `setIndentationConfig(_:)` | 仍缺语言配置接线。 |
 | `SetAutoPairsConfig` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `setAutoPairsConfig(_:)`；也有 enabled bool | headless 和 UI command 面仍不一致。 |
 | `SetAutoPairsEnabled` | 有 | UI JSON 有，headless FFI 缺 | Swift UI 有 bool，也可通过 `executeCommandJSON` 调用 | headless 和 UI command 面仍不一致。 |
-| fold / unfold / unfold all | 有 | 有 | Swift 有 typed `fold` / `unfold` / `unfoldAll`；AttoEditor command palette、菜单和 keymap 有 fold selection/unfold/unfold all | P0 接线完成；仍缺 LSP folding ranges 产品化通道。 |
+| fold / unfold / unfold all | 有 | 有 | Swift 有 typed `fold` / `unfold` / `unfoldAll`；AttoEditor command palette、菜单和 keymap 有 fold selection/unfold/unfold all；Swift UI binding 已可把 LSP folding ranges 应用到 core fold regions | P0 接线完成；仍缺 App 层 folding refresh/error UI 和 typed model。 |
 | bracket match highlight update/clear | 有 | UI JSON 有，headless FFI 缺 | Swift UI 有 enabled bool 和内部更新，也有 typed `updateBracketMatchHighlights` / `clearBracketMatchHighlights` | headless 和 UI command 面仍不一致。 |
 
 建议不要为每个低频命令都新增一个独立 C ABI 函数。更合理的方向是：
@@ -166,7 +169,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - LSP enable/status。
 - hover。
 - definition。
-- declaration / type definition / implementation / references / completion / completion item resolve / signature help / prepare rename / rename / code action / code action resolve / document symbols / workspace symbols 的 Swift UI raw async request/take API。
+- declaration / type definition / implementation / references / completion / completion item resolve / signature help / prepare rename / rename / code action / code action resolve / document symbols / workspace symbols / folding ranges 的 Swift UI raw async request/take API。
 - AttoEditor App command/menu 已覆盖 go to definition/declaration/type definition/implementation/find references，其中 references 多结果有轻量可过滤结果 palette。
 - AttoEditor App command/menu 已覆盖 completion popup 主路径。
 - AttoEditor App completion popup commit 路径已覆盖 `completionItem/resolve`，可把 resolved item 的 `textEdit`、`additionalTextEdits` 和 snippet payload 应用到当前文档；resolve 不可用或超时时会回退到原始 item。
@@ -179,6 +182,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - document links hit-test。
 - document highlights。
 - document symbols result 到 core outline 的应用和 JSON 导出。
+- folding ranges result 到 core fold regions 的应用和 JSON 导出。
 - WorkspaceEdit 中当前文档 `TextEdit` 的 Swift UI binding 应用，并返回跨 URI skip/summary 信息。
 - AttoEditor App command/menu/keymap 已覆盖 `lsp.rename` 主路径，可输入新名称、请求 LSP rename 并应用当前文档 WorkspaceEdit。
 - AttoEditor App command/menu/keymap 已覆盖 `lsp.code_actions` 主路径，可展示 code action quick panel、resolve action、应用当前文档 edit 并发起 `workspace/executeCommand`。
@@ -198,7 +202,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - workspace symbols 已有 quick panel 主路径，但还缺增量查询/输入面板和完整结果模型。
 - on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；仍缺错误展示和 typed result model。
 - semantic tokens refresh / delta 策略。
-- folding ranges request 到 fold UI 的完整通道。
+- folding ranges binding 已覆盖 request/take/apply 到 fold UI state；仍缺 App 层 refresh/error UI、折叠范围可视化和 typed model。
 - selection range。
 - linked editing。
 - document diagnostic pull / workspace diagnostic。
@@ -236,6 +240,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - `EditorUI.foldingRegionsJSON()` 获取当前 fold regions。
 - `EditorUI.styleIntervalsJSON(start:end:)` 获取当前 style layers 的样式区间。
 - `EditorUI.lspApplyDocumentSymbolsJSON(_:)` 可把 LSP document symbols result 写入 core outline。
+- `EditorUI.lspApplyFoldingRangesJSON(_:)` 可把 LSP folding ranges result 写入 core fold regions。
 
 剩余缺口已经从“Swift binding 拿不到”转为 App 层消费、模型化和统一控制：
 
@@ -441,7 +446,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - code action kind/filter/diagnostics context 产品化、跨文件 WorkspaceEdit 应用/预览、执行结果/错误展示和 typed result model。
 - document/workspace symbols 持久面板和 workspace 增量查询。
 - range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发和 server trigger characters 自动触发路径已完成，仍缺错误展示和 typed result model。
-- folding ranges。
+- folding ranges request/take/apply 到 fold state 已完成；仍缺 App 层 refresh/error UI、可视化和 typed model。
 - linked editing。
 - LSP result panels 和错误展示。
 
@@ -485,6 +490,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, input UI + menu/keymap + current-doc apply | partial |
 | LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand | partial, raw result + current-doc WorkspaceEdit apply + executeCommand | yes, quick panel/menu/keymap/current-doc apply | partial |
 | LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply + trigger-character auto path | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers | document + selection commands; on-type trigger-character auto path | partial |
+| LSP folding ranges | yes | partial helper | yes, request/take + apply to fold regions | yes, raw request/take + apply JSON | yes, raw request/take + apply JSON | partial, fold commands use current state | yes |
 | split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
 | workspace tabs/splits | yes, headless `Workspace` | partial `Workspace` wrapper | yes, `MultiDocumentEditorUi` | no | no, current Swift tabs are migration shims | partial, transitional AppKit projection; must move to core-owned workspace | partial |
 

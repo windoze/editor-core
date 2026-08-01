@@ -1744,6 +1744,25 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_document_sym
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges(
+    ui: *mut EditorUi,
+    out_request_id: *mut u64,
+) -> c_int {
+    lsp_request_no_position_ffi(ui, out_request_id, |ui| ui.lsp_request_folding_ranges())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
+        ui.lsp_take_last_folding_ranges_result_json()
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_workspace_symbols(
     ui: *mut EditorUi,
     query_utf8: *const c_char,
@@ -2184,6 +2203,31 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_json(
         .to_str()
         .map_err(|_| "document_symbols_result_json_utf8 is not valid UTF-8".to_string())?;
         ui.lsp_apply_document_symbols_json(json)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json(
+    ui: *mut EditorUi,
+    folding_ranges_result_json_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let json = require_cstr(
+            folding_ranges_result_json_utf8,
+            "folding_ranges_result_json_utf8",
+        )?
+        .to_str()
+        .map_err(|_| "folding_ranges_result_json_utf8 is not valid UTF-8".to_string())?;
+        ui.lsp_apply_folding_ranges_json(json)
             .map(|_| ECU_OK)
             .map_err(map_ui_error)
     }) {
@@ -8224,6 +8268,9 @@ contexts:
         let mut out_id: u64 = 0;
         let code =
             unsafe { editor_core_ui_ffi_editor_ui_lsp_request_definition(ui, 0, 0, &mut out_id) };
+        assert_eq!(code, ECU_ERR_INTERNAL);
+        let code =
+            unsafe { editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges(ui, &mut out_id) };
         assert_eq!(code, ECU_ERR_INTERNAL);
 
         let msg_ptr = editor_core_ui_ffi_last_error_message();
