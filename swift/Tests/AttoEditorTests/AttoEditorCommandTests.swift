@@ -861,6 +861,32 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(try editorView.editor.hasActiveSnippetSession())
     }
 
+    func testAddOccurrenceCommandsUseFindSearchOptions() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("occurrences.txt")
+        try "foo Foo foo\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        vc.showFindBar()
+
+        let caseSensitiveButton = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.findCaseSensitiveButton, in: vc.view) as? NSButton
+        )
+        caseSensitiveButton.state = .off
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 0, end: 3)], primaryIndex: 0)
+
+        XCTAssertTrue(vc.addAllOccurrencesInActiveTab())
+        XCTAssertEqual(try editorView.editor.selections().ranges.count, 3)
+    }
+
     func testPickDocumentColorResultOpensPickerAtColorRange() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

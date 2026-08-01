@@ -180,6 +180,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 98 已完成：AttoEditor workspace symbols parser 新增统一 kind 分组/稳定排序策略，按 Types、Functions、Values、Other 分组，再按名称、容器、URI 和位置排序；普通 workspace symbol 结果、增量查询结果和历史 snapshot 都消费同一个排序入口，quick panel command 也带有同一 kind group 元数据。测试覆盖 parser 层排序 tie-break 和 App 层 snapshot 顺序。
 - 2026-08-02 阶段 99 已完成：AttoEditor 新增 `lsp.pick_document_color` 命令和 Go 菜单入口；document color result 可进入直接 color picker 路径，单个颜色会直接打开 `NSColorPanel`，多个颜色先用色块 quick panel 选择目标，选中颜色变化后继续复用既有 `textDocument/colorPresentation` 请求和 apply 链路。测试覆盖命令/菜单注册，以及注入 picker 时的初始颜色和 range selection。
 - 2026-08-02 阶段 100 已完成：AttoEditor 新增通用 `editor.apply_snippet` App command 和 Edit 菜单入口；命令可通过输入框接收 editor-core snippet 字符串，并应用到当前 primary selection range，继续使用既有 `EditorUI.applySnippet` 和 snippet placeholder session。测试覆盖命令/菜单注册、文本插入和 active snippet session。
+- 2026-08-02 阶段 101 已完成：AttoEditor 的 `editor.add_next_occurrence` / `editor.add_all_occurrences` 命令从静态 JSON 默认参数改为调用 Swift typed API，并消费 Find bar 当前 case-sensitive / whole-word / regex search options。测试覆盖关闭 `Aa` 后 add-all occurrence 会按大小写不敏感选中所有匹配。
 
 ## 分层结论
 
@@ -237,7 +238,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | visual movement commands | 有 | 有 | Swift 有 typed grapheme/word、visual row/page、line/document start/end 及 modify-selection wrapper；AttoEditor command palette 已有 `cursor.*` coverage matrix，直接调用 typed API | App command matrix 已补齐；未给每个低层 cursor command 增加默认菜单项/keymap，默认键盘主路径仍由 AppKit text system dispatch。 |
 | selection / multicursor commands | 有 | 有 | Swift UI FFI 有 typed select word/line、expand selection、add cursor above/below，也可通过 UI JSON 调用；AttoEditor command palette 和 Selection 菜单有 `editor.select_word` / `editor.select_line` / `editor.expand_selection` / `editor.add_cursor_above` / `editor.add_cursor_below`；selection-modifying visual movement 通过 `cursor.select_*` command palette 覆盖；keymap 已支持 arrow/navigation function-key token | 常用 App command、Selection 菜单分组和 cursor selection movement matrix 已补齐；细粒度默认 keymap 仍走 AppKit 文本系统。 |
 | `MoveToMatchingBracket` | 有 | 有 | Swift headless/UI 都有公开方法 | headless/UI command 覆盖已对齐。 |
-| add occurrence options | 有 | 有 | Swift typed `addNextOccurrence(options:)` / `addAllOccurrences(options:)` 已支持 options；AttoEditor command palette、菜单和 keymap 有 `editor.add_next_occurrence` / `editor.add_all_occurrences` 默认 options 入口 | 默认 App command/keymap 已补齐；仍缺 settings/search-options 接线。 |
+| add occurrence options | 有 | 有 | Swift typed `addNextOccurrence(options:)` / `addAllOccurrences(options:)` 已支持 options；AttoEditor command palette、菜单和 keymap 有 `editor.add_next_occurrence` / `editor.add_all_occurrences`，并会消费 Find bar 当前 search options | App command/keymap 和 search-options 接线已补齐。 |
 | `SetWrapMode` | 有 | 有 | Swift 有 typed `setWrapMode(_:)`；AttoEditor command palette、菜单和 keymap 有 wrap off/char/word；preferences 有持久化 wrap mode 并会应用到新建和已打开 editor | App settings 接线已补齐。 |
 | `SetWrapIndent` | 有 | 有 | Swift 有 typed `setWrapIndent(_:)`；preferences 有持久化 wrap indent 并会应用到新建和已打开 editor | App settings 接线已补齐。 |
 | `SetIndentationConfig` | 有 | 有 | Swift 有 typed `setIndentationConfig(_:)`；AttoEditor 会按 syntax language id 或文件扩展名应用基础语言 indentation config 到新建 editor、手动语言切换和 split clone | 基础语言配置接线已补齐；仍可继续扩展语言表和用户覆盖配置。 |
@@ -617,7 +618,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | duplicate line | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | apply snippet | yes | yes, via JSON | yes | yes, via JSON | yes, typed + JSON | yes, generic apply-snippet command + completion apply + Tab/Backtab placeholder path + explicit placeholder commands | yes |
-| add occurrence | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, default-options command palette/menu/keymap | yes |
+| add occurrence | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap + Find bar search options | yes |
 | selection/multicursor | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, common commands in command palette/menu; select line has default keymap | yes |
 | visual cursor movement | yes | yes | yes | yes, typed + JSON subset | yes, typed grapheme/word/row/page/line/doc + modify-selection | yes, `cursor.*` command palette matrix; default keyboard path remains AppKit text dispatch | yes |
 | LSP completion | yes | partial helper | yes | yes, raw completion + resolve result | yes, raw completion + resolve result | yes, popup + auto trigger + incremental filter + commit-time resolve/current-doc/cross-file text edits apply | partial |

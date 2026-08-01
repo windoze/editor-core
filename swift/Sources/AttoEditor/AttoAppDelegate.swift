@@ -71,8 +71,6 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         .init(id: "editor.delete_to_prev_tab_stop", title: "Edit: Delete to Previous Tab Stop", commandJSON: #"{"kind":"edit","op":"delete_to_prev_tab_stop"}"#),
         .init(id: "editor.snippet_next_placeholder", title: "Edit: Snippet Next Placeholder", commandJSON: #"{"kind":"cursor","op":"snippet_next_placeholder"}"#),
         .init(id: "editor.snippet_prev_placeholder", title: "Edit: Snippet Previous Placeholder", commandJSON: #"{"kind":"cursor","op":"snippet_prev_placeholder"}"#),
-        .init(id: "editor.add_next_occurrence", title: "Edit: Add Next Occurrence", commandJSON: #"{"kind":"cursor","op":"add_next_occurrence"}"#),
-        .init(id: "editor.add_all_occurrences", title: "Edit: Add All Occurrences", commandJSON: #"{"kind":"cursor","op":"add_all_occurrences"}"#),
         .init(id: "editor.select_word", title: "Edit: Select Word", commandJSON: #"{"kind":"cursor","op":"select_word"}"#),
         .init(id: "editor.select_line", title: "Edit: Select Line", commandJSON: #"{"kind":"cursor","op":"select_line"}"#),
         .init(id: "editor.expand_selection", title: "Edit: Expand Selection", commandJSON: #"{"kind":"cursor","op":"expand_selection"}"#),
@@ -596,6 +594,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         commands.append(contentsOf: [
             .init(id: "editor.apply_snippet", title: "Edit: Apply Snippet") { [weak self] in
                 self?.activeWindow()?.editorAreaController.promptApplySnippetInActiveTab()
+            },
+            .init(id: "editor.add_next_occurrence", title: "Edit: Add Next Occurrence") { [weak self] in
+                self?.activeWindow()?.editorAreaController.addNextOccurrenceInActiveTab()
+            },
+            .init(id: "editor.add_all_occurrences", title: "Edit: Add All Occurrences") { [weak self] in
+                self?.activeWindow()?.editorAreaController.addAllOccurrencesInActiveTab()
             },
             .init(id: "editor.toggle_line_comment", title: "Edit: Toggle Line Comment") { [weak self] in
                 self?.activeWindow()?.editorAreaController.toggleLineCommentInActiveTab()

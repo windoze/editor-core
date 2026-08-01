@@ -1600,6 +1600,44 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     @discardableResult
+    func addNextOccurrenceInActiveTab() -> Bool {
+        addOccurrenceInActiveTab(selectAll: false)
+    }
+
+    @discardableResult
+    func addAllOccurrencesInActiveTab() -> Bool {
+        addOccurrenceInActiveTab(selectAll: true)
+    }
+
+    @discardableResult
+    private func addOccurrenceInActiveTab(selectAll: Bool) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            if selectAll {
+                try tab.editCore.editor.addAllOccurrences(options: currentSearchOptions())
+            } else {
+                try tab.editCore.editor.addNextOccurrence(options: currentSearchOptions())
+            }
+            tab.editCore.layoutSubtreeIfNeeded()
+            try? tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.editorView.kickProcessingPoll()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            handleTabDidChangeSelection(tabID: tab.id, causedByTextMutation: false)
+            updateStatusBar()
+            view.window?.makeFirstResponder(tab.editCore.editorView)
+            return true
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
     func performCursorMovementCommand(_ command: CursorMovementCommand) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
