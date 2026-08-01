@@ -8,9 +8,15 @@ enum AttoLspDefinitionParser {
     }
 
     static func firstTarget(fromDefinitionResultJSON json: String) -> Target? {
-        guard let data = json.data(using: .utf8) else { return nil }
-        guard let root = try? JSONSerialization.jsonObject(with: data) else { return nil }
-        return firstTarget(from: root)
+        targets(fromLocationResultJSON: json).first
+    }
+
+    static func targets(fromLocationResultJSON json: String) -> [Target] {
+        guard let data = json.data(using: .utf8) else { return [] }
+        guard let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        var out: [Target] = []
+        appendTargets(from: root, into: &out)
+        return out
     }
 
     /// Convert an LSP position (line + UTF-16 character) into an editor char offset (Unicode scalars).
@@ -35,23 +41,22 @@ enum AttoLspDefinitionParser {
         return UInt32(clamping: lineStart + column)
     }
 
-    private static func firstTarget(from any: Any) -> Target? {
-        if any is NSNull { return nil }
+    private static func appendTargets(from any: Any, into out: inout [Target]) {
+        if any is NSNull { return }
 
         if let arr = any as? [Any] {
             for el in arr {
-                if let t = firstTarget(from: el) {
-                    return t
-                }
+                appendTargets(from: el, into: &out)
             }
-            return nil
+            return
         }
 
         if let dict = any as? [String: Any] {
-            return parseLocation(dict) ?? parseLocationLink(dict)
+            if let target = parseLocation(dict) ?? parseLocationLink(dict) {
+                out.append(target)
+            }
+            return
         }
-
-        return nil
     }
 
     private static func parseLocation(_ dict: [String: Any]) -> Target? {
@@ -100,4 +105,3 @@ enum AttoLspDefinitionParser {
         return scalars
     }
 }
-

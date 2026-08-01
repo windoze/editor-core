@@ -53,10 +53,19 @@ final class AttoEditorAreaViewController: NSViewController {
         let info: EditorCoreSkiaHoverInfo
     }
 
+    private enum LspLocationRequestKind {
+        case definition
+        case declaration
+        case typeDefinition
+        case implementation
+        case references
+    }
+
     private struct DefinitionRequestContext {
         let tabID: UUID
         let logicalLine: UInt32
         let logicalColumn: UInt32
+        let kind: LspLocationRequestKind
     }
 
     private var hoverContext: HoverRequestContext?
@@ -67,6 +76,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private var definitionContext: DefinitionRequestContext?
     private var definitionPollTimer: DispatchSourceTimer?
+    private var lspLocationResultsController: AttoCommandPaletteController?
 
     init(library: EditorCoreUIFFILibrary, theme: EditorCoreSkiaTheme, workspaceRootURL: URL) {
         self.library = library
@@ -1588,33 +1598,103 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
-    // MARK: - LSP go to definition (Cmd-click)
+    // MARK: - LSP location requests
 
     private func handleCommandClick(ctx: EditorCoreSkiaContextMenuContext, tabID: UUID) -> Bool {
         guard activeTab?.id == tabID else { return false }
-        guard let tab = activeTab else { return false }
+        return requestLspLocation(tabID: tabID, logicalLine: ctx.logicalLine, logicalColumn: ctx.logicalColumn, kind: .definition)
+    }
 
+    @discardableResult
+    func goToDefinitionInActiveTab() -> Bool {
+        requestLspLocationAtPrimaryCaret(kind: .definition)
+    }
+
+    @discardableResult
+    func goToDeclarationInActiveTab() -> Bool {
+        requestLspLocationAtPrimaryCaret(kind: .declaration)
+    }
+
+    @discardableResult
+    func goToTypeDefinitionInActiveTab() -> Bool {
+        requestLspLocationAtPrimaryCaret(kind: .typeDefinition)
+    }
+
+    @discardableResult
+    func goToImplementationInActiveTab() -> Bool {
+        requestLspLocationAtPrimaryCaret(kind: .implementation)
+    }
+
+    @discardableResult
+    func findReferencesInActiveTab() -> Bool {
+        requestLspLocationAtPrimaryCaret(kind: .references)
+    }
+
+    private func requestLspLocationAtPrimaryCaret(kind: LspLocationRequestKind) -> Bool {
+        guard let tab = activeTab else { return false }
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+            return requestLspLocation(
+                tabID: tab.id,
+                logicalLine: pos.line,
+                logicalColumn: pos.column,
+                kind: kind
+            )
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private func requestLspLocation(
+        tabID: UUID,
+        logicalLine: UInt32,
+        logicalColumn: UInt32,
+        kind: LspLocationRequestKind
+    ) -> Bool {
+        guard activeTab?.id == tabID else { return false }
+        guard let tab = activeTab else { return false }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            NSSound.beep()
             return false
         }
 
         cancelHoverUI()
 
-        definitionContext = DefinitionRequestContext(tabID: tabID, logicalLine: ctx.logicalLine, logicalColumn: ctx.logicalColumn)
+        definitionContext = DefinitionRequestContext(
+            tabID: tabID,
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            kind: kind
+        )
         definitionPollTimer?.cancel()
 
         do {
-            _ = try tab.editCore.editor.lspRequestDefinition(
-                logicalLine: ctx.logicalLine,
-                logicalColumn: ctx.logicalColumn
-            )
+            try requestLspLocation(kind: kind, editor: tab.editCore.editor, line: logicalLine, column: logicalColumn)
         } catch {
             cancelDefinitionUI()
+            NSSound.beep()
             return false
         }
 
         startDefinitionPollTimer(tabID: tabID)
         return true
+    }
+
+    private func requestLspLocation(kind: LspLocationRequestKind, editor: EditorUI, line: UInt32, column: UInt32) throws {
+        switch kind {
+        case .definition:
+            _ = try editor.lspRequestDefinition(logicalLine: line, logicalColumn: column)
+        case .declaration:
+            _ = try editor.lspRequestDeclaration(logicalLine: line, logicalColumn: column)
+        case .typeDefinition:
+            _ = try editor.lspRequestTypeDefinition(logicalLine: line, logicalColumn: column)
+        case .implementation:
+            _ = try editor.lspRequestImplementation(logicalLine: line, logicalColumn: column)
+        case .references:
+            _ = try editor.lspRequestReferences(logicalLine: line, logicalColumn: column, includeDeclaration: true)
+        }
     }
 
     private func startDefinitionPollTimer(tabID: UUID) {
@@ -1643,14 +1723,14 @@ final class AttoEditorAreaViewController: NSViewController {
 
             let json: String?
             do {
-                json = try tab.editCore.editor.lspTakeLastDefinitionResultJSON()
+                json = try self.takeLspLocationResult(kind: ctx.kind, editor: tab.editCore.editor)
             } catch {
                 return
             }
             guard let json else { return }
 
             self.cancelDefinitionUI()
-            self.navigateToDefinitionResultJSON(json)
+            self.handleLspLocationResultJSON(json, kind: ctx.kind)
             timer.cancel()
         }
 
@@ -1658,11 +1738,72 @@ final class AttoEditorAreaViewController: NSViewController {
         timer.resume()
     }
 
-    private func navigateToDefinitionResultJSON(_ json: String) {
-        guard let target = AttoLspDefinitionParser.firstTarget(fromDefinitionResultJSON: json) else {
+    private func takeLspLocationResult(kind: LspLocationRequestKind, editor: EditorUI) throws -> String? {
+        switch kind {
+        case .definition:
+            try editor.lspTakeLastDefinitionResultJSON()
+        case .declaration:
+            try editor.lspTakeLastDeclarationResultJSON()
+        case .typeDefinition:
+            try editor.lspTakeLastTypeDefinitionResultJSON()
+        case .implementation:
+            try editor.lspTakeLastImplementationResultJSON()
+        case .references:
+            try editor.lspTakeLastReferencesResultJSON()
+        }
+    }
+
+    private func handleLspLocationResultJSON(_ json: String, kind: LspLocationRequestKind) {
+        let targets = AttoLspDefinitionParser.targets(fromLocationResultJSON: json)
+        guard targets.isEmpty == false else {
             NSSound.beep()
             return
         }
+
+        if kind == .references, targets.count > 1 {
+            showLspLocationResults(targets)
+            return
+        }
+
+        navigateToLspTarget(targets[0])
+    }
+
+    private func showLspLocationResults(_ targets: [AttoLspDefinitionParser.Target]) {
+        guard let window = view.window else {
+            navigateToLspTarget(targets[0])
+            return
+        }
+
+        let commands = targets.enumerated().map { idx, target in
+            AttoCommandPaletteCommand(
+                id: "lsp.location.\(idx)",
+                title: displayTitle(for: target)
+            ) { [weak self] in
+                self?.navigateToLspTarget(target)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(commandsProvider: { commands })
+        lspLocationResultsController = controller
+        controller.show(relativeTo: window, placeholder: "Filter LSP results...")
+    }
+
+    private func displayTitle(for target: AttoLspDefinitionParser.Target) -> String {
+        let location = ":\(target.line + 1):\(target.utf16Character + 1)"
+        guard let url = URL(string: target.uri), url.isFileURL else {
+            return "\(target.uri)\(location)"
+        }
+
+        let standardized = url.standardizedFileURL
+        let root = workspaceRootURL.standardizedFileURL.path
+        let path = standardized.path
+        if path.hasPrefix(root + "/") {
+            return "\(String(path.dropFirst(root.count + 1)))\(location)"
+        }
+        return "\(standardized.lastPathComponent)\(location)"
+    }
+
+    private func navigateToLspTarget(_ target: AttoLspDefinitionParser.Target) {
         guard let url = URL(string: target.uri), url.isFileURL else {
             NSSound.beep()
             return
@@ -1864,6 +2005,8 @@ final class AttoEditorAreaViewController: NSViewController {
         definitionPollTimer?.cancel()
         definitionPollTimer = nil
         definitionContext = nil
+        lspLocationResultsController?.hide()
+        lspLocationResultsController = nil
     }
 }
 

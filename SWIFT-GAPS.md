@@ -31,7 +31,7 @@ Swift 侧已经具备以下基础能力：
 - `EditorCoreUIFFI.EditorUI` 暴露了较完整的“编辑器视图主路径”API，包括打开文本、插入/删除、搜索替换、撤销重做、选择、鼠标输入、IME、渲染 RGBA/Metal、主题、Tree-sitter、Sublime syntax、部分 LSP、minimap、gutter、bookmark、jump history、document link hit-test 等。
 - `EditorCoreUI` / `AttoEditor` 已有 AppKit 组件级 XCTest，能用 `NSWindow`、`NSEvent` 和 view API 驱动交互。
 - 2026-08-01 本地验证过：
-  - `swift test --filter AttoEditorTests` 通过，41 个测试。
+  - `swift test --filter AttoEditorTests` 通过，42 个测试。
   - `swift test --filter EditorCoreUITests` 通过，64 个测试。
   - `swift test --filter EditorCoreUIFFITests` 通过，45 个测试。
 
@@ -56,7 +56,9 @@ Swift 侧已经具备以下基础能力：
 - 阶段 5 尚未完成 App 层统一 derived-state store、Problems/Outline 面板、minimap markers、gutter diagnostic icons、状态栏消费和更高层 Swift typed model。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
-- 阶段 6 第一部分尚未完成 App 层结果 UI：references/locations 面板、completion popup、signature help popup、document/workspace symbols quick panel、rename/code action 主路径仍待实现。
+- 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
+- 阶段 6 第二部分已让 references 多结果进入一个轻量可过滤结果 palette，单结果直接跳转；`AttoLspDefinitionParser` 新增多目标解析并补测试。
+- 阶段 6 尚未完成 completion popup、signature help popup、document/workspace symbols quick panel、rename/code action 主路径、完整 references/locations panel 和 typed result model。
 
 ## 分层结论
 
@@ -138,6 +140,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - hover。
 - definition。
 - declaration / type definition / implementation / references / completion / signature help / document symbols / workspace symbols 的 Swift UI raw async request/take API。
+- AttoEditor App command/menu 已覆盖 go to definition/declaration/type definition/implementation/find references，其中 references 多结果有轻量可过滤结果 palette。
 - format。
 - diagnostics 派生状态应用。
 - semantic tokens 到 style intervals 的应用。
@@ -150,8 +153,8 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 
 仍缺产品化、结果 UI 或仍只停留在 raw API 的 LSP 能力：
 
-- declaration/type definition/implementation 的 App command 和多结果导航 UI。
-- references 结果列表 UI。
+- declaration/type definition/implementation 的多结果导航 UI 仍较基础。
+- references 结果列表已有轻量 palette，但还不是完整结果面板。
 - completion popup、completion resolve、commit characters、additional text edits、snippet insertion。
 - signature help popup。
 - rename / prepare rename。
@@ -265,7 +268,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 主要缺口：
 
 - command registry 仍较轻量，还没有命令启用/禁用状态、参数模型和分组元数据。
-- command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令，但 LSP/项目级命令仍不完整。
+- command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令；LSP location 类命令已接入，但 completion/signature/code action/rename/symbols 等 LSP/项目级命令仍不完整。
 - P0 菜单、command palette、keymap 和测试已开始统一使用 command id；更深层的命令上下文、参数化命令和冲突解析仍缺。
 - 一些 core/LSP 命令仍没有 App 命令入口。
 - 已有初步用户 keymap 文件，但还不是完整 Sublime keymap 兼容实现。

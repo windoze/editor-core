@@ -56,8 +56,27 @@ final class AttoLspDefinitionParserTests: XCTestCase {
         )
     }
 
+    func testTargetsReturnsAllValidLocations() {
+        let json = """
+        [
+          { "not": "a location" },
+          { "uri": "file:///tmp/a.rs", "range": { "start": { "line": 1, "character": 2 }, "end": { "line": 1, "character": 3 } } },
+          { "targetUri": "file:///tmp/b.rs", "targetSelectionRange": { "start": { "line": 4, "character": 5 }, "end": { "line": 4, "character": 6 } } }
+        ]
+        """
+
+        XCTAssertEqual(
+            AttoLspDefinitionParser.targets(fromLocationResultJSON: json),
+            [
+                .init(uri: "file:///tmp/a.rs", line: 1, utf16Character: 2),
+                .init(uri: "file:///tmp/b.rs", line: 4, utf16Character: 5),
+            ]
+        )
+    }
+
     func testNullReturnsNil() {
         XCTAssertNil(AttoLspDefinitionParser.firstTarget(fromDefinitionResultJSON: "null"))
+        XCTAssertEqual(AttoLspDefinitionParser.targets(fromLocationResultJSON: "null"), [])
     }
 
     func testCharOffsetConversionHandlesUTF16Emoji() {
@@ -77,4 +96,3 @@ final class AttoLspDefinitionParserTests: XCTestCase {
         )
     }
 }
-

@@ -334,6 +334,21 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(id: "go.matching_bracket", title: "Go: Go to Matching Bracket") { [weak self] in
                 self?.activeWindow()?.editorAreaController.moveToMatchingBracketInActiveTab()
             },
+            .init(id: "lsp.go_to_definition", title: "LSP: Go to Definition") { [weak self] in
+                self?.activeWindow()?.editorAreaController.goToDefinitionInActiveTab()
+            },
+            .init(id: "lsp.go_to_declaration", title: "LSP: Go to Declaration") { [weak self] in
+                self?.activeWindow()?.editorAreaController.goToDeclarationInActiveTab()
+            },
+            .init(id: "lsp.go_to_type_definition", title: "LSP: Go to Type Definition") { [weak self] in
+                self?.activeWindow()?.editorAreaController.goToTypeDefinitionInActiveTab()
+            },
+            .init(id: "lsp.go_to_implementation", title: "LSP: Go to Implementation") { [weak self] in
+                self?.activeWindow()?.editorAreaController.goToImplementationInActiveTab()
+            },
+            .init(id: "lsp.find_references", title: "LSP: Find References") { [weak self] in
+                self?.activeWindow()?.editorAreaController.findReferencesInActiveTab()
+            },
         ]
 
         commands.append(contentsOf: editorCommandPaletteCommands())

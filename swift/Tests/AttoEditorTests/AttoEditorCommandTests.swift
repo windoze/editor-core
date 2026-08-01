@@ -22,6 +22,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.unfold"))
         XCTAssertTrue(ids.contains("editor.unfold_all"))
         XCTAssertTrue(ids.contains("view.wrap.word"))
+        XCTAssertTrue(ids.contains("lsp.go_to_definition"))
+        XCTAssertTrue(ids.contains("lsp.go_to_declaration"))
+        XCTAssertTrue(ids.contains("lsp.go_to_type_definition"))
+        XCTAssertTrue(ids.contains("lsp.go_to_implementation"))
+        XCTAssertTrue(ids.contains("lsp.find_references"))
     }
 
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
@@ -77,6 +82,8 @@ final class AttoEditorCommandTests: XCTestCase {
 
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.fold_selection", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.go_to_definition", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.find_references", in: menu))
     }
 
     func testExecuteCommandUsesRegisteredCommandIDs() throws {

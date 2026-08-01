@@ -79,6 +79,12 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Back", commandID: "go.back", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Forward", commandID: "go.forward", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Go to Matching Bracket", commandID: "go.matching_bracket", appDelegate: appDelegate))
+        goMenu.addItem(.separator())
+        goMenu.addItem(commandItem(title: "Go to Definition", commandID: "lsp.go_to_definition", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Go to Declaration", commandID: "lsp.go_to_declaration", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Go to Type Definition", commandID: "lsp.go_to_type_definition", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Go to Implementation", commandID: "lsp.go_to_implementation", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Find References", commandID: "lsp.find_references", appDelegate: appDelegate))
 
         return mainMenu
     }
