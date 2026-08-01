@@ -599,7 +599,9 @@ final class AttoEditorAreaViewController: NSViewController {
             AttoTabSnapshot(
                 filePath: tab.fileURL.standardizedFileURL.path,
                 isPreview: tab.isPreview,
-                showsMinimap: tab.editCore.showsMinimap
+                showsMinimap: tab.editCore.showsMinimap,
+                paneCount: tab.panes.count,
+                activePaneIndex: max(0, min(tab.activePaneIndex, tab.panes.count - 1))
             )
         }
 
@@ -641,6 +643,16 @@ final class AttoEditorAreaViewController: NSViewController {
                     isPreview: wantsPreview,
                     showsMinimap: snap.showsMinimap ?? true
                 )
+
+                let paneCount = max(1, min(snap.paneCount ?? 1, 8))
+                if paneCount > 1 {
+                    for _ in 1..<paneCount {
+                        _ = try appendSplitPane(to: tab)
+                    }
+                    tab.activePaneIndex = max(0, min(snap.activePaneIndex ?? 0, tab.panes.count - 1))
+                    setCoreActiveView(tab)
+                }
+
                 newTabs.append(tab)
             } catch {
                 NSLog("AttoEditor: session restore failed to open file %@: %@", url.path, String(describing: error))
@@ -1114,21 +1126,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         do {
-            let editor = try tab.editCore.editor.cloneView(viewportWidthCells: 120)
-            let pane = try EditCoreUI(
-                editor: editor,
-                fontFamiliesCSV: AttoPreferences.shared.fontFamiliesCSVForNewViews(),
-                showsMinimap: tab.editCore.showsMinimap,
-                minimapPlacement: .rightOfScrollbar
-            )
-
-            try configureEditorChrome(pane)
-            applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
-            configureEditCoreHooks(pane, tabID: tab.id)
-
-            tab.panes.append(pane)
-            tab.activePaneIndex = tab.panes.count - 1
-            splitCoreTab(tab)
+            let pane = try appendSplitPane(to: tab)
             showTabContent(tab)
             attachStatusObserver(to: pane.editorView)
             updateAlwaysPollProcessingForSelectedTab()
@@ -1140,6 +1138,26 @@ final class AttoEditorAreaViewController: NSViewController {
             NSLog("AttoEditor: split active tab failed: %@", String(describing: error))
             return false
         }
+    }
+
+    @discardableResult
+    private func appendSplitPane(to tab: AttoEditorTab) throws -> EditCoreUI {
+        let editor = try tab.editCore.editor.cloneView(viewportWidthCells: 120)
+        let pane = try EditCoreUI(
+            editor: editor,
+            fontFamiliesCSV: AttoPreferences.shared.fontFamiliesCSVForNewViews(),
+            showsMinimap: tab.editCore.showsMinimap,
+            minimapPlacement: .rightOfScrollbar
+        )
+
+        try configureEditorChrome(pane)
+        applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
+        configureEditCoreHooks(pane, tabID: tab.id)
+
+        tab.panes.append(pane)
+        tab.activePaneIndex = tab.panes.count - 1
+        splitCoreTab(tab)
+        return pane
     }
 
     @discardableResult

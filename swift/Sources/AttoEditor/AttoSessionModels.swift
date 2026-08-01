@@ -34,4 +34,6 @@ struct AttoTabSnapshot: Codable, Equatable, Sendable {
     var filePath: String
     var isPreview: Bool
     var showsMinimap: Bool?
+    var paneCount: Int?
+    var activePaneIndex: Int?
 }

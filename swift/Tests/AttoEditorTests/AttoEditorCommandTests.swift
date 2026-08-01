@@ -1337,6 +1337,45 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(vc.closeActivePane())
     }
 
+    func testSessionRestoreRestoresSplitPanesIntoCoreMirror() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("session-split.txt")
+        try "abc".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        XCTAssertTrue(vc.splitActiveTabRight())
+        XCTAssertTrue(vc.focusPreviousPaneInActiveTab())
+
+        let snapshot = vc.makeSessionSnapshot()
+        XCTAssertEqual(snapshot.tabs.count, 1)
+        XCTAssertEqual(snapshot.tabs[0].paneCount, 2)
+        XCTAssertEqual(snapshot.tabs[0].activePaneIndex, 0)
+
+        let restored = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(restored)
+        restored.restoreSession(tabs: snapshot.tabs, selectedTabIndex: snapshot.selectedTabIndex)
+        restored.view.layoutSubtreeIfNeeded()
+
+        let editorViews = findSubviews(of: EditorCoreSkiaView.self, in: restored.view)
+        XCTAssertEqual(editorViews.count, 2)
+
+        let restoredSnapshot = restored.makeSessionSnapshot()
+        XCTAssertEqual(restoredSnapshot.tabs.count, 1)
+        XCTAssertEqual(restoredSnapshot.tabs[0].paneCount, 2)
+        XCTAssertEqual(restoredSnapshot.tabs[0].activePaneIndex, 0)
+
+        let coreSnapshot = try XCTUnwrap(restored._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(coreSnapshot.tabs.count, 1)
+        XCTAssertEqual(coreSnapshot.tabs[0].viewCount, 2)
+        XCTAssertEqual(coreSnapshot.tabs[0].activeViewIndex, 0)
+    }
+
     private func makeEditorArea(workspaceRootURL: URL) -> AttoEditorAreaViewController {
         AttoEditorAreaViewController(
             library: EditorCoreUIFFILibrary(),
