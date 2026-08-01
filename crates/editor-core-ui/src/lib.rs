@@ -85,6 +85,51 @@ fn parse_lsp_formatting_options(
     }
 }
 
+fn parse_lsp_position_list_json(positions_json: &str) -> Result<Vec<(usize, usize)>, UiError> {
+    let value: serde_json::Value =
+        serde_json::from_str(positions_json).map_err(|e| UiError::Processor(e.to_string()))?;
+    let positions = value.as_array().ok_or_else(|| {
+        UiError::Processor("selection range positions must be an array".to_string())
+    })?;
+
+    positions
+        .iter()
+        .map(|position| {
+            let line = position
+                .get("line")
+                .and_then(serde_json::Value::as_u64)
+                .ok_or_else(|| {
+                    UiError::Processor("selection range position missing line".to_string())
+                })?;
+            let column = position
+                .get("column")
+                .and_then(serde_json::Value::as_u64)
+                .ok_or_else(|| {
+                    UiError::Processor("selection range position missing column".to_string())
+                })?;
+            let line = usize::try_from(line)
+                .map_err(|_| UiError::Processor("selection range line is too large".to_string()))?;
+            let column = usize::try_from(column).map_err(|_| {
+                UiError::Processor("selection range column is too large".to_string())
+            })?;
+            Ok((line, column))
+        })
+        .collect()
+}
+
+fn parse_lsp_json_array(value_json: &str, name: &str) -> Result<Vec<serde_json::Value>, UiError> {
+    if value_json.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let value: serde_json::Value =
+        serde_json::from_str(value_json).map_err(|e| UiError::Processor(e.to_string()))?;
+    value
+        .as_array()
+        .cloned()
+        .ok_or_else(|| UiError::Processor(format!("{name} must be a JSON array")))
+}
+
 fn diagnostic_severity_to_str(value: DiagnosticSeverity) -> &'static str {
     match value {
         DiagnosticSeverity::Error => "error",
@@ -767,9 +812,22 @@ enum LspResultSlot {
     CodeAction,
     CodeActionResolve,
     ExecuteCommand,
+    CodeLensResolve,
     DocumentSymbols,
     WorkspaceSymbols,
     FoldingRanges,
+    SelectionRange,
+    LinkedEditingRange,
+    DocumentDiagnostic,
+    WorkspaceDiagnostic,
+    DocumentColor,
+    ColorPresentation,
+    PrepareCallHierarchy,
+    CallHierarchyIncoming,
+    CallHierarchyOutgoing,
+    PrepareTypeHierarchy,
+    TypeHierarchySupertypes,
+    TypeHierarchySubtypes,
 }
 
 impl LspResultSlot {
@@ -789,9 +847,22 @@ impl LspResultSlot {
             "textDocument/codeAction" => Some(Self::CodeAction),
             "codeAction/resolve" => Some(Self::CodeActionResolve),
             "workspace/executeCommand" => Some(Self::ExecuteCommand),
+            "codeLens/resolve" => Some(Self::CodeLensResolve),
             "textDocument/documentSymbol" => Some(Self::DocumentSymbols),
             "workspace/symbol" => Some(Self::WorkspaceSymbols),
             "textDocument/foldingRange" => Some(Self::FoldingRanges),
+            "textDocument/selectionRange" => Some(Self::SelectionRange),
+            "textDocument/linkedEditingRange" => Some(Self::LinkedEditingRange),
+            "textDocument/diagnostic" => Some(Self::DocumentDiagnostic),
+            "workspace/diagnostic" => Some(Self::WorkspaceDiagnostic),
+            "textDocument/documentColor" => Some(Self::DocumentColor),
+            "textDocument/colorPresentation" => Some(Self::ColorPresentation),
+            "textDocument/prepareCallHierarchy" => Some(Self::PrepareCallHierarchy),
+            "callHierarchy/incomingCalls" => Some(Self::CallHierarchyIncoming),
+            "callHierarchy/outgoingCalls" => Some(Self::CallHierarchyOutgoing),
+            "textDocument/prepareTypeHierarchy" => Some(Self::PrepareTypeHierarchy),
+            "typeHierarchy/supertypes" => Some(Self::TypeHierarchySupertypes),
+            "typeHierarchy/subtypes" => Some(Self::TypeHierarchySubtypes),
             _ => None,
         }
     }
@@ -2843,6 +2914,45 @@ impl EditorUi {
         Ok(id)
     }
 
+    fn lsp_request_with_line_index_result(
+        &mut self,
+        slot: LspResultSlot,
+        request: impl FnOnce(&mut LspSession, &editor_core::LineIndex) -> Result<u64, String>,
+    ) -> Result<u64, UiError> {
+        self.flush_lsp_did_change_from_delta();
+
+        let mut doc = self.lock_doc();
+        let Some(shared) = doc.lsp.as_ref() else {
+            return Err(UiError::Processor("LSP is not enabled".to_string()));
+        };
+        let Some(doc_uri) = doc.lsp_document_uri.as_deref() else {
+            return Err(UiError::Processor("LSP document URI missing".to_string()));
+        };
+
+        let line_index = doc
+            .ws
+            .buffer_line_index(doc.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        let id = shared
+            .with_session_mut(|lsp| {
+                lsp.set_active_document(doc_uri)?;
+                request(lsp, line_index)
+            })
+            .map_err(UiError::Processor)?;
+
+        doc.lsp_client_requests.insert(
+            id,
+            LspClientRequest::Result {
+                view: self.view_id,
+                slot,
+            },
+        );
+        doc.lsp_latest_result_request_id
+            .insert((self.view_id, slot), id);
+        doc.lsp_last_result_json.remove(&(self.view_id, slot));
+        Ok(id)
+    }
+
     fn lsp_take_last_result_json(&mut self, slot: LspResultSlot) -> Option<String> {
         let mut doc = self.lock_doc();
         doc.lsp_last_result_json.remove(&(self.view_id, slot))
@@ -3115,6 +3225,18 @@ impl EditorUi {
         self.lsp_take_last_result_json(LspResultSlot::ExecuteCommand)
     }
 
+    pub fn lsp_request_code_lens_resolve(&mut self, lens_json: &str) -> Result<u64, UiError> {
+        let lens: serde_json::Value =
+            serde_json::from_str(lens_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        self.lsp_request_document_result(LspResultSlot::CodeLensResolve, |lsp| {
+            lsp.request_code_lens_resolve(lens)
+        })
+    }
+
+    pub fn lsp_take_last_code_lens_resolve_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::CodeLensResolve)
+    }
+
     pub fn lsp_request_document_symbols(&mut self) -> Result<u64, UiError> {
         self.lsp_request_document_result(LspResultSlot::DocumentSymbols, |lsp| {
             lsp.request_document_symbols()
@@ -3143,6 +3265,192 @@ impl EditorUi {
 
     pub fn lsp_take_last_folding_ranges_result_json(&mut self) -> Option<String> {
         self.lsp_take_last_result_json(LspResultSlot::FoldingRanges)
+    }
+
+    pub fn lsp_request_selection_range(&mut self, positions_json: &str) -> Result<u64, UiError> {
+        let positions = parse_lsp_position_list_json(positions_json)?;
+        self.lsp_request_with_line_index_result(LspResultSlot::SelectionRange, |lsp, line_index| {
+            lsp.request_selection_range(line_index, &positions)
+        })
+    }
+
+    pub fn lsp_take_last_selection_range_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::SelectionRange)
+    }
+
+    pub fn lsp_request_linked_editing_range(
+        &mut self,
+        line: usize,
+        column: usize,
+    ) -> Result<u64, UiError> {
+        self.lsp_request_position_result(
+            LspResultSlot::LinkedEditingRange,
+            line,
+            column,
+            |lsp, line_index, line, column| {
+                lsp.request_linked_editing_range(line_index, line, column)
+            },
+        )
+    }
+
+    pub fn lsp_take_last_linked_editing_range_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::LinkedEditingRange)
+    }
+
+    pub fn lsp_request_document_diagnostic(
+        &mut self,
+        previous_result_id: Option<&str>,
+    ) -> Result<u64, UiError> {
+        self.lsp_request_document_result(LspResultSlot::DocumentDiagnostic, |lsp| {
+            lsp.request_document_diagnostic(previous_result_id.map(str::to_string))
+        })
+    }
+
+    pub fn lsp_take_last_document_diagnostic_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::DocumentDiagnostic)
+    }
+
+    pub fn lsp_request_workspace_diagnostic(
+        &mut self,
+        previous_result_ids_json: &str,
+    ) -> Result<u64, UiError> {
+        let previous_result_ids = parse_lsp_json_array(
+            previous_result_ids_json,
+            "workspace diagnostic previousResultIds",
+        )?;
+        self.lsp_request_document_result(LspResultSlot::WorkspaceDiagnostic, |lsp| {
+            lsp.request_workspace_diagnostic(previous_result_ids)
+        })
+    }
+
+    pub fn lsp_take_last_workspace_diagnostic_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::WorkspaceDiagnostic)
+    }
+
+    pub fn lsp_request_document_color(&mut self) -> Result<u64, UiError> {
+        self.lsp_request_document_result(LspResultSlot::DocumentColor, |lsp| {
+            lsp.request_document_color()
+        })
+    }
+
+    pub fn lsp_take_last_document_color_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::DocumentColor)
+    }
+
+    pub fn lsp_request_color_presentation(
+        &mut self,
+        start_offset: usize,
+        end_offset: usize,
+        color_json: &str,
+    ) -> Result<u64, UiError> {
+        let color: serde_json::Value =
+            serde_json::from_str(color_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        self.lsp_request_with_line_index_result(
+            LspResultSlot::ColorPresentation,
+            |lsp, line_index| {
+                let range = lsp.lsp_range_for_editor_offsets(line_index, start_offset, end_offset);
+                lsp.request_color_presentation(&range, color)
+            },
+        )
+    }
+
+    pub fn lsp_take_last_color_presentation_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::ColorPresentation)
+    }
+
+    pub fn lsp_request_prepare_call_hierarchy(
+        &mut self,
+        line: usize,
+        column: usize,
+    ) -> Result<u64, UiError> {
+        self.lsp_request_position_result(
+            LspResultSlot::PrepareCallHierarchy,
+            line,
+            column,
+            |lsp, line_index, line, column| {
+                lsp.request_prepare_call_hierarchy(line_index, line, column)
+            },
+        )
+    }
+
+    pub fn lsp_take_last_prepare_call_hierarchy_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::PrepareCallHierarchy)
+    }
+
+    pub fn lsp_request_call_hierarchy_incoming_calls(
+        &mut self,
+        item_json: &str,
+    ) -> Result<u64, UiError> {
+        let item: serde_json::Value =
+            serde_json::from_str(item_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        self.lsp_request_document_result(LspResultSlot::CallHierarchyIncoming, |lsp| {
+            lsp.request_call_hierarchy_incoming_calls(item)
+        })
+    }
+
+    pub fn lsp_take_last_call_hierarchy_incoming_calls_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::CallHierarchyIncoming)
+    }
+
+    pub fn lsp_request_call_hierarchy_outgoing_calls(
+        &mut self,
+        item_json: &str,
+    ) -> Result<u64, UiError> {
+        let item: serde_json::Value =
+            serde_json::from_str(item_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        self.lsp_request_document_result(LspResultSlot::CallHierarchyOutgoing, |lsp| {
+            lsp.request_call_hierarchy_outgoing_calls(item)
+        })
+    }
+
+    pub fn lsp_take_last_call_hierarchy_outgoing_calls_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::CallHierarchyOutgoing)
+    }
+
+    pub fn lsp_request_prepare_type_hierarchy(
+        &mut self,
+        line: usize,
+        column: usize,
+    ) -> Result<u64, UiError> {
+        self.lsp_request_position_result(
+            LspResultSlot::PrepareTypeHierarchy,
+            line,
+            column,
+            |lsp, line_index, line, column| {
+                lsp.request_prepare_type_hierarchy(line_index, line, column)
+            },
+        )
+    }
+
+    pub fn lsp_take_last_prepare_type_hierarchy_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::PrepareTypeHierarchy)
+    }
+
+    pub fn lsp_request_type_hierarchy_supertypes(
+        &mut self,
+        item_json: &str,
+    ) -> Result<u64, UiError> {
+        let item: serde_json::Value =
+            serde_json::from_str(item_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        self.lsp_request_document_result(LspResultSlot::TypeHierarchySupertypes, |lsp| {
+            lsp.request_type_hierarchy_supertypes(item)
+        })
+    }
+
+    pub fn lsp_take_last_type_hierarchy_supertypes_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::TypeHierarchySupertypes)
+    }
+
+    pub fn lsp_request_type_hierarchy_subtypes(&mut self, item_json: &str) -> Result<u64, UiError> {
+        let item: serde_json::Value =
+            serde_json::from_str(item_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        self.lsp_request_document_result(LspResultSlot::TypeHierarchySubtypes, |lsp| {
+            lsp.request_type_hierarchy_subtypes(item)
+        })
+    }
+
+    pub fn lsp_take_last_type_hierarchy_subtypes_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::TypeHierarchySubtypes)
     }
 
     fn maybe_request_lsp_on_type_formatting(&mut self, ch: &str) -> Result<bool, UiError> {

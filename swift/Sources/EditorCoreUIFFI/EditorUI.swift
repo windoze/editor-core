@@ -291,6 +291,19 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    private func lspRequestJSON(
+        _ json: String,
+        context: String,
+        _ request: (UnsafePointer<CChar>, UnsafeMutablePointer<UInt64>) -> Int32
+    ) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = json.withCString { cstr in
+            request(cstr, &out)
+        }
+        try library.ensureStatus(status, context: context)
+        return out
+    }
+
     public func lspRequestDeclaration(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
         try lspRequestPosition(
             logicalLine: logicalLine,
@@ -489,6 +502,18 @@ public final class EditorUI {
         }
     }
 
+    public func lspRequestCodeLensResolve(lensJSON: String) throws -> UInt64 {
+        try lspRequestJSON(lensJSON, context: "editor_ui_lsp_request_code_lens_resolve") { cstr, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_code_lens_resolve(handle, cstr, out)
+        }
+    }
+
+    public func lspTakeLastCodeLensResolveResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_code_lens_resolve_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_code_lens_resolve_json(handle, has, ptr)
+        }
+    }
+
     public func lspRequestDocumentSymbols() throws -> UInt64 {
         var out: UInt64 = 0
         let status = editor_core_ui_ffi_editor_ui_lsp_request_document_symbols(handle, &out)
@@ -512,6 +537,184 @@ public final class EditorUI {
     public func lspTakeLastFoldingRangesResultJSON() throws -> String? {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_folding_ranges_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestSelectionRange(positionsJSON: String) throws -> UInt64 {
+        try lspRequestJSON(positionsJSON, context: "editor_ui_lsp_request_selection_range") { cstr, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_selection_range(handle, cstr, out)
+        }
+    }
+
+    public func lspTakeLastSelectionRangeResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_selection_range_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_selection_range_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestLinkedEditingRange(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
+        try lspRequestPosition(
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            context: "editor_ui_lsp_request_linked_editing_range"
+        ) { line, column, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_linked_editing_range(handle, line, column, out)
+        }
+    }
+
+    public func lspTakeLastLinkedEditingRangeResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_linked_editing_range_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_linked_editing_range_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestDocumentDiagnostic(previousResultId: String? = nil) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status: Int32
+        if let previousResultId {
+            status = previousResultId.withCString { cstr in
+                editor_core_ui_ffi_editor_ui_lsp_request_document_diagnostic(handle, cstr, &out)
+            }
+        } else {
+            status = editor_core_ui_ffi_editor_ui_lsp_request_document_diagnostic(handle, nil, &out)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_document_diagnostic")
+        return out
+    }
+
+    public func lspTakeLastDocumentDiagnosticResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_document_diagnostic_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_document_diagnostic_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestWorkspaceDiagnostic(previousResultIdsJSON: String = "[]") throws -> UInt64 {
+        try lspRequestJSON(previousResultIdsJSON, context: "editor_ui_lsp_request_workspace_diagnostic") { cstr, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_workspace_diagnostic(handle, cstr, out)
+        }
+    }
+
+    public func lspTakeLastWorkspaceDiagnosticResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_workspace_diagnostic_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_workspace_diagnostic_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestDocumentColor() throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_request_document_color(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_document_color")
+        return out
+    }
+
+    public func lspTakeLastDocumentColorResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_document_color_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_document_color_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestColorPresentation(
+        startOffset: UInt32,
+        endOffset: UInt32,
+        colorJSON: String
+    ) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = colorJSON.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_lsp_request_color_presentation(
+                handle,
+                startOffset,
+                endOffset,
+                cstr,
+                &out
+            )
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_color_presentation")
+        return out
+    }
+
+    public func lspTakeLastColorPresentationResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_color_presentation_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_color_presentation_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestPrepareCallHierarchy(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
+        try lspRequestPosition(
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            context: "editor_ui_lsp_request_prepare_call_hierarchy"
+        ) { line, column, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_prepare_call_hierarchy(handle, line, column, out)
+        }
+    }
+
+    public func lspTakeLastPrepareCallHierarchyResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_prepare_call_hierarchy_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_prepare_call_hierarchy_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestCallHierarchyIncomingCalls(itemJSON: String) throws -> UInt64 {
+        try lspRequestJSON(itemJSON, context: "editor_ui_lsp_request_call_hierarchy_incoming_calls") { cstr, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_call_hierarchy_incoming_calls(handle, cstr, out)
+        }
+    }
+
+    public func lspTakeLastCallHierarchyIncomingCallsResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_call_hierarchy_incoming_calls_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_call_hierarchy_incoming_calls_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestCallHierarchyOutgoingCalls(itemJSON: String) throws -> UInt64 {
+        try lspRequestJSON(itemJSON, context: "editor_ui_lsp_request_call_hierarchy_outgoing_calls") { cstr, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_call_hierarchy_outgoing_calls(handle, cstr, out)
+        }
+    }
+
+    public func lspTakeLastCallHierarchyOutgoingCallsResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_call_hierarchy_outgoing_calls_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_call_hierarchy_outgoing_calls_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestPrepareTypeHierarchy(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
+        try lspRequestPosition(
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            context: "editor_ui_lsp_request_prepare_type_hierarchy"
+        ) { line, column, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_prepare_type_hierarchy(handle, line, column, out)
+        }
+    }
+
+    public func lspTakeLastPrepareTypeHierarchyResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_prepare_type_hierarchy_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_prepare_type_hierarchy_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestTypeHierarchySupertypes(itemJSON: String) throws -> UInt64 {
+        try lspRequestJSON(itemJSON, context: "editor_ui_lsp_request_type_hierarchy_supertypes") { cstr, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_type_hierarchy_supertypes(handle, cstr, out)
+        }
+    }
+
+    public func lspTakeLastTypeHierarchySupertypesResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_type_hierarchy_supertypes_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_type_hierarchy_supertypes_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestTypeHierarchySubtypes(itemJSON: String) throws -> UInt64 {
+        try lspRequestJSON(itemJSON, context: "editor_ui_lsp_request_type_hierarchy_subtypes") { cstr, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_type_hierarchy_subtypes(handle, cstr, out)
+        }
+    }
+
+    public func lspTakeLastTypeHierarchySubtypesResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_type_hierarchy_subtypes_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_type_hierarchy_subtypes_json(handle, has, ptr)
         }
     }
 

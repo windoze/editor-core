@@ -89,6 +89,8 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 15 已完成：Swift UI binding 新增 LSP folding ranges request/take/apply 通道，覆盖 Rust `editor-core-lsp` 已有的 `textDocument/foldingRange` 请求路径和 `ProcessingEdit::ReplaceFoldingRegions` 应用路径。
 - 阶段 15 已新增 `EditorUi.lsp_request_folding_ranges()` / `lsp_apply_folding_ranges_json(...)`、C ABI `editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges` / `editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json` / `editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json`、Swift `EditorUI.lspRequestFoldingRanges()` / `lspTakeLastFoldingRangesResultJSON()` / `lspApplyFoldingRangesJSON(_:)`。
 - 阶段 15 已让手动 `textDocument/foldingRange` result 可以写入 core fold regions，并通过 `foldingRegionsJSON()` 被 Swift 读取；仍缺 App 层 folding refresh/error UI 和 fold region typed model。
+- 2026-08-01 阶段 16 已完成：Swift UI binding 新增高级 LSP raw request/take 覆盖，打通 Rust `editor-core-lsp` 已有的 code lens resolve、selection range、linked editing range、pull diagnostics、document color/color presentation、call hierarchy 和 type hierarchy 请求路径。
+- 阶段 16 已新增 `EditorUi`、C ABI 和 Swift `EditorUI` 对应 API；这些能力目前仍停留在 raw JSON result 层，App 层 panel/popup/inline UI、typed model、错误展示和 cross-file/workspace 结果产品化仍未完成。
 
 ## 分层结论
 
@@ -169,7 +171,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - LSP enable/status。
 - hover。
 - definition。
-- declaration / type definition / implementation / references / completion / completion item resolve / signature help / prepare rename / rename / code action / code action resolve / document symbols / workspace symbols / folding ranges 的 Swift UI raw async request/take API。
+- declaration / type definition / implementation / references / completion / completion item resolve / signature help / prepare rename / rename / code action / code action resolve / code lens resolve / document symbols / workspace symbols / folding ranges / selection range / linked editing range / pull diagnostics / document color / color presentation / call hierarchy / type hierarchy 的 Swift UI raw async request/take API。
 - AttoEditor App command/menu 已覆盖 go to definition/declaration/type definition/implementation/find references，其中 references 多结果有轻量可过滤结果 palette。
 - AttoEditor App command/menu 已覆盖 completion popup 主路径。
 - AttoEditor App completion popup commit 路径已覆盖 `completionItem/resolve`，可把 resolved item 的 `textEdit`、`additionalTextEdits` 和 snippet payload 应用到当前文档；resolve 不可用或超时时会回退到原始 item。
@@ -197,18 +199,18 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - signature help popup 主路径已有；仍缺 trigger characters / 自动弹出、active parameter 富格式高亮和 typed result model。
 - rename 主路径已有 App 输入 UI 和当前文档 WorkspaceEdit 应用；仍缺 prepareRename range/placeholder 产品化、跨文件应用/预览和 typed result model。
 - code action 主路径已有 App quick panel、resolve、当前文档 edit 应用和 command 执行；仍缺 code action kind/filter/diagnostics context 产品化、跨文件应用/预览、执行结果/错误展示和 typed result model。
-- code lens resolve / command execution。
+- code lens resolve 和 workspace command execution 的 Swift UI binding 已有；仍缺 App 层 code lens action UI、执行结果/错误展示和 typed model。
 - outline / document symbols 已有 quick panel 主路径，但还缺持久 Outline panel。
 - workspace symbols 已有 quick panel 主路径，但还缺增量查询/输入面板和完整结果模型。
 - on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；仍缺错误展示和 typed result model。
 - semantic tokens refresh / delta 策略。
 - folding ranges binding 已覆盖 request/take/apply 到 fold UI state；仍缺 App 层 refresh/error UI、折叠范围可视化和 typed model。
-- selection range。
-- linked editing。
-- document diagnostic pull / workspace diagnostic。
-- document color / color presentation。
-- call hierarchy。
-- type hierarchy。
+- selection range raw request/take 已有；仍缺 App 层 expand-selection 产品化和 typed model。
+- linked editing raw request/take 已有；仍缺联动编辑 UI、编辑同步策略和 typed model。
+- document diagnostic pull / workspace diagnostic raw request/take 已有；仍缺 Problems panel 增量刷新、workspace 级归属和 typed model。
+- document color / color presentation raw request/take 已有；仍缺色块 UI、color picker、编辑应用和 typed model。
+- call hierarchy raw request/take 已有；仍缺 hierarchy panel、导航 UI 和 typed model。
+- type hierarchy raw request/take 已有；仍缺 hierarchy panel、导航 UI 和 typed model。
 - references/locations 结果列表 UI。
 - request cancellation、debounce、超时和错误展示策略。
 
@@ -447,7 +449,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - document/workspace symbols 持久面板和 workspace 增量查询。
 - range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发和 server trigger characters 自动触发路径已完成，仍缺错误展示和 typed result model。
 - folding ranges request/take/apply 到 fold state 已完成；仍缺 App 层 refresh/error UI、可视化和 typed model。
-- linked editing。
+- code lens resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；仍缺 App 层 UI 和 typed model。
 - LSP result panels 和错误展示。
 
 ### P1：统一多文档和分屏架构
@@ -491,6 +493,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand | partial, raw result + current-doc WorkspaceEdit apply + executeCommand | yes, quick panel/menu/keymap/current-doc apply | partial |
 | LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply + trigger-character auto path | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers | document + selection commands; on-type trigger-character auto path | partial |
 | LSP folding ranges | yes | partial helper | yes, request/take + apply to fold regions | yes, raw request/take + apply JSON | yes, raw request/take + apply JSON | partial, fold commands use current state | yes |
+| LSP advanced raw requests | yes | partial helper | yes, code lens resolve + selection/linked editing/diagnostics/color/hierarchy raw request/take | yes, raw request/take JSON | yes, raw request/take JSON | no, needs product UI | partial |
 | split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
 | workspace tabs/splits | yes, headless `Workspace` | partial `Workspace` wrapper | yes, `MultiDocumentEditorUi` | no | no, current Swift tabs are migration shims | partial, transitional AppKit projection; must move to core-owned workspace | partial |
 

@@ -308,6 +308,11 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_execute_command_json(EditorUi
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges(EditorUi* ui, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json(EditorUi* ui, const char* folding_ranges_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_selection_range(EditorUi* ui, const char* positions_json_utf8, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_diagnostic(EditorUi* ui, const char* previous_result_id_utf8, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_color(EditorUi* ui, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_prepare_call_hierarchy(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_prepare_type_hierarchy(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_lsp_format_document(EditorUi* ui, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);
 int32_t editor_core_ui_ffi_editor_ui_lsp_format_range(EditorUi* ui, uint32_t start_offset, uint32_t end_offset, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);
 int32_t editor_core_ui_ffi_editor_ui_lsp_format_on_type(EditorUi* ui, uint32_t logical_line, uint32_t logical_column, const char* trigger_utf8, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);

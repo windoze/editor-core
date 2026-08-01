@@ -301,6 +301,12 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_execute_command(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_execute_command_json(EditorUi* ui,
                                                                         uint8_t* out_has_result,
                                                                         char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_code_lens_resolve(EditorUi* ui,
+                                                                   const char* lens_json_utf8,
+                                                                   uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_code_lens_resolve_json(EditorUi* ui,
+                                                                          uint8_t* out_has_result,
+                                                                          char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_symbols(EditorUi* ui,
                                                                   uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_document_symbols_json(EditorUi* ui,
@@ -311,6 +317,82 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json(EditorUi* ui,
                                                                        uint8_t* out_has_result,
                                                                        char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_selection_range(EditorUi* ui,
+                                                                 const char* positions_json_utf8,
+                                                                 uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_selection_range_json(EditorUi* ui,
+                                                                        uint8_t* out_has_result,
+                                                                        char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_linked_editing_range(EditorUi* ui,
+                                                                      uint32_t line,
+                                                                      uint32_t column,
+                                                                      uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_linked_editing_range_json(EditorUi* ui,
+                                                                             uint8_t* out_has_result,
+                                                                             char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_diagnostic(EditorUi* ui,
+                                                                     const char* previous_result_id_utf8,
+                                                                     uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_document_diagnostic_json(EditorUi* ui,
+                                                                            uint8_t* out_has_result,
+                                                                            char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_workspace_diagnostic(EditorUi* ui,
+                                                                      const char* previous_result_ids_json_utf8,
+                                                                      uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_workspace_diagnostic_json(EditorUi* ui,
+                                                                             uint8_t* out_has_result,
+                                                                             char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_color(EditorUi* ui,
+                                                                uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_document_color_json(EditorUi* ui,
+                                                                       uint8_t* out_has_result,
+                                                                       char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_color_presentation(EditorUi* ui,
+                                                                    uint32_t start_offset,
+                                                                    uint32_t end_offset,
+                                                                    const char* color_json_utf8,
+                                                                    uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_color_presentation_json(EditorUi* ui,
+                                                                           uint8_t* out_has_result,
+                                                                           char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_prepare_call_hierarchy(EditorUi* ui,
+                                                                        uint32_t line,
+                                                                        uint32_t column,
+                                                                        uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_prepare_call_hierarchy_json(EditorUi* ui,
+                                                                               uint8_t* out_has_result,
+                                                                               char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_call_hierarchy_incoming_calls(EditorUi* ui,
+                                                                               const char* item_json_utf8,
+                                                                               uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_call_hierarchy_incoming_calls_json(EditorUi* ui,
+                                                                                      uint8_t* out_has_result,
+                                                                                      char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_call_hierarchy_outgoing_calls(EditorUi* ui,
+                                                                               const char* item_json_utf8,
+                                                                               uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_call_hierarchy_outgoing_calls_json(EditorUi* ui,
+                                                                                      uint8_t* out_has_result,
+                                                                                      char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_prepare_type_hierarchy(EditorUi* ui,
+                                                                        uint32_t line,
+                                                                        uint32_t column,
+                                                                        uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_prepare_type_hierarchy_json(EditorUi* ui,
+                                                                               uint8_t* out_has_result,
+                                                                               char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_type_hierarchy_supertypes(EditorUi* ui,
+                                                                           const char* item_json_utf8,
+                                                                           uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_type_hierarchy_supertypes_json(EditorUi* ui,
+                                                                                  uint8_t* out_has_result,
+                                                                                  char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_type_hierarchy_subtypes(EditorUi* ui,
+                                                                         const char* item_json_utf8,
+                                                                         uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_type_hierarchy_subtypes_json(EditorUi* ui,
+                                                                                uint8_t* out_has_result,
+                                                                                char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_workspace_symbols(EditorUi* ui,
                                                                    const char* query_utf8,
                                                                    uint64_t* out_request_id);
