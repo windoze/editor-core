@@ -429,6 +429,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.find_references", title: "LSP: Find References") { [weak self] in
                 self?.activeWindow()?.editorAreaController.findReferencesInActiveTab()
             },
+            .init(id: "lsp.show_last_locations", title: "LSP: Show Last Locations") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLastLspLocationResults()
+            },
             .init(id: "lsp.call_hierarchy_incoming", title: "LSP: Incoming Calls") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showIncomingCallsInActiveTab()
             },

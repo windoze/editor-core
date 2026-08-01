@@ -141,7 +141,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 60 已完成：Swift/App 显式 formatting 路径新增 `EditorCoreLSPFormattingResult` typed outcome，document/range/on-type formatting binding 可区分 applied、no edits、LSP unavailable 和 failed；AttoEditor 的显式 Format Document / Format Selection 现在会用 HUD 展示 no edits、不可用和错误原因，旧 Bool API 继续兼容。自动 on-type 异步 response error 仍需后续通过 Rust status/event 路径产品化。
 - 2026-08-02 阶段 61 已完成：Rust UI 的自动 `textDocument/onTypeFormatting` 异步 response error 不再静默丢弃，会记录到 `lsp_status_json.detail`；AttoEditor 现有 status bar 路径会显示 `LSP: Failed` 并把 detail 写入日志。后续仍缺面向自动 on-type 错误的去重 HUD/event 通道。
 - 2026-08-02 阶段 62 已完成：AttoEditor 新增可测试的 `AttoLspStatusFormatter`，统一解析 `lsp_status_json` 的 status bar 文案和 failure detail；`EditorCoreSkiaView` 的短 async processing poll window 即使没有 applied edits，也会在结束时通知宿主刷新 status，AttoEditor 会对新的 LSP failed detail 弹一次去重 HUD。
-- 2026-08-02 阶段 63 已完成：AttoEditor LSP location 多结果新增可测试的 `LocationItem` 展示模型，quick panel 结果会按 workspace-relative 路径、行列位置稳定排序，并保留非 `file://` URI / workspace 外文件的显示兜底。后续仍缺持久 locations/references panel 和更深层 result lifecycle model。
+- 2026-08-02 阶段 63 已完成：AttoEditor LSP location 多结果新增可测试的 `LocationItem` 展示模型，quick panel 结果会按 workspace-relative 路径、行列位置稳定排序，并保留非 `file://` URI / workspace 外文件的显示兜底。阶段 71 已补最近一次 location/reference snapshot 和 reopen command；后续仍缺完整持久 Locations/References panel 和更深层 result lifecycle model。
 - 2026-08-02 阶段 64 已完成：Swift `EditorUI` 新增 `lspStatusSnapshot()` typed model，覆盖 availability/state/server/activity/detail 和 completion/signature/capability 摘要；AttoEditor status bar 现在消费 typed snapshot 而不是在 App 层直接解析 raw JSON。后续仍缺通用 LSP event stream、request lifecycle 和状态变更订阅模型。
 - 2026-08-02 阶段 65 已完成：AttoEditor LSP capabilities 消费也迁到 typed `EcuLspStatusSnapshot`：semantic tokens engine selection、completion item resolve 支持判断，以及 completion/signature trigger characters 自动触发都不再在 App 行为路径直接解析 raw status JSON；JSON helper 仅保留兼容入口和测试覆盖。
 - 2026-08-02 阶段 66 已完成：AttoEditor status bar 左侧 derived-state 摘要开始消费 typed `EcuFoldingRegionsSnapshot`，当 active tab 存在已折叠 region 时显示 `Folded: N`；`SWIFT-GAPS.md` 同步校准 folding 缺口，typed fold region model 不再列为缺失项。
@@ -149,6 +149,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 68 已完成：AttoEditor document/workspace symbols 请求新增统一反馈文案；LSP 未启用、请求失败、poll/take 失败、超时和空结果都会通过 editor HUD 给出明确原因，不再只蜂鸣或静默取消。
 - 2026-08-02 阶段 69 已完成：`editor-core-ui-ffi` 新增 UI ABI version 与 feature flags C ABI，Swift `EditorCoreUIFFILibrary` 暴露 `abiVersion`、`featureFlags` 和 `runtimeInfo()` typed facade，覆盖 JSON command dispatcher、typed derived snapshots、LSP interactive requests、LSP status snapshot、WorkspaceEdit application 等 coarse feature probes；SwiftPM Rust build plugin 改为显式 input/output `buildCommand`，避免 ABI/header 变更后继续链接旧 staticlib。
 - 2026-08-02 阶段 70 已完成：AttoEditor 新增 `AttoRuntimeCompatibility` 启动期兼容性策略，启动时会读取 Swift UI FFI `runtimeInfo()` 并校验最低 UI ABI version 与必需 feature flags；ABI 过低、读取失败或缺少 JSON command dispatcher、typed derived snapshots、LSP interactive requests、LSP status snapshot、WorkspaceEdit application 时会在创建窗口前给出明确错误并退出。后续仍缺逐命令/逐面板的可选 feature 降级策略。
+- 2026-08-02 阶段 71 已完成：AttoEditor LSP definition/declaration/type definition/implementation/references 结果新增最近一次 `LspLocationResultSnapshot`，多结果 quick panel 和单结果导航都会记录排序后的 typed items；新增 `lsp.show_last_locations` command palette / Go 菜单入口，可重新打开最近一次 location/reference 结果面板或重新跳转单结果。后续仍缺完整持久 Locations/References panel、跨请求历史和更细 result lifecycle。
 
 ## 分层结论
 
@@ -255,7 +256,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 
 仍缺产品化、结果 UI 或仍只停留在 raw API 的 LSP 能力：
 
-- definition/declaration/type definition/implementation/references 多结果已有统一 quick panel，展示 item model 和稳定排序已完成；仍缺完整持久 locations/references result panel 和更深层 result lifecycle model。
+- definition/declaration/type definition/implementation/references 多结果已有统一 quick panel，展示 item model、稳定排序、最近结果 snapshot 和 reopen command 已完成；仍缺完整持久 locations/references result panel、跨请求历史和更深层 result lifecycle model。
 - completion popup 主路径、commit-time completion resolve、rich documentation/detail preview、commitCharacters 提交行为、server triggerCharacters 自动触发、本地增量过滤、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用，以及打开 tab / 本地未打开文件 resource operations 已有；仍缺 core workspace-owned 跨文件事务和完整 typed result model。
 - signature help popup 主路径已有，并会按 server trigger/retrigger characters 自动弹出，active parameter 富格式高亮、typed result model 和手动请求空/错反馈已完成。
 - rename 主路径已有 App 输入 UI、prepareRename range/placeholder 默认名、当前文档 WorkspaceEdit 应用、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用，以及打开 tab / 本地未打开文件 resource operations；仍缺 core workspace-owned 跨文件事务和 typed result model。
@@ -532,7 +533,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 - completion commit-time resolve、rich documentation/detail preview、commitCharacters 提交行为、server triggerCharacters 自动触发、本地增量过滤、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用和打开 tab / 本地未打开文件 resource operations 已完成；仍缺 core workspace-owned 跨文件事务和更完整 typed result model。
 - signature help server trigger/retrigger characters 自动触发、active parameter 富格式高亮、typed result model 和手动请求空/错反馈已完成。
-- references/implementation/declaration/type definition 多结果 quick panel 已统一，展示 item model 和稳定排序已完成；仍缺持久 locations/references result panel 和更深层 result lifecycle model。
+- references/implementation/declaration/type definition 多结果 quick panel 已统一，展示 item model、稳定排序、最近结果 snapshot 和 reopen command 已完成；仍缺持久 locations/references result panel、跨请求历史和更深层 result lifecycle model。
 - rename prepareRename range/placeholder、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用和打开 tab / 本地未打开文件 resource operations 已产品化；仍缺 core workspace-owned 跨文件事务和 typed result model。
 - code action typed diagnostics context、kind/filter、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用、打开 tab / 本地未打开文件 resource operations 和 command payload 执行结果/错误展示已完成；仍缺 core workspace-owned 跨文件事务和 typed result model。
 - document/workspace symbols 基础错误/超时/空结果反馈已完成；仍缺持久面板和 workspace 增量查询。

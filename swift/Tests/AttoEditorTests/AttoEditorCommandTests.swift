@@ -42,6 +42,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.go_to_type_definition"))
         XCTAssertTrue(ids.contains("lsp.go_to_implementation"))
         XCTAssertTrue(ids.contains("lsp.find_references"))
+        XCTAssertTrue(ids.contains("lsp.show_last_locations"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_incoming"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_outgoing"))
         XCTAssertTrue(ids.contains("lsp.type_hierarchy_supertypes"))
@@ -274,6 +275,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_folding_ranges", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.go_to_definition", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.find_references", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_locations", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.call_hierarchy_incoming", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.call_hierarchy_outgoing", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.type_hierarchy_supertypes", in: menu))
@@ -380,6 +382,25 @@ final class AttoEditorCommandTests: XCTestCase {
             ) as? NSSearchField
         )
         XCTAssertEqual(searchField.placeholderString, "Filter implementations...")
+
+        let snapshot = try XCTUnwrap(vc._lastLspLocationResultForTesting())
+        XCTAssertEqual(snapshot.kind, .implementation)
+        XCTAssertEqual(snapshot.items.count, 2)
+
+        panel.close()
+        XCTAssertTrue(vc.showLastLspLocationResults())
+
+        let reopenedPanel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.LocationResults")
+        })
+        let reopenedRoot = try XCTUnwrap(reopenedPanel.contentView)
+        let reopenedSearchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.LSP.LocationResults"),
+                in: reopenedRoot
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(reopenedSearchField.placeholderString, "Filter implementations...")
     }
 
     func testApplyLinkedEditingRangeResultCreatesMulticursorSelections() throws {

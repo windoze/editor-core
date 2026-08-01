@@ -122,6 +122,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Go to Type Definition", commandID: "lsp.go_to_type_definition", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Go to Implementation", commandID: "lsp.go_to_implementation", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Find References", commandID: "lsp.find_references", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Show Last Locations...", commandID: "lsp.show_last_locations", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Incoming Calls", commandID: "lsp.call_hierarchy_incoming", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Outgoing Calls", commandID: "lsp.call_hierarchy_outgoing", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Supertypes", commandID: "lsp.type_hierarchy_supertypes", appDelegate: appDelegate))

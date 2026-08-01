@@ -67,12 +67,16 @@ final class AttoEditorAreaViewController: NSViewController {
         updateStatusBar()
     }
 
+    func _lastLspLocationResultForTesting() -> LspLocationResultSnapshot? {
+        lastLspLocationResultSnapshot
+    }
+
     private struct HoverRequestContext {
         let tabID: UUID
         let info: EditorCoreSkiaHoverInfo
     }
 
-    enum LspLocationRequestKind {
+    enum LspLocationRequestKind: Equatable {
         case definition
         case declaration
         case typeDefinition
@@ -93,6 +97,11 @@ final class AttoEditorAreaViewController: NSViewController {
                 return "Filter references..."
             }
         }
+    }
+
+    struct LspLocationResultSnapshot: Equatable {
+        let kind: LspLocationRequestKind
+        let items: [AttoLspDefinitionParser.LocationItem]
     }
 
     private enum LspSymbolRequestKind {
@@ -261,6 +270,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private var definitionContext: DefinitionRequestContext?
     private var definitionPollTimer: DispatchSourceTimer?
     private var lspLocationResultsController: AttoCommandPaletteController?
+    private var lastLspLocationResultSnapshot: LspLocationResultSnapshot?
 
     private var symbolContext: SymbolRequestContext?
     private var symbolPollTimer: DispatchSourceTimer?
@@ -3116,23 +3126,41 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
 
-        if targets.count > 1 {
-            showLspLocationResults(targets, kind: kind)
+        let items = AttoLspDefinitionParser.locationItems(for: targets, workspaceRootURL: workspaceRootURL)
+        let snapshot = LspLocationResultSnapshot(kind: kind, items: items)
+        lastLspLocationResultSnapshot = snapshot
+
+        if items.count > 1 {
+            showLspLocationResults(snapshot)
             return true
         }
 
-        navigateToLspTarget(targets[0])
+        navigateToLspTarget(items[0].target)
         return true
     }
 
-    private func showLspLocationResults(_ targets: [AttoLspDefinitionParser.Target], kind: LspLocationRequestKind) {
+    @discardableResult
+    func showLastLspLocationResults() -> Bool {
+        guard let snapshot = lastLspLocationResultSnapshot, snapshot.items.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        if snapshot.items.count > 1 {
+            showLspLocationResults(snapshot)
+        } else {
+            navigateToLspTarget(snapshot.items[0].target)
+        }
+        return true
+    }
+
+    private func showLspLocationResults(_ snapshot: LspLocationResultSnapshot) {
         guard let window = view.window else {
-            navigateToLspTarget(targets[0])
+            navigateToLspTarget(snapshot.items[0].target)
             return
         }
 
-        let items = AttoLspDefinitionParser.locationItems(for: targets, workspaceRootURL: workspaceRootURL)
-        let commands = items.enumerated().map { idx, item in
+        let commands = snapshot.items.enumerated().map { idx, item in
             AttoCommandPaletteCommand(
                 id: "lsp.location.\(idx)",
                 title: item.displayTitle
@@ -3146,7 +3174,7 @@ final class AttoEditorAreaViewController: NSViewController {
             commandsProvider: { commands }
         )
         lspLocationResultsController = controller
-        controller.show(relativeTo: window, placeholder: kind.resultPlaceholder)
+        controller.show(relativeTo: window, placeholder: snapshot.kind.resultPlaceholder)
     }
 
     private func displayTitle(for target: AttoLspDefinitionParser.Target) -> String {
