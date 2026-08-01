@@ -11,6 +11,42 @@ struct AttoKeyBinding: Equatable {
     }
 }
 
+enum AttoKeymapContextValue: Equatable {
+    case bool(Bool)
+    case string(String)
+    case number(Double)
+
+    var stringValue: String? {
+        switch self {
+        case .bool(let value):
+            return value ? "true" : "false"
+        case .string(let value):
+            return value
+        case .number(let value):
+            return String(value)
+        }
+    }
+}
+
+struct AttoKeymapContext: Equatable {
+    var values: [String: AttoKeymapContextValue]
+
+    init(values: [String: AttoKeymapContextValue] = [:]) {
+        self.values = values
+    }
+}
+
+struct AttoKeymapConflict: Equatable {
+    let binding: AttoKeyBinding
+    let keptCommand: String
+    let shadowedCommand: String
+}
+
+struct AttoKeymapResolution: Equatable {
+    let bindings: [String: AttoKeyBinding]
+    let conflicts: [AttoKeymapConflict]
+}
+
 enum AttoKeymap {
     static let userKeymapEnv = "ATTO_EDITOR_KEYMAP_PATH"
 
@@ -62,36 +98,61 @@ enum AttoKeymap {
 
     static func resolvedBindings(
         fileManager: FileManager = .default,
-        env: [String: String] = ProcessInfo.processInfo.environment
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        context: AttoKeymapContext = AttoKeymapContext()
     ) -> [String: AttoKeyBinding] {
-        var out = defaultBindings
-        for (command, binding) in loadUserBindings(fileManager: fileManager, env: env) {
-            out[command] = binding
+        resolvedKeymap(fileManager: fileManager, env: env, context: context).bindings
+    }
+
+    static func resolvedKeymap(
+        fileManager: FileManager = .default,
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        context: AttoKeymapContext = AttoKeymapContext()
+    ) -> AttoKeymapResolution {
+        var resolver = BindingResolver()
+        for command in defaultBindings.keys.sorted() {
+            guard let binding = defaultBindings[command] else { continue }
+            resolver.apply(command: command, binding: binding)
         }
-        return out
+        for entry in loadUserEntries(fileManager: fileManager, env: env, context: context) {
+            guard let bindingText = entry.bindingText,
+                  let binding = parseBinding(bindingText)
+            else { continue }
+            resolver.apply(command: entry.command, binding: binding)
+        }
+        return resolver.resolution()
     }
 
     static func loadUserBindings(
         fileManager: FileManager = .default,
-        env: [String: String] = ProcessInfo.processInfo.environment
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        context: AttoKeymapContext = AttoKeymapContext()
     ) -> [String: AttoKeyBinding] {
+        var resolver = BindingResolver()
+        for entry in loadUserEntries(fileManager: fileManager, env: env, context: context) {
+            guard let bindingText = entry.bindingText,
+                  let binding = parseBinding(bindingText)
+            else { continue }
+            resolver.apply(command: entry.command, binding: binding)
+        }
+        return resolver.resolution().bindings
+    }
+
+    private static func loadUserEntries(
+        fileManager: FileManager = .default,
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        context: AttoKeymapContext
+    ) -> [UserKeymapEntry] {
         let url = userKeymapURL(fileManager: fileManager, env: env)
-        guard fileManager.fileExists(atPath: url.path) else { return [:] }
+        guard fileManager.fileExists(atPath: url.path) else { return [] }
 
         do {
             let data = try Data(contentsOf: url)
             let root = try JSONDecoder().decode(UserKeymapRoot.self, from: data)
-            var out: [String: AttoKeyBinding] = [:]
-            for entry in root.entries {
-                guard let bindingText = entry.bindingText,
-                      let binding = parseBinding(bindingText)
-                else { continue }
-                out[entry.command] = binding
-            }
-            return out
+            return root.entries.filter { $0.applies(to: context) }
         } catch {
             NSLog("AttoEditor: failed to load keymap %@: %@", url.path, String(describing: error))
-            return [:]
+            return []
         }
     }
 
@@ -200,6 +261,49 @@ enum AttoKeymap {
         guard let scalar = UnicodeScalar(UInt32(value)) else { return "" }
         return String(Character(scalar))
     }
+
+    private struct BindingKey: Hashable {
+        let keyEquivalent: String
+        let modifiersRawValue: UInt
+
+        init(_ binding: AttoKeyBinding) {
+            self.keyEquivalent = binding.keyEquivalent
+            self.modifiersRawValue = binding.modifiers.rawValue
+        }
+    }
+
+    private struct BindingResolver {
+        private var bindings: [String: AttoKeyBinding] = [:]
+        private var ownersByBinding: [BindingKey: String] = [:]
+        private var conflicts: [AttoKeymapConflict] = []
+
+        mutating func apply(command: String, binding: AttoKeyBinding) {
+            let bindingKey = BindingKey(binding)
+
+            if let oldBinding = bindings[command] {
+                let oldKey = BindingKey(oldBinding)
+                if ownersByBinding[oldKey] == command {
+                    ownersByBinding.removeValue(forKey: oldKey)
+                }
+            }
+
+            if let shadowed = ownersByBinding[bindingKey], shadowed != command {
+                bindings.removeValue(forKey: shadowed)
+                conflicts.append(AttoKeymapConflict(
+                    binding: binding,
+                    keptCommand: command,
+                    shadowedCommand: shadowed
+                ))
+            }
+
+            bindings[command] = binding
+            ownersByBinding[bindingKey] = command
+        }
+
+        func resolution() -> AttoKeymapResolution {
+            AttoKeymapResolution(bindings: bindings, conflicts: conflicts)
+        }
+    }
 }
 
 private struct UserKeymapRoot: Decodable {
@@ -227,9 +331,104 @@ private struct UserKeymapEntry: Decodable {
     var keys: [String]?
     var key: String?
     var command: String
+    var context: [AttoKeymapCondition]?
 
     var bindingText: String? {
         if let first = keys?.first { return first }
         return key
+    }
+
+    func applies(to keymapContext: AttoKeymapContext) -> Bool {
+        guard let context, context.isEmpty == false else { return true }
+        return context.allSatisfy { $0.matches(keymapContext) }
+    }
+}
+
+private struct AttoKeymapCondition: Decodable, Equatable {
+    enum Operator: Equatable {
+        case equal
+        case notEqual
+        case regexMatch
+        case notRegexMatch
+        case unknown(String)
+
+        init(rawValue: String?) {
+            switch rawValue?.lowercased() {
+            case nil, "", "equal":
+                self = .equal
+            case "not_equal":
+                self = .notEqual
+            case "regex_match":
+                self = .regexMatch
+            case "not_regex_match":
+                self = .notRegexMatch
+            case .some(let raw):
+                self = .unknown(raw)
+            }
+        }
+    }
+
+    var key: String
+    var op: Operator
+    var operand: AttoKeymapContextValue
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case op = "operator"
+        case operand
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.key = try container.decode(String.self, forKey: .key)
+        self.op = Operator(rawValue: try container.decodeIfPresent(String.self, forKey: .op))
+        self.operand = (try? container.decode(AttoKeymapContextValue.self, forKey: .operand)) ?? .bool(true)
+    }
+
+    func matches(_ context: AttoKeymapContext) -> Bool {
+        guard let actual = context.values[key] else { return false }
+        switch op {
+        case .equal:
+            return actual == operand
+        case .notEqual:
+            return actual != operand
+        case .regexMatch:
+            return regexMatches(actual: actual, operand: operand)
+        case .notRegexMatch:
+            return regexMatches(actual: actual, operand: operand) == false
+        case .unknown:
+            return false
+        }
+    }
+
+    private func regexMatches(actual: AttoKeymapContextValue, operand: AttoKeymapContextValue) -> Bool {
+        guard let actualString = actual.stringValue,
+              let pattern = operand.stringValue,
+              let regex = try? NSRegularExpression(pattern: pattern, options: [])
+        else { return false }
+        let range = NSRange(actualString.startIndex..<actualString.endIndex, in: actualString)
+        return regex.firstMatch(in: actualString, options: [], range: range) != nil
+    }
+}
+
+extension AttoKeymapContextValue: Decodable {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+            return
+        }
+        if let value = try? container.decode(Double.self) {
+            self = .number(value)
+            return
+        }
+        if let value = try? container.decode(String.self) {
+            self = .string(value)
+            return
+        }
+        throw DecodingError.typeMismatch(
+            AttoKeymapContextValue.self,
+            DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "unsupported keymap context value")
+        )
     }
 }

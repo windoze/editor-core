@@ -425,6 +425,97 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(resolved["go.line"], AttoKeymap.parseBinding("ctrl+g"))
     }
 
+    func testKeymapContextConditionsFilterBindingsAndResolveUserConflicts() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let keymapURL = tempDir.appendingPathComponent("keymap.json")
+        try """
+        [
+          { "key": "cmd+1", "command": "file.new" },
+          {
+            "key": "cmd+1",
+            "command": "editor.duplicate_lines",
+            "context": [
+              { "key": "has_active_editor", "operator": "equal", "operand": true }
+            ]
+          },
+          {
+            "key": "cmd+2",
+            "command": "editor.delete_lines",
+            "context": [
+              { "key": "selector", "operator": "regex_match", "operand": "source\\\\.(swift|rust)" }
+            ]
+          },
+          {
+            "key": "cmd+3",
+            "command": "editor.join_lines",
+            "context": [
+              { "key": "selection_empty", "operator": "not_equal", "operand": true }
+            ]
+          },
+          {
+            "key": "cmd+4",
+            "command": "editor.split_line",
+            "context": [
+              { "key": "selector", "operator": "not_regex_match", "operand": "source\\\\.swift" }
+            ]
+          }
+        ]
+        """.write(to: keymapURL, atomically: true, encoding: .utf8)
+
+        let env = [AttoKeymap.userKeymapEnv: keymapURL.path]
+        let globalOnly = AttoKeymap.loadUserBindings(env: env)
+        XCTAssertEqual(globalOnly["file.new"], AttoKeymap.parseBinding("cmd+1"))
+        XCTAssertNil(globalOnly["editor.duplicate_lines"])
+        XCTAssertNil(globalOnly["editor.delete_lines"])
+        XCTAssertNil(globalOnly["editor.join_lines"])
+
+        let swiftEditorContext = AttoKeymapContext(values: [
+            "has_active_editor": .bool(true),
+            "selector": .string("source.swift"),
+            "selection_empty": .bool(false),
+        ])
+        let resolution = AttoKeymap.resolvedKeymap(env: env, context: swiftEditorContext)
+
+        XCTAssertNil(resolution.bindings["file.new"])
+        XCTAssertEqual(resolution.bindings["editor.duplicate_lines"], AttoKeymap.parseBinding("cmd+1"))
+        XCTAssertEqual(resolution.bindings["editor.delete_lines"], AttoKeymap.parseBinding("cmd+2"))
+        XCTAssertEqual(resolution.bindings["editor.join_lines"], AttoKeymap.parseBinding("cmd+3"))
+        XCTAssertNil(resolution.bindings["editor.split_line"])
+
+        let conflict = try XCTUnwrap(resolution.conflicts.first {
+            $0.keptCommand == "editor.duplicate_lines" && $0.shadowedCommand == "file.new"
+        })
+        XCTAssertEqual(conflict.binding, AttoKeymap.parseBinding("cmd+1"))
+    }
+
+    func testKeymapUserBindingShadowsConflictingDefaultShortcut() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let keymapURL = tempDir.appendingPathComponent("keymap.json")
+        try """
+        [
+          { "key": "cmd+s", "command": "editor.duplicate_lines" }
+        ]
+        """.write(to: keymapURL, atomically: true, encoding: .utf8)
+
+        let env = [AttoKeymap.userKeymapEnv: keymapURL.path]
+        let resolution = AttoKeymap.resolvedKeymap(env: env)
+
+        XCTAssertEqual(resolution.bindings["editor.duplicate_lines"], AttoKeymap.parseBinding("cmd+s"))
+        XCTAssertNil(resolution.bindings["file.save"])
+        let conflict = try XCTUnwrap(resolution.conflicts.first {
+            $0.keptCommand == "editor.duplicate_lines" && $0.shadowedCommand == "file.save"
+        })
+        XCTAssertEqual(conflict.binding, AttoKeymap.parseBinding("cmd+s"))
+    }
+
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
         let delegate = AttoAppDelegate(
             keyBindings: [
