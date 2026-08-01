@@ -25,6 +25,8 @@ enum AttoKeymap {
         "editor.format_selection": AttoKeyBinding(keyEquivalent: "f", modifiers: [.option, .shift]),
         "editor.duplicate_lines": AttoKeyBinding(keyEquivalent: "d", modifiers: [.command, .shift]),
         "editor.delete_lines": AttoKeyBinding(keyEquivalent: "k", modifiers: [.command, .shift]),
+        "editor.move_lines_up": AttoKeyBinding(keyEquivalent: functionKey(NSUpArrowFunctionKey), modifiers: [.command, .control]),
+        "editor.move_lines_down": AttoKeyBinding(keyEquivalent: functionKey(NSDownArrowFunctionKey), modifiers: [.command, .control]),
         "editor.join_lines": AttoKeyBinding(keyEquivalent: "j", modifiers: [.command]),
         "editor.select_line": AttoKeyBinding(keyEquivalent: "l", modifiers: [.command]),
         "editor.add_next_occurrence": AttoKeyBinding(keyEquivalent: "d", modifiers: [.command]),
@@ -148,6 +150,22 @@ enum AttoKeymap {
             return "\u{1b}"
         case "backspace":
             return "\u{7f}"
+        case "up", "arrowup", "up_arrow", "up-arrow":
+            return functionKey(NSUpArrowFunctionKey)
+        case "down", "arrowdown", "down_arrow", "down-arrow":
+            return functionKey(NSDownArrowFunctionKey)
+        case "left", "arrowleft", "left_arrow", "left-arrow":
+            return functionKey(NSLeftArrowFunctionKey)
+        case "right", "arrowright", "right_arrow", "right-arrow":
+            return functionKey(NSRightArrowFunctionKey)
+        case "home":
+            return functionKey(NSHomeFunctionKey)
+        case "end":
+            return functionKey(NSEndFunctionKey)
+        case "pageup", "page_up", "page-up":
+            return functionKey(NSPageUpFunctionKey)
+        case "pagedown", "page_down", "page-down":
+            return functionKey(NSPageDownFunctionKey)
         case "f1": return functionKey(NSF1FunctionKey)
         case "f2": return functionKey(NSF2FunctionKey)
         case "f3": return functionKey(NSF3FunctionKey)

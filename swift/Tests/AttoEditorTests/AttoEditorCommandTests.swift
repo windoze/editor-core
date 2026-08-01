@@ -109,6 +109,16 @@ final class AttoEditorCommandTests: XCTestCase {
         )
         XCTAssertEqual(user["lsp.rename"]?.keyEquivalent, AttoKeymap.parseBinding("f2")?.keyEquivalent)
         XCTAssertEqual(user["lsp.rename"]?.modifiers.intersection(.deviceIndependentFlagsMask), [])
+        XCTAssertEqual(AttoKeymap.parseBinding("super+ctrl+up")?.keyEquivalent, AttoKeymap.parseBinding("up")?.keyEquivalent)
+        XCTAssertEqual(
+            AttoKeymap.parseBinding("super+ctrl+up")?.modifiers.intersection(.deviceIndependentFlagsMask),
+            [.command, .control]
+        )
+        XCTAssertEqual(AttoKeymap.parseBinding("cmd+shift+arrowleft")?.keyEquivalent, AttoKeymap.parseBinding("left")?.keyEquivalent)
+        XCTAssertEqual(
+            AttoKeymap.parseBinding("cmd+shift+arrowleft")?.modifiers.intersection(.deviceIndependentFlagsMask),
+            [.command, .shift]
+        )
 
         let resolved = AttoKeymap.resolvedBindings(env: env)
         XCTAssertEqual(resolved["editor.duplicate_lines"]?.keyEquivalent, "l")
@@ -149,6 +159,8 @@ final class AttoEditorCommandTests: XCTestCase {
             resolved["editor.add_all_occurrences"]?.modifiers.intersection(.deviceIndependentFlagsMask),
             [.command, .control]
         )
+        XCTAssertEqual(resolved["editor.move_lines_up"], AttoKeymap.parseBinding("super+ctrl+up"))
+        XCTAssertEqual(resolved["editor.move_lines_down"], AttoKeymap.parseBinding("super+ctrl+down"))
     }
 
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
