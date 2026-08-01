@@ -173,6 +173,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let item: AttoLspCodeActionParser.Item
     }
 
+    private struct CodeLensResolveContext {
+        let tabID: UUID
+        let item: AttoLspCodeLensParser.Item
+    }
+
     private struct ExecuteCommandRequestContext {
         let tabID: UUID
         let commandTitle: String
@@ -252,6 +257,9 @@ final class AttoEditorAreaViewController: NSViewController {
     private var codeActionResolveContext: CodeActionResolveContext?
     private var codeActionResolvePollTimer: DispatchSourceTimer?
     private var codeActionResultsController: AttoCommandPaletteController?
+    private var codeLensResolveContext: CodeLensResolveContext?
+    private var codeLensResolvePollTimer: DispatchSourceTimer?
+    private var codeLensResultsController: AttoCommandPaletteController?
     private var executeCommandContext: ExecuteCommandRequestContext?
     private var executeCommandPollTimer: DispatchSourceTimer?
 
@@ -4136,6 +4144,160 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    // MARK: - LSP code lens
+
+    @discardableResult
+    func showCodeLensActionsInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelCodeLensUI()
+
+        derivedStateStore.refreshActive(editor: tab.editCore.editor)
+        let items = AttoLspCodeLensParser.items(fromDecorationsSnapshot: derivedStateStore.active.decorations)
+        guard items.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        showCodeLensResults(items, tab: tab)
+        return true
+    }
+
+    private func showCodeLensResults(_ items: [AttoLspCodeLensParser.Item], tab: AttoEditorTab) {
+        guard let window = view.window else {
+            if let first = items.first {
+                _ = applyCodeLens(first)
+            }
+            return
+        }
+
+        let commands = items.enumerated().map { idx, item in
+            AttoCommandPaletteCommand(
+                id: "lsp.code_lens.\(idx)",
+                title: displayTitle(for: item, in: tab)
+            ) { [weak self] in
+                _ = self?.applyCodeLens(item)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.CodeLens",
+            commandsProvider: { commands }
+        )
+        codeLensResultsController = controller
+        controller.show(relativeTo: window, placeholder: "Filter code lens actions...")
+    }
+
+    @discardableResult
+    private func applyCodeLens(_ item: AttoLspCodeLensParser.Item, allowResolve: Bool = true) -> Bool {
+        if let command = item.command {
+            return requestExecuteCommandJSON(command.commandJSON, commandTitle: command.title)
+        }
+
+        guard allowResolve else {
+            NSSound.beep()
+            return false
+        }
+        return requestCodeLensResolve(item)
+    }
+
+    private func requestCodeLensResolve(_ item: AttoLspCodeLensParser.Item) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            _ = try tab.editCore.editor.lspRequestCodeLensResolve(lensJSON: item.lensJSON)
+            codeLensResolveContext = CodeLensResolveContext(tabID: tab.id, item: item)
+            codeLensResultsController?.hide()
+            codeLensResultsController = nil
+            startCodeLensResolvePollTimer(tabID: tab.id)
+            return true
+        } catch {
+            cancelCodeLensUI()
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private func startCodeLensResolvePollTimer(tabID: UUID) {
+        codeLensResolvePollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.codeLensResolveContext, ctx.tabID == tabID else {
+                self.cancelCodeLensUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelCodeLensUI()
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelCodeLensUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastCodeLensResolveResultJSON()
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            self.codeLensResolvePollTimer?.cancel()
+            self.codeLensResolvePollTimer = nil
+            self.codeLensResolveContext = nil
+
+            let resolved = AttoLspCodeLensParser.item(
+                fromCodeLensJSON: json,
+                fallbackTitle: ctx.item.title,
+                fallbackRange: ctx.item.range
+            ) ?? ctx.item
+            _ = self.applyCodeLens(resolved, allowResolve: false)
+            timer.cancel()
+        }
+
+        codeLensResolvePollTimer = timer
+        timer.resume()
+    }
+
+    private func displayTitle(for item: AttoLspCodeLensParser.Item, in tab: AttoEditorTab) -> String {
+        let location: String? = {
+            do {
+                let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: item.range.start)
+                return "\(tab.fileURL.lastPathComponent):\(pos.line + 1):\(pos.column + 1)"
+            } catch {
+                return tab.fileURL.lastPathComponent
+            }
+        }()
+        return AttoLspCodeLensParser.displayTitle(for: item, location: location)
+    }
+
     // MARK: - LSP code actions
 
     @discardableResult
@@ -4400,20 +4562,26 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func requestExecuteCodeActionCommand(_ command: AttoLspCodeActionParser.Command) -> Bool {
-        guard let tab = activeTab else {
+        guard let commandJSON = AttoLspCodeActionParser.commandJSON(for: command) else {
             NSSound.beep()
             return false
         }
-        guard let commandJSON = AttoLspCodeActionParser.commandJSON(for: command) else {
+        return requestExecuteCommandJSON(commandJSON, commandTitle: command.title)
+    }
+
+    private func requestExecuteCommandJSON(_ commandJSON: String, commandTitle: String) -> Bool {
+        guard let tab = activeTab else {
             NSSound.beep()
             return false
         }
 
         do {
             _ = try tab.editCore.editor.lspRequestExecuteCommand(commandJSON: commandJSON)
-            executeCommandContext = ExecuteCommandRequestContext(tabID: tab.id, commandTitle: command.title)
+            executeCommandContext = ExecuteCommandRequestContext(tabID: tab.id, commandTitle: commandTitle)
             codeActionResultsController?.hide()
             codeActionResultsController = nil
+            codeLensResultsController?.hide()
+            codeLensResultsController = nil
             startExecuteCommandPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
             return true
         } catch {
@@ -5411,7 +5579,17 @@ final class AttoEditorAreaViewController: NSViewController {
         codeActionResultsController?.hide()
         codeActionResultsController = nil
 
+        cancelCodeLensUI()
         cancelExecuteCommandUI()
+    }
+
+    private func cancelCodeLensUI() {
+        codeLensResolvePollTimer?.cancel()
+        codeLensResolvePollTimer = nil
+        codeLensResolveContext = nil
+
+        codeLensResultsController?.hide()
+        codeLensResultsController = nil
     }
 
     private func cancelExecuteCommandUI() {

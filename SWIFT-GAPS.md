@@ -132,6 +132,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 51 已完成：AttoEditor 新增 `lsp.document_colors` App 命令和 Go 菜单入口，可请求 `textDocument/documentColor`，用带色块的 quick panel 展示颜色位置；选择颜色后会请求 `textDocument/colorPresentation`，展示 presentation 列表，并能把带 `textEdit` / `additionalTextEdits` 的 presentation 应用到当前文档。新增 `AttoLspDocumentColorParser` typed model，覆盖 LSP UTF-16 range、RGBA、presentation edit 解析和测试。
 - 2026-08-01 阶段 52 已完成：AttoEditor 新增 `lsp.linked_editing` App 命令和 Selection 菜单入口，可请求 `textDocument/linkedEditingRange`，用 `AttoLspLinkedEditingParser` typed model 解析 linked ranges，并把结果应用成多个 selection ranges；当前基础同步编辑策略是复用 core multi-cursor/selection replacement，让用户在 linked ranges 被选中后直接输入即可同时替换这些范围。
 - 2026-08-01 阶段 53 已完成：AttoEditor 新增 call/type hierarchy 基础 App 主路径，命令覆盖 `lsp.call_hierarchy_incoming`、`lsp.call_hierarchy_outgoing`、`lsp.type_hierarchy_supertypes`、`lsp.type_hierarchy_subtypes`，Go 菜单可触发 prepare hierarchy 请求、选择多个 prepare root、轮询 incoming/outgoing 或 supertypes/subtypes 结果，并用 quick panel 导航到对应 LSP target。新增 `AttoLspHierarchyParser` typed model，覆盖 prepare item、incoming/outgoing call、type hierarchy item、opaque `data` request payload 保留和测试。
+- 2026-08-01 阶段 54 已完成：AttoEditor 新增 `lsp.code_lens_actions` App 命令和 Go 菜单入口，可从 active derived-state decorations snapshot 中读取 core 已渲染的 code lens decorations，展示 Code Lens Actions quick panel；选择 action 后若已有 command 则走统一 `workspace/executeCommand` 路径，若缺 command 则先请求 `codeLens/resolve` 再执行。新增 `AttoLspCodeLensParser` typed model，覆盖 decoration `data_json` 中原始 lens payload、resolved lens command 和 command JSON 保留。
 
 ## 分层结论
 
@@ -224,6 +225,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - semantic tokens 到 style intervals 的应用。
 - inlay hints。
 - code lens 派生显示。
+- AttoEditor App command/menu 已覆盖 active code lens actions quick panel；可消费 core code lens decorations 中保留的原始 lens JSON，必要时先 resolve 再执行 command。
 - document links hit-test。
 - document highlights。
 - document symbols result 到 core outline 的应用和 JSON 导出。
@@ -242,7 +244,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - signature help popup 主路径已有，并会按 server trigger/retrigger characters 自动弹出，active parameter 富格式高亮、typed result model 和手动请求空/错反馈已完成。
 - rename 主路径已有 App 输入 UI、prepareRename range/placeholder 默认名、当前文档 WorkspaceEdit 应用、跨文件 WorkspaceEdit 摘要预览，以及打开 tab / 本地 `file://` 文档 text edits 应用；仍缺 resource operations、core workspace-owned 跨文件事务和 typed result model。
 - code action 主路径已有 App quick panel、resolve、typed diagnostics context、kind/filter、当前文档 edit 应用、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用、command 执行和执行结果/错误 HUD；仍缺 resource operations、core workspace-owned 跨文件事务和 typed result model。
-- code lens resolve 和 workspace command execution 的 Swift UI binding 已有；code action command payload 已有执行结果/错误 HUD，仍缺 App 层 code lens action UI、通用 workspace command typed model。
+- code lens resolve、active code lens actions quick panel 和 workspace command execution 的 Swift UI/App 路径已有；仍缺内联 code lens 点击/键盘定位、手动刷新入口、自动刷新状态反馈和通用 workspace command typed model。
 - outline / document symbols 已有 quick panel 主路径，document symbols 展示已消费 typed derived-state snapshot；仍缺持久 Outline panel。
 - workspace symbols 已有查询输入框和 quick panel 主路径，但还缺增量查询、持久结果面板和完整结果模型。
 - on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；仍缺错误展示和 typed result model。
@@ -520,7 +522,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - document/workspace symbols 持久面板和 workspace 增量查询。
 - range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发和 server trigger characters 自动触发路径已完成，仍缺错误展示和 typed result model。
 - folding ranges request/take/apply 到 fold state、App refresh 命令和错误反馈已完成；仍缺可视化和更完整 typed model。
-- code lens resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；selection range 已有 App expand-selection 命令和 typed candidate model，linked editing 已有 App multi-cursor selection 主路径，document color/color presentation 已有 App quick panel 和 edit apply 主路径，call/type hierarchy 已有基础 quick panel 导航和 typed parser，diagnostics 已有 active-tab Problems quick panel；code lens action UI 和 workspace diagnostic/project 级 UI 仍缺 App 层产品化。
+- code lens resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；code lens 已有 active actions quick panel 和 typed parser，selection range 已有 App expand-selection 命令和 typed candidate model，linked editing 已有 App multi-cursor selection 主路径，document color/color presentation 已有 App quick panel 和 edit apply 主路径，call/type hierarchy 已有基础 quick panel 导航和 typed parser，diagnostics 已有 active-tab Problems quick panel；workspace diagnostic/project 级 UI 仍缺 App 层产品化。
 - LSP result panels 和错误展示。
 
 ### P1：统一多文档和分屏架构
@@ -568,7 +570,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand result envelope | partial, raw result + typed diagnostics context + kind filters + current-doc WorkspaceEdit apply + executeCommand result envelope | yes, quick panel/menu/keymap/typed diagnostics context/kind-filter commands/current-doc/cross-file text edits apply + command result/error HUD | partial |
 | LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply + trigger-character auto path | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers | document + selection commands; on-type trigger-character auto path | partial |
 | LSP folding ranges | yes | partial helper | yes, request/take + apply to fold regions | yes, raw request/take + apply JSON | yes, raw request/take + apply JSON | partial, refresh command applies ranges and fold commands use current state | yes |
-| LSP advanced raw requests | yes | partial helper | yes, code lens resolve + selection/linked editing/diagnostics/color/hierarchy raw request/take | yes, raw request/take JSON | yes, raw request/take JSON | partial, selection range/linked editing/document colors/call hierarchy/type hierarchy have App commands; code lens and workspace diagnostics need product UI | partial |
+| LSP advanced raw requests | yes | partial helper | yes, code lens resolve + selection/linked editing/diagnostics/color/hierarchy raw request/take | yes, raw request/take JSON | yes, raw request/take JSON | partial, code lens/selection range/linked editing/document colors/call hierarchy/type hierarchy have App commands; workspace diagnostics need product UI | partial |
 | split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
 | workspace tabs/splits | yes, headless `Workspace` | partial `Workspace` wrapper | yes, `MultiDocumentEditorUi` | no | no, current Swift tabs are migration shims; future ownership must be core workspace | partial, transitional AppKit projection; new tab/workspace semantics must move to core-owned workspace first | partial |
 
