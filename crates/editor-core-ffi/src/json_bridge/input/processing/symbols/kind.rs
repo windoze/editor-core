@@ -1,4 +1,4 @@
-use super::*;
+use super::super::*;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
@@ -95,57 +95,5 @@ pub(crate) fn symbol_kind_to_json(value: SymbolKind) -> Value {
         SymbolKind::Operator => json!({ "kind": "operator" }),
         SymbolKind::TypeParameter => json!({ "kind": "type_parameter" }),
         SymbolKind::Custom(v) => json!({ "kind": "custom", "value": v }),
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct FfiDocumentSymbolInput {
-    name: String,
-    detail: Option<String>,
-    kind: FfiSymbolKind,
-    range: FfiOffsetRange,
-    selection_range: FfiOffsetRange,
-    #[serde(default)]
-    children: Vec<FfiDocumentSymbolInput>,
-    data_json: Option<String>,
-}
-
-impl From<FfiDocumentSymbolInput> for DocumentSymbol {
-    fn from(value: FfiDocumentSymbolInput) -> Self {
-        DocumentSymbol {
-            name: value.name,
-            detail: value.detail,
-            kind: value.kind.into(),
-            range: SymbolRange::new(value.range.start, value.range.end),
-            selection_range: SymbolRange::new(
-                value.selection_range.start,
-                value.selection_range.end,
-            ),
-            children: value.children.into_iter().map(Into::into).collect(),
-            data_json: value.data_json,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct FfiWorkspaceSymbolInput {
-    name: String,
-    detail: Option<String>,
-    kind: FfiSymbolKind,
-    location: FfiSymbolLocation,
-    container_name: Option<String>,
-    data_json: Option<String>,
-}
-
-impl From<FfiWorkspaceSymbolInput> for WorkspaceSymbol {
-    fn from(value: FfiWorkspaceSymbolInput) -> Self {
-        WorkspaceSymbol {
-            name: value.name,
-            detail: value.detail,
-            kind: value.kind.into(),
-            location: value.location.into(),
-            container_name: value.container_name,
-            data_json: value.data_json,
-        }
     }
 }
