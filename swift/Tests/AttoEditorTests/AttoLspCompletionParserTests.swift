@@ -57,6 +57,39 @@ final class AttoLspCompletionParserTests: XCTestCase {
         XCTAssertEqual(items.map(\.label), ["abc"])
     }
 
+    func testFilteredItemsUsePrefixAndFilterText() throws {
+        let items = AttoLspCompletionParser.items(
+            fromCompletionResultJSON: #"[{"label":"print"},{"label":"private"},{"label":"println","filterText":"writeLine"},{"label":"map"}]"#
+        )
+
+        XCTAssertEqual(AttoLspCompletionParser.filteredItems(items, prefix: "").map(\.label), [
+            "print",
+            "private",
+            "println",
+            "map",
+        ])
+        XCTAssertEqual(AttoLspCompletionParser.filteredItems(items, prefix: "pr").map(\.label), [
+            "print",
+            "private",
+        ])
+        XCTAssertEqual(AttoLspCompletionParser.filteredItems(items, prefix: "WRITE").map(\.label), [
+            "println",
+        ])
+        XCTAssertTrue(AttoLspCompletionParser.filteredItems(items, prefix: "ri").isEmpty)
+    }
+
+    func testCompletionPrefixUsesOriginalReplacementStart() throws {
+        XCTAssertEqual(
+            AttoLspCompletionParser.completionPrefix(in: "object.pri", start: 7, caretOffset: 10),
+            "pri"
+        )
+        XCTAssertEqual(
+            AttoLspCompletionParser.completionPrefix(in: "hello", start: 0, caretOffset: 0),
+            ""
+        )
+        XCTAssertNil(AttoLspCompletionParser.completionPrefix(in: "hello", start: 4, caretOffset: 3))
+    }
+
     func testResolvedCompletionItemSerializesAndAddsEditsToPlan() throws {
         let unresolved = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResultJSON: #"[{"label":"foo","data":{"id":1}}]"#).first)
         XCTAssertNotNil(AttoLspCompletionParser.rawJSON(for: unresolved))

@@ -10,7 +10,11 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
     private let previewTextView = NSTextView(frame: .zero)
 
     private var items: [AttoLspCompletionParser.Item] = []
+    private var visibleItems: [AttoLspCompletionParser.Item] = []
     private var onCommit: ((AttoLspCompletionParser.Item, String?) -> Void)?
+    var onTextInput: ((String) -> Bool)?
+    var onDeleteBackward: (() -> Bool)?
+    var onDismiss: (() -> Void)?
 
     func show(
         items: [AttoLspCompletionParser.Item],
@@ -25,6 +29,7 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         guard let parentWindow = editorView.window else { return }
 
         self.items = items
+        self.visibleItems = items
         self.onCommit = onCommit
 
         if panel == nil {
@@ -43,11 +48,32 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         panel.makeFirstResponder(tableView)
     }
 
+    @discardableResult
+    func updateFilter(prefix: String, relativeTo editorView: NSView, anchorRect: NSRect) -> Bool {
+        let filtered = AttoLspCompletionParser.filteredItems(items, prefix: prefix)
+        guard filtered.isEmpty == false else {
+            hide()
+            return false
+        }
+
+        visibleItems = filtered
+        tableView.reloadData()
+        tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        tableView.scrollRowToVisible(0)
+        updatePreviewForSelectedRow()
+
+        if let panel {
+            position(panel: panel, relativeTo: editorView, anchorRect: anchorRect, itemCount: filtered.count)
+        }
+        return true
+    }
+
     func hide() {
         guard let panel else { return }
         panel.orderOut(nil)
         panel.parent?.removeChildWindow(panel)
         previewTextView.string = ""
+        onDismiss?()
     }
 
     private func buildPanel() -> NSPanel {
@@ -88,6 +114,12 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         }
         tableView.onCommitCharacter = { [weak self] character in
             self?.commitSelected(commitCharacter: character) ?? false
+        }
+        tableView.onTextInput = { [weak self] text in
+            self?.onTextInput?(text) ?? false
+        }
+        tableView.onDeleteBackward = { [weak self] in
+            self?.onDeleteBackward?() ?? false
         }
         tableView.onCancel = { [weak self] in
             self?.hide()
@@ -171,11 +203,11 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
-        items.count
+        visibleItems.count
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard row >= 0, row < items.count else { return nil }
+        guard row >= 0, row < visibleItems.count else { return nil }
 
         let id = NSUserInterfaceItemIdentifier("completion-cell")
         let cell = tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView ?? NSTableCellView()
@@ -197,7 +229,7 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
             ])
         }
 
-        label.stringValue = AttoLspCompletionParser.displayTitle(for: items[row])
+        label.stringValue = AttoLspCompletionParser.displayTitle(for: visibleItems[row])
         return cell
     }
 
@@ -212,8 +244,8 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
     @discardableResult
     private func commitSelected(commitCharacter: String? = nil) -> Bool {
         let row = tableView.selectedRow
-        guard row >= 0, row < items.count else { return false }
-        let item = items[row]
+        guard row >= 0, row < visibleItems.count else { return false }
+        let item = visibleItems[row]
         if let commitCharacter,
            AttoLspCompletionParser.isCommitCharacter(commitCharacter, for: item) == false
         {
@@ -227,11 +259,11 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
 
     private func updatePreviewForSelectedRow() {
         let row = tableView.selectedRow
-        guard row >= 0, row < items.count else {
+        guard row >= 0, row < visibleItems.count else {
             previewTextView.string = ""
             return
         }
-        previewTextView.string = AttoLspCompletionParser.previewText(for: items[row]) ?? items[row].label
+        previewTextView.string = AttoLspCompletionParser.previewText(for: visibleItems[row]) ?? visibleItems[row].label
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -242,12 +274,19 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
 private final class AttoCompletionTableView: NSTableView {
     var onCommit: (() -> Void)?
     var onCommitCharacter: ((String) -> Bool)?
+    var onTextInput: ((String) -> Bool)?
+    var onDeleteBackward: (() -> Bool)?
     var onCancel: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 36, 76:
             onCommit?()
+        case 51:
+            if onDeleteBackward?() == true {
+                return
+            }
+            super.keyDown(with: event)
         case 53:
             onCancel?()
         default:
@@ -258,8 +297,26 @@ private final class AttoCompletionTableView: NSTableView {
             {
                 return
             }
+            if event.modifierFlags.intersection(disallowedModifiers).isEmpty,
+               let characters = event.characters,
+               Self.isPlainTextInput(characters),
+               onTextInput?(characters) == true
+            {
+                return
+            }
             super.keyDown(with: event)
         }
+    }
+
+    private static func isPlainTextInput(_ text: String) -> Bool {
+        guard text.isEmpty == false else { return false }
+        for scalar in text.unicodeScalars
+            where CharacterSet.controlCharacters.contains(scalar)
+                || CharacterSet.newlines.contains(scalar)
+        {
+            return false
+        }
+        return true
     }
 }
 

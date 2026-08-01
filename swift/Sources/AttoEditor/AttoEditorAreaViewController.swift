@@ -163,6 +163,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var completionResolveContext: CompletionResolveContext?
     private var completionResolvePollTimer: DispatchSourceTimer?
     private var completionListController: AttoCompletionListController?
+    private var completionListContext: CompletionRequestContext?
+    private var shouldPreserveCompletionUIForCurrentTextMutation = false
 
     private var renameContext: RenameRequestContext?
     private var renamePollTimer: DispatchSourceTimer?
@@ -1271,9 +1273,12 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func handleTabDidMutateDocumentText(tabID: UUID) {
         guard let tab = tabs.first(where: { $0.id == tabID }) else { return }
+        let preserveCompletionUI = shouldPreserveCompletionUIForCurrentTextMutation
         if selectedTabID == tabID {
             cancelSignatureHelpUI()
-            cancelCompletionUI()
+            if preserveCompletionUI == false {
+                cancelCompletionUI()
+            }
         }
 
         let didUnpreview = tab.isPreview
@@ -2382,6 +2387,20 @@ final class AttoEditorAreaViewController: NSViewController {
 
         let controller = AttoCompletionListController()
         completionListController = controller
+        completionListContext = context
+        controller.onTextInput = { [weak self, weak controller] text in
+            guard let self, self.completionListController === controller else { return false }
+            return self.handleCompletionFilterTextInput(text, tabID: context.tabID)
+        }
+        controller.onDeleteBackward = { [weak self, weak controller] in
+            guard let self, self.completionListController === controller else { return false }
+            return self.handleCompletionFilterDeleteBackward(tabID: context.tabID)
+        }
+        controller.onDismiss = { [weak self, weak controller] in
+            guard let self, self.completionListController === controller else { return }
+            self.completionListController = nil
+            self.completionListContext = nil
+        }
         controller.show(
             items: items,
             relativeTo: editorView,
@@ -2389,6 +2408,65 @@ final class AttoEditorAreaViewController: NSViewController {
         ) { [weak self] item, commitCharacter in
             self?.applyCompletion(item, context: context, commitCharacter: commitCharacter)
         }
+    }
+
+    @discardableResult
+    private func handleCompletionFilterTextInput(_ text: String, tabID: UUID) -> Bool {
+        guard let tab = activeTab, tab.id == tabID else { return false }
+        guard completionListController != nil else { return false }
+
+        shouldPreserveCompletionUIForCurrentTextMutation = true
+        defer { shouldPreserveCompletionUIForCurrentTextMutation = false }
+        tab.editCore.editorView.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+        refreshCompletionFilter(tabID: tabID)
+        return true
+    }
+
+    @discardableResult
+    private func handleCompletionFilterDeleteBackward(tabID: UUID) -> Bool {
+        guard let tab = activeTab, tab.id == tabID else { return false }
+        guard completionListController != nil else { return false }
+
+        shouldPreserveCompletionUIForCurrentTextMutation = true
+        defer { shouldPreserveCompletionUIForCurrentTextMutation = false }
+        tab.editCore.editorView.doCommand(by: #selector(NSResponder.deleteBackward(_:)))
+        refreshCompletionFilter(tabID: tabID)
+        return true
+    }
+
+    private func refreshCompletionFilter(tabID: UUID) {
+        guard let tab = activeTab, tab.id == tabID,
+              let context = completionListContext,
+              let controller = completionListController
+        else {
+            return
+        }
+
+        guard let prefix = completionFilterPrefix(context: context, editor: tab.editCore.editor) else {
+            cancelCompletionUI()
+            view.window?.makeFirstResponder(tab.editCore.editorView)
+            return
+        }
+
+        if controller.updateFilter(
+            prefix: prefix,
+            relativeTo: tab.editCore.editorView,
+            anchorRect: caretAnchorRect(in: tab.editCore.editorView)
+        ) == false {
+            view.window?.makeFirstResponder(tab.editCore.editorView)
+        }
+    }
+
+    private func completionFilterPrefix(context: CompletionRequestContext, editor: EditorUI) -> String? {
+        guard let offsets = try? editor.selectionOffsets() else { return nil }
+        guard offsets.start == offsets.end else { return nil }
+        guard offsets.end >= context.fallbackStart else { return nil }
+        guard let text = try? editor.text() else { return nil }
+        return AttoLspCompletionParser.completionPrefix(
+            in: text,
+            start: context.fallbackStart,
+            caretOffset: offsets.end
+        )
     }
 
     private func applyCompletion(
@@ -3512,6 +3590,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         completionListController?.hide()
         completionListController = nil
+        completionListContext = nil
     }
 
     private func cancelRenameUI() {

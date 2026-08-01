@@ -100,6 +100,26 @@ enum AttoLspCompletionParser {
         return item.commitCharacters.contains(character)
     }
 
+    static func filteredItems(_ items: [Item], prefix: String) -> [Item] {
+        guard prefix.isEmpty == false else { return items }
+        return items.filter { item in
+            completionFilterText(for: item).range(
+                of: prefix,
+                options: [.caseInsensitive, .anchored]
+            ) != nil
+        }
+    }
+
+    static func completionPrefix(in text: String, start: UInt32, caretOffset: UInt32) -> String? {
+        let scalars = Array(text.unicodeScalars)
+        let start = Int(start)
+        let end = Int(caretOffset)
+        guard start >= 0, end >= start, end <= scalars.count else { return nil }
+        var out = String.UnicodeScalarView()
+        out.append(contentsOf: scalars[start..<end])
+        return String(out)
+    }
+
     static func identifierFallbackRange(in text: String, caretOffset: UInt32) -> (start: UInt32, end: UInt32) {
         let scalars = Array(text.unicodeScalars)
         let end = max(0, min(Int(caretOffset), scalars.count))
@@ -215,6 +235,13 @@ enum AttoLspCompletionParser {
             return label
         }
         return nil
+    }
+
+    private static func completionFilterText(for item: Item) -> String {
+        if let filterText = item.filterText, filterText.isEmpty == false {
+            return filterText
+        }
+        return item.label
     }
 
     private static func kindLabel(_ kind: Int) -> String? {
