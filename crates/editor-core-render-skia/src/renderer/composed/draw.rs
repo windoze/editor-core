@@ -1,8 +1,7 @@
 use super::super::drawing::*;
-use super::super::geometry::*;
-use super::super::style::*;
 use super::super::text_runs::*;
 use super::super::*;
+use super::{background::*, caret::*, gutter::*, selection::*, whitespace::*};
 
 impl SkiaRenderer {
     #[allow(clippy::too_many_arguments)]
@@ -26,21 +25,7 @@ impl SkiaRenderer {
         let row_start = row_start.min(total_rows);
         let row_end = row_end.min(total_rows);
 
-        // Resolve caret positions in the composed grid (visible subset only).
-        #[derive(Debug, Clone, Copy)]
-        struct PendingCaret {
-            local_row: usize,
-            x_cells: u32,
-        }
-        let mut pending_carets: Vec<PendingCaret> = Vec::new();
-        for &caret_offset in caret_offsets {
-            let Some(local_row) = composed_line_index_for_offset(grid, caret_offset) else {
-                continue;
-            };
-            let line = &grid.lines[local_row];
-            let x_cells = caret_x_cells_in_composed_line(line, caret_offset);
-            pending_carets.push(PendingCaret { local_row, x_cells });
-        }
+        let pending_carets = pending_carets_for_composed_grid(grid, caret_offsets);
 
         debug_assert!(
             !self.fonts_normal.fonts.is_empty(),
@@ -49,70 +34,33 @@ impl SkiaRenderer {
         let baseline_offset = self.baseline_offset_px(config);
 
         // 1) Draw per-cell backgrounds (including styled backgrounds).
-        for row_idx in row_start..row_end {
-            let line = &grid.lines[row_idx];
-            let y_top =
-                config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
-            let mut x_cells: u32 = 0;
-            for cell in &line.cells {
-                let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
-                let (_fg, bg) = resolve_cell_colors(cell.styles.as_slice(), theme);
-                if bg != theme.background {
-                    let w_px = cell.width as f32 * config.cell_width_px;
-                    let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
-                    let mut bg_paint = Paint::default();
-                    bg_paint.set_anti_alias(false);
-                    bg_paint.set_color(rgba_to_skia_color(bg));
-                    canvas.draw_rect(rect, &bg_paint);
-                }
-                x_cells = x_cells.saturating_add(cell.width as u32);
-            }
-        }
+        draw_composed_cell_backgrounds(
+            canvas,
+            grid,
+            text_origin_x,
+            config,
+            theme,
+            row_start,
+            row_end,
+        );
 
         // 2) Selection overlay (under text, over backgrounds).
         //
         // Note: selection highlight is applied only to document cells. Virtual text is not
         // considered part of the selection.
-        let mut sel_ranges: Vec<(usize, usize)> = Vec::new();
-        for (a, b) in selection_ranges {
-            if *a == *b {
-                continue;
-            }
-            if *a <= *b {
-                sel_ranges.push((*a, *b));
-            } else {
-                sel_ranges.push((*b, *a));
-            }
-        }
+        let sel_ranges = normalized_selection_ranges(selection_ranges);
 
         if !sel_ranges.is_empty() {
-            for row_idx in row_start..row_end {
-                let line = &grid.lines[row_idx];
-                if !matches!(line.kind, ComposedLineKind::Document { .. }) {
-                    continue;
-                }
-                let y_top = config.padding_y_px + row_idx as f32 * config.line_height_px
-                    - config.scroll_y_px;
-                let mut x_cells: u32 = 0;
-                for cell in &line.cells {
-                    let selected = match cell.source {
-                        ComposedCellSource::Document { offset } => {
-                            sel_ranges.iter().any(|(s, e)| offset >= *s && offset < *e)
-                        }
-                        _ => false,
-                    };
-                    if selected {
-                        let x_px = text_origin_x + x_cells as f32 * config.cell_width_px;
-                        let w_px = cell.width as f32 * config.cell_width_px;
-                        let rect = Rect::from_xywh(x_px, y_top, w_px, config.line_height_px);
-                        let mut sel_paint = Paint::default();
-                        sel_paint.set_anti_alias(false);
-                        sel_paint.set_color(rgba_to_skia_color(theme.selection_background));
-                        canvas.draw_rect(rect, &sel_paint);
-                    }
-                    x_cells = x_cells.saturating_add(cell.width as u32);
-                }
-            }
+            draw_composed_selection_overlay(
+                canvas,
+                grid,
+                text_origin_x,
+                config,
+                theme,
+                row_start,
+                row_end,
+                sel_ranges.as_slice(),
+            );
         }
 
         // 3) Text + underlines.
@@ -122,107 +70,31 @@ impl SkiaRenderer {
                 config.padding_y_px + row_idx as f32 * config.line_height_px - config.scroll_y_px;
             let baseline_y = y_top + baseline_offset;
 
-            // Gutter: fold markers + line numbers for document lines (first visual segment only).
-            if config.gutter_width_cells > 0
-                && let ComposedLineKind::Document {
-                    logical_line,
-                    visual_in_logical,
-                } = line.kind
-                && visual_in_logical == 0
-            {
-                let marker_state = fold_marker_state_for_line(logical_line as u32, fold_markers);
-                if let Some(is_collapsed) = marker_state {
-                    let style_id = if is_collapsed {
-                        FOLD_MARKER_COLLAPSED_STYLE_ID
-                    } else {
-                        FOLD_MARKER_EXPANDED_STYLE_ID
-                    };
-                    let marker_cells = fold_marker_column_cells(&config);
-                    let rect = Rect::from_xywh(
-                        gutter_x,
-                        y_top,
-                        config.cell_width_px * marker_cells as f32,
-                        config.line_height_px,
-                    );
-                    draw_fold_marker(
-                        canvas,
-                        rect,
-                        is_collapsed,
-                        config.fold_marker_style,
-                        theme,
-                        style_id,
-                    );
-                }
-
-                draw_gutter_line_number(
-                    self,
-                    canvas,
-                    logical_line,
-                    gutter_x,
-                    baseline_y,
-                    config,
-                    theme,
-                );
-            }
+            draw_composed_gutter(
+                self,
+                canvas,
+                line,
+                fold_markers,
+                gutter_x,
+                y_top,
+                baseline_y,
+                config,
+                theme,
+            );
 
             // Indent guides + whitespace markers are drawn after selection but before text.
             if config.show_indent_guides
                 || config.whitespace_render_mode != WhitespaceRenderMode::None
             {
-                if config.show_indent_guides {
-                    let mut indent_cells: u32 = 0;
-                    for cell in &line.cells {
-                        if cell.ch == ' ' || cell.ch == '\t' {
-                            indent_cells = indent_cells.saturating_add(cell.width as u32);
-                        } else {
-                            break;
-                        }
-                    }
-
-                    draw_indent_guides(canvas, indent_cells, text_origin_x, y_top, config, theme);
-                }
-
-                let whitespace_mode = config.whitespace_render_mode;
-                if should_draw_whitespace_markers(whitespace_mode, !sel_ranges.is_empty()) {
-                    let (dot_paint, stroke_paint) = whitespace_marker_paints(theme);
-                    let mut marker_x_cells: u32 = 0;
-                    for cell in &line.cells {
-                        let w_cells = cell.width as u32;
-                        let selected = match cell.source {
-                            ComposedCellSource::Document { offset } => {
-                                let is_whitespace = cell.ch == ' ' || cell.ch == '\t';
-                                match whitespace_mode {
-                                    WhitespaceRenderMode::None => false,
-                                    WhitespaceRenderMode::Selection => {
-                                        is_whitespace
-                                            && sel_ranges
-                                                .iter()
-                                                .any(|(s, e)| offset >= *s && offset < *e)
-                                    }
-                                    WhitespaceRenderMode::All => is_whitespace,
-                                }
-                            }
-                            _ => false,
-                        };
-
-                        if selected {
-                            let x_px = text_origin_x + marker_x_cells as f32 * config.cell_width_px;
-                            let w_px = w_cells as f32 * config.cell_width_px;
-                            draw_whitespace_marker_cell(
-                                canvas,
-                                cell.ch,
-                                x_px,
-                                w_px,
-                                y_top,
-                                config,
-                                &dot_paint,
-                                &stroke_paint,
-                            );
-                        }
-
-                        marker_x_cells = marker_x_cells.saturating_add(w_cells);
-                    }
-                }
+                draw_composed_guides_and_whitespace(
+                    canvas,
+                    line,
+                    text_origin_x,
+                    y_top,
+                    config,
+                    theme,
+                    sel_ranges.as_slice(),
+                );
             }
 
             draw_text_runs_for_cells(

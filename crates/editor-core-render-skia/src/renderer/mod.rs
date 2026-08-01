@@ -8,6 +8,7 @@ mod headless;
 mod metal;
 mod state;
 mod style;
+mod text_run_buffer;
 mod text_runs;
 
 pub(crate) use font::FontVariant;
