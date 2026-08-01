@@ -7,27 +7,38 @@ enum AttoLspSelectionRangeParser {
     }
 
     static func candidates(fromResultJSON json: String, documentText: String) -> [Candidate] {
-        guard let data = json.data(using: .utf8),
-              let root = try? JSONSerialization.jsonObject(with: data, options: [])
-        else {
-            return []
-        }
-
-        let roots: [Any]
-        if let array = root as? [Any] {
-            roots = array
-        } else if root is NSNull {
-            roots = []
-        } else {
-            roots = [root]
-        }
-
+        let roots = resultRoots(fromResultJSON: json)
         var out: [Candidate] = []
         var seen = Set<String>()
         for root in roots {
             appendCandidates(from: root, documentText: documentText, into: &out, seen: &seen)
         }
         return out
+    }
+
+    static func candidateChains(fromResultJSON json: String, documentText: String) -> [[Candidate]] {
+        resultRoots(fromResultJSON: json).map { root in
+            var out: [Candidate] = []
+            var seen = Set<String>()
+            appendCandidates(from: root, documentText: documentText, into: &out, seen: &seen)
+            return out
+        }
+    }
+
+    private static func resultRoots(fromResultJSON json: String) -> [Any] {
+        guard let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data, options: [])
+        else {
+            return []
+        }
+
+        if let array = root as? [Any] {
+            return array
+        }
+        if root is NSNull {
+            return []
+        }
+        return [root]
     }
 
     static func nextCandidate(

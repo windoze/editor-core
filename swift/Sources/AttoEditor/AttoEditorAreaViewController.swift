@@ -1855,10 +1855,13 @@ final class AttoEditorAreaViewController: NSViewController {
 
         let positionsJSON: String
         do {
-            let offsets = try tab.editCore.editor.selectionOffsets()
-            let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+            let selections = try tab.editCore.editor.selections().ranges
+            let positions = try selections.map { range in
+                let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: range.end)
+                return ["line": Int(pos.line), "column": Int(pos.column)]
+            }
             let data = try JSONSerialization.data(
-                withJSONObject: [["line": Int(pos.line), "column": Int(pos.column)]],
+                withJSONObject: positions,
                 options: []
             )
             guard let json = String(data: data, encoding: .utf8) else {
@@ -1916,16 +1919,31 @@ final class AttoEditorAreaViewController: NSViewController {
 
         do {
             let text = try tab.editCore.editor.text()
-            let offsets = try tab.editCore.editor.selectionOffsets()
-            let candidates = AttoLspSelectionRangeParser.candidates(
+            let selections = try tab.editCore.editor.selections()
+            let candidateChains = AttoLspSelectionRangeParser.candidateChains(
                 fromResultJSON: json,
                 documentText: text
             )
-            guard let candidate = AttoLspSelectionRangeParser.nextCandidate(
-                from: candidates,
-                currentStart: offsets.start,
-                currentEnd: offsets.end
-            ) else {
+
+            var nextRanges: [EcuSelectionRange] = []
+            nextRanges.reserveCapacity(selections.ranges.count)
+            var didExpand = false
+
+            for (idx, range) in selections.ranges.enumerated() {
+                let candidates = idx < candidateChains.count ? candidateChains[idx] : []
+                if let candidate = AttoLspSelectionRangeParser.nextCandidate(
+                    from: candidates,
+                    currentStart: range.start,
+                    currentEnd: range.end
+                ) {
+                    nextRanges.append(EcuSelectionRange(start: candidate.start, end: candidate.end))
+                    didExpand = true
+                } else {
+                    nextRanges.append(range)
+                }
+            }
+
+            guard didExpand else {
                 if showFeedback {
                     showWorkspaceEditPopover(
                         text: "No larger selection range is available.",
@@ -1937,8 +1955,8 @@ final class AttoEditorAreaViewController: NSViewController {
             }
 
             try tab.editCore.editor.setSelections(
-                [EcuSelectionRange(start: candidate.start, end: candidate.end)],
-                primaryIndex: 0
+                nextRanges,
+                primaryIndex: min(selections.primaryIndex, UInt32(max(0, nextRanges.count - 1)))
             )
             tab.editCore.layoutSubtreeIfNeeded()
             tab.editCore.editorView.needsDisplay = true

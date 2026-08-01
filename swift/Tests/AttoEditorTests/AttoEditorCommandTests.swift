@@ -704,6 +704,69 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(offsets.end, 21)
     }
 
+    func testApplySelectionRangeResultExpandsMultipleSelectionsByResultOrder() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("selection-multi.txt")
+        try "let one = call(a)\nlet two = call(b)\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections(
+            [
+                EcuSelectionRange(start: 15, end: 16),
+                EcuSelectionRange(start: 33, end: 34),
+            ],
+            primaryIndex: 1
+        )
+
+        let resultJSON = """
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 15 },
+              "end": { "line": 0, "character": 16 }
+            },
+            "parent": {
+              "range": {
+                "start": { "line": 0, "character": 10 },
+                "end": { "line": 0, "character": 17 }
+              }
+            }
+          },
+          {
+            "range": {
+              "start": { "line": 1, "character": 15 },
+              "end": { "line": 1, "character": 16 }
+            },
+            "parent": {
+              "range": {
+                "start": { "line": 1, "character": 10 },
+                "end": { "line": 1, "character": 17 }
+              }
+            }
+          }
+        ]
+        """
+
+        XCTAssertTrue(vc.applySelectionRangeResultJSONToActiveTab(resultJSON))
+        let selections = try editorView.editor.selections()
+        XCTAssertEqual(
+            selections.ranges,
+            [
+                EcuSelectionRange(start: 10, end: 17),
+                EcuSelectionRange(start: 28, end: 35),
+            ]
+        )
+        XCTAssertEqual(selections.primaryIndex, 1)
+    }
+
     func testExecuteCommandUsesRegisteredCommandIDs() throws {
         let delegate = AttoAppDelegate(keyBindings: [:])
         let tempDir = FileManager.default.temporaryDirectory
