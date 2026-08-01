@@ -55,6 +55,31 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.fix_all"))
     }
 
+    func testCommandRegistryCarriesMetadataAndAvailability() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let commands = delegate._defaultCommandsForTesting()
+
+        let duplicate = try XCTUnwrap(commands.first { $0.id == "editor.duplicate_lines" })
+        XCTAssertEqual(duplicate.group, "Edit")
+        XCTAssertTrue(duplicate.requiresEditor)
+        XCTAssertFalse(duplicate.isEnabled)
+
+        let openFile = try XCTUnwrap(commands.first { $0.id == "file.open_file" })
+        XCTAssertEqual(openFile.group, "File")
+        XCTAssertFalse(openFile.requiresEditor)
+        XCTAssertTrue(openFile.isEnabled)
+    }
+
+    func testEditorCommandsAreDisabledWithoutActiveEditor() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let menu = AttoMainMenuBuilder.build(appDelegate: delegate)
+        let item = try XCTUnwrap(findMenuItem(commandID: "editor.duplicate_lines", in: menu))
+
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "editor.duplicate_lines"))
+        XCTAssertFalse(delegate.validateMenuItem(item))
+        XCTAssertFalse(delegate.executeCommand(id: "editor.duplicate_lines"))
+    }
+
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -179,8 +204,24 @@ final class AttoEditorCommandTests: XCTestCase {
 
     func testExecuteCommandUsesRegisteredCommandIDs() throws {
         let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("a.txt")
+        try "a\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "editor.duplicate_lines"))
         XCTAssertTrue(delegate.executeCommand(id: "editor.duplicate_lines"))
         XCTAssertFalse(delegate.executeCommand(id: "missing.command"))
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        XCTAssertEqual(try editorView.editor.text(), "a\na\n")
     }
 
     func testActiveEditorCommandJSONMutatesTextAndDirtyState() throws {

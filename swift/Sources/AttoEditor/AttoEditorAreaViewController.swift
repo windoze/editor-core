@@ -49,6 +49,14 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private var isRestoringSession: Bool = false
 
+    var hasActiveEditorForCommands: Bool {
+        activeTab != nil
+    }
+
+    var hasMultiplePanesForCommands: Bool {
+        (activeTab?.panes.count ?? 0) > 1
+    }
+
     private struct HoverRequestContext {
         let tabID: UUID
         let info: EditorCoreSkiaHoverInfo

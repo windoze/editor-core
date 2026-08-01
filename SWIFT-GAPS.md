@@ -113,6 +113,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 32 已完成：AttoEditor preferences 新增 `wrapMode` 持久化设置和 Word Wrap popup；新建 editor chrome 和已打开 panes 会从 `AttoPreferences.effectiveWrapMode` 应用 `EditorUI.setWrapMode(_:)`，并支持 `ATTO_EDITOR_WRAP_MODE` / `EDITOR_CORE_APPKIT_WRAP_MODE` 环境变量覆盖默认值。
 - 2026-08-01 阶段 33 已完成：AttoEditor preferences 新增 `wrapIndent` 持久化设置和 Wrap Indent popup/fixed-cells 输入；新建 editor chrome 和已打开 panes 会从 `AttoPreferences.effectiveWrapIndent` 应用 `EditorUI.setWrapIndent(_:)`，并支持 `ATTO_EDITOR_WRAP_INDENT` / `EDITOR_CORE_APPKIT_WRAP_INDENT` 环境变量覆盖默认值。
 - 2026-08-01 阶段 34 已完成：AttoEditor 新增基础语言配置表，按 syntax language id 或文件扩展名把 `EcuIndentationConfig` 应用到新打开 editor、手动语言切换和 split clone；toggle comment 也改为消费同一语言配置入口，避免 comment token 与 indentation language 推断分叉。
+- 2026-08-01 阶段 35 已完成：AttoEditor command registry 新增基础 group / requiresEditor / isEnabled 元数据；菜单 validation、command palette disabled state 和 `executeCommand(id:)` 会共用同一套 command availability 规则，编辑器命令在没有 active editor 时不再静默 no-op。
 
 ## 分层结论
 
@@ -156,10 +157,10 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | `ReplaceCoalescingUndo` / `ReplaceCoalescingUndoWithSelection` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `replaceCoalescingUndo` / `replaceCoalescingUndoWithSelection`；IME/marked text 路径内部也使用相关语义 | headless FFI 覆盖仍不一致。 |
 | `ApplySnippet` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `applySnippet`；Tab/Backtab 可在 snippet active 时切 placeholder；completion popup 可应用 snippet item | headless FFI 覆盖仍不一致。 |
 | `SnippetNextPlaceholder` / `SnippetPrevPlaceholder` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `snippetNextPlaceholder` / `snippetPrevPlaceholder`，`insertTab` / `insertBacktab` 也内部支持；AttoEditor command palette 和菜单有 `editor.snippet_next_placeholder` / `editor.snippet_prev_placeholder` | App 显式 command 已补齐；headless FFI 覆盖仍不一致。 |
-| duplicate lines | 有 | 有 | Swift 有 typed `duplicateLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.duplicate_lines` | P0 接线完成；仍缺启用/禁用状态模型。 |
-| delete lines | 有 | 有 | Swift 有 typed `deleteLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.delete_lines` | P0 接线完成；仍缺启用/禁用状态模型。 |
+| duplicate lines | 有 | 有 | Swift 有 typed `duplicateLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.duplicate_lines` | P0 接线和基础启用/禁用状态模型已补齐。 |
+| delete lines | 有 | 有 | Swift 有 typed `deleteLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.delete_lines` | P0 接线和基础启用/禁用状态模型已补齐。 |
 | move lines up/down | 有 | 有 | Swift 有 typed `moveLinesUp()` / `moveLinesDown()`；AttoEditor command palette、菜单有 `editor.move_lines_up/down` | P0 菜单接线完成；默认 keymap 仍未给 arrow-key 形式建模。 |
-| join lines | 有 | 有 | Swift 有 typed `joinLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.join_lines` | P0 接线完成；仍缺启用/禁用状态模型。 |
+| join lines | 有 | 有 | Swift 有 typed `joinLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.join_lines` | P0 接线和基础启用/禁用状态模型已补齐。 |
 | split line | 有 | 有 | Swift 有 typed `splitLine()`；AttoEditor command palette 和菜单有 `editor.split_line` | P0 菜单接线完成；可配置 keymap 可覆盖。 |
 | toggle comment | 有 | 有 | Swift 有 typed `toggleComment(_:)`；AttoEditor command palette、菜单和 keymap 有 `editor.toggle_line_comment` 并按文件类型选择基础 line token | 仍缺完整语言 comment config 桥接。 |
 | general `ApplyTextEdits` | 有 | 有 | Swift 有 typed `applyTextEdits(_:)`；Rust UI 也有 LSP text edit apply helper；completion popup 可应用 textEdit/additionalTextEdits | LSP code action、rename 等仍需要产品化接线。 |
@@ -345,7 +346,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 主要缺口：
 
-- command registry 仍较轻量，还没有命令启用/禁用状态、参数模型和分组元数据。
+- command registry 已有基础命令启用/禁用状态和分组元数据；仍缺更完整的参数模型、冲突解析和面向插件/宏的 command schema。
 - command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令；LSP location、symbols quick panels、completion popup、signature help、rename 和 code action 主路径已接入，但更深层 LSP/项目级命令仍不完整。
 - P0 菜单、command palette、keymap 和测试已开始统一使用 command id；更深层的命令上下文、参数化命令和冲突解析仍缺。
 - 一些 core/LSP 命令仍没有 App 命令入口。
@@ -472,6 +473,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor preferences 已接入 wrap mode 开关，并应用到新建和已打开 editor。
 - 已完成：AttoEditor preferences 已接入 wrap indent 设置，并应用到新建和已打开 editor。
 - 已完成：AttoEditor 会按语言/扩展名应用基础 indentation config。
+- 已完成：AttoEditor command registry 已接入基础 group/requiresEditor/isEnabled 元数据，菜单、palette 和 `executeCommand(id:)` 共用同一启用状态。
 - 已完成：AttoEditor command palette 为一批 Sublime 基础编辑命令建立稳定 command id。
 - 已完成：为高频命令补 typed Swift convenience API。
 - 已完成：把 App command id 统一接入主菜单和初步用户可配置 keymap。

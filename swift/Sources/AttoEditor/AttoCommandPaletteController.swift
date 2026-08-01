@@ -4,17 +4,39 @@ import Foundation
 struct AttoCommandPaletteCommand {
     let id: String
     let title: String
+    let group: String
+    let isEnabled: Bool
+    let requiresEditor: Bool
     let run: () -> Void
 
-    init(id: String, title: String, run: @escaping () -> Void) {
+    init(
+        id: String,
+        title: String,
+        group: String = "General",
+        isEnabled: Bool = true,
+        requiresEditor: Bool = false,
+        run: @escaping () -> Void
+    ) {
         self.id = id
         self.title = title
+        self.group = group
+        self.isEnabled = isEnabled
+        self.requiresEditor = requiresEditor
         self.run = run
     }
 
-    init(title: String, run: @escaping () -> Void) {
+    init(
+        title: String,
+        group: String = "General",
+        isEnabled: Bool = true,
+        requiresEditor: Bool = false,
+        run: @escaping () -> Void
+    ) {
         self.id = title
         self.title = title
+        self.group = group
+        self.isEnabled = isEnabled
+        self.requiresEditor = requiresEditor
         self.run = run
     }
 }
@@ -193,7 +215,7 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
 
         let label = cell.textField ?? NSTextField(labelWithString: "")
         label.font = NSFont.systemFont(ofSize: 13)
-        label.textColor = NSColor(attoHex: 0xD4D4D4)
+        label.textColor = cmd.isEnabled ? NSColor(attoHex: 0xD4D4D4) : NSColor(attoHex: 0x777777)
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
 
@@ -219,6 +241,10 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         let row = tableView.selectedRow
         guard row >= 0, row < filteredCommands.count else { return }
         let cmd = filteredCommands[row]
+        guard cmd.isEnabled else {
+            NSSound.beep()
+            return
+        }
         hide()
         cmd.run()
     }

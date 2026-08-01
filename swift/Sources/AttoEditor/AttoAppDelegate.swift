@@ -5,7 +5,7 @@ import EditorCoreUIFFI
 import Foundation
 
 @MainActor
-final class AttoAppDelegate: NSObject, NSApplicationDelegate {
+final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var commandPaletteController: AttoCommandPaletteController?
     private var quickOpenController: AttoCommandPaletteController?
     private var preferencesWindowController: AttoPreferencesWindowController?
@@ -34,6 +34,27 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         let id: String
         let title: String
         let commandJSON: String
+    }
+
+    private enum CommandAvailabilityRequirement {
+        case none
+        case activeWindow
+        case activeEditor
+        case multiplePanes
+
+        var requiresEditor: Bool {
+            switch self {
+            case .activeEditor, .multiplePanes:
+                return true
+            case .none, .activeWindow:
+                return false
+            }
+        }
+    }
+
+    private struct CommandMetadata {
+        let group: String
+        let requirement: CommandAvailabilityRequirement
     }
 
     private static let staticEditorJSONCommands: [StaticEditorJSONCommand] = [
@@ -278,6 +299,11 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         executeCommand(id: commandID)
     }
 
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard let commandID = menuItem.representedObject as? String else { return true }
+        return commandIsEnabled(commandID: commandID)
+    }
+
     // MARK: - Command palette integration
 
     private func showCommandPalette() {
@@ -409,7 +435,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         ]
 
         commands.append(contentsOf: editorCommandPaletteCommands())
-        return commands
+        return commands.map(commandWithCurrentContext(_:))
     }
 
     func _defaultCommandsForTesting() -> [AttoCommandPaletteCommand] {
@@ -420,11 +446,27 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         keyBinding(forCommandID: commandID)
     }
 
+    func _commandIsEnabledForTesting(commandID: String) -> Bool {
+        commandIsEnabled(commandID: commandID)
+    }
+
+    func _createWindowForTesting(workspaceRootURL: URL) -> AttoWindowContext {
+        createWindow(
+            workspaceRootURL: workspaceRootURL,
+            contentSize: AttoWindowSizing.preferredContentSize,
+            centerOnShow: false
+        )
+    }
+
     @discardableResult
     func executeCommand(id commandID: String) -> Bool {
         guard let command = defaultCommands().first(where: { $0.id == commandID }) else {
             NSSound.beep()
             NSLog("AttoEditor: unknown command id %@", commandID)
+            return false
+        }
+        guard command.isEnabled else {
+            NSSound.beep()
             return false
         }
         command.run()
@@ -458,6 +500,84 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         ])
 
         return commands
+    }
+
+    private func commandWithCurrentContext(_ command: AttoCommandPaletteCommand) -> AttoCommandPaletteCommand {
+        let metadata = commandMetadata(commandID: command.id, title: command.title)
+        return AttoCommandPaletteCommand(
+            id: command.id,
+            title: command.title,
+            group: metadata.group,
+            isEnabled: commandIsEnabled(requirement: metadata.requirement),
+            requiresEditor: metadata.requirement.requiresEditor,
+            run: command.run
+        )
+    }
+
+    private func commandIsEnabled(commandID: String) -> Bool {
+        commandIsEnabled(requirement: commandMetadata(commandID: commandID, title: commandID).requirement)
+    }
+
+    private func commandIsEnabled(requirement: CommandAvailabilityRequirement) -> Bool {
+        switch requirement {
+        case .none:
+            return true
+        case .activeWindow:
+            return activeWindow() != nil
+        case .activeEditor:
+            return activeWindow()?.editorAreaController.hasActiveEditorForCommands == true
+        case .multiplePanes:
+            return activeWindow()?.editorAreaController.hasMultiplePanesForCommands == true
+        }
+    }
+
+    private func commandMetadata(commandID: String, title: String) -> CommandMetadata {
+        let group: String = {
+            if let prefix = title.split(separator: ":", maxSplits: 1).first,
+               prefix.isEmpty == false,
+               prefix.count < title.count
+            {
+                return String(prefix)
+            }
+
+            if commandID.hasPrefix("file.") { return "File" }
+            if commandID.hasPrefix("editor.") { return "Edit" }
+            if commandID.hasPrefix("view.") { return "View" }
+            if commandID.hasPrefix("go.") { return "Go" }
+            if commandID.hasPrefix("search.") { return "Search" }
+            if commandID.hasPrefix("lsp.") { return "LSP" }
+            if commandID.hasPrefix("workbench.") { return "AttoEditor" }
+            return "General"
+        }()
+
+        let requirement: CommandAvailabilityRequirement = {
+            switch commandID {
+            case "file.open_folder", "file.open_file", "file.new", "workbench.command_palette", "workbench.preferences":
+                return .none
+            case "go.file", "search.find_in_files", "view.toggle_sidebar":
+                return .activeWindow
+            case "view.focus_next_pane", "view.focus_previous_pane", "view.close_pane":
+                return .multiplePanes
+            default:
+                if commandID == "file.save" || commandID == "file.close_tab" {
+                    return .activeEditor
+                }
+                if commandID.hasPrefix("editor.")
+                    || commandID.hasPrefix("lsp.")
+                    || commandID.hasPrefix("view.wrap.")
+                    || commandID == "view.toggle_minimap"
+                    || commandID == "view.split_right"
+                    || commandID == "go.back"
+                    || commandID == "go.forward"
+                    || commandID == "go.matching_bracket"
+                {
+                    return .activeEditor
+                }
+                return .none
+            }
+        }()
+
+        return CommandMetadata(group: group, requirement: requirement)
     }
 
     // MARK: - Preferences
