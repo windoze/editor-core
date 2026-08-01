@@ -122,6 +122,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 41 已完成：AttoEditor 新增 `lsp.problems` 命令、Go 菜单入口和 Problems quick panel，直接消费 active derived-state store 的 typed diagnostics；无 panel window 时可跳转到第一个 diagnostic，测试覆盖命令注册、菜单入口和 diagnostic range 导航。
 - 2026-08-01 阶段 42 已完成：AttoEditor code action diagnostics context 主路径改为消费 active derived-state store 的 typed `EcuDiagnosticsSnapshot`，`AttoLspCodeActionContext` 新增 typed diagnostics 输入并保留旧 JSON 兼容入口，减少 App 层手写 diagnostics JSON 解析。
 - 2026-08-01 阶段 43 已完成：AttoEditor document symbols quick panel 在 LSP result 写入 core outline 后，优先从 active derived-state store 的 typed `EcuDocumentSymbolsSnapshot` 构建展示和导航项；raw result JSON parser 只作为兜底，测试覆盖 typed snapshot、嵌套 depth、kind label 和 UTF-16 column 转换。
+- 2026-08-01 阶段 44 已完成：AttoEditor `lsp.workspace_symbols` App 命令改为先显示查询输入框，再发起 workspace/symbol 请求；原 `showWorkspaceSymbolsInActiveTab(query:)` 保留给程序化调用和测试，空 active editor 时不会弹框。
 
 ## 分层结论
 
@@ -233,7 +234,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - code action 主路径已有 App quick panel、resolve、typed diagnostics context、kind/filter、当前文档 edit 应用、跨文件 WorkspaceEdit 摘要预览和 command 执行；仍缺跨文件真正应用、执行结果/错误展示和 typed result model。
 - code lens resolve 和 workspace command execution 的 Swift UI binding 已有；仍缺 App 层 code lens action UI、执行结果/错误展示和 typed model。
 - outline / document symbols 已有 quick panel 主路径，document symbols 展示已消费 typed derived-state snapshot；仍缺持久 Outline panel。
-- workspace symbols 已有 quick panel 主路径，但还缺增量查询/输入面板和完整结果模型。
+- workspace symbols 已有查询输入框和 quick panel 主路径，但还缺增量查询、持久结果面板和完整结果模型。
 - on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；仍缺错误展示和 typed result model。
 - semantic tokens refresh / delta 策略。
 - folding ranges binding 已覆盖 request/take/apply 到 fold UI state；仍缺 App 层 refresh/error UI、折叠范围可视化和 typed model。

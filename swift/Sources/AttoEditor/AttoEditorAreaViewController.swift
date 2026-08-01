@@ -2165,6 +2165,32 @@ final class AttoEditorAreaViewController: NSViewController {
         requestLspSymbols(kind: .workspace(query: query))
     }
 
+    @discardableResult
+    func promptWorkspaceSymbolsInActiveTab(initialQuery: String = "") -> Bool {
+        guard activeTab != nil else {
+            NSSound.beep()
+            return false
+        }
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.stringValue = initialQuery
+        field.placeholderString = "Symbol query"
+        field.selectText(nil)
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Workspace Symbols"
+        alert.informativeText = "Enter a symbol query for the workspace."
+        alert.addButton(withTitle: "Search")
+        alert.addButton(withTitle: "Cancel")
+        alert.accessoryView = field
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return false }
+
+        return showWorkspaceSymbolsInActiveTab(query: field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
     private func requestLspSymbols(kind: LspSymbolRequestKind) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()

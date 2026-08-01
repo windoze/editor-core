@@ -81,6 +81,13 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(delegate.executeCommand(id: "editor.duplicate_lines"))
     }
 
+    func testWorkspaceSymbolsPromptRequiresActiveEditor() throws {
+        let vc = makeEditorArea(workspaceRootURL: FileManager.default.temporaryDirectory)
+        _ = vc.view
+
+        XCTAssertFalse(vc.promptWorkspaceSymbolsInActiveTab(initialQuery: "app"))
+    }
+
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

@@ -427,7 +427,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                 self?.activeWindow()?.editorAreaController.showDocumentSymbolsInActiveTab()
             },
             .init(id: "lsp.workspace_symbols", title: "LSP: Workspace Symbols") { [weak self] in
-                self?.activeWindow()?.editorAreaController.showWorkspaceSymbolsInActiveTab()
+                self?.activeWindow()?.editorAreaController.promptWorkspaceSymbolsInActiveTab()
             },
             .init(id: "lsp.completion", title: "LSP: Completion") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showCompletionsInActiveTab()
