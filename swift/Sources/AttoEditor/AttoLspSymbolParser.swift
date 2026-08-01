@@ -1,3 +1,4 @@
+import EditorCoreUIFFI
 import Foundation
 
 enum AttoLspSymbolParser {
@@ -17,6 +18,18 @@ enum AttoLspSymbolParser {
         var out: [Symbol] = []
         for item in arr {
             appendDocumentSymbol(item, documentURI: documentURI, depth: 0, into: &out)
+        }
+        return out
+    }
+
+    static func documentSymbols(
+        snapshot: EcuDocumentSymbolsSnapshot,
+        documentURI: String,
+        documentText: String
+    ) -> [Symbol] {
+        var out: [Symbol] = []
+        for symbol in snapshot.symbols {
+            appendDocumentSymbol(symbol, documentURI: documentURI, documentText: documentText, depth: 0, into: &out)
         }
         return out
     }
@@ -80,6 +93,32 @@ enum AttoLspSymbolParser {
         }
     }
 
+    private static func appendDocumentSymbol(
+        _ symbol: EcuDocumentSymbol,
+        documentURI: String,
+        documentText: String,
+        depth: Int,
+        into out: inout [Symbol]
+    ) {
+        let position = lspPosition(in: documentText, charOffset: symbol.selectionRange.start)
+        out.append(Symbol(
+            name: symbol.name,
+            detail: nonEmptyString(symbol.detail),
+            kindLabel: kindLabel(symbol.kind),
+            containerName: nil,
+            target: AttoLspDefinitionParser.Target(
+                uri: documentURI,
+                line: position.line,
+                utf16Character: position.character
+            ),
+            depth: depth
+        ))
+
+        for child in symbol.children {
+            appendDocumentSymbol(child, documentURI: documentURI, documentText: documentText, depth: depth + 1, into: &out)
+        }
+    }
+
     private static func parseTarget(fromLocation location: [String: Any]) -> AttoLspDefinitionParser.Target? {
         guard let uri = nonEmptyString(location["uri"]) else { return nil }
         if let range = location["range"] as? [String: Any] {
@@ -122,6 +161,12 @@ enum AttoLspSymbolParser {
         return lspKindLabels[n]
     }
 
+    private static func kindLabel(_ value: EcuJSONValue) -> String? {
+        if let label = stringKindLabel(value) { return label }
+        guard let n = intValue(value) else { return nil }
+        return lspKindLabels[n]
+    }
+
     private static func stringKindLabel(_ any: Any?) -> String? {
         if let s = any as? String {
             return s
@@ -131,6 +176,49 @@ enum AttoLspSymbolParser {
             if let n = intValue(dict["value"]) { return lspKindLabels[n] }
         }
         return nil
+    }
+
+    private static func stringKindLabel(_ value: EcuJSONValue) -> String? {
+        switch value {
+        case .string(let s):
+            return s
+        case .object(let dict):
+            if let kind = dict["kind"], case .string(let s) = kind {
+                return s
+            }
+            if let value = dict["value"], let n = intValue(value) {
+                return lspKindLabels[n]
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    private static func intValue(_ value: EcuJSONValue) -> Int? {
+        switch value {
+        case .number(let n):
+            return Int(n)
+        default:
+            return nil
+        }
+    }
+
+    private static func lspPosition(in text: String, charOffset: UInt32) -> (line: Int, character: Int) {
+        let limit = min(Int(charOffset), text.unicodeScalars.count)
+        var line = 0
+        var utf16Column = 0
+
+        for scalar in text.unicodeScalars.prefix(limit) {
+            if scalar == "\n" {
+                line += 1
+                utf16Column = 0
+            } else {
+                utf16Column += String(scalar).utf16.count
+            }
+        }
+
+        return (line, utf16Column)
     }
 
     private static let lspKindLabels: [Int: String] = [

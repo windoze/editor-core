@@ -2253,10 +2253,21 @@ final class AttoEditorAreaViewController: NSViewController {
         switch kind {
         case .document:
             try? tab.editCore.editor.lspApplyDocumentSymbolsJSON(json)
-            symbols = AttoLspSymbolParser.documentSymbols(
-                fromResultJSON: json,
-                documentURI: tab.fileURL.absoluteString
+            derivedStateStore.refreshActive(editor: tab.editCore.editor)
+            let text = (try? tab.editCore.editor.text()) ?? ""
+            let typedSymbols = AttoLspSymbolParser.documentSymbols(
+                snapshot: derivedStateStore.active.documentSymbols,
+                documentURI: tab.fileURL.absoluteString,
+                documentText: text
             )
+            if typedSymbols.isEmpty {
+                symbols = AttoLspSymbolParser.documentSymbols(
+                    fromResultJSON: json,
+                    documentURI: tab.fileURL.absoluteString
+                )
+            } else {
+                symbols = typedSymbols
+            }
             placeholder = "Filter document symbols..."
 
         case .workspace:

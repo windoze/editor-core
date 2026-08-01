@@ -121,6 +121,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 40 已完成：AttoEditor 新增 active-tab derived-state store，使用 Swift typed snapshots 缓存 diagnostics、decorations、document symbols、folding regions 和 style intervals；status bar 开始消费该 store 显示 Problems 数量，测试可通过同一 store 做结构化断言。
 - 2026-08-01 阶段 41 已完成：AttoEditor 新增 `lsp.problems` 命令、Go 菜单入口和 Problems quick panel，直接消费 active derived-state store 的 typed diagnostics；无 panel window 时可跳转到第一个 diagnostic，测试覆盖命令注册、菜单入口和 diagnostic range 导航。
 - 2026-08-01 阶段 42 已完成：AttoEditor code action diagnostics context 主路径改为消费 active derived-state store 的 typed `EcuDiagnosticsSnapshot`，`AttoLspCodeActionContext` 新增 typed diagnostics 输入并保留旧 JSON 兼容入口，减少 App 层手写 diagnostics JSON 解析。
+- 2026-08-01 阶段 43 已完成：AttoEditor document symbols quick panel 在 LSP result 写入 core outline 后，优先从 active derived-state store 的 typed `EcuDocumentSymbolsSnapshot` 构建展示和导航项；raw result JSON parser 只作为兜底，测试覆盖 typed snapshot、嵌套 depth、kind label 和 UTF-16 column 转换。
 
 ## 分层结论
 
@@ -231,7 +232,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - rename 主路径已有 App 输入 UI、prepareRename range/placeholder 默认名、当前文档 WorkspaceEdit 应用和跨文件 WorkspaceEdit 摘要预览；仍缺跨文件真正应用和 typed result model。
 - code action 主路径已有 App quick panel、resolve、typed diagnostics context、kind/filter、当前文档 edit 应用、跨文件 WorkspaceEdit 摘要预览和 command 执行；仍缺跨文件真正应用、执行结果/错误展示和 typed result model。
 - code lens resolve 和 workspace command execution 的 Swift UI binding 已有；仍缺 App 层 code lens action UI、执行结果/错误展示和 typed model。
-- outline / document symbols 已有 quick panel 主路径，但还缺持久 Outline panel。
+- outline / document symbols 已有 quick panel 主路径，document symbols 展示已消费 typed derived-state snapshot；仍缺持久 Outline panel。
 - workspace symbols 已有 quick panel 主路径，但还缺增量查询/输入面板和完整结果模型。
 - on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；仍缺错误展示和 typed result model。
 - semantic tokens refresh / delta 策略。
@@ -549,7 +550,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | add occurrence | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, default-options command palette/menu/keymap | yes |
 | selection/multicursor | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, common commands in command palette/menu; select line has default keymap | yes |
 | LSP completion | yes | partial helper | yes | yes, raw completion + resolve result | yes, raw completion + resolve result | yes, popup + auto trigger + incremental filter + commit-time resolve/current-doc apply | partial |
-| LSP symbols | yes | partial helper | yes | yes, raw JSON result | yes, raw JSON result | yes, document/workspace symbols quick panels | yes |
+| LSP symbols | yes | partial helper | yes | yes, raw JSON result + typed document symbols snapshot | yes, raw JSON result + typed document symbols snapshot | yes, document symbols quick panel consumes typed snapshot; workspace symbols quick panel remains raw result based | yes |
 | LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, prepareRename seed + input UI + menu/keymap + current-doc apply | partial |
 | LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand | partial, raw result + typed diagnostics context + kind filters + current-doc WorkspaceEdit apply + executeCommand | yes, quick panel/menu/keymap/typed diagnostics context/kind-filter commands/current-doc apply/cross-file summary | partial |
 | LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply + trigger-character auto path | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers | document + selection commands; on-type trigger-character auto path | partial |
