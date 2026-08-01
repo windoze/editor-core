@@ -5213,8 +5213,9 @@ final class AttoEditorAreaViewController: NSViewController {
             documents: documents
         )
 
+        let feedbackEditorView = activeTab?.editCore.editorView ?? initialActiveTab.editCore.editorView
         guard result.applied else {
-            showWorkspaceEditSummaryIfNeeded(result, editorView: initialActiveTab.editCore.editorView)
+            showWorkspaceEditSummaryIfNeeded(result, editorView: feedbackEditorView)
             if result.skippedURIs.isEmpty == false {
                 NSLog(
                     "AttoEditor: WorkspaceEdit was not applied; skipped URIs: %@",
@@ -5233,8 +5234,10 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         updateStatusBar()
-        showWorkspaceEditSummaryIfNeeded(result, editorView: initialActiveTab.editCore.editorView)
-        view.window?.makeFirstResponder(initialActiveTab.editCore.editorView)
+        showWorkspaceEditSummaryIfNeeded(result, editorView: feedbackEditorView)
+        if let activeEditorView = activeTab?.editCore.editorView {
+            view.window?.makeFirstResponder(activeEditorView)
+        }
         return true
     }
 
@@ -5248,6 +5251,10 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func tabForDocumentURI(_ uri: String) -> AttoEditorTab? {
         guard let url = Self.fileURL(fromDocumentURI: uri) else { return nil }
+        return tabForFileURL(url)
+    }
+
+    private func tabForFileURL(_ url: URL) -> AttoEditorTab? {
         return tabs.first { tab in
             tab.fileURL.standardizedFileURL == url.standardizedFileURL
         }
@@ -5296,26 +5303,70 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func applyWorkspaceResourceOperation(_ operation: AttoWorkspaceEditParser.ResourceOperation) -> Bool {
-        guard operation.affectedURIs.allSatisfy({ tabForDocumentURI($0) == nil }) else {
-            return false
-        }
-
         switch operation {
         case .create(let op):
             guard let url = workspaceFileURL(fromDocumentURI: op.uri) else { return false }
+            if let tab = tabForFileURL(url) {
+                if op.ignoreIfExists { return true }
+                guard op.overwrite, tab.isDirty == false else { return false }
+                guard createWorkspaceFile(at: url, overwrite: true, ignoreIfExists: false) else { return false }
+                return replaceOpenTabText(tab, with: "", markSaved: true)
+            }
             return createWorkspaceFile(at: url, overwrite: op.overwrite, ignoreIfExists: op.ignoreIfExists)
+
         case .rename(let op):
             guard let oldURL = workspaceFileURL(fromDocumentURI: op.oldURI),
                   let newURL = workspaceFileURL(fromDocumentURI: op.newURI)
             else { return false }
-            return renameWorkspaceFile(
+
+            if oldURL.standardizedFileURL == newURL.standardizedFileURL {
+                return true
+            }
+
+            let oldTab = tabForFileURL(oldURL)
+            let targetTab = tabForFileURL(newURL)
+            let targetExists = FileManager.default.fileExists(atPath: newURL.path)
+            if targetExists, op.ignoreIfExists {
+                return true
+            }
+
+            if let targetTab, targetTab.id != oldTab?.id {
+                guard op.overwrite, targetTab.isDirty == false else { return false }
+                closeTab(id: targetTab.id)
+            }
+
+            guard renameWorkspaceFile(
                 from: oldURL,
                 to: newURL,
                 overwrite: op.overwrite,
                 ignoreIfExists: op.ignoreIfExists
-            )
+            ) else {
+                return false
+            }
+
+            if let oldTab {
+                oldTab.fileURL = newURL
+                oldTab.isUntitled = false
+                refreshTabAfterWorkspaceResourceOperation(oldTab)
+                return true
+            }
+
+            return true
+
         case .delete(let op):
             guard let url = workspaceFileURL(fromDocumentURI: op.uri) else { return false }
+            if let tab = tabForFileURL(url) {
+                guard tab.isDirty == false else { return false }
+                guard deleteWorkspaceFile(
+                    at: url,
+                    recursive: op.recursive,
+                    ignoreIfNotExists: op.ignoreIfNotExists
+                ) else {
+                    return false
+                }
+                closeTab(id: tab.id)
+                return true
+            }
             return deleteWorkspaceFile(
                 at: url,
                 recursive: op.recursive,
@@ -5398,6 +5449,46 @@ final class AttoEditorAreaViewController: NSViewController {
             NSLog("AttoEditor: failed to delete WorkspaceEdit file %@: %@", url.path, String(describing: error))
             return false
         }
+    }
+
+    private func replaceOpenTabText(_ tab: AttoEditorTab, with text: String, markSaved: Bool) -> Bool {
+        do {
+            let oldText = try tab.editCore.editor.text()
+            let fullRange = UInt32(clamping: oldText.unicodeScalars.count)
+            _ = try tab.editCore.editor.applyTextEdits([
+                EcuTextEdit(start: 0, end: fullRange, text: text),
+            ])
+            if markSaved {
+                try tab.editCore.editor.markSaved()
+                tab.isDirty = false
+                tab.isUntitled = false
+            } else {
+                tab.isDirty = (try? tab.editCore.editor.isModified()) ?? true
+            }
+            refreshTabAfterWorkspaceResourceOperation(tab)
+            return true
+        } catch {
+            NSLog(
+                "AttoEditor: failed to replace open WorkspaceEdit tab %@: %@",
+                tab.fileURL.path,
+                String(describing: error)
+            )
+            return false
+        }
+    }
+
+    private func refreshTabAfterWorkspaceResourceOperation(_ tab: AttoEditorTab) {
+        for pane in tab.panes {
+            pane.layoutSubtreeIfNeeded()
+            pane.editorView.kickProcessingPoll()
+            pane.editorView.needsDisplay = true
+            pane.needsDisplay = true
+            applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
+        }
+        refreshTabBar()
+        updateWindowTitle()
+        updateStatusBar()
+        notifySessionStateChanged()
     }
 
     private static func fileURL(fromDocumentURI uri: String) -> URL? {

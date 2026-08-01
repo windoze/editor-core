@@ -720,6 +720,156 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "active\n")
     }
 
+    func testWorkspaceEditResourceOperationRenamesOpenTabAndAppliesFollowingEdits() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let oldURL = tempDir.appendingPathComponent("old-open.txt")
+        let renamedURL = tempDir.appendingPathComponent("renamed-open.txt")
+        try "old\n".write(to: oldURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: oldURL, mode: .pinned)
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "rename",
+              "oldUri": "\(oldURL.absoluteString)",
+              "newUri": "\(renamedURL.absoluteString)"
+            },
+            {
+              "textDocument": { "uri": "\(renamedURL.absoluteString)", "version": null },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "renamed "
+                }
+              ]
+            }
+          ]
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldURL.path))
+        XCTAssertEqual(try String(contentsOf: renamedURL, encoding: .utf8), "old\n")
+
+        let items = vc.openFileItems()
+        XCTAssertFalse(items.contains { $0.url.standardizedFileURL == oldURL.standardizedFileURL })
+        let renamedItem = try XCTUnwrap(items.first { $0.url.standardizedFileURL == renamedURL.standardizedFileURL })
+        XCTAssertTrue(renamedItem.isDirty)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "renamed old\n")
+    }
+
+    func testWorkspaceEditResourceOperationDeletesOpenCleanTab() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let keepURL = tempDir.appendingPathComponent("keep.txt")
+        let deleteURL = tempDir.appendingPathComponent("delete-open.txt")
+        try "keep\n".write(to: keepURL, atomically: true, encoding: .utf8)
+        try "delete\n".write(to: deleteURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: keepURL, mode: .pinned)
+        vc.openFile(url: deleteURL, mode: .pinned)
+        vc.selectFile(url: keepURL)
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "delete",
+              "uri": "\(deleteURL.absoluteString)"
+            }
+          ]
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: deleteURL.path))
+        XCTAssertFalse(vc.openFileItems().contains { $0.url.standardizedFileURL == deleteURL.standardizedFileURL })
+        XCTAssertTrue(vc.openFileItems().contains { $0.url.standardizedFileURL == keepURL.standardizedFileURL })
+    }
+
+    func testWorkspaceEditResourceOperationOverwritesOpenCleanTabCreate() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let url = tempDir.appendingPathComponent("overwrite-open.txt")
+        try "existing\n".write(to: url, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: url, mode: .pinned)
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "create",
+              "uri": "\(url.absoluteString)",
+              "options": { "overwrite": true }
+            }
+          ]
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "")
+        let item = try XCTUnwrap(vc.openFileItems().first { $0.url.standardizedFileURL == url.standardizedFileURL })
+        XCTAssertFalse(item.isDirty)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "")
+    }
+
+    func testWorkspaceEditResourceOperationSkipsDirtyOpenTabDelete() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("dirty-delete.txt")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "delete",
+              "uri": "\(dirtyURL.absoluteString)"
+            }
+          ]
+        }
+        """
+
+        XCTAssertFalse(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+        let dirtyItem = try XCTUnwrap(vc.openFileItems().first { $0.url.standardizedFileURL == dirtyURL.standardizedFileURL })
+        XCTAssertTrue(dirtyItem.isDirty)
+    }
+
     func testShowProblemsUsesDerivedDiagnosticsAndNavigatesWithoutPanelWindow() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
