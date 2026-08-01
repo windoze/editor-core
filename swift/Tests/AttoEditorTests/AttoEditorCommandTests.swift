@@ -53,6 +53,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.rename"))
         XCTAssertTrue(ids.contains("lsp.code_actions"))
         XCTAssertTrue(ids.contains("lsp.code_lens_actions"))
+        XCTAssertTrue(ids.contains("lsp.refresh_code_lens"))
         XCTAssertTrue(ids.contains("lsp.quick_fix"))
         XCTAssertTrue(ids.contains("lsp.refactor"))
         XCTAssertTrue(ids.contains("lsp.source_actions"))
@@ -127,6 +128,22 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(regions[0].endLine, 1)
         XCTAssertFalse(regions[0].isCollapsed)
         XCTAssertEqual(regions[0].placeholder, "use ...")
+    }
+
+    func testRefreshCodeLensRequiresEnabledLsp() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("lens.txt")
+        try "func demo() {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc.refreshCodeLensInActiveTab(showFeedback: false))
     }
 
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
@@ -268,6 +285,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.rename", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.code_actions", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.code_lens_actions", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_code_lens", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.quick_fix", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refactor", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.source_actions", in: menu))

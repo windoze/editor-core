@@ -193,6 +193,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let item: AttoLspCodeLensParser.Item
     }
 
+    private struct CodeLensRefreshContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
     private struct ExecuteCommandRequestContext {
         let tabID: UUID
         let commandTitle: String
@@ -282,6 +287,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var codeActionResultsController: AttoCommandPaletteController?
     private var codeLensResolveContext: CodeLensResolveContext?
     private var codeLensResolvePollTimer: DispatchSourceTimer?
+    private var codeLensRefreshContext: CodeLensRefreshContext?
+    private var codeLensRefreshPollTimer: DispatchSourceTimer?
     private var codeLensResultsController: AttoCommandPaletteController?
     private var executeCommandContext: ExecuteCommandRequestContext?
     private var executeCommandPollTimer: DispatchSourceTimer?
@@ -4321,6 +4328,57 @@ final class AttoEditorAreaViewController: NSViewController {
     // MARK: - LSP code lens
 
     @discardableResult
+    func refreshCodeLensInActiveTab(showFeedback: Bool = true) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Code lens is unavailable.\nLSP is not enabled for this document.",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelFoldingRangesUI()
+        cancelSelectionRangeUI()
+        cancelLinkedEditingUI()
+        cancelDocumentColorUI()
+
+        do {
+            _ = try tab.editCore.editor.lspRequestCodeLens()
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Code lens refresh failed.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        codeLensRefreshContext = CodeLensRefreshContext(tabID: tab.id, showFeedback: showFeedback)
+        tab.editCore.editorView.kickProcessingPoll()
+        updateStatusBar()
+        startCodeLensRefreshPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
+        return true
+    }
+
+    @discardableResult
     func showCodeLensActionsInActiveTab() -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
@@ -4458,6 +4516,125 @@ final class AttoEditorAreaViewController: NSViewController {
 
         codeLensResolvePollTimer = timer
         timer.resume()
+    }
+
+    private func startCodeLensRefreshPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        codeLensRefreshPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.codeLensRefreshContext, ctx.tabID == tabID else {
+                self.cancelCodeLensUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
+                self.cancelCodeLensUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(text: "Code lens refresh timed out.", in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelCodeLensUI()
+                return
+            }
+
+            do {
+                _ = try tab.editCore.editor.pollProcessing()
+            } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelCodeLensUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(
+                        text: "Code lens refresh failed.\n\(error.localizedDescription)",
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastCodeLensResultJSON()
+            } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelCodeLensUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(
+                        text: "Code lens refresh failed.\n\(error.localizedDescription)",
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+            guard let json else { return }
+
+            let showFeedback = ctx.showFeedback
+            self.cancelCodeLensUI()
+            tab.editCore.layoutSubtreeIfNeeded()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            self.derivedStateStore.refreshActive(editor: tab.editCore.editor)
+            self.updateStatusBar()
+
+            guard showFeedback else { return }
+            if let errorMessage = Self.codeLensResultErrorMessage(json) {
+                self.showWorkspaceEditPopover(
+                    text: "Code lens refresh failed.\n\(errorMessage)",
+                    in: editorView
+                )
+                NSSound.beep()
+                return
+            }
+            let count = Self.codeLensResultCount(json) ?? 0
+            let text: String
+            if count == 0 {
+                text = "No code lens actions are available."
+            } else if count == 1 {
+                text = "Code lens refreshed.\n1 action is available."
+            } else {
+                text = "Code lens refreshed.\n\(count) actions are available."
+            }
+            self.showWorkspaceEditPopover(text: text, in: editorView)
+        }
+
+        codeLensRefreshPollTimer = timer
+        timer.resume()
+    }
+
+    private static func codeLensResultCount(_ json: String) -> Int? {
+        guard let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data, options: [])
+        else {
+            return nil
+        }
+        if root is NSNull {
+            return 0
+        }
+        return (root as? [Any])?.count
+    }
+
+    private static func codeLensResultErrorMessage(_ json: String) -> String? {
+        guard let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+              let error = root["error"] as? [String: Any]
+        else {
+            return nil
+        }
+        if let message = error["message"] as? String, message.isEmpty == false {
+            return message
+        }
+        return "Unknown LSP error."
     }
 
     private func displayTitle(for item: AttoLspCodeLensParser.Item, in tab: AttoEditorTab) -> String {
@@ -5897,6 +6074,10 @@ final class AttoEditorAreaViewController: NSViewController {
         codeLensResolvePollTimer?.cancel()
         codeLensResolvePollTimer = nil
         codeLensResolveContext = nil
+
+        codeLensRefreshPollTimer?.cancel()
+        codeLensRefreshPollTimer = nil
+        codeLensRefreshContext = nil
 
         codeLensResultsController?.hide()
         codeLensResultsController = nil

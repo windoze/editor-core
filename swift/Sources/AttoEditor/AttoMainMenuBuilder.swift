@@ -129,6 +129,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Rename Symbol", commandID: "lsp.rename", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Code Actions", commandID: "lsp.code_actions", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Code Lens Actions", commandID: "lsp.code_lens_actions", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Refresh Code Lens", commandID: "lsp.refresh_code_lens", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Quick Fixes", commandID: "lsp.quick_fix", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Refactor Actions", commandID: "lsp.refactor", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Source Actions", commandID: "lsp.source_actions", appDelegate: appDelegate))

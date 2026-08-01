@@ -422,6 +422,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.code_lens_actions", title: "LSP: Code Lens Actions") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showCodeLensActionsInActiveTab()
             },
+            .init(id: "lsp.refresh_code_lens", title: "LSP: Refresh Code Lens") { [weak self] in
+                self?.activeWindow()?.editorAreaController.refreshCodeLensInActiveTab()
+            },
             .init(id: "lsp.quick_fix", title: "LSP: Quick Fixes") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showQuickFixesInActiveTab()
             },

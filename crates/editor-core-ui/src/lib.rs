@@ -851,6 +851,7 @@ enum LspResultSlot {
     CodeAction,
     CodeActionResolve,
     ExecuteCommand,
+    CodeLens,
     CodeLensResolve,
     DocumentSymbols,
     WorkspaceSymbols,
@@ -886,6 +887,7 @@ impl LspResultSlot {
             "textDocument/codeAction" => Some(Self::CodeAction),
             "codeAction/resolve" => Some(Self::CodeActionResolve),
             "workspace/executeCommand" => Some(Self::ExecuteCommand),
+            "textDocument/codeLens" => Some(Self::CodeLens),
             "codeLens/resolve" => Some(Self::CodeLensResolve),
             "textDocument/documentSymbol" => Some(Self::DocumentSymbols),
             "workspace/symbol" => Some(Self::WorkspaceSymbols),
@@ -908,7 +910,7 @@ impl LspResultSlot {
 }
 
 fn stored_lsp_error_result_json(slot: LspResultSlot, error: LspResponseError) -> Option<String> {
-    if slot != LspResultSlot::ExecuteCommand {
+    if slot != LspResultSlot::ExecuteCommand && slot != LspResultSlot::CodeLens {
         return None;
     }
 
@@ -930,6 +932,9 @@ fn stored_lsp_success_result_json(
 ) -> Option<String> {
     if slot == LspResultSlot::ExecuteCommand {
         return Some(serde_json::json!({ "result": result }).to_string());
+    }
+    if slot == LspResultSlot::CodeLens {
+        return Some(result.to_string());
     }
 
     if result.is_null() {
@@ -3296,6 +3301,19 @@ impl EditorUi {
 
     pub fn lsp_take_last_execute_command_result_json(&mut self) -> Option<String> {
         self.lsp_take_last_result_json(LspResultSlot::ExecuteCommand)
+    }
+
+    pub fn lsp_request_code_lens(&mut self) -> Result<u64, UiError> {
+        let id = self
+            .lsp_request_document_result(LspResultSlot::CodeLens, |lsp| lsp.request_code_lens())?;
+        let mut doc = self.lock_doc();
+        doc.lsp_code_lens_in_flight = true;
+        doc.lsp_aux_refresh_due = None;
+        Ok(id)
+    }
+
+    pub fn lsp_take_last_code_lens_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::CodeLens)
     }
 
     pub fn lsp_request_code_lens_resolve(&mut self, lens_json: &str) -> Result<u64, UiError> {
@@ -6496,6 +6514,9 @@ impl EditorUi {
                     }
 
                     if let Some(error) = resp.error {
+                        if slot == LspResultSlot::CodeLens {
+                            doc.lsp_code_lens_in_flight = false;
+                        }
                         if let Some(json) = stored_lsp_error_result_json(slot, error) {
                             doc.lsp_last_result_json.insert((view, slot), json);
                         } else {
@@ -6522,6 +6543,19 @@ impl EditorUi {
                             let edit = folding_ranges_result_to_processing_edit(&result);
                             applied |= doc.apply_lsp_processing_edits([edit])?;
                         }
+                        LspResultSlot::CodeLens => {
+                            doc.lsp_code_lens_in_flight = false;
+                            let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
+                                Ok(line_index) => {
+                                    lsp_code_lens_to_processing_edit(line_index, &result)
+                                }
+                                Err(_) => {
+                                    doc.lsp_fail("LSP buffer line index unavailable");
+                                    return Ok(false);
+                                }
+                            };
+                            applied |= doc.apply_lsp_processing_edits([edit])?;
+                        }
                         _ => {}
                     }
 
@@ -6530,8 +6564,8 @@ impl EditorUi {
                     } else {
                         doc.lsp_last_result_json.remove(&(view, slot));
                     }
+                    continue;
                 }
-                continue;
             }
 
             match resp.method.as_str() {
@@ -7480,7 +7514,7 @@ mod tests {
     use editor_core_treesitter::TreeSitterUpdateMode;
 
     #[test]
-    fn execute_command_result_slot_stores_success_null_and_error_envelopes() {
+    fn lsp_result_slots_store_special_success_null_and_error_envelopes() {
         let success = stored_lsp_success_result_json(
             LspResultSlot::ExecuteCommand,
             serde_json::json!({ "changed": true }),
@@ -7498,6 +7532,12 @@ mod tests {
         let null_json: serde_json::Value = serde_json::from_str(&null).unwrap();
         assert!(null_json["result"].is_null());
 
+        let code_lens_null =
+            stored_lsp_success_result_json(LspResultSlot::CodeLens, serde_json::Value::Null)
+                .unwrap();
+        let code_lens_null_json: serde_json::Value = serde_json::from_str(&code_lens_null).unwrap();
+        assert!(code_lens_null_json.is_null());
+
         let error = stored_lsp_error_result_json(
             LspResultSlot::ExecuteCommand,
             LspResponseError {
@@ -7514,6 +7554,19 @@ mod tests {
             error_json["error"]["data"],
             serde_json::json!({ "detail": "boom" })
         );
+
+        let code_lens_error = stored_lsp_error_result_json(
+            LspResultSlot::CodeLens,
+            LspResponseError {
+                code: -32603,
+                message: "code lens failed".to_string(),
+                data: None,
+            },
+        )
+        .unwrap();
+        let code_lens_error_json: serde_json::Value =
+            serde_json::from_str(&code_lens_error).unwrap();
+        assert_eq!(code_lens_error_json["error"]["message"], "code lens failed");
 
         assert_eq!(
             stored_lsp_success_result_json(LspResultSlot::Hover, serde_json::json!("hover")),

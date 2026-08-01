@@ -502,6 +502,19 @@ public final class EditorUI {
         }
     }
 
+    public func lspRequestCodeLens() throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_request_code_lens(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_code_lens")
+        return out
+    }
+
+    public func lspTakeLastCodeLensResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_code_lens_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_code_lens_json(handle, has, ptr)
+        }
+    }
+
     public func lspRequestCodeLensResolve(lensJSON: String) throws -> UInt64 {
         try lspRequestJSON(lensJSON, context: "editor_ui_lsp_request_code_lens_resolve") { cstr, out in
             editor_core_ui_ffi_editor_ui_lsp_request_code_lens_resolve(handle, cstr, out)
