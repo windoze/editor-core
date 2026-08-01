@@ -149,6 +149,12 @@ final class AttoEditorAreaViewController: NSViewController {
         let showFeedback: Bool
     }
 
+    private struct LinkedEditingRequestContext {
+        let tabID: UUID
+        let caretOffset: UInt32
+        let showFeedback: Bool
+    }
+
     private struct DocumentColorRequestContext {
         let tabID: UUID
         let showFeedback: Bool
@@ -209,6 +215,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var foldingRangesPollTimer: DispatchSourceTimer?
     private var selectionRangeContext: SelectionRangeRequestContext?
     private var selectionRangePollTimer: DispatchSourceTimer?
+    private var linkedEditingContext: LinkedEditingRequestContext?
+    private var linkedEditingPollTimer: DispatchSourceTimer?
     private var documentColorContext: DocumentColorRequestContext?
     private var documentColorPollTimer: DispatchSourceTimer?
     private var colorPresentationContext: ColorPresentationRequestContext?
@@ -1190,6 +1198,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelCodeActionUI()
         cancelFoldingRangesUI()
         cancelSelectionRangeUI()
+        cancelLinkedEditingUI()
 
         do {
             _ = try tab.editCore.editor.lspRequestSelectionRange(positionsJSON: positionsJSON)
@@ -1316,6 +1325,190 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     @discardableResult
+    func startLinkedEditingInActiveTab(showFeedback: Bool = true) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Linked editing is unavailable.\nLSP is not enabled for this document.",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        let caretOffset: UInt32
+        let position: (line: UInt32, column: UInt32)
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            caretOffset = offsets.end
+            position = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Linked editing position could not be computed.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelFoldingRangesUI()
+        cancelSelectionRangeUI()
+        cancelLinkedEditingUI()
+        cancelDocumentColorUI()
+
+        do {
+            _ = try tab.editCore.editor.lspRequestLinkedEditingRange(
+                logicalLine: position.line,
+                logicalColumn: position.column
+            )
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Linked editing request failed.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        linkedEditingContext = LinkedEditingRequestContext(
+            tabID: tab.id,
+            caretOffset: caretOffset,
+            showFeedback: showFeedback
+        )
+        startLinkedEditingPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
+        return true
+    }
+
+    @discardableResult
+    func applyLinkedEditingRangeResultJSONToActiveTab(
+        _ json: String,
+        caretOffset: UInt32? = nil,
+        showFeedback: Bool = false
+    ) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let text = try tab.editCore.editor.text()
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let effectiveCaretOffset = caretOffset ?? offsets.end
+            guard let result = AttoLspLinkedEditingParser.result(
+                fromLinkedEditingRangeResultJSON: json,
+                documentText: text
+            ), result.ranges.count > 1 else {
+                if showFeedback {
+                    showWorkspaceEditPopover(
+                        text: "No linked editing ranges are available here.",
+                        in: tab.editCore.editorView
+                    )
+                }
+                NSSound.beep()
+                return false
+            }
+
+            try tab.editCore.editor.setSelections(
+                result.ranges,
+                primaryIndex: result.primaryIndex(containing: effectiveCaretOffset)
+            )
+            tab.editCore.layoutSubtreeIfNeeded()
+            try? tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            updateStatusBar()
+            view.window?.makeFirstResponder(tab.editCore.editorView)
+            return true
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Linked editing ranges could not be applied.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private func startLinkedEditingPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        linkedEditingPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.linkedEditingContext, ctx.tabID == tabID else {
+                self.cancelLinkedEditingUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
+                self.cancelLinkedEditingUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(text: "Linked editing request timed out.", in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelLinkedEditingUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastLinkedEditingRangeResultJSON()
+            } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelLinkedEditingUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(
+                        text: "Linked editing failed.\n\(error.localizedDescription)",
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+            guard let json else { return }
+
+            let caretOffset = ctx.caretOffset
+            let showFeedback = ctx.showFeedback
+            self.cancelLinkedEditingUI()
+            _ = self.applyLinkedEditingRangeResultJSONToActiveTab(
+                json,
+                caretOffset: caretOffset,
+                showFeedback: showFeedback
+            )
+        }
+
+        linkedEditingPollTimer = timer
+        timer.resume()
+    }
+
+    @discardableResult
     func showDocumentColorsInActiveTab(showFeedback: Bool = true) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
@@ -1342,6 +1535,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelCodeActionUI()
         cancelFoldingRangesUI()
         cancelSelectionRangeUI()
+        cancelLinkedEditingUI()
         cancelDocumentColorUI()
 
         do {
@@ -4844,6 +5038,12 @@ final class AttoEditorAreaViewController: NSViewController {
         selectionRangePollTimer?.cancel()
         selectionRangePollTimer = nil
         selectionRangeContext = nil
+    }
+
+    private func cancelLinkedEditingUI() {
+        linkedEditingPollTimer?.cancel()
+        linkedEditingPollTimer = nil
+        linkedEditingContext = nil
     }
 
     private func cancelDocumentColorUI() {

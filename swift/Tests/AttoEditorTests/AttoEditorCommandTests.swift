@@ -57,6 +57,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.document_colors"))
         XCTAssertTrue(ids.contains("lsp.refresh_folding_ranges"))
         XCTAssertTrue(ids.contains("lsp.selection_range"))
+        XCTAssertTrue(ids.contains("lsp.linked_editing"))
     }
 
     func testCommandRegistryCarriesMetadataAndAvailability() throws {
@@ -236,6 +237,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "editor.select_line", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.expand_selection", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.selection_range", in: selectionMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.linked_editing", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.add_cursor_above", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.add_cursor_below", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.add_next_occurrence", in: selectionMenu))
@@ -262,6 +264,51 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.fix_all", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.problems", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
+    }
+
+    func testApplyLinkedEditingRangeResultCreatesMulticursorSelections() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("linked.txt")
+        try "foo + foo\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 7, end: 7)], primaryIndex: 0)
+
+        let json = """
+        {
+          "ranges": [
+            {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 3 }
+            },
+            {
+              "start": { "line": 0, "character": 6 },
+              "end": { "line": 0, "character": 9 }
+            }
+          ],
+          "wordPattern": "[A-Za-z]+"
+        }
+        """
+
+        XCTAssertTrue(vc.applyLinkedEditingRangeResultJSONToActiveTab(json, caretOffset: 7))
+
+        let selections = try editorView.editor.selections()
+        XCTAssertEqual(
+            selections.ranges,
+            [
+                EcuSelectionRange(start: 0, end: 3),
+                EcuSelectionRange(start: 6, end: 9),
+            ]
+        )
+        XCTAssertEqual(selections.primaryIndex, 1)
     }
 
     func testApplyColorPresentationMutatesActiveDocument() throws {

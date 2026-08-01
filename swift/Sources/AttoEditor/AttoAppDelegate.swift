@@ -434,6 +434,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.selection_range", title: "LSP: Expand Selection") { [weak self] in
                 self?.activeWindow()?.editorAreaController.expandSelectionWithLspInActiveTab()
             },
+            .init(id: "lsp.linked_editing", title: "LSP: Linked Editing") { [weak self] in
+                self?.activeWindow()?.editorAreaController.startLinkedEditingInActiveTab()
+            },
             .init(id: "lsp.document_symbols", title: "LSP: Document Symbols") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showDocumentSymbolsInActiveTab()
             },
