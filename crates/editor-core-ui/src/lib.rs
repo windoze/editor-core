@@ -85,6 +85,19 @@ fn lsp_signature_help_capability_json(capabilities: &serde_json::Value) -> serde
     })
 }
 
+fn lsp_completion_capability_json(capabilities: &serde_json::Value) -> serde_json::Value {
+    let provider = capabilities.get("completionProvider");
+    let trigger_characters = lsp_string_array(provider.and_then(|p| p.get("triggerCharacters")));
+    let all_commit_characters =
+        lsp_string_array(provider.and_then(|p| p.get("allCommitCharacters")));
+
+    serde_json::json!({
+        "supported": provider.is_some(),
+        "trigger_characters": trigger_characters,
+        "all_commit_characters": all_commit_characters,
+    })
+}
+
 fn lsp_string_array(value: Option<&serde_json::Value>) -> Vec<String> {
     value
         .and_then(|v| v.as_array())
@@ -2813,6 +2826,7 @@ impl EditorUi {
                             "semantic_tokens": s.capabilities.semantic_tokens,
                             "semantic_tokens_delta": s.capabilities.semantic_tokens_delta,
                             "completion_item_resolve": s.capabilities.completion_item_resolve,
+                            "completion": lsp_completion_capability_json(session.server_capabilities()),
                             "folding_ranges": s.capabilities.folding_ranges,
                             "on_type_formatting": s.capabilities.on_type_formatting,
                             "signature_help": lsp_signature_help_capability_json(session.server_capabilities()),
@@ -7521,6 +7535,44 @@ mod tests {
         assert_eq!(
             status["capabilities"]["signature_help"]["retrigger_characters"],
             serde_json::json!([")"])
+        );
+
+        ui.lsp_disable();
+        let _ = std::fs::remove_file(capture_path);
+    }
+
+    #[test]
+    fn lsp_status_reports_completion_trigger_characters() {
+        let capture_path = unique_temp_path("completion-status");
+        let capabilities = serde_json::json!({
+            "completionProvider": {
+                "triggerCharacters": [".", "/"],
+                "allCommitCharacters": [";"]
+            }
+        });
+        let script = lsp_capture_server_script(&capture_path, capabilities);
+        let args = vec!["-c".to_string(), script];
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root_uri = format!("file:///tmp/editor-core-ui-completion-{stamp}");
+        let doc_uri = format!("{root_uri}/main.rs");
+
+        let mut ui = EditorUi::new("fn main() {}", 80);
+        ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+            .unwrap();
+
+        let status: serde_json::Value =
+            serde_json::from_str(ui.lsp_status_json().as_str()).unwrap();
+        assert_eq!(status["capabilities"]["completion"]["supported"], true);
+        assert_eq!(
+            status["capabilities"]["completion"]["trigger_characters"],
+            serde_json::json!([".", "/"])
+        );
+        assert_eq!(
+            status["capabilities"]["completion"]["all_commit_characters"],
+            serde_json::json!([";"])
         );
 
         ui.lsp_disable();

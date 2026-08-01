@@ -87,6 +87,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let tabID: UUID
         let fallbackStart: UInt32
         let fallbackEnd: UInt32
+        let beepOnFailure: Bool
     }
 
     private struct CompletionResolveContext {
@@ -2270,12 +2271,17 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func showCompletionsInActiveTab() -> Bool {
+        showCompletionsInActiveTab(beepOnFailure: true)
+    }
+
+    @discardableResult
+    private func showCompletionsInActiveTab(beepOnFailure: Bool) -> Bool {
         guard let tab = activeTab else {
-            NSSound.beep()
+            if beepOnFailure { NSSound.beep() }
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
-            NSSound.beep()
+            if beepOnFailure { NSSound.beep() }
             return false
         }
 
@@ -2307,12 +2313,13 @@ final class AttoEditorAreaViewController: NSViewController {
             completionContext = CompletionRequestContext(
                 tabID: tab.id,
                 fallbackStart: fallback.start,
-                fallbackEnd: fallback.end
+                fallbackEnd: fallback.end,
+                beepOnFailure: beepOnFailure
             )
             startCompletionPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
             return true
         } catch {
-            NSSound.beep()
+            if beepOnFailure { NSSound.beep() }
             return false
         }
     }
@@ -2368,7 +2375,7 @@ final class AttoEditorAreaViewController: NSViewController {
     ) {
         guard items.isEmpty == false else {
             cancelCompletionUI()
-            NSSound.beep()
+            if context.beepOnFailure { NSSound.beep() }
             return
         }
         guard editorView.window != nil else { return }
@@ -3076,14 +3083,21 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let tab = activeTab, tab.id == tabID else { return }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else { return }
         guard let status = try? tab.editCore.editor.lspStatusJSON() else { return }
-        guard AttoLspSignatureHelpTrigger.shouldTrigger(
+        let shouldShowSignatureHelp = AttoLspSignatureHelpTrigger.shouldTrigger(
             committedText: text,
             lspStatusJSON: status
-        ) else {
-            return
+        )
+
+        if AttoLspCompletionTrigger.shouldTrigger(
+            committedText: text,
+            lspStatusJSON: status
+        ), shouldShowSignatureHelp == false {
+            _ = showCompletionsInActiveTab(beepOnFailure: false)
         }
 
-        _ = showSignatureHelpInActiveTab(beepOnFailure: false, showEmptyResults: false)
+        if shouldShowSignatureHelp {
+            _ = showSignatureHelpInActiveTab(beepOnFailure: false, showEmptyResults: false)
+        }
     }
 
     @discardableResult
