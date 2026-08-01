@@ -29,8 +29,14 @@ final class AttoWorkspaceEditParserTests: XCTestCase {
                 }
               ]
             },
-            { "kind": "create", "uri": "file:///project/new.swift" },
-            { "kind": "rename", "oldUri": "file:///project/old.swift", "newUri": "file:///project/renamed.swift" }
+            { "kind": "create", "uri": "file:///project/new.swift", "options": { "overwrite": true } },
+            {
+              "kind": "rename",
+              "oldUri": "file:///project/old.swift",
+              "newUri": "file:///project/renamed.swift",
+              "options": { "ignoreIfExists": true }
+            },
+            { "kind": "delete", "uri": "file:///project/remove.swift", "options": { "recursive": true } }
           ]
         }
         """
@@ -41,11 +47,38 @@ final class AttoWorkspaceEditParserTests: XCTestCase {
         XCTAssertEqual(parsed.documents[0].edits.count, 1)
         XCTAssertEqual(parsed.documents[1].edits.count, 1)
         XCTAssertEqual(
+            parsed.resourceOperations,
+            [
+                .create(.init(uri: "file:///project/new.swift", overwrite: true, ignoreIfExists: false)),
+                .rename(.init(
+                    oldURI: "file:///project/old.swift",
+                    newURI: "file:///project/renamed.swift",
+                    overwrite: false,
+                    ignoreIfExists: true
+                )),
+                .delete(.init(uri: "file:///project/remove.swift", recursive: true, ignoreIfNotExists: false)),
+            ]
+        )
+        XCTAssertEqual(parsed.unsupportedURIs, [])
+    }
+
+    func testParseKeepsUnknownResourceOperationURIsUnsupported() throws {
+        let edit = """
+        {
+          "documentChanges": [
+            { "kind": "unknown", "uri": "file:///project/a.swift", "newUri": "file:///project/b.swift" }
+          ]
+        }
+        """
+
+        let parsed = try XCTUnwrap(AttoWorkspaceEditParser.parse(edit))
+
+        XCTAssertEqual(parsed.resourceOperations, [])
+        XCTAssertEqual(
             parsed.unsupportedURIs,
             [
-                "file:///project/new.swift",
-                "file:///project/old.swift",
-                "file:///project/renamed.swift",
+                "file:///project/a.swift",
+                "file:///project/b.swift",
             ]
         )
     }

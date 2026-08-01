@@ -4779,10 +4779,32 @@ final class AttoEditorAreaViewController: NSViewController {
                 )
             )
         }
+        for operation in workspaceEdit.resourceOperations {
+            for uri in operation.affectedURIs where documents.contains(where: { $0.uri == uri }) == false {
+                documents.append(
+                    AttoWorkspaceEditApplyResult.Document(
+                        uri: uri,
+                        editCount: 0,
+                        hasOverlappingEdits: false
+                    )
+                )
+            }
+        }
 
         var appliedURIs: [String] = []
         var appliedEditCount = 0
+        var appliedResourceOperationCount = 0
         var skippedURIs = Set(workspaceEdit.unsupportedURIs)
+
+        for operation in workspaceEdit.resourceOperations {
+            guard applyWorkspaceResourceOperation(operation) else {
+                skippedURIs.formUnion(operation.affectedURIs)
+                continue
+            }
+
+            appliedURIs.append(contentsOf: operation.affectedURIs)
+            appliedResourceOperationCount += 1
+        }
 
         for document in workspaceEdit.documents {
             guard document.edits.isEmpty == false else { continue }
@@ -4833,9 +4855,9 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         let result = AttoWorkspaceEditApplyResult(
-            applied: appliedEditCount > 0,
+            applied: (appliedEditCount + appliedResourceOperationCount) > 0,
             appliedURI: appliedURIs.first ?? documentURI ?? initialActiveTab.fileURL.absoluteString,
-            appliedEditCount: appliedEditCount,
+            appliedEditCount: appliedEditCount + appliedResourceOperationCount,
             skippedURIs: Array(skippedURIs).sorted(),
             documents: documents
         )
@@ -4918,6 +4940,111 @@ final class AttoEditorAreaViewController: NSViewController {
                 url.path,
                 String(describing: error)
             )
+            return false
+        }
+    }
+
+    private func applyWorkspaceResourceOperation(_ operation: AttoWorkspaceEditParser.ResourceOperation) -> Bool {
+        guard operation.affectedURIs.allSatisfy({ tabForDocumentURI($0) == nil }) else {
+            return false
+        }
+
+        switch operation {
+        case .create(let op):
+            guard let url = workspaceFileURL(fromDocumentURI: op.uri) else { return false }
+            return createWorkspaceFile(at: url, overwrite: op.overwrite, ignoreIfExists: op.ignoreIfExists)
+        case .rename(let op):
+            guard let oldURL = workspaceFileURL(fromDocumentURI: op.oldURI),
+                  let newURL = workspaceFileURL(fromDocumentURI: op.newURI)
+            else { return false }
+            return renameWorkspaceFile(
+                from: oldURL,
+                to: newURL,
+                overwrite: op.overwrite,
+                ignoreIfExists: op.ignoreIfExists
+            )
+        case .delete(let op):
+            guard let url = workspaceFileURL(fromDocumentURI: op.uri) else { return false }
+            return deleteWorkspaceFile(
+                at: url,
+                recursive: op.recursive,
+                ignoreIfNotExists: op.ignoreIfNotExists
+            )
+        }
+    }
+
+    private func workspaceFileURL(fromDocumentURI uri: String) -> URL? {
+        guard let url = Self.fileURL(fromDocumentURI: uri) else { return nil }
+        let path = url.standardizedFileURL.path
+        let root = workspaceRootURL.standardizedFileURL.path
+        guard path == root || path.hasPrefix(root + "/") else { return nil }
+        return url
+    }
+
+    private func createWorkspaceFile(at url: URL, overwrite: Bool, ignoreIfExists: Bool) -> Bool {
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        let exists = fm.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        if exists {
+            if ignoreIfExists { return true }
+            guard overwrite, isDirectory.boolValue == false else { return false }
+        }
+
+        do {
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data().write(to: url, options: .atomic)
+            return true
+        } catch {
+            NSLog("AttoEditor: failed to create WorkspaceEdit file %@: %@", url.path, String(describing: error))
+            return false
+        }
+    }
+
+    private func renameWorkspaceFile(
+        from oldURL: URL,
+        to newURL: URL,
+        overwrite: Bool,
+        ignoreIfExists: Bool
+    ) -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: oldURL.path) else { return false }
+
+        let targetExists = fm.fileExists(atPath: newURL.path)
+        if targetExists {
+            if ignoreIfExists { return true }
+            guard overwrite else { return false }
+        }
+
+        do {
+            try fm.createDirectory(at: newURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if targetExists {
+                try fm.removeItem(at: newURL)
+            }
+            try fm.moveItem(at: oldURL, to: newURL)
+            return true
+        } catch {
+            NSLog(
+                "AttoEditor: failed to rename WorkspaceEdit file %@ -> %@: %@",
+                oldURL.path,
+                newURL.path,
+                String(describing: error)
+            )
+            return false
+        }
+    }
+
+    private func deleteWorkspaceFile(at url: URL, recursive: Bool, ignoreIfNotExists: Bool) -> Bool {
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        let exists = fm.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        guard exists else { return ignoreIfNotExists }
+        guard recursive || isDirectory.boolValue == false else { return false }
+
+        do {
+            try fm.removeItem(at: url)
+            return true
+        } catch {
+            NSLog("AttoEditor: failed to delete WorkspaceEdit file %@: %@", url.path, String(describing: error))
             return false
         }
     }

@@ -552,6 +552,68 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(secondItem.isDirty)
     }
 
+    func testWorkspaceEditResourceOperationsApplyToUnopenedLocalFiles() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let activeURL = tempDir.appendingPathComponent("active.txt")
+        let createdURL = tempDir.appendingPathComponent("created.txt")
+        let oldURL = tempDir.appendingPathComponent("old.txt")
+        let renamedURL = tempDir.appendingPathComponent("renamed.txt")
+        let removedURL = tempDir.appendingPathComponent("removed.txt")
+        try "active\n".write(to: activeURL, atomically: true, encoding: .utf8)
+        try "old\n".write(to: oldURL, atomically: true, encoding: .utf8)
+        try "remove\n".write(to: removedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: activeURL, mode: .pinned)
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "create",
+              "uri": "\(createdURL.absoluteString)",
+              "options": { "overwrite": true }
+            },
+            {
+              "textDocument": { "uri": "\(createdURL.absoluteString)", "version": null },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "created\\n"
+                }
+              ]
+            },
+            {
+              "kind": "rename",
+              "oldUri": "\(oldURL.absoluteString)",
+              "newUri": "\(renamedURL.absoluteString)"
+            },
+            {
+              "kind": "delete",
+              "uri": "\(removedURL.absoluteString)"
+            }
+          ]
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(try String(contentsOf: createdURL, encoding: .utf8), "created\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldURL.path))
+        XCTAssertEqual(try String(contentsOf: renamedURL, encoding: .utf8), "old\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: removedURL.path))
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "active\n")
+    }
+
     func testShowProblemsUsesDerivedDiagnosticsAndNavigatesWithoutPanelWindow() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

@@ -54,8 +54,45 @@ enum AttoWorkspaceEditParser {
         }
     }
 
+    enum ResourceOperation: Equatable {
+        struct CreateFile: Equatable {
+            let uri: String
+            let overwrite: Bool
+            let ignoreIfExists: Bool
+        }
+
+        struct RenameFile: Equatable {
+            let oldURI: String
+            let newURI: String
+            let overwrite: Bool
+            let ignoreIfExists: Bool
+        }
+
+        struct DeleteFile: Equatable {
+            let uri: String
+            let recursive: Bool
+            let ignoreIfNotExists: Bool
+        }
+
+        case create(CreateFile)
+        case rename(RenameFile)
+        case delete(DeleteFile)
+
+        var affectedURIs: [String] {
+            switch self {
+            case .create(let op):
+                return [op.uri]
+            case .rename(let op):
+                return [op.oldURI, op.newURI]
+            case .delete(let op):
+                return [op.uri]
+            }
+        }
+    }
+
     struct ParseResult: Equatable {
         let documents: [DocumentEdit]
+        let resourceOperations: [ResourceOperation]
         let unsupportedURIs: [String]
     }
 
@@ -75,6 +112,7 @@ enum AttoWorkspaceEditParser {
 
         var documentsByURI: [String: [TextEdit]] = [:]
         var documentOrder: [String] = []
+        var resourceOperations: [ResourceOperation] = []
         var unsupportedURIs: [String] = []
 
         if let changes = object["changes"] as? [String: Any] {
@@ -96,7 +134,11 @@ enum AttoWorkspaceEditParser {
                     continue
                 }
 
-                unsupportedURIs.append(contentsOf: resourceOperationURIs(from: changeObject))
+                if let operation = resourceOperation(from: changeObject) {
+                    resourceOperations.append(operation)
+                } else {
+                    unsupportedURIs.append(contentsOf: resourceOperationURIs(from: changeObject))
+                }
             }
         }
 
@@ -106,6 +148,7 @@ enum AttoWorkspaceEditParser {
 
         return ParseResult(
             documents: documents,
+            resourceOperations: resourceOperations,
             unsupportedURIs: uniqueSorted(unsupportedURIs)
         )
     }
@@ -221,9 +264,47 @@ enum AttoWorkspaceEditParser {
         }
     }
 
+    private static func resourceOperation(from object: [String: Any]) -> ResourceOperation? {
+        let options = object["options"] as? [String: Any]
+        switch stringValue(object["kind"]) {
+        case "create":
+            guard let uri = stringValue(object["uri"]) else { return nil }
+            return .create(ResourceOperation.CreateFile(
+                uri: uri,
+                overwrite: boolValue(options?["overwrite"]) ?? false,
+                ignoreIfExists: boolValue(options?["ignoreIfExists"]) ?? false
+            ))
+        case "rename":
+            guard let oldURI = stringValue(object["oldUri"]),
+                  let newURI = stringValue(object["newUri"])
+            else { return nil }
+            return .rename(ResourceOperation.RenameFile(
+                oldURI: oldURI,
+                newURI: newURI,
+                overwrite: boolValue(options?["overwrite"]) ?? false,
+                ignoreIfExists: boolValue(options?["ignoreIfExists"]) ?? false
+            ))
+        case "delete":
+            guard let uri = stringValue(object["uri"]) else { return nil }
+            return .delete(ResourceOperation.DeleteFile(
+                uri: uri,
+                recursive: boolValue(options?["recursive"]) ?? false,
+                ignoreIfNotExists: boolValue(options?["ignoreIfNotExists"]) ?? false
+            ))
+        default:
+            return nil
+        }
+    }
+
     private static func intValue(_ any: Any?) -> Int? {
         if let value = any as? Int { return value }
         if let number = any as? NSNumber { return number.intValue }
+        return nil
+    }
+
+    private static func boolValue(_ any: Any?) -> Bool? {
+        if let value = any as? Bool { return value }
+        if let number = any as? NSNumber { return number.boolValue }
         return nil
     }
 
