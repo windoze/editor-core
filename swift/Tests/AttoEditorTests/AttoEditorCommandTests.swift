@@ -36,6 +36,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("view.split_right"))
         XCTAssertTrue(ids.contains("view.focus_next_pane"))
         XCTAssertTrue(ids.contains("view.focus_previous_pane"))
+        XCTAssertTrue(ids.contains("view.move_pane_left"))
+        XCTAssertTrue(ids.contains("view.move_pane_right"))
         XCTAssertTrue(ids.contains("view.close_pane"))
         XCTAssertTrue(ids.contains("lsp.go_to_definition"))
         XCTAssertTrue(ids.contains("lsp.go_to_declaration"))
@@ -271,6 +273,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.focus_next_pane", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.focus_previous_pane", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "view.move_pane_left", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "view.move_pane_right", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.close_pane", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.fold_selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_folding_ranges", in: menu))
@@ -1335,6 +1339,52 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(remaining.count, 1)
         XCTAssertTrue(remaining[0] === editorViews[0])
         XCTAssertFalse(vc.closeActivePane())
+    }
+
+    func testMovePaneCommandsReorderAppKitProjectionAndCoreMirror() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("move-panes.txt")
+        try "abc".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(vc.splitActiveTabRight())
+        XCTAssertTrue(vc.splitActiveTabRight())
+        vc.view.layoutSubtreeIfNeeded()
+
+        let original = findSubviews(of: EditorCoreSkiaView.self, in: vc.view)
+        XCTAssertEqual(original.count, 3)
+
+        XCTAssertTrue(vc.moveActivePaneLeft())
+        vc.view.layoutSubtreeIfNeeded()
+        var moved = findSubviews(of: EditorCoreSkiaView.self, in: vc.view)
+        XCTAssertEqual(moved.count, 3)
+        XCTAssertTrue(moved[0] === original[0])
+        XCTAssertTrue(moved[1] === original[2])
+        XCTAssertTrue(moved[2] === original[1])
+        var snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs[0].viewCount, 3)
+        XCTAssertEqual(snapshot.tabs[0].activeViewIndex, 1)
+
+        XCTAssertTrue(vc.moveActivePaneLeft())
+        vc.view.layoutSubtreeIfNeeded()
+        moved = findSubviews(of: EditorCoreSkiaView.self, in: vc.view)
+        XCTAssertTrue(moved[0] === original[2])
+        XCTAssertTrue(moved[1] === original[0])
+        XCTAssertTrue(moved[2] === original[1])
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs[0].activeViewIndex, 0)
+
+        XCTAssertFalse(vc.moveActivePaneLeft())
+        XCTAssertTrue(vc.moveActivePaneRight())
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs[0].activeViewIndex, 1)
     }
 
     func testSessionRestoreRestoresSplitPanesIntoCoreMirror() throws {

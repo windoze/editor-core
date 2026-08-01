@@ -521,6 +521,34 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_close_view_index(
     }
 }
 
+/// Move a view in a tab. Returns whether the view was moved.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_move_view_index(
+    multi: *mut MultiDocumentEditorUi,
+    tab_id: u64,
+    from_view_index: u32,
+    to_view_index: u32,
+    out_moved: *mut u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let from_view_index = u32_to_usize(from_view_index, "from_view_index")?;
+        let to_view_index = u32_to_usize(to_view_index, "to_view_index")?;
+        let out_moved = require_out_mut(out_moved, "out_moved")?;
+        let moved = multi
+            .move_view_index(tab_id_from_raw(tab_id), from_view_index, to_view_index)
+            .map_err(map_ui_error)?;
+        *out_moved = u8::from(moved);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Return the number of views in a tab.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_multi_document_view_count(

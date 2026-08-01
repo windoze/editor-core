@@ -772,6 +772,20 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    private func moveCoreView(tab: AttoEditorTab, fromIndex: Int, toIndex: Int) -> Bool {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return false }
+        do {
+            return try coreDocuments.moveView(
+                tabId: coreTabID,
+                fromIndex: UInt32(clamping: fromIndex),
+                toIndex: UInt32(clamping: toIndex)
+            )
+        } catch {
+            NSLog("AttoEditor: core multi-document moveView failed: %@", String(describing: error))
+            return false
+        }
+    }
+
     private func setCoreActiveView(_ tab: AttoEditorTab) {
         guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
         do {
@@ -1193,6 +1207,16 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     @discardableResult
+    func moveActivePaneLeft() -> Bool {
+        moveActivePaneInActiveTab(delta: -1)
+    }
+
+    @discardableResult
+    func moveActivePaneRight() -> Bool {
+        moveActivePaneInActiveTab(delta: 1)
+    }
+
+    @discardableResult
     private func focusPaneInActiveTab(delta: Int) -> Bool {
         guard let tab = activeTab, tab.panes.count > 1 else {
             NSSound.beep()
@@ -1210,6 +1234,38 @@ final class AttoEditorAreaViewController: NSViewController {
         updateAlwaysPollProcessingForSelectedTab()
         updateStatusBar()
         activePane.focusEditor()
+        return true
+    }
+
+    @discardableResult
+    private func moveActivePaneInActiveTab(delta: Int) -> Bool {
+        guard let tab = activeTab, tab.panes.count > 1 else {
+            NSSound.beep()
+            return false
+        }
+
+        let count = tab.panes.count
+        let from = max(0, min(tab.activePaneIndex, count - 1))
+        let to = from + delta
+        guard to >= 0, to < count else {
+            NSSound.beep()
+            return false
+        }
+
+        guard moveCoreView(tab: tab, fromIndex: from, toIndex: to) else {
+            NSSound.beep()
+            return false
+        }
+
+        let pane = tab.panes.remove(at: from)
+        tab.panes.insert(pane, at: to)
+        tab.activePaneIndex = to
+
+        showTabContent(tab)
+        attachStatusObserver(to: pane.editorView)
+        updateAlwaysPollProcessingForSelectedTab()
+        updateStatusBar()
+        pane.focusEditor()
         return true
     }
 

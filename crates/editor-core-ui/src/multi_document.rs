@@ -415,6 +415,37 @@ impl MultiDocumentEditorUi {
         Ok(true)
     }
 
+    /// Move a view within a tab.
+    ///
+    /// Returns `true` if the view existed and its index changed.
+    pub fn move_view_index(
+        &mut self,
+        tab_id: TabId,
+        from_index: usize,
+        to_index: usize,
+    ) -> Result<bool, UiError> {
+        let tab = self
+            .tabs
+            .get_mut(&tab_id)
+            .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
+        if from_index >= tab.views.len() || to_index >= tab.views.len() || from_index == to_index {
+            return Ok(false);
+        }
+
+        let view = tab.views.remove(from_index);
+        tab.views.insert(to_index, view);
+
+        if tab.active_view == from_index {
+            tab.active_view = to_index;
+        } else if from_index < tab.active_view && tab.active_view <= to_index {
+            tab.active_view = tab.active_view.saturating_sub(1);
+        } else if to_index <= tab.active_view && tab.active_view < from_index {
+            tab.active_view = tab.active_view.saturating_add(1);
+        }
+
+        Ok(true)
+    }
+
     /// Return the number of views in a tab.
     pub fn view_count(&self, tab_id: TabId) -> Option<usize> {
         self.tabs.get(&tab_id).map(|t| t.views.len())

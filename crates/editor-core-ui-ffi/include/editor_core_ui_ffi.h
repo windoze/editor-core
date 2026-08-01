@@ -188,6 +188,11 @@ int32_t editor_core_ui_ffi_multi_document_close_view_index(MultiDocumentEditorUi
                                                            uint64_t tab_id,
                                                            uint32_t view_index,
                                                            uint8_t* out_closed);
+int32_t editor_core_ui_ffi_multi_document_move_view_index(MultiDocumentEditorUi* multi,
+                                                          uint64_t tab_id,
+                                                          uint32_t from_view_index,
+                                                          uint32_t to_view_index,
+                                                          uint8_t* out_moved);
 int32_t editor_core_ui_ffi_multi_document_view_count(MultiDocumentEditorUi* multi,
                                                      uint64_t tab_id,
                                                      uint32_t* out_view_count);

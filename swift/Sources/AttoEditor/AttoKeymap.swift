@@ -40,6 +40,8 @@ enum AttoKeymap {
         "view.split_right": AttoKeyBinding(keyEquivalent: "2", modifiers: [.command, .option]),
         "view.focus_next_pane": AttoKeyBinding(keyEquivalent: "]", modifiers: [.command, .control]),
         "view.focus_previous_pane": AttoKeyBinding(keyEquivalent: "[", modifiers: [.command, .control]),
+        "view.move_pane_left": AttoKeyBinding(keyEquivalent: functionKey(NSLeftArrowFunctionKey), modifiers: [.command, .option, .control]),
+        "view.move_pane_right": AttoKeyBinding(keyEquivalent: functionKey(NSRightArrowFunctionKey), modifiers: [.command, .option, .control]),
         "view.close_pane": AttoKeyBinding(keyEquivalent: "w", modifiers: [.command, .option]),
         "view.wrap.word": AttoKeyBinding(keyEquivalent: "z", modifiers: [.option]),
         "workbench.command_palette": AttoKeyBinding(keyEquivalent: "p", modifiers: [.command, .shift]),

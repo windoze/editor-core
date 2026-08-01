@@ -121,6 +121,17 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         ECU_OK
     );
     assert_eq!(view_index, 1);
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_split_tab(multi, beta_id, 80, &mut view_index),
+        ECU_OK
+    );
+    assert_eq!(view_index, 2);
+    let mut moved_view: u8 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_move_view_index(multi, beta_id, 2, 0, &mut moved_view),
+        ECU_OK
+    );
+    assert_eq!(moved_view, 1);
 
     let replacement = CString::new("beta mirror").unwrap();
     assert_eq!(
@@ -221,11 +232,11 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
     assert_eq!(snapshot["active_tab_id"], beta_id);
     let tabs = snapshot["tabs"].as_array().unwrap();
-    assert!(
-        tabs.iter().any(|tab| tab["id"] == beta_id
-            && tab["title"] == "Beta"
-            && tab["is_modified"] == false)
-    );
+    assert!(tabs.iter().any(|tab| tab["id"] == beta_id
+        && tab["title"] == "Beta"
+        && tab["view_count"] == 3
+        && tab["active_view_index"] == 0
+        && tab["is_modified"] == false));
     assert!(
         tabs.iter()
             .any(|tab| tab["id"] == preview_id && tab["is_preview"] == false)

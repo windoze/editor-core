@@ -83,6 +83,8 @@ enum AttoMainMenuBuilder {
         viewMenu.addItem(commandItem(title: "Split Right", commandID: "view.split_right", appDelegate: appDelegate))
         viewMenu.addItem(commandItem(title: "Focus Next Pane", commandID: "view.focus_next_pane", appDelegate: appDelegate))
         viewMenu.addItem(commandItem(title: "Focus Previous Pane", commandID: "view.focus_previous_pane", appDelegate: appDelegate))
+        viewMenu.addItem(commandItem(title: "Move Pane Left", commandID: "view.move_pane_left", appDelegate: appDelegate))
+        viewMenu.addItem(commandItem(title: "Move Pane Right", commandID: "view.move_pane_right", appDelegate: appDelegate))
         viewMenu.addItem(commandItem(title: "Close Pane", commandID: "view.close_pane", appDelegate: appDelegate))
         viewMenu.addItem(.separator())
         let wrapMenuItem = NSMenuItem(title: "Word Wrap", action: nil, keyEquivalent: "")

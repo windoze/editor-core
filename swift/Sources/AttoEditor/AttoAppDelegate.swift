@@ -390,6 +390,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "view.focus_previous_pane", title: "View: Focus Previous Pane") { [weak self] in
                 self?.activeWindow()?.editorAreaController.focusPreviousPaneInActiveTab()
             },
+            .init(id: "view.move_pane_left", title: "View: Move Pane Left") { [weak self] in
+                self?.activeWindow()?.editorAreaController.moveActivePaneLeft()
+            },
+            .init(id: "view.move_pane_right", title: "View: Move Pane Right") { [weak self] in
+                self?.activeWindow()?.editorAreaController.moveActivePaneRight()
+            },
             .init(id: "view.close_pane", title: "View: Close Pane") { [weak self] in
                 self?.activeWindow()?.editorAreaController.closeActivePane()
             },
@@ -636,7 +642,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                 return .none
             case "go.file", "search.find_in_files", "view.toggle_sidebar":
                 return .activeWindow
-            case "view.focus_next_pane", "view.focus_previous_pane", "view.close_pane":
+            case "view.focus_next_pane", "view.focus_previous_pane", "view.move_pane_left", "view.move_pane_right", "view.close_pane":
                 return .multiplePanes
             default:
                 if commandID == "file.save" || commandID == "file.close_tab" {

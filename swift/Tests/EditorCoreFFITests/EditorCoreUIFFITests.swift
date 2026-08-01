@@ -103,7 +103,9 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(try multi.closeView(tabId: beta, viewIndex: 1))
         XCTAssertEqual(try multi.viewCount(tabId: beta), 1)
         XCTAssertEqual(try multi.splitTab(beta, viewportWidthCells: 80), 1)
-        try multi.setActiveViewIndex(tabId: beta, viewIndex: 0)
+        XCTAssertEqual(try multi.splitTab(beta, viewportWidthCells: 80), 2)
+        XCTAssertTrue(try multi.moveView(tabId: beta, fromIndex: 2, toIndex: 0))
+        XCTAssertFalse(try multi.moveView(tabId: beta, fromIndex: 0, toIndex: 0))
 
         try multi.replaceTabText(tabId: beta, text: "beta mirror", markSaved: false)
         XCTAssertEqual(try multi.tabText(tabId: beta), "beta mirror")
@@ -128,7 +130,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         let snapshot = try multi.snapshot()
         XCTAssertEqual(snapshot.activeTabId, beta)
         XCTAssertEqual(snapshot.tabs.count, 3)
-        XCTAssertTrue(snapshot.tabs.contains { $0.id == beta && $0.title == "Beta" && $0.viewCount == 2 && $0.isModified == false })
+        XCTAssertTrue(snapshot.tabs.contains { $0.id == beta && $0.title == "Beta" && $0.viewCount == 3 && $0.activeViewIndex == 0 && $0.isModified == false })
         XCTAssertTrue(snapshot.tabs.contains { $0.id == preview && $0.isPreview == false })
 
         XCTAssertEqual(try multi.closeTabsToRight(of: beta), 1)

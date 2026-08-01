@@ -68,6 +68,52 @@ fn multi_document_ui_supports_splits_via_clone_view() {
 }
 
 #[test]
+fn multi_document_ui_can_move_split_views() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let tab = ui.open_tab("abc\n", 80);
+
+    ui.set_active_tab(tab).unwrap();
+    ui.set_active_view_index(tab, 0).unwrap();
+    ui.active_editor_mut()
+        .unwrap()
+        .set_selections_offsets(&[(0, 0)], 0)
+        .unwrap();
+
+    assert_eq!(ui.split_tab(tab, 80).unwrap(), 1);
+    ui.active_editor_mut()
+        .unwrap()
+        .set_selections_offsets(&[(1, 1)], 0)
+        .unwrap();
+
+    assert_eq!(ui.split_tab(tab, 80).unwrap(), 2);
+    ui.active_editor_mut()
+        .unwrap()
+        .set_selections_offsets(&[(2, 2)], 0)
+        .unwrap();
+
+    assert!(ui.move_view_index(tab, 2, 0).unwrap());
+    assert_eq!(ui.active_view_index(tab), Some(0));
+    assert_eq!(
+        ui.active_editor().unwrap().primary_selection_offsets(),
+        (2, 2)
+    );
+
+    ui.set_active_view_index(tab, 1).unwrap();
+    assert_eq!(
+        ui.active_editor().unwrap().primary_selection_offsets(),
+        (0, 0)
+    );
+    ui.set_active_view_index(tab, 2).unwrap();
+    assert_eq!(
+        ui.active_editor().unwrap().primary_selection_offsets(),
+        (1, 1)
+    );
+
+    assert!(!ui.move_view_index(tab, 2, 2).unwrap());
+    assert!(!ui.move_view_index(tab, 2, 3).unwrap());
+}
+
+#[test]
 fn multi_document_ui_can_search_across_tabs() {
     let mut ui = MultiDocumentEditorUi::new();
     let a = ui.open_tab("hello world\n", 80);

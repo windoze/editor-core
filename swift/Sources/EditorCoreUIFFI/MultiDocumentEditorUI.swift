@@ -184,6 +184,20 @@ public final class MultiDocumentEditorUI {
     }
 
     @discardableResult
+    public func moveView(tabId: UInt64, fromIndex: UInt32, toIndex: UInt32) throws -> Bool {
+        var moved: UInt8 = 0
+        let status = editor_core_ui_ffi_multi_document_move_view_index(
+            handle,
+            tabId,
+            fromIndex,
+            toIndex,
+            &moved
+        )
+        try library.ensureStatus(status, context: "multi_document_move_view_index")
+        return moved != 0
+    }
+
+    @discardableResult
     public func closeView(tabId: UInt64, viewIndex: UInt32) throws -> Bool {
         var closed: UInt8 = 0
         let status = editor_core_ui_ffi_multi_document_close_view_index(handle, tabId, viewIndex, &closed)
