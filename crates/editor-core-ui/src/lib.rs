@@ -737,10 +737,41 @@ fn get_or_start_shared_lsp_session(
     Ok(shared)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum LspResultSlot {
+    Hover,
+    Definition,
+    Declaration,
+    TypeDefinition,
+    Implementation,
+    References,
+    Completion,
+    SignatureHelp,
+    DocumentSymbols,
+    WorkspaceSymbols,
+}
+
+impl LspResultSlot {
+    fn from_response_method(method: &str) -> Option<Self> {
+        match method {
+            "textDocument/hover" => Some(Self::Hover),
+            "textDocument/definition" => Some(Self::Definition),
+            "textDocument/declaration" => Some(Self::Declaration),
+            "textDocument/typeDefinition" => Some(Self::TypeDefinition),
+            "textDocument/implementation" => Some(Self::Implementation),
+            "textDocument/references" => Some(Self::References),
+            "textDocument/completion" => Some(Self::Completion),
+            "textDocument/signatureHelp" => Some(Self::SignatureHelp),
+            "textDocument/documentSymbol" => Some(Self::DocumentSymbols),
+            "workspace/symbol" => Some(Self::WorkspaceSymbols),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LspClientRequest {
-    Hover { view: ViewId },
-    Definition { view: ViewId },
+    Result { view: ViewId, slot: LspResultSlot },
     OnTypeFormatting { view: ViewId, version: u64 },
 }
 
@@ -764,11 +795,9 @@ struct EditorUiDoc {
     lsp_code_lens_in_flight: bool,
     lsp_document_links_in_flight: bool,
     lsp_client_requests: HashMap<u64, LspClientRequest>,
-    lsp_latest_hover_request_id: HashMap<ViewId, u64>,
-    lsp_latest_definition_request_id: HashMap<ViewId, u64>,
+    lsp_latest_result_request_id: HashMap<(ViewId, LspResultSlot), u64>,
     lsp_latest_on_type_formatting_request_id: HashMap<ViewId, u64>,
-    lsp_last_hover_result_json: HashMap<ViewId, String>,
-    lsp_last_definition_result_json: HashMap<ViewId, String>,
+    lsp_last_result_json: HashMap<(ViewId, LspResultSlot), String>,
     text_version: u64,
 }
 
@@ -832,6 +861,17 @@ impl EditorUiDoc {
         self.lsp_reset();
     }
 
+    fn lsp_clear_result_state(&mut self) {
+        self.lsp_latest_result_request_id.clear();
+        self.lsp_last_result_json.clear();
+    }
+
+    fn lsp_clear_result_state_for_view(&mut self, view: ViewId) {
+        self.lsp_latest_result_request_id
+            .retain(|key, _| key.0 != view);
+        self.lsp_last_result_json.retain(|key, _| key.0 != view);
+    }
+
     fn lsp_reset(&mut self) {
         if let (Some(shared), Some(uri)) = (self.lsp.as_ref(), self.lsp_document_uri.as_deref()) {
             let uri = uri.to_string();
@@ -846,11 +886,8 @@ impl EditorUiDoc {
         self.lsp_code_lens_in_flight = false;
         self.lsp_document_links_in_flight = false;
         self.lsp_client_requests.clear();
-        self.lsp_latest_hover_request_id.clear();
-        self.lsp_latest_definition_request_id.clear();
+        self.lsp_clear_result_state();
         self.lsp_latest_on_type_formatting_request_id.clear();
-        self.lsp_last_hover_result_json.clear();
-        self.lsp_last_definition_result_json.clear();
 
         let _ = self.apply_processing_edits(editor_core_lsp::lsp_clear_edits());
     }
@@ -905,12 +942,9 @@ impl Drop for EditorUi {
                 doc.lsp_disable();
             }
         } else {
-            doc.lsp_latest_hover_request_id.remove(&self.view_id);
-            doc.lsp_latest_definition_request_id.remove(&self.view_id);
+            doc.lsp_clear_result_state_for_view(self.view_id);
             doc.lsp_latest_on_type_formatting_request_id
                 .remove(&self.view_id);
-            doc.lsp_last_hover_result_json.remove(&self.view_id);
-            doc.lsp_last_definition_result_json.remove(&self.view_id);
         }
 
         let _ = doc.ws.close_view(self.view_id);
@@ -1110,11 +1144,9 @@ impl EditorUi {
             lsp_code_lens_in_flight: false,
             lsp_document_links_in_flight: false,
             lsp_client_requests: HashMap::new(),
-            lsp_latest_hover_request_id: HashMap::new(),
-            lsp_latest_definition_request_id: HashMap::new(),
+            lsp_latest_result_request_id: HashMap::new(),
             lsp_latest_on_type_formatting_request_id: HashMap::new(),
-            lsp_last_hover_result_json: HashMap::new(),
-            lsp_last_definition_result_json: HashMap::new(),
+            lsp_last_result_json: HashMap::new(),
             text_version: 0,
         }));
         Self {
@@ -2589,11 +2621,8 @@ impl EditorUi {
             doc.lsp_code_lens_in_flight = false;
             doc.lsp_document_links_in_flight = false;
             doc.lsp_client_requests.clear();
-            doc.lsp_latest_hover_request_id.clear();
-            doc.lsp_latest_definition_request_id.clear();
+            doc.lsp_clear_result_state();
             doc.lsp_latest_on_type_formatting_request_id.clear();
-            doc.lsp_last_hover_result_json.clear();
-            doc.lsp_last_definition_result_json.clear();
         }
         Ok(())
     }
@@ -2704,11 +2733,18 @@ impl EditorUi {
         .to_string()
     }
 
-    /// Request LSP hover information for a given logical position (0-based line/column in Unicode scalars).
-    ///
-    /// The result is delivered asynchronously via `poll_processing` and can be read by calling
-    /// [`Self::lsp_take_last_hover_result_json`].
-    pub fn lsp_request_hover(&mut self, line: usize, column: usize) -> Result<u64, UiError> {
+    fn lsp_request_position_result(
+        &mut self,
+        slot: LspResultSlot,
+        line: usize,
+        column: usize,
+        request: impl FnOnce(
+            &mut LspSession,
+            &editor_core::LineIndex,
+            usize,
+            usize,
+        ) -> Result<u64, String>,
+    ) -> Result<u64, UiError> {
         self.flush_lsp_did_change_from_delta();
 
         let mut doc = self.lock_doc();
@@ -2726,20 +2762,78 @@ impl EditorUi {
         let id = shared
             .with_session_mut(|lsp| {
                 lsp.set_active_document(doc_uri)?;
-                lsp.request_hover(line_index, line, column)
+                request(lsp, line_index, line, column)
             })
             .map_err(UiError::Processor)?;
 
-        doc.lsp_client_requests
-            .insert(id, LspClientRequest::Hover { view: self.view_id });
-        doc.lsp_latest_hover_request_id.insert(self.view_id, id);
-        doc.lsp_last_hover_result_json.remove(&self.view_id);
+        doc.lsp_client_requests.insert(
+            id,
+            LspClientRequest::Result {
+                view: self.view_id,
+                slot,
+            },
+        );
+        doc.lsp_latest_result_request_id
+            .insert((self.view_id, slot), id);
+        doc.lsp_last_result_json.remove(&(self.view_id, slot));
         Ok(id)
     }
 
-    pub fn lsp_take_last_hover_result_json(&mut self) -> Option<String> {
+    fn lsp_request_document_result(
+        &mut self,
+        slot: LspResultSlot,
+        request: impl FnOnce(&mut LspSession) -> Result<u64, String>,
+    ) -> Result<u64, UiError> {
+        self.flush_lsp_did_change_from_delta();
+
         let mut doc = self.lock_doc();
-        doc.lsp_last_hover_result_json.remove(&self.view_id)
+        let Some(shared) = doc.lsp.as_ref() else {
+            return Err(UiError::Processor("LSP is not enabled".to_string()));
+        };
+        let Some(doc_uri) = doc.lsp_document_uri.as_deref() else {
+            return Err(UiError::Processor("LSP document URI missing".to_string()));
+        };
+
+        let id = shared
+            .with_session_mut(|lsp| {
+                lsp.set_active_document(doc_uri)?;
+                request(lsp)
+            })
+            .map_err(UiError::Processor)?;
+
+        doc.lsp_client_requests.insert(
+            id,
+            LspClientRequest::Result {
+                view: self.view_id,
+                slot,
+            },
+        );
+        doc.lsp_latest_result_request_id
+            .insert((self.view_id, slot), id);
+        doc.lsp_last_result_json.remove(&(self.view_id, slot));
+        Ok(id)
+    }
+
+    fn lsp_take_last_result_json(&mut self, slot: LspResultSlot) -> Option<String> {
+        let mut doc = self.lock_doc();
+        doc.lsp_last_result_json.remove(&(self.view_id, slot))
+    }
+
+    /// Request LSP hover information for a given logical position (0-based line/column in Unicode scalars).
+    ///
+    /// The result is delivered asynchronously via `poll_processing` and can be read by calling
+    /// [`Self::lsp_take_last_hover_result_json`].
+    pub fn lsp_request_hover(&mut self, line: usize, column: usize) -> Result<u64, UiError> {
+        self.lsp_request_position_result(
+            LspResultSlot::Hover,
+            line,
+            column,
+            |lsp, line_index, line, column| lsp.request_hover(line_index, line, column),
+        )
+    }
+
+    pub fn lsp_take_last_hover_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::Hover)
     }
 
     /// Request LSP go-to-definition for a given logical position (0-based line/column in Unicode scalars).
@@ -2747,38 +2841,133 @@ impl EditorUi {
     /// The result is delivered asynchronously via `poll_processing` and can be read by calling
     /// [`Self::lsp_take_last_definition_result_json`].
     pub fn lsp_request_definition(&mut self, line: usize, column: usize) -> Result<u64, UiError> {
-        self.flush_lsp_did_change_from_delta();
-
-        let mut doc = self.lock_doc();
-        let Some(shared) = doc.lsp.as_ref() else {
-            return Err(UiError::Processor("LSP is not enabled".to_string()));
-        };
-        let Some(doc_uri) = doc.lsp_document_uri.as_deref() else {
-            return Err(UiError::Processor("LSP document URI missing".to_string()));
-        };
-
-        let line_index = doc
-            .ws
-            .buffer_line_index(doc.buffer_id)
-            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
-        let id = shared
-            .with_session_mut(|lsp| {
-                lsp.set_active_document(doc_uri)?;
-                lsp.request_definition(line_index, line, column)
-            })
-            .map_err(UiError::Processor)?;
-
-        doc.lsp_client_requests
-            .insert(id, LspClientRequest::Definition { view: self.view_id });
-        doc.lsp_latest_definition_request_id
-            .insert(self.view_id, id);
-        doc.lsp_last_definition_result_json.remove(&self.view_id);
-        Ok(id)
+        self.lsp_request_position_result(
+            LspResultSlot::Definition,
+            line,
+            column,
+            |lsp, line_index, line, column| lsp.request_definition(line_index, line, column),
+        )
     }
 
     pub fn lsp_take_last_definition_result_json(&mut self) -> Option<String> {
-        let mut doc = self.lock_doc();
-        doc.lsp_last_definition_result_json.remove(&self.view_id)
+        self.lsp_take_last_result_json(LspResultSlot::Definition)
+    }
+
+    pub fn lsp_request_declaration(&mut self, line: usize, column: usize) -> Result<u64, UiError> {
+        self.lsp_request_position_result(
+            LspResultSlot::Declaration,
+            line,
+            column,
+            |lsp, line_index, line, column| lsp.request_declaration(line_index, line, column),
+        )
+    }
+
+    pub fn lsp_take_last_declaration_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::Declaration)
+    }
+
+    pub fn lsp_request_type_definition(
+        &mut self,
+        line: usize,
+        column: usize,
+    ) -> Result<u64, UiError> {
+        self.lsp_request_position_result(
+            LspResultSlot::TypeDefinition,
+            line,
+            column,
+            |lsp, line_index, line, column| lsp.request_type_definition(line_index, line, column),
+        )
+    }
+
+    pub fn lsp_take_last_type_definition_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::TypeDefinition)
+    }
+
+    pub fn lsp_request_implementation(
+        &mut self,
+        line: usize,
+        column: usize,
+    ) -> Result<u64, UiError> {
+        self.lsp_request_position_result(
+            LspResultSlot::Implementation,
+            line,
+            column,
+            |lsp, line_index, line, column| lsp.request_implementation(line_index, line, column),
+        )
+    }
+
+    pub fn lsp_take_last_implementation_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::Implementation)
+    }
+
+    pub fn lsp_request_references(
+        &mut self,
+        line: usize,
+        column: usize,
+        include_declaration: bool,
+    ) -> Result<u64, UiError> {
+        self.lsp_request_position_result(
+            LspResultSlot::References,
+            line,
+            column,
+            |lsp, line_index, line, column| {
+                lsp.request_references(line_index, line, column, include_declaration)
+            },
+        )
+    }
+
+    pub fn lsp_take_last_references_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::References)
+    }
+
+    pub fn lsp_request_completion(&mut self, line: usize, column: usize) -> Result<u64, UiError> {
+        self.lsp_request_position_result(
+            LspResultSlot::Completion,
+            line,
+            column,
+            |lsp, line_index, line, column| lsp.request_completion(line_index, line, column),
+        )
+    }
+
+    pub fn lsp_take_last_completion_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::Completion)
+    }
+
+    pub fn lsp_request_signature_help(
+        &mut self,
+        line: usize,
+        column: usize,
+    ) -> Result<u64, UiError> {
+        self.lsp_request_position_result(
+            LspResultSlot::SignatureHelp,
+            line,
+            column,
+            |lsp, line_index, line, column| lsp.request_signature_help(line_index, line, column),
+        )
+    }
+
+    pub fn lsp_take_last_signature_help_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::SignatureHelp)
+    }
+
+    pub fn lsp_request_document_symbols(&mut self) -> Result<u64, UiError> {
+        self.lsp_request_document_result(LspResultSlot::DocumentSymbols, |lsp| {
+            lsp.request_document_symbols()
+        })
+    }
+
+    pub fn lsp_take_last_document_symbols_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::DocumentSymbols)
+    }
+
+    pub fn lsp_request_workspace_symbols(&mut self, query: &str) -> Result<u64, UiError> {
+        self.lsp_request_document_result(LspResultSlot::WorkspaceSymbols, |lsp| {
+            lsp.request_workspace_symbol(query)
+        })
+    }
+
+    pub fn lsp_take_last_workspace_symbols_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::WorkspaceSymbols)
     }
 
     fn maybe_request_lsp_on_type_formatting(&mut self, ch: &str) -> Result<bool, UiError> {
@@ -5545,6 +5734,48 @@ impl EditorUi {
                 continue;
             };
 
+            if let Some(slot) = LspResultSlot::from_response_method(resp.method.as_str()) {
+                if let Some(LspClientRequest::Result {
+                    view,
+                    slot: request_slot,
+                }) = doc.lsp_client_requests.remove(&resp.id)
+                {
+                    if request_slot != slot {
+                        continue;
+                    }
+                    if doc.lsp_latest_result_request_id.get(&(view, slot)) != Some(&resp.id) {
+                        continue;
+                    }
+
+                    if resp.error.is_some() {
+                        doc.lsp_last_result_json.remove(&(view, slot));
+                        continue;
+                    }
+
+                    let result = resp.result.unwrap_or(serde_json::Value::Null);
+                    if slot == LspResultSlot::DocumentSymbols {
+                        let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
+                            Ok(line_index) => {
+                                lsp_document_symbols_to_processing_edit(line_index, &result)
+                            }
+                            Err(_) => {
+                                doc.lsp_fail("LSP buffer line index unavailable");
+                                return Ok(false);
+                            }
+                        };
+                        applied |= doc.apply_lsp_processing_edits([edit])?;
+                    }
+
+                    if result.is_null() {
+                        doc.lsp_last_result_json.remove(&(view, slot));
+                    } else {
+                        doc.lsp_last_result_json
+                            .insert((view, slot), result.to_string());
+                    }
+                }
+                continue;
+            }
+
             match resp.method.as_str() {
                 "textDocument/inlayHint" => {
                     doc.lsp_inlay_in_flight = false;
@@ -5583,50 +5814,6 @@ impl EditorUi {
                         }
                     };
                     applied |= doc.apply_lsp_processing_edits(edits)?;
-                }
-                "textDocument/hover" => {
-                    if let Some(LspClientRequest::Hover { view }) =
-                        doc.lsp_client_requests.remove(&resp.id)
-                    {
-                        if doc.lsp_latest_hover_request_id.get(&view) != Some(&resp.id) {
-                            continue;
-                        }
-
-                        if resp.error.is_some() {
-                            doc.lsp_last_hover_result_json.remove(&view);
-                            continue;
-                        }
-
-                        let result = resp.result.unwrap_or(serde_json::Value::Null);
-                        if result.is_null() {
-                            doc.lsp_last_hover_result_json.remove(&view);
-                        } else {
-                            doc.lsp_last_hover_result_json
-                                .insert(view, result.to_string());
-                        }
-                    }
-                }
-                "textDocument/definition" => {
-                    if let Some(LspClientRequest::Definition { view }) =
-                        doc.lsp_client_requests.remove(&resp.id)
-                    {
-                        if doc.lsp_latest_definition_request_id.get(&view) != Some(&resp.id) {
-                            continue;
-                        }
-
-                        if resp.error.is_some() {
-                            doc.lsp_last_definition_result_json.remove(&view);
-                            continue;
-                        }
-
-                        let result = resp.result.unwrap_or(serde_json::Value::Null);
-                        if result.is_null() {
-                            doc.lsp_last_definition_result_json.remove(&view);
-                        } else {
-                            doc.lsp_last_definition_result_json
-                                .insert(view, result.to_string());
-                        }
-                    }
                 }
                 "textDocument/onTypeFormatting" => {
                     if let Some(LspClientRequest::OnTypeFormatting { view, version }) =

@@ -54,6 +54,9 @@ Swift 侧已经具备以下基础能力：
 - 阶段 5 已新增 `EditorUI.diagnosticsJSON()`、`decorationsJSON()`、`documentSymbolsJSON()`、`foldingRegionsJSON()`、`styleIntervalsJSON(start:end:)`，并新增 `lspApplyDocumentSymbolsJSON(_:)` 让 Swift UI 可把 LSP `textDocument/documentSymbol` result 写入 core outline。
 - 阶段 5 已用 Rust `cargo test -p editor-core-ui -p editor-core-ui-ffi` 和 Swift `swift test --filter EditorCoreUIFFITests` 覆盖，其中 Swift 新增测试验证 “LSP/processing 派生状态 -> Rust UI -> C ABI -> Swift” 的完整路径。
 - 阶段 5 尚未完成 App 层统一 derived-state store、Problems/Outline 面板、minimap markers、gutter diagnostic icons、状态栏消费和更高层 Swift typed model。
+- 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
+- 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
+- 阶段 6 第一部分尚未完成 App 层结果 UI：references/locations 面板、completion popup、signature help popup、document/workspace symbols quick panel、rename/code action 主路径仍待实现。
 
 ## 分层结论
 
@@ -134,6 +137,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - LSP enable/status。
 - hover。
 - definition。
+- declaration / type definition / implementation / references / completion / signature help / document symbols / workspace symbols 的 Swift UI raw async request/take API。
 - format。
 - diagnostics 派生状态应用。
 - semantic tokens 到 style intervals 的应用。
@@ -144,19 +148,17 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - document symbols result 到 core outline 的应用和 JSON 导出。
 - `LSPBridge` 中有若干 JSON/DTO 转换 helper。
 
-仍缺产品化或缺公开 API 的 LSP 能力：
+仍缺产品化、结果 UI 或仍只停留在 raw API 的 LSP 能力：
 
-- declaration。
-- type definition。
-- implementation。
-- references。
-- completion request、completion resolve、completion popup、commit characters、additional text edits、snippet insertion。
-- signature help。
+- declaration/type definition/implementation 的 App command 和多结果导航 UI。
+- references 结果列表 UI。
+- completion popup、completion resolve、commit characters、additional text edits、snippet insertion。
+- signature help popup。
 - rename / prepare rename。
 - code action / code action resolve / execute command。
 - code lens resolve / command execution。
 - outline / document symbols UI。
-- workspace symbols UI。
+- workspace symbols quick panel。
 - range formatting。
 - on-type formatting。
 - semantic tokens refresh / delta 策略。
@@ -355,7 +357,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - `editor-core-ffi` 和 `editor-core-ui-ffi` 命令覆盖面不一致。
 - headless Swift 和 Swift UI 都已有 JSON command escape hatch，但两者覆盖面仍不完全一致。
 - Swift `EditorUI` typed API 覆盖主路径，但不是完整 command API。
-- LSP 相关返回值和事件缺统一 envelope。
+- LSP interactive request 已覆盖一批 raw JSON result API，但返回值和事件仍缺统一 envelope。
 - 长任务、异步请求、取消、错误、诊断日志没有统一 Swift 事件流。
 - 配置 DTO 不完整，例如 wrap、indentation、comment、auto-pairs、word boundary、search options。
 - 缺 ABI version / feature probing 在 Swift 层的显式使用策略。
@@ -367,6 +369,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已有高频命令 typed convenience API；新增或低频命令按产品化需要继续补 typed API。
 - FFI 返回统一 `{ ok, value, error, version }` 风格。
 - Swift 层封装稳定 enum/struct，但保留 unknown command 的转发能力。
+- LSP raw result API 后续应收敛到 typed model / result panel model，而不是让 App 层到处解析临时 JSON。
 - App 命令系统只依赖 Swift command abstraction，不直接散落调用 FFI 函数。
 
 ## 优先级建议

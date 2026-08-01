@@ -655,10 +655,30 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(vp.scrollTop, 46)
     }
 
-    func testLspRequestDefinitionThrowsWhenLspDisabled() throws {
+    func testLspInteractiveRequestsThrowWhenLspDisabledAndTakeReturnsNil() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "hello", viewportWidthCells: 80)
+        XCTAssertThrowsError(try ui.lspRequestHover(logicalLine: 0, logicalColumn: 0))
         XCTAssertThrowsError(try ui.lspRequestDefinition(logicalLine: 0, logicalColumn: 0))
+        XCTAssertThrowsError(try ui.lspRequestDeclaration(logicalLine: 0, logicalColumn: 0))
+        XCTAssertThrowsError(try ui.lspRequestTypeDefinition(logicalLine: 0, logicalColumn: 0))
+        XCTAssertThrowsError(try ui.lspRequestImplementation(logicalLine: 0, logicalColumn: 0))
+        XCTAssertThrowsError(try ui.lspRequestReferences(logicalLine: 0, logicalColumn: 0))
+        XCTAssertThrowsError(try ui.lspRequestCompletion(logicalLine: 0, logicalColumn: 0))
+        XCTAssertThrowsError(try ui.lspRequestSignatureHelp(logicalLine: 0, logicalColumn: 0))
+        XCTAssertThrowsError(try ui.lspRequestDocumentSymbols())
+        XCTAssertThrowsError(try ui.lspRequestWorkspaceSymbols(query: "hello"))
+
+        XCTAssertNil(try ui.lspTakeLastHoverResultJSON())
+        XCTAssertNil(try ui.lspTakeLastDefinitionResultJSON())
+        XCTAssertNil(try ui.lspTakeLastDeclarationResultJSON())
+        XCTAssertNil(try ui.lspTakeLastTypeDefinitionResultJSON())
+        XCTAssertNil(try ui.lspTakeLastImplementationResultJSON())
+        XCTAssertNil(try ui.lspTakeLastReferencesResultJSON())
+        XCTAssertNil(try ui.lspTakeLastCompletionResultJSON())
+        XCTAssertNil(try ui.lspTakeLastSignatureHelpResultJSON())
+        XCTAssertNil(try ui.lspTakeLastDocumentSymbolsResultJSON())
+        XCTAssertNil(try ui.lspTakeLastWorkspaceSymbolsResultJSON())
     }
 
     func testStyleColorsOverrideAffectsRendering() throws {

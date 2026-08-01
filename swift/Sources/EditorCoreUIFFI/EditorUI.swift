@@ -266,6 +266,162 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    private func lspRequestPosition(
+        logicalLine: UInt32,
+        logicalColumn: UInt32,
+        context: String,
+        _ request: (UInt32, UInt32, UnsafeMutablePointer<UInt64>) -> Int32
+    ) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = request(logicalLine, logicalColumn, &out)
+        try library.ensureStatus(status, context: context)
+        return out
+    }
+
+    private func lspTakeLastResultJSON(
+        context: String,
+        _ take: (UnsafeMutablePointer<UInt8>, UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>) -> Int32
+    ) throws -> String? {
+        var has: UInt8 = 0
+        var ptr: UnsafeMutablePointer<CChar>?
+        let status = take(&has, &ptr)
+        try library.ensureStatus(status, context: context)
+        guard has != 0, let ptr else { return nil }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func lspRequestDeclaration(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
+        try lspRequestPosition(
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            context: "editor_ui_lsp_request_declaration"
+        ) { line, column, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_declaration(handle, line, column, out)
+        }
+    }
+
+    public func lspTakeLastDeclarationResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_declaration_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_declaration_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestTypeDefinition(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
+        try lspRequestPosition(
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            context: "editor_ui_lsp_request_type_definition"
+        ) { line, column, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_type_definition(handle, line, column, out)
+        }
+    }
+
+    public func lspTakeLastTypeDefinitionResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_type_definition_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_type_definition_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestImplementation(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
+        try lspRequestPosition(
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            context: "editor_ui_lsp_request_implementation"
+        ) { line, column, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_implementation(handle, line, column, out)
+        }
+    }
+
+    public func lspTakeLastImplementationResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_implementation_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_implementation_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestReferences(
+        logicalLine: UInt32,
+        logicalColumn: UInt32,
+        includeDeclaration: Bool = true
+    ) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_request_references(
+            handle,
+            logicalLine,
+            logicalColumn,
+            includeDeclaration ? 1 : 0,
+            &out
+        )
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_references")
+        return out
+    }
+
+    public func lspTakeLastReferencesResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_references_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_references_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestCompletion(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
+        try lspRequestPosition(
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            context: "editor_ui_lsp_request_completion"
+        ) { line, column, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_completion(handle, line, column, out)
+        }
+    }
+
+    public func lspTakeLastCompletionResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_completion_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_completion_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestSignatureHelp(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
+        try lspRequestPosition(
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            context: "editor_ui_lsp_request_signature_help"
+        ) { line, column, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_signature_help(handle, line, column, out)
+        }
+    }
+
+    public func lspTakeLastSignatureHelpResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_signature_help_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_signature_help_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestDocumentSymbols() throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_request_document_symbols(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_document_symbols")
+        return out
+    }
+
+    public func lspTakeLastDocumentSymbolsResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_document_symbols_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_document_symbols_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestWorkspaceSymbols(query: String) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = query.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_lsp_request_workspace_symbols(handle, cstr, &out)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_workspace_symbols")
+        return out
+    }
+
+    public func lspTakeLastWorkspaceSymbolsResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_workspace_symbols_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_workspace_symbols_json(handle, has, ptr)
+        }
+    }
+
     /// Format the current document via LSP (`textDocument/formatting`) and apply edits locally.
     ///
     /// Notes:

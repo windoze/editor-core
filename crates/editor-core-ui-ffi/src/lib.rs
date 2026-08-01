@@ -1253,6 +1253,297 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_definition_j
     }
 }
 
+fn lsp_request_position_ffi(
+    ui: *mut EditorUi,
+    line: u32,
+    column: u32,
+    out_request_id: *mut u64,
+    request: impl FnOnce(&mut EditorUi, usize, usize) -> Result<u64, editor_core_ui::UiError>,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_request_id.is_null() {
+            return Err(invalid_argument("out_request_id is null"));
+        }
+
+        let id = request(
+            ui,
+            u32_to_usize(line, "line")?,
+            u32_to_usize(column, "column")?,
+        )
+        .map_err(map_ui_error)?;
+        unsafe {
+            *out_request_id = id;
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+fn lsp_request_no_position_ffi(
+    ui: *mut EditorUi,
+    out_request_id: *mut u64,
+    request: impl FnOnce(&mut EditorUi) -> Result<u64, editor_core_ui::UiError>,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_request_id.is_null() {
+            return Err(invalid_argument("out_request_id is null"));
+        }
+
+        let id = request(ui).map_err(map_ui_error)?;
+        unsafe {
+            *out_request_id = id;
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+fn lsp_take_result_json_ffi(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+    take: impl FnOnce(&mut EditorUi) -> Option<String>,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_has_result.is_null() {
+            return Err(invalid_argument("out_has_result is null"));
+        }
+        if out_result_json_utf8.is_null() {
+            return Err(invalid_argument("out_result_json_utf8 is null"));
+        }
+
+        let json = take(ui);
+        unsafe {
+            if let Some(json) = json {
+                *out_has_result = 1;
+                *out_result_json_utf8 = make_c_string_ptr(json);
+            } else {
+                *out_has_result = 0;
+                *out_result_json_utf8 = ptr::null_mut();
+            }
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_declaration(
+    ui: *mut EditorUi,
+    line: u32,
+    column: u32,
+    out_request_id: *mut u64,
+) -> c_int {
+    lsp_request_position_ffi(ui, line, column, out_request_id, |ui, line, column| {
+        ui.lsp_request_declaration(line, column)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_declaration_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
+        ui.lsp_take_last_declaration_result_json()
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_type_definition(
+    ui: *mut EditorUi,
+    line: u32,
+    column: u32,
+    out_request_id: *mut u64,
+) -> c_int {
+    lsp_request_position_ffi(ui, line, column, out_request_id, |ui, line, column| {
+        ui.lsp_request_type_definition(line, column)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_type_definition_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
+        ui.lsp_take_last_type_definition_result_json()
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_implementation(
+    ui: *mut EditorUi,
+    line: u32,
+    column: u32,
+    out_request_id: *mut u64,
+) -> c_int {
+    lsp_request_position_ffi(ui, line, column, out_request_id, |ui, line, column| {
+        ui.lsp_request_implementation(line, column)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_implementation_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
+        ui.lsp_take_last_implementation_result_json()
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_references(
+    ui: *mut EditorUi,
+    line: u32,
+    column: u32,
+    include_declaration: u8,
+    out_request_id: *mut u64,
+) -> c_int {
+    lsp_request_position_ffi(ui, line, column, out_request_id, |ui, line, column| {
+        ui.lsp_request_references(line, column, include_declaration != 0)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_references_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
+        ui.lsp_take_last_references_result_json()
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_completion(
+    ui: *mut EditorUi,
+    line: u32,
+    column: u32,
+    out_request_id: *mut u64,
+) -> c_int {
+    lsp_request_position_ffi(ui, line, column, out_request_id, |ui, line, column| {
+        ui.lsp_request_completion(line, column)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_completion_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
+        ui.lsp_take_last_completion_result_json()
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_signature_help(
+    ui: *mut EditorUi,
+    line: u32,
+    column: u32,
+    out_request_id: *mut u64,
+) -> c_int {
+    lsp_request_position_ffi(ui, line, column, out_request_id, |ui, line, column| {
+        ui.lsp_request_signature_help(line, column)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_signature_help_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
+        ui.lsp_take_last_signature_help_result_json()
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_document_symbols(
+    ui: *mut EditorUi,
+    out_request_id: *mut u64,
+) -> c_int {
+    lsp_request_no_position_ffi(ui, out_request_id, |ui| ui.lsp_request_document_symbols())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_document_symbols_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
+        ui.lsp_take_last_document_symbols_result_json()
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_workspace_symbols(
+    ui: *mut EditorUi,
+    query_utf8: *const c_char,
+    out_request_id: *mut u64,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_request_id.is_null() {
+            return Err(invalid_argument("out_request_id is null"));
+        }
+        let query = require_cstr(query_utf8, "query_utf8")?
+            .to_str()
+            .map_err(|_| "query_utf8 is not valid UTF-8".to_string())?;
+        let id = ui
+            .lsp_request_workspace_symbols(query)
+            .map_err(map_ui_error)?;
+        unsafe {
+            *out_request_id = id;
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_workspace_symbols_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
+        ui.lsp_take_last_workspace_symbols_result_json()
+    })
+}
+
 /// Format the current document via LSP (`textDocument/formatting`) and apply edits locally.
 ///
 /// - `formatting_options_json_utf8`: optional JSON `FormattingOptions` object; pass `NULL` or an
