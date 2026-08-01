@@ -21,6 +21,18 @@ struct AttoDerivedStateSnapshot: Equatable {
         guard count > 0 else { return nil }
         return count == 1 ? "Problems: 1" : "Problems: \(count)"
     }
+
+    var foldedStatusText: String? {
+        let count = foldingRegions.regions.filter(\.isCollapsed).count
+        guard count > 0 else { return nil }
+        return count == 1 ? "Folded: 1" : "Folded: \(count)"
+    }
+
+    var statusBarLeftText: String? {
+        let parts = [problemsStatusText, foldedStatusText].compactMap { $0 }
+        guard parts.isEmpty == false else { return nil }
+        return parts.joined(separator: " | ")
+    }
 }
 
 final class AttoDerivedStateStore {

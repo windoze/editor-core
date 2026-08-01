@@ -2481,7 +2481,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }()
 
         statusBarView.update(
-            leftText: derivedStateStore.active.problemsStatusText,
+            leftText: derivedStateStore.active.statusBarLeftText,
             languageId: tab.syntaxLanguageId,
             languageIsEnabled: true,
             lspText: lspText,
