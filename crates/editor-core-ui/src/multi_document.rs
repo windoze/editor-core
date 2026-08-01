@@ -7,6 +7,11 @@ use std::collections::BTreeMap;
 pub struct TabId(u64);
 
 impl TabId {
+    /// Construct a tab id from its stable numeric representation.
+    pub fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
     /// Return the underlying numeric id.
     pub fn get(self) -> u64 {
         self.0
@@ -237,6 +242,11 @@ impl MultiDocumentEditorUi {
         self.tabs.get(&id)?.title.as_deref()
     }
 
+    /// Get a tab title by id (if the tab exists and has a title).
+    pub fn tab_title(&self, tab_id: TabId) -> Option<&str> {
+        self.tabs.get(&tab_id)?.title.as_deref()
+    }
+
     /// Set a tab title.
     pub fn set_tab_title(&mut self, tab_id: TabId, title: Option<String>) -> Result<(), UiError> {
         let tab = self
@@ -317,6 +327,11 @@ impl MultiDocumentEditorUi {
     /// Return the number of views in a tab.
     pub fn view_count(&self, tab_id: TabId) -> Option<usize> {
         self.tabs.get(&tab_id).map(|t| t.views.len())
+    }
+
+    /// Return the active view index in a tab.
+    pub fn active_view_index(&self, tab_id: TabId) -> Option<usize> {
+        self.tabs.get(&tab_id).map(|t| t.active_view)
     }
 
     /// Search across all open tabs.

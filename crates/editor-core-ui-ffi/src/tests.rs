@@ -51,6 +51,135 @@ fn set_test_treesitter_registry(ui: *mut EditorUi) {
 }
 
 #[test]
+fn ffi_multi_document_exposes_tab_preview_split_and_search() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let alpha = CString::new("alpha world").unwrap();
+    let beta = CString::new("beta world").unwrap();
+    let mut alpha_id: u64 = 0;
+    let mut beta_id: u64 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, alpha.as_ptr(), 80, &mut alpha_id),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, beta.as_ptr(), 80, &mut beta_id),
+        ECU_OK
+    );
+    assert_ne!(alpha_id, beta_id);
+
+    let title = CString::new("Beta").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_title(multi, beta_id, title.as_ptr()),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_active_tab(multi, beta_id),
+        ECU_OK
+    );
+
+    let mut has_active: u8 = 0;
+    let mut active_id: u64 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_active_tab_id(multi, &mut has_active, &mut active_id),
+        ECU_OK
+    );
+    assert_eq!(has_active, 1);
+    assert_eq!(active_id, beta_id);
+
+    let mut view_index: u32 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_split_tab(multi, beta_id, 80, &mut view_index),
+        ECU_OK
+    );
+    assert_eq!(view_index, 1);
+    let mut view_count: u32 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_view_count(multi, beta_id, &mut view_count),
+        ECU_OK
+    );
+    assert_eq!(view_count, 2);
+
+    let preview1 = CString::new("preview one").unwrap();
+    let preview2 = CString::new("preview two").unwrap();
+    let mut preview_id: u64 = 0;
+    let mut preview_again_id: u64 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_preview_tab(
+            multi,
+            preview1.as_ptr(),
+            80,
+            &mut preview_id,
+        ),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_preview_tab(
+            multi,
+            preview2.as_ptr(),
+            80,
+            &mut preview_again_id,
+        ),
+        ECU_OK
+    );
+    assert_eq!(preview_again_id, preview_id);
+    let mut is_preview: u8 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_is_preview_tab(multi, preview_id, &mut is_preview),
+        ECU_OK
+    );
+    assert_eq!(is_preview, 1);
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_pin_tab(multi, preview_id),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_is_preview_tab(multi, preview_id, &mut is_preview),
+        ECU_OK
+    );
+    assert_eq!(is_preview, 0);
+
+    let query = CString::new("world").unwrap();
+    let search_ptr =
+        editor_core_ui_ffi_multi_document_search_all_tabs_json(multi, query.as_ptr(), 1, 0, 0);
+    assert!(!search_ptr.is_null());
+    let search_json = unsafe { std::ffi::CStr::from_ptr(search_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(search_ptr) };
+    let search_value: serde_json::Value = serde_json::from_str(&search_json).unwrap();
+    assert_eq!(search_value["results"].as_array().unwrap().len(), 2);
+
+    let snapshot_ptr = editor_core_ui_ffi_multi_document_snapshot_json(multi);
+    assert!(!snapshot_ptr.is_null());
+    let snapshot_json = unsafe { std::ffi::CStr::from_ptr(snapshot_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(snapshot_ptr) };
+    let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
+    assert_eq!(snapshot["active_tab_id"], beta_id);
+    let tabs = snapshot["tabs"].as_array().unwrap();
+    assert!(
+        tabs.iter()
+            .any(|tab| tab["id"] == beta_id && tab["title"] == "Beta")
+    );
+    assert!(
+        tabs.iter()
+            .any(|tab| tab["id"] == preview_id && tab["is_preview"] == false)
+    );
+
+    let mut closed: u32 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_close_tabs_to_right(multi, beta_id, &mut closed),
+        ECU_OK
+    );
+    assert!(closed >= 1);
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+}
+
+#[test]
 fn ffi_smoke_create_insert_render_get_text() {
     let initial = CString::new("abc").unwrap();
     let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);

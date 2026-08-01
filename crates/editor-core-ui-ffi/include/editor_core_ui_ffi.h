@@ -8,6 +8,7 @@ extern "C" {
 
 // Opaque handle.
 typedef struct EditorUi EditorUi;
+typedef struct MultiDocumentEditorUi MultiDocumentEditorUi;
 
 typedef struct EcuRgba8 {
   uint8_t r;
@@ -140,7 +141,57 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_LSP_INTERACTIVE_REQUESTS   (1ull << 2)
 #define ECU_FEATURE_LSP_STATUS_SNAPSHOT        (1ull << 3)
 #define ECU_FEATURE_WORKSPACE_EDIT_APPLICATION (1ull << 4)
+#define ECU_FEATURE_MULTI_DOCUMENT_UI          (1ull << 5)
 uint64_t editor_core_ui_ffi_feature_flags(void);
+
+MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);
+void editor_core_ui_ffi_multi_document_free(MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_open_tab(MultiDocumentEditorUi* multi,
+                                                   const char* initial_text_utf8,
+                                                   uint32_t viewport_width_cells,
+                                                   uint64_t* out_tab_id);
+int32_t editor_core_ui_ffi_multi_document_open_preview_tab(MultiDocumentEditorUi* multi,
+                                                           const char* initial_text_utf8,
+                                                           uint32_t viewport_width_cells,
+                                                           uint64_t* out_tab_id);
+int32_t editor_core_ui_ffi_multi_document_active_tab_id(MultiDocumentEditorUi* multi,
+                                                        uint8_t* out_has_active,
+                                                        uint64_t* out_tab_id);
+char* editor_core_ui_ffi_multi_document_snapshot_json(MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_set_active_tab(MultiDocumentEditorUi* multi,
+                                                         uint64_t tab_id);
+int32_t editor_core_ui_ffi_multi_document_set_tab_title(MultiDocumentEditorUi* multi,
+                                                        uint64_t tab_id,
+                                                        const char* title_utf8);
+int32_t editor_core_ui_ffi_multi_document_is_preview_tab(MultiDocumentEditorUi* multi,
+                                                         uint64_t tab_id,
+                                                         uint8_t* out_is_preview);
+int32_t editor_core_ui_ffi_multi_document_pin_tab(MultiDocumentEditorUi* multi, uint64_t tab_id);
+int32_t editor_core_ui_ffi_multi_document_close_tab(MultiDocumentEditorUi* multi,
+                                                    uint64_t tab_id,
+                                                    uint8_t* out_closed);
+int32_t editor_core_ui_ffi_multi_document_close_all_tabs(MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_close_other_tabs(MultiDocumentEditorUi* multi,
+                                                           uint64_t tab_id,
+                                                           uint32_t* out_closed_count);
+int32_t editor_core_ui_ffi_multi_document_close_tabs_to_right(MultiDocumentEditorUi* multi,
+                                                              uint64_t tab_id,
+                                                              uint32_t* out_closed_count);
+int32_t editor_core_ui_ffi_multi_document_split_tab(MultiDocumentEditorUi* multi,
+                                                    uint64_t tab_id,
+                                                    uint32_t viewport_width_cells,
+                                                    uint32_t* out_view_index);
+int32_t editor_core_ui_ffi_multi_document_set_active_view_index(MultiDocumentEditorUi* multi,
+                                                                uint64_t tab_id,
+                                                                uint32_t view_index);
+int32_t editor_core_ui_ffi_multi_document_view_count(MultiDocumentEditorUi* multi,
+                                                     uint64_t tab_id,
+                                                     uint32_t* out_view_count);
+char* editor_core_ui_ffi_multi_document_search_all_tabs_json(MultiDocumentEditorUi* multi,
+                                                             const char* query_utf8,
+                                                             uint8_t case_sensitive,
+                                                             uint8_t whole_word,
+                                                             uint8_t regex);
 
 EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8,
                                           uint32_t viewport_width_cells);

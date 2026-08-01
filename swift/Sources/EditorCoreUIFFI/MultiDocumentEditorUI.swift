@@ -1,0 +1,235 @@
+import CEditorCoreUIFFI
+import Foundation
+
+public struct EcuMultiDocumentTabSnapshot: Decodable, Equatable, Sendable {
+    public let id: UInt64
+    public let title: String?
+    public let isPreview: Bool
+    public let isActive: Bool
+    public let viewCount: UInt32
+    public let activeViewIndex: UInt32
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case isPreview = "is_preview"
+        case isActive = "is_active"
+        case viewCount = "view_count"
+        case activeViewIndex = "active_view_index"
+    }
+}
+
+public struct EcuMultiDocumentSnapshot: Decodable, Equatable, Sendable {
+    public let activeTabId: UInt64?
+    public let tabs: [EcuMultiDocumentTabSnapshot]
+
+    private enum CodingKeys: String, CodingKey {
+        case activeTabId = "active_tab_id"
+        case tabs
+    }
+}
+
+public struct EcuTabSearchMatch: Decodable, Equatable, Sendable {
+    public let start: UInt32
+    public let end: UInt32
+}
+
+public struct EcuTabSearchResult: Decodable, Equatable, Sendable {
+    public let tabId: UInt64
+    public let matches: [EcuTabSearchMatch]
+
+    private enum CodingKeys: String, CodingKey {
+        case tabId = "tab_id"
+        case matches
+    }
+}
+
+private struct EcuTabSearchResponse: Decodable {
+    let results: [EcuTabSearchResult]
+}
+
+public final class MultiDocumentEditorUI {
+    public let library: EditorCoreUIFFILibrary
+    private let handle: OpaquePointer
+
+    public init(library: EditorCoreUIFFILibrary) throws {
+        self.library = library
+        guard let ptr = editor_core_ui_ffi_multi_document_new() else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "multi_document_new",
+                message: library.lastErrorMessageString()
+            )
+        }
+        self.handle = ptr
+    }
+
+    deinit {
+        editor_core_ui_ffi_multi_document_free(handle)
+    }
+
+    public func openTab(text: String, viewportWidthCells: UInt32 = 120) throws -> UInt64 {
+        var tabId: UInt64 = 0
+        let status = text.withCString { textPtr in
+            editor_core_ui_ffi_multi_document_open_tab(handle, textPtr, viewportWidthCells, &tabId)
+        }
+        try library.ensureStatus(status, context: "multi_document_open_tab")
+        return tabId
+    }
+
+    public func openPreviewTab(text: String, viewportWidthCells: UInt32 = 120) throws -> UInt64 {
+        var tabId: UInt64 = 0
+        let status = text.withCString { textPtr in
+            editor_core_ui_ffi_multi_document_open_preview_tab(handle, textPtr, viewportWidthCells, &tabId)
+        }
+        try library.ensureStatus(status, context: "multi_document_open_preview_tab")
+        return tabId
+    }
+
+    public func activeTabId() throws -> UInt64? {
+        var hasActive: UInt8 = 0
+        var tabId: UInt64 = 0
+        let status = editor_core_ui_ffi_multi_document_active_tab_id(handle, &hasActive, &tabId)
+        try library.ensureStatus(status, context: "multi_document_active_tab_id")
+        return hasActive == 0 ? nil : tabId
+    }
+
+    public func snapshotJSON() throws -> String {
+        guard let ptr = editor_core_ui_ffi_multi_document_snapshot_json(handle) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "multi_document_snapshot_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func snapshot() throws -> EcuMultiDocumentSnapshot {
+        try decode(EcuMultiDocumentSnapshot.self, from: snapshotJSON(), context: "multi_document_snapshot_decode")
+    }
+
+    public func setActiveTab(_ tabId: UInt64) throws {
+        let status = editor_core_ui_ffi_multi_document_set_active_tab(handle, tabId)
+        try library.ensureStatus(status, context: "multi_document_set_active_tab")
+    }
+
+    public func setTabTitle(_ title: String?, tabId: UInt64) throws {
+        let status: Int32
+        if let title {
+            status = title.withCString { titlePtr in
+                editor_core_ui_ffi_multi_document_set_tab_title(handle, tabId, titlePtr)
+            }
+        } else {
+            status = editor_core_ui_ffi_multi_document_set_tab_title(handle, tabId, nil)
+        }
+        try library.ensureStatus(status, context: "multi_document_set_tab_title")
+    }
+
+    public func isPreviewTab(_ tabId: UInt64) throws -> Bool {
+        var raw: UInt8 = 0
+        let status = editor_core_ui_ffi_multi_document_is_preview_tab(handle, tabId, &raw)
+        try library.ensureStatus(status, context: "multi_document_is_preview_tab")
+        return raw != 0
+    }
+
+    public func pinTab(_ tabId: UInt64) throws {
+        let status = editor_core_ui_ffi_multi_document_pin_tab(handle, tabId)
+        try library.ensureStatus(status, context: "multi_document_pin_tab")
+    }
+
+    @discardableResult
+    public func closeTab(_ tabId: UInt64) throws -> Bool {
+        var closed: UInt8 = 0
+        let status = editor_core_ui_ffi_multi_document_close_tab(handle, tabId, &closed)
+        try library.ensureStatus(status, context: "multi_document_close_tab")
+        return closed != 0
+    }
+
+    public func closeAllTabs() throws {
+        let status = editor_core_ui_ffi_multi_document_close_all_tabs(handle)
+        try library.ensureStatus(status, context: "multi_document_close_all_tabs")
+    }
+
+    @discardableResult
+    public func closeOtherTabs(keeping tabId: UInt64) throws -> UInt32 {
+        var closed: UInt32 = 0
+        let status = editor_core_ui_ffi_multi_document_close_other_tabs(handle, tabId, &closed)
+        try library.ensureStatus(status, context: "multi_document_close_other_tabs")
+        return closed
+    }
+
+    @discardableResult
+    public func closeTabsToRight(of tabId: UInt64) throws -> UInt32 {
+        var closed: UInt32 = 0
+        let status = editor_core_ui_ffi_multi_document_close_tabs_to_right(handle, tabId, &closed)
+        try library.ensureStatus(status, context: "multi_document_close_tabs_to_right")
+        return closed
+    }
+
+    @discardableResult
+    public func splitTab(_ tabId: UInt64, viewportWidthCells: UInt32 = 120) throws -> UInt32 {
+        var viewIndex: UInt32 = 0
+        let status = editor_core_ui_ffi_multi_document_split_tab(handle, tabId, viewportWidthCells, &viewIndex)
+        try library.ensureStatus(status, context: "multi_document_split_tab")
+        return viewIndex
+    }
+
+    public func setActiveViewIndex(tabId: UInt64, viewIndex: UInt32) throws {
+        let status = editor_core_ui_ffi_multi_document_set_active_view_index(handle, tabId, viewIndex)
+        try library.ensureStatus(status, context: "multi_document_set_active_view_index")
+    }
+
+    public func viewCount(tabId: UInt64) throws -> UInt32 {
+        var count: UInt32 = 0
+        let status = editor_core_ui_ffi_multi_document_view_count(handle, tabId, &count)
+        try library.ensureStatus(status, context: "multi_document_view_count")
+        return count
+    }
+
+    public func searchAllTabsJSON(query: String, options: EcuSearchOptions = EcuSearchOptions()) throws -> String {
+        let ptr = query.withCString { queryPtr in
+            editor_core_ui_ffi_multi_document_search_all_tabs_json(
+                handle,
+                queryPtr,
+                options.ffiCaseSensitive,
+                options.ffiWholeWord,
+                options.ffiRegex
+            )
+        }
+        guard let ptr else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "multi_document_search_all_tabs_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func searchAllTabs(query: String, options: EcuSearchOptions = EcuSearchOptions()) throws -> [EcuTabSearchResult] {
+        let json = try searchAllTabsJSON(query: query, options: options)
+        return try decode(EcuTabSearchResponse.self, from: json, context: "multi_document_search_decode").results
+    }
+
+    private func decode<T: Decodable>(_ type: T.Type, from json: String, context: String) throws -> T {
+        guard let data = json.data(using: .utf8) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: context,
+                message: "JSON is not UTF-8"
+            )
+        }
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: context,
+                message: String(describing: error)
+            )
+        }
+    }
+}

@@ -15,7 +15,7 @@ use editor_core::{ExpandSelectionDirection, ExpandSelectionUnit};
 use editor_core_render_skia::{
     RenderTheme, Rgba8, StyleColors, StyleFont, TextDecorations, UnderlineStyle,
 };
-use editor_core_ui::{ChromeTheme, EditorUi, UiError};
+use editor_core_ui::{ChromeTheme, EditorUi, MultiDocumentEditorUi, TabId, UiError};
 use libc::{c_char, c_float, c_int, c_void};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -41,12 +41,15 @@ pub const ECU_FEATURE_LSP_INTERACTIVE_REQUESTS: u64 = 1 << 2;
 pub const ECU_FEATURE_LSP_STATUS_SNAPSHOT: u64 = 1 << 3;
 /// Feature bit: LSP WorkspaceEdit application helpers are available.
 pub const ECU_FEATURE_WORKSPACE_EDIT_APPLICATION: u64 = 1 << 4;
+/// Feature bit: multi-document UI orchestrator ABI is available.
+pub const ECU_FEATURE_MULTI_DOCUMENT_UI: u64 = 1 << 5;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
     | ECU_FEATURE_LSP_INTERACTIVE_REQUESTS
     | ECU_FEATURE_LSP_STATUS_SNAPSHOT
-    | ECU_FEATURE_WORKSPACE_EDIT_APPLICATION;
+    | ECU_FEATURE_WORKSPACE_EDIT_APPLICATION
+    | ECU_FEATURE_MULTI_DOCUMENT_UI;
 
 fn set_last_error(msg: impl Into<String>) {
     LAST_ERROR.with(|slot| {

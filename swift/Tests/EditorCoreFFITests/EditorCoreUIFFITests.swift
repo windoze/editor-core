@@ -83,6 +83,49 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.lspInteractiveRequests))
         XCTAssertTrue(info.supports(.lspStatusSnapshot))
         XCTAssertTrue(info.supports(.workspaceEditApplication))
+        XCTAssertTrue(info.supports(.multiDocumentUI))
+    }
+
+    func testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+
+        let alpha = try multi.openTab(text: "alpha world", viewportWidthCells: 80)
+        let beta = try multi.openTab(text: "beta world", viewportWidthCells: 80)
+        XCTAssertNotEqual(alpha, beta)
+
+        try multi.setTabTitle("Beta", tabId: beta)
+        try multi.setActiveTab(beta)
+        XCTAssertEqual(try multi.activeTabId(), beta)
+
+        XCTAssertEqual(try multi.splitTab(beta, viewportWidthCells: 80), 1)
+        XCTAssertEqual(try multi.viewCount(tabId: beta), 2)
+        try multi.setActiveViewIndex(tabId: beta, viewIndex: 0)
+
+        let preview = try multi.openPreviewTab(text: "preview one", viewportWidthCells: 80)
+        let reusedPreview = try multi.openPreviewTab(text: "preview two", viewportWidthCells: 80)
+        XCTAssertEqual(reusedPreview, preview)
+        XCTAssertTrue(try multi.isPreviewTab(preview))
+
+        try multi.pinTab(preview)
+        XCTAssertFalse(try multi.isPreviewTab(preview))
+
+        let results = try multi.searchAllTabs(query: "world")
+        XCTAssertEqual(results.map(\.tabId).sorted(), [alpha, beta].sorted())
+        XCTAssertEqual(results.flatMap(\.matches).count, 2)
+
+        let snapshot = try multi.snapshot()
+        XCTAssertEqual(snapshot.activeTabId, beta)
+        XCTAssertEqual(snapshot.tabs.count, 3)
+        XCTAssertTrue(snapshot.tabs.contains { $0.id == beta && $0.title == "Beta" && $0.viewCount == 2 })
+        XCTAssertTrue(snapshot.tabs.contains { $0.id == preview && $0.isPreview == false })
+
+        XCTAssertEqual(try multi.closeTabsToRight(of: beta), 1)
+        XCTAssertEqual(try multi.closeOtherTabs(keeping: beta), 1)
+        XCTAssertEqual(try multi.snapshot().tabs.map(\.id), [beta])
+
+        XCTAssertTrue(try multi.closeTab(beta))
+        XCTAssertNil(try multi.activeTabId())
     }
 
     func testParagraphSelectionAPIs() throws {
