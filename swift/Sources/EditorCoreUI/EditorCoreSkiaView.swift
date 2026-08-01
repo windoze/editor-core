@@ -74,6 +74,29 @@ public struct EditorCoreSkiaContextMenuContext {
     }
 }
 
+public enum EditorCoreLSPFormattingResult: Equatable {
+    case applied
+    case noEdits
+    case unavailable(String)
+    case failed(String)
+
+    public var didApply: Bool {
+        if case .applied = self { return true }
+        return false
+    }
+
+    public var message: String? {
+        switch self {
+        case .applied:
+            return nil
+        case .noEdits:
+            return "No formatting edits were returned."
+        case .unavailable(let reason), .failed(let reason):
+            return reason
+        }
+    }
+}
+
 /// 自绘版 AppKit 组件（Option 2）：
 /// - Rust: editor-core + editor-core-ui + Skia（Metal/GPU 直接绘制到 `MTLTexture`）
 /// - Swift/AppKit: `MTKView` 负责承接事件并把 `CAMetalDrawable` 呈现到屏幕
@@ -2070,14 +2093,25 @@ public final class EditorCoreSkiaView: MTKView {
     /// This is intended for explicit user actions (command palette / menu item).
     @discardableResult
     public func formatDocumentWithLSP(timeoutMs: UInt32 = 2000) -> Bool {
+        let result = formatDocumentWithLSPResult(timeoutMs: timeoutMs)
+        if case .unavailable = result {
+            NSSound.beep()
+        } else if case .failed = result {
+            NSSound.beep()
+        }
+        return result.didApply
+    }
+
+    /// Format the current document via LSP and return a typed outcome for UI feedback/tests.
+    @discardableResult
+    public func formatDocumentWithLSPResult(timeoutMs: UInt32 = 2000) -> EditorCoreLSPFormattingResult {
         dismissHoverUIForUserAction()
 
         let didApply: Bool
         updateViewportIfNeeded()
         do {
             guard try editor.lspIsEnabled() else {
-                NSSound.beep()
-                return false
+                return .unavailable("LSP is not enabled for this document.")
             }
 
             didApply = try editor.lspFormatDocument(
@@ -2088,27 +2122,41 @@ public final class EditorCoreSkiaView: MTKView {
                 didMutateDocumentText()
             }
         } catch {
-            NSSound.beep()
-            return false
+            return .failed(error.localizedDescription)
         }
 
         requestRedraw()
         invalidateIMECharacterCoordinates()
         notifyViewportStateDidChange()
-        return didApply
+        return didApply ? .applied : .noEdits
     }
 
     /// Format an editor-core char-offset range via LSP (`textDocument/rangeFormatting`).
     @discardableResult
     public func formatRangeWithLSP(startOffset: UInt32, endOffset: UInt32, timeoutMs: UInt32 = 2000) -> Bool {
+        let result = formatRangeWithLSPResult(startOffset: startOffset, endOffset: endOffset, timeoutMs: timeoutMs)
+        if case .unavailable = result {
+            NSSound.beep()
+        } else if case .failed = result {
+            NSSound.beep()
+        }
+        return result.didApply
+    }
+
+    /// Format an editor-core char-offset range via LSP and return a typed outcome for UI feedback/tests.
+    @discardableResult
+    public func formatRangeWithLSPResult(
+        startOffset: UInt32,
+        endOffset: UInt32,
+        timeoutMs: UInt32 = 2000
+    ) -> EditorCoreLSPFormattingResult {
         dismissHoverUIForUserAction()
 
         let didApply: Bool
         updateViewportIfNeeded()
         do {
             guard try editor.lspIsEnabled() else {
-                NSSound.beep()
-                return false
+                return .unavailable("LSP is not enabled for this document.")
             }
 
             didApply = try editor.lspFormatRange(
@@ -2121,14 +2169,13 @@ public final class EditorCoreSkiaView: MTKView {
                 didMutateDocumentText()
             }
         } catch {
-            NSSound.beep()
-            return false
+            return .failed(error.localizedDescription)
         }
 
         requestRedraw()
         invalidateIMECharacterCoordinates()
         notifyViewportStateDidChange()
-        return didApply
+        return didApply ? .applied : .noEdits
     }
 
     /// Request LSP on-type formatting at a logical position and apply the returned edits.
@@ -2139,11 +2186,27 @@ public final class EditorCoreSkiaView: MTKView {
         trigger: String,
         timeoutMs: UInt32 = 2000
     ) -> Bool {
+        formatOnTypeWithLSPResult(
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            trigger: trigger,
+            timeoutMs: timeoutMs
+        ).didApply
+    }
+
+    /// Request LSP on-type formatting and return a typed outcome.
+    @discardableResult
+    public func formatOnTypeWithLSPResult(
+        logicalLine: UInt32,
+        logicalColumn: UInt32,
+        trigger: String,
+        timeoutMs: UInt32 = 2000
+    ) -> EditorCoreLSPFormattingResult {
         let didApply: Bool
         updateViewportIfNeeded()
         do {
             guard try editor.lspIsEnabled() else {
-                return false
+                return .unavailable("LSP is not enabled for this document.")
             }
 
             didApply = try editor.lspFormatOnType(
@@ -2157,7 +2220,7 @@ public final class EditorCoreSkiaView: MTKView {
                 didMutateDocumentText()
             }
         } catch {
-            return false
+            return .failed(error.localizedDescription)
         }
 
         if didApply {
@@ -2165,7 +2228,7 @@ public final class EditorCoreSkiaView: MTKView {
             invalidateIMECharacterCoordinates()
             notifyViewportStateDidChange()
         }
-        return didApply
+        return didApply ? .applied : .noEdits
     }
 
     // MARK: - Clipboard

@@ -83,10 +83,10 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 13 已完成：Swift UI binding 新增 LSP range/on-type formatting 的阻塞 turnkey API，覆盖 Rust `editor-core-lsp` 已有的 `textDocument/rangeFormatting` 和 `textDocument/onTypeFormatting` 请求路径，并复用 `editor-core-ui` 的 LSP `TextEdit` 应用逻辑。
 - 阶段 13 已新增 `EditorUi.lsp_format_range(...)` / `lsp_format_on_type(...)`、C ABI `editor_core_ui_ffi_editor_ui_lsp_format_range` / `editor_core_ui_ffi_editor_ui_lsp_format_on_type`、Swift `EditorUI.lspFormatRange(...)` / `lspFormatOnType(...)`，以及 `EditorCoreSkiaView.formatRangeWithLSP(...)` / `formatOnTypeWithLSP(...)`。
 - 阶段 13 已让 AttoEditor App 新增 `editor.format_selection` 主路径，接入 command palette、Edit 菜单和默认 keymap；选区为空时不向 LSP 发 range formatting 请求。
-- 阶段 13 尚未完成 on-type formatting 的完整产品触发策略（除 Rust UI 已有的换行触发路径外，还缺按 server trigger characters 自动触发）、格式化错误展示、跨文件 WorkspaceEdit 产品化和 typed result model。
+- 阶段 13 后续缺口中，按 server trigger characters 自动触发已在阶段 14 补齐，显式 formatting 错误展示和 typed outcome 已在阶段 60 补齐；formatting 本身仍是当前文档 `TextEdit` apply API，不走跨文件 `WorkspaceEdit` 产品路径。
 - 2026-08-01 阶段 14 已完成：Rust UI `insert_text` 单字符 typing 路径会按 LSP server `documentOnTypeFormattingProvider` 宣告的 `firstTriggerCharacter` / `moreTriggerCharacter` 自动触发 `textDocument/onTypeFormatting`；粘贴和多字符 IME commit 仍保持批量插入语义，不触发 on-type formatting。
 - 阶段 14 已用 fake LSP server 单测覆盖：单字符 paste 不触发、非 trigger typing 不触发、server trigger typing 会发送 `textDocument/onTypeFormatting` 并携带正确 `ch`。
-- 阶段 14 尚未完成格式化错误展示、跨文件 WorkspaceEdit 产品化和 formatting typed result model。
+- 阶段 14 后续缺口中，显式 formatting 错误展示和 formatting typed outcome 已在阶段 60 补齐；formatting 本身仍是当前文档 `TextEdit` apply API，不走跨文件 `WorkspaceEdit` 产品路径。
 - 2026-08-01 阶段 15 已完成：Swift UI binding 新增 LSP folding ranges request/take/apply 通道，覆盖 Rust `editor-core-lsp` 已有的 `textDocument/foldingRange` 请求路径和 `ProcessingEdit::ReplaceFoldingRegions` 应用路径。
 - 阶段 15 已新增 `EditorUi.lsp_request_folding_ranges()` / `lsp_apply_folding_ranges_json(...)`、C ABI `editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges` / `editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json` / `editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json`、Swift `EditorUI.lspRequestFoldingRanges()` / `lspTakeLastFoldingRangesResultJSON()` / `lspApplyFoldingRangesJSON(_:)`。
 - 阶段 15 已让手动 `textDocument/foldingRange` result 可以写入 core fold regions，并通过 `foldingRegionsJSON()` 被 Swift 读取；仍缺 App 层 folding refresh/error UI 和 fold region typed model。
@@ -138,6 +138,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 57 已完成：AttoEditor LSP location result 主路径不再只对 references 多结果展示 palette；definition、declaration、type definition、implementation 和 references 只要返回多个 target，都会进入统一 `AttoEditor.LSP.LocationResults` quick panel，并按请求类型显示对应 filter placeholder。单结果和无窗口 fallback 仍直接跳转。
 - 2026-08-02 阶段 58 已完成：Swift UI binding 新增 `textDocument/codeLens` 手动 request/take 通道，`editor-core-ui` 会在手动 result slot 命中时同步更新 core code lens decorations 并保留 raw result；AttoEditor 新增 `lsp.refresh_code_lens` 命令和 Go 菜单入口，可主动刷新 code lens、轮询 processing、刷新 derived-state/status bar，并用 HUD 反馈刷新完成、无结果、失败或超时。
 - 2026-08-02 阶段 59 已完成：AttoEditor `WorkspaceEdit` resource operations 现在也能作用于已打开 tab：`rename` 会更新 open tab URL 并让后续 text edits 命中新 URI，`delete` 会关闭干净 open tab，`create`/overwrite 可同步清空干净 open tab；dirty open tab 会被安全跳过并进入 WorkspaceEdit summary。
+- 2026-08-02 阶段 60 已完成：Swift/App 显式 formatting 路径新增 `EditorCoreLSPFormattingResult` typed outcome，document/range/on-type formatting binding 可区分 applied、no edits、LSP unavailable 和 failed；AttoEditor 的显式 Format Document / Format Selection 现在会用 HUD 展示 no edits、不可用和错误原因，旧 Bool API 继续兼容。自动 on-type 异步 response error 仍需后续通过 Rust status/event 路径产品化。
 
 ## 分层结论
 
@@ -252,7 +253,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - code lens refresh、code lens resolve、active code lens actions quick panel 和 workspace command execution 的 Swift UI/App 路径已有；仍缺内联 code lens 点击/键盘定位、自动刷新状态反馈和通用 workspace command typed model。
 - outline / document symbols 已有 quick panel 主路径，document symbols 展示已消费 typed derived-state snapshot；仍缺持久 Outline panel。
 - workspace symbols 已有查询输入框和 quick panel 主路径，但还缺增量查询、持久结果面板和完整结果模型。
-- on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；仍缺错误展示和 typed result model。
+- on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；显式 Swift binding 的 `EditorCoreLSPFormattingResult` typed outcome 已完成，自动 on-type 异步 response error 仍缺用户可见反馈。
 - semantic tokens refresh / delta 策略。
 - folding ranges binding 已覆盖 request/take/apply 到 fold UI state，AttoEditor 已有显式 refresh 命令、菜单入口和错误/超时反馈；仍缺折叠范围可视化和更完整 typed result model。
 - selection range raw request/take 已有；App 层 `lsp.selection_range` expand-selection 主路径和 typed candidate model 已完成，仍缺多光标 selection range 策略和更完整 result lifecycle model。
@@ -525,7 +526,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - rename prepareRename range/placeholder、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用和打开 tab / 本地未打开文件 resource operations 已产品化；仍缺 core workspace-owned 跨文件事务和 typed result model。
 - code action typed diagnostics context、kind/filter、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用、打开 tab / 本地未打开文件 resource operations 和 command payload 执行结果/错误展示已完成；仍缺 core workspace-owned 跨文件事务和 typed result model。
 - document/workspace symbols 持久面板和 workspace 增量查询。
-- range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发和 server trigger characters 自动触发路径已完成，仍缺错误展示和 typed result model。
+- range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发、server trigger characters 自动触发路径、显式 Swift/App 错误展示和 formatting typed outcome 已完成；自动 on-type 异步 response error 仍缺用户可见反馈。
 - folding ranges request/take/apply 到 fold state、App refresh 命令和错误反馈已完成；仍缺可视化和更完整 typed model。
 - code lens refresh/resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；code lens 已有手动刷新入口、HUD 反馈、active actions quick panel 和 typed parser，selection range 已有 App expand-selection 命令和 typed candidate model，linked editing 已有 App multi-cursor selection 主路径，document color/color presentation 已有 App quick panel 和 edit apply 主路径，call/type hierarchy 已有基础 quick panel 导航和 typed parser，diagnostics 已有 active-tab Problems quick panel 和 workspace diagnostics quick panel；仍缺持久 project Problems store/panel、增量刷新和 core workspace-owned 归属。
 - LSP result panels 和错误展示。
@@ -573,7 +574,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | LSP symbols | yes | partial helper | yes | yes, raw JSON result + typed document symbols snapshot | yes, raw JSON result + typed document symbols snapshot | yes, document symbols quick panel consumes typed snapshot; workspace symbols quick panel remains raw result based | yes |
 | LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, prepareRename seed + input UI + menu/keymap + current-doc/cross-file text edits apply + opened/unopened local resource operations | partial |
 | LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand result envelope | partial, raw result + typed diagnostics context + kind filters + current-doc WorkspaceEdit apply + executeCommand result envelope | yes, quick panel/menu/keymap/typed diagnostics context/kind-filter commands/current-doc/cross-file text edits apply + opened/unopened local resource operations + command result/error HUD | partial |
-| LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply + trigger-character auto path | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers | document + selection commands; on-type trigger-character auto path | partial |
+| LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply + trigger-character auto path | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers + formatting outcome | document + selection commands with no-edits/error HUD; on-type trigger-character auto path | partial |
 | LSP folding ranges | yes | partial helper | yes, request/take + apply to fold regions | yes, raw request/take + apply JSON | yes, raw request/take + apply JSON | partial, refresh command applies ranges and fold commands use current state | yes |
 | LSP advanced raw requests | yes | partial helper | yes, code lens refresh/resolve + selection/linked editing/diagnostics/color/hierarchy raw request/take | yes, raw request/take JSON | yes, raw request/take JSON | partial, code lens refresh/actions + selection range/linked editing/document colors/call hierarchy/type hierarchy/workspace diagnostics have App commands and quick panels; persistent project Problems still missing | partial |
 | split view | partial | no | yes | yes, clone view | yes, clone view + AppKit split pane | yes, split/focus/close pane commands | yes |
