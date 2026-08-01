@@ -10,13 +10,13 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
     private let previewTextView = NSTextView(frame: .zero)
 
     private var items: [AttoLspCompletionParser.Item] = []
-    private var onCommit: ((AttoLspCompletionParser.Item) -> Void)?
+    private var onCommit: ((AttoLspCompletionParser.Item, String?) -> Void)?
 
     func show(
         items: [AttoLspCompletionParser.Item],
         relativeTo editorView: NSView,
         anchorRect: NSRect,
-        onCommit: @escaping (AttoLspCompletionParser.Item) -> Void
+        onCommit: @escaping (AttoLspCompletionParser.Item, String?) -> Void
     ) {
         guard items.isEmpty == false else {
             hide()
@@ -84,7 +84,10 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         tableView.target = self
         tableView.doubleAction = #selector(doubleClicked(_:))
         tableView.onCommit = { [weak self] in
-            self?.commitSelected()
+            _ = self?.commitSelected()
+        }
+        tableView.onCommitCharacter = { [weak self] character in
+            self?.commitSelected(commitCharacter: character) ?? false
         }
         tableView.onCancel = { [weak self] in
             self?.hide()
@@ -206,12 +209,20 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         commitSelected()
     }
 
-    private func commitSelected() {
+    @discardableResult
+    private func commitSelected(commitCharacter: String? = nil) -> Bool {
         let row = tableView.selectedRow
-        guard row >= 0, row < items.count else { return }
+        guard row >= 0, row < items.count else { return false }
         let item = items[row]
+        if let commitCharacter,
+           AttoLspCompletionParser.isCommitCharacter(commitCharacter, for: item) == false
+        {
+            return false
+        }
+
         hide()
-        onCommit?(item)
+        onCommit?(item, commitCharacter)
+        return true
     }
 
     private func updatePreviewForSelectedRow() {
@@ -230,6 +241,7 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
 
 private final class AttoCompletionTableView: NSTableView {
     var onCommit: (() -> Void)?
+    var onCommitCharacter: ((String) -> Bool)?
     var onCancel: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
@@ -239,6 +251,13 @@ private final class AttoCompletionTableView: NSTableView {
         case 53:
             onCancel?()
         default:
+            let disallowedModifiers: NSEvent.ModifierFlags = [.command, .control, .option]
+            if event.modifierFlags.intersection(disallowedModifiers).isEmpty,
+               let characters = event.characters,
+               onCommitCharacter?(characters) == true
+            {
+                return
+            }
             super.keyDown(with: event)
         }
     }

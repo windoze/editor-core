@@ -95,6 +95,11 @@ enum AttoLspCompletionParser {
         return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
     }
 
+    static func isCommitCharacter(_ character: String, for item: Item) -> Bool {
+        guard character.isEmpty == false else { return false }
+        return item.commitCharacters.contains(character)
+    }
+
     static func identifierFallbackRange(in text: String, caretOffset: UInt32) -> (start: UInt32, end: UInt32) {
         let scalars = Array(text.unicodeScalars)
         let end = max(0, min(Int(caretOffset), scalars.count))

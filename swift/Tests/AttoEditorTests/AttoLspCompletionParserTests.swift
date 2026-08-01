@@ -37,6 +37,9 @@ final class AttoLspCompletionParserTests: XCTestCase {
             AttoLspCompletionParser.previewText(for: items[0]),
             "print\nFunction  (value: Any)\n\nWrites a value.\n\nCommit characters: ( ."
         )
+        XCTAssertTrue(AttoLspCompletionParser.isCommitCharacter("(", for: items[0]))
+        XCTAssertTrue(AttoLspCompletionParser.isCommitCharacter(".", for: items[0]))
+        XCTAssertFalse(AttoLspCompletionParser.isCommitCharacter(")", for: items[0]))
         XCTAssertEqual(AttoLspCompletionParser.displayTitle(for: items[1]), "private  [Keyword]")
     }
 

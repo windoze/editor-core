@@ -92,6 +92,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private struct CompletionResolveContext {
         let request: CompletionRequestContext
         let item: AttoLspCompletionParser.Item
+        let commitCharacter: String?
     }
 
     private struct RenameRequestContext {
@@ -2378,32 +2379,40 @@ final class AttoEditorAreaViewController: NSViewController {
             items: items,
             relativeTo: editorView,
             anchorRect: caretAnchorRect(in: editorView)
-        ) { [weak self] item in
-            self?.applyCompletion(item, context: context)
+        ) { [weak self] item, commitCharacter in
+            self?.applyCompletion(item, context: context, commitCharacter: commitCharacter)
         }
     }
 
-    private func applyCompletion(_ item: AttoLspCompletionParser.Item, context: CompletionRequestContext) {
+    private func applyCompletion(
+        _ item: AttoLspCompletionParser.Item,
+        context: CompletionRequestContext,
+        commitCharacter: String? = nil
+    ) {
         guard let tab = activeTab, tab.id == context.tabID else { return }
 
         guard completionItemResolveSupported(for: tab.editCore.editor) else {
-            _ = applyCompletionItem(item, context: context)
+            _ = applyCompletionItem(item, context: context, commitCharacter: commitCharacter)
             return
         }
 
         guard let itemJSON = AttoLspCompletionParser.rawJSON(for: item) else {
-            _ = applyCompletionItem(item, context: context)
+            _ = applyCompletionItem(item, context: context, commitCharacter: commitCharacter)
             return
         }
 
         do {
             _ = try tab.editCore.editor.lspRequestCompletionItemResolve(itemJSON: itemJSON)
-            completionResolveContext = CompletionResolveContext(request: context, item: item)
+            completionResolveContext = CompletionResolveContext(
+                request: context,
+                item: item,
+                commitCharacter: commitCharacter
+            )
             completionListController?.hide()
             completionListController = nil
             startCompletionResolvePollTimer(tabID: tab.id)
         } catch {
-            _ = applyCompletionItem(item, context: context)
+            _ = applyCompletionItem(item, context: context, commitCharacter: commitCharacter)
         }
     }
 
@@ -2435,7 +2444,13 @@ final class AttoEditorAreaViewController: NSViewController {
             }
 
             if remainingTicks <= 0 {
-                self.finishCompletionResolve(with: ctx.item, fallback: ctx.item, context: ctx.request, timer: timer)
+                self.finishCompletionResolve(
+                    with: ctx.item,
+                    fallback: ctx.item,
+                    context: ctx.request,
+                    commitCharacter: ctx.commitCharacter,
+                    timer: timer
+                )
                 return
             }
             remainingTicks -= 1
@@ -2454,7 +2469,13 @@ final class AttoEditorAreaViewController: NSViewController {
             guard let json else { return }
 
             let resolved = AttoLspCompletionParser.item(fromCompletionItemJSON: json) ?? ctx.item
-            self.finishCompletionResolve(with: resolved, fallback: ctx.item, context: ctx.request, timer: timer)
+            self.finishCompletionResolve(
+                with: resolved,
+                fallback: ctx.item,
+                context: ctx.request,
+                commitCharacter: ctx.commitCharacter,
+                timer: timer
+            )
         }
 
         completionResolvePollTimer = timer
@@ -2465,14 +2486,25 @@ final class AttoEditorAreaViewController: NSViewController {
         with item: AttoLspCompletionParser.Item,
         fallback: AttoLspCompletionParser.Item,
         context: CompletionRequestContext,
+        commitCharacter: String?,
         timer: DispatchSourceTimer
     ) {
         completionResolvePollTimer = nil
         completionResolveContext = nil
         timer.cancel()
 
-        if applyCompletionItem(item, context: context, beepOnFailure: false) == false {
-            _ = applyCompletionItem(fallback, context: context, beepOnFailure: true)
+        if applyCompletionItem(
+            item,
+            context: context,
+            commitCharacter: commitCharacter,
+            beepOnFailure: false
+        ) == false {
+            _ = applyCompletionItem(
+                fallback,
+                context: context,
+                commitCharacter: commitCharacter,
+                beepOnFailure: true
+            )
         }
     }
 
@@ -2480,6 +2512,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private func applyCompletionItem(
         _ item: AttoLspCompletionParser.Item,
         context: CompletionRequestContext,
+        commitCharacter: String? = nil,
         beepOnFailure: Bool = true
     ) -> Bool {
         guard let tab = activeTab, tab.id == context.tabID else { return false }
@@ -2509,6 +2542,17 @@ final class AttoEditorAreaViewController: NSViewController {
                 let edits = [EcuTextEdit(start: plan.start, end: plan.end, text: plan.text)] + plan.additionalEdits
                 _ = try tab.editCore.editor.applyTextEdits(edits)
             }
+            var didCommitCharacter = false
+            if let commitCharacter {
+                do {
+                    try tab.editCore.editor.commitText(commitCharacter)
+                    didCommitCharacter = true
+                } catch {
+                    if beepOnFailure {
+                        NSSound.beep()
+                    }
+                }
+            }
 
             tab.editCore.layoutSubtreeIfNeeded()
             try? tab.editCore.editor.revealPrimaryCaret()
@@ -2516,6 +2560,9 @@ final class AttoEditorAreaViewController: NSViewController {
             tab.editCore.editorView.needsDisplay = true
             tab.editCore.needsDisplay = true
             handleTabDidMutateDocumentText(tabID: tab.id)
+            if let commitCharacter, didCommitCharacter {
+                handleCommittedTextForLspTriggers(commitCharacter, tabID: tab.id)
+            }
             updateStatusBar()
             view.window?.makeFirstResponder(tab.editCore.editorView)
             return true
