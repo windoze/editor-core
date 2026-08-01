@@ -32,7 +32,7 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
             AttoWorkspaceEditApplyResult.displayText(for: result),
             """
             Workspace edit partially applied.
-            Applied 2 edits to the active document.
+            Applied 2 edits across 1 document.
 
             Not applied:
             - other.swift (1 edit) [overlapping edits]
@@ -61,8 +61,8 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         XCTAssertEqual(
             AttoWorkspaceEditApplyResult.displayText(for: result),
             """
-            Workspace edit targets other documents.
-            No edits were applied to the active document.
+            Workspace edit was not applied.
+            No edits were applied.
 
             Affected documents:
             - rename.swift (3 edits)

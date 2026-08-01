@@ -13,6 +13,20 @@ struct AttoWorkspaceEditApplyResult: Equatable {
     let skippedURIs: [String]
     let documents: [Document]
 
+    init(
+        applied: Bool,
+        appliedURI: String?,
+        appliedEditCount: Int,
+        skippedURIs: [String],
+        documents: [Document]
+    ) {
+        self.applied = applied
+        self.appliedURI = appliedURI
+        self.appliedEditCount = appliedEditCount
+        self.skippedURIs = skippedURIs
+        self.documents = documents
+    }
+
     init(json: String) {
         guard let data = json.data(using: .utf8),
               let obj = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any]
@@ -44,6 +58,11 @@ struct AttoWorkspaceEditApplyResult: Equatable {
         return documents.filter { skipped.contains($0.uri) }
     }
 
+    var appliedDocuments: [Document] {
+        let skipped = Set(skippedURIs)
+        return documents.filter { skipped.contains($0.uri) == false && $0.editCount > 0 }
+    }
+
     var needsUserSummary: Bool {
         skippedURIs.isEmpty == false
     }
@@ -54,13 +73,14 @@ struct AttoWorkspaceEditApplyResult: Equatable {
         var lines: [String] = []
         if result.applied {
             let count = editCountText(result.appliedEditCount)
+            let documentCount = documentCountText(max(result.appliedDocuments.count, 1))
             lines.append("Workspace edit partially applied.")
-            lines.append("Applied \(count) to the active document.")
+            lines.append("Applied \(count) across \(documentCount).")
             lines.append("")
             lines.append("Not applied:")
         } else {
-            lines.append("Workspace edit targets other documents.")
-            lines.append("No edits were applied to the active document.")
+            lines.append("Workspace edit was not applied.")
+            lines.append("No edits were applied.")
             lines.append("")
             lines.append("Affected documents:")
         }
@@ -84,6 +104,10 @@ struct AttoWorkspaceEditApplyResult: Equatable {
 
     private static func editCountText(_ count: Int) -> String {
         count == 1 ? "1 edit" : "\(count) edits"
+    }
+
+    private static func documentCountText(_ count: Int) -> String {
+        count == 1 ? "1 document" : "\(count) documents"
     }
 
     private static func displayName(for uri: String) -> String {

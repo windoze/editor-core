@@ -3355,51 +3355,116 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func applyWorkspaceEditJSONToActiveTab(_ workspaceEditJSON: String, documentURI: String? = nil) -> Bool {
-        guard let tab = activeTab else {
+        guard let initialActiveTab = activeTab else {
             NSSound.beep()
             return false
         }
 
-        do {
-            let targetURI = documentURI ?? tab.fileURL.absoluteString
-            let resultJSON = try tab.editCore.editor.lspApplyWorkspaceEditJSON(
-                workspaceEditJSON,
-                documentURI: targetURI
+        guard let workspaceEdit = AttoWorkspaceEditParser.parse(workspaceEditJSON) else {
+            NSSound.beep()
+            return false
+        }
+
+        var documents = workspaceEdit.documents.map { document in
+            AttoWorkspaceEditApplyResult.Document(
+                uri: document.uri,
+                editCount: document.edits.count,
+                hasOverlappingEdits: document.hasOverlappingEdits
             )
-            let result = AttoWorkspaceEditApplyResult(json: resultJSON)
-            guard result.applied else {
-                showWorkspaceEditSummaryIfNeeded(result, editorView: tab.editCore.editorView)
-                if result.skippedURIs.isEmpty == false {
-                    NSLog(
-                        "AttoEditor: WorkspaceEdit did not target active document; skipped URIs: %@",
-                        result.skippedURIs.joined(separator: ", ")
-                    )
-                }
-                NSSound.beep()
-                return false
+        }
+        for uri in workspaceEdit.unsupportedURIs where documents.contains(where: { $0.uri == uri }) == false {
+            documents.append(
+                AttoWorkspaceEditApplyResult.Document(
+                    uri: uri,
+                    editCount: 0,
+                    hasOverlappingEdits: false
+                )
+            )
+        }
+
+        var appliedURIs: [String] = []
+        var appliedEditCount = 0
+        var skippedURIs = Set(workspaceEdit.unsupportedURIs)
+
+        for document in workspaceEdit.documents {
+            guard document.edits.isEmpty == false else { continue }
+
+            if document.hasOverlappingEdits {
+                skippedURIs.insert(document.uri)
+                continue
             }
 
+            if let tab = tabForDocumentURI(document.uri) {
+                do {
+                    let resultJSON = try tab.editCore.editor.lspApplyWorkspaceEditJSON(
+                        workspaceEditJSON,
+                        documentURI: document.uri
+                    )
+                    let result = AttoWorkspaceEditApplyResult(json: resultJSON)
+                    guard result.applied else {
+                        skippedURIs.insert(document.uri)
+                        continue
+                    }
+
+                    appliedURIs.append(document.uri)
+                    appliedEditCount += result.appliedEditCount
+                    refreshTabAfterWorkspaceEdit(tab)
+                } catch {
+                    skippedURIs.insert(document.uri)
+                    NSLog(
+                        "AttoEditor: failed to apply WorkspaceEdit to open document %@: %@",
+                        document.uri,
+                        String(describing: error)
+                    )
+                }
+                continue
+            }
+
+            guard let url = Self.fileURL(fromDocumentURI: document.uri) else {
+                skippedURIs.insert(document.uri)
+                continue
+            }
+
+            guard applyWorkspaceEdit(document, toFileAt: url) else {
+                skippedURIs.insert(document.uri)
+                continue
+            }
+
+            appliedURIs.append(document.uri)
+            appliedEditCount += document.edits.count
+        }
+
+        let result = AttoWorkspaceEditApplyResult(
+            applied: appliedEditCount > 0,
+            appliedURI: appliedURIs.first ?? documentURI ?? initialActiveTab.fileURL.absoluteString,
+            appliedEditCount: appliedEditCount,
+            skippedURIs: Array(skippedURIs).sorted(),
+            documents: documents
+        )
+
+        guard result.applied else {
+            showWorkspaceEditSummaryIfNeeded(result, editorView: initialActiveTab.editCore.editorView)
             if result.skippedURIs.isEmpty == false {
                 NSLog(
-                    "AttoEditor: WorkspaceEdit applied active document and skipped unsupported cross-file URIs: %@",
+                    "AttoEditor: WorkspaceEdit was not applied; skipped URIs: %@",
                     result.skippedURIs.joined(separator: ", ")
                 )
             }
-
-            tab.editCore.layoutSubtreeIfNeeded()
-            try? tab.editCore.editor.revealPrimaryCaret()
-            tab.editCore.editorView.kickProcessingPoll()
-            tab.editCore.editorView.needsDisplay = true
-            tab.editCore.needsDisplay = true
-            handleTabDidMutateDocumentText(tabID: tab.id)
-            updateStatusBar()
-            showWorkspaceEditSummaryIfNeeded(result, editorView: tab.editCore.editorView)
-            view.window?.makeFirstResponder(tab.editCore.editorView)
-            return true
-        } catch {
             NSSound.beep()
             return false
         }
+
+        if result.skippedURIs.isEmpty == false {
+            NSLog(
+                "AttoEditor: WorkspaceEdit partially applied; skipped URIs: %@",
+                result.skippedURIs.joined(separator: ", ")
+            )
+        }
+
+        updateStatusBar()
+        showWorkspaceEditSummaryIfNeeded(result, editorView: initialActiveTab.editCore.editorView)
+        view.window?.makeFirstResponder(initialActiveTab.editCore.editorView)
+        return true
     }
 
     private func showWorkspaceEditSummaryIfNeeded(
@@ -3408,6 +3473,60 @@ final class AttoEditorAreaViewController: NSViewController {
     ) {
         guard let text = AttoWorkspaceEditApplyResult.displayText(for: result) else { return }
         showWorkspaceEditPopover(text: text, in: editorView)
+    }
+
+    private func tabForDocumentURI(_ uri: String) -> AttoEditorTab? {
+        guard let url = Self.fileURL(fromDocumentURI: uri) else { return nil }
+        return tabs.first { tab in
+            tab.fileURL.standardizedFileURL == url.standardizedFileURL
+        }
+    }
+
+    private func refreshTabAfterWorkspaceEdit(_ tab: AttoEditorTab) {
+        for pane in tab.panes {
+            pane.layoutSubtreeIfNeeded()
+            pane.editorView.kickProcessingPoll()
+            pane.editorView.needsDisplay = true
+            pane.needsDisplay = true
+        }
+        try? tab.editCore.editor.revealPrimaryCaret()
+        handleTabDidMutateDocumentText(tabID: tab.id)
+    }
+
+    private func applyWorkspaceEdit(
+        _ document: AttoWorkspaceEditParser.DocumentEdit,
+        toFileAt url: URL
+    ) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              isDirectory.boolValue == false
+        else {
+            return false
+        }
+
+        do {
+            let oldText = try String(contentsOf: url, encoding: .utf8)
+            guard let result = AttoWorkspaceEditParser.apply(document, to: oldText),
+                  result.hasOverlappingEdits == false,
+                  result.editCount > 0
+            else {
+                return false
+            }
+            try result.text.write(to: url, atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            NSLog(
+                "AttoEditor: failed to apply WorkspaceEdit to file %@: %@",
+                url.path,
+                String(describing: error)
+            )
+            return false
+        }
+    }
+
+    private static func fileURL(fromDocumentURI uri: String) -> URL? {
+        guard let url = URL(string: uri), url.isFileURL else { return nil }
+        return url.standardizedFileURL
     }
 
     private func startRenamePreparePollTimer(tabID: UUID) {

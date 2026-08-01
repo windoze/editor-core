@@ -310,7 +310,9 @@ final class AttoEditorCommandTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let fileURL = tempDir.appendingPathComponent("rename.txt")
+        let otherURL = tempDir.appendingPathComponent("other.txt")
         try "abc\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "other\n".write(to: otherURL, atomically: true, encoding: .utf8)
 
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         let window = attachToWindow(vc)
@@ -328,7 +330,7 @@ final class AttoEditorCommandTests: XCTestCase {
                 "newText": "B"
               }
             ],
-            "file:///other.txt": [
+            "\(otherURL.absoluteString)": [
               {
                 "range": {
                   "start": { "line": 0, "character": 0 },
@@ -346,7 +348,64 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
         XCTAssertEqual(try editorView.editor.text(), "aBc\n")
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "Xother\n")
         XCTAssertTrue(window.title.contains("●"))
+    }
+
+    func testWorkspaceEditApplicationMutatesAlreadyOpenCrossFileTab() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first.txt")
+        let secondURL = tempDir.appendingPathComponent("second.txt")
+        try "abc\n".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "def\n".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.selectFile(url: firstURL)
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "\(firstURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "B"
+              }
+            ],
+            "\(secondURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "E"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+
+        var editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "aBc\n")
+
+        vc.selectFile(url: secondURL)
+        editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "dEf\n")
+        XCTAssertEqual(try String(contentsOf: secondURL, encoding: .utf8), "def\n")
+
+        let secondItem = try XCTUnwrap(vc.openFileItems().first { $0.url.standardizedFileURL == secondURL.standardizedFileURL })
+        XCTAssertTrue(secondItem.isDirty)
     }
 
     func testShowProblemsUsesDerivedDiagnosticsAndNavigatesWithoutPanelWindow() throws {
