@@ -4,7 +4,7 @@
 
 本文记录当前 Swift 侧、FFI 层、`editor-core-ui` 适配层以及 AttoEditor App 层相对 `editor-core-*` 能力的功能缺口。这里的 “Swift UI” 指仓库中的 Swift/AppKit/Skia/Metal 集成，不是 Apple SwiftUI 框架。
 
-本文关注的是“能否从 Swift 产品层完整使用 `editor-core-*` 能力”，不是评价 Rust core 自身是否完整。总体结论是：**当前 Swift 路径已经能支撑一个可用编辑器主流程，但还不是 `editor-core-*` 的完整能力投影**。尤其对于“复刻 Sublime Text”这个目标，缺口主要集中在命令面、LSP 产品化、派生状态产品化/消费、多文档/分屏归属、Sublime 兼容行为和视觉/交互测试体系。其中多文档、tab、workspace、project/session 的状态归属已经明确：后续应收敛到 `editor-core` / `editor-core-ui` 的 workspace 模型，Swift/AppKit 侧不再新开或扩展一套长期独立的 workspace/tab/session 模型。本文后续提到的 Sublime 兼容不包含 `.sublime-syntax` 语法定义扩展；AttoEditor 的语言语义、结构化高亮和智能能力重点走 Tree-sitter 与 LSP 路线，Sublime syntax 支持以现有 `editor-core-sublime` 能力为基线即可。
+本文关注的是“能否从 Swift 产品层完整使用 `editor-core-*` 能力”，不是评价 Rust core 自身是否完整。总体结论是：**当前 Swift 路径已经能支撑一个可用编辑器主流程，但还不是 `editor-core-*` 的完整能力投影**。尤其对于“复刻 Sublime Text”这个目标，缺口主要集中在命令面、LSP 产品化、派生状态产品化/消费、多文档/分屏归属、Sublime 兼容行为和视觉/交互测试体系。其中多文档、tab、workspace、project/session 的状态归属已经明确：后续应收敛到 `editor-core` / `editor-core-ui` 的 workspace 模型，Swift/AppKit 侧不再新开或扩展一套长期独立的 workspace/tab/session 模型。本文后续提到的 Sublime 兼容不包含 `.sublime-syntax` 语法定义扩展；AttoEditor 的语言语义、结构化高亮和智能能力重点走 Tree-sitter 与 LSP 路线，Sublime syntax 支持以现有 `editor-core-sublime` 能力为基线即可。因此，后续 Swift gaps 的验收口径不把“提高 Sublime syntax 覆盖率”列为待补功能。
 
 ## 范围
 
@@ -127,6 +127,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 46 已完成：AttoEditor 新增 `lsp.refresh_folding_ranges` App 命令和 View 菜单入口，可显式请求 `textDocument/foldingRange`、轮询结果并应用到 core fold regions；应用后刷新 active derived-state store，错误/超时/LSP 未启用会通过 editor popover 反馈，测试覆盖命令注册、菜单入口和 folding result 到 typed derived-state snapshot 的路径。
 - 2026-08-01 阶段 47 已完成：AttoEditor App 层新增 `AttoWorkspaceEditParser`，`WorkspaceEdit` text edits 现在可以按 URI 应用到已打开 tab 或未打开但存在的本地 `file://` 文档；打开 tab 继续走 Rust UI FFI 以保留 undo/dirty/layout 语义，磁盘文件按 LSP UTF-16 坐标转换后原子写回。resource operations（create/rename/delete）、非 file URI、缺失文件、重叠 edits 和 core workspace-owned 跨文件事务仍保留为 skipped/后续缺口。
 - 2026-08-01 阶段 48 已完成：`editor-core-ui` 对 `workspace/executeCommand` result slot 改为返回 `{ result: ... }` / `{ error: ... }` envelope，不再丢弃 executeCommand 错误；AttoEditor code action command payload 会轮询执行结果并用 editor HUD 展示成功、错误或无结果反馈，新增 `AttoLspExecuteCommandFormatter` typed display helper 和测试。
+- 2026-08-01 阶段 49 已完成：`SWIFT-GAPS.md` 明确 Sublime 兼容性不包含继续扩展 `.sublime-syntax`；AttoEditor 后续语言能力重点推进 Tree-sitter 与 LSP 路线，Sublime syntax 以现有 `editor-core-sublime` 行为作为基线，不建立新的 syntax 兼容矩阵或公开规范假设。
 
 ## 分层结论
 
@@ -384,7 +385,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 ## Sublime 兼容缺口
 
-当前仓库已经有 Sublime 相关 crate 和 Swift/App 集成，但“复刻 Sublime Text”需要更宽的产品面。这里的 Sublime 兼容范围明确不包含继续扩展 `.sublime-syntax` 语法定义兼容性：AttoEditor 的主路线是 Tree-sitter + LSP，`editor-core-sublime` 现有 syntax 支持只作为已有文件/主题生态的基线能力保留，不作为 P0/P1/P2 的新增功能目标。
+当前仓库已经有 Sublime 相关 crate 和 Swift/App 集成，但“复刻 Sublime Text”需要更宽的产品面。这里的 Sublime 兼容范围明确不包含继续扩展 `.sublime-syntax` 语法定义兼容性：AttoEditor 的主路线是 Tree-sitter + LSP，`editor-core-sublime` 现有 syntax 支持只作为已有文件/主题生态的基线能力保留，不作为 P0/P1/P2 的新增功能目标。后续 Sublime 兼容审计应聚焦 settings、keymap、theme、package resource、command/panel 行为和编辑器交互语义，而不是补齐未公开规范的 syntax 细节。
 
 已具备或部分具备：
 
@@ -398,6 +399,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 - 扩展 `.sublime-syntax` 兼容覆盖率，或把 Sublime syntax 当作 AttoEditor 后续语义/高亮主路线。
 - 为没有公开规范文档的 Sublime syntax 细节建立新的兼容矩阵；已有 `editor-core-sublime` 行为作为当前基线即可。
+- 围绕 Sublime syntax 细节追加新的 P0/P1/P2 缺口项；除非是现有 `editor-core-sublime` 基线能力在 Swift 路径上不可达，否则不作为本审计的待办。
 
 仍需审计或补齐：
 
@@ -534,7 +536,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - package resource loading。
 - command palette 覆盖。
 - quick panels/input panels/output panels。
-- Sublime theme 兼容矩阵；syntax 部分不扩展，维持现有 `editor-core-sublime` 基线。
+- Sublime theme 兼容矩阵；syntax 部分不扩展，维持现有 `editor-core-sublime` 基线，新增语言能力优先走 Tree-sitter 和 LSP。
 
 ### P2：视觉回归和黑盒自动化
 
