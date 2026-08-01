@@ -34,6 +34,9 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.fold_selection"))
         XCTAssertTrue(ids.contains("editor.unfold"))
         XCTAssertTrue(ids.contains("editor.unfold_all"))
+        for command in AttoEditorAreaViewController.CursorMovementCommand.allCases {
+            XCTAssertTrue(ids.contains(command.id), command.id)
+        }
         XCTAssertTrue(ids.contains("view.wrap.word"))
         XCTAssertTrue(ids.contains("view.split_right"))
         XCTAssertTrue(ids.contains("view.focus_next_pane"))
@@ -87,6 +90,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(openFile.group, "File")
         XCTAssertFalse(openFile.requiresEditor)
         XCTAssertTrue(openFile.isEnabled)
+
+        let cursor = try XCTUnwrap(commands.first { $0.id == "cursor.move_down" })
+        XCTAssertEqual(cursor.group, "Cursor")
+        XCTAssertTrue(cursor.requiresEditor)
+        XCTAssertFalse(cursor.isEnabled)
     }
 
     func testEditorCommandsAreDisabledWithoutActiveEditor() throws {
@@ -95,8 +103,10 @@ final class AttoEditorCommandTests: XCTestCase {
         let item = try XCTUnwrap(findMenuItem(commandID: "editor.duplicate_lines", in: menu))
 
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "editor.duplicate_lines"))
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "cursor.move_down"))
         XCTAssertFalse(delegate.validateMenuItem(item))
         XCTAssertFalse(delegate.executeCommand(id: "editor.duplicate_lines"))
+        XCTAssertFalse(delegate.executeCommand(id: "cursor.move_down"))
     }
 
     func testWorkspaceSymbolsPromptRequiresActiveEditor() throws {
@@ -634,6 +644,55 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
         XCTAssertEqual(try editorView.editor.text(), "a\na\n")
+    }
+
+    func testCursorMovementCommandsUseRegisteredCommandPath() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let text = "abc def\nghi jkl\n"
+        let fileURL = tempDir.appendingPathComponent("cursor.txt")
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 0, end: 0)], primaryIndex: 0)
+
+        XCTAssertTrue(delegate.executeCommand(id: "cursor.move_word_right"))
+        var offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 3)
+        XCTAssertEqual(offsets.end, 3)
+
+        XCTAssertTrue(delegate.executeCommand(id: "cursor.move_right"))
+        offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 4)
+        XCTAssertEqual(offsets.end, 4)
+
+        XCTAssertTrue(delegate.executeCommand(id: "cursor.select_word_right"))
+        offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 4)
+        XCTAssertEqual(offsets.end, 7)
+
+        XCTAssertTrue(delegate.executeCommand(id: "cursor.move_left"))
+        offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 4)
+        XCTAssertEqual(offsets.end, 4)
+
+        XCTAssertTrue(delegate.executeCommand(id: "cursor.document_end"))
+        offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, UInt32(text.count))
+        XCTAssertEqual(offsets.end, UInt32(text.count))
+
+        XCTAssertTrue(delegate.executeCommand(id: "cursor.select_document_start"))
+        offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 0)
+        XCTAssertEqual(offsets.end, UInt32(text.count))
     }
 
     func testActiveEditorCommandJSONMutatesTextAndDirtyState() throws {

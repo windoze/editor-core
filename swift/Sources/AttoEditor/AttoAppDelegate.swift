@@ -522,6 +522,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             },
         ]
 
+        commands.append(contentsOf: cursorMovementCommands())
         commands.append(contentsOf: editorCommandPaletteCommands())
         return commands.map(commandWithCurrentContext(_:))
     }
@@ -598,6 +599,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         return commands
     }
 
+    private func cursorMovementCommands() -> [AttoCommandPaletteCommand] {
+        AttoEditorAreaViewController.CursorMovementCommand.allCases.map { command in
+            AttoCommandPaletteCommand(id: command.id, title: command.title) { [weak self] in
+                self?.activeWindow()?.editorAreaController.performCursorMovementCommand(command)
+            }
+        }
+    }
+
     private func commandWithCurrentContext(_ command: AttoCommandPaletteCommand) -> AttoCommandPaletteCommand {
         let metadata = commandMetadata(commandID: command.id, title: command.title)
         return AttoCommandPaletteCommand(
@@ -640,6 +649,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
             if commandID.hasPrefix("file.") { return "File" }
             if commandID.hasPrefix("editor.") { return "Edit" }
+            if commandID.hasPrefix("cursor.") { return "Cursor" }
             if commandID.hasPrefix("view.") { return "View" }
             if commandID.hasPrefix("go.") { return "Go" }
             if commandID.hasPrefix("search.") { return "Search" }
@@ -663,6 +673,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                     return .activeEditor
                 }
                 if commandID.hasPrefix("editor.")
+                    || commandID.hasPrefix("cursor.")
                     || commandID.hasPrefix("lsp.")
                     || commandID.hasPrefix("view.wrap.")
                     || commandID == "view.toggle_minimap"

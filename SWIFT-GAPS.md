@@ -169,6 +169,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 87 已完成：AttoEditor 新增 core-backed dirty 查询/同步 helper，关闭单 tab、关闭窗口前的保存全部、preview tab 复用、WorkspaceEdit create/rename/delete resource operation 等可能丢弃或覆盖用户内容的保护条件都会优先消费 `MultiDocumentEditorUI.isTabModified`；Swift `tab.isDirty` 保留为 AppKit 标题/tab bar 展示缓存，并用本地 `EditorUI.isModified` 做保守兜底。测试覆盖 Swift dirty cache 被故意置 stale false 时，core dirty snapshot 仍会阻止 WorkspaceEdit 删除打开 tab。
 - 2026-08-02 阶段 88 已完成：`MultiDocumentEditorUi` 新增显式 `tab_order` 和 `move_tab_index`，`tab_ids()`、snapshot、search-all-tabs 和 close-tabs-to-right 都按 core tab order 工作；UI FFI/header/Swift `MultiDocumentEditorUI` wrapper 暴露 `moveTab`，SwiftPM C target stamp 已 bump。AttoEditor 新增 `file.move_tab_left` / `file.move_tab_right` 命令、File 菜单、默认 keymap 和多 tab availability，执行时先移动 core tab order，再重排 AppKit tabs。测试覆盖 Rust core order、C ABI、Swift wrapper、Atto AppKit open-file 顺序和 core snapshot 顺序同步。
 - 2026-08-02 阶段 89 已完成：AttoEditor 新增用户可调用的 `go.line` 主路径，用 `EditorUI.moveTo(line:column:)` 执行 core logical `MoveTo`，支持 `line` / `line:column` / `line,column` 输入格式，并接入 command palette、Go 菜单和默认 `ctrl+g` keymap。测试覆盖命令注册、菜单/keymap 接线、输入解析和 caret 目标位置。
+- 2026-08-02 阶段 90 已完成：AttoEditor 新增 `cursor.*` App command coverage matrix，覆盖 grapheme/word、visual row/page、visual line start/end、document start/end 以及对应 modify-selection 版本；命令通过 command palette 调用 Swift `EditorUI` typed FFI API，左右/按词移动复用 AppKit 文本命令的选区折叠语义。测试覆盖命令注册、active-editor availability 和 `executeCommand(id:)` 到 Swift editor API 的执行路径。
 
 ## 分层结论
 
@@ -223,8 +224,8 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | explicit indent/outdent commands | 有 | 有 | Swift 有 typed `indent()` / `outdent()`；Tab/Backtab 主路径可用；AttoEditor command palette 和菜单有 `editor.indent/outdent` | P0 菜单接线完成；Tab/Backtab 仍走文本系统主路径。 |
 | `EndUndoGroup` | 有 | 有 | Swift 有 typed `endUndoGroup()` | App 层复合命令还未统一使用。 |
 | logical `MoveTo` / `MoveBy` | 有 | 有 | Swift 有 typed `moveTo(line:column:)` / `moveBy(deltaLine:deltaColumn:)`；AttoEditor 已有 `go.line` 参数化 App command，接入 command palette、Go 菜单和默认 `ctrl+g` keymap | `MoveTo` 主路径已产品化；`MoveBy` 参数化用户命令仍按产品需要评估。 |
-| visual movement commands | 有 | 有 | Swift 可通过 `executeCommandJSON` 调用，AppKit key handling 覆盖一部分 | 仍缺 App command coverage matrix。 |
-| selection / multicursor commands | 有 | 有 | Swift UI FFI 有 typed select word/line、expand selection、add cursor above/below，也可通过 UI JSON 调用；AttoEditor command palette 和 Selection 菜单有 `editor.select_word` / `editor.select_line` / `editor.expand_selection` / `editor.add_cursor_above` / `editor.add_cursor_below`；keymap 已支持 arrow/navigation function-key token | 常用 App command 和 Selection 菜单分组已补齐；仍缺所有视觉移动命令矩阵。 |
+| visual movement commands | 有 | 有 | Swift 有 typed grapheme/word、visual row/page、line/document start/end 及 modify-selection wrapper；AttoEditor command palette 已有 `cursor.*` coverage matrix，直接调用 typed API | App command matrix 已补齐；未给每个低层 cursor command 增加默认菜单项/keymap，默认键盘主路径仍由 AppKit text system dispatch。 |
+| selection / multicursor commands | 有 | 有 | Swift UI FFI 有 typed select word/line、expand selection、add cursor above/below，也可通过 UI JSON 调用；AttoEditor command palette 和 Selection 菜单有 `editor.select_word` / `editor.select_line` / `editor.expand_selection` / `editor.add_cursor_above` / `editor.add_cursor_below`；selection-modifying visual movement 通过 `cursor.select_*` command palette 覆盖；keymap 已支持 arrow/navigation function-key token | 常用 App command、Selection 菜单分组和 cursor selection movement matrix 已补齐；细粒度默认 keymap 仍走 AppKit 文本系统。 |
 | `MoveToMatchingBracket` | 有 | 有 | Swift headless/UI 都有公开方法 | headless/UI command 覆盖已对齐。 |
 | add occurrence options | 有 | 有 | Swift typed `addNextOccurrence(options:)` / `addAllOccurrences(options:)` 已支持 options；AttoEditor command palette、菜单和 keymap 有 `editor.add_next_occurrence` / `editor.add_all_occurrences` 默认 options 入口 | 默认 App command/keymap 已补齐；仍缺 settings/search-options 接线。 |
 | `SetWrapMode` | 有 | 有 | Swift 有 typed `setWrapMode(_:)`；AttoEditor command palette、菜单和 keymap 有 wrap off/char/word；preferences 有持久化 wrap mode 并会应用到新建和已打开 editor | App settings 接线已补齐。 |
@@ -546,6 +547,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor 会按语言/扩展名向 toggle comment 传完整 line/block comment config。
 - 已完成：AttoEditor command registry 已接入基础 group/requiresEditor/isEnabled 元数据，菜单、palette 和 `executeCommand(id:)` 共用同一启用状态。
 - 已完成：AttoEditor keymap 已支持 arrow/navigation function-key token，move lines up/down 已有默认 arrow-key 绑定。
+- 已完成：AttoEditor command palette 已用 `cursor.*` 覆盖 grapheme/word、visual row/page、visual line/document start/end 及对应 modify-selection 视觉移动命令矩阵。
 - 已完成：AttoEditor 主菜单已有独立 Selection 菜单分组，常用 selection/multicursor 命令复用统一 command id。
 - 已完成：Swift UI binding 已为 derived-state snapshots 提供基础 typed model。
 - 已完成：AttoEditor 已有 active-tab derived-state store，status bar 可显示 Problems 数量，测试可直接断言 active derived-state snapshot。
@@ -607,6 +609,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | apply snippet | yes | yes, via JSON | yes | yes, via JSON | yes, typed + JSON | partial, completion apply + Tab/Backtab placeholder path + explicit placeholder commands; no generic apply-snippet command | yes |
 | add occurrence | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, default-options command palette/menu/keymap | yes |
 | selection/multicursor | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, common commands in command palette/menu; select line has default keymap | yes |
+| visual cursor movement | yes | yes | yes | yes, typed + JSON subset | yes, typed grapheme/word/row/page/line/doc + modify-selection | yes, `cursor.*` command palette matrix; default keyboard path remains AppKit text dispatch | yes |
 | LSP completion | yes | partial helper | yes | yes, raw completion + resolve result | yes, raw completion + resolve result | yes, popup + auto trigger + incremental filter + commit-time resolve/current-doc/cross-file text edits apply | partial |
 | LSP symbols | yes | partial helper | yes | yes, raw JSON result + typed document symbols snapshot | yes, raw JSON result + typed document symbols snapshot | yes, document symbols quick panel consumes typed snapshot; workspace symbols quick panel remains raw result based | yes |
 | LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, prepareRename seed + input UI + menu/keymap + current-doc/cross-file text edits apply + opened/unopened local resource operations | partial |

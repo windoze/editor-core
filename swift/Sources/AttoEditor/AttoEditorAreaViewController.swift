@@ -135,6 +135,64 @@ final class AttoEditorAreaViewController: NSViewController {
         let column1: Int
     }
 
+    enum CursorMovementCommand: String, CaseIterable {
+        case moveLeft = "cursor.move_left"
+        case moveRight = "cursor.move_right"
+        case moveWordLeft = "cursor.move_word_left"
+        case moveWordRight = "cursor.move_word_right"
+        case moveUp = "cursor.move_up"
+        case moveDown = "cursor.move_down"
+        case pageUp = "cursor.page_up"
+        case pageDown = "cursor.page_down"
+        case lineStart = "cursor.line_start"
+        case lineEnd = "cursor.line_end"
+        case documentStart = "cursor.document_start"
+        case documentEnd = "cursor.document_end"
+        case selectLeft = "cursor.select_left"
+        case selectRight = "cursor.select_right"
+        case selectWordLeft = "cursor.select_word_left"
+        case selectWordRight = "cursor.select_word_right"
+        case selectUp = "cursor.select_up"
+        case selectDown = "cursor.select_down"
+        case selectPageUp = "cursor.select_page_up"
+        case selectPageDown = "cursor.select_page_down"
+        case selectLineStart = "cursor.select_line_start"
+        case selectLineEnd = "cursor.select_line_end"
+        case selectDocumentStart = "cursor.select_document_start"
+        case selectDocumentEnd = "cursor.select_document_end"
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .moveLeft: return "Cursor: Move Left"
+            case .moveRight: return "Cursor: Move Right"
+            case .moveWordLeft: return "Cursor: Move Word Left"
+            case .moveWordRight: return "Cursor: Move Word Right"
+            case .moveUp: return "Cursor: Move Up"
+            case .moveDown: return "Cursor: Move Down"
+            case .pageUp: return "Cursor: Page Up"
+            case .pageDown: return "Cursor: Page Down"
+            case .lineStart: return "Cursor: Move to Line Start"
+            case .lineEnd: return "Cursor: Move to Line End"
+            case .documentStart: return "Cursor: Move to Document Start"
+            case .documentEnd: return "Cursor: Move to Document End"
+            case .selectLeft: return "Cursor: Select Left"
+            case .selectRight: return "Cursor: Select Right"
+            case .selectWordLeft: return "Cursor: Select Word Left"
+            case .selectWordRight: return "Cursor: Select Word Right"
+            case .selectUp: return "Cursor: Select Up"
+            case .selectDown: return "Cursor: Select Down"
+            case .selectPageUp: return "Cursor: Select Page Up"
+            case .selectPageDown: return "Cursor: Select Page Down"
+            case .selectLineStart: return "Cursor: Select to Line Start"
+            case .selectLineEnd: return "Cursor: Select to Line End"
+            case .selectDocumentStart: return "Cursor: Select to Document Start"
+            case .selectDocumentEnd: return "Cursor: Select to Document End"
+            }
+        }
+    }
+
     private enum LspSymbolRequestKind {
         case document
         case workspace(query: String)
@@ -1408,6 +1466,113 @@ final class AttoEditorAreaViewController: NSViewController {
             NSSound.beep()
             return false
         }
+    }
+
+    @discardableResult
+    func performCursorMovementCommand(_ command: CursorMovementCommand) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            tab.editCore.layoutSubtreeIfNeeded()
+            try Self.applyCursorMovementCommand(command, editor: tab.editCore.editor)
+            tab.editCore.layoutSubtreeIfNeeded()
+            try? tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.editorView.kickProcessingPoll()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            updateStatusBar()
+            tab.editCore.focusEditor()
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: cursor movement command failed: %@", String(describing: error))
+            return false
+        }
+    }
+
+    @discardableResult
+    func performCursorMovementCommand(id commandID: String) -> Bool {
+        guard let command = CursorMovementCommand(rawValue: commandID) else {
+            NSSound.beep()
+            return false
+        }
+        return performCursorMovementCommand(command)
+    }
+
+    private static func applyCursorMovementCommand(_ command: CursorMovementCommand, editor: EditorUI) throws {
+        switch command {
+        case .moveLeft:
+            if try collapseSelection(editor, to: .start) == false {
+                try editor.moveGraphemeLeft()
+            }
+        case .moveRight:
+            if try collapseSelection(editor, to: .end) == false {
+                try editor.moveGraphemeRight()
+            }
+        case .moveWordLeft:
+            _ = try collapseSelection(editor, to: .start)
+            try editor.moveWordLeft()
+        case .moveWordRight:
+            _ = try collapseSelection(editor, to: .end)
+            try editor.moveWordRight()
+        case .moveUp:
+            try editor.moveVisualByRows(-1)
+        case .moveDown:
+            try editor.moveVisualByRows(1)
+        case .pageUp:
+            try editor.moveVisualByPages(-1)
+        case .pageDown:
+            try editor.moveVisualByPages(1)
+        case .lineStart:
+            try editor.moveToVisualLineStart()
+        case .lineEnd:
+            try editor.moveToVisualLineEnd()
+        case .documentStart:
+            try editor.moveToDocumentStart()
+        case .documentEnd:
+            try editor.moveToDocumentEnd()
+        case .selectLeft:
+            try editor.moveGraphemeLeftAndModifySelection()
+        case .selectRight:
+            try editor.moveGraphemeRightAndModifySelection()
+        case .selectWordLeft:
+            try editor.moveWordLeftAndModifySelection()
+        case .selectWordRight:
+            try editor.moveWordRightAndModifySelection()
+        case .selectUp:
+            try editor.moveVisualByRowsAndModifySelection(-1)
+        case .selectDown:
+            try editor.moveVisualByRowsAndModifySelection(1)
+        case .selectPageUp:
+            try editor.moveVisualByPagesAndModifySelection(-1)
+        case .selectPageDown:
+            try editor.moveVisualByPagesAndModifySelection(1)
+        case .selectLineStart:
+            try editor.moveToVisualLineStartAndModifySelection()
+        case .selectLineEnd:
+            try editor.moveToVisualLineEndAndModifySelection()
+        case .selectDocumentStart:
+            try editor.moveToDocumentStartAndModifySelection()
+        case .selectDocumentEnd:
+            try editor.moveToDocumentEndAndModifySelection()
+        }
+    }
+
+    private enum SelectionCollapseEdge {
+        case start
+        case end
+    }
+
+    private static func collapseSelection(_ editor: EditorUI, to edge: SelectionCollapseEdge) throws -> Bool {
+        let offsets = try editor.selectionOffsets()
+        guard offsets.start != offsets.end else { return false }
+
+        let target = edge == .start ? offsets.start : offsets.end
+        try editor.setSelections([EcuSelectionRange(start: target, end: target)], primaryIndex: 0)
+        return true
     }
 
     @discardableResult
