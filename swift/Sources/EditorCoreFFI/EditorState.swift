@@ -43,6 +43,28 @@ public final class EditorState {
         return try ffi.takeOwnedCString(ptr, context: "editor_state_execute_json")
     }
 
+    @discardableResult
+    private func executeCommandObject(_ object: [String: Any]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [])
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw EditorCoreFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: "editor_state_encode_command_json",
+                message: "failed to encode command JSON as UTF-8"
+            )
+        }
+        return try executeJSON(json)
+    }
+
+    @discardableResult
+    private func executeEditorCommand(kind: String, op: String, fields: [String: Any] = [:]) throws -> String {
+        var object: [String: Any] = ["kind": kind, "op": op]
+        for (key, value) in fields {
+            object[key] = value
+        }
+        return try executeCommandObject(object)
+    }
+
     public func fullStateJSON() throws -> String {
         try ffi.takeOwnedCString(editor_core_ffi_editor_state_full_state_json(handle), context: "editor_state_full_state_json")
     }
@@ -147,6 +169,103 @@ public final class EditorState {
             editor_core_ffi_editor_insert_text_utf8(handle, buf.baseAddress, UInt32(buf.count))
         }
         try ffi.ensureStatus(status, context: "insert_text_utf8")
+    }
+
+    @discardableResult
+    public func typeChar(_ ch: String) throws -> String {
+        try executeEditorCommand(kind: "edit", op: "type_char", fields: ["ch": ch])
+    }
+
+    @discardableResult
+    public func replaceCoalescingUndo(start: UInt32, length: UInt32, text: String) throws -> String {
+        try executeEditorCommand(
+            kind: "edit",
+            op: "replace_coalescing_undo",
+            fields: ["start": Int(start), "length": Int(length), "text": text]
+        )
+    }
+
+    @discardableResult
+    public func replaceCoalescingUndoWithSelection(
+        start: UInt32,
+        length: UInt32,
+        text: String,
+        selectionStart: UInt32,
+        selectionEnd: UInt32
+    ) throws -> String {
+        try executeEditorCommand(
+            kind: "edit",
+            op: "replace_coalescing_undo_with_selection",
+            fields: [
+                "start": Int(start),
+                "length": Int(length),
+                "text": text,
+                "selection_start": Int(selectionStart),
+                "selection_end": Int(selectionEnd),
+            ]
+        )
+    }
+
+    @discardableResult
+    public func applySnippet(
+        start: UInt32,
+        end: UInt32,
+        snippet: String,
+        additionalEdits: [EcfTextEdit] = []
+    ) throws -> String {
+        try executeEditorCommand(
+            kind: "edit",
+            op: "apply_snippet",
+            fields: [
+                "start": Int(start),
+                "end": Int(end),
+                "snippet": snippet,
+                "additional_edits": additionalEdits.map(\.jsonObject),
+            ]
+        )
+    }
+
+    @discardableResult
+    public func snippetNextPlaceholder() throws -> String {
+        try executeEditorCommand(kind: "cursor", op: "snippet_next_placeholder")
+    }
+
+    @discardableResult
+    public func snippetPrevPlaceholder() throws -> String {
+        try executeEditorCommand(kind: "cursor", op: "snippet_prev_placeholder")
+    }
+
+    @discardableResult
+    public func moveToMatchingBracket() throws -> String {
+        try executeEditorCommand(kind: "cursor", op: "move_to_matching_bracket")
+    }
+
+    @discardableResult
+    public func setAutoPairsConfig(_ config: EcfAutoPairsConfig) throws -> String {
+        try executeEditorCommand(
+            kind: "view",
+            op: "set_auto_pairs_config",
+            fields: ["config": config.jsonObject]
+        )
+    }
+
+    @discardableResult
+    public func setAutoPairsEnabled(_ enabled: Bool) throws -> String {
+        try executeEditorCommand(
+            kind: "view",
+            op: "set_auto_pairs_enabled",
+            fields: ["enabled": enabled]
+        )
+    }
+
+    @discardableResult
+    public func updateBracketMatchHighlights() throws -> String {
+        try executeEditorCommand(kind: "style", op: "update_bracket_match_highlights")
+    }
+
+    @discardableResult
+    public func clearBracketMatchHighlights() throws -> String {
+        try executeEditorCommand(kind: "style", op: "clear_bracket_match_highlights")
     }
 
     public func moveTo(line: UInt32, column: UInt32) throws {

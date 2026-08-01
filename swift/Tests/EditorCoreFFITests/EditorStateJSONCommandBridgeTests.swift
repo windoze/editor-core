@@ -214,6 +214,29 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
             XCTAssertEqual(r.replaced, 3)
             XCTAssertEqual(try state.text(), "bar bar bar")
         }
+
+        do {
+            let state = try EditorState(library: library, initialText: "", viewportWidth: 80)
+            assertSuccess(try run(state, #"{"kind":"view","op":"set_auto_pairs_enabled","enabled":true}"#))
+            assertSuccess(try run(state, #"{"kind":"edit","op":"type_char","ch":"("}"#))
+            XCTAssertEqual(try state.text(), "()")
+        }
+
+        do {
+            let state = try EditorState(library: library, initialText: "", viewportWidth: 80)
+            assertSuccess(try run(state, #"{"kind":"edit","op":"apply_snippet","start":0,"end":0,"snippet":"println!(${1:msg})$0"}"#))
+            XCTAssertEqual(try state.text(), "println!(msg)")
+            assertSuccess(try run(state, #"{"kind":"cursor","op":"snippet_next_placeholder"}"#))
+            assertSuccess(try run(state, #"{"kind":"cursor","op":"snippet_prev_placeholder"}"#))
+        }
+
+        do {
+            let state = try EditorState(library: library, initialText: "abc", viewportWidth: 80)
+            assertSuccess(try run(state, #"{"kind":"edit","op":"replace_coalescing_undo","start":0,"length":1,"text":"A"}"#))
+            XCTAssertEqual(try state.text(), "Abc")
+            assertSuccess(try run(state, #"{"kind":"edit","op":"replace_coalescing_undo_with_selection","start":1,"length":1,"text":"B","selection_start":1,"selection_end":2}"#))
+            XCTAssertEqual(try state.text(), "ABc")
+        }
     }
 
     func testCursorCommandsCoverAllOps() throws {
@@ -369,6 +392,14 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
             let full = try JSONTestHelpers.decode(FullStateJSON.self, from: try state.fullStateJSON())
             XCTAssertNotNil(full.cursor.selection)
         }
+
+        do {
+            let state = try EditorState(library: library, initialText: "(x)", viewportWidth: 80)
+            assertSuccess(try run(state, #"{"kind":"cursor","op":"move_to","line":0,"column":0}"#))
+            assertSuccess(try run(state, #"{"kind":"cursor","op":"move_to_matching_bracket"}"#))
+            let full = try JSONTestHelpers.decode(FullStateJSON.self, from: try state.fullStateJSON())
+            XCTAssertEqual(full.cursor.position, PositionJSON(line: 0, column: 2))
+        }
     }
 
     func testViewAndStyleCommandsCoverAllOpsAndViewportResult() throws {
@@ -441,6 +472,12 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
             assertSuccess(try run(state, #"{"kind":"style","op":"unfold_all"}"#))
             full = try JSONTestHelpers.decode(FullStateJSON.self, from: try state.fullStateJSON())
             XCTAssertFalse(full.folding.regions.contains { $0.isCollapsed })
+        }
+
+        do {
+            let state = try EditorState(library: library, initialText: "(x)", viewportWidth: 80)
+            assertSuccess(try run(state, #"{"kind":"style","op":"update_bracket_match_highlights"}"#))
+            assertSuccess(try run(state, #"{"kind":"style","op":"clear_bracket_match_highlights"}"#))
         }
     }
 
@@ -522,6 +559,13 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
             XCTFail("期望抛错，但实际未抛错")
         } catch {
             XCTAssertFalse(library.lastErrorMessage().isEmpty)
+        }
+
+        do {
+            _ = try state.executeJSON(#"{"kind":"edit","op":"type_char","ch":"too long"}"#)
+            XCTFail("期望抛错，但实际未抛错")
+        } catch {
+            XCTAssertTrue(library.lastErrorMessage().contains("exactly one character"))
         }
     }
 }

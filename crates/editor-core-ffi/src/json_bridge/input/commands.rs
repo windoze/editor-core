@@ -23,13 +23,13 @@ pub(crate) enum FfiCommandInput {
 }
 
 impl FfiCommandInput {
-    pub(crate) fn into_core(self) -> Command {
-        match self {
-            Self::Edit { op } => Command::Edit(op.into_core()),
+    pub(crate) fn into_core(self) -> Result<Command, String> {
+        Ok(match self {
+            Self::Edit { op } => Command::Edit(op.try_into_core()?),
             Self::Cursor { op } => Command::Cursor(op.into_core()),
-            Self::View { op } => Command::View(op.into_core()),
+            Self::View { op } => Command::View(op.try_into_core()?),
             Self::Style { op } => Command::Style(op.into_core()),
-        }
+        })
     }
 }
 
@@ -49,8 +49,23 @@ pub(crate) enum FfiEditCommandInput {
         length: usize,
         text: String,
     },
+    ReplaceCoalescingUndo {
+        start: usize,
+        length: usize,
+        text: String,
+    },
+    ReplaceCoalescingUndoWithSelection {
+        start: usize,
+        length: usize,
+        text: String,
+        selection_start: usize,
+        selection_end: usize,
+    },
     InsertText {
         text: String,
+    },
+    TypeChar {
+        ch: String,
     },
     InsertTab,
     InsertNewline {
@@ -70,6 +85,13 @@ pub(crate) enum FfiEditCommandInput {
     },
     ApplyTextEdits {
         edits: Vec<FfiTextEditSpec>,
+    },
+    ApplySnippet {
+        start: usize,
+        end: usize,
+        snippet: String,
+        #[serde(default)]
+        additional_edits: Vec<FfiTextEditSpec>,
     },
     DeleteToPrevTabStop,
     DeleteGraphemeBack,
@@ -96,8 +118,8 @@ pub(crate) enum FfiEditCommandInput {
 }
 
 impl FfiEditCommandInput {
-    fn into_core(self) -> EditCommand {
-        match self {
+    fn try_into_core(self) -> Result<EditCommand, String> {
+        Ok(match self {
             Self::Insert { offset, text } => EditCommand::Insert { offset, text },
             Self::Delete { start, length } => EditCommand::Delete { start, length },
             Self::Replace {
@@ -109,7 +131,32 @@ impl FfiEditCommandInput {
                 length,
                 text,
             },
+            Self::ReplaceCoalescingUndo {
+                start,
+                length,
+                text,
+            } => EditCommand::ReplaceCoalescingUndo {
+                start,
+                length,
+                text,
+            },
+            Self::ReplaceCoalescingUndoWithSelection {
+                start,
+                length,
+                text,
+                selection_start,
+                selection_end,
+            } => EditCommand::ReplaceCoalescingUndoWithSelection {
+                start,
+                length,
+                text,
+                selection_start,
+                selection_end,
+            },
             Self::InsertText { text } => EditCommand::InsertText { text },
+            Self::TypeChar { ch } => EditCommand::TypeChar {
+                ch: single_char(&ch, "ch")?,
+            },
             Self::InsertTab => EditCommand::InsertTab,
             Self::InsertNewline { auto_indent } => EditCommand::InsertNewline { auto_indent },
             Self::Indent => EditCommand::Indent,
@@ -125,6 +172,17 @@ impl FfiEditCommandInput {
             },
             Self::ApplyTextEdits { edits } => EditCommand::ApplyTextEdits {
                 edits: edits.into_iter().map(Into::into).collect(),
+            },
+            Self::ApplySnippet {
+                start,
+                end,
+                snippet,
+                additional_edits,
+            } => EditCommand::ApplySnippet {
+                start,
+                end,
+                snippet,
+                additional_edits: additional_edits.into_iter().map(Into::into).collect(),
             },
             Self::DeleteToPrevTabStop => EditCommand::DeleteToPrevTabStop,
             Self::DeleteGraphemeBack => EditCommand::DeleteGraphemeBack,
@@ -154,7 +212,7 @@ impl FfiEditCommandInput {
                 replacement,
                 options: options.into(),
             },
-        }
+        })
     }
 }
 
@@ -218,6 +276,7 @@ pub(crate) enum FfiCursorCommandInput {
     MoveGraphemeRight,
     MoveWordLeft,
     MoveWordRight,
+    MoveToMatchingBracket,
     SetSelection {
         start: FfiPosition,
         end: FfiPosition,
@@ -263,6 +322,8 @@ pub(crate) enum FfiCursorCommandInput {
         #[serde(default)]
         options: FfiSearchOptions,
     },
+    SnippetNextPlaceholder,
+    SnippetPrevPlaceholder,
 }
 
 impl FfiCursorCommandInput {
@@ -286,6 +347,7 @@ impl FfiCursorCommandInput {
             Self::MoveGraphemeRight => CursorCommand::MoveGraphemeRight,
             Self::MoveWordLeft => CursorCommand::MoveWordLeft,
             Self::MoveWordRight => CursorCommand::MoveWordRight,
+            Self::MoveToMatchingBracket => CursorCommand::MoveToMatchingBracket,
             Self::SetSelection { start, end } => CursorCommand::SetSelection {
                 start: start.into(),
                 end: end.into(),
@@ -332,6 +394,8 @@ impl FfiCursorCommandInput {
                 query,
                 options: options.into(),
             },
+            Self::SnippetNextPlaceholder => CursorCommand::SnippetNextPlaceholder,
+            Self::SnippetPrevPlaceholder => CursorCommand::SnippetPrevPlaceholder,
         }
     }
 }
@@ -345,6 +409,8 @@ pub(crate) enum FfiViewCommandInput {
     SetTabWidth { width: usize },
     SetTabKeyBehavior { behavior: FfiTabKeyBehavior },
     SetIndentationConfig { config: FfiIndentationConfig },
+    SetAutoPairsConfig { config: FfiAutoPairsConfig },
+    SetAutoPairsEnabled { enabled: bool },
     SetWordBoundaryAsciiBoundaryChars { boundary_chars: String },
     ResetWordBoundaryDefaults,
     ScrollTo { line: usize },
@@ -352,8 +418,8 @@ pub(crate) enum FfiViewCommandInput {
 }
 
 impl FfiViewCommandInput {
-    fn into_core(self) -> ViewCommand {
-        match self {
+    fn try_into_core(self) -> Result<ViewCommand, String> {
+        Ok(match self {
             Self::SetViewportWidth { width } => ViewCommand::SetViewportWidth { width },
             Self::SetWrapMode { mode } => ViewCommand::SetWrapMode { mode: mode.into() },
             Self::SetWrapIndent { indent } => ViewCommand::SetWrapIndent {
@@ -366,13 +432,17 @@ impl FfiViewCommandInput {
             Self::SetIndentationConfig { config } => ViewCommand::SetIndentationConfig {
                 config: config.into(),
             },
+            Self::SetAutoPairsConfig { config } => ViewCommand::SetAutoPairsConfig {
+                config: config.try_into_core()?,
+            },
+            Self::SetAutoPairsEnabled { enabled } => ViewCommand::SetAutoPairsEnabled { enabled },
             Self::SetWordBoundaryAsciiBoundaryChars { boundary_chars } => {
                 ViewCommand::SetWordBoundaryAsciiBoundaryChars { boundary_chars }
             }
             Self::ResetWordBoundaryDefaults => ViewCommand::ResetWordBoundaryDefaults,
             Self::ScrollTo { line } => ViewCommand::ScrollTo { line },
             Self::GetViewport { start_row, count } => ViewCommand::GetViewport { start_row, count },
-        }
+        })
     }
 }
 
@@ -397,6 +467,8 @@ pub(crate) enum FfiStyleCommandInput {
         start_line: usize,
     },
     UnfoldAll,
+    UpdateBracketMatchHighlights,
+    ClearBracketMatchHighlights,
 }
 
 impl FfiStyleCommandInput {
@@ -429,6 +501,8 @@ impl FfiStyleCommandInput {
             },
             Self::Unfold { start_line } => StyleCommand::Unfold { start_line },
             Self::UnfoldAll => StyleCommand::UnfoldAll,
+            Self::UpdateBracketMatchHighlights => StyleCommand::UpdateBracketMatchHighlights,
+            Self::ClearBracketMatchHighlights => StyleCommand::ClearBracketMatchHighlights,
         }
     }
 }

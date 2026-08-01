@@ -69,3 +69,72 @@ public struct WorkspaceViewportState: Equatable, Sendable {
         self.totalVisualLines = raw.total_visual_lines
     }
 }
+
+public struct EcfTextEdit: Equatable, Sendable {
+    public let start: UInt32
+    public let end: UInt32
+    public let text: String
+
+    public init(start: UInt32, end: UInt32, text: String) {
+        self.start = start
+        self.end = end
+        self.text = text
+    }
+
+    var jsonObject: [String: Any] {
+        [
+            "start": Int(start),
+            "end": Int(end),
+            "text": text,
+        ]
+    }
+}
+
+public struct EcfAutoPair: Equatable, Sendable {
+    public let open: String
+    public let close: String
+
+    public init(open: String, close: String) {
+        self.open = open
+        self.close = close
+    }
+
+    var jsonObject: [String: Any] {
+        [
+            "open": open,
+            "close": close,
+        ]
+    }
+}
+
+public struct EcfAutoPairsConfig: Equatable, Sendable {
+    public var enabled: Bool?
+    public var pairs: [EcfAutoPair]?
+    public var wrapSelection: Bool?
+    public var skipOverClosing: Bool?
+    public var deletePair: Bool?
+
+    public init(
+        enabled: Bool? = nil,
+        pairs: [EcfAutoPair]? = nil,
+        wrapSelection: Bool? = nil,
+        skipOverClosing: Bool? = nil,
+        deletePair: Bool? = nil
+    ) {
+        self.enabled = enabled
+        self.pairs = pairs
+        self.wrapSelection = wrapSelection
+        self.skipOverClosing = skipOverClosing
+        self.deletePair = deletePair
+    }
+
+    var jsonObject: [String: Any] {
+        var object: [String: Any] = [:]
+        if let enabled { object["enabled"] = enabled }
+        if let pairs { object["pairs"] = pairs.map(\.jsonObject) }
+        if let wrapSelection { object["wrap_selection"] = wrapSelection }
+        if let skipOverClosing { object["skip_over_closing"] = skipOverClosing }
+        if let deletePair { object["delete_pair"] = deletePair }
+        return object
+    }
+}

@@ -30,8 +30,8 @@ use editor_core::workspace::{
     WorkspaceViewportState,
 };
 use editor_core::{
-    FoldRegion, IndentStyle, IndentationConfig, Interval, LineEnding, SearchMatch, SearchOptions,
-    StyleLayerId, WrapIndent, WrapMode,
+    AutoPair, AutoPairsConfig, FoldRegion, IndentStyle, IndentationConfig, Interval, LineEnding,
+    SearchMatch, SearchOptions, StyleLayerId, WrapIndent, WrapMode,
 };
 use editor_core_lsp::{
     CompletionTextEditMode, LspCoordinateConverter, apply_completion_item, apply_text_edits,

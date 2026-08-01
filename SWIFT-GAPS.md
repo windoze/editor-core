@@ -156,6 +156,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 75 已完成：继续拆 `editor-core-ui` 和 `editor-core-ui-ffi` 中阶段 74 后仍偏长的两个 implementation 文件，保持 Rust API、C ABI 和 Swift binding 行为不变。`editor-core-ui/src/editor_ui.rs` 将 LSP request/result、processing poll、Tree-sitter prefetch 和 LSP formatting/apply helper 拆入 `editor_ui/lsp.rs`，主文件从 5941 行降到 3869 行；`editor-core-ui-ffi/src/editor_ui_abi.rs` 拆成 `configuration.rs`、`editing.rs`、`lifecycle_theme_syntax.rs`、`lsp.rs`、`rendering_queries.rs`，入口文件降到 11 行。已验证 `cargo build -p editor-core-ui -p editor-core-ui-ffi`、`cargo test -p editor-core-ui --lib`、`cargo test -p editor-core-ui-ffi --lib` 和 `swift test --package-path swift --filter EditorCoreUIFFITests/testCodeLensHitTestReturnsPayloadJSON`。
 - 2026-08-02 阶段 76 已完成：继续拆 `crates/editor-core-ui/src/editor_ui.rs`、`crates/editor-core-render-skia/src/lib.rs`、`crates/editor-core-ffi/src/lib.rs` 三个阶段 75 后仍偏长的文件，保持 Rust API、C ABI 和 Swift binding 行为不变。`editor_ui.rs` 拆出 selection、coordinate/hit-test、appearance/search、syntax、viewport、editing/input、rendering 子模块，root 降到 568 行；`editor-core-render-skia` 将 `SkiaRenderer`、font/shaping cache 和绘制 helper 拆入 `renderer.rs`，root 降到 333 行；`editor-core-ffi` 将 ABI 函数组拆成 `editor_state_abi.rs`、`workspace_abi.rs`、`lsp_abi.rs`、`processors_abi.rs`、`binary_abi.rs`，root 降到 717 行。已验证 `cargo build -p editor-core-ui-ffi -p editor-core-ffi`、`cargo test -p editor-core-ui --lib`、`cargo test -p editor-core-render-skia --lib`、`cargo test -p editor-core-ffi`，以及 Swift headless/UI FFI smoke。
 - 2026-08-02 阶段 77 已完成：继续拆本轮指定的七个长文件，保持 Rust API、C ABI、Swift binding 和行为不变。`editor-core-render-skia/src/renderer.rs` 现在作为 53 行入口，拆出 `font`、`font_loading`、`geometry`、`drawing`、`style`、`decoration`、`headless`、`composed`、`metal`；`editor-core-ui/src/editor_ui/lsp.rs` 拆出 lifecycle、sync、processing、formatting、apply、requests，并把 requests 再按 common/navigation/completion/actions/document/hierarchy 分组；`editor-core-ui-ffi/src/editor_ui_abi/lsp.rs` 和 `editing.rs` 拆成 ABI 分组模块，LSP requests 再按 common/navigation/completion/actions/document/hierarchy_workspace 分组；`editor-core-ui/src/lib.rs` 拆出 JSON helper、shared LSP session/result slot、render helper 和 Tree-sitter worker；`editor-core-ffi/src/json_bridge.rs` 拆出 parse/value/input，input 再按 primitives/commands/processing 分组；`editor-core-ui/src/editor_ui/editing.rs` 拆成 text、movement、IME/mouse。已验证 `cargo build -p editor-core-ui -p editor-core-ui-ffi -p editor-core-render-skia -p editor-core-ffi`、`cargo test -p editor-core-render-skia --lib`、`cargo test -p editor-core-ui --lib`、`cargo test -p editor-core-ui-ffi --lib`、`cargo test -p editor-core-ffi`，以及 Swift smoke `TypedAPITests/testDocumentStatsAndVersionBump` 和 `EditorCoreUIFFITests/testCodeLensHitTestReturnsPayloadJSON`。
+- 2026-08-02 阶段 78 已完成：补齐 headless FFI JSON command plane 相对 UI command JSON 的一批缺口，保持 C ABI 函数表不变，通过 JSON schema 扩展暴露 `type_char`、coalescing replace、`apply_snippet`、snippet placeholder navigation、`move_to_matching_bracket`、auto-pairs config/enabled 和 bracket-match highlight update/clear。Swift `EditorCoreFFI.EditorState` 新增对应 typed convenience API，并新增 `EcfTextEdit`、`EcfAutoPair`、`EcfAutoPairsConfig` DTO。已验证 `cargo test -p editor-core-ffi`、`swift test --package-path swift --filter EditorStateJSONCommandBridgeTests` 和 `swift test --package-path swift --filter TypedAPITests`。
 
 ## 分层结论
 
@@ -195,10 +196,10 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 
 | 能力 | Rust core | headless FFI JSON | Swift `EditorUI` / App | 缺口 |
 | --- | --- | --- | --- | --- |
-| `TypeChar` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `typeChar(_:)`，`insertText` 单字符也会在 Rust UI 内部走 typing 路径 | 仍缺 App command id；headless FFI 覆盖仍不一致。 |
-| `ReplaceCoalescingUndo` / `ReplaceCoalescingUndoWithSelection` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `replaceCoalescingUndo` / `replaceCoalescingUndoWithSelection`；IME/marked text 路径内部也使用相关语义 | headless FFI 覆盖仍不一致。 |
-| `ApplySnippet` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `applySnippet`；Tab/Backtab 可在 snippet active 时切 placeholder；completion popup 可应用 snippet item | headless FFI 覆盖仍不一致。 |
-| `SnippetNextPlaceholder` / `SnippetPrevPlaceholder` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `snippetNextPlaceholder` / `snippetPrevPlaceholder`，`insertTab` / `insertBacktab` 也内部支持；AttoEditor command palette 和菜单有 `editor.snippet_next_placeholder` / `editor.snippet_prev_placeholder` | App 显式 command 已补齐；headless FFI 覆盖仍不一致。 |
+| `TypeChar` | 有 | 有 | Swift headless/UI 都有 typed `typeChar(_:)`；`insertText` 单字符也会在 Rust UI 内部走 typing 路径 | headless/UI JSON 覆盖已对齐；App 显式 command id 仍按产品需要评估。 |
+| `ReplaceCoalescingUndo` / `ReplaceCoalescingUndoWithSelection` | 有 | 有 | Swift headless/UI 都有 typed `replaceCoalescingUndo` / `replaceCoalescingUndoWithSelection`；IME/marked text 路径内部也使用相关语义 | headless/UI command 覆盖已对齐。 |
+| `ApplySnippet` | 有 | 有 | Swift headless/UI 都有 typed `applySnippet`；Tab/Backtab 可在 snippet active 时切 placeholder；completion popup 可应用 snippet item | headless/UI command 覆盖已对齐。 |
+| `SnippetNextPlaceholder` / `SnippetPrevPlaceholder` | 有 | 有 | Swift headless/UI 都有 typed `snippetNextPlaceholder` / `snippetPrevPlaceholder`，`insertTab` / `insertBacktab` 也内部支持；AttoEditor command palette 和菜单有 `editor.snippet_next_placeholder` / `editor.snippet_prev_placeholder` | App 显式 command 已补齐；headless/UI command 覆盖已对齐。 |
 | duplicate lines | 有 | 有 | Swift 有 typed `duplicateLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.duplicate_lines` | P0 接线和基础启用/禁用状态模型已补齐。 |
 | delete lines | 有 | 有 | Swift 有 typed `deleteLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.delete_lines` | P0 接线和基础启用/禁用状态模型已补齐。 |
 | move lines up/down | 有 | 有 | Swift 有 typed `moveLinesUp()` / `moveLinesDown()`；AttoEditor command palette、菜单和默认 keymap 有 `editor.move_lines_up/down` | P0 菜单和 arrow-key 默认 keymap 接线完成。 |
@@ -212,15 +213,15 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | logical `MoveTo` / `MoveBy` | 有 | 有 | Swift 有 typed `moveTo(line:column:)` / `moveBy(deltaLine:deltaColumn:)`，也可通过 selection/conversion 间接达成 | 仍缺面向用户的参数化 App command。 |
 | visual movement commands | 有 | 有 | Swift 可通过 `executeCommandJSON` 调用，AppKit key handling 覆盖一部分 | 仍缺 App command coverage matrix。 |
 | selection / multicursor commands | 有 | 有 | Swift UI FFI 有 typed select word/line、expand selection、add cursor above/below，也可通过 UI JSON 调用；AttoEditor command palette 和 Selection 菜单有 `editor.select_word` / `editor.select_line` / `editor.expand_selection` / `editor.add_cursor_above` / `editor.add_cursor_below`；keymap 已支持 arrow/navigation function-key token | 常用 App command 和 Selection 菜单分组已补齐；仍缺所有视觉移动命令矩阵。 |
-| `MoveToMatchingBracket` | 有 | headless FFI 缺 | Swift UI 有公开方法 | headless 和 UI command 面不一致。 |
+| `MoveToMatchingBracket` | 有 | 有 | Swift headless/UI 都有公开方法 | headless/UI command 覆盖已对齐。 |
 | add occurrence options | 有 | 有 | Swift typed `addNextOccurrence(options:)` / `addAllOccurrences(options:)` 已支持 options；AttoEditor command palette、菜单和 keymap 有 `editor.add_next_occurrence` / `editor.add_all_occurrences` 默认 options 入口 | 默认 App command/keymap 已补齐；仍缺 settings/search-options 接线。 |
 | `SetWrapMode` | 有 | 有 | Swift 有 typed `setWrapMode(_:)`；AttoEditor command palette、菜单和 keymap 有 wrap off/char/word；preferences 有持久化 wrap mode 并会应用到新建和已打开 editor | App settings 接线已补齐。 |
 | `SetWrapIndent` | 有 | 有 | Swift 有 typed `setWrapIndent(_:)`；preferences 有持久化 wrap indent 并会应用到新建和已打开 editor | App settings 接线已补齐。 |
 | `SetIndentationConfig` | 有 | 有 | Swift 有 typed `setIndentationConfig(_:)`；AttoEditor 会按 syntax language id 或文件扩展名应用基础语言 indentation config 到新建 editor、手动语言切换和 split clone | 基础语言配置接线已补齐；仍可继续扩展语言表和用户覆盖配置。 |
-| `SetAutoPairsConfig` | 有 | UI JSON 有，headless FFI 缺 | Swift 有 typed `setAutoPairsConfig(_:)`；也有 enabled bool | headless 和 UI command 面仍不一致。 |
-| `SetAutoPairsEnabled` | 有 | UI JSON 有，headless FFI 缺 | Swift UI 有 bool，也可通过 `executeCommandJSON` 调用；AttoEditor preferences 有持久化开关并会应用到新建和已打开 editor | App settings 接线已补齐；headless 和 UI command 面仍不一致。 |
+| `SetAutoPairsConfig` | 有 | 有 | Swift headless/UI 都有 typed config API；UI 也有 enabled bool | headless/UI command 覆盖已对齐。 |
+| `SetAutoPairsEnabled` | 有 | 有 | Swift headless/UI 都有 bool API；AttoEditor preferences 有持久化开关并会应用到新建和已打开 editor | App settings 接线已补齐；headless/UI command 覆盖已对齐。 |
 | fold / unfold / unfold all | 有 | 有 | Swift 有 typed `fold` / `unfold` / `unfoldAll`；AttoEditor command palette、菜单和 keymap 有 fold selection/unfold/unfold all；Swift UI binding 已可把 LSP folding ranges 应用到 core fold regions，AttoEditor refresh 命令会按 typed LSP folding capability 拦截 unsupported server | P0 接线完成；仍缺 gutter fold marker 视觉回归和 result lifecycle model。 |
-| bracket match highlight update/clear | 有 | UI JSON 有，headless FFI 缺 | Swift UI 有 enabled bool 和内部更新，也有 typed `updateBracketMatchHighlights` / `clearBracketMatchHighlights` | headless 和 UI command 面仍不一致。 |
+| bracket match highlight update/clear | 有 | 有 | Swift headless/UI 都有 typed `updateBracketMatchHighlights` / `clearBracketMatchHighlights`；Swift UI 另有 enabled bool 和内部更新 | headless/UI command 覆盖已对齐。 |
 
 建议不要为每个低频命令都新增一个独立 C ABI 函数。更合理的方向是：
 
@@ -590,7 +591,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | duplicate line | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
-| apply snippet | yes | no | yes | yes, via JSON | yes, typed + JSON | partial, completion apply + Tab/Backtab placeholder path + explicit placeholder commands; no generic apply-snippet command | yes |
+| apply snippet | yes | yes, via JSON | yes | yes, via JSON | yes, typed + JSON | partial, completion apply + Tab/Backtab placeholder path + explicit placeholder commands; no generic apply-snippet command | yes |
 | add occurrence | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, default-options command palette/menu/keymap | yes |
 | selection/multicursor | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, common commands in command palette/menu; select line has default keymap | yes |
 | LSP completion | yes | partial helper | yes | yes, raw completion + resolve result | yes, raw completion + resolve result | yes, popup + auto trigger + incremental filter + commit-time resolve/current-doc/cross-file text edits apply | partial |
