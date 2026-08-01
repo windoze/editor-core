@@ -145,6 +145,8 @@ pub struct LspSessionCapabilities {
     pub semantic_tokens: bool,
     /// Server supports semantic tokens delta requests.
     pub semantic_tokens_delta: bool,
+    /// Server advertises `completionProvider.resolveProvider`.
+    pub completion_item_resolve: bool,
     /// Server advertises `foldingRangeProvider`.
     pub folding_ranges: bool,
     /// Server advertises `documentOnTypeFormattingProvider`.
@@ -497,6 +499,9 @@ impl LspSession {
             capabilities: LspSessionCapabilities {
                 semantic_tokens: self.supports_semantic_tokens,
                 semantic_tokens_delta: self.supports_semantic_tokens_delta,
+                completion_item_resolve: parse_supports_completion_item_resolve(
+                    &self.server_capabilities,
+                ),
                 folding_ranges: self.supports_folding_range,
                 on_type_formatting: self.supports_on_type_formatting(),
             },
@@ -2612,6 +2617,14 @@ fn parse_supports_folding_range(capabilities: &Value) -> bool {
         Some(Value::Object(_)) => true,
         _ => false,
     }
+}
+
+fn parse_supports_completion_item_resolve(capabilities: &Value) -> bool {
+    capabilities
+        .get("completionProvider")
+        .and_then(|provider| provider.get("resolveProvider"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
 }
 
 fn lsp_position_for_offset(line_index: &LineIndex, offset: usize) -> LspPosition {

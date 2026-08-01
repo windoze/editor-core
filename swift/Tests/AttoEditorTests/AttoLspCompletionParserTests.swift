@@ -34,6 +34,39 @@ final class AttoLspCompletionParserTests: XCTestCase {
         XCTAssertEqual(items.map(\.label), ["abc"])
     }
 
+    func testResolvedCompletionItemSerializesAndAddsEditsToPlan() throws {
+        let unresolved = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResultJSON: #"[{"label":"foo","data":{"id":1}}]"#).first)
+        XCTAssertNotNil(AttoLspCompletionParser.rawJSON(for: unresolved))
+
+        let resolvedJSON = """
+        {
+          "label": "foo",
+          "insertText": "foo()",
+          "additionalTextEdits": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 0 }
+              },
+              "newText": "import Foo\\n"
+            }
+          ]
+        }
+        """
+        let resolved = try XCTUnwrap(AttoLspCompletionParser.item(fromCompletionItemJSON: resolvedJSON))
+        let plan = try XCTUnwrap(AttoLspCompletionParser.applicationPlan(
+            for: resolved,
+            documentText: "fo",
+            fallbackStart: 0,
+            fallbackEnd: 2
+        ))
+
+        XCTAssertEqual(plan.start, 0)
+        XCTAssertEqual(plan.end, 2)
+        XCTAssertEqual(plan.text, "foo()")
+        XCTAssertEqual(plan.additionalEdits, [EcuTextEdit(start: 0, end: 0, text: "import Foo\n")])
+    }
+
     func testApplicationPlanUsesTextEditAndAdditionalTextEdits() throws {
         let json = """
         [

@@ -378,6 +378,21 @@ public final class EditorUI {
         }
     }
 
+    public func lspRequestCompletionItemResolve(itemJSON: String) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = itemJSON.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_lsp_request_completion_item_resolve(handle, cstr, &out)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_completion_item_resolve")
+        return out
+    }
+
+    public func lspTakeLastCompletionItemResolveResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_completion_item_resolve_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_completion_item_resolve_json(handle, has, ptr)
+        }
+    }
+
     public func lspRequestSignatureHelp(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
         try lspRequestPosition(
             logicalLine: logicalLine,

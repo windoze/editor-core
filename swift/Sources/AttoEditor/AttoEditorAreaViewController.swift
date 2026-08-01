@@ -88,6 +88,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let fallbackEnd: UInt32
     }
 
+    private struct CompletionResolveContext {
+        let request: CompletionRequestContext
+        let item: AttoLspCompletionParser.Item
+    }
+
     private struct RenameRequestContext {
         let tabID: UUID
         let documentURI: String
@@ -147,6 +152,8 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private var completionContext: CompletionRequestContext?
     private var completionPollTimer: DispatchSourceTimer?
+    private var completionResolveContext: CompletionResolveContext?
+    private var completionResolvePollTimer: DispatchSourceTimer?
     private var completionListController: AttoCompletionListController?
 
     private var renameContext: RenameRequestContext?
@@ -2330,6 +2337,104 @@ final class AttoEditorAreaViewController: NSViewController {
     private func applyCompletion(_ item: AttoLspCompletionParser.Item, context: CompletionRequestContext) {
         guard let tab = activeTab, tab.id == context.tabID else { return }
 
+        guard completionItemResolveSupported(for: tab.editCore.editor) else {
+            _ = applyCompletionItem(item, context: context)
+            return
+        }
+
+        guard let itemJSON = AttoLspCompletionParser.rawJSON(for: item) else {
+            _ = applyCompletionItem(item, context: context)
+            return
+        }
+
+        do {
+            _ = try tab.editCore.editor.lspRequestCompletionItemResolve(itemJSON: itemJSON)
+            completionResolveContext = CompletionResolveContext(request: context, item: item)
+            completionListController?.hide()
+            completionListController = nil
+            startCompletionResolvePollTimer(tabID: tab.id)
+        } catch {
+            _ = applyCompletionItem(item, context: context)
+        }
+    }
+
+    private func completionItemResolveSupported(for editor: EditorUI) -> Bool {
+        guard let json = try? editor.lspStatusJSON(),
+              let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+              let capabilities = root["capabilities"] as? [String: Any],
+              let value = capabilities["completion_item_resolve"]
+        else {
+            return true
+        }
+        if let bool = value as? Bool { return bool }
+        if let number = value as? NSNumber { return number.boolValue }
+        return true
+    }
+
+    private func startCompletionResolvePollTimer(tabID: UUID) {
+        completionResolvePollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.completionResolveContext, ctx.request.tabID == tabID else {
+                self.cancelCompletionUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.finishCompletionResolve(with: ctx.item, fallback: ctx.item, context: ctx.request, timer: timer)
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelCompletionUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastCompletionItemResolveResultJSON()
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            let resolved = AttoLspCompletionParser.item(fromCompletionItemJSON: json) ?? ctx.item
+            self.finishCompletionResolve(with: resolved, fallback: ctx.item, context: ctx.request, timer: timer)
+        }
+
+        completionResolvePollTimer = timer
+        timer.resume()
+    }
+
+    private func finishCompletionResolve(
+        with item: AttoLspCompletionParser.Item,
+        fallback: AttoLspCompletionParser.Item,
+        context: CompletionRequestContext,
+        timer: DispatchSourceTimer
+    ) {
+        completionResolvePollTimer = nil
+        completionResolveContext = nil
+        timer.cancel()
+
+        if applyCompletionItem(item, context: context, beepOnFailure: false) == false {
+            _ = applyCompletionItem(fallback, context: context, beepOnFailure: true)
+        }
+    }
+
+    @discardableResult
+    private func applyCompletionItem(
+        _ item: AttoLspCompletionParser.Item,
+        context: CompletionRequestContext,
+        beepOnFailure: Bool = true
+    ) -> Bool {
+        guard let tab = activeTab, tab.id == context.tabID else { return false }
+
         do {
             let text = try tab.editCore.editor.text()
             guard let plan = AttoLspCompletionParser.applicationPlan(
@@ -2338,8 +2443,10 @@ final class AttoEditorAreaViewController: NSViewController {
                 fallbackStart: context.fallbackStart,
                 fallbackEnd: context.fallbackEnd
             ) else {
-                NSSound.beep()
-                return
+                if beepOnFailure {
+                    NSSound.beep()
+                }
+                return false
             }
 
             if plan.isSnippet {
@@ -2362,8 +2469,12 @@ final class AttoEditorAreaViewController: NSViewController {
             handleTabDidMutateDocumentText(tabID: tab.id)
             updateStatusBar()
             view.window?.makeFirstResponder(tab.editCore.editorView)
+            return true
         } catch {
-            NSSound.beep()
+            if beepOnFailure {
+                NSSound.beep()
+            }
+            return false
         }
     }
 
@@ -3117,6 +3228,11 @@ final class AttoEditorAreaViewController: NSViewController {
         completionPollTimer?.cancel()
         completionPollTimer = nil
         completionContext = nil
+
+        completionResolvePollTimer?.cancel()
+        completionResolvePollTimer = nil
+        completionResolveContext = nil
+
         completionListController?.hide()
         completionListController = nil
     }

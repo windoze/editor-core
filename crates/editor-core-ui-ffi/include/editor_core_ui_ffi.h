@@ -253,6 +253,12 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_completion(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_completion_json(EditorUi* ui,
                                                                    uint8_t* out_has_result,
                                                                    char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_completion_item_resolve(EditorUi* ui,
+                                                                         const char* item_json_utf8,
+                                                                         uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_completion_item_resolve_json(EditorUi* ui,
+                                                                                uint8_t* out_has_result,
+                                                                                char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_signature_help(EditorUi* ui,
                                                                 uint32_t line,
                                                                 uint32_t column,

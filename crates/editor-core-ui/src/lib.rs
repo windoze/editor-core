@@ -747,6 +747,7 @@ enum LspResultSlot {
     Implementation,
     References,
     Completion,
+    CompletionResolve,
     SignatureHelp,
     PrepareRename,
     Rename,
@@ -767,6 +768,7 @@ impl LspResultSlot {
             "textDocument/implementation" => Some(Self::Implementation),
             "textDocument/references" => Some(Self::References),
             "textDocument/completion" => Some(Self::Completion),
+            "completionItem/resolve" => Some(Self::CompletionResolve),
             "textDocument/signatureHelp" => Some(Self::SignatureHelp),
             "textDocument/prepareRename" => Some(Self::PrepareRename),
             "textDocument/rename" => Some(Self::Rename),
@@ -2699,6 +2701,7 @@ impl EditorUi {
                         capabilities = Some(serde_json::json!({
                             "semantic_tokens": s.capabilities.semantic_tokens,
                             "semantic_tokens_delta": s.capabilities.semantic_tokens_delta,
+                            "completion_item_resolve": s.capabilities.completion_item_resolve,
                             "folding_ranges": s.capabilities.folding_ranges,
                             "on_type_formatting": s.capabilities.on_type_formatting,
                         }));
@@ -2942,6 +2945,18 @@ impl EditorUi {
 
     pub fn lsp_take_last_completion_result_json(&mut self) -> Option<String> {
         self.lsp_take_last_result_json(LspResultSlot::Completion)
+    }
+
+    pub fn lsp_request_completion_item_resolve(&mut self, item_json: &str) -> Result<u64, UiError> {
+        let item: serde_json::Value =
+            serde_json::from_str(item_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        self.lsp_request_document_result(LspResultSlot::CompletionResolve, |lsp| {
+            lsp.request_completion_item_resolve(item)
+        })
+    }
+
+    pub fn lsp_take_last_completion_item_resolve_result_json(&mut self) -> Option<String> {
+        self.lsp_take_last_result_json(LspResultSlot::CompletionResolve)
     }
 
     pub fn lsp_request_signature_help(
@@ -8892,6 +8907,14 @@ fn main() {
     fn ui_lsp_request_definition_errors_when_lsp_disabled() {
         let mut ui = EditorUi::new("hello", 80);
         let err = ui.lsp_request_definition(0, 0).unwrap_err();
+        match err {
+            UiError::Processor(msg) => assert_eq!(msg, "LSP is not enabled"),
+            other => panic!("expected UiError::Processor, got: {other:?}"),
+        }
+
+        let err = ui
+            .lsp_request_completion_item_resolve(r#"{"label":"hello"}"#)
+            .unwrap_err();
         match err {
             UiError::Processor(msg) => assert_eq!(msg, "LSP is not enabled"),
             other => panic!("expected UiError::Processor, got: {other:?}"),

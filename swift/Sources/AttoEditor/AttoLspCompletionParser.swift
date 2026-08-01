@@ -36,18 +36,19 @@ enum AttoLspCompletionParser {
 
         return rawItems.compactMap { any in
             guard let dict = any as? [String: Any] else { return nil }
-            guard let label = dict["label"] as? String, label.isEmpty == false else { return nil }
-            let kind = intValue(dict["kind"])
-            return Item(
-                label: label,
-                detail: stringValue(dict["detail"]),
-                kind: kind,
-                kindLabel: kind.flatMap(kindLabel),
-                filterText: stringValue(dict["filterText"]),
-                sortText: stringValue(dict["sortText"]),
-                object: dict
-            )
+            return item(from: dict)
         }
+    }
+
+    static func item(fromCompletionItemJSON json: String) -> Item? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        guard let root = try? JSONSerialization.jsonObject(with: data, options: []) else { return nil }
+        guard let dict = root as? [String: Any] else { return nil }
+        return item(from: dict)
+    }
+
+    static func rawJSON(for item: Item) -> String? {
+        jsonString(item.object)
     }
 
     static func displayTitle(for item: Item) -> String {
@@ -119,6 +120,20 @@ enum AttoLspCompletionParser {
         }
 
         return nil
+    }
+
+    private static func item(from dict: [String: Any]) -> Item? {
+        guard let label = dict["label"] as? String, label.isEmpty == false else { return nil }
+        let kind = intValue(dict["kind"])
+        return Item(
+            label: label,
+            detail: stringValue(dict["detail"]),
+            kind: kind,
+            kindLabel: kind.flatMap(kindLabel),
+            filterText: stringValue(dict["filterText"]),
+            sortText: stringValue(dict["sortText"]),
+            object: dict
+        )
     }
 
     private static func textEdits(from any: Any?, documentText: String) -> [EcuTextEdit] {
@@ -212,5 +227,11 @@ enum AttoLspCompletionParser {
         if let v = any as? Int { return v }
         if let n = any as? NSNumber { return n.intValue }
         return nil
+    }
+
+    private static func jsonString(_ object: Any) -> String? {
+        guard JSONSerialization.isValidJSONObject(object) else { return nil }
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: []) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }

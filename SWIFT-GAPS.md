@@ -31,9 +31,9 @@ Swift 侧已经具备以下基础能力：
 - `EditorCoreUIFFI.EditorUI` 暴露了较完整的“编辑器视图主路径”API，包括打开文本、插入/删除、搜索替换、撤销重做、选择、鼠标输入、IME、渲染 RGBA/Metal、主题、Tree-sitter、Sublime syntax、部分 LSP、minimap、gutter、bookmark、jump history、document link hit-test 等。
 - `EditorCoreUI` / `AttoEditor` 已有 AppKit 组件级 XCTest，能用 `NSWindow`、`NSEvent` 和 view API 驱动交互。
 - 2026-08-01 本地验证过：
-  - `cargo test -p editor-core-ui -p editor-core-ui-ffi` 通过。
-  - `swift test --package-path swift` 通过，205 个测试。
-  - `swift test --filter AttoEditorTests` 通过，60 个测试。
+  - `cargo test -p editor-core-lsp -p editor-core-ui -p editor-core-ui-ffi` 通过。
+  - `swift test --package-path swift` 通过，206 个测试。
+  - `swift test --filter AttoEditorTests` 通过，61 个测试。
   - `swift test --filter EditorCoreUITests` 通过，64 个测试。
   - `swift test --filter EditorCoreUIFFITests` 通过，46 个测试。
 
@@ -71,12 +71,14 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 9 已完成：AttoEditor 新增 LSP signature help popup 主路径，命令 `lsp.signature_help` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspSignatureHelpFormatter`，覆盖 SignatureHelp、activeSignature、activeParameter、ParameterInformation string/range label 和 documentation 常见结果形态。
 - 阶段 9 尚未完成 signature help trigger characters / 自动弹出、active parameter 富格式高亮、typed result model 和空结果/错误展示。
 - 2026-08-01 阶段 10 已完成：AttoEditor 新增 LSP completion popup 主路径，命令 `lsp.completion` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspCompletionParser` 和 caret-anchored completion list，覆盖 CompletionList/CompletionItem、TextEdit、InsertReplaceEdit insert range、additionalTextEdits、snippet insertion 和 fallback identifier-prefix replacement。
-- 阶段 10 尚未完成 completionItem/resolve、commit characters、自动触发/增量过滤、跨文件 workspace edit、rich documentation/detail preview 和更完整的 typed result model。
+- 阶段 10 后续剩余缺口包括 commit characters、自动触发/增量过滤、跨文件 workspace edit、rich documentation/detail preview 和更完整的 typed result model。
 - 2026-08-01 阶段 11 已完成：Swift UI binding 新增 rename / prepare rename / code action / code action resolve 的 raw async request/take API，覆盖 Rust `editor-core-lsp` 已有的 `textDocument/prepareRename`、`textDocument/rename`、`textDocument/codeAction` 和 `codeAction/resolve` 请求路径。
 - 2026-08-01 阶段 11 第二部分已完成：Swift UI binding 新增 `lspApplyWorkspaceEditJSON(_:documentURI:)`，通过 UI FFI 把 `WorkspaceEdit` 中命中当前文档 URI 的 `TextEdit` 应用到当前 buffer，并返回 applied/skipped/documents summary，覆盖 rename/code action 返回 edit 后的当前文档应用基础链路。
 - 2026-08-01 阶段 11 第三部分已完成：AttoEditor App 新增 `lsp.rename` 主路径，包含 command palette、Go 菜单、F2 keymap、rename 输入框、候选名预填、LSP rename request/poll，以及把返回的当前文档 WorkspaceEdit 应用到 active tab 并标记 dirty。
 - 2026-08-01 阶段 11 第四部分已完成：Swift UI binding 新增 `workspace/executeCommand` raw request/take API；AttoEditor App 新增 `lsp.code_actions` 主路径，包含 command palette、Go 菜单、Cmd+. keymap、code action quick panel、`codeAction/resolve` 轮询、当前文档 WorkspaceEdit 应用和 command payload 执行。
 - 阶段 11 尚未完成跨文件 WorkspaceEdit 应用/预览、code action kind/filter/diagnostics context 产品化、执行结果/错误展示，以及相关 typed result model。
+- 2026-08-01 阶段 12 已完成：Swift UI binding 新增 `completionItem/resolve` raw request/take API；AttoEditor completion popup 在 commit 时会先请求 resolve，使用 resolved CompletionItem 中的 `textEdit` / `additionalTextEdits` / snippet payload，resolve 不可用或超时时回退到原始 completion item。
+- 阶段 12 尚未完成 commit characters、自动触发/增量过滤、跨文件 workspace edit、rich documentation/detail preview 和更完整的 typed result model。
 
 ## 分层结论
 
@@ -157,9 +159,10 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - LSP enable/status。
 - hover。
 - definition。
-- declaration / type definition / implementation / references / completion / signature help / prepare rename / rename / code action / code action resolve / document symbols / workspace symbols 的 Swift UI raw async request/take API。
+- declaration / type definition / implementation / references / completion / completion item resolve / signature help / prepare rename / rename / code action / code action resolve / document symbols / workspace symbols 的 Swift UI raw async request/take API。
 - AttoEditor App command/menu 已覆盖 go to definition/declaration/type definition/implementation/find references，其中 references 多结果有轻量可过滤结果 palette。
 - AttoEditor App command/menu 已覆盖 completion popup 主路径。
+- AttoEditor App completion popup commit 路径已覆盖 `completionItem/resolve`，可把 resolved item 的 `textEdit`、`additionalTextEdits` 和 snippet payload 应用到当前文档；resolve 不可用或超时时会回退到原始 item。
 - AttoEditor App command/menu 已覆盖 signature help popup 主路径。
 - format。
 - diagnostics 派生状态应用。
@@ -178,7 +181,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 
 - declaration/type definition/implementation 的多结果导航 UI 仍较基础。
 - references 结果列表已有轻量 palette，但还不是完整结果面板。
-- completion popup 主路径已有；仍缺 completion resolve、commit characters、自动触发/增量过滤、rich documentation/detail preview 和 completion/code action 中的完整 workspace edit 产品化。
+- completion popup 主路径和 commit-time completion resolve 已有；仍缺 commit characters、自动触发/增量过滤、rich documentation/detail preview 和 completion/code action 中的完整 workspace edit 产品化。
 - signature help popup 主路径已有；仍缺 trigger characters / 自动弹出、active parameter 富格式高亮和 typed result model。
 - rename 主路径已有 App 输入 UI 和当前文档 WorkspaceEdit 应用；仍缺 prepareRename range/placeholder 产品化、跨文件应用/预览和 typed result model。
 - code action 主路径已有 App quick panel、resolve、当前文档 edit 应用和 command 执行；仍缺 code action kind/filter/diagnostics context 产品化、跨文件应用/预览、执行结果/错误展示和 typed result model。
@@ -299,7 +302,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 主要缺口：
 
 - command registry 仍较轻量，还没有命令启用/禁用状态、参数模型和分组元数据。
-- command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令；LSP location、symbols quick panels、completion popup 和 signature help 主路径已接入，但 code action/rename 等 LSP/项目级命令仍不完整。
+- command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令；LSP location、symbols quick panels、completion popup、signature help、rename 和 code action 主路径已接入，但更深层 LSP/项目级命令仍不完整。
 - P0 菜单、command palette、keymap 和测试已开始统一使用 command id；更深层的命令上下文、参数化命令和冲突解析仍缺。
 - 一些 core/LSP 命令仍没有 App 命令入口。
 - 已有初步用户 keymap 文件，但还不是完整 Sublime keymap 兼容实现。
@@ -421,7 +424,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 ### P1：补 LSP 产品主路径
 
-- completion resolve、commit characters 和自动触发。
+- completion commit-time resolve 已完成；仍缺 commit characters、自动触发/增量过滤和 rich documentation/detail preview。
 - signature help 自动触发和富格式高亮。
 - references/implementation/declaration/type definition。
 - rename prepareRename range/placeholder、跨文件 WorkspaceEdit 应用/预览和 typed result model。
@@ -467,6 +470,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | duplicate line | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
 | apply snippet | yes | no | yes | yes, via JSON | yes, typed + JSON | partial, Tab/Backtab placeholder path only | yes |
+| LSP completion | yes | partial helper | yes | yes, raw completion + resolve result | yes, raw completion + resolve result | yes, popup + commit-time resolve/current-doc apply | partial |
 | LSP symbols | yes | partial helper | yes | yes, raw JSON result | yes, raw JSON result | yes, document/workspace symbols quick panels | yes |
 | LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, input UI + menu/keymap + current-doc apply | partial |
 | LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand | partial, raw result + current-doc WorkspaceEdit apply + executeCommand | yes, quick panel/menu/keymap/current-doc apply | partial |
