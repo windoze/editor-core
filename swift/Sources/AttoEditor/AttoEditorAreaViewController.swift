@@ -149,6 +149,17 @@ final class AttoEditorAreaViewController: NSViewController {
         let showFeedback: Bool
     }
 
+    private struct DocumentColorRequestContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
+    private struct ColorPresentationRequestContext {
+        let tabID: UUID
+        let item: AttoLspDocumentColorParser.Item
+        let showFeedback: Bool
+    }
+
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
@@ -165,6 +176,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var symbolPollTimer: DispatchSourceTimer?
     private var lspSymbolResultsController: AttoCommandPaletteController?
     private var problemsResultsController: AttoCommandPaletteController?
+    private var documentColorResultsController: AttoCommandPaletteController?
+    private var colorPresentationResultsController: AttoCommandPaletteController?
 
     private var signatureHelpContext: SignatureHelpRequestContext?
     private var signatureHelpPollTimer: DispatchSourceTimer?
@@ -196,6 +209,10 @@ final class AttoEditorAreaViewController: NSViewController {
     private var foldingRangesPollTimer: DispatchSourceTimer?
     private var selectionRangeContext: SelectionRangeRequestContext?
     private var selectionRangePollTimer: DispatchSourceTimer?
+    private var documentColorContext: DocumentColorRequestContext?
+    private var documentColorPollTimer: DispatchSourceTimer?
+    private var colorPresentationContext: ColorPresentationRequestContext?
+    private var colorPresentationPollTimer: DispatchSourceTimer?
 
     init(
         library: EditorCoreUIFFILibrary,
@@ -1296,6 +1313,392 @@ final class AttoEditorAreaViewController: NSViewController {
 
         selectionRangePollTimer = timer
         timer.resume()
+    }
+
+    @discardableResult
+    func showDocumentColorsInActiveTab(showFeedback: Bool = true) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Document colors are unavailable.\nLSP is not enabled for this document.",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelFoldingRangesUI()
+        cancelSelectionRangeUI()
+        cancelDocumentColorUI()
+
+        do {
+            _ = try tab.editCore.editor.lspRequestDocumentColor()
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Document color request failed.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        documentColorContext = DocumentColorRequestContext(tabID: tab.id, showFeedback: showFeedback)
+        startDocumentColorPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
+        return true
+    }
+
+    @discardableResult
+    func showDocumentColorResultJSONInActiveTab(_ json: String, showFeedback: Bool = false) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        let text = (try? tab.editCore.editor.text()) ?? ""
+        let items = AttoLspDocumentColorParser.items(
+            fromDocumentColorResultJSON: json,
+            documentText: text
+        )
+        guard items.isEmpty == false else {
+            if showFeedback {
+                showWorkspaceEditPopover(text: "No document colors are available.", in: tab.editCore.editorView)
+            }
+            NSSound.beep()
+            return false
+        }
+
+        showDocumentColorResults(items, tabID: tab.id)
+        return true
+    }
+
+    private func showDocumentColorResults(_ items: [AttoLspDocumentColorParser.Item], tabID: UUID) {
+        guard let window = view.window else {
+            if let first = items.first {
+                _ = selectDocumentColor(first, tabID: tabID, requestPresentations: false)
+            }
+            return
+        }
+
+        let commands = items.enumerated().map { idx, item in
+            AttoCommandPaletteCommand(
+                id: "lsp.document_color.\(idx)",
+                title: AttoLspDocumentColorParser.displayTitle(for: item),
+                swatchColor: nsColor(for: item.color)
+            ) { [weak self] in
+                _ = self?.selectDocumentColor(item, tabID: tabID, requestPresentations: true)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.DocumentColors",
+            commandsProvider: { commands }
+        )
+        documentColorResultsController = controller
+        controller.show(relativeTo: window, placeholder: "Filter document colors...")
+    }
+
+    @discardableResult
+    private func selectDocumentColor(
+        _ item: AttoLspDocumentColorParser.Item,
+        tabID: UUID,
+        requestPresentations: Bool
+    ) -> Bool {
+        guard let tab = activeTab, tab.id == tabID else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try tab.editCore.editor.setSelections([item.range], primaryIndex: 0)
+            try? tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.layoutSubtreeIfNeeded()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            updateStatusBar()
+            view.window?.makeFirstResponder(tab.editCore.editorView)
+        } catch {
+            NSSound.beep()
+            return false
+        }
+
+        if requestPresentations {
+            return requestColorPresentations(for: item, tabID: tabID, showFeedback: true)
+        }
+        return true
+    }
+
+    @discardableResult
+    private func requestColorPresentations(
+        for item: AttoLspDocumentColorParser.Item,
+        tabID: UUID,
+        showFeedback: Bool
+    ) -> Bool {
+        guard let tab = activeTab, tab.id == tabID else {
+            NSSound.beep()
+            return false
+        }
+        guard let colorJSON = AttoLspDocumentColorParser.colorJSON(for: item) else {
+            if showFeedback {
+                showWorkspaceEditPopover(text: "Color presentation request could not encode the color.", in: tab.editCore.editorView)
+            }
+            NSSound.beep()
+            return false
+        }
+
+        cancelColorPresentationUI()
+        do {
+            _ = try tab.editCore.editor.lspRequestColorPresentation(
+                startOffset: item.range.start,
+                endOffset: item.range.end,
+                colorJSON: colorJSON
+            )
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Color presentation request failed.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        colorPresentationContext = ColorPresentationRequestContext(
+            tabID: tabID,
+            item: item,
+            showFeedback: showFeedback
+        )
+        startColorPresentationPollTimer(tabID: tabID, editorView: tab.editCore.editorView)
+        return true
+    }
+
+    private func startDocumentColorPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        documentColorPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.documentColorContext, ctx.tabID == tabID else {
+                self.cancelDocumentColorUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
+                self.cancelDocumentColorUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(text: "Document color request timed out.", in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelDocumentColorUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastDocumentColorResultJSON()
+            } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelDocumentColorUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(
+                        text: "Document colors failed.\n\(error.localizedDescription)",
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+            guard let json else { return }
+
+            let showFeedback = ctx.showFeedback
+            self.cancelDocumentColorRequestOnly()
+            _ = self.showDocumentColorResultJSONInActiveTab(json, showFeedback: showFeedback)
+        }
+
+        documentColorPollTimer = timer
+        timer.resume()
+    }
+
+    private func startColorPresentationPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        colorPresentationPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.colorPresentationContext, ctx.tabID == tabID else {
+                self.cancelColorPresentationUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
+                self.cancelColorPresentationUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(text: "Color presentation request timed out.", in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelColorPresentationUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastColorPresentationResultJSON()
+            } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelColorPresentationUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(
+                        text: "Color presentations failed.\n\(error.localizedDescription)",
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+            guard let json else { return }
+
+            let item = ctx.item
+            let showFeedback = ctx.showFeedback
+            self.cancelColorPresentationRequestOnly()
+            _ = self.showColorPresentationResultJSONInActiveTab(
+                json,
+                item: item,
+                tabID: tabID,
+                showFeedback: showFeedback
+            )
+        }
+
+        colorPresentationPollTimer = timer
+        timer.resume()
+    }
+
+    @discardableResult
+    func showColorPresentationResultJSONInActiveTab(
+        _ json: String,
+        item: AttoLspDocumentColorParser.Item,
+        tabID: UUID,
+        showFeedback: Bool = false
+    ) -> Bool {
+        guard let tab = activeTab, tab.id == tabID else {
+            NSSound.beep()
+            return false
+        }
+
+        let text = (try? tab.editCore.editor.text()) ?? ""
+        let presentations = AttoLspDocumentColorParser.presentations(
+            fromColorPresentationResultJSON: json,
+            documentText: text
+        )
+        guard presentations.isEmpty == false else {
+            if showFeedback {
+                showWorkspaceEditPopover(text: "No color presentations are available.", in: tab.editCore.editorView)
+            }
+            NSSound.beep()
+            return false
+        }
+
+        guard let window = view.window else {
+            return applyColorPresentationToActiveTab(presentations[0], showFeedback: showFeedback)
+        }
+
+        let commands = presentations.enumerated().map { idx, presentation in
+            AttoCommandPaletteCommand(
+                id: "lsp.color_presentation.\(idx)",
+                title: AttoLspDocumentColorParser.displayTitle(for: presentation),
+                swatchColor: nsColor(for: item.color),
+                isEnabled: presentation.isApplicable
+            ) { [weak self] in
+                _ = self?.applyColorPresentationToActiveTab(presentation, showFeedback: true)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.ColorPresentations",
+            commandsProvider: { commands }
+        )
+        colorPresentationResultsController = controller
+        controller.show(relativeTo: window, placeholder: "Filter color presentations...")
+        return true
+    }
+
+    @discardableResult
+    func applyColorPresentationToActiveTab(
+        _ presentation: AttoLspDocumentColorParser.Presentation,
+        showFeedback: Bool = true
+    ) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard presentation.isApplicable else {
+            if showFeedback {
+                showWorkspaceEditPopover(text: "This color presentation has no text edit to apply.", in: tab.editCore.editorView)
+            }
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            _ = try tab.editCore.editor.applyTextEdits(presentation.edits)
+            tab.editCore.layoutSubtreeIfNeeded()
+            try? tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.editorView.kickProcessingPoll()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            handleTabDidMutateDocumentText(tabID: tab.id)
+            updateStatusBar()
+            view.window?.makeFirstResponder(tab.editCore.editorView)
+            return true
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Color presentation could not be applied.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private func nsColor(for color: AttoLspDocumentColorParser.Color) -> NSColor {
+        NSColor(
+            calibratedRed: CGFloat(max(0, min(1, color.red))),
+            green: CGFloat(max(0, min(1, color.green))),
+            blue: CGFloat(max(0, min(1, color.blue))),
+            alpha: CGFloat(max(0, min(1, color.alpha)))
+        )
     }
 
     func moveToMatchingBracketInActiveTab() {
@@ -4441,6 +4844,31 @@ final class AttoEditorAreaViewController: NSViewController {
         selectionRangePollTimer?.cancel()
         selectionRangePollTimer = nil
         selectionRangeContext = nil
+    }
+
+    private func cancelDocumentColorUI() {
+        cancelDocumentColorRequestOnly()
+        documentColorResultsController?.hide()
+        documentColorResultsController = nil
+        cancelColorPresentationUI()
+    }
+
+    private func cancelDocumentColorRequestOnly() {
+        documentColorPollTimer?.cancel()
+        documentColorPollTimer = nil
+        documentColorContext = nil
+    }
+
+    private func cancelColorPresentationUI() {
+        cancelColorPresentationRequestOnly()
+        colorPresentationResultsController?.hide()
+        colorPresentationResultsController = nil
+    }
+
+    private func cancelColorPresentationRequestOnly() {
+        colorPresentationPollTimer?.cancel()
+        colorPresentationPollTimer = nil
+        colorPresentationContext = nil
     }
 }
 

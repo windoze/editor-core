@@ -425,6 +425,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.problems", title: "LSP: Problems") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showProblemsInActiveTab()
             },
+            .init(id: "lsp.document_colors", title: "LSP: Document Colors") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showDocumentColorsInActiveTab()
+            },
             .init(id: "lsp.refresh_folding_ranges", title: "LSP: Refresh Folding Ranges") { [weak self] in
                 self?.activeWindow()?.editorAreaController.refreshFoldingRangesInActiveTab()
             },

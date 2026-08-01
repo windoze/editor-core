@@ -5,6 +5,7 @@ struct AttoCommandPaletteCommand {
     let id: String
     let title: String
     let group: String
+    let swatchColor: NSColor?
     let isEnabled: Bool
     let requiresEditor: Bool
     let run: () -> Void
@@ -13,6 +14,7 @@ struct AttoCommandPaletteCommand {
         id: String,
         title: String,
         group: String = "General",
+        swatchColor: NSColor? = nil,
         isEnabled: Bool = true,
         requiresEditor: Bool = false,
         run: @escaping () -> Void
@@ -20,6 +22,7 @@ struct AttoCommandPaletteCommand {
         self.id = id
         self.title = title
         self.group = group
+        self.swatchColor = swatchColor
         self.isEnabled = isEnabled
         self.requiresEditor = requiresEditor
         self.run = run
@@ -28,6 +31,7 @@ struct AttoCommandPaletteCommand {
     init(
         title: String,
         group: String = "General",
+        swatchColor: NSColor? = nil,
         isEnabled: Bool = true,
         requiresEditor: Bool = false,
         run: @escaping () -> Void
@@ -35,6 +39,7 @@ struct AttoCommandPaletteCommand {
         self.id = title
         self.title = title
         self.group = group
+        self.swatchColor = swatchColor
         self.isEnabled = isEnabled
         self.requiresEditor = requiresEditor
         self.run = run
@@ -237,7 +242,8 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         label.identifier = NSUserInterfaceItemIdentifier(
             AttoAccessibilityID.commandPaletteRowTitle(prefix: accessibilityPrefix)
         )
-        label.font = NSFont.systemFont(ofSize: 13)
+        let rowFont = NSFont.systemFont(ofSize: 13)
+        label.font = rowFont
         label.textColor = cmd.isEnabled ? NSColor(attoHex: 0xD4D4D4) : NSColor(attoHex: 0x777777)
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -252,7 +258,19 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
             ])
         }
 
-        label.stringValue = cmd.title
+        if let swatchColor = cmd.swatchColor {
+            let attributed = NSMutableAttributedString(
+                string: "■  \(cmd.title)",
+                attributes: [
+                    .font: rowFont,
+                    .foregroundColor: label.textColor as Any,
+                ]
+            )
+            attributed.addAttribute(.foregroundColor, value: swatchColor, range: NSRange(location: 0, length: 1))
+            label.attributedStringValue = attributed
+        } else {
+            label.stringValue = cmd.title
+        }
         return cell
     }
 

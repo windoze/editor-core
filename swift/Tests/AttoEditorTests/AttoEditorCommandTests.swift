@@ -54,6 +54,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.organize_imports"))
         XCTAssertTrue(ids.contains("lsp.fix_all"))
         XCTAssertTrue(ids.contains("lsp.problems"))
+        XCTAssertTrue(ids.contains("lsp.document_colors"))
         XCTAssertTrue(ids.contains("lsp.refresh_folding_ranges"))
         XCTAssertTrue(ids.contains("lsp.selection_range"))
     }
@@ -260,6 +261,45 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.organize_imports", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.fix_all", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.problems", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
+    }
+
+    func testApplyColorPresentationMutatesActiveDocument() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("color.txt")
+        try "let color = \"#ff0000\"\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        let presentation = try XCTUnwrap(AttoLspDocumentColorParser.presentations(
+            fromColorPresentationResultJSON: """
+            [
+              {
+                "label": "rgb(255, 0, 0)",
+                "textEdit": {
+                  "range": {
+                    "start": { "line": 0, "character": 13 },
+                    "end": { "line": 0, "character": 20 }
+                  },
+                  "newText": "rgb(255, 0, 0)"
+                }
+              }
+            ]
+            """,
+            documentText: try editorView.editor.text()
+        ).first)
+
+        XCTAssertFalse(window.title.contains("●"))
+        XCTAssertTrue(vc.applyColorPresentationToActiveTab(presentation))
+        XCTAssertEqual(try editorView.editor.text(), "let color = \"rgb(255, 0, 0)\"\n")
+        XCTAssertTrue(window.title.contains("●"))
     }
 
     func testApplySelectionRangeResultExpandsActiveSelection() throws {
