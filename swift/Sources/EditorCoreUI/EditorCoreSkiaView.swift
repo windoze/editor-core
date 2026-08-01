@@ -2054,35 +2054,111 @@ public final class EditorCoreSkiaView: MTKView {
         notifyViewportStateDidChange()
     }
 
+    private static let defaultLSPFormattingOptionsJSON = """
+    { "tabSize": 4, "insertSpaces": true }
+    """
+
     /// Format the current document via LSP (`textDocument/formatting`) and apply edits locally.
     ///
     /// This is intended for explicit user actions (command palette / menu item).
-    public func formatDocumentWithLSP(timeoutMs: UInt32 = 2000) {
+    @discardableResult
+    public func formatDocumentWithLSP(timeoutMs: UInt32 = 2000) -> Bool {
         dismissHoverUIForUserAction()
 
+        let didApply: Bool
         updateViewportIfNeeded()
         do {
             guard try editor.lspIsEnabled() else {
                 NSSound.beep()
-                return
+                return false
             }
 
-            // Small, VSCode-ish defaults.
-            let optionsJSON = """
-            { "tabSize": 4, "insertSpaces": true }
-            """
-            let applied = try editor.lspFormatDocument(formattingOptionsJSON: optionsJSON, timeoutMs: timeoutMs)
-            if applied {
+            didApply = try editor.lspFormatDocument(
+                formattingOptionsJSON: Self.defaultLSPFormattingOptionsJSON,
+                timeoutMs: timeoutMs
+            )
+            if didApply {
                 didMutateDocumentText()
             }
         } catch {
             NSSound.beep()
-            return
+            return false
         }
 
         requestRedraw()
         invalidateIMECharacterCoordinates()
         notifyViewportStateDidChange()
+        return didApply
+    }
+
+    /// Format an editor-core char-offset range via LSP (`textDocument/rangeFormatting`).
+    @discardableResult
+    public func formatRangeWithLSP(startOffset: UInt32, endOffset: UInt32, timeoutMs: UInt32 = 2000) -> Bool {
+        dismissHoverUIForUserAction()
+
+        let didApply: Bool
+        updateViewportIfNeeded()
+        do {
+            guard try editor.lspIsEnabled() else {
+                NSSound.beep()
+                return false
+            }
+
+            didApply = try editor.lspFormatRange(
+                startOffset: startOffset,
+                endOffset: endOffset,
+                formattingOptionsJSON: Self.defaultLSPFormattingOptionsJSON,
+                timeoutMs: timeoutMs
+            )
+            if didApply {
+                didMutateDocumentText()
+            }
+        } catch {
+            NSSound.beep()
+            return false
+        }
+
+        requestRedraw()
+        invalidateIMECharacterCoordinates()
+        notifyViewportStateDidChange()
+        return didApply
+    }
+
+    /// Request LSP on-type formatting at a logical position and apply the returned edits.
+    @discardableResult
+    public func formatOnTypeWithLSP(
+        logicalLine: UInt32,
+        logicalColumn: UInt32,
+        trigger: String,
+        timeoutMs: UInt32 = 2000
+    ) -> Bool {
+        let didApply: Bool
+        updateViewportIfNeeded()
+        do {
+            guard try editor.lspIsEnabled() else {
+                return false
+            }
+
+            didApply = try editor.lspFormatOnType(
+                logicalLine: logicalLine,
+                logicalColumn: logicalColumn,
+                trigger: trigger,
+                formattingOptionsJSON: Self.defaultLSPFormattingOptionsJSON,
+                timeoutMs: timeoutMs
+            )
+            if didApply {
+                didMutateDocumentText()
+            }
+        } catch {
+            return false
+        }
+
+        if didApply {
+            requestRedraw()
+            invalidateIMECharacterCoordinates()
+            notifyViewportStateDidChange()
+        }
+        return didApply
     }
 
     // MARK: - Clipboard

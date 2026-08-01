@@ -305,6 +305,9 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_completion_item_resolve(EditorU
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_completion_item_resolve_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_execute_command(EditorUi* ui, const char* command_json_utf8, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_execute_command_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_format_document(EditorUi* ui, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);
+int32_t editor_core_ui_ffi_editor_ui_lsp_format_range(EditorUi* ui, uint32_t start_offset, uint32_t end_offset, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);
+int32_t editor_core_ui_ffi_editor_ui_lsp_format_on_type(EditorUi* ui, uint32_t logical_line, uint32_t logical_column, const char* trigger_utf8, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);
 char* editor_core_ui_ffi_editor_ui_minimap_json(EditorUi* ui, uint32_t start_visual_row, uint32_t count);
 int32_t editor_core_ui_ffi_editor_ui_render_rgba(EditorUi* ui, uint8_t* out_buf, uint32_t out_cap, uint32_t* out_len);
 int32_t editor_core_ui_ffi_editor_ui_get_selections(EditorUi* ui, EcuSelectionRange* out_ranges, uint32_t out_cap, uint32_t* out_len, uint32_t* out_primary_index);

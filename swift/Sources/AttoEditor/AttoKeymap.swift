@@ -22,6 +22,7 @@ enum AttoKeymap {
         "file.close_tab": AttoKeyBinding(keyEquivalent: "w", modifiers: [.command]),
         "editor.find": AttoKeyBinding(keyEquivalent: "f", modifiers: [.command]),
         "editor.replace": AttoKeyBinding(keyEquivalent: "f", modifiers: [.command, .option]),
+        "editor.format_selection": AttoKeyBinding(keyEquivalent: "f", modifiers: [.option, .shift]),
         "editor.duplicate_lines": AttoKeyBinding(keyEquivalent: "d", modifiers: [.command, .shift]),
         "editor.delete_lines": AttoKeyBinding(keyEquivalent: "k", modifiers: [.command, .shift]),
         "editor.join_lines": AttoKeyBinding(keyEquivalent: "j", modifiers: [.command]),

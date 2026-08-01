@@ -301,6 +301,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(id: "editor.format_document", title: "Edit: Format Document") { [weak self] in
                 self?.activeWindow()?.editorAreaController.formatDocumentWithLspInActiveTab()
             },
+            .init(id: "editor.format_selection", title: "Edit: Format Selection") { [weak self] in
+                self?.activeWindow()?.editorAreaController.formatSelectionWithLspInActiveTab()
+            },
             .init(id: "editor.find", title: "Edit: Find") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showFindBar()
             },

@@ -320,6 +320,23 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_format_document(
     uint32_t timeout_ms,
     uint8_t* out_applied
 );
+int32_t editor_core_ui_ffi_editor_ui_lsp_format_range(
+    EditorUi* ui,
+    uint32_t start_offset,
+    uint32_t end_offset,
+    const char* formatting_options_json_utf8, // nullable
+    uint32_t timeout_ms,
+    uint8_t* out_applied
+);
+int32_t editor_core_ui_ffi_editor_ui_lsp_format_on_type(
+    EditorUi* ui,
+    uint32_t logical_line,
+    uint32_t logical_column,
+    const char* trigger_utf8,
+    const char* formatting_options_json_utf8, // nullable
+    uint32_t timeout_ms,
+    uint8_t* out_applied
+);
 
 // LSP-derived state ingestion (diagnostics + semantic tokens).
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json(

@@ -537,6 +537,84 @@ public final class EditorUI {
         return applied != 0
     }
 
+    /// Format a range via LSP (`textDocument/rangeFormatting`) and apply edits locally.
+    ///
+    /// Offsets use editor-core char offsets. `formattingOptionsJSON` should match LSP `FormattingOptions`.
+    @discardableResult
+    public func lspFormatRange(
+        startOffset: UInt32,
+        endOffset: UInt32,
+        formattingOptionsJSON: String? = nil,
+        timeoutMs: UInt32 = 2000
+    ) throws -> Bool {
+        var applied: UInt8 = 0
+        let status: Int32
+        if let formattingOptionsJSON {
+            status = formattingOptionsJSON.withCString { cstr in
+                editor_core_ui_ffi_editor_ui_lsp_format_range(
+                    handle,
+                    startOffset,
+                    endOffset,
+                    cstr,
+                    timeoutMs,
+                    &applied
+                )
+            }
+        } else {
+            status = editor_core_ui_ffi_editor_ui_lsp_format_range(
+                handle,
+                startOffset,
+                endOffset,
+                nil,
+                timeoutMs,
+                &applied
+            )
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_format_range")
+        return applied != 0
+    }
+
+    /// Request on-type formatting via LSP (`textDocument/onTypeFormatting`) and apply edits locally.
+    ///
+    /// `logicalLine` and `logicalColumn` are the logical editor position after `trigger` was inserted.
+    @discardableResult
+    public func lspFormatOnType(
+        logicalLine: UInt32,
+        logicalColumn: UInt32,
+        trigger: String,
+        formattingOptionsJSON: String? = nil,
+        timeoutMs: UInt32 = 2000
+    ) throws -> Bool {
+        var applied: UInt8 = 0
+        let status = trigger.withCString { triggerCStr in
+            if let formattingOptionsJSON {
+                formattingOptionsJSON.withCString { optionsCStr in
+                    editor_core_ui_ffi_editor_ui_lsp_format_on_type(
+                        handle,
+                        logicalLine,
+                        logicalColumn,
+                        triggerCStr,
+                        optionsCStr,
+                        timeoutMs,
+                        &applied
+                    )
+                }
+            } else {
+                editor_core_ui_ffi_editor_ui_lsp_format_on_type(
+                    handle,
+                    logicalLine,
+                    logicalColumn,
+                    triggerCStr,
+                    nil,
+                    timeoutMs,
+                    &applied
+                )
+            }
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_format_on_type")
+        return applied != 0
+    }
+
     /// Poll and apply any completed async processing (Tree-sitter highlighting/folding).
     ///
     /// This call is non-blocking: it never waits for background work.

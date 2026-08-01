@@ -10,6 +10,8 @@ final class AttoEditorCommandTests: XCTestCase {
         let delegate = AttoAppDelegate()
         let ids = Set(delegate._defaultCommandsForTesting().map(\.id))
 
+        XCTAssertTrue(ids.contains("editor.format_document"))
+        XCTAssertTrue(ids.contains("editor.format_selection"))
         XCTAssertTrue(ids.contains("editor.duplicate_lines"))
         XCTAssertTrue(ids.contains("file.close_tab"))
         XCTAssertTrue(ids.contains("editor.delete_lines"))
@@ -88,6 +90,11 @@ final class AttoEditorCommandTests: XCTestCase {
             resolved["lsp.code_actions"]?.modifiers.intersection(.deviceIndependentFlagsMask),
             [.command]
         )
+        XCTAssertEqual(resolved["editor.format_selection"]?.keyEquivalent, "f")
+        XCTAssertEqual(
+            resolved["editor.format_selection"]?.modifiers.intersection(.deviceIndependentFlagsMask),
+            [.option, .shift]
+        )
     }
 
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
@@ -109,6 +116,8 @@ final class AttoEditorCommandTests: XCTestCase {
             [.command, .shift]
         )
 
+        XCTAssertNotNil(findMenuItem(commandID: "editor.format_document", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.format_selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.focus_next_pane", in: menu))

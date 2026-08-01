@@ -926,9 +926,47 @@ final class AttoEditorAreaViewController: NSViewController {
         tab.editCore.editorView.jumpForward()
     }
 
-    func formatDocumentWithLspInActiveTab() {
-        guard let tab = activeTab else { return }
-        tab.editCore.editorView.formatDocumentWithLSP()
+    @discardableResult
+    func formatDocumentWithLspInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        let applied = tab.editCore.editorView.formatDocumentWithLSP()
+        if applied {
+            updateStatusBar()
+        }
+        return applied
+    }
+
+    @discardableResult
+    func formatSelectionWithLspInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let startOffset = min(offsets.start, offsets.end)
+            let endOffset = max(offsets.start, offsets.end)
+            guard startOffset < endOffset else {
+                NSSound.beep()
+                return false
+            }
+
+            let applied = tab.editCore.editorView.formatRangeWithLSP(
+                startOffset: startOffset,
+                endOffset: endOffset
+            )
+            if applied {
+                updateStatusBar()
+            }
+            return applied
+        } catch {
+            NSSound.beep()
+            return false
+        }
     }
 
     @discardableResult

@@ -674,6 +674,9 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertThrowsError(try ui.lspRequestExecuteCommand(commandJSON: #"{"command":"server.fix","arguments":[]}"#))
         XCTAssertThrowsError(try ui.lspRequestDocumentSymbols())
         XCTAssertThrowsError(try ui.lspRequestWorkspaceSymbols(query: "hello"))
+        XCTAssertThrowsError(try ui.lspFormatDocument())
+        XCTAssertThrowsError(try ui.lspFormatRange(startOffset: 0, endOffset: 1))
+        XCTAssertThrowsError(try ui.lspFormatOnType(logicalLine: 0, logicalColumn: 1, trigger: "\n"))
 
         XCTAssertNil(try ui.lspTakeLastHoverResultJSON())
         XCTAssertNil(try ui.lspTakeLastDefinitionResultJSON())
