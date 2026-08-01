@@ -27,10 +27,13 @@ final class AttoLspSignatureHelpFormatterTests: XCTestCase {
         }
         """
 
-        let text = try XCTUnwrap(AttoLspSignatureHelpFormatter.displayText(fromSignatureHelpResultJSON: json))
+        let display = try XCTUnwrap(AttoLspSignatureHelpFormatter.display(fromSignatureHelpResultJSON: json))
+        let text = display.text
         XCTAssertTrue(text.contains("open(path: String, mode: Mode)"))
         XCTAssertTrue(text.contains("parameter: path: String"))
         XCTAssertTrue(text.contains("Open a file."))
+        XCTAssertTrue(display.activeParameterRanges.contains(NSRange(location: 5, length: 12)))
+        XCTAssertTrue(highlightedSubstrings(in: display).contains("path: String"))
     }
 
     func testSignatureHelpUsesSignatureActiveParameterOverride() throws {
@@ -50,8 +53,31 @@ final class AttoLspSignatureHelpFormatterTests: XCTestCase {
         }
         """
 
-        let text = try XCTUnwrap(AttoLspSignatureHelpFormatter.displayText(fromSignatureHelpResultJSON: json))
-        XCTAssertTrue(text.contains("parameter: b: Int"))
+        let display = try XCTUnwrap(AttoLspSignatureHelpFormatter.display(fromSignatureHelpResultJSON: json))
+        XCTAssertTrue(display.text.contains("parameter: b: Int"))
+        XCTAssertTrue(display.activeParameterRanges.contains(NSRange(location: 12, length: 6)))
+        XCTAssertTrue(highlightedSubstrings(in: display).contains("b: Int"))
+    }
+
+    func testSignatureHelpHighlightRangeUsesUTF16Offsets() throws {
+        let json = """
+        {
+          "signatures": [
+            {
+              "label": "mix(😀: Int, b: Int)",
+              "parameters": [
+                { "label": [4, 11] },
+                { "label": "b: Int" }
+              ]
+            }
+          ],
+          "activeParameter": 0
+        }
+        """
+
+        let display = try XCTUnwrap(AttoLspSignatureHelpFormatter.display(fromSignatureHelpResultJSON: json))
+        XCTAssertTrue(display.activeParameterRanges.contains(NSRange(location: 4, length: 7)))
+        XCTAssertTrue(highlightedSubstrings(in: display).contains("😀: Int"))
     }
 
     func testSignatureHelpReturnsNilForNullOrEmptyResult() throws {
@@ -89,5 +115,10 @@ final class AttoLspSignatureHelpFormatterTests: XCTestCase {
                 lspStatusJSON: #"{"capabilities":{"signature_help":{"supported":false,"trigger_characters":["("]}}}"#
             )
         )
+    }
+
+    private func highlightedSubstrings(in display: AttoLspSignatureHelpFormatter.Display) -> [String] {
+        let nsText = display.text as NSString
+        return display.activeParameterRanges.map { nsText.substring(with: $0) }
     }
 }

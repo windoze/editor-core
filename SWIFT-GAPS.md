@@ -69,7 +69,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 8 已完成：AttoEditor 新增 LSP document/workspace symbols quick panel 主路径，命令 `lsp.document_symbols` / `lsp.workspace_symbols` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspSymbolParser`，覆盖 DocumentSymbol、SymbolInformation、WorkspaceSymbol 常见结果形态。
 - 阶段 8 尚未完成 symbols 的持久面板、workspace symbol 增量查询/输入面板、结果分组/排序策略和错误展示。
 - 2026-08-01 阶段 9 已完成：AttoEditor 新增 LSP signature help popup 主路径，命令 `lsp.signature_help` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspSignatureHelpFormatter`，覆盖 SignatureHelp、activeSignature、activeParameter、ParameterInformation string/range label 和 documentation 常见结果形态。
-- 阶段 9 尚未完成 signature help trigger characters / 自动弹出、active parameter 富格式高亮、typed result model 和空结果/错误展示。
+- 阶段 9 后续缺口中，trigger characters / 自动弹出已在阶段 18 补齐，active parameter 富格式高亮已在阶段 19 补齐；仍缺 typed result model 和空结果/错误展示。
 - 2026-08-01 阶段 10 已完成：AttoEditor 新增 LSP completion popup 主路径，命令 `lsp.completion` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspCompletionParser` 和 caret-anchored completion list，覆盖 CompletionList/CompletionItem、TextEdit、InsertReplaceEdit insert range、additionalTextEdits、snippet insertion 和 fallback identifier-prefix replacement。
 - 阶段 10 后续剩余缺口包括 commit characters、自动触发/增量过滤、跨文件 workspace edit、rich documentation/detail preview 和更完整的 typed result model。
 - 2026-08-01 阶段 11 已完成：Swift UI binding 新增 rename / prepare rename / code action / code action resolve 的 raw async request/take API，覆盖 Rust `editor-core-lsp` 已有的 `textDocument/prepareRename`、`textDocument/rename`、`textDocument/codeAction` 和 `codeAction/resolve` 请求路径。
@@ -94,7 +94,9 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 17 已完成：AttoEditor App 的 `lsp.rename` 弹窗接入 `textDocument/prepareRename`，会优先使用 server 返回的 `placeholder` 或 `range` 文本作为默认 rename 名称；支持 LSP `Range`、`{ range, placeholder }` 和 `{ defaultBehavior: true }` 返回形态。
 - 阶段 17 已新增 `AttoLspRenameSupport.DialogSeed` / `dialogSeed(...)`，按 LSP UTF-16 line/character range 从当前文档提取 rename 文本，并在 prepareRename 无响应或不可解析时回退到当前选区/identifier 逻辑；仍缺跨文件 WorkspaceEdit 预览/应用和 rename typed result model。
 - 2026-08-01 阶段 18 已完成：Rust UI `lsp_status_json()` 暴露 server `signatureHelpProvider.triggerCharacters` / `retriggerCharacters`，Swift `EditorCoreSkiaView` 新增 finalized commit text hook，AttoEditor 会在输入命中 server 声明的 signature help trigger/retrigger 字符时自动请求并弹出 signature help；粘贴/多字符 commit 和未声明能力的 server 不触发。
-- 阶段 18 尚未完成 active parameter 富格式高亮、signature help typed result model 和空结果/错误展示。
+- 阶段 18 后续缺口中，active parameter 富格式高亮已在阶段 19 补齐；仍缺 signature help typed result model 和空结果/错误展示。
+- 2026-08-01 阶段 19 已完成：`AttoLspSignatureHelpFormatter` 新增 signature help display model，携带 active parameter 的 UTF-16 highlight ranges；AttoEditor signature help popover 改为 attributed string 渲染，能同时高亮 signature label 中的 active parameter 和 `parameter:` 摘要行，覆盖 `ParameterInformation.label` string/range 两种形态。
+- 阶段 19 尚未完成 signature help typed result model 和空结果/错误展示。
 
 ## 分层结论
 
@@ -200,7 +202,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - declaration/type definition/implementation 的多结果导航 UI 仍较基础。
 - references 结果列表已有轻量 palette，但还不是完整结果面板。
 - completion popup 主路径和 commit-time completion resolve 已有；仍缺 commit characters、自动触发/增量过滤、rich documentation/detail preview 和 completion/code action 中的完整 workspace edit 产品化。
-- signature help popup 主路径已有，并会按 server trigger/retrigger characters 自动弹出；仍缺 active parameter 富格式高亮、typed result model 和空结果/错误展示。
+- signature help popup 主路径已有，并会按 server trigger/retrigger characters 自动弹出，active parameter 已有富格式高亮；仍缺 typed result model 和空结果/错误展示。
 - rename 主路径已有 App 输入 UI、prepareRename range/placeholder 默认名、当前文档 WorkspaceEdit 应用；仍缺跨文件应用/预览和 typed result model。
 - code action 主路径已有 App quick panel、resolve、当前文档 edit 应用和 command 执行；仍缺 code action kind/filter/diagnostics context 产品化、跨文件应用/预览、执行结果/错误展示和 typed result model。
 - code lens resolve 和 workspace command execution 的 Swift UI binding 已有；仍缺 App 层 code lens action UI、执行结果/错误展示和 typed model。
@@ -446,7 +448,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 ### P1：补 LSP 产品主路径
 
 - completion commit-time resolve 已完成；仍缺 commit characters、自动触发/增量过滤和 rich documentation/detail preview。
-- signature help server trigger/retrigger characters 自动触发已完成；仍缺 active parameter 富格式高亮、typed result model 和空结果/错误展示。
+- signature help server trigger/retrigger characters 自动触发与 active parameter 富格式高亮已完成；仍缺 typed result model 和空结果/错误展示。
 - references/implementation/declaration/type definition。
 - rename prepareRename range/placeholder 已产品化；仍缺跨文件 WorkspaceEdit 应用/预览和 typed result model。
 - code action kind/filter/diagnostics context 产品化、跨文件 WorkspaceEdit 应用/预览、执行结果/错误展示和 typed result model。

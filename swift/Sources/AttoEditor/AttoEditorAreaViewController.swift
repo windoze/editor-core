@@ -3110,9 +3110,9 @@ final class AttoEditorAreaViewController: NSViewController {
             }
             guard let json else { return }
 
-            let text = AttoLspSignatureHelpFormatter.displayText(fromSignatureHelpResultJSON: json)
+            let display = AttoLspSignatureHelpFormatter.display(fromSignatureHelpResultJSON: json)
             self.cancelSignatureHelpUI()
-            self.showSignatureHelpPopover(text: text, in: editorView)
+            self.showSignatureHelpPopover(display: display, in: editorView)
             timer.cancel()
         }
 
@@ -3120,8 +3120,8 @@ final class AttoEditorAreaViewController: NSViewController {
         timer.resume()
     }
 
-    private func showSignatureHelpPopover(text: String?, in editorView: EditorCoreSkiaView) {
-        guard let text else {
+    private func showSignatureHelpPopover(display: AttoLspSignatureHelpFormatter.Display?, in editorView: EditorCoreSkiaView) {
+        guard let display else {
             cancelSignatureHelpUI()
             return
         }
@@ -3163,13 +3163,39 @@ final class AttoEditorAreaViewController: NSViewController {
             popover = p
         }
 
-        signatureHelpPopoverLabel?.stringValue = text
-        popover.contentSize = preferredHoverPopoverSize(text: text, font: signatureHelpPopoverLabel?.font)
+        signatureHelpPopoverLabel?.attributedStringValue = attributedSignatureHelp(display)
+        popover.contentSize = preferredHoverPopoverSize(text: display.text, font: signatureHelpPopoverLabel?.font)
 
         if popover.isShown {
             popover.performClose(nil)
         }
         popover.show(relativeTo: caretAnchorRect(in: editorView), of: editorView, preferredEdge: .maxY)
+    }
+
+    private func attributedSignatureHelp(_ display: AttoLspSignatureHelpFormatter.Display) -> NSAttributedString {
+        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let activeFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold)
+        let attributed = NSMutableAttributedString(
+            string: display.text,
+            attributes: [
+                .font: font,
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+        let fullRange = NSRange(location: 0, length: (display.text as NSString).length)
+        let highlightColor = NSColor.controlAccentColor.withAlphaComponent(0.24)
+
+        for range in display.activeParameterRanges where NSIntersectionRange(range, fullRange).length == range.length {
+            attributed.addAttributes(
+                [
+                    .font: activeFont,
+                    .foregroundColor: NSColor.controlAccentColor,
+                    .backgroundColor: highlightColor,
+                ],
+                range: range
+            )
+        }
+        return attributed
     }
 
     private func caretAnchorRect(in editorView: EditorCoreSkiaView) -> NSRect {
