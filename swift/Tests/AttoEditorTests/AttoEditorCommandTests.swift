@@ -226,6 +226,76 @@ final class AttoEditorCommandTests: XCTestCase {
         )
     }
 
+    func testPrepareRenameDialogSeedUsesPlaceholderRangeAndFallback() throws {
+        let fallback = AttoLspRenameSupport.DialogSeed(initialName: "fallback", placeholder: nil)
+
+        let placeholderJSON = """
+        {
+          "range": {
+            "start": { "line": 0, "character": 4 },
+            "end": { "line": 0, "character": 9 }
+          },
+          "placeholder": "serverName"
+        }
+        """
+        XCTAssertEqual(
+            AttoLspRenameSupport.dialogSeed(
+                documentText: "let alpha = beta\n",
+                selectedText: "",
+                caretOffset: 0,
+                prepareRenameResultJSON: placeholderJSON,
+                fallback: fallback
+            ),
+            AttoLspRenameSupport.DialogSeed(initialName: "serverName", placeholder: "serverName")
+        )
+
+        let rangeOnlyJSON = """
+        {
+          "start": { "line": 0, "character": 4 },
+          "end": { "line": 0, "character": 9 }
+        }
+        """
+        XCTAssertEqual(
+            AttoLspRenameSupport.dialogSeed(
+                documentText: "let alpha = beta\n",
+                selectedText: "",
+                caretOffset: 0,
+                prepareRenameResultJSON: rangeOnlyJSON,
+                fallback: fallback
+            ).initialName,
+            "alpha"
+        )
+
+        let emojiText = "let emoji_\u{1F600} = 1\n"
+        let emojiRangeJSON = """
+        {
+          "start": { "line": 0, "character": 4 },
+          "end": { "line": 0, "character": 12 }
+        }
+        """
+        XCTAssertEqual(
+            AttoLspRenameSupport.dialogSeed(
+                documentText: emojiText,
+                selectedText: "",
+                caretOffset: 0,
+                prepareRenameResultJSON: emojiRangeJSON,
+                fallback: fallback
+            ).initialName,
+            "emoji_\u{1F600}"
+        )
+
+        XCTAssertEqual(
+            AttoLspRenameSupport.dialogSeed(
+                documentText: "let alpha = beta\n",
+                selectedText: "",
+                caretOffset: 0,
+                prepareRenameResultJSON: #"{"defaultBehavior":true}"#,
+                fallback: fallback
+            ),
+            fallback
+        )
+    }
+
     func testToggleLineCommentUsesFileLanguageDefault() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

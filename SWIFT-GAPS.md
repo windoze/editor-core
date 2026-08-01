@@ -91,6 +91,8 @@ Swift 侧已经具备以下基础能力：
 - 阶段 15 已让手动 `textDocument/foldingRange` result 可以写入 core fold regions，并通过 `foldingRegionsJSON()` 被 Swift 读取；仍缺 App 层 folding refresh/error UI 和 fold region typed model。
 - 2026-08-01 阶段 16 已完成：Swift UI binding 新增高级 LSP raw request/take 覆盖，打通 Rust `editor-core-lsp` 已有的 code lens resolve、selection range、linked editing range、pull diagnostics、document color/color presentation、call hierarchy 和 type hierarchy 请求路径。
 - 阶段 16 已新增 `EditorUi`、C ABI 和 Swift `EditorUI` 对应 API；这些能力目前仍停留在 raw JSON result 层，App 层 panel/popup/inline UI、typed model、错误展示和 cross-file/workspace 结果产品化仍未完成。
+- 2026-08-01 阶段 17 已完成：AttoEditor App 的 `lsp.rename` 弹窗接入 `textDocument/prepareRename`，会优先使用 server 返回的 `placeholder` 或 `range` 文本作为默认 rename 名称；支持 LSP `Range`、`{ range, placeholder }` 和 `{ defaultBehavior: true }` 返回形态。
+- 阶段 17 已新增 `AttoLspRenameSupport.DialogSeed` / `dialogSeed(...)`，按 LSP UTF-16 line/character range 从当前文档提取 rename 文本，并在 prepareRename 无响应或不可解析时回退到当前选区/identifier 逻辑；仍缺跨文件 WorkspaceEdit 预览/应用和 rename typed result model。
 
 ## 分层结论
 
@@ -197,7 +199,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - references 结果列表已有轻量 palette，但还不是完整结果面板。
 - completion popup 主路径和 commit-time completion resolve 已有；仍缺 commit characters、自动触发/增量过滤、rich documentation/detail preview 和 completion/code action 中的完整 workspace edit 产品化。
 - signature help popup 主路径已有；仍缺 trigger characters / 自动弹出、active parameter 富格式高亮和 typed result model。
-- rename 主路径已有 App 输入 UI 和当前文档 WorkspaceEdit 应用；仍缺 prepareRename range/placeholder 产品化、跨文件应用/预览和 typed result model。
+- rename 主路径已有 App 输入 UI、prepareRename range/placeholder 默认名、当前文档 WorkspaceEdit 应用；仍缺跨文件应用/预览和 typed result model。
 - code action 主路径已有 App quick panel、resolve、当前文档 edit 应用和 command 执行；仍缺 code action kind/filter/diagnostics context 产品化、跨文件应用/预览、执行结果/错误展示和 typed result model。
 - code lens resolve 和 workspace command execution 的 Swift UI binding 已有；仍缺 App 层 code lens action UI、执行结果/错误展示和 typed model。
 - outline / document symbols 已有 quick panel 主路径，但还缺持久 Outline panel。
@@ -444,7 +446,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - completion commit-time resolve 已完成；仍缺 commit characters、自动触发/增量过滤和 rich documentation/detail preview。
 - signature help 自动触发和富格式高亮。
 - references/implementation/declaration/type definition。
-- rename prepareRename range/placeholder、跨文件 WorkspaceEdit 应用/预览和 typed result model。
+- rename prepareRename range/placeholder 已产品化；仍缺跨文件 WorkspaceEdit 应用/预览和 typed result model。
 - code action kind/filter/diagnostics context 产品化、跨文件 WorkspaceEdit 应用/预览、执行结果/错误展示和 typed result model。
 - document/workspace symbols 持久面板和 workspace 增量查询。
 - range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发和 server trigger characters 自动触发路径已完成，仍缺错误展示和 typed result model。
@@ -489,7 +491,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | apply snippet | yes | no | yes | yes, via JSON | yes, typed + JSON | partial, Tab/Backtab placeholder path only | yes |
 | LSP completion | yes | partial helper | yes | yes, raw completion + resolve result | yes, raw completion + resolve result | yes, popup + commit-time resolve/current-doc apply | partial |
 | LSP symbols | yes | partial helper | yes | yes, raw JSON result | yes, raw JSON result | yes, document/workspace symbols quick panels | yes |
-| LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, input UI + menu/keymap + current-doc apply | partial |
+| LSP rename | yes | partial helper | partial | partial, raw request + current-doc WorkspaceEdit apply | partial, raw result + current-doc WorkspaceEdit apply | yes, prepareRename seed + input UI + menu/keymap + current-doc apply | partial |
 | LSP code action | yes | partial helper | partial | partial, raw request/resolve + current-doc WorkspaceEdit apply + executeCommand | partial, raw result + current-doc WorkspaceEdit apply + executeCommand | yes, quick panel/menu/keymap/current-doc apply | partial |
 | LSP formatting | yes | partial helper | yes, document/range/on-type blocking apply + trigger-character auto path | yes, document/range/on-type blocking apply | yes, typed document/range/on-type helpers | document + selection commands; on-type trigger-character auto path | partial |
 | LSP folding ranges | yes | partial helper | yes, request/take + apply to fold regions | yes, raw request/take + apply JSON | yes, raw request/take + apply JSON | partial, fold commands use current state | yes |

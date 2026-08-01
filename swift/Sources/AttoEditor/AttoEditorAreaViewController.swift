@@ -98,6 +98,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let documentURI: String
     }
 
+    private struct RenamePrepareContext {
+        let tabID: UUID
+        let fallbackSeed: AttoLspRenameSupport.DialogSeed
+    }
+
     private struct CodeActionRequestContext {
         let tabID: UUID
     }
@@ -158,6 +163,8 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private var renameContext: RenameRequestContext?
     private var renamePollTimer: DispatchSourceTimer?
+    private var renamePrepareContext: RenamePrepareContext?
+    private var renamePreparePollTimer: DispatchSourceTimer?
 
     private var codeActionContext: CodeActionRequestContext?
     private var codeActionPollTimer: DispatchSourceTimer?
@@ -2754,9 +2761,35 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
 
+        let fallbackSeed = renameDialogSeedInActiveTab()
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+            _ = try tab.editCore.editor.lspRequestPrepareRename(
+                logicalLine: pos.line,
+                logicalColumn: pos.column
+            )
+            renamePrepareContext = RenamePrepareContext(tabID: tab.id, fallbackSeed: fallbackSeed)
+            startRenamePreparePollTimer(tabID: tab.id)
+            return true
+        } catch {
+            return showRenameDialog(seed: fallbackSeed)
+        }
+    }
+
+    @discardableResult
+    private func showRenameDialog(seed: AttoLspRenameSupport.DialogSeed) -> Bool {
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        field.stringValue = renameCandidateInActiveTab()
-        field.placeholderString = "New symbol name"
+        field.stringValue = seed.initialName
+        field.placeholderString = seed.placeholder ?? "New symbol name"
         field.selectText(nil)
 
         let alert = NSAlert()
@@ -2863,6 +2896,55 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    private func startRenamePreparePollTimer(tabID: UUID) {
+        renamePreparePollTimer?.cancel()
+
+        var remainingTicks = 20 // ~1s at 50ms; fall back to local identifier if no prepare result arrives.
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.renamePrepareContext, ctx.tabID == tabID else {
+                self.cancelRenamePrepareUI()
+                return
+            }
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelRenamePrepareUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastPrepareRenameResultJSON()
+            } catch {
+                return
+            }
+
+            if let json {
+                self.cancelRenamePrepareUI()
+                let seed = self.renameDialogSeedInActiveTab(
+                    prepareRenameResultJSON: json,
+                    fallback: ctx.fallbackSeed
+                )
+                _ = self.showRenameDialog(seed: seed)
+                timer.cancel()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelRenamePrepareUI()
+                _ = self.showRenameDialog(seed: ctx.fallbackSeed)
+                timer.cancel()
+                return
+            }
+            remainingTicks -= 1
+        }
+
+        renamePreparePollTimer = timer
+        timer.resume()
+    }
+
     private func startRenamePollTimer(tabID: UUID) {
         renamePollTimer?.cancel()
 
@@ -2906,19 +2988,34 @@ final class AttoEditorAreaViewController: NSViewController {
         timer.resume()
     }
 
-    private func renameCandidateInActiveTab() -> String {
-        guard let tab = activeTab else { return "" }
+    private func renameDialogSeedInActiveTab(
+        prepareRenameResultJSON: String? = nil,
+        fallback fallbackSeed: AttoLspRenameSupport.DialogSeed? = nil
+    ) -> AttoLspRenameSupport.DialogSeed {
+        guard let tab = activeTab else {
+            return fallbackSeed ?? AttoLspRenameSupport.DialogSeed(initialName: "", placeholder: nil)
+        }
         do {
             let selected = try tab.editCore.editor.selectedText()
             let offsets = try tab.editCore.editor.selectionOffsets()
             let text = try tab.editCore.editor.text()
-            return AttoLspRenameSupport.candidateName(
+            let fallback = fallbackSeed ?? AttoLspRenameSupport.DialogSeed(
+                initialName: AttoLspRenameSupport.candidateName(
+                    documentText: text,
+                    selectedText: selected,
+                    caretOffset: offsets.end
+                ),
+                placeholder: nil
+            )
+            return AttoLspRenameSupport.dialogSeed(
                 documentText: text,
                 selectedText: selected,
-                caretOffset: offsets.end
+                caretOffset: offsets.end,
+                prepareRenameResultJSON: prepareRenameResultJSON,
+                fallback: fallback
             )
         } catch {
-            return ""
+            return fallbackSeed ?? AttoLspRenameSupport.DialogSeed(initialName: "", placeholder: nil)
         }
     }
 
@@ -3276,9 +3373,16 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func cancelRenameUI() {
+        cancelRenamePrepareUI()
         renamePollTimer?.cancel()
         renamePollTimer = nil
         renameContext = nil
+    }
+
+    private func cancelRenamePrepareUI() {
+        renamePreparePollTimer?.cancel()
+        renamePreparePollTimer = nil
+        renamePrepareContext = nil
     }
 
     private func cancelCodeActionUI() {
@@ -3296,6 +3400,11 @@ final class AttoEditorAreaViewController: NSViewController {
 }
 
 enum AttoLspRenameSupport {
+    struct DialogSeed: Equatable {
+        let initialName: String
+        let placeholder: String?
+    }
+
     static func candidateName(documentText: String, selectedText: String, caretOffset: UInt32) -> String {
         let selected = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
         if selected.isEmpty == false, selected.rangeOfCharacter(from: .newlines) == nil {
@@ -3327,9 +3436,143 @@ enum AttoLspRenameSupport {
         return String(chars[start..<end])
     }
 
+    static func dialogSeed(
+        documentText: String,
+        selectedText: String,
+        caretOffset: UInt32,
+        prepareRenameResultJSON: String?,
+        fallback: DialogSeed? = nil
+    ) -> DialogSeed {
+        let fallback = fallback ?? DialogSeed(
+            initialName: candidateName(
+                documentText: documentText,
+                selectedText: selectedText,
+                caretOffset: caretOffset
+            ),
+            placeholder: nil
+        )
+
+        guard let prepareRenameResultJSON,
+              let data = prepareRenameResultJSON.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data, options: [])
+        else {
+            return fallback
+        }
+
+        if value is NSNull {
+            return fallback
+        }
+
+        guard let obj = value as? [String: Any] else {
+            return fallback
+        }
+
+        if boolValue(obj["defaultBehavior"]) == true {
+            return fallback
+        }
+
+        if let range = obj["range"] as? [String: Any] {
+            let placeholder = stringValue(obj["placeholder"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let rangeName = text(inLspRange: range, documentText: documentText)
+            let initial = nonEmpty(placeholder) ?? nonEmpty(rangeName) ?? fallback.initialName
+            return DialogSeed(initialName: initial, placeholder: nonEmpty(placeholder))
+        }
+
+        if isLspRangeObject(obj) {
+            let initial = nonEmpty(text(inLspRange: obj, documentText: documentText)) ?? fallback.initialName
+            return DialogSeed(initialName: initial, placeholder: fallback.placeholder)
+        }
+
+        return fallback
+    }
+
     private static func isIdentifierCharacter(_ ch: Character) -> Bool {
         if ch == "_" { return true }
         return ch.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) }
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        if let value = value as? Bool { return value }
+        if let value = value as? NSNumber { return value.boolValue }
+        return nil
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        value as? String
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func isLspRangeObject(_ obj: [String: Any]) -> Bool {
+        obj["start"] is [String: Any] && obj["end"] is [String: Any]
+    }
+
+    private static func text(inLspRange range: [String: Any], documentText: String) -> String? {
+        guard let start = range["start"] as? [String: Any],
+              let end = range["end"] as? [String: Any]
+        else {
+            return nil
+        }
+
+        let lines = documentText.split(separator: "\n", omittingEmptySubsequences: false)
+        guard let startOffset = scalarOffset(forLspPosition: start, lines: lines),
+              let endOffset = scalarOffset(forLspPosition: end, lines: lines),
+              startOffset <= endOffset,
+              endOffset <= documentText.unicodeScalars.count
+        else {
+            return nil
+        }
+
+        let scalars = documentText.unicodeScalars
+        let startIndex = scalars.index(scalars.startIndex, offsetBy: startOffset)
+        let endIndex = scalars.index(scalars.startIndex, offsetBy: endOffset)
+        return String(scalars[startIndex..<endIndex])
+    }
+
+    private static func scalarOffset(
+        forLspPosition position: [String: Any],
+        lines: [String.SubSequence]
+    ) -> Int? {
+        guard let lineNumber = intValue(position["line"]),
+              let utf16Column = intValue(position["character"]),
+              lineNumber >= 0,
+              utf16Column >= 0,
+              lineNumber < lines.count
+        else {
+            return nil
+        }
+
+        let preceding = lines.prefix(lineNumber).reduce(0) { total, line in
+            total + line.unicodeScalars.count + 1
+        }
+        return preceding + scalarOffset(fromUTF16Offset: utf16Column, in: lines[lineNumber])
+    }
+
+    private static func intValue(_ value: Any?) -> Int? {
+        if let value = value as? Int { return value }
+        if let value = value as? NSNumber { return value.intValue }
+        return nil
+    }
+
+    private static func scalarOffset(fromUTF16Offset targetUtf16Offset: Int, in line: String.SubSequence) -> Int {
+        let target = max(0, min(targetUtf16Offset, line.utf16.count))
+        var scalarCursor = 0
+        var utf16Cursor = 0
+
+        for scalar in line.unicodeScalars {
+            let unitCount = scalar.value <= 0xFFFF ? 1 : 2
+            if utf16Cursor + unitCount > target {
+                return scalarCursor
+            }
+            utf16Cursor += unitCount
+            scalarCursor += 1
+        }
+
+        return scalarCursor
     }
 }
 
