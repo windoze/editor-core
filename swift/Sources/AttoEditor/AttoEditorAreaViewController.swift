@@ -2466,8 +2466,8 @@ final class AttoEditorAreaViewController: NSViewController {
             guard isRustFile || isEnabled else { return nil }
 
             do {
-                let raw = try editor.lspStatusJSON()
-                let display = AttoLspStatusFormatter.display(statusJSON: raw, fallbackEnabled: isEnabled)
+                let status = try editor.lspStatusSnapshot()
+                let display = AttoLspStatusFormatter.display(status: status, fallbackEnabled: isEnabled)
                 if let detail = display.failureDetail {
                     presentLspFailureDetailIfNeeded(detail, editorView: tab.editCore.editorView)
                 } else {

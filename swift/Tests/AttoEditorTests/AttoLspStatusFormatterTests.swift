@@ -1,4 +1,5 @@
 import XCTest
+import EditorCoreUIFFI
 @testable import AttoEditor
 
 final class AttoLspStatusFormatterTests: XCTestCase {
@@ -30,6 +31,22 @@ final class AttoLspStatusFormatterTests: XCTestCase {
 
         XCTAssertEqual(display.text, "LSP fake-lsp: Failed")
         XCTAssertEqual(display.failureDetail, "formatter exploded")
+    }
+
+    func testFormatsTypedFailedStatusWithDetailForHud() {
+        let status = EcuLspStatusSnapshot(
+            availability: .failed,
+            state: .failed,
+            server: .init(name: nil, version: nil, command: "typed-lsp", args: []),
+            activity: nil,
+            detail: " typed failure ",
+            capabilities: nil
+        )
+
+        let display = AttoLspStatusFormatter.display(status: status, fallbackEnabled: true)
+
+        XCTAssertEqual(display.text, "LSP typed-lsp: Failed")
+        XCTAssertEqual(display.failureDetail, "typed failure")
     }
 
     func testInvalidStatusJSONFallsBackToEnabledText() {

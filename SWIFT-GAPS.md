@@ -142,6 +142,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 61 已完成：Rust UI 的自动 `textDocument/onTypeFormatting` 异步 response error 不再静默丢弃，会记录到 `lsp_status_json.detail`；AttoEditor 现有 status bar 路径会显示 `LSP: Failed` 并把 detail 写入日志。后续仍缺面向自动 on-type 错误的去重 HUD/event 通道。
 - 2026-08-02 阶段 62 已完成：AttoEditor 新增可测试的 `AttoLspStatusFormatter`，统一解析 `lsp_status_json` 的 status bar 文案和 failure detail；`EditorCoreSkiaView` 的短 async processing poll window 即使没有 applied edits，也会在结束时通知宿主刷新 status，AttoEditor 会对新的 LSP failed detail 弹一次去重 HUD。
 - 2026-08-02 阶段 63 已完成：AttoEditor LSP location 多结果新增可测试的 `LocationItem` 展示模型，quick panel 结果会按 workspace-relative 路径、行列位置稳定排序，并保留非 `file://` URI / workspace 外文件的显示兜底。后续仍缺持久 locations/references panel 和更深层 result lifecycle model。
+- 2026-08-02 阶段 64 已完成：Swift `EditorUI` 新增 `lspStatusSnapshot()` typed model，覆盖 availability/state/server/activity/detail 和 completion/signature/capability 摘要；AttoEditor status bar 现在消费 typed snapshot 而不是在 App 层直接解析 raw JSON。后续仍缺通用 LSP event stream、request lifecycle 和状态变更订阅模型。
 
 ## 分层结论
 
@@ -256,7 +257,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - code lens refresh、code lens resolve、active code lens actions quick panel 和 workspace command execution 的 Swift UI/App 路径已有；仍缺内联 code lens 点击/键盘定位、自动刷新状态反馈和通用 workspace command typed model。
 - outline / document symbols 已有 quick panel 主路径，document symbols 展示已消费 typed derived-state snapshot；仍缺持久 Outline panel。
 - workspace symbols 已有查询输入框和 quick panel 主路径，但还缺增量查询、持久结果面板和完整结果模型。
-- on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；显式 Swift binding 的 `EditorCoreLSPFormattingResult` typed outcome 已完成，自动 on-type 异步 response error 已进入 LSP status/detail，AttoEditor 会刷新 status 并对新的 failure detail 弹一次去重 HUD。后续仍缺更通用的 LSP status/event model。
+- on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；显式 Swift binding 的 `EditorCoreLSPFormattingResult` typed outcome 已完成，自动 on-type 异步 response error 已进入 LSP status/detail，AttoEditor 会刷新 status 并对新的 failure detail 弹一次去重 HUD；Swift 已有 typed `lspStatusSnapshot()`。后续仍缺更通用的 LSP event stream、request lifecycle 和状态变更订阅模型。
 - semantic tokens refresh / delta 策略。
 - folding ranges binding 已覆盖 request/take/apply 到 fold UI state，AttoEditor 已有显式 refresh 命令、菜单入口和错误/超时反馈；仍缺折叠范围可视化和更完整 typed result model。
 - selection range raw request/take 已有；App 层 `lsp.selection_range` expand-selection 主路径和 typed candidate model 已完成，仍缺多光标 selection range 策略和更完整 result lifecycle model。
@@ -529,7 +530,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - rename prepareRename range/placeholder、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用和打开 tab / 本地未打开文件 resource operations 已产品化；仍缺 core workspace-owned 跨文件事务和 typed result model。
 - code action typed diagnostics context、kind/filter、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用、打开 tab / 本地未打开文件 resource operations 和 command payload 执行结果/错误展示已完成；仍缺 core workspace-owned 跨文件事务和 typed result model。
 - document/workspace symbols 持久面板和 workspace 增量查询。
-- range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发、server trigger characters 自动触发路径、显式 Swift/App 错误展示和 formatting typed outcome 已完成；自动 on-type 异步 response error 已进入 LSP status/detail，并有 status refresh + 去重 HUD。后续仍缺更通用的 LSP status/event model。
+- range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发、server trigger characters 自动触发路径、显式 Swift/App 错误展示和 formatting typed outcome 已完成；自动 on-type 异步 response error 已进入 LSP status/detail，并有 status refresh + 去重 HUD；Swift 已有 typed `lspStatusSnapshot()`。后续仍缺更通用的 LSP event stream、request lifecycle 和状态变更订阅模型。
 - folding ranges request/take/apply 到 fold state、App refresh 命令和错误反馈已完成；仍缺可视化和更完整 typed model。
 - code lens refresh/resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；code lens 已有手动刷新入口、HUD 反馈、active actions quick panel 和 typed parser，selection range 已有 App expand-selection 命令和 typed candidate model，linked editing 已有 App multi-cursor selection 主路径，document color/color presentation 已有 App quick panel 和 edit apply 主路径，call/type hierarchy 已有基础 quick panel 导航和 typed parser，diagnostics 已有 active-tab Problems quick panel 和 workspace diagnostics quick panel；仍缺持久 project Problems store/panel、增量刷新和 core workspace-owned 归属。
 - LSP result panels 和错误展示。

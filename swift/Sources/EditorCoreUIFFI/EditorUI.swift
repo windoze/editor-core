@@ -216,6 +216,14 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    public func lspStatusSnapshot() throws -> EcuLspStatusSnapshot {
+        try Self.decodeSnapshot(
+            EcuLspStatusSnapshot.self,
+            from: lspStatusJSON(),
+            context: "editor_ui_lsp_status_snapshot"
+        )
+    }
+
     /// Request an LSP hover (`textDocument/hover`) for a logical position.
     ///
     /// Notes:

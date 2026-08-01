@@ -1,0 +1,100 @@
+import EditorCoreUI
+import EditorCoreUIFFI
+import XCTest
+
+final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
+    func testDecodesReadyStatusWithCapabilities() throws {
+        let status = try decode("""
+        {
+          "availability": "enabled",
+          "state": "ready",
+          "server": {
+            "name": "rust-analyzer",
+            "version": "1.0",
+            "command": "rust-analyzer",
+            "args": ["--stdio"]
+          },
+          "activity": null,
+          "detail": null,
+          "capabilities": {
+            "semantic_tokens": true,
+            "semantic_tokens_delta": false,
+            "completion_item_resolve": true,
+            "completion": {
+              "supported": true,
+              "trigger_characters": [".", ":"],
+              "all_commit_characters": [";", ")"]
+            },
+            "folding_ranges": true,
+            "on_type_formatting": true,
+            "signature_help": {
+              "supported": true,
+              "trigger_characters": ["("],
+              "retrigger_characters": [","]
+            }
+          }
+        }
+        """)
+
+        XCTAssertEqual(status.availability, .enabled)
+        XCTAssertEqual(status.state, .ready)
+        XCTAssertEqual(status.server?.name, "rust-analyzer")
+        XCTAssertEqual(status.server?.args, ["--stdio"])
+        XCTAssertNil(status.activity)
+        XCTAssertEqual(status.capabilities?.semanticTokens, true)
+        XCTAssertEqual(status.capabilities?.completion.triggerCharacters, [".", ":"])
+        XCTAssertEqual(status.capabilities?.completion.allCommitCharacters, [";", ")"])
+        XCTAssertEqual(status.capabilities?.signatureHelp.triggerCharacters, ["("])
+        XCTAssertEqual(status.capabilities?.signatureHelp.retriggerCharacters, [","])
+    }
+
+    func testDecodesFailedStatusWithMinimalServer() throws {
+        let status = try decode("""
+        {
+          "availability": "failed",
+          "state": "failed",
+          "server": { "command": "fake-lsp" },
+          "activity": { "title": "Indexing", "message": "Crates", "percentage": 42 },
+          "detail": "server exited",
+          "capabilities": null
+        }
+        """)
+
+        XCTAssertEqual(status.availability, .failed)
+        XCTAssertEqual(status.state, .failed)
+        XCTAssertEqual(status.server?.command, "fake-lsp")
+        XCTAssertEqual(status.server?.args, [])
+        XCTAssertEqual(status.activity?.title, "Indexing")
+        XCTAssertEqual(status.activity?.message, "Crates")
+        XCTAssertEqual(status.activity?.percentage, 42)
+        XCTAssertEqual(status.detail, "server exited")
+        XCTAssertNil(status.capabilities)
+    }
+
+    func testPreservesUnknownAvailabilityAndState() throws {
+        let status = try decode(#"{ "availability": "warming", "state": "restarting" }"#)
+
+        XCTAssertEqual(status.availability, .unknown("warming"))
+        XCTAssertEqual(status.availability.rawValue, "warming")
+        XCTAssertEqual(status.state, .unknown("restarting"))
+        XCTAssertEqual(status.state.rawValue, "restarting")
+        XCTAssertNil(status.server)
+        XCTAssertNil(status.capabilities)
+    }
+
+    func testEditorUIStatusSnapshotReportsDisabledWhenLspIsOff() throws {
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
+        let editor = try EditorUI(library: lib, initialText: "abc\n", viewportWidthCells: 80)
+
+        let status = try editor.lspStatusSnapshot()
+
+        XCTAssertEqual(status.availability, .disabled)
+        XCTAssertEqual(status.state, .disabled)
+        XCTAssertNil(status.detail)
+    }
+
+    private func decode(_ json: String) throws -> EcuLspStatusSnapshot {
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        return try JSONDecoder().decode(EcuLspStatusSnapshot.self, from: data)
+    }
+}

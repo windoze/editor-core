@@ -459,6 +459,254 @@ public indirect enum EcuJSONValue: Equatable, Sendable, Decodable {
     }
 }
 
+public enum EcuLspAvailability: Equatable, Sendable, Decodable {
+    case disabled
+    case enabled
+    case failed
+    case unknown(String)
+
+    public var rawValue: String {
+        switch self {
+        case .disabled: return "disabled"
+        case .enabled: return "enabled"
+        case .failed: return "failed"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        switch value {
+        case "disabled": self = .disabled
+        case "enabled": self = .enabled
+        case "failed": self = .failed
+        default: self = .unknown(value)
+        }
+    }
+}
+
+public enum EcuLspWorkState: Equatable, Sendable, Decodable {
+    case disabled
+    case ready
+    case indexing
+    case busy
+    case failed
+    case unknown(String)
+
+    public var rawValue: String {
+        switch self {
+        case .disabled: return "disabled"
+        case .ready: return "ready"
+        case .indexing: return "indexing"
+        case .busy: return "busy"
+        case .failed: return "failed"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        switch value {
+        case "disabled": self = .disabled
+        case "ready": self = .ready
+        case "indexing": self = .indexing
+        case "busy": self = .busy
+        case "failed": self = .failed
+        default: self = .unknown(value)
+        }
+    }
+}
+
+@frozen
+public struct EcuLspServerStatus: Equatable, Sendable, Decodable {
+    public var name: String?
+    public var version: String?
+    public var command: String?
+    public var args: [String]
+
+    public init(name: String?, version: String?, command: String?, args: [String] = []) {
+        self.name = name
+        self.version = version
+        self.command = command
+        self.args = args
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case version
+        case command
+        case args
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name)
+        self.version = try container.decodeIfPresent(String.self, forKey: .version)
+        self.command = try container.decodeIfPresent(String.self, forKey: .command)
+        self.args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
+    }
+}
+
+@frozen
+public struct EcuLspActivity: Equatable, Sendable, Decodable {
+    public var title: String?
+    public var message: String?
+    public var percentage: Double?
+
+    public init(title: String?, message: String?, percentage: Double?) {
+        self.title = title
+        self.message = message
+        self.percentage = percentage
+    }
+}
+
+@frozen
+public struct EcuLspCompletionCapability: Equatable, Sendable, Decodable {
+    public var supported: Bool
+    public var triggerCharacters: [String]
+    public var allCommitCharacters: [String]
+
+    public init(supported: Bool, triggerCharacters: [String] = [], allCommitCharacters: [String] = []) {
+        self.supported = supported
+        self.triggerCharacters = triggerCharacters
+        self.allCommitCharacters = allCommitCharacters
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case supported
+        case triggerCharacters = "trigger_characters"
+        case allCommitCharacters = "all_commit_characters"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.supported = try container.decodeIfPresent(Bool.self, forKey: .supported) ?? false
+        self.triggerCharacters = try container.decodeIfPresent([String].self, forKey: .triggerCharacters) ?? []
+        self.allCommitCharacters = try container.decodeIfPresent([String].self, forKey: .allCommitCharacters) ?? []
+    }
+}
+
+@frozen
+public struct EcuLspSignatureHelpCapability: Equatable, Sendable, Decodable {
+    public var supported: Bool
+    public var triggerCharacters: [String]
+    public var retriggerCharacters: [String]
+
+    public init(supported: Bool, triggerCharacters: [String] = [], retriggerCharacters: [String] = []) {
+        self.supported = supported
+        self.triggerCharacters = triggerCharacters
+        self.retriggerCharacters = retriggerCharacters
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case supported
+        case triggerCharacters = "trigger_characters"
+        case retriggerCharacters = "retrigger_characters"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.supported = try container.decodeIfPresent(Bool.self, forKey: .supported) ?? false
+        self.triggerCharacters = try container.decodeIfPresent([String].self, forKey: .triggerCharacters) ?? []
+        self.retriggerCharacters = try container.decodeIfPresent([String].self, forKey: .retriggerCharacters) ?? []
+    }
+}
+
+@frozen
+public struct EcuLspCapabilities: Equatable, Sendable, Decodable {
+    public var semanticTokens: Bool
+    public var semanticTokensDelta: Bool
+    public var completionItemResolve: Bool
+    public var completion: EcuLspCompletionCapability
+    public var foldingRanges: Bool
+    public var onTypeFormatting: Bool
+    public var signatureHelp: EcuLspSignatureHelpCapability
+
+    public init(
+        semanticTokens: Bool = false,
+        semanticTokensDelta: Bool = false,
+        completionItemResolve: Bool = false,
+        completion: EcuLspCompletionCapability = .init(supported: false),
+        foldingRanges: Bool = false,
+        onTypeFormatting: Bool = false,
+        signatureHelp: EcuLspSignatureHelpCapability = .init(supported: false)
+    ) {
+        self.semanticTokens = semanticTokens
+        self.semanticTokensDelta = semanticTokensDelta
+        self.completionItemResolve = completionItemResolve
+        self.completion = completion
+        self.foldingRanges = foldingRanges
+        self.onTypeFormatting = onTypeFormatting
+        self.signatureHelp = signatureHelp
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case semanticTokens = "semantic_tokens"
+        case semanticTokensDelta = "semantic_tokens_delta"
+        case completionItemResolve = "completion_item_resolve"
+        case completion
+        case foldingRanges = "folding_ranges"
+        case onTypeFormatting = "on_type_formatting"
+        case signatureHelp = "signature_help"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.semanticTokens = try container.decodeIfPresent(Bool.self, forKey: .semanticTokens) ?? false
+        self.semanticTokensDelta = try container.decodeIfPresent(Bool.self, forKey: .semanticTokensDelta) ?? false
+        self.completionItemResolve = try container.decodeIfPresent(Bool.self, forKey: .completionItemResolve) ?? false
+        self.completion = try container.decodeIfPresent(EcuLspCompletionCapability.self, forKey: .completion) ?? .init(supported: false)
+        self.foldingRanges = try container.decodeIfPresent(Bool.self, forKey: .foldingRanges) ?? false
+        self.onTypeFormatting = try container.decodeIfPresent(Bool.self, forKey: .onTypeFormatting) ?? false
+        self.signatureHelp = try container.decodeIfPresent(EcuLspSignatureHelpCapability.self, forKey: .signatureHelp) ?? .init(supported: false)
+    }
+}
+
+@frozen
+public struct EcuLspStatusSnapshot: Equatable, Sendable, Decodable {
+    public var availability: EcuLspAvailability
+    public var state: EcuLspWorkState
+    public var server: EcuLspServerStatus?
+    public var activity: EcuLspActivity?
+    public var detail: String?
+    public var capabilities: EcuLspCapabilities?
+
+    public init(
+        availability: EcuLspAvailability,
+        state: EcuLspWorkState,
+        server: EcuLspServerStatus?,
+        activity: EcuLspActivity?,
+        detail: String?,
+        capabilities: EcuLspCapabilities?
+    ) {
+        self.availability = availability
+        self.state = state
+        self.server = server
+        self.activity = activity
+        self.detail = detail
+        self.capabilities = capabilities
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case availability
+        case state
+        case server
+        case activity
+        case detail
+        case capabilities
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.availability = try container.decodeIfPresent(EcuLspAvailability.self, forKey: .availability) ?? .disabled
+        self.state = try container.decodeIfPresent(EcuLspWorkState.self, forKey: .state) ?? .disabled
+        self.server = try container.decodeIfPresent(EcuLspServerStatus.self, forKey: .server)
+        self.activity = try container.decodeIfPresent(EcuLspActivity.self, forKey: .activity)
+        self.detail = try container.decodeIfPresent(String.self, forKey: .detail)
+        self.capabilities = try container.decodeIfPresent(EcuLspCapabilities.self, forKey: .capabilities)
+    }
+}
+
 @frozen
 public struct EcuOffsetRange: Equatable, Sendable, Decodable {
     public var start: UInt32
