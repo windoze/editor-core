@@ -12,6 +12,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     private let library = EditorCoreUIFFILibrary()
     private let sessionManager = AttoSessionManager()
+    private var runtimeCompatibilityReport: AttoRuntimeCompatibility.Report?
 
     private var windows: [AttoWindowContext] = []
     private var activeWindowID: UUID?
@@ -88,6 +89,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             name: .attoPreferencesDidChange,
             object: nil
         )
+
+        guard validateRuntimeCompatibilityBeforeLaunch() else {
+            return
+        }
 
         let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
             ?? CGRect(origin: .zero, size: AttoWindowSizing.preferredContentSize)
@@ -166,6 +171,29 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             })
         }
         ipcServer?.stop()
+    }
+
+    private func validateRuntimeCompatibilityBeforeLaunch(logSuccess: Bool = true) -> Bool {
+        let report = AttoRuntimeCompatibility.evaluate(library: library)
+        runtimeCompatibilityReport = report
+        guard report.isCompatible else {
+            presentRuntimeCompatibilityFailure(report)
+            NSApplication.shared.terminate(nil)
+            return false
+        }
+        if logSuccess {
+            NSLog("AttoEditor: %@", report.diagnosticMessage)
+        }
+        return true
+    }
+
+    private func presentRuntimeCompatibilityFailure(_ report: AttoRuntimeCompatibility.Report) {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "AttoEditor cannot start"
+        alert.informativeText = report.diagnosticMessage
+        alert.addButton(withTitle: "Quit")
+        alert.runModal()
     }
 
     // MARK: - Menu actions
@@ -486,6 +514,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     func _commandIsEnabledForTesting(commandID: String) -> Bool {
         commandIsEnabled(commandID: commandID)
+    }
+
+    func _validateRuntimeCompatibilityForTesting() -> Bool {
+        validateRuntimeCompatibilityBeforeLaunch(logSuccess: false)
+    }
+
+    func _runtimeCompatibilityReportForTesting() -> AttoRuntimeCompatibility.Report? {
+        runtimeCompatibilityReport
     }
 
     func _createWindowForTesting(workspaceRootURL: URL) -> AttoWindowContext {

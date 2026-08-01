@@ -148,6 +148,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 67 已完成：AttoEditor `lsp.refresh_folding_ranges` 会消费 typed `EcuLspStatusSnapshot.capabilities.foldingRanges`；当 active LSP server 明确未宣告 `textDocument/foldingRange` 时不再发请求，而是直接给出 unsupported 反馈。capabilities 暂缺时仍保留 best-effort 请求路径。
 - 2026-08-02 阶段 68 已完成：AttoEditor document/workspace symbols 请求新增统一反馈文案；LSP 未启用、请求失败、poll/take 失败、超时和空结果都会通过 editor HUD 给出明确原因，不再只蜂鸣或静默取消。
 - 2026-08-02 阶段 69 已完成：`editor-core-ui-ffi` 新增 UI ABI version 与 feature flags C ABI，Swift `EditorCoreUIFFILibrary` 暴露 `abiVersion`、`featureFlags` 和 `runtimeInfo()` typed facade，覆盖 JSON command dispatcher、typed derived snapshots、LSP interactive requests、LSP status snapshot、WorkspaceEdit application 等 coarse feature probes；SwiftPM Rust build plugin 改为显式 input/output `buildCommand`，避免 ABI/header 变更后继续链接旧 staticlib。
+- 2026-08-02 阶段 70 已完成：AttoEditor 新增 `AttoRuntimeCompatibility` 启动期兼容性策略，启动时会读取 Swift UI FFI `runtimeInfo()` 并校验最低 UI ABI version 与必需 feature flags；ABI 过低、读取失败或缺少 JSON command dispatcher、typed derived snapshots、LSP interactive requests、LSP status snapshot、WorkspaceEdit application 时会在创建窗口前给出明确错误并退出。后续仍缺逐命令/逐面板的可选 feature 降级策略。
 
 ## 分层结论
 
@@ -488,7 +489,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - LSP interactive request 已覆盖一批 raw JSON result API；LSP status/capabilities 已有 typed snapshot，但 request 返回值和事件仍缺统一 envelope。
 - 长任务、异步请求、取消、错误、诊断日志没有统一 Swift 事件流。
 - 配置 DTO 不完整，例如 wrap、indentation、comment、auto-pairs、word boundary、search options。
-- headless Swift FFI 已有 ABI version；阶段 69 已补齐 UI FFI 的 ABI version / feature flags C ABI 和 Swift `runtimeInfo()` typed facade。后续仍缺更细粒度的 App 启动期 feature gating / compatibility policy。
+- headless Swift FFI 已有 ABI version；阶段 69 已补齐 UI FFI 的 ABI version / feature flags C ABI 和 Swift `runtimeInfo()` typed facade；阶段 70 已补 AttoEditor 启动期最低 ABI/必需 feature compatibility gate。后续仍缺逐命令/逐面板的可选 feature 降级策略。
 
 建议演进方向：
 
