@@ -1,3 +1,4 @@
+import EditorCoreUIFFI
 import Foundation
 
 extension Notification.Name {
@@ -19,6 +20,7 @@ final class AttoPreferences: NSObject {
         static let fontSizePoints = "AttoEditor.preferences.fontSizePoints"
         static let ligaturesEnabled = "AttoEditor.preferences.ligaturesEnabled"
         static let autoPairsEnabled = "AttoEditor.preferences.autoPairsEnabled"
+        static let wrapMode = "AttoEditor.preferences.wrapMode"
         static let themeName = "AttoEditor.preferences.themeName"
     }
 
@@ -63,6 +65,16 @@ final class AttoPreferences: NSObject {
         return true
     }
 
+    var effectiveWrapMode: EcuWrapMode {
+        if let stored = storedWrapMode { return stored }
+        if let parsed = Self.parseWrapModeEnv(env["ATTO_EDITOR_WRAP_MODE"])
+            ?? Self.parseWrapModeEnv(env["EDITOR_CORE_APPKIT_WRAP_MODE"])
+        {
+            return parsed
+        }
+        return .char
+    }
+
     var effectiveThemeName: String {
         if let stored = storedThemeName, stored.isEmpty == false { return stored }
 
@@ -94,6 +106,11 @@ final class AttoPreferences: NSObject {
         defaults.object(forKey: Keys.autoPairsEnabled) as? Bool
     }
 
+    var storedWrapMode: EcuWrapMode? {
+        guard let raw = defaults.string(forKey: Keys.wrapMode) else { return nil }
+        return EcuWrapMode(rawValue: raw)
+    }
+
     var storedThemeName: String? {
         guard let raw = defaults.string(forKey: Keys.themeName) else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -123,6 +140,15 @@ final class AttoPreferences: NSObject {
 
     func clearAutoPairsEnabled() {
         defaults.removeObject(forKey: Keys.autoPairsEnabled)
+        postDidChange()
+    }
+
+    func setWrapMode(_ mode: EcuWrapMode?) {
+        if let mode {
+            defaults.set(mode.rawValue, forKey: Keys.wrapMode)
+        } else {
+            defaults.removeObject(forKey: Keys.wrapMode)
+        }
         postDidChange()
     }
 
@@ -226,6 +252,11 @@ final class AttoPreferences: NSObject {
         default:
             return nil
         }
+    }
+
+    private static func parseWrapModeEnv(_ raw: String?) -> EcuWrapMode? {
+        guard let raw else { return nil }
+        return EcuWrapMode(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
     }
 
     private func postDidChange() {

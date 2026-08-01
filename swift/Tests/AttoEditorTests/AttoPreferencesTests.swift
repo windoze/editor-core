@@ -1,5 +1,6 @@
 import Foundation
 @testable import AttoEditor
+import EditorCoreUIFFI
 import XCTest
 
 @MainActor
@@ -127,5 +128,24 @@ final class AttoPreferencesTests: XCTestCase {
         prefs.clearAutoPairsEnabled()
         XCTAssertNil(prefs.storedAutoPairsEnabled)
         XCTAssertFalse(prefs.effectiveAutoPairsEnabled)
+    }
+
+    func testWrapModeDefaultEnvAndStoredPreference() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        var prefs = AttoPreferences(defaults: defaults, env: [:])
+        XCTAssertNil(prefs.storedWrapMode)
+        XCTAssertEqual(prefs.effectiveWrapMode, .char)
+
+        prefs = AttoPreferences(defaults: defaults, env: ["ATTO_EDITOR_WRAP_MODE": "word"])
+        XCTAssertEqual(prefs.effectiveWrapMode, .word)
+
+        prefs.setWrapMode(EcuWrapMode.none)
+        XCTAssertEqual(prefs.storedWrapMode, EcuWrapMode.none)
+        XCTAssertEqual(prefs.effectiveWrapMode, EcuWrapMode.none)
+
+        prefs.setWrapMode(nil)
+        XCTAssertNil(prefs.storedWrapMode)
+        XCTAssertEqual(prefs.effectiveWrapMode, .word)
     }
 }

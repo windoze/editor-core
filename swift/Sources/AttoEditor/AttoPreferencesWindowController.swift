@@ -1,5 +1,6 @@
 import AppKit
 import EditorCoreUI
+import EditorCoreUIFFI
 import Foundation
 
 private enum AttoPreferencesPage: Int, CaseIterable {
@@ -258,6 +259,8 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
     private let fontSizeField = NSTextField(string: "")
     private let fontSizeStepper = NSStepper(frame: .zero)
 
+    private let wrapModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+
     private let ligaturesCheckbox = NSButton(checkboxWithTitle: "Enable ligatures", target: nil, action: nil)
     private let autoPairsCheckbox = NSButton(checkboxWithTitle: "Enable auto pairs", target: nil, action: nil)
 
@@ -390,6 +393,22 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         fontSizeRow.alignment = .centerY
         stack.addArrangedSubview(fontSizeRow)
 
+        // Wrap mode
+        let wrapModeLabel = NSTextField(labelWithString: "Word wrap")
+        wrapModeLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        stack.addArrangedSubview(wrapModeLabel)
+
+        wrapModePopUp.addItem(withTitle: "Off")
+        wrapModePopUp.item(at: 0)?.representedObject = EcuWrapMode.none.rawValue
+        wrapModePopUp.addItem(withTitle: "By Character")
+        wrapModePopUp.item(at: 1)?.representedObject = EcuWrapMode.char.rawValue
+        wrapModePopUp.addItem(withTitle: "By Word")
+        wrapModePopUp.item(at: 2)?.representedObject = EcuWrapMode.word.rawValue
+        wrapModePopUp.target = self
+        wrapModePopUp.action = #selector(wrapModeChanged(_:))
+        wrapModePopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+        stack.addArrangedSubview(wrapModePopUp)
+
         // Ligatures
         ligaturesCheckbox.target = self
         ligaturesCheckbox.action = #selector(ligaturesToggled(_:))
@@ -442,6 +461,7 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
         ligaturesCheckbox.state = prefs.effectiveLigaturesEnabled ? .on : .off
         autoPairsCheckbox.state = prefs.effectiveAutoPairsEnabled ? .on : .off
+        selectWrapMode(prefs.effectiveWrapMode)
     }
 
     // MARK: - Actions
@@ -490,6 +510,16 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
     @objc private func ligaturesToggled(_ sender: Any?) {
         prefs.setLigaturesEnabled(ligaturesCheckbox.state == .on)
+    }
+
+    @objc private func wrapModeChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        let idx = wrapModePopUp.indexOfSelectedItem
+        guard idx >= 0,
+              let raw = wrapModePopUp.item(at: idx)?.representedObject as? String,
+              let mode = EcuWrapMode(rawValue: raw)
+        else { return }
+        prefs.setWrapMode(mode)
     }
 
     @objc private func autoPairsToggled(_ sender: Any?) {
@@ -564,5 +594,15 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         themePopUp.addItem(withTitle: "\(effectiveName) (Missing)")
         themePopUp.item(at: themePopUp.numberOfItems - 1)?.representedObject = effectiveName
         themePopUp.selectItem(at: themePopUp.numberOfItems - 1)
+    }
+
+    private func selectWrapMode(_ mode: EcuWrapMode) {
+        for idx in 0..<wrapModePopUp.numberOfItems {
+            if wrapModePopUp.item(at: idx)?.representedObject as? String == mode.rawValue {
+                wrapModePopUp.selectItem(at: idx)
+                return
+            }
+        }
+        wrapModePopUp.selectItem(at: 1)
     }
 }

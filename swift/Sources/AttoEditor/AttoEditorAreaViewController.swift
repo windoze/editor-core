@@ -324,6 +324,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let fontFamiliesCSV = preferences.fontFamiliesCSVForApplying()
         let ligaturesEnabled = preferences.effectiveLigaturesEnabled
         let autoPairsEnabled = preferences.effectiveAutoPairsEnabled
+        let wrapMode = preferences.effectiveWrapMode
         let fontSizePoints = preferences.effectiveFontSizePoints
 
         for tab in tabs {
@@ -345,6 +346,12 @@ final class AttoEditorAreaViewController: NSViewController {
                     try editCore.editor.setAutoPairsEnabled(autoPairsEnabled)
                 } catch {
                     NSLog("AttoEditor: setAutoPairsEnabled failed: %@", String(describing: error))
+                }
+
+                do {
+                    _ = try editCore.editor.setWrapMode(wrapMode)
+                } catch {
+                    NSLog("AttoEditor: setWrapMode failed: %@", String(describing: error))
                 }
 
                 editCore.editorView.fontSizePoints = CGFloat(fontSizePoints)
@@ -1597,6 +1604,7 @@ final class AttoEditorAreaViewController: NSViewController {
         try editCore.editor.setFontLigaturesEnabled(preferences.effectiveLigaturesEnabled)
         editCore.editorView.fontSizePoints = CGFloat(preferences.effectiveFontSizePoints)
         try editCore.applyTheme(theme)
+        _ = try editCore.editor.setWrapMode(preferences.effectiveWrapMode)
         try editCore.editor.setAutoPairsEnabled(preferences.effectiveAutoPairsEnabled)
         try editCore.editor.setBracketMatchHighlightsEnabled(true)
     }
