@@ -1153,6 +1153,59 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "{\n  ")
     }
 
+    func testCoreMultiDocumentMirrorTracksTabsAndPanes() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first.txt")
+        let secondURL = tempDir.appendingPathComponent("second.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+
+        vc.openFile(url: firstURL, mode: .preview)
+        var snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs.count, 1)
+        XCTAssertEqual(snapshot.tabs[0].title, "first.txt")
+        XCTAssertTrue(snapshot.tabs[0].isPreview)
+
+        vc.openFile(url: secondURL, mode: .preview)
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs.count, 1)
+        XCTAssertEqual(snapshot.tabs[0].title, "second.txt")
+        XCTAssertTrue(snapshot.tabs[0].isPreview)
+
+        vc.openFile(url: secondURL, mode: .pinned)
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs.count, 1)
+        XCTAssertEqual(snapshot.tabs[0].title, "second.txt")
+        XCTAssertFalse(snapshot.tabs[0].isPreview)
+        XCTAssertEqual(snapshot.activeTabId, snapshot.tabs[0].id)
+
+        XCTAssertTrue(vc.splitActiveTabRight())
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs[0].viewCount, 2)
+        XCTAssertEqual(snapshot.tabs[0].activeViewIndex, 1)
+
+        XCTAssertTrue(vc.focusPreviousPaneInActiveTab())
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs[0].activeViewIndex, 0)
+
+        XCTAssertTrue(vc.closeActivePane())
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs[0].viewCount, 1)
+        XCTAssertEqual(snapshot.tabs[0].activeViewIndex, 0)
+
+        vc.closeActiveTab()
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertTrue(snapshot.tabs.isEmpty)
+        XCTAssertNil(snapshot.activeTabId)
+    }
+
     func testSplitRightCreatesSharedDocumentPane() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

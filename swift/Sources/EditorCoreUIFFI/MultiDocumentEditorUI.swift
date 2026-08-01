@@ -181,6 +181,14 @@ public final class MultiDocumentEditorUI {
         try library.ensureStatus(status, context: "multi_document_set_active_view_index")
     }
 
+    @discardableResult
+    public func closeView(tabId: UInt64, viewIndex: UInt32) throws -> Bool {
+        var closed: UInt8 = 0
+        let status = editor_core_ui_ffi_multi_document_close_view_index(handle, tabId, viewIndex, &closed)
+        try library.ensureStatus(status, context: "multi_document_close_view_index")
+        return closed != 0
+    }
+
     public func viewCount(tabId: UInt64) throws -> UInt32 {
         var count: UInt32 = 0
         let status = editor_core_ui_ffi_multi_document_view_count(handle, tabId, &count)

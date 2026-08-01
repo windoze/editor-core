@@ -78,6 +78,11 @@ struct AttoRuntimeCompatibility {
             name: "WorkspaceEdit application",
             reason: "Rename, code actions, completion resolve, and color presentations apply WorkspaceEdit payloads."
         ),
+        RequiredFeature(
+            feature: .multiDocumentUI,
+            name: "multi-document UI",
+            reason: "AttoEditor mirrors AppKit tabs and split panes into the core-owned MultiDocumentEditorUi model."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

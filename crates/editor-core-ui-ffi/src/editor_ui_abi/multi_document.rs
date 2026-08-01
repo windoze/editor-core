@@ -399,6 +399,32 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_set_active_view_index(
     }
 }
 
+/// Close a view in a tab. The last remaining view is kept.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_close_view_index(
+    multi: *mut MultiDocumentEditorUi,
+    tab_id: u64,
+    view_index: u32,
+    out_closed: *mut u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let view_index = u32_to_usize(view_index, "view_index")?;
+        let out_closed = require_out_mut(out_closed, "out_closed")?;
+        let closed = multi
+            .close_view_index(tab_id_from_raw(tab_id), view_index)
+            .map_err(map_ui_error)?;
+        *out_closed = u8::from(closed);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Return the number of views in a tab.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_multi_document_view_count(

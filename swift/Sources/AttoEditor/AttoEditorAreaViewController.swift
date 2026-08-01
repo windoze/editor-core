@@ -26,6 +26,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private var tabs: [AttoEditorTab] = []
     private var selectedTabID: UUID?
+    private let coreDocuments: MultiDocumentEditorUI?
 
     private let tabBarView = AttoTabBarView()
     private let findReplaceBarView = AttoFindReplaceBarView()
@@ -73,6 +74,10 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func _lastLspSymbolResultForTesting() -> LspSymbolResultSnapshot? {
         lastLspSymbolResultSnapshot
+    }
+
+    func _coreMultiDocumentSnapshotForTesting() throws -> EcuMultiDocumentSnapshot? {
+        try coreDocuments?.snapshot()
     }
 
     private struct HoverRequestContext {
@@ -349,6 +354,12 @@ final class AttoEditorAreaViewController: NSViewController {
         self.theme = theme
         self.workspaceRootURL = workspaceRootURL
         self.preferences = preferences
+        do {
+            self.coreDocuments = try MultiDocumentEditorUI(library: library)
+        } catch {
+            self.coreDocuments = nil
+            NSLog("AttoEditor: failed to initialize core multi-document model: %@", String(describing: error))
+        }
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -605,6 +616,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelCodeActionUI()
         cancelFoldingRangesUI()
 
+        closeAllCoreDocumentTabs()
         tabs = []
         selectedTabID = nil
 
@@ -652,6 +664,97 @@ final class AttoEditorAreaViewController: NSViewController {
         onSessionStateChanged?()
     }
 
+    private func openCoreDocumentTab(for url: URL, initialText: String, isPreview: Bool) -> UInt64? {
+        guard let coreDocuments else { return nil }
+        do {
+            let tabID: UInt64
+            if isPreview {
+                tabID = try coreDocuments.openPreviewTab(text: initialText, viewportWidthCells: 120)
+            } else {
+                tabID = try coreDocuments.openTab(text: initialText, viewportWidthCells: 120)
+            }
+            try coreDocuments.setTabTitle(url.lastPathComponent, tabId: tabID)
+            return tabID
+        } catch {
+            NSLog("AttoEditor: core multi-document open failed for %@: %@", url.path, String(describing: error))
+            return nil
+        }
+    }
+
+    private func closeAllCoreDocumentTabs() {
+        guard let coreDocuments else { return }
+        do {
+            try coreDocuments.closeAllTabs()
+        } catch {
+            NSLog("AttoEditor: core multi-document closeAllTabs failed: %@", String(describing: error))
+        }
+    }
+
+    private func setCoreActiveTab(_ tab: AttoEditorTab) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+        do {
+            try coreDocuments.setActiveTab(coreTabID)
+            try coreDocuments.setActiveViewIndex(tabId: coreTabID, viewIndex: UInt32(clamping: tab.activePaneIndex))
+        } catch {
+            NSLog("AttoEditor: core multi-document setActive failed: %@", String(describing: error))
+        }
+    }
+
+    private func updateCoreTabTitle(_ tab: AttoEditorTab) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+        do {
+            try coreDocuments.setTabTitle(tab.fileURL.lastPathComponent, tabId: coreTabID)
+        } catch {
+            NSLog("AttoEditor: core multi-document setTabTitle failed: %@", String(describing: error))
+        }
+    }
+
+    private func pinCoreTabIfPreview(_ tab: AttoEditorTab) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+        do {
+            try coreDocuments.pinTab(coreTabID)
+        } catch {
+            NSLog("AttoEditor: core multi-document pinTab failed: %@", String(describing: error))
+        }
+    }
+
+    private func closeCoreTab(_ tab: AttoEditorTab) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+        do {
+            _ = try coreDocuments.closeTab(coreTabID)
+        } catch {
+            NSLog("AttoEditor: core multi-document closeTab failed: %@", String(describing: error))
+        }
+    }
+
+    private func splitCoreTab(_ tab: AttoEditorTab) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+        do {
+            _ = try coreDocuments.splitTab(coreTabID, viewportWidthCells: 120)
+        } catch {
+            NSLog("AttoEditor: core multi-document splitTab failed: %@", String(describing: error))
+        }
+    }
+
+    private func closeCoreView(tab: AttoEditorTab, viewIndex: Int) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+        do {
+            _ = try coreDocuments.closeView(tabId: coreTabID, viewIndex: UInt32(clamping: viewIndex))
+            try coreDocuments.setActiveViewIndex(tabId: coreTabID, viewIndex: UInt32(clamping: tab.activePaneIndex))
+        } catch {
+            NSLog("AttoEditor: core multi-document closeView failed: %@", String(describing: error))
+        }
+    }
+
+    private func setCoreActiveView(_ tab: AttoEditorTab) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+        do {
+            try coreDocuments.setActiveViewIndex(tabId: coreTabID, viewIndex: UInt32(clamping: tab.activePaneIndex))
+        } catch {
+            NSLog("AttoEditor: core multi-document setActiveViewIndex failed: %@", String(describing: error))
+        }
+    }
+
     func openFile(url: URL) {
         openFile(url: url, mode: .pinned)
     }
@@ -661,6 +764,7 @@ final class AttoEditorAreaViewController: NSViewController {
         if let existing = tabs.first(where: { $0.fileURL.standardizedFileURL == url.standardizedFileURL }) {
             if mode == .pinned, existing.isPreview {
                 existing.isPreview = false
+                pinCoreTabIfPreview(existing)
             }
             selectTab(id: existing.id)
             refreshTabBar()
@@ -676,6 +780,7 @@ final class AttoEditorAreaViewController: NSViewController {
                     // Safety: never discard dirty state; pin the preview tab if it got edited.
                     if tabs[previewIdx].isDirty {
                         tabs[previewIdx].isPreview = false
+                        pinCoreTabIfPreview(tabs[previewIdx])
                     } else {
                         let oldURL = tabs[previewIdx].fileURL
                         let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
@@ -813,6 +918,8 @@ final class AttoEditorAreaViewController: NSViewController {
             tab.isUntitled = false
             tab.isDirty = false
             tab.isPreview = false
+            pinCoreTabIfPreview(tab)
+            updateCoreTabTitle(tab)
             refreshTabBar()
             updateWindowTitle()
             updateStatusBar()
@@ -853,6 +960,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         let url = tab.fileURL
         let wasSelected = (selectedTabID == id)
+        closeCoreTab(tab)
         tabs.remove(at: idx)
         onDidCloseFile?(url)
         notifySessionStateChanged()
@@ -874,6 +982,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private func selectTab(id: UUID) {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
         selectedTabID = id
+        setCoreActiveTab(tab)
 
         updateAlwaysPollProcessingForSelectedTab()
         cancelHoverUI()
@@ -909,6 +1018,7 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
         guard tab.isPreview else { return }
         tab.isPreview = false
+        pinCoreTabIfPreview(tab)
         refreshTabBar()
         notifySessionStateChanged()
     }
@@ -950,6 +1060,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
             tab.panes.append(pane)
             tab.activePaneIndex = tab.panes.count - 1
+            splitCoreTab(tab)
             showTabContent(tab)
             attachStatusObserver(to: pane.editorView)
             updateAlwaysPollProcessingForSelectedTab()
@@ -984,6 +1095,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let pane = tab.panes.remove(at: idx)
         pane.removeFromSuperview()
         tab.activePaneIndex = min(idx, tab.panes.count - 1)
+        closeCoreView(tab: tab, viewIndex: idx)
 
         let activePane = tab.editCore
         showTabContent(tab)
@@ -1005,6 +1117,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let current = max(0, min(tab.activePaneIndex, count - 1))
         let next = (current + delta + count) % count
         tab.activePaneIndex = next
+        setCoreActiveView(tab)
 
         let activePane = tab.editCore
         attachStatusObserver(to: activePane.editorView)
@@ -2405,6 +2518,9 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         tab.isDirty = (try? tab.editCore.editor.isModified()) ?? true
+        if didUnpreview {
+            pinCoreTabIfPreview(tab)
+        }
 
         refreshTabBar()
         updateWindowTitle()
@@ -2743,6 +2859,7 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let idx = tab.panes.firstIndex(where: { $0 === editCore }) else { return }
 
         tab.activePaneIndex = idx
+        setCoreActiveView(tab)
         attachStatusObserver(to: editCore.editorView)
         updateAlwaysPollProcessingForSelectedTab()
         updateStatusBar()
@@ -2789,8 +2906,10 @@ final class AttoEditorAreaViewController: NSViewController {
         let tabId = UUID()
         editCore.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorPane(tabId))
         editCore.editorView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorView(tabId))
+        let coreTabID = openCoreDocumentTab(for: url, initialText: initialText, isPreview: isPreview)
         let tab = AttoEditorTab(
             id: tabId,
+            coreTabID: coreTabID,
             fileURL: url,
             isUntitled: isUntitled,
             isPreview: isPreview,
@@ -6676,6 +6795,9 @@ private enum AttoLanguageConfiguration {
 @MainActor
 private final class AttoEditorTab {
     let id: UUID
+    /// Projection handle into Rust `MultiDocumentEditorUi`; Swift keeps this only to route
+    /// command/query sync while the AppKit tab views are being migrated.
+    let coreTabID: UInt64?
     var fileURL: URL
     var isUntitled: Bool
     var isPreview: Bool
@@ -6698,6 +6820,7 @@ private final class AttoEditorTab {
 
     init(
         id: UUID,
+        coreTabID: UInt64?,
         fileURL: URL,
         isUntitled: Bool,
         isPreview: Bool,
@@ -6706,6 +6829,7 @@ private final class AttoEditorTab {
         editCore: EditCoreUI
     ) {
         self.id = id
+        self.coreTabID = coreTabID
         self.fileURL = fileURL
         self.isUntitled = isUntitled
         self.isPreview = isPreview

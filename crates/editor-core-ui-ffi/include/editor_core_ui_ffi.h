@@ -184,6 +184,10 @@ int32_t editor_core_ui_ffi_multi_document_split_tab(MultiDocumentEditorUi* multi
 int32_t editor_core_ui_ffi_multi_document_set_active_view_index(MultiDocumentEditorUi* multi,
                                                                 uint64_t tab_id,
                                                                 uint32_t view_index);
+int32_t editor_core_ui_ffi_multi_document_close_view_index(MultiDocumentEditorUi* multi,
+                                                           uint64_t tab_id,
+                                                           uint32_t view_index,
+                                                           uint8_t* out_closed);
 int32_t editor_core_ui_ffi_multi_document_view_count(MultiDocumentEditorUi* multi,
                                                      uint64_t tab_id,
                                                      uint32_t* out_view_count);

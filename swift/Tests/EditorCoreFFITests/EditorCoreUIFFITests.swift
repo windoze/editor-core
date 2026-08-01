@@ -100,6 +100,9 @@ final class EditorCoreUIFFITests: XCTestCase {
 
         XCTAssertEqual(try multi.splitTab(beta, viewportWidthCells: 80), 1)
         XCTAssertEqual(try multi.viewCount(tabId: beta), 2)
+        XCTAssertTrue(try multi.closeView(tabId: beta, viewIndex: 1))
+        XCTAssertEqual(try multi.viewCount(tabId: beta), 1)
+        XCTAssertEqual(try multi.splitTab(beta, viewportWidthCells: 80), 1)
         try multi.setActiveViewIndex(tabId: beta, viewIndex: 0)
 
         let preview = try multi.openPreviewTab(text: "preview one", viewportWidthCells: 80)

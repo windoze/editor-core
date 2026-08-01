@@ -41,6 +41,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingFeatures.contains { $0.feature == .lspInteractiveRequests })
         XCTAssertTrue(report.missingFeatures.contains { $0.feature == .lspStatusSnapshot })
         XCTAssertTrue(report.missingFeatures.contains { $0.feature == .workspaceEditApplication })
+        XCTAssertTrue(report.missingFeatures.contains { $0.feature == .multiDocumentUI })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing UI FFI features"))
     }
 

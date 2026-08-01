@@ -100,6 +100,27 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         ECU_OK
     );
     assert_eq!(view_count, 2);
+    let mut closed_view: u8 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_close_view_index(
+            multi,
+            beta_id,
+            view_index,
+            &mut closed_view,
+        ),
+        ECU_OK
+    );
+    assert_eq!(closed_view, 1);
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_view_count(multi, beta_id, &mut view_count),
+        ECU_OK
+    );
+    assert_eq!(view_count, 1);
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_split_tab(multi, beta_id, 80, &mut view_index),
+        ECU_OK
+    );
+    assert_eq!(view_index, 1);
 
     let preview1 = CString::new("preview one").unwrap();
     let preview2 = CString::new("preview two").unwrap();

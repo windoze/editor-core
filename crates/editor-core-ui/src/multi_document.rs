@@ -324,6 +324,29 @@ impl MultiDocumentEditorUi {
         Ok(())
     }
 
+    /// Close a view within a tab.
+    ///
+    /// Returns `true` if the view existed and was closed. The last remaining view is kept.
+    pub fn close_view_index(&mut self, tab_id: TabId, view_index: usize) -> Result<bool, UiError> {
+        let tab = self
+            .tabs
+            .get_mut(&tab_id)
+            .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
+        if view_index >= tab.views.len() {
+            return Ok(false);
+        }
+        if tab.views.len() <= 1 {
+            return Ok(false);
+        }
+        tab.views.remove(view_index);
+        if tab.active_view >= tab.views.len() {
+            tab.active_view = tab.views.len().saturating_sub(1);
+        } else if tab.active_view > view_index {
+            tab.active_view = tab.active_view.saturating_sub(1);
+        }
+        Ok(true)
+    }
+
     /// Return the number of views in a tab.
     pub fn view_count(&self, tab_id: TabId) -> Option<usize> {
         self.tabs.get(&tab_id).map(|t| t.views.len())
