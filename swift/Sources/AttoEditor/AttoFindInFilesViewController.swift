@@ -17,6 +17,7 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
     }
 
     var onOpenResult: ((URL, AttoCommandLine.FileLocation) -> Void)?
+    var openedFilesSearchProvider: ((String) -> [SearchResult])?
     var openedFilesProvider: (() -> [URL])?
     var workspaceFilesProvider: (() -> [URL])?
 
@@ -176,6 +177,18 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         }
 
         let scope = Scope(rawValue: scopeControl.selectedSegment) ?? .openedFiles
+
+        if scope == .openedFiles, let openedFilesSearchProvider {
+            let token = lastSearchToken &+ 1
+            lastSearchToken = token
+            statusLabel.stringValue = "Searching…"
+            let found = openedFilesSearchProvider(rawQuery)
+            guard lastSearchToken == token else { return }
+            results = found
+            tableView.reloadData()
+            statusLabel.stringValue = "\(found.count) results"
+            return
+        }
 
         let files: [URL] = {
             switch scope {

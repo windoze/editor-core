@@ -125,6 +125,9 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         findInFilesController.openedFilesProvider = { [weak self] in
             self?.editorAreaController.openFileURLs() ?? []
         }
+        findInFilesController.openedFilesSearchProvider = { [weak self] query in
+            self?.editorAreaController.findInOpenTabs(query: query) ?? []
+        }
         findInFilesController.workspaceFilesProvider = { [weak self] in
             self?.fileIndex.entries().map(\.url) ?? []
         }

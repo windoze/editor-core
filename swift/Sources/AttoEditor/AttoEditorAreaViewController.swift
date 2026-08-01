@@ -855,6 +855,59 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    func findInOpenTabs(query: String) -> [AttoFindInFilesViewController.SearchResult] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.isEmpty == false, let coreDocuments else { return [] }
+
+        do {
+            let coreResults = try coreDocuments.searchAllTabs(
+                query: q,
+                options: EcuSearchOptions(caseSensitive: false)
+            )
+
+            var out: [AttoFindInFilesViewController.SearchResult] = []
+            out.reserveCapacity(coreResults.reduce(0) { $0 + $1.matches.count })
+
+            let maxResults = 2000
+            for result in coreResults {
+                guard out.count < maxResults else { break }
+                guard let tab = tabs.first(where: { $0.coreTabID == result.tabId }) else { continue }
+                let text = (try? tab.editCore.editor.text()) ?? ""
+
+                for match in result.matches {
+                    guard out.count < maxResults else { break }
+                    let position = try tab.editCore.editor.charOffsetToLogicalPosition(offset: match.start)
+                    out.append(
+                        AttoFindInFilesViewController.SearchResult(
+                            url: tab.fileURL.standardizedFileURL,
+                            line1: Int(position.line) + 1,
+                            column1: Int(position.column) + 1,
+                            lineText: Self.findResultLinePreview(in: text, zeroBasedLine: Int(position.line))
+                        )
+                    )
+                }
+            }
+
+            out.sort { a, b in
+                if a.url.path != b.url.path { return a.url.path < b.url.path }
+                if a.line1 != b.line1 { return a.line1 < b.line1 }
+                return a.column1 < b.column1
+            }
+            return out
+        } catch {
+            NSLog("AttoEditor: core multi-document open-tab search failed: %@", String(describing: error))
+            return []
+        }
+    }
+
+    private static func findResultLinePreview(in text: String, zeroBasedLine: Int) -> String {
+        guard zeroBasedLine >= 0 else { return "" }
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        guard zeroBasedLine < lines.count else { return "" }
+        let line = String(lines[zeroBasedLine]).trimmingCharacters(in: .whitespaces)
+        return line.count > 240 ? String(line.prefix(240)) + "…" : line
+    }
+
     func selectFile(url: URL) {
         guard let tab = tabs.first(where: { $0.fileURL.standardizedFileURL == url.standardizedFileURL }) else { return }
         selectTab(id: tab.id)
