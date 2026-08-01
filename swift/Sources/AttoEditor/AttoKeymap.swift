@@ -20,6 +20,8 @@ enum AttoKeymap {
         "file.open_folder": AttoKeyBinding(keyEquivalent: "o", modifiers: [.command, .shift]),
         "file.save": AttoKeyBinding(keyEquivalent: "s", modifiers: [.command]),
         "file.close_tab": AttoKeyBinding(keyEquivalent: "w", modifiers: [.command]),
+        "file.move_tab_left": AttoKeyBinding(keyEquivalent: "[", modifiers: [.command, .shift]),
+        "file.move_tab_right": AttoKeyBinding(keyEquivalent: "]", modifiers: [.command, .shift]),
         "editor.find": AttoKeyBinding(keyEquivalent: "f", modifiers: [.command]),
         "editor.replace": AttoKeyBinding(keyEquivalent: "f", modifiers: [.command, .option]),
         "editor.format_selection": AttoKeyBinding(keyEquivalent: "f", modifiers: [.option, .shift]),

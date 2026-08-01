@@ -177,6 +177,10 @@ int32_t editor_core_ui_ffi_multi_document_close_other_tabs(MultiDocumentEditorUi
 int32_t editor_core_ui_ffi_multi_document_close_tabs_to_right(MultiDocumentEditorUi* multi,
                                                               uint64_t tab_id,
                                                               uint32_t* out_closed_count);
+int32_t editor_core_ui_ffi_multi_document_move_tab_index(MultiDocumentEditorUi* multi,
+                                                         uint32_t from_tab_index,
+                                                         uint32_t to_tab_index,
+                                                         uint8_t* out_moved);
 int32_t editor_core_ui_ffi_multi_document_split_tab(MultiDocumentEditorUi* multi,
                                                     uint64_t tab_id,
                                                     uint32_t viewport_width_cells,

@@ -446,6 +446,33 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_close_tabs_to_right(
     }
 }
 
+/// Move a tab in the current tab order. Returns whether the tab was moved.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_move_tab_index(
+    multi: *mut MultiDocumentEditorUi,
+    from_tab_index: u32,
+    to_tab_index: u32,
+    out_moved: *mut u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let from_tab_index = u32_to_usize(from_tab_index, "from_tab_index")?;
+        let to_tab_index = u32_to_usize(to_tab_index, "to_tab_index")?;
+        let out_moved = require_out_mut(out_moved, "out_moved")?;
+        let moved = multi
+            .move_tab_index(from_tab_index, to_tab_index)
+            .map_err(map_ui_error)?;
+        *out_moved = u8::from(moved);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Split a tab by cloning its active view.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_multi_document_split_tab(

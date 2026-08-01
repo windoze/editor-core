@@ -171,6 +171,14 @@ public final class MultiDocumentEditorUI {
     }
 
     @discardableResult
+    public func moveTab(fromIndex: UInt32, toIndex: UInt32) throws -> Bool {
+        var moved: UInt8 = 0
+        let status = editor_core_ui_ffi_multi_document_move_tab_index(handle, fromIndex, toIndex, &moved)
+        try library.ensureStatus(status, context: "multi_document_move_tab_index")
+        return moved != 0
+    }
+
+    @discardableResult
     public func splitTab(_ tabId: UInt64, viewportWidthCells: UInt32 = 120) throws -> UInt32 {
         var viewIndex: UInt32 = 0
         let status = editor_core_ui_ffi_multi_document_split_tab(handle, tabId, viewportWidthCells, &viewIndex)

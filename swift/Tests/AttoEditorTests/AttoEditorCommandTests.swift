@@ -14,6 +14,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.format_selection"))
         XCTAssertTrue(ids.contains("editor.duplicate_lines"))
         XCTAssertTrue(ids.contains("file.close_tab"))
+        XCTAssertTrue(ids.contains("file.move_tab_left"))
+        XCTAssertTrue(ids.contains("file.move_tab_right"))
         XCTAssertTrue(ids.contains("editor.delete_lines"))
         XCTAssertTrue(ids.contains("editor.move_lines_up"))
         XCTAssertTrue(ids.contains("editor.move_lines_down"))
@@ -231,6 +233,8 @@ final class AttoEditorCommandTests: XCTestCase {
         )
         XCTAssertEqual(resolved["editor.move_lines_up"], AttoKeymap.parseBinding("super+ctrl+up"))
         XCTAssertEqual(resolved["editor.move_lines_down"], AttoKeymap.parseBinding("super+ctrl+down"))
+        XCTAssertEqual(resolved["file.move_tab_left"], AttoKeymap.parseBinding("super+shift+["))
+        XCTAssertEqual(resolved["file.move_tab_right"], AttoKeymap.parseBinding("super+shift+]"))
     }
 
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
@@ -240,6 +244,10 @@ final class AttoEditorCommandTests: XCTestCase {
             ]
         )
         let menu = AttoMainMenuBuilder.build(appDelegate: delegate)
+
+        let fileMenu = try XCTUnwrap(topLevelMenu(title: "File", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "file.move_tab_left", in: fileMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "file.move_tab_right", in: fileMenu))
 
         let item = try XCTUnwrap(findMenuItem(commandID: "editor.duplicate_lines", in: menu))
         XCTAssertEqual(item.representedObject as? String, "editor.duplicate_lines")
@@ -1420,6 +1428,70 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc.moveActivePaneRight())
         snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
         XCTAssertEqual(snapshot.tabs[0].activeViewIndex, 1)
+    }
+
+    func testMoveTabCommandsReorderAppKitProjectionAndCoreMirror() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-tab.txt")
+        let secondURL = tempDir.appendingPathComponent("second-tab.txt")
+        let thirdURL = tempDir.appendingPathComponent("third-tab.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "third".write(to: thirdURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.openFile(url: thirdURL, mode: .pinned)
+
+        XCTAssertEqual(vc.openFileItems().map { $0.url.lastPathComponent }, [
+            "first-tab.txt",
+            "second-tab.txt",
+            "third-tab.txt",
+        ])
+        XCTAssertFalse(vc.moveActiveTabRight())
+
+        XCTAssertTrue(vc.moveActiveTabLeft())
+        XCTAssertEqual(vc.openFileItems().map { $0.url.lastPathComponent }, [
+            "first-tab.txt",
+            "third-tab.txt",
+            "second-tab.txt",
+        ])
+        var snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs.map(\.title), [
+            "first-tab.txt",
+            "third-tab.txt",
+            "second-tab.txt",
+        ])
+        XCTAssertEqual(snapshot.tabs.first(where: { $0.isActive })?.title, "third-tab.txt")
+
+        XCTAssertTrue(vc.moveActiveTabLeft())
+        XCTAssertEqual(vc.openFileItems().map { $0.url.lastPathComponent }, [
+            "third-tab.txt",
+            "first-tab.txt",
+            "second-tab.txt",
+        ])
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs.map(\.title), [
+            "third-tab.txt",
+            "first-tab.txt",
+            "second-tab.txt",
+        ])
+        XCTAssertEqual(snapshot.tabs.first(where: { $0.isActive })?.title, "third-tab.txt")
+
+        XCTAssertFalse(vc.moveActiveTabLeft())
+        XCTAssertTrue(vc.moveActiveTabRight())
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs.map(\.title), [
+            "first-tab.txt",
+            "third-tab.txt",
+            "second-tab.txt",
+        ])
     }
 
     func testSessionRestoreRestoresSplitPanesIntoCoreMirror() throws {

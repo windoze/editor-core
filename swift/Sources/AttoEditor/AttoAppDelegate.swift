@@ -42,10 +42,11 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         case activeWindow
         case activeEditor
         case multiplePanes
+        case multipleTabs
 
         var requiresEditor: Bool {
             switch self {
-            case .activeEditor, .multiplePanes:
+            case .activeEditor, .multiplePanes, .multipleTabs:
                 return true
             case .none, .activeWindow:
                 return false
@@ -363,6 +364,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "file.close_tab", title: "File: Close Tab") { [weak self] in
                 self?.closeTabMenuClicked(nil)
             },
+            .init(id: "file.move_tab_left", title: "File: Move Tab Left") { [weak self] in
+                self?.activeWindow()?.editorAreaController.moveActiveTabLeft()
+            },
+            .init(id: "file.move_tab_right", title: "File: Move Tab Right") { [weak self] in
+                self?.activeWindow()?.editorAreaController.moveActiveTabRight()
+            },
             .init(id: "editor.format_document", title: "Edit: Format Document") { [weak self] in
                 self?.activeWindow()?.editorAreaController.formatDocumentWithLspInActiveTab()
             },
@@ -614,6 +621,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return activeWindow()?.editorAreaController.hasActiveEditorForCommands == true
         case .multiplePanes:
             return activeWindow()?.editorAreaController.hasMultiplePanesForCommands == true
+        case .multipleTabs:
+            return activeWindow()?.editorAreaController.hasMultipleTabsForCommands == true
         }
     }
 
@@ -644,6 +653,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                 return .activeWindow
             case "view.focus_next_pane", "view.focus_previous_pane", "view.move_pane_left", "view.move_pane_right", "view.close_pane":
                 return .multiplePanes
+            case "file.move_tab_left", "file.move_tab_right":
+                return .multipleTabs
             default:
                 if commandID == "file.save" || commandID == "file.close_tab" {
                     return .activeEditor

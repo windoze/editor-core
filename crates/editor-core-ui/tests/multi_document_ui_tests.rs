@@ -34,6 +34,30 @@ fn multi_document_ui_tabs_are_independent_documents() {
 }
 
 #[test]
+fn multi_document_ui_can_move_tabs() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let a = ui.open_tab("a", 80);
+    let b = ui.open_tab("b", 80);
+    let c = ui.open_tab("c", 80);
+
+    ui.set_active_tab(b).unwrap();
+    assert!(ui.move_tab_index(1, 0).unwrap());
+    assert_eq!(ui.tab_ids(), vec![b, a, c]);
+    assert_eq!(ui.active_tab_id(), Some(b));
+
+    assert!(ui.move_tab_index(2, 1).unwrap());
+    assert_eq!(ui.tab_ids(), vec![b, c, a]);
+
+    assert!(!ui.move_tab_index(1, 1).unwrap());
+    assert!(!ui.move_tab_index(3, 0).unwrap());
+
+    let closed = ui.close_tabs_to_right(b).unwrap();
+    assert_eq!(closed, 2);
+    assert_eq!(ui.tab_ids(), vec![b]);
+    assert_eq!(ui.active_tab_id(), Some(b));
+}
+
+#[test]
 fn multi_document_ui_supports_splits_via_clone_view() {
     let mut ui = MultiDocumentEditorUi::new();
     let tab = ui.open_tab("abc\n", 80);

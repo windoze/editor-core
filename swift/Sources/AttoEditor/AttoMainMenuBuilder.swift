@@ -29,6 +29,8 @@ enum AttoMainMenuBuilder {
         fileMenu.addItem(commandItem(title: "Save", commandID: "file.save", appDelegate: appDelegate))
         fileMenu.addItem(.separator())
         fileMenu.addItem(commandItem(title: "Close Tab", commandID: "file.close_tab", appDelegate: appDelegate))
+        fileMenu.addItem(commandItem(title: "Move Tab Left", commandID: "file.move_tab_left", appDelegate: appDelegate))
+        fileMenu.addItem(commandItem(title: "Move Tab Right", commandID: "file.move_tab_right", appDelegate: appDelegate))
 
         let editMenuItem = NSMenuItem()
         editMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("Edit"))

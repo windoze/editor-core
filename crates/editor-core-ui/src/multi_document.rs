@@ -53,6 +53,7 @@ impl TabEntry {
 pub struct MultiDocumentEditorUi {
     next_tab_id: u64,
     tabs: BTreeMap<TabId, TabEntry>,
+    tab_order: Vec<TabId>,
     active_tab: Option<TabId>,
     preview_tab: Option<TabId>,
 }
@@ -70,7 +71,11 @@ impl MultiDocumentEditorUi {
 
     /// Return all currently open tab ids in deterministic order.
     pub fn tab_ids(&self) -> Vec<TabId> {
-        self.tabs.keys().cloned().collect()
+        self.tab_order
+            .iter()
+            .copied()
+            .filter(|id| self.tabs.contains_key(id))
+            .collect()
     }
 
     /// Open a new tab with initial text and an initial wrap width.
@@ -127,6 +132,7 @@ impl MultiDocumentEditorUi {
                 is_preview,
             },
         );
+        self.tab_order.push(tab_id);
 
         if self.active_tab.is_none() {
             self.active_tab = Some(tab_id);
@@ -157,10 +163,22 @@ impl MultiDocumentEditorUi {
     ///
     /// Returns `true` if the tab existed.
     pub fn close_tab(&mut self, tab_id: TabId) -> bool {
+        let closed_pos = self.tab_order.iter().position(|id| *id == tab_id);
         let existed = self.tabs.remove(&tab_id).is_some();
 
+        if existed {
+            self.tab_order.retain(|id| *id != tab_id);
+        }
+
         if existed && self.active_tab == Some(tab_id) {
-            self.active_tab = self.tabs.keys().next().cloned();
+            self.active_tab = closed_pos
+                .and_then(|idx| self.tab_order.get(idx).copied())
+                .or_else(|| {
+                    closed_pos
+                        .and_then(|idx| idx.checked_sub(1))
+                        .and_then(|idx| self.tab_order.get(idx).copied())
+                })
+                .or_else(|| self.tab_order.first().copied());
         }
 
         if existed && self.preview_tab == Some(tab_id) {
@@ -173,6 +191,7 @@ impl MultiDocumentEditorUi {
     /// Close all tabs.
     pub fn close_all_tabs(&mut self) {
         self.tabs.clear();
+        self.tab_order.clear();
         self.active_tab = None;
         self.preview_tab = None;
     }
@@ -222,6 +241,28 @@ impl MultiDocumentEditorUi {
             }
         }
         Ok(closed)
+    }
+
+    /// Move a tab by index in the current tab order.
+    ///
+    /// Returns `true` if the tab existed and its index changed.
+    pub fn move_tab_index(&mut self, from_index: usize, to_index: usize) -> Result<bool, UiError> {
+        if from_index >= self.tab_order.len()
+            || to_index >= self.tab_order.len()
+            || from_index == to_index
+        {
+            return Ok(false);
+        }
+
+        let tab_id = self.tab_order.remove(from_index);
+        if !self.tabs.contains_key(&tab_id) {
+            return Err(UiError::Processor(format!(
+                "tab order referenced unknown tab id {}",
+                tab_id.get()
+            )));
+        }
+        self.tab_order.insert(to_index, tab_id);
+        Ok(true)
     }
 
     /// Set the active tab.
@@ -465,7 +506,10 @@ impl MultiDocumentEditorUi {
         options: SearchOptions,
     ) -> Result<Vec<TabSearchResult>, editor_core::SearchError> {
         let mut out = Vec::new();
-        for (tab_id, tab) in &self.tabs {
+        for tab_id in self.tab_ids() {
+            let Some(tab) = self.tabs.get(&tab_id) else {
+                continue;
+            };
             let Some(view) = tab.active_view() else {
                 continue;
             };
@@ -473,10 +517,7 @@ impl MultiDocumentEditorUi {
             if matches.is_empty() {
                 continue;
             }
-            out.push(TabSearchResult {
-                tab_id: *tab_id,
-                matches,
-            });
+            out.push(TabSearchResult { tab_id, matches });
         }
         Ok(out)
     }

@@ -88,6 +88,13 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     assert_eq!(has_active, 1);
     assert_eq!(active_id, beta_id);
 
+    let mut moved_tab: u8 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_move_tab_index(multi, 1, 0, &mut moved_tab),
+        ECU_OK
+    );
+    assert_eq!(moved_tab, 1);
+
     let mut view_index: u32 = 0;
     assert_eq!(
         editor_core_ui_ffi_multi_document_split_tab(multi, beta_id, 80, &mut view_index),
@@ -232,6 +239,8 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
     assert_eq!(snapshot["active_tab_id"], beta_id);
     let tabs = snapshot["tabs"].as_array().unwrap();
+    assert_eq!(tabs[0]["id"], beta_id);
+    assert_eq!(tabs[1]["id"], alpha_id);
     assert!(tabs.iter().any(|tab| tab["id"] == beta_id
         && tab["title"] == "Beta"
         && tab["view_count"] == 3

@@ -60,6 +60,10 @@ final class AttoEditorAreaViewController: NSViewController {
         (activeTab?.panes.count ?? 0) > 1
     }
 
+    var hasMultipleTabsForCommands: Bool {
+        tabs.count > 1
+    }
+
     func _activeDerivedStateForTesting() -> AttoDerivedStateSnapshot {
         derivedStateStore.active
     }
@@ -832,6 +836,19 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    private func moveCoreTab(fromIndex: Int, toIndex: Int) -> Bool {
+        guard let coreDocuments else { return false }
+        do {
+            return try coreDocuments.moveTab(
+                fromIndex: UInt32(clamping: fromIndex),
+                toIndex: UInt32(clamping: toIndex)
+            )
+        } catch {
+            NSLog("AttoEditor: core multi-document moveTab failed: %@", String(describing: error))
+            return false
+        }
+    }
+
     private func setCoreActiveView(_ tab: AttoEditorTab) {
         guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
         do {
@@ -1163,6 +1180,45 @@ final class AttoEditorAreaViewController: NSViewController {
         pinCoreTabIfPreview(tab)
         refreshTabBar()
         notifySessionStateChanged()
+    }
+
+    @discardableResult
+    func moveActiveTabLeft() -> Bool {
+        moveActiveTab(delta: -1)
+    }
+
+    @discardableResult
+    func moveActiveTabRight() -> Bool {
+        moveActiveTab(delta: 1)
+    }
+
+    @discardableResult
+    private func moveActiveTab(delta: Int) -> Bool {
+        guard let selectedTabID,
+              let from = tabs.firstIndex(where: { $0.id == selectedTabID }),
+              tabs.count > 1
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        let to = from + delta
+        guard to >= 0, to < tabs.count else {
+            NSSound.beep()
+            return false
+        }
+
+        guard moveCoreTab(fromIndex: from, toIndex: to) else {
+            NSSound.beep()
+            return false
+        }
+
+        let tab = tabs.remove(at: from)
+        tabs.insert(tab, at: to)
+        refreshTabBar()
+        updateWindowTitle()
+        notifySessionStateChanged()
+        return true
     }
 
     // MARK: - Minimap

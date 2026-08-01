@@ -98,6 +98,11 @@ final class EditorCoreUIFFITests: XCTestCase {
         try multi.setActiveTab(beta)
         XCTAssertEqual(try multi.activeTabId(), beta)
 
+        XCTAssertTrue(try multi.moveTab(fromIndex: 1, toIndex: 0))
+        XCTAssertEqual(try multi.snapshot().tabs.map(\.id), [beta, alpha])
+        XCTAssertTrue(try multi.moveTab(fromIndex: 0, toIndex: 1))
+        XCTAssertEqual(try multi.snapshot().tabs.map(\.id), [alpha, beta])
+
         XCTAssertEqual(try multi.splitTab(beta, viewportWidthCells: 80), 1)
         XCTAssertEqual(try multi.viewCount(tabId: beta), 2)
         XCTAssertTrue(try multi.closeView(tabId: beta, viewIndex: 1))
