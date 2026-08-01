@@ -361,6 +361,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             .init(id: "lsp.find_references", title: "LSP: Find References") { [weak self] in
                 self?.activeWindow()?.editorAreaController.findReferencesInActiveTab()
             },
+            .init(id: "lsp.rename", title: "LSP: Rename Symbol") { [weak self] in
+                self?.activeWindow()?.editorAreaController.promptRenameSymbolInActiveTab()
+            },
             .init(id: "lsp.document_symbols", title: "LSP: Document Symbols") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showDocumentSymbolsInActiveTab()
             },

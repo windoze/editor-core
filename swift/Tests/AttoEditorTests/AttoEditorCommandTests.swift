@@ -35,6 +35,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.workspace_symbols"))
         XCTAssertTrue(ids.contains("lsp.completion"))
         XCTAssertTrue(ids.contains("lsp.signature_help"))
+        XCTAssertTrue(ids.contains("lsp.rename"))
     }
 
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
@@ -47,7 +48,8 @@ final class AttoEditorCommandTests: XCTestCase {
         try """
         [
           { "keys": ["cmd+shift+l"], "command": "editor.duplicate_lines" },
-          { "key": "super+/", "command": "editor.toggle_line_comment" }
+          { "key": "super+/", "command": "editor.toggle_line_comment" },
+          { "key": "f2", "command": "lsp.rename" }
         ]
         """.write(to: keymapURL, atomically: true, encoding: .utf8)
 
@@ -63,6 +65,8 @@ final class AttoEditorCommandTests: XCTestCase {
             user["editor.toggle_line_comment"]?.modifiers.intersection(.deviceIndependentFlagsMask),
             [.command]
         )
+        XCTAssertEqual(user["lsp.rename"]?.keyEquivalent, AttoKeymap.parseBinding("f2")?.keyEquivalent)
+        XCTAssertEqual(user["lsp.rename"]?.modifiers.intersection(.deviceIndependentFlagsMask), [])
 
         let resolved = AttoKeymap.resolvedBindings(env: env)
         XCTAssertEqual(resolved["editor.duplicate_lines"]?.keyEquivalent, "l")
@@ -77,6 +81,7 @@ final class AttoEditorCommandTests: XCTestCase {
             resolved["lsp.signature_help"]?.modifiers.intersection(.deviceIndependentFlagsMask),
             [.control, .shift]
         )
+        XCTAssertEqual(resolved["lsp.rename"]?.keyEquivalent, AttoKeymap.parseBinding("f2")?.keyEquivalent)
     }
 
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {
@@ -110,6 +115,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.completion", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.signature_help", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.rename", in: menu))
     }
 
     func testExecuteCommandUsesRegisteredCommandIDs() throws {
@@ -137,6 +143,71 @@ final class AttoEditorCommandTests: XCTestCase {
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
         XCTAssertEqual(try editorView.editor.text(), "a\na\nb\n")
         XCTAssertTrue(window.title.contains("●"))
+    }
+
+    func testWorkspaceEditApplicationMutatesTextAndDirtyState() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("rename.txt")
+        try "abc\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "\(fileURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "B"
+              }
+            ],
+            "file:///other.txt": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "X"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertFalse(window.title.contains("●"))
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "aBc\n")
+        XCTAssertTrue(window.title.contains("●"))
+    }
+
+    func testRenameCandidateUsesSelectionOrIdentifierAtCaret() throws {
+        XCTAssertEqual(
+            AttoLspRenameSupport.candidateName(documentText: "let alpha = beta\n", selectedText: "alpha", caretOffset: 0),
+            "alpha"
+        )
+        XCTAssertEqual(
+            AttoLspRenameSupport.candidateName(documentText: "let alpha = beta\n", selectedText: "", caretOffset: 7),
+            "alpha"
+        )
+        XCTAssertEqual(
+            AttoLspRenameSupport.candidateName(documentText: "let alpha = beta\n", selectedText: "", caretOffset: 9),
+            "alpha"
+        )
+        XCTAssertEqual(
+            AttoLspRenameSupport.candidateName(documentText: "let alpha = beta\n", selectedText: "alpha\nbeta", caretOffset: 0),
+            "let"
+        )
     }
 
     func testToggleLineCommentUsesFileLanguageDefault() throws {

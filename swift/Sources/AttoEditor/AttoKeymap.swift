@@ -42,6 +42,7 @@ enum AttoKeymap {
         "lsp.workspace_symbols": AttoKeyBinding(keyEquivalent: "r", modifiers: [.command, .shift]),
         "lsp.completion": AttoKeyBinding(keyEquivalent: " ", modifiers: [.control]),
         "lsp.signature_help": AttoKeyBinding(keyEquivalent: " ", modifiers: [.control, .shift]),
+        "lsp.rename": AttoKeyBinding(keyEquivalent: functionKey(NSF2FunctionKey), modifiers: []),
         "go.matching_bracket": AttoKeyBinding(keyEquivalent: "m", modifiers: [.control]),
         "search.find_in_files": AttoKeyBinding(keyEquivalent: "f", modifiers: [.command, .shift]),
         "workbench.preferences": AttoKeyBinding(keyEquivalent: ",", modifiers: [.command]),
@@ -142,9 +143,34 @@ enum AttoKeymap {
             return "\u{1b}"
         case "backspace":
             return "\u{7f}"
+        case "f1": return functionKey(NSF1FunctionKey)
+        case "f2": return functionKey(NSF2FunctionKey)
+        case "f3": return functionKey(NSF3FunctionKey)
+        case "f4": return functionKey(NSF4FunctionKey)
+        case "f5": return functionKey(NSF5FunctionKey)
+        case "f6": return functionKey(NSF6FunctionKey)
+        case "f7": return functionKey(NSF7FunctionKey)
+        case "f8": return functionKey(NSF8FunctionKey)
+        case "f9": return functionKey(NSF9FunctionKey)
+        case "f10": return functionKey(NSF10FunctionKey)
+        case "f11": return functionKey(NSF11FunctionKey)
+        case "f12": return functionKey(NSF12FunctionKey)
+        case "f13": return functionKey(NSF13FunctionKey)
+        case "f14": return functionKey(NSF14FunctionKey)
+        case "f15": return functionKey(NSF15FunctionKey)
+        case "f16": return functionKey(NSF16FunctionKey)
+        case "f17": return functionKey(NSF17FunctionKey)
+        case "f18": return functionKey(NSF18FunctionKey)
+        case "f19": return functionKey(NSF19FunctionKey)
+        case "f20": return functionKey(NSF20FunctionKey)
         default:
             return token
         }
+    }
+
+    private static func functionKey(_ value: Int) -> String {
+        guard let scalar = UnicodeScalar(UInt32(value)) else { return "" }
+        return String(Character(scalar))
     }
 }
 

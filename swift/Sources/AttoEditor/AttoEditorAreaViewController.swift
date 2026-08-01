@@ -88,6 +88,35 @@ final class AttoEditorAreaViewController: NSViewController {
         let fallbackEnd: UInt32
     }
 
+    private struct RenameRequestContext {
+        let tabID: UUID
+        let documentURI: String
+    }
+
+    private struct WorkspaceEditApplyResult {
+        let applied: Bool
+        let skippedURIs: [String]
+
+        init(json: String) {
+            guard let data = json.data(using: .utf8),
+                  let obj = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any]
+            else {
+                applied = false
+                skippedURIs = []
+                return
+            }
+
+            if let v = obj["applied"] as? Bool {
+                applied = v
+            } else if let v = obj["applied"] as? NSNumber {
+                applied = v.boolValue
+            } else {
+                applied = false
+            }
+            skippedURIs = obj["skipped_uris"] as? [String] ?? []
+        }
+    }
+
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
@@ -110,6 +139,9 @@ final class AttoEditorAreaViewController: NSViewController {
     private var completionContext: CompletionRequestContext?
     private var completionPollTimer: DispatchSourceTimer?
     private var completionListController: AttoCompletionListController?
+
+    private var renameContext: RenameRequestContext?
+    private var renamePollTimer: DispatchSourceTimer?
 
     init(library: EditorCoreUIFFILibrary, theme: EditorCoreSkiaTheme, workspaceRootURL: URL) {
         self.library = library
@@ -339,6 +371,7 @@ final class AttoEditorAreaViewController: NSViewController {
         defer { isRestoringSession = false }
 
         cancelHoverUI()
+        cancelRenameUI()
         cancelDefinitionUI()
         cancelSymbolUI()
         cancelSignatureHelpUI()
@@ -618,6 +651,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelHoverUI()
         cancelDefinitionUI()
         cancelSymbolUI()
+        cancelRenameUI()
         cancelSignatureHelpUI()
         cancelCompletionUI()
 
@@ -1835,6 +1869,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         cancelHoverUI()
+        cancelRenameUI()
 
         definitionContext = DefinitionRequestContext(
             tabID: tabID,
@@ -2033,6 +2068,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelHoverUI()
         cancelDefinitionUI()
         cancelSymbolUI()
+        cancelRenameUI()
 
         symbolContext = SymbolRequestContext(tabID: tab.id, kind: kind)
 
@@ -2172,6 +2208,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelSymbolUI()
         cancelSignatureHelpUI()
         cancelCompletionUI()
+        cancelRenameUI()
 
         do {
             let offsets = try tab.editCore.editor.selectionOffsets()
@@ -2310,6 +2347,186 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    // MARK: - LSP rename
+
+    @discardableResult
+    func promptRenameSymbolInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            NSSound.beep()
+            return false
+        }
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.stringValue = renameCandidateInActiveTab()
+        field.placeholderString = "New symbol name"
+        field.selectText(nil)
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Rename Symbol"
+        alert.informativeText = "Enter the new name for the symbol."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        alert.accessoryView = field
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return false }
+
+        let newName = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return renameSymbolInActiveTab(to: newName)
+    }
+
+    @discardableResult
+    func renameSymbolInActiveTab(to newName: String) -> Bool {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+
+        do {
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+            _ = try tab.editCore.editor.lspRequestRename(
+                logicalLine: pos.line,
+                logicalColumn: pos.column,
+                newName: trimmed
+            )
+            renameContext = RenameRequestContext(tabID: tab.id, documentURI: tab.fileURL.absoluteString)
+            startRenamePollTimer(tabID: tab.id)
+            return true
+        } catch {
+            cancelRenameUI()
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
+    func applyWorkspaceEditJSONToActiveTab(_ workspaceEditJSON: String, documentURI: String? = nil) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let targetURI = documentURI ?? tab.fileURL.absoluteString
+            let resultJSON = try tab.editCore.editor.lspApplyWorkspaceEditJSON(
+                workspaceEditJSON,
+                documentURI: targetURI
+            )
+            let result = WorkspaceEditApplyResult(json: resultJSON)
+            guard result.applied else {
+                if result.skippedURIs.isEmpty == false {
+                    NSLog(
+                        "AttoEditor: WorkspaceEdit did not target active document; skipped URIs: %@",
+                        result.skippedURIs.joined(separator: ", ")
+                    )
+                }
+                NSSound.beep()
+                return false
+            }
+
+            if result.skippedURIs.isEmpty == false {
+                NSLog(
+                    "AttoEditor: WorkspaceEdit applied active document and skipped unsupported cross-file URIs: %@",
+                    result.skippedURIs.joined(separator: ", ")
+                )
+            }
+
+            tab.editCore.layoutSubtreeIfNeeded()
+            try? tab.editCore.editor.revealPrimaryCaret()
+            tab.editCore.editorView.kickProcessingPoll()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            handleTabDidMutateDocumentText(tabID: tab.id)
+            updateStatusBar()
+            view.window?.makeFirstResponder(tab.editCore.editorView)
+            return true
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private func startRenamePollTimer(tabID: UUID) {
+        renamePollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.renameContext, ctx.tabID == tabID else {
+                self.cancelRenameUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.cancelRenameUI()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelRenameUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastRenameResultJSON()
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            self.renamePollTimer?.cancel()
+            self.renamePollTimer = nil
+            self.renameContext = nil
+            _ = self.applyWorkspaceEditJSONToActiveTab(json, documentURI: ctx.documentURI)
+            timer.cancel()
+        }
+
+        renamePollTimer = timer
+        timer.resume()
+    }
+
+    private func renameCandidateInActiveTab() -> String {
+        guard let tab = activeTab else { return "" }
+        do {
+            let selected = try tab.editCore.editor.selectedText()
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let text = try tab.editCore.editor.text()
+            return AttoLspRenameSupport.candidateName(
+                documentText: text,
+                selectedText: selected,
+                caretOffset: offsets.end
+            )
+        } catch {
+            return ""
+        }
+    }
+
     // MARK: - LSP signature help
 
     @discardableResult
@@ -2327,6 +2544,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelDefinitionUI()
         cancelSymbolUI()
         cancelSignatureHelpUI()
+        cancelRenameUI()
 
         do {
             let offsets = try tab.editCore.editor.selectionOffsets()
@@ -2654,6 +2872,50 @@ final class AttoEditorAreaViewController: NSViewController {
         completionContext = nil
         completionListController?.hide()
         completionListController = nil
+    }
+
+    private func cancelRenameUI() {
+        renamePollTimer?.cancel()
+        renamePollTimer = nil
+        renameContext = nil
+    }
+}
+
+enum AttoLspRenameSupport {
+    static func candidateName(documentText: String, selectedText: String, caretOffset: UInt32) -> String {
+        let selected = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if selected.isEmpty == false, selected.rangeOfCharacter(from: .newlines) == nil {
+            return selected
+        }
+
+        let chars = Array(documentText)
+        guard chars.isEmpty == false else { return "" }
+
+        let rawIndex = max(0, min(Int(caretOffset), chars.count))
+        var probe = rawIndex
+        if probe >= chars.count || isIdentifierCharacter(chars[probe]) == false {
+            probe = max(0, probe - 1)
+        }
+        guard probe < chars.count, isIdentifierCharacter(chars[probe]) else {
+            return ""
+        }
+
+        var start = probe
+        while start > 0, isIdentifierCharacter(chars[start - 1]) {
+            start -= 1
+        }
+
+        var end = probe + 1
+        while end < chars.count, isIdentifierCharacter(chars[end]) {
+            end += 1
+        }
+
+        return String(chars[start..<end])
+    }
+
+    private static func isIdentifierCharacter(_ ch: Character) -> Bool {
+        if ch == "_" { return true }
+        return ch.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) }
     }
 }
 
