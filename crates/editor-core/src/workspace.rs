@@ -20,12 +20,14 @@ use crate::commands::{
 };
 use crate::decorations::{Decoration, DecorationLayerId};
 use crate::delta::TextDelta;
-use crate::intervals::FoldRegion;
+use crate::diagnostics::Diagnostic;
+use crate::intervals::{FoldRegion, Interval, StyleLayerId};
 use crate::processing::ProcessingEdit;
 use crate::search::{SearchError, SearchMatch, SearchOptions, find_all};
 use crate::selection_set::selection_direction;
 use crate::snippets::SnippetSession;
 use crate::state::CursorState;
+use crate::symbols::DocumentOutline;
 use crate::{AnchorBias, TextAnchor};
 use crate::{
     IndentationConfig, LineEnding, LineIndex, Position, Selection, SelectionDirection,
@@ -842,6 +844,53 @@ impl Workspace {
             return Err(WorkspaceError::BufferNotFound(buffer_id));
         };
         Ok(buffer.executor.editor().decorations())
+    }
+
+    /// Get the current diagnostics list for a buffer.
+    pub fn diagnostics_for_buffer(
+        &self,
+        buffer_id: BufferId,
+    ) -> Result<&[Diagnostic], WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(buffer.executor.editor().diagnostics())
+    }
+
+    /// Get the current document outline for a buffer.
+    pub fn document_symbols_for_buffer(
+        &self,
+        buffer_id: BufferId,
+    ) -> Result<&DocumentOutline, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(buffer.executor.editor().document_symbols())
+    }
+
+    /// Get style intervals overlapping a buffer range, grouped by style layer.
+    pub fn style_intervals_for_buffer(
+        &self,
+        buffer_id: BufferId,
+        start: usize,
+        end: usize,
+    ) -> Result<BTreeMap<StyleLayerId, Vec<Interval>>, WorkspaceError> {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+
+        let mut layers = BTreeMap::new();
+        for (layer, tree) in buffer.executor.editor().style_layers() {
+            let intervals = tree
+                .query_range(start, end)
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            if !intervals.is_empty() {
+                layers.insert(*layer, intervals);
+            }
+        }
+        Ok(layers)
     }
 
     /// Get the current folding regions for a buffer (user folds + derived folds).

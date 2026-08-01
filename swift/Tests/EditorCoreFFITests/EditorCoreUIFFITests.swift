@@ -833,6 +833,102 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(pixel(rgba, widthPx: 200, x: 15, y: 10), [1, 200, 2, 255])
     }
 
+    func testDerivedStateSnapshotsExposeLspAndFoldingState() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "fn main() {\n  value\n}\n", viewportWidthCells: 80)
+
+        let diagnosticsParams = """
+        {
+          "uri": "file:///test.rs",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 1, "character": 2 },
+                "end": { "line": 1, "character": 7 }
+              },
+              "severity": 2,
+              "code": "unused",
+              "source": "unit-test",
+              "message": "value is unused"
+            }
+          ],
+          "version": 1
+        }
+        """
+        try ui.lspApplyDiagnosticsJSON(diagnosticsParams)
+
+        let diagnostics = try JSONTestHelpers.object(try ui.diagnosticsJSON())
+        let diagnosticList = try XCTUnwrap(diagnostics["diagnostics"] as? [[String: Any]])
+        XCTAssertEqual(diagnosticList.count, 1)
+        XCTAssertEqual(diagnosticList[0]["message"] as? String, "value is unused")
+        XCTAssertEqual(diagnosticList[0]["severity"] as? String, "warning")
+
+        let inlayHints = """
+        [
+          {
+            "position": { "line": 1, "character": 7 },
+            "label": ": i32",
+            "tooltip": "inferred type"
+          }
+        ]
+        """
+        try ui.lspApplyInlayHintsJSON(inlayHints)
+
+        let decorations = try JSONTestHelpers.object(try ui.decorationsJSON())
+        let decorationLayers = try XCTUnwrap(decorations["layers"] as? [[String: Any]])
+        let inlayLayer = try XCTUnwrap(decorationLayers.first { ($0["layer"] as? Int) == 1 })
+        let inlayDecorations = try XCTUnwrap(inlayLayer["decorations"] as? [[String: Any]])
+        XCTAssertEqual(inlayDecorations.first?["text"] as? String, ": i32")
+        let inlayKind = try XCTUnwrap(inlayDecorations.first?["kind"] as? [String: Any])
+        XCTAssertEqual(inlayKind["kind"] as? String, "inlay_hint")
+
+        let documentSymbols = """
+        [
+          {
+            "name": "main",
+            "detail": "fn()",
+            "kind": 12,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 2, "character": 1 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 3 },
+              "end": { "line": 0, "character": 7 }
+            },
+            "children": []
+          }
+        ]
+        """
+        try ui.lspApplyDocumentSymbolsJSON(documentSymbols)
+
+        let symbols = try JSONTestHelpers.object(try ui.documentSymbolsJSON())
+        let symbolList = try XCTUnwrap(symbols["symbols"] as? [[String: Any]])
+        XCTAssertEqual(symbolList.first?["name"] as? String, "main")
+        let symbolKind = try XCTUnwrap(symbolList.first?["kind"] as? [String: Any])
+        XCTAssertEqual(symbolKind["kind"] as? String, "function")
+
+        try ui.lspApplySemanticTokens([0, 3, 4, 7, 0])
+
+        let styleIntervals = try JSONTestHelpers.object(try ui.styleIntervalsJSON(start: 0, end: 24))
+        let styleLayers = try XCTUnwrap(styleIntervals["layers"] as? [[String: Any]])
+        let semanticLayer = try XCTUnwrap(styleLayers.first { ($0["layer"] as? Int) == 1 })
+        let semanticIntervals = try XCTUnwrap(semanticLayer["intervals"] as? [[String: Any]])
+        XCTAssertEqual(semanticIntervals.first?["start"] as? Int, 3)
+        XCTAssertEqual(semanticIntervals.first?["end"] as? Int, 7)
+        XCTAssertEqual(semanticIntervals.first?["style_id"] as? Int, 0x0007_0000)
+
+        try ui.fold(startLine: 0, endLine: 2)
+
+        let folding = try JSONTestHelpers.object(try ui.foldingRegionsJSON())
+        let regions = try XCTUnwrap(folding["regions"] as? [[String: Any]])
+        XCTAssertTrue(regions.contains {
+            ($0["start_line"] as? Int) == 0
+                && ($0["end_line"] as? Int) == 2
+                && ($0["is_collapsed"] as? Bool) == true
+        })
+    }
+
     func testLspSemanticTokensAffectRendering() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         // Use a space in the highlighted range so glyph rasterization does not affect the pixel sample.

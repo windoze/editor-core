@@ -13,16 +13,18 @@ use editor_core::snapshot::{ComposedCellSource, ComposedGrid, ComposedLineKind, 
 use editor_core::workspace::{BufferId, ViewId, Workspace};
 use editor_core::{
     AutoPairsConfig, Command, CommandResult, CursorCommand, DecorationKind, DecorationLayerId,
-    EditCommand, ExpandSelectionDirection, ExpandSelectionUnit, IME_MARKED_TEXT_STYLE_ID, Interval,
-    MATCH_HIGHLIGHT_STYLE_ID, Position, ProcessingEdit, SearchOptions, Selection,
-    SelectionDirection, StyleCommand, StyleLayerId, ViewCommand,
+    DecorationPlacement, DiagnosticSeverity, DocumentSymbol, EditCommand, ExpandSelectionDirection,
+    ExpandSelectionUnit, FoldRegion, IME_MARKED_TEXT_STYLE_ID, Interval, MATCH_HIGHLIGHT_STYLE_ID,
+    Position, ProcessingEdit, SearchOptions, Selection, SelectionDirection, StyleCommand,
+    StyleLayerId, SymbolKind, ViewCommand,
 };
 use editor_core_lsp::{
     DeltaCalculator, LspContentChange, LspDocument, LspEvent, LspNotification, LspSession,
     LspSessionStartOptions, char_offsets_for_lsp_range, encode_semantic_style_id,
     lsp_code_lens_to_processing_edit, lsp_diagnostics_to_processing_edits,
     lsp_document_highlights_to_processing_edit, lsp_document_links_to_processing_edits,
-    lsp_inlay_hints_to_processing_edit, semantic_tokens_to_intervals, text_edits_from_value,
+    lsp_document_symbols_to_processing_edit, lsp_inlay_hints_to_processing_edit,
+    semantic_tokens_to_intervals, text_edits_from_value,
 };
 use editor_core_render_skia::{
     FOLD_MARKER_COLLAPSED_STYLE_ID, FOLD_MARKER_EXPANDED_STYLE_ID, FoldMarker, FoldMarkerStyle,
@@ -63,6 +65,122 @@ pub enum UiError {
     Render(#[from] RenderError),
     #[error("processor error: {0}")]
     Processor(String),
+}
+
+fn value_offset_range(start: usize, end: usize) -> serde_json::Value {
+    serde_json::json!({ "start": start, "end": end })
+}
+
+fn diagnostic_severity_to_str(value: DiagnosticSeverity) -> &'static str {
+    match value {
+        DiagnosticSeverity::Error => "error",
+        DiagnosticSeverity::Warning => "warning",
+        DiagnosticSeverity::Information => "information",
+        DiagnosticSeverity::Hint => "hint",
+    }
+}
+
+fn value_diagnostic(diagnostic: &editor_core::Diagnostic) -> serde_json::Value {
+    serde_json::json!({
+        "range": value_offset_range(diagnostic.range.start, diagnostic.range.end),
+        "severity": diagnostic.severity.map(diagnostic_severity_to_str),
+        "code": diagnostic.code,
+        "source": diagnostic.source,
+        "message": diagnostic.message,
+        "related_information_json": diagnostic.related_information_json,
+        "data_json": diagnostic.data_json
+    })
+}
+
+fn decoration_placement_to_str(value: DecorationPlacement) -> &'static str {
+    match value {
+        DecorationPlacement::Before => "before",
+        DecorationPlacement::After => "after",
+        DecorationPlacement::AboveLine => "above_line",
+    }
+}
+
+fn decoration_kind_to_json(value: DecorationKind) -> serde_json::Value {
+    match value {
+        DecorationKind::InlayHint => serde_json::json!({ "kind": "inlay_hint" }),
+        DecorationKind::CodeLens => serde_json::json!({ "kind": "code_lens" }),
+        DecorationKind::DocumentLink => serde_json::json!({ "kind": "document_link" }),
+        DecorationKind::Highlight => serde_json::json!({ "kind": "highlight" }),
+        DecorationKind::Custom(v) => serde_json::json!({ "kind": "custom", "value": v }),
+    }
+}
+
+fn value_decoration(decoration: &editor_core::Decoration) -> serde_json::Value {
+    serde_json::json!({
+        "range": value_offset_range(decoration.range.start, decoration.range.end),
+        "placement": decoration_placement_to_str(decoration.placement),
+        "kind": decoration_kind_to_json(decoration.kind),
+        "text": decoration.text,
+        "styles": decoration.styles,
+        "tooltip": decoration.tooltip,
+        "data_json": decoration.data_json
+    })
+}
+
+fn value_fold_region(region: &FoldRegion) -> serde_json::Value {
+    serde_json::json!({
+        "start_line": region.start_line,
+        "end_line": region.end_line,
+        "is_collapsed": region.is_collapsed,
+        "placeholder": region.placeholder
+    })
+}
+
+fn value_interval(interval: &Interval) -> serde_json::Value {
+    serde_json::json!({
+        "start": interval.start,
+        "end": interval.end,
+        "style_id": interval.style_id
+    })
+}
+
+fn symbol_kind_to_json(value: SymbolKind) -> serde_json::Value {
+    match value {
+        SymbolKind::File => serde_json::json!({ "kind": "file" }),
+        SymbolKind::Module => serde_json::json!({ "kind": "module" }),
+        SymbolKind::Namespace => serde_json::json!({ "kind": "namespace" }),
+        SymbolKind::Package => serde_json::json!({ "kind": "package" }),
+        SymbolKind::Class => serde_json::json!({ "kind": "class" }),
+        SymbolKind::Method => serde_json::json!({ "kind": "method" }),
+        SymbolKind::Property => serde_json::json!({ "kind": "property" }),
+        SymbolKind::Field => serde_json::json!({ "kind": "field" }),
+        SymbolKind::Constructor => serde_json::json!({ "kind": "constructor" }),
+        SymbolKind::Enum => serde_json::json!({ "kind": "enum" }),
+        SymbolKind::Interface => serde_json::json!({ "kind": "interface" }),
+        SymbolKind::Function => serde_json::json!({ "kind": "function" }),
+        SymbolKind::Variable => serde_json::json!({ "kind": "variable" }),
+        SymbolKind::Constant => serde_json::json!({ "kind": "constant" }),
+        SymbolKind::String => serde_json::json!({ "kind": "string" }),
+        SymbolKind::Number => serde_json::json!({ "kind": "number" }),
+        SymbolKind::Boolean => serde_json::json!({ "kind": "boolean" }),
+        SymbolKind::Array => serde_json::json!({ "kind": "array" }),
+        SymbolKind::Object => serde_json::json!({ "kind": "object" }),
+        SymbolKind::Key => serde_json::json!({ "kind": "key" }),
+        SymbolKind::Null => serde_json::json!({ "kind": "null" }),
+        SymbolKind::EnumMember => serde_json::json!({ "kind": "enum_member" }),
+        SymbolKind::Struct => serde_json::json!({ "kind": "struct" }),
+        SymbolKind::Event => serde_json::json!({ "kind": "event" }),
+        SymbolKind::Operator => serde_json::json!({ "kind": "operator" }),
+        SymbolKind::TypeParameter => serde_json::json!({ "kind": "type_parameter" }),
+        SymbolKind::Custom(v) => serde_json::json!({ "kind": "custom", "value": v }),
+    }
+}
+
+fn value_document_symbol(symbol: &DocumentSymbol) -> serde_json::Value {
+    serde_json::json!({
+        "name": symbol.name,
+        "detail": symbol.detail,
+        "kind": symbol_kind_to_json(symbol.kind),
+        "range": value_offset_range(symbol.range.start, symbol.range.end),
+        "selection_range": value_offset_range(symbol.selection_range.start, symbol.selection_range.end),
+        "children": symbol.children.iter().map(value_document_symbol).collect::<Vec<_>>(),
+        "data_json": symbol.data_json
+    })
 }
 
 /// UI chrome colors (gutter, fold markers, etc.) rendered outside the document text grid.
@@ -865,6 +983,97 @@ impl EditorUi {
 
         serde_json::to_string(&command_json::command_result_to_value(result))
             .map_err(|err| UiError::Processor(format!("failed to encode command result: {err}")))
+    }
+
+    /// Export current diagnostics for the active buffer.
+    pub fn diagnostics_json(&self) -> Result<String, UiError> {
+        let doc = self.lock_doc();
+        let diagnostics = doc
+            .ws
+            .diagnostics_for_buffer(self.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        let value = serde_json::json!({
+            "diagnostics": diagnostics.iter().map(value_diagnostic).collect::<Vec<_>>()
+        });
+        serde_json::to_string(&value)
+            .map_err(|err| UiError::Processor(format!("failed to encode diagnostics: {err}")))
+    }
+
+    /// Export current decoration layers for the active buffer.
+    pub fn decorations_json(&self) -> Result<String, UiError> {
+        let doc = self.lock_doc();
+        let decorations = doc
+            .ws
+            .buffer_decorations(self.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        let value = serde_json::json!({
+            "layers": decorations
+                .iter()
+                .map(|(layer, decorations)| {
+                    serde_json::json!({
+                        "layer": layer.0,
+                        "decorations": decorations.iter().map(value_decoration).collect::<Vec<_>>()
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+        serde_json::to_string(&value)
+            .map_err(|err| UiError::Processor(format!("failed to encode decorations: {err}")))
+    }
+
+    /// Export current document symbols for the active buffer.
+    pub fn document_symbols_json(&self) -> Result<String, UiError> {
+        let doc = self.lock_doc();
+        let outline = doc
+            .ws
+            .document_symbols_for_buffer(self.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        let value = serde_json::json!({
+            "symbols": outline
+                .symbols
+                .iter()
+                .map(value_document_symbol)
+                .collect::<Vec<_>>()
+        });
+        serde_json::to_string(&value)
+            .map_err(|err| UiError::Processor(format!("failed to encode document symbols: {err}")))
+    }
+
+    /// Export current folding regions for the active buffer.
+    pub fn folding_regions_json(&self) -> Result<String, UiError> {
+        let doc = self.lock_doc();
+        let regions = doc
+            .ws
+            .folding_regions_for_buffer(self.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        let value = serde_json::json!({
+            "regions": regions.iter().map(value_fold_region).collect::<Vec<_>>()
+        });
+        serde_json::to_string(&value)
+            .map_err(|err| UiError::Processor(format!("failed to encode folding regions: {err}")))
+    }
+
+    /// Export style intervals overlapping the given character-offset range.
+    pub fn style_intervals_json(&self, start: usize, end: usize) -> Result<String, UiError> {
+        let (start, end) = (start.min(end), start.max(end));
+        let doc = self.lock_doc();
+        let layers = doc
+            .ws
+            .style_intervals_for_buffer(self.buffer_id, start, end)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        let value = serde_json::json!({
+            "layers": layers
+                .iter()
+                .map(|(layer, intervals)| {
+                    serde_json::json!({
+                        "layer": layer.0,
+                        "intervals": intervals.iter().map(value_interval).collect::<Vec<_>>()
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+        serde_json::to_string(&value)
+            .map_err(|err| UiError::Processor(format!("failed to encode style intervals: {err}")))
     }
 
     fn apply_processing_edits<I>(&mut self, edits: I) -> Result<(), UiError>
@@ -3001,6 +3210,19 @@ impl EditorUi {
             serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
         let edit = self.with_line_index(|line_index| {
             lsp_document_highlights_to_processing_edit(line_index, &result_value)
+        })?;
+        self.apply_processing_edits([edit])?;
+        Ok(())
+    }
+
+    /// Apply LSP document symbol result payload (`DocumentSymbol[] | SymbolInformation[] | null`).
+    ///
+    /// The caller should pass the raw `result` JSON from `textDocument/documentSymbol`.
+    pub fn lsp_apply_document_symbols_json(&mut self, result_json: &str) -> Result<(), UiError> {
+        let result_value: serde_json::Value =
+            serde_json::from_str(result_json).map_err(|e| UiError::Processor(e.to_string()))?;
+        let edit = self.with_line_index(|line_index| {
+            lsp_document_symbols_to_processing_edit(line_index, &result_value)
         })?;
         self.apply_processing_edits([edit])?;
         Ok(())

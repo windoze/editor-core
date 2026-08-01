@@ -4,7 +4,7 @@
 
 本文记录当前 Swift 侧、FFI 层、`editor-core-ui` 适配层以及 AttoEditor App 层相对 `editor-core-*` 能力的功能缺口。这里的 “Swift UI” 指仓库中的 Swift/AppKit/Skia/Metal 集成，不是 Apple SwiftUI 框架。
 
-本文关注的是“能否从 Swift 产品层完整使用 `editor-core-*` 能力”，不是评价 Rust core 自身是否完整。总体结论是：**当前 Swift 路径已经能支撑一个可用编辑器主流程，但还不是 `editor-core-*` 的完整能力投影**。尤其对于“复刻 Sublime Text”这个目标，缺口主要集中在命令面、LSP 产品化、派生状态可观测性、多文档/分屏归属、Sublime 兼容行为和视觉/交互测试体系。
+本文关注的是“能否从 Swift 产品层完整使用 `editor-core-*` 能力”，不是评价 Rust core 自身是否完整。总体结论是：**当前 Swift 路径已经能支撑一个可用编辑器主流程，但还不是 `editor-core-*` 的完整能力投影**。尤其对于“复刻 Sublime Text”这个目标，缺口主要集中在命令面、LSP 产品化、派生状态产品化/消费、多文档/分屏归属、Sublime 兼容行为和视觉/交互测试体系。
 
 ## 范围
 
@@ -33,7 +33,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 本地验证过：
   - `swift test --filter AttoEditorTests` 通过，41 个测试。
   - `swift test --filter EditorCoreUITests` 通过，64 个测试。
-  - `swift test --filter EditorCoreUIFFITests` 通过，44 个测试。
+  - `swift test --filter EditorCoreUIFFITests` 通过，45 个测试。
 
 这说明当前 Swift 路径不是“不可用”，而是“主流程可用、完整能力映射不足”。
 
@@ -50,6 +50,10 @@ Swift 侧已经具备以下基础能力：
 - 阶段 3 已覆盖 replace coalescing、type char、insert newline with auto-indent、line commands、toggle comment、apply text edits、apply snippet、snippet placeholder navigation、move to/by、occurrence options、wrap mode/indent、indentation config、auto-pairs config、viewport query、fold/unfold、bracket highlight update/clear。
 - 2026-08-01 阶段 4 已完成：AttoEditor 主菜单改为通过 command id 调用统一命令入口，新增 `AttoKeymap` 解析默认/用户 keymap，并让菜单快捷键使用同一组 command id。
 - 阶段 4 已覆盖 P0 基础编辑命令、wrap/fold 命令、file/search/go/view/workbench 命令的菜单接线；其中常用命令已有默认 key binding，其余命令可通过 `~/Library/Application Support/codes.unwritten.attoeditor/keymap.json` 或 `ATTO_EDITOR_KEYMAP_PATH` 覆盖 key binding。
+- 2026-08-01 阶段 5 已完成：Swift UI binding 新增派生状态 JSON snapshot API，覆盖 diagnostics、decorations、document symbols、folding regions、style intervals。
+- 阶段 5 已新增 `EditorUI.diagnosticsJSON()`、`decorationsJSON()`、`documentSymbolsJSON()`、`foldingRegionsJSON()`、`styleIntervalsJSON(start:end:)`，并新增 `lspApplyDocumentSymbolsJSON(_:)` 让 Swift UI 可把 LSP `textDocument/documentSymbol` result 写入 core outline。
+- 阶段 5 已用 Rust `cargo test -p editor-core-ui -p editor-core-ui-ffi` 和 Swift `swift test --filter EditorCoreUIFFITests` 覆盖，其中 Swift 新增测试验证 “LSP/processing 派生状态 -> Rust UI -> C ABI -> Swift” 的完整路径。
+- 阶段 5 尚未完成 App 层统一 derived-state store、Problems/Outline 面板、minimap markers、gutter diagnostic icons、状态栏消费和更高层 Swift typed model。
 
 ## 分层结论
 
@@ -65,7 +69,7 @@ Swift 侧已经具备以下基础能力：
 
 ### 2. `editor-core-ui` 到 Swift `EditorUI`
 
-`editor-core-ui` 本身比 Swift `EditorUI` 暴露更多能力。阶段 1 已经补上 Swift UI 通用 JSON dispatcher，因此很多 core/FFI 已有能力现在可以到达 Swift `EditorUI`；阶段 3 已为高频命令补上 Swift typed convenience API；阶段 4 已把 P0 App 命令接入主菜单和默认/用户 keymap。但 AttoEditor App 命令系统在启用状态、参数、上下文和 LSP/项目命令覆盖上仍未完整。
+`editor-core-ui` 本身比 Swift `EditorUI` 暴露更多能力。阶段 1 已经补上 Swift UI 通用 JSON dispatcher，因此很多 core/FFI 已有能力现在可以到达 Swift `EditorUI`；阶段 3 已为高频命令补上 Swift typed convenience API；阶段 4 已把 P0 App 命令接入主菜单和默认/用户 keymap；阶段 5 已补上主要派生状态的 Swift JSON snapshot API。但 AttoEditor App 命令系统在启用状态、参数、上下文、LSP/项目命令覆盖和派生状态消费上仍未完整。
 
 主要问题：
 
@@ -137,6 +141,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - code lens 派生显示。
 - document links hit-test。
 - document highlights。
+- document symbols result 到 core outline 的应用和 JSON 导出。
 - `LSPBridge` 中有若干 JSON/DTO 转换 helper。
 
 仍缺产品化或缺公开 API 的 LSP 能力：
@@ -150,7 +155,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - rename / prepare rename。
 - code action / code action resolve / execute command。
 - code lens resolve / command execution。
-- document symbols UI。
+- outline / document symbols UI。
 - workspace symbols UI。
 - range formatting。
 - on-type formatting。
@@ -183,16 +188,22 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - decorations。
 - document symbols。
 
-Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、semantic tokens、inlay hints、code lens、document links、document highlights，以及 Tree-sitter/Sublime 产生的样式信息。
+Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、semantic tokens、inlay hints、code lens、document links、document highlights、document symbols，以及 Tree-sitter/Sublime 产生的样式信息。
 
-缺口是可观测性和统一控制：
+阶段 5 已补齐 Swift UI binding 的主要可观测 API：
 
-- `EditorUI` 没有统一 API 获取当前 diagnostics 列表。
-- `EditorUI` 没有统一 API 获取当前 decorations。
-- `EditorUI` 没有统一 API 获取当前 document symbols。
-- `EditorUI` 没有统一 API 获取当前 fold regions。
-- `EditorUI` 没有统一 API 获取当前 style layers 或样式区间。
+- `EditorUI.diagnosticsJSON()` 获取当前 diagnostics 列表。
+- `EditorUI.decorationsJSON()` 获取当前 decoration layers。
+- `EditorUI.documentSymbolsJSON()` 获取当前 document symbols。
+- `EditorUI.foldingRegionsJSON()` 获取当前 fold regions。
+- `EditorUI.styleIntervalsJSON(start:end:)` 获取当前 style layers 的样式区间。
+- `EditorUI.lspApplyDocumentSymbolsJSON(_:)` 可把 LSP document symbols result 写入 core outline。
+
+剩余缺口已经从“Swift binding 拿不到”转为 App 层消费、模型化和统一控制：
+
+- Swift 侧目前仍以 JSON snapshot 为主，缺少 diagnostics、decorations、symbols、fold regions、style intervals 的高层 typed model。
 - App 层没有一个统一的 derived-state store，供 outline、problems panel、minimap markers、gutter icons、status bar、测试断言共同使用。
+- App 层还没有统一的派生状态刷新策略、过期响应处理、增量更新通知和错误展示。
 
 这会影响 Sublime 复刻中的这些功能：
 

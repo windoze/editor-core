@@ -247,6 +247,10 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_json(
     EditorUi* ui,
     const char* document_highlights_result_json_utf8
 );
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_json(
+    EditorUi* ui,
+    const char* document_symbols_result_json_utf8
+);
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(EditorUi* ui,
                                                                const uint32_t* data,
                                                                uint32_t data_len);
@@ -305,6 +309,17 @@ int32_t editor_core_ui_ffi_editor_ui_insert_text(EditorUi* ui, const char* text_
 // `editor_core_ui_ffi_string_free`.
 char* editor_core_ui_ffi_editor_ui_execute_command_json(EditorUi* ui,
                                                         const char* command_json_utf8);
+// Derived state snapshots as JSON.
+//
+// The returned strings are owned by the caller and must be freed with
+// `editor_core_ui_ffi_string_free`.
+char* editor_core_ui_ffi_editor_ui_diagnostics_json(EditorUi* ui);
+char* editor_core_ui_ffi_editor_ui_decorations_json(EditorUi* ui);
+char* editor_core_ui_ffi_editor_ui_document_symbols_json(EditorUi* ui);
+char* editor_core_ui_ffi_editor_ui_folding_regions_json(EditorUi* ui);
+char* editor_core_ui_ffi_editor_ui_style_intervals_json(EditorUi* ui,
+                                                        uint32_t start,
+                                                        uint32_t end);
 int32_t editor_core_ui_ffi_editor_ui_insert_tab(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_insert_backtab(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_has_active_snippet_session(EditorUi* ui,

@@ -353,6 +353,13 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_lsp_apply_document_highlights_json")
     }
 
+    public func lspApplyDocumentSymbolsJSON(_ documentSymbolsResultJSON: String) throws {
+        let status = documentSymbolsResultJSON.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_json(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_apply_document_symbols_json")
+    }
+
     public func lspApplySemanticTokens(_ data: [UInt32]) throws {
         let status = data.withUnsafeBufferPointer { ptr in
             editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(handle, ptr.baseAddress, UInt32(ptr.count))
@@ -559,6 +566,66 @@ public final class EditorUI {
             throw EditorCoreUIFFIError.ffiStatus(
                 code: .internal,
                 context: "editor_ui_execute_command_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func diagnosticsJSON() throws -> String {
+        guard let ptr = editor_core_ui_ffi_editor_ui_diagnostics_json(handle) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_diagnostics_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func decorationsJSON() throws -> String {
+        guard let ptr = editor_core_ui_ffi_editor_ui_decorations_json(handle) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_decorations_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func documentSymbolsJSON() throws -> String {
+        guard let ptr = editor_core_ui_ffi_editor_ui_document_symbols_json(handle) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_document_symbols_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func foldingRegionsJSON() throws -> String {
+        guard let ptr = editor_core_ui_ffi_editor_ui_folding_regions_json(handle) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_folding_regions_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func styleIntervalsJSON(start: UInt32, end: UInt32) throws -> String {
+        guard let ptr = editor_core_ui_ffi_editor_ui_style_intervals_json(handle, start, end) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_style_intervals_json",
                 message: library.lastErrorMessageString()
             )
         }
