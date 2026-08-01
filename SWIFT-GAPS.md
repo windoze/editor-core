@@ -90,7 +90,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 14 后续缺口中，显式 formatting 错误展示和 formatting typed outcome 已在阶段 60 补齐；formatting 本身仍是当前文档 `TextEdit` apply API，不走跨文件 `WorkspaceEdit` 产品路径。
 - 2026-08-01 阶段 15 已完成：Swift UI binding 新增 LSP folding ranges request/take/apply 通道，覆盖 Rust `editor-core-lsp` 已有的 `textDocument/foldingRange` 请求路径和 `ProcessingEdit::ReplaceFoldingRegions` 应用路径。
 - 阶段 15 已新增 `EditorUi.lsp_request_folding_ranges()` / `lsp_apply_folding_ranges_json(...)`、C ABI `editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges` / `editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json` / `editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json`、Swift `EditorUI.lspRequestFoldingRanges()` / `lspTakeLastFoldingRangesResultJSON()` / `lspApplyFoldingRangesJSON(_:)`。
-- 阶段 15 已让手动 `textDocument/foldingRange` result 可以写入 core fold regions，并通过 `foldingRegionsJSON()` / typed `foldingRegionsSnapshot()` 被 Swift 读取；App 层 refresh/error UI、菜单入口和 status bar 折叠摘要已补齐。仍缺更完整的 gutter fold marker 视觉回归和 result lifecycle model。
+- 阶段 15 已让手动 `textDocument/foldingRange` result 可以写入 core fold regions，并通过 `foldingRegionsJSON()` / typed `foldingRegionsSnapshot()` 被 Swift 读取；App 层 refresh/error UI、菜单入口和 status bar 折叠摘要已补齐；gutter fold marker 视觉回归 baseline 已在阶段 103 补齐。仍缺 result lifecycle model。
 - 2026-08-01 阶段 16 已完成：Swift UI binding 新增高级 LSP raw request/take 覆盖，打通 Rust `editor-core-lsp` 已有的 code lens resolve、selection range、linked editing range、pull diagnostics、document color/color presentation、call hierarchy 和 type hierarchy 请求路径。
 - 阶段 16 已新增 `EditorUi`、C ABI 和 Swift `EditorUI` 对应 API；这些能力目前仍停留在 raw JSON result 层，App 层 panel/popup/inline UI、typed model、错误展示和 cross-file/workspace 结果产品化仍未完成。
 - 2026-08-01 阶段 17 已完成：AttoEditor App 的 `lsp.rename` 弹窗接入 `textDocument/prepareRename`，会优先使用 server 返回的 `placeholder` 或 `range` 文本作为默认 rename 名称；支持 LSP `Range`、`{ range, placeholder }` 和 `{ defaultBehavior: true }` 返回形态。
@@ -182,6 +182,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 100 已完成：AttoEditor 新增通用 `editor.apply_snippet` App command 和 Edit 菜单入口；命令可通过输入框接收 editor-core snippet 字符串，并应用到当前 primary selection range，继续使用既有 `EditorUI.applySnippet` 和 snippet placeholder session。测试覆盖命令/菜单注册、文本插入和 active snippet session。
 - 2026-08-02 阶段 101 已完成：AttoEditor 的 `editor.add_next_occurrence` / `editor.add_all_occurrences` 命令从静态 JSON 默认参数改为调用 Swift typed API，并消费 Find bar 当前 case-sensitive / whole-word / regex search options。测试覆盖关闭 `Aa` 后 add-all occurrence 会按大小写不敏感选中所有匹配。
 - 2026-08-02 阶段 102 已完成：AttoEditor comment toggle 新增用户语言级 comment configuration override，`AttoPreferences` 可按 normalized language key 存储 line/block comment token，`editor.toggle_line_comment` 会优先使用用户覆盖再回落到内置语言默认。测试覆盖 preferences 存取归一化/清除，以及 `.py` 文件按用户覆盖 token 注释。
+- 2026-08-02 阶段 103 已完成：`editor-core-render-skia` 为 gutter fold marker 增加确定性像素回归覆盖，包含默认 triangle 样式 collapsed/expanded raster 差异、hidden marker 不绘制、composed grid 中 virtual line 不绘制而 document line 绘制 marker，以及 fold marker 状态变化时 partial-row redraw 与完整重绘一致。已验证 `cargo test -p editor-core-render-skia fold_marker --release`。
 
 ## 分层结论
 
@@ -245,7 +246,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | `SetIndentationConfig` | 有 | 有 | Swift 有 typed `setIndentationConfig(_:)`；AttoEditor 会按 syntax language id 或文件扩展名应用基础语言 indentation config 到新建 editor、手动语言切换和 split clone | 基础语言配置接线已补齐；仍可继续扩展语言表和用户覆盖配置。 |
 | `SetAutoPairsConfig` | 有 | 有 | Swift headless/UI 都有 typed config API；UI 也有 enabled bool | headless/UI command 覆盖已对齐。 |
 | `SetAutoPairsEnabled` | 有 | 有 | Swift headless/UI 都有 bool API；AttoEditor preferences 有持久化开关并会应用到新建和已打开 editor | App settings 接线已补齐；headless/UI command 覆盖已对齐。 |
-| fold / unfold / unfold all | 有 | 有 | Swift 有 typed `fold` / `unfold` / `unfoldAll`；AttoEditor command palette、菜单和 keymap 有 fold selection/unfold/unfold all；Swift UI binding 已可把 LSP folding ranges 应用到 core fold regions，AttoEditor refresh 命令会按 typed LSP folding capability 拦截 unsupported server | P0 接线完成；仍缺 gutter fold marker 视觉回归和 result lifecycle model。 |
+| fold / unfold / unfold all | 有 | 有 | Swift 有 typed `fold` / `unfold` / `unfoldAll`；AttoEditor command palette、菜单和 keymap 有 fold selection/unfold/unfold all；Swift UI binding 已可把 LSP folding ranges 应用到 core fold regions，AttoEditor refresh 命令会按 typed LSP folding capability 拦截 unsupported server；gutter fold marker 视觉回归 baseline 已补齐 | P0 接线完成；仍缺 result lifecycle model。 |
 | bracket match highlight update/clear | 有 | 有 | Swift headless/UI 都有 typed `updateBracketMatchHighlights` / `clearBracketMatchHighlights`；Swift UI 另有 enabled bool 和内部更新 | headless/UI command 覆盖已对齐。 |
 
 建议不要为每个低频命令都新增一个独立 C ABI 函数。更合理的方向是：
@@ -298,7 +299,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - workspace symbols 已有增量查询输入面板、quick panel 主路径、kind 分组/稳定排序、基础错误/超时/空结果反馈、最近结果 snapshot、reopen command 和 bounded in-memory history command；仍缺持久结果面板和完整结果模型。
 - on-type formatting 已有 explicit binding、换行触发和 server trigger characters 自动触发路径；显式 Swift binding 的 `EditorCoreLSPFormattingResult` typed outcome 已完成，自动 on-type 异步 response error 已进入 LSP status/detail，AttoEditor 会刷新 status 并对新的 failure detail 弹一次去重 HUD；Swift 已有 typed `lspStatusSnapshot()`，AttoEditor 的 LSP status/capabilities 行为路径也已迁到 typed snapshot。后续仍缺更通用的 LSP event stream、request lifecycle 和状态变更订阅模型。
 - semantic tokens refresh / delta 策略。
-- folding ranges binding 已覆盖 request/take/apply 到 fold UI state，AttoEditor 已有显式 refresh 命令、typed capability gate、菜单入口、错误/超时反馈、typed fold snapshot 和 status bar 折叠摘要；仍缺更完整的 gutter fold marker 视觉回归和 result lifecycle model。
+- folding ranges binding 已覆盖 request/take/apply 到 fold UI state，AttoEditor 已有显式 refresh 命令、typed capability gate、菜单入口、错误/超时反馈、typed fold snapshot、status bar 折叠摘要和 renderer 层 gutter fold marker 视觉回归 baseline；仍缺更完整的 result lifecycle model。
 - selection range raw request/take 已有；App 层 `lsp.selection_range` expand-selection 主路径、typed candidate model 和多光标 selection range 策略已完成，仍缺更完整 result lifecycle model。
 - linked editing raw request/take 已有；App 层 `lsp.linked_editing` 主路径、typed parser、wordPattern/shared-text 校验、基于 multi-cursor selections 的基础同步编辑策略和轻量 session 生命周期/退出条件已完成；仍缺更完整 result lifecycle model。
 - document diagnostic pull / workspace diagnostic raw request/take 已有；active-tab Problems quick panel 已消费 typed diagnostics，workspace diagnostics 也已有基础 quick panel 和 typed parser；仍缺持久 Problems panel、增量刷新、core workspace-owned project 级归属和更完整 typed model。
@@ -578,7 +579,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - code action typed diagnostics context、kind/filter、跨文件 WorkspaceEdit 摘要预览、打开 tab / 本地 `file://` 文档 text edits 应用、打开 tab / 本地未打开文件 resource operations 和 command payload 执行结果/错误展示已完成；仍缺 core workspace-owned 跨文件事务和 typed result model。
 - document/workspace symbols 基础错误/超时/空结果反馈、最近结果 snapshot、reopen command、bounded in-memory history command、workspace symbols 增量查询面板和 kind 分组/稳定排序已完成；仍缺持久 Outline/Symbols 面板和更深 result lifecycle model。
 - range formatting Swift/App 主路径已完成；on-type formatting binding、换行触发、server trigger characters 自动触发路径、显式 Swift/App 错误展示和 formatting typed outcome 已完成；自动 on-type 异步 response error 已进入 LSP status/detail，并有 status refresh + 去重 HUD；Swift 已有 typed `lspStatusSnapshot()`，AttoEditor 的 LSP status/capabilities 行为路径也已迁到 typed snapshot。后续仍缺更通用的 LSP event stream、request lifecycle 和状态变更订阅模型。
-- folding ranges request/take/apply 到 fold state、App refresh 命令、typed capability gate、错误反馈、typed fold snapshot 和 status bar 折叠摘要已完成；仍缺更完整的 gutter fold marker 视觉回归和 result lifecycle model。
+- folding ranges request/take/apply 到 fold state、App refresh 命令、typed capability gate、错误反馈、typed fold snapshot、status bar 折叠摘要和 renderer 层 gutter fold marker 视觉回归 baseline 已完成；仍缺更完整的 result lifecycle model。
 - code lens refresh/resolve、selection range、linked editing、diagnostics pull、document color/color presentation、call hierarchy、type hierarchy 的 raw request/take binding 已完成；code lens 已有手动刷新入口、HUD 反馈、active actions quick panel、当前行键盘定位命令、inline Cmd-click 执行路径、typed parser、自动辅助刷新消费和状态栏数量反馈，selection range 已有 App expand-selection 命令、typed candidate model 和多光标策略，linked editing 已有 App multi-cursor selection 主路径、wordPattern/shared-text 校验和轻量 session lifecycle，document color/color presentation 已有 App quick panel、直接 color picker 和 edit apply 主路径，call/type hierarchy 已有基础 quick panel 导航和 typed parser，diagnostics 已有 active-tab Problems quick panel 和 workspace diagnostics quick panel；仍缺持久 project Problems store/panel、增量刷新和 core workspace-owned 归属。
 - LSP result panels 和错误展示。
 

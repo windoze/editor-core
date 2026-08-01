@@ -6,6 +6,8 @@ use editor_core::snapshot::{
 use skia_safe::TextBlobIter;
 use skia_safe::shaper::TextBlobBuilderRunHandler;
 
+mod fold_markers;
+
 #[test]
 fn normalize_font_family_name_strips_quotes() {
     assert_eq!(normalize_font_family_name("Menlo"), "Menlo");
