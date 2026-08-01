@@ -8,7 +8,9 @@ struct AttoCommandPaletteCommand {
     let swatchColor: NSColor?
     let isEnabled: Bool
     let requiresEditor: Bool
+    let schema: AttoCommandSchema
     let run: () -> Void
+    let runWithArguments: (AttoCommandArguments) -> Void
 
     init(
         id: String,
@@ -17,6 +19,7 @@ struct AttoCommandPaletteCommand {
         swatchColor: NSColor? = nil,
         isEnabled: Bool = true,
         requiresEditor: Bool = false,
+        schema: AttoCommandSchema = AttoCommandSchema(),
         run: @escaping () -> Void
     ) {
         self.id = id
@@ -25,7 +28,30 @@ struct AttoCommandPaletteCommand {
         self.swatchColor = swatchColor
         self.isEnabled = isEnabled
         self.requiresEditor = requiresEditor
+        self.schema = schema
         self.run = run
+        self.runWithArguments = { _ in run() }
+    }
+
+    init(
+        id: String,
+        title: String,
+        group: String = "General",
+        swatchColor: NSColor? = nil,
+        isEnabled: Bool = true,
+        requiresEditor: Bool = false,
+        schema: AttoCommandSchema,
+        runWithArguments: @escaping (AttoCommandArguments) -> Void
+    ) {
+        self.id = id
+        self.title = title
+        self.group = group
+        self.swatchColor = swatchColor
+        self.isEnabled = isEnabled
+        self.requiresEditor = requiresEditor
+        self.schema = schema
+        self.run = { runWithArguments([:]) }
+        self.runWithArguments = runWithArguments
     }
 
     init(
@@ -34,6 +60,7 @@ struct AttoCommandPaletteCommand {
         swatchColor: NSColor? = nil,
         isEnabled: Bool = true,
         requiresEditor: Bool = false,
+        schema: AttoCommandSchema = AttoCommandSchema(),
         run: @escaping () -> Void
     ) {
         self.id = title
@@ -42,7 +69,9 @@ struct AttoCommandPaletteCommand {
         self.swatchColor = swatchColor
         self.isEnabled = isEnabled
         self.requiresEditor = requiresEditor
+        self.schema = schema
         self.run = run
+        self.runWithArguments = { _ in run() }
     }
 }
 

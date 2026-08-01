@@ -35,6 +35,17 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         let id: String
         let title: String
         let commandJSON: String
+        let schema: AttoCommandSchema
+
+        init(id: String, title: String, commandJSON: String) {
+            self.id = id
+            self.title = title
+            self.commandJSON = commandJSON
+            self.schema = AttoCommandSchema(
+                macroPolicy: .recordable,
+                defaultPayloadJSON: commandJSON
+            )
+        }
     }
 
     private enum CommandAvailabilityRequirement {
@@ -57,6 +68,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private struct CommandMetadata {
         let group: String
         let requirement: CommandAvailabilityRequirement
+        let schema: AttoCommandSchema
     }
 
     private static let staticEditorJSONCommands: [StaticEditorJSONCommand] = [
@@ -80,6 +92,69 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         .init(id: "view.wrap.char", title: "View: Word Wrap by Character", commandJSON: #"{"kind":"view","op":"set_wrap_mode","mode":"char"}"#),
         .init(id: "view.wrap.word", title: "View: Word Wrap by Word", commandJSON: #"{"kind":"view","op":"set_wrap_mode","mode":"word"}"#),
     ]
+
+    private static let snippetCommandSchema = AttoCommandSchema(
+        parameters: [
+            AttoCommandParameterSchema(
+                name: "snippet",
+                title: "Snippet",
+                kind: .string,
+                isRequired: true,
+                allowsEmptyString: false,
+                help: "editor-core snippet string using $0 and ${1:name} placeholders."
+            ),
+        ],
+        macroPolicy: .recordableWithArguments
+    )
+
+    private static let goToLineCommandSchema = AttoCommandSchema(
+        parameters: [
+            AttoCommandParameterSchema(
+                name: "line",
+                title: "Line",
+                kind: .integer,
+                isRequired: true,
+                minimumInteger: 1,
+                help: "1-based logical line number."
+            ),
+            AttoCommandParameterSchema(
+                name: "column",
+                title: "Column",
+                kind: .integer,
+                defaultValue: .integer(1),
+                minimumInteger: 1,
+                help: "1-based logical column number."
+            ),
+        ],
+        macroPolicy: .recordableWithArguments
+    )
+
+    private static let workspaceSymbolsCommandSchema = AttoCommandSchema(
+        parameters: [
+            AttoCommandParameterSchema(
+                name: "query",
+                title: "Query",
+                kind: .string,
+                defaultValue: .string(""),
+                help: "Workspace symbol search query sent to the LSP server."
+            ),
+        ],
+        macroPolicy: .recordableWithArguments
+    )
+
+    private static let renameCommandSchema = AttoCommandSchema(
+        parameters: [
+            AttoCommandParameterSchema(
+                name: "newName",
+                title: "New Name",
+                kind: .string,
+                isRequired: true,
+                allowsEmptyString: false,
+                help: "Replacement symbol name passed to textDocument/rename."
+            ),
+        ],
+        macroPolicy: .recordableWithArguments
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationCenter.default.addObserver(
@@ -410,8 +485,17 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "go.file", title: "Go: Go to File…") { [weak self] in
                 self?.showQuickOpen()
             },
-            .init(id: "go.line", title: "Go: Go to Line…") { [weak self] in
-                self?.activeWindow()?.editorAreaController.promptGoToLineInActiveTab()
+            .init(
+                id: "go.line",
+                title: "Go: Go to Line…",
+                schema: Self.goToLineCommandSchema
+            ) { [weak self] arguments in
+                guard let line = arguments.integer("line") else {
+                    self?.activeWindow()?.editorAreaController.promptGoToLineInActiveTab()
+                    return
+                }
+                let column = arguments.integer("column") ?? 1
+                self?.activeWindow()?.editorAreaController.goToLineInActiveTab(line1: line, column1: column)
             },
             .init(id: "search.find_in_files", title: "Search: Find in Files") { [weak self] in
                 self?.activeWindow()?.showFindInFilesSidebar()
@@ -461,8 +545,16 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.type_hierarchy_subtypes", title: "LSP: Subtypes") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showTypeSubtypesInActiveTab()
             },
-            .init(id: "lsp.rename", title: "LSP: Rename Symbol") { [weak self] in
-                self?.activeWindow()?.editorAreaController.promptRenameSymbolInActiveTab()
+            .init(
+                id: "lsp.rename",
+                title: "LSP: Rename Symbol",
+                schema: Self.renameCommandSchema
+            ) { [weak self] arguments in
+                guard let newName = arguments.string("newName") else {
+                    self?.activeWindow()?.editorAreaController.promptRenameSymbolInActiveTab()
+                    return
+                }
+                self?.activeWindow()?.editorAreaController.renameSymbolInActiveTab(to: newName)
             },
             .init(id: "lsp.code_actions", title: "LSP: Code Actions") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showCodeActionsInActiveTab()
@@ -515,8 +607,16 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.document_symbols", title: "LSP: Document Symbols") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showDocumentSymbolsInActiveTab()
             },
-            .init(id: "lsp.workspace_symbols", title: "LSP: Workspace Symbols") { [weak self] in
-                self?.activeWindow()?.editorAreaController.promptWorkspaceSymbolsInActiveTab()
+            .init(
+                id: "lsp.workspace_symbols",
+                title: "LSP: Workspace Symbols",
+                schema: Self.workspaceSymbolsCommandSchema
+            ) { [weak self] arguments in
+                guard let query = arguments.string("query") else {
+                    self?.activeWindow()?.editorAreaController.promptWorkspaceSymbolsInActiveTab()
+                    return
+                }
+                self?.activeWindow()?.editorAreaController.showWorkspaceSymbolsInActiveTab(query: query)
             },
             .init(id: "lsp.show_last_symbols", title: "LSP: Show Last Symbols") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showLastLspSymbolResults()
@@ -549,6 +649,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         commandIsEnabled(commandID: commandID)
     }
 
+    func _commandSchemaForTesting(commandID: String) -> AttoCommandSchema? {
+        defaultCommands().first(where: { $0.id == commandID })?.schema
+    }
+
+    func _commandConflictsForTesting() -> [String] {
+        Self.duplicateCommandIDs(in: defaultCommands())
+    }
+
     func _validateRuntimeCompatibilityForTesting() -> Bool {
         validateRuntimeCompatibilityBeforeLaunch(logSuccess: false)
     }
@@ -567,6 +675,16 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     @discardableResult
     func executeCommand(id commandID: String) -> Bool {
+        executeCommand(id: commandID, explicitArguments: nil)
+    }
+
+    @discardableResult
+    func executeCommand(id commandID: String, arguments: AttoCommandArguments) -> Bool {
+        executeCommand(id: commandID, explicitArguments: arguments)
+    }
+
+    @discardableResult
+    private func executeCommand(id commandID: String, explicitArguments arguments: AttoCommandArguments?) -> Bool {
         guard let command = defaultCommands().first(where: { $0.id == commandID }) else {
             NSSound.beep()
             NSLog("AttoEditor: unknown command id %@", commandID)
@@ -576,7 +694,18 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             NSSound.beep()
             return false
         }
-        command.run()
+        guard let arguments else {
+            command.run()
+            return true
+        }
+        do {
+            let normalized = try command.schema.normalizedArguments(arguments)
+            command.runWithArguments(normalized)
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: invalid arguments for command %@: %@", commandID, String(describing: error))
+            return false
+        }
         return true
     }
 
@@ -592,8 +721,16 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
 
         commands.append(contentsOf: [
-            .init(id: "editor.apply_snippet", title: "Edit: Apply Snippet") { [weak self] in
-                self?.activeWindow()?.editorAreaController.promptApplySnippetInActiveTab()
+            .init(
+                id: "editor.apply_snippet",
+                title: "Edit: Apply Snippet",
+                schema: Self.snippetCommandSchema
+            ) { [weak self] arguments in
+                guard let snippet = arguments.string("snippet") else {
+                    self?.activeWindow()?.editorAreaController.promptApplySnippetInActiveTab()
+                    return
+                }
+                self?.activeWindow()?.editorAreaController.applySnippetInActiveTab(snippet)
             },
             .init(id: "editor.add_next_occurrence", title: "Edit: Add Next Occurrence") { [weak self] in
                 self?.activeWindow()?.editorAreaController.addNextOccurrenceInActiveTab()
@@ -634,7 +771,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             group: metadata.group,
             isEnabled: commandIsEnabled(requirement: metadata.requirement),
             requiresEditor: metadata.requirement.requiresEditor,
-            run: command.run
+            schema: metadata.schema,
+            runWithArguments: command.runWithArguments
         )
     }
 
@@ -708,7 +846,63 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             }
         }()
 
-        return CommandMetadata(group: group, requirement: requirement)
+        return CommandMetadata(
+            group: group,
+            requirement: requirement,
+            schema: commandSchema(commandID: commandID)
+        )
+    }
+
+    private func commandSchema(commandID: String) -> AttoCommandSchema {
+        if let staticCommand = Self.staticEditorJSONCommands.first(where: { $0.id == commandID }) {
+            return staticCommand.schema
+        }
+
+        switch commandID {
+        case "editor.apply_snippet":
+            return Self.snippetCommandSchema
+        case "go.line":
+            return Self.goToLineCommandSchema
+        case "lsp.workspace_symbols":
+            return Self.workspaceSymbolsCommandSchema
+        case "lsp.rename":
+            return Self.renameCommandSchema
+        case "file.open_folder", "file.open_file", "workbench.preferences", "go.file",
+             "editor.find", "editor.replace", "workbench.command_palette":
+            return AttoCommandSchema(macroPolicy: .promptRequired)
+        case "file.new", "file.save", "file.close_tab",
+             "file.move_tab_left", "file.move_tab_right",
+             "view.toggle_sidebar", "view.toggle_minimap", "view.split_right",
+             "view.focus_next_pane", "view.focus_previous_pane",
+             "view.move_pane_left", "view.move_pane_right", "view.close_pane",
+             "go.back", "go.forward", "go.matching_bracket":
+            return AttoCommandSchema(macroPolicy: .recordable)
+        default:
+            if commandID.hasPrefix("cursor.") {
+                return AttoCommandSchema(macroPolicy: .recordable)
+            }
+            if commandID == "editor.add_next_occurrence"
+                || commandID == "editor.add_all_occurrences"
+                || commandID == "editor.toggle_line_comment"
+                || commandID == "editor.fold_selection"
+                || commandID == "editor.unfold"
+                || commandID == "editor.unfold_all"
+            {
+                return AttoCommandSchema(macroPolicy: .recordable)
+            }
+            return AttoCommandSchema(macroPolicy: .notRecordable)
+        }
+    }
+
+    private static func duplicateCommandIDs(in commands: [AttoCommandPaletteCommand]) -> [String] {
+        var counts: [String: Int] = [:]
+        for command in commands {
+            counts[command.id, default: 0] += 1
+        }
+        return counts
+            .filter { $0.value > 1 }
+            .map(\.key)
+            .sorted()
     }
 
     // MARK: - Preferences

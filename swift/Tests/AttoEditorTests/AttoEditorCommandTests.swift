@@ -102,6 +102,49 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(cursor.isEnabled)
     }
 
+    func testCommandRegistryCarriesParameterSchemasAndMacroPolicies() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        XCTAssertTrue(delegate._commandConflictsForTesting().isEmpty)
+
+        let duplicate = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "editor.duplicate_lines"))
+        XCTAssertEqual(duplicate.macroPolicy, .recordable)
+        XCTAssertEqual(duplicate.defaultPayloadJSON, #"{"kind":"edit","op":"duplicate_lines"}"#)
+        XCTAssertFalse(duplicate.isParameterized)
+
+        let snippet = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "editor.apply_snippet"))
+        XCTAssertEqual(snippet.macroPolicy, .recordableWithArguments)
+        XCTAssertEqual(snippet.parameters.map(\.name), ["snippet"])
+        XCTAssertEqual(snippet.parameters.first?.kind, .string)
+        XCTAssertTrue(snippet.parameters.first?.isRequired == true)
+
+        let goLine = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "go.line"))
+        XCTAssertEqual(goLine.macroPolicy, .recordableWithArguments)
+        XCTAssertEqual(goLine.parameters.map(\.name), ["line", "column"])
+        XCTAssertEqual(goLine.parameters[0].kind, .integer)
+        XCTAssertEqual(goLine.parameters[0].minimumInteger, 1)
+        XCTAssertEqual(goLine.parameters[1].defaultValue, .integer(1))
+        XCTAssertEqual(
+            try goLine.normalizedArguments(["line": .integer(42)]),
+            ["line": .integer(42), "column": .integer(1)]
+        )
+        XCTAssertThrowsError(try goLine.normalizedArguments(["line": .integer(0)]))
+        XCTAssertThrowsError(try goLine.normalizedArguments(["line": .string("42")]))
+
+        let workspaceSymbols = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "lsp.workspace_symbols"))
+        XCTAssertEqual(workspaceSymbols.parameters.map(\.name), ["query"])
+        XCTAssertEqual(
+            try workspaceSymbols.normalizedArguments([:]),
+            ["query": .string("")]
+        )
+
+        let rename = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "lsp.rename"))
+        XCTAssertEqual(rename.parameters.map(\.name), ["newName"])
+        XCTAssertEqual(rename.macroPolicy, .recordableWithArguments)
+
+        let openFile = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "file.open_file"))
+        XCTAssertEqual(openFile.macroPolicy, .promptRequired)
+    }
+
     func testEditorCommandsAreDisabledWithoutActiveEditor() throws {
         let delegate = AttoAppDelegate(keyBindings: [:])
         let menu = AttoMainMenuBuilder.build(appDelegate: delegate)
@@ -1059,6 +1102,42 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
         XCTAssertEqual(try editorView.editor.text(), "a\na\n")
+    }
+
+    func testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("args.txt")
+        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        XCTAssertFalse(delegate.executeCommand(id: "go.line", arguments: [:]))
+        XCTAssertFalse(delegate.executeCommand(id: "go.line", arguments: ["line": .integer(0)]))
+
+        XCTAssertTrue(delegate.executeCommand(
+            id: "go.line",
+            arguments: ["line": .integer(2), "column": .integer(3)]
+        ))
+        let offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 6)
+        XCTAssertEqual(offsets.end, 6)
+
+        XCTAssertFalse(delegate.executeCommand(id: "editor.apply_snippet", arguments: ["snippet": .string("")]))
+        XCTAssertTrue(delegate.executeCommand(
+            id: "editor.apply_snippet",
+            arguments: ["snippet": .string("X$0")]
+        ))
+        XCTAssertEqual(try editorView.editor.text(), "abc\ndeXf\n")
+
+        XCTAssertFalse(delegate.executeCommand(id: "editor.duplicate_lines", arguments: ["unused": .boolean(true)]))
     }
 
     func testCursorMovementCommandsUseRegisteredCommandPath() throws {
