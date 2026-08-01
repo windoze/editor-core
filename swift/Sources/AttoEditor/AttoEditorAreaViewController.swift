@@ -37,6 +37,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private let derivedStateStore = AttoDerivedStateStore()
     private let emptyStateLabel = NSTextField(labelWithString: "Open a file to start editing")
     private var lastPresentedLspFailureDetail: String?
+    private var transientStatusText: String?
 
     private var activeViewportObserver: EditorCoreSkiaView.ViewportStateObserverToken?
 
@@ -67,6 +68,10 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func _activeDerivedStateForTesting() -> AttoDerivedStateSnapshot {
         derivedStateStore.active
+    }
+
+    func _transientStatusTextForTesting() -> String? {
+        transientStatusText
     }
 
     func _updateStatusBarForTesting() {
@@ -3326,7 +3331,7 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let tab = activeTab else {
             derivedStateStore.clearActive()
             statusBarView.update(
-                leftText: nil,
+                leftText: transientStatusText,
                 languageId: nil,
                 languageIsEnabled: false,
                 lspText: nil,
@@ -3417,7 +3422,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }()
 
         statusBarView.update(
-            leftText: derivedStateStore.active.statusBarLeftText,
+            leftText: transientStatusText ?? derivedStateStore.active.statusBarLeftText,
             languageId: tab.syntaxLanguageId,
             languageIsEnabled: true,
             lspText: lspText,
@@ -3425,6 +3430,14 @@ final class AttoEditorAreaViewController: NSViewController {
             selectionText: selectionText,
             fileSizeText: fileSizeText
         )
+    }
+
+    func setTransientStatusText(_ text: String?) {
+        let normalized = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let next = normalized?.isEmpty == false ? normalized : nil
+        guard transientStatusText != next else { return }
+        transientStatusText = next
+        updateStatusBar()
     }
 
     private func setSyntaxLanguageForActiveTab(languageId: String?) {

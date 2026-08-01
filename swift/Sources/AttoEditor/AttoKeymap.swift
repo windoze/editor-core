@@ -9,6 +9,24 @@ struct AttoKeyBinding: Equatable {
         self.keyEquivalent = keyEquivalent
         self.modifiers = modifiers.intersection(.deviceIndependentFlagsMask)
     }
+
+    var displayText: String {
+        var parts: [String] = []
+        if modifiers.contains(.control) {
+            parts.append("ctrl")
+        }
+        if modifiers.contains(.option) {
+            parts.append("option")
+        }
+        if modifiers.contains(.shift) {
+            parts.append("shift")
+        }
+        if modifiers.contains(.command) {
+            parts.append("cmd")
+        }
+        parts.append(AttoKeymap.displayText(forKeyEquivalent: keyEquivalent))
+        return parts.joined(separator: "+")
+    }
 }
 
 struct AttoKeySequence: Equatable {
@@ -295,6 +313,79 @@ enum AttoKeymap {
         case "f20": return functionKey(NSF20FunctionKey)
         default:
             return token
+        }
+    }
+
+    static func displayText(forKeyEquivalent keyEquivalent: String) -> String {
+        switch keyEquivalent {
+        case " ":
+            return "space"
+        case "\t":
+            return "tab"
+        case "\r":
+            return "enter"
+        case "\u{1b}":
+            return "escape"
+        case "\u{7f}":
+            return "backspace"
+        case functionKey(NSUpArrowFunctionKey):
+            return "up"
+        case functionKey(NSDownArrowFunctionKey):
+            return "down"
+        case functionKey(NSLeftArrowFunctionKey):
+            return "left"
+        case functionKey(NSRightArrowFunctionKey):
+            return "right"
+        case functionKey(NSHomeFunctionKey):
+            return "home"
+        case functionKey(NSEndFunctionKey):
+            return "end"
+        case functionKey(NSPageUpFunctionKey):
+            return "pageup"
+        case functionKey(NSPageDownFunctionKey):
+            return "pagedown"
+        case functionKey(NSF1FunctionKey):
+            return "f1"
+        case functionKey(NSF2FunctionKey):
+            return "f2"
+        case functionKey(NSF3FunctionKey):
+            return "f3"
+        case functionKey(NSF4FunctionKey):
+            return "f4"
+        case functionKey(NSF5FunctionKey):
+            return "f5"
+        case functionKey(NSF6FunctionKey):
+            return "f6"
+        case functionKey(NSF7FunctionKey):
+            return "f7"
+        case functionKey(NSF8FunctionKey):
+            return "f8"
+        case functionKey(NSF9FunctionKey):
+            return "f9"
+        case functionKey(NSF10FunctionKey):
+            return "f10"
+        case functionKey(NSF11FunctionKey):
+            return "f11"
+        case functionKey(NSF12FunctionKey):
+            return "f12"
+        case functionKey(NSF13FunctionKey):
+            return "f13"
+        case functionKey(NSF14FunctionKey):
+            return "f14"
+        case functionKey(NSF15FunctionKey):
+            return "f15"
+        case functionKey(NSF16FunctionKey):
+            return "f16"
+        case functionKey(NSF17FunctionKey):
+            return "f17"
+        case functionKey(NSF18FunctionKey):
+            return "f18"
+        case functionKey(NSF19FunctionKey):
+            return "f19"
+        case functionKey(NSF20FunctionKey):
+            return "f20"
+        default:
+            return keyEquivalent
         }
     }
 

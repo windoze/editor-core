@@ -601,10 +601,12 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(resolution.sequences["go.line"], chord)
         XCTAssertEqual(resolution.arguments["go.line"], ["line": .integer(2), "column": .integer(1)])
 
+        var keySequenceStatusTexts: [String?] = []
         let delegate = AttoAppDelegate(
             keyBindings: resolution.bindings,
             keyBindingArguments: resolution.arguments,
-            keySequences: resolution.sequences
+            keySequences: resolution.sequences,
+            keySequenceStatusHandler: { keySequenceStatusTexts.append($0) }
         )
         XCTAssertNil(delegate._keyBindingForTesting(commandID: "go.line"))
         XCTAssertEqual(delegate._keySequenceForTesting(commandID: "go.line"), chord)
@@ -620,9 +622,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.selectionOffsets().start, 0)
 
         XCTAssertTrue(delegate._handleKeyBindingForTesting(chord.bindings[0]))
+        XCTAssertEqual(keySequenceStatusTexts.last!, "Keys: ctrl+k")
         XCTAssertEqual(try editorView.editor.selectionOffsets().start, 0)
 
         XCTAssertTrue(delegate._handleKeyBindingForTesting(chord.bindings[1]))
+        XCTAssertNil(keySequenceStatusTexts.last!)
         let offsets = try editorView.editor.selectionOffsets()
         XCTAssertEqual(offsets.start, 4)
         XCTAssertEqual(offsets.end, 4)
@@ -633,27 +637,59 @@ final class AttoEditorCommandTests: XCTestCase {
             try XCTUnwrap(AttoKeymap.parseBinding("ctrl+k")),
             try XCTUnwrap(AttoKeymap.parseBinding("ctrl+g")),
         ])
+        var keySequenceStatusTexts: [String?] = []
+        let delegate = AttoAppDelegate(
+            keyBindings: [:],
+            keySequences: ["go.line": chord],
+            keySequencePrefixTimeoutSeconds: 0,
+            keySequenceStatusHandler: { keySequenceStatusTexts.append($0) }
+        )
+
+        XCTAssertTrue(delegate._handleKeyBindingForTesting(chord.bindings[0]))
+        XCTAssertEqual(delegate._pendingKeySequenceForTesting(), [chord.bindings[0]])
+        XCTAssertEqual(keySequenceStatusTexts.last!, "Keys: ctrl+k")
+
+        delegate._expirePendingKeySequenceForTesting()
+        XCTAssertTrue(delegate._pendingKeySequenceForTesting().isEmpty)
+        XCTAssertNil(keySequenceStatusTexts.last!)
+        XCTAssertFalse(delegate._handleKeyBindingForTesting(chord.bindings[1]))
+        XCTAssertTrue(delegate._pendingKeySequenceForTesting().isEmpty)
+
+        XCTAssertTrue(delegate._handleKeyBindingForTesting(chord.bindings[0]))
+        XCTAssertEqual(delegate._pendingKeySequenceForTesting(), [chord.bindings[0]])
+        XCTAssertEqual(keySequenceStatusTexts.last!, "Keys: ctrl+k")
+
+        let escape = try XCTUnwrap(AttoKeymap.parseBinding("escape"))
+        XCTAssertTrue(delegate._handleKeyBindingForTesting(escape))
+        XCTAssertTrue(delegate._pendingKeySequenceForTesting().isEmpty)
+        XCTAssertNil(keySequenceStatusTexts.last!)
+        XCTAssertFalse(delegate._handleKeyBindingForTesting(chord.bindings[1]))
+    }
+
+    func testKeymapChordPrefixUpdatesActiveWindowStatusText() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let chord = AttoKeySequence(bindings: [
+            try XCTUnwrap(AttoKeymap.parseBinding("ctrl+k")),
+            try XCTUnwrap(AttoKeymap.parseBinding("ctrl+g")),
+        ])
         let delegate = AttoAppDelegate(
             keyBindings: [:],
             keySequences: ["go.line": chord],
             keySequencePrefixTimeoutSeconds: 0
         )
 
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+
         XCTAssertTrue(delegate._handleKeyBindingForTesting(chord.bindings[0]))
-        XCTAssertEqual(delegate._pendingKeySequenceForTesting(), [chord.bindings[0]])
+        XCTAssertEqual(ctx.editorAreaController._transientStatusTextForTesting(), "Keys: ctrl+k")
 
         delegate._expirePendingKeySequenceForTesting()
-        XCTAssertTrue(delegate._pendingKeySequenceForTesting().isEmpty)
-        XCTAssertFalse(delegate._handleKeyBindingForTesting(chord.bindings[1]))
-        XCTAssertTrue(delegate._pendingKeySequenceForTesting().isEmpty)
-
-        XCTAssertTrue(delegate._handleKeyBindingForTesting(chord.bindings[0]))
-        XCTAssertEqual(delegate._pendingKeySequenceForTesting(), [chord.bindings[0]])
-
-        let escape = try XCTUnwrap(AttoKeymap.parseBinding("escape"))
-        XCTAssertTrue(delegate._handleKeyBindingForTesting(escape))
-        XCTAssertTrue(delegate._pendingKeySequenceForTesting().isEmpty)
-        XCTAssertFalse(delegate._handleKeyBindingForTesting(chord.bindings[1]))
+        XCTAssertNil(ctx.editorAreaController._transientStatusTextForTesting())
     }
 
     func testMainMenuItemsUseCommandIDsAndResolvedKeymap() throws {

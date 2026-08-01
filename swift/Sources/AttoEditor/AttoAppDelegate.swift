@@ -22,6 +22,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var pendingKeySequence: [AttoKeyBinding] = []
     private var keySequenceTimeoutTimer: Timer?
     private let keySequencePrefixTimeoutSeconds: TimeInterval
+    private var keySequenceStatusHandler: ((String?) -> Void)?
     private var keyEventMonitor: Any?
 
     var ipcServer: AttoIpcServer?
@@ -40,12 +41,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         keyBindings: [String: AttoKeyBinding],
         keyBindingArguments: [String: AttoCommandArguments] = [:],
         keySequences: [String: AttoKeySequence] = [:],
-        keySequencePrefixTimeoutSeconds: TimeInterval = 1.0
+        keySequencePrefixTimeoutSeconds: TimeInterval = 1.0,
+        keySequenceStatusHandler: ((String?) -> Void)? = nil
     ) {
         self.keyBindings = keyBindings
         self.keySequences = keySequences
         self.keyBindingArguments = keyBindingArguments
         self.keySequencePrefixTimeoutSeconds = keySequencePrefixTimeoutSeconds
+        self.keySequenceStatusHandler = keySequenceStatusHandler
         super.init()
     }
 
@@ -490,13 +493,18 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     private func setPendingKeySequence(_ sequence: [AttoKeyBinding]) {
         pendingKeySequence = sequence
+        publishPendingKeySequenceStatus()
         restartKeySequenceTimeout()
     }
 
     private func clearPendingKeySequence() {
+        let hadPending = pendingKeySequence.isEmpty == false
         pendingKeySequence = []
         keySequenceTimeoutTimer?.invalidate()
         keySequenceTimeoutTimer = nil
+        if hadPending {
+            publishPendingKeySequenceStatus()
+        }
     }
 
     private func restartKeySequenceTimeout() {
@@ -517,6 +525,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     @objc private func keySequenceTimeoutTimerFired(_ timer: Timer) {
         _ = timer
         clearPendingKeySequence()
+    }
+
+    private func publishPendingKeySequenceStatus() {
+        let text: String? = if pendingKeySequence.isEmpty {
+            nil
+        } else {
+            "Keys: \(pendingKeySequence.map(\.displayText).joined(separator: " "))"
+        }
+
+        if let keySequenceStatusHandler {
+            keySequenceStatusHandler(text)
+        } else {
+            activeWindow()?.editorAreaController.setTransientStatusText(text)
+        }
     }
 
     private func commandID(forKeySequence bindings: [AttoKeyBinding]) -> String? {
