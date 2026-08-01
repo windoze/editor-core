@@ -132,6 +132,15 @@ typedef struct EcuViewportState {
 void editor_core_ui_ffi_string_free(char* ptr);
 char* editor_core_ui_ffi_last_error_message(void);
 char* editor_core_ui_ffi_version(void);
+uint32_t editor_core_ui_ffi_abi_version(void);
+
+// Feature flags returned by `editor_core_ui_ffi_feature_flags`.
+#define ECU_FEATURE_JSON_COMMAND_DISPATCH      (1ull << 0)
+#define ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS    (1ull << 1)
+#define ECU_FEATURE_LSP_INTERACTIVE_REQUESTS   (1ull << 2)
+#define ECU_FEATURE_LSP_STATUS_SNAPSHOT        (1ull << 3)
+#define ECU_FEATURE_WORKSPACE_EDIT_APPLICATION (1ull << 4)
+uint64_t editor_core_ui_ffi_feature_flags(void);
 
 EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8,
                                           uint32_t viewport_width_cells);

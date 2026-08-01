@@ -72,7 +72,17 @@ final class EditorCoreUIFFITests: XCTestCase {
 
     func testLoadsLibraryAndVersion() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        XCTAssertGreaterThan(lib.abiVersion, 0)
         XCTAssertFalse((try lib.versionString()).isEmpty)
+
+        let info = try lib.runtimeInfo()
+        XCTAssertEqual(info.abiVersion, lib.abiVersion)
+        XCTAssertFalse(info.version.isEmpty)
+        XCTAssertTrue(info.supports(.jsonCommandDispatch))
+        XCTAssertTrue(info.supports(.typedDerivedSnapshots))
+        XCTAssertTrue(info.supports(.lspInteractiveRequests))
+        XCTAssertTrue(info.supports(.lspStatusSnapshot))
+        XCTAssertTrue(info.supports(.workspaceEditApplication))
     }
 
     func testParagraphSelectionAPIs() throws {

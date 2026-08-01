@@ -232,6 +232,9 @@ Guidelines:
 ## Versioning Strategy
 
 - ABI major version baked into library and exported via `ecf_abi_version()`.
+- The UI FFI also exports `editor_core_ui_ffi_abi_version()` and
+  `editor_core_ui_ffi_feature_flags()` so Swift/App hosts can probe the loaded UI ABI and gate
+  optional feature paths before calling newer symbols.
 - The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
   - new functions
@@ -296,6 +299,8 @@ char* editor_core_ffi_lsp_formatting_options_json(uint32_t tab_size, bool insert
 The UI FFI (`editor-core-ui-ffi`) follows the same fixed-width boundary discipline for its C surface. Examples include:
 
 ```c
+uint32_t editor_core_ui_ffi_abi_version(void);
+uint64_t editor_core_ui_ffi_feature_flags(void);
 EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8, uint32_t viewport_width_cells);
 EditorUi* editor_core_ui_ffi_editor_ui_clone_view(EditorUi* ui, uint32_t viewport_width_cells);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_hover(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);

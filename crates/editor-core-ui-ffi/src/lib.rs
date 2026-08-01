@@ -28,6 +28,26 @@ thread_local! {
     static LAST_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
+/// ABI version for the UI C contract exposed by this crate.
+pub const ECU_ABI_VERSION: u32 = 1;
+
+/// Feature bit: generic JSON editor command dispatcher is available.
+pub const ECU_FEATURE_JSON_COMMAND_DISPATCH: u64 = 1 << 0;
+/// Feature bit: typed derived-state snapshot JSON exports are available.
+pub const ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS: u64 = 1 << 1;
+/// Feature bit: LSP interactive request/take APIs are available.
+pub const ECU_FEATURE_LSP_INTERACTIVE_REQUESTS: u64 = 1 << 2;
+/// Feature bit: LSP status/capability snapshot is available.
+pub const ECU_FEATURE_LSP_STATUS_SNAPSHOT: u64 = 1 << 3;
+/// Feature bit: LSP WorkspaceEdit application helpers are available.
+pub const ECU_FEATURE_WORKSPACE_EDIT_APPLICATION: u64 = 1 << 4;
+
+pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
+    | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
+    | ECU_FEATURE_LSP_INTERACTIVE_REQUESTS
+    | ECU_FEATURE_LSP_STATUS_SNAPSHOT
+    | ECU_FEATURE_WORKSPACE_EDIT_APPLICATION;
+
 fn set_last_error(msg: impl Into<String>) {
     LAST_ERROR.with(|slot| {
         *slot.borrow_mut() = Some(msg.into());
@@ -485,6 +505,18 @@ pub extern "C" fn editor_core_ui_ffi_last_error_message() -> *mut c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_version() -> *mut c_char {
     make_c_string_ptr(env!("CARGO_PKG_VERSION").to_string())
+}
+
+/// Return ABI version for the UI C contract.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_abi_version() -> u32 {
+    ECU_ABI_VERSION
+}
+
+/// Return a bitmask of optional UI FFI features supported by this build.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_feature_flags() -> u64 {
+    ECU_FEATURE_FLAGS
 }
 
 /// Create a new Editor UI handle.

@@ -110,8 +110,13 @@ glibc version issues when shipping `.so` files.
 ## Versioning + SwiftPM rebuild triggers
 
 - ABI version is exposed via `editor_core_ffi_abi_version()` (typed/binary ABI layer).
+- UI ABI version and coarse feature probes are exposed via
+  `editor_core_ui_ffi_abi_version()` and `editor_core_ui_ffi_feature_flags()`.
 - For the Swift package, ABI/header changes should also bump:
   - `swift/Sources/CEditorCoreFFI/stamp.c`
   - `swift/Sources/CEditorCoreUIFFI/stamp.c`
 
 These `stamp.c` files exist to force SwiftPM to relink/rebuild when exported symbols change.
+The Rust build plugin also declares Rust sources, headers, these stamp files, and the reusable UI
+staticlib candidates as explicit build-command inputs, so SwiftPM reruns the staticlib copy/build
+step when the ABI surface or copied archive changes.
