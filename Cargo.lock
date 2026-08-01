@@ -996,6 +996,7 @@ dependencies = [
  "editor-core-treesitter",
  "libc",
  "pretty_assertions",
+ "serde",
  "serde_json",
  "softbuffer",
  "thiserror 2.0.18",

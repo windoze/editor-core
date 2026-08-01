@@ -548,6 +548,24 @@ public final class EditorUI {
         try library.ensureStatus(status, context: "editor_ui_insert_text")
     }
 
+    /// Execute one editor command encoded as JSON and return command-result JSON.
+    ///
+    /// The schema matches the headless `EditorState.executeJSON(_:)` command plane, with UI-layer
+    /// additions for snippets, auto-pairs config, and bracket-match highlight commands.
+    public func executeCommandJSON(_ commandJSON: String) throws -> String {
+        guard let ptr = commandJSON.withCString({ cstr in
+            editor_core_ui_ffi_editor_ui_execute_command_json(handle, cstr)
+        }) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_execute_command_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
     public func insertTab() throws {
         let status = editor_core_ui_ffi_editor_ui_insert_tab(handle)
         try library.ensureStatus(status, context: "editor_ui_insert_tab")

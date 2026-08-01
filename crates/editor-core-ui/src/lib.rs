@@ -3,6 +3,7 @@
 //! This crate owns editor state, performs input-event mapping, and uses a renderer
 //! implementation (Skia in `editor-core-render-skia`) to draw the viewport.
 
+mod command_json;
 mod ime;
 mod keybindings;
 mod multi_document;
@@ -832,6 +833,38 @@ impl EditorUi {
         }
 
         Ok(result)
+    }
+
+    /// Execute a core editor command encoded as JSON, using the same schema as the headless FFI
+    /// command plane plus UI-specific additions such as snippets, auto-pairs config, and bracket
+    /// highlight maintenance commands.
+    pub fn execute_command_json(&mut self, command_json: &str) -> Result<String, UiError> {
+        let command =
+            command_json::parse_command_from_json(command_json).map_err(UiError::Processor)?;
+        let is_edit = matches!(command, Command::Edit(_));
+        let is_cursor = matches!(command, Command::Cursor(_));
+
+        match &command {
+            Command::View(ViewCommand::SetAutoPairsConfig { config }) => {
+                self.auto_pairs = config.clone();
+            }
+            Command::View(ViewCommand::SetAutoPairsEnabled { enabled }) => {
+                self.auto_pairs.enabled = *enabled;
+            }
+            _ => {}
+        }
+
+        let result = self.exec_core(command)?;
+
+        if is_edit {
+            self.refresh_processing()?;
+            self.ensure_primary_caret_visible_after_edit();
+        } else if is_cursor {
+            self.ensure_primary_caret_visible_after_navigation();
+        }
+
+        serde_json::to_string(&command_json::command_result_to_value(result))
+            .map_err(|err| UiError::Processor(format!("failed to encode command result: {err}")))
     }
 
     fn apply_processing_edits<I>(&mut self, edits: I) -> Result<(), UiError>

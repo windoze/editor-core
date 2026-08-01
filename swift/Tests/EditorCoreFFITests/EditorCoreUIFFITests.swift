@@ -3,6 +3,24 @@ import Foundation
 import XCTest
 
 final class EditorCoreUIFFITests: XCTestCase {
+    @discardableResult
+    private func assertCommandSuccess(
+        _ ui: EditorUI,
+        _ commandJSON: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> [String: Any] {
+        let result = try ui.executeCommandJSON(commandJSON)
+        let data = try XCTUnwrap(result.data(using: .utf8), file: file, line: line)
+        let obj = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(obj["kind"] as? String, "success", file: file, line: line)
+        return obj
+    }
+
     private func waitForAsyncProcessing(_ ui: EditorUI, timeoutSeconds: TimeInterval = 2.0) throws {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while true {
@@ -177,6 +195,131 @@ final class EditorCoreUIFFITests: XCTestCase {
         try ui.setTabKeyBehavior(.tab)
         try ui.insertTab()
         XCTAssertEqual(try ui.text(), "\t")
+    }
+
+    func testExecuteCommandJSONExposesCoreLineCommands() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "a\nb\n", viewportWidthCells: 80)
+            try assertCommandSuccess(ui, #"{"kind":"cursor","op":"move_to","line":0,"column":0}"#)
+            try assertCommandSuccess(ui, #"{"kind":"edit","op":"duplicate_lines"}"#)
+            XCTAssertEqual(try ui.text(), "a\na\nb\n")
+
+            try assertCommandSuccess(ui, #"{"kind":"cursor","op":"move_to","line":1,"column":0}"#)
+            try assertCommandSuccess(ui, #"{"kind":"edit","op":"delete_lines"}"#)
+            XCTAssertEqual(try ui.text(), "a\nb\n")
+        }
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)
+            try assertCommandSuccess(ui, #"{"kind":"cursor","op":"move_to","line":1,"column":0}"#)
+            try assertCommandSuccess(ui, #"{"kind":"edit","op":"move_lines_up"}"#)
+            XCTAssertEqual(try ui.text(), "b\na\nc\n")
+        }
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)
+            try assertCommandSuccess(ui, #"{"kind":"cursor","op":"move_to","line":1,"column":0}"#)
+            try assertCommandSuccess(ui, #"{"kind":"edit","op":"move_lines_down"}"#)
+            XCTAssertEqual(try ui.text(), "a\nc\nb\n")
+        }
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "a\nb\n", viewportWidthCells: 80)
+            try assertCommandSuccess(ui, #"{"kind":"cursor","op":"move_to","line":0,"column":0}"#)
+            try assertCommandSuccess(ui, #"{"kind":"edit","op":"join_lines"}"#)
+            XCTAssertEqual(try ui.text(), "a b\n")
+        }
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "ab\n", viewportWidthCells: 80)
+            try assertCommandSuccess(ui, #"{"kind":"cursor","op":"move_to","line":0,"column":1}"#)
+            try assertCommandSuccess(ui, #"{"kind":"edit","op":"split_line"}"#)
+            XCTAssertEqual(try ui.text(), "a\nb\n")
+        }
+    }
+
+    func testExecuteCommandJSONExposesCommentTextEditAndUndoGroupingCommands() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "let a = 1\n", viewportWidthCells: 80)
+
+        try assertCommandSuccess(ui, #"{"kind":"cursor","op":"move_to","line":0,"column":0}"#)
+        try assertCommandSuccess(ui, #"{"kind":"edit","op":"toggle_comment","config":{"line":"//"}}"#)
+        XCTAssertEqual(try ui.text(), "// let a = 1\n")
+
+        try assertCommandSuccess(ui, #"{"kind":"edit","op":"toggle_comment","config":{"line":"//"}}"#)
+        XCTAssertEqual(try ui.text(), "let a = 1\n")
+
+        try assertCommandSuccess(
+            ui,
+            #"{"kind":"edit","op":"apply_text_edits","edits":[{"start":0,"end":3,"text":"var"},{"start":8,"end":9,"text":"2"}]}"#
+        )
+        XCTAssertEqual(try ui.text(), "var a = 2\n")
+
+        try assertCommandSuccess(ui, #"{"kind":"edit","op":"end_undo_group"}"#)
+        try ui.undo()
+        XCTAssertEqual(try ui.text(), "let a = 1\n")
+    }
+
+    func testExecuteCommandJSONExposesWrapAndFoldCommands() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "abcdef\nsecond\nthird\n", viewportWidthCells: 80)
+
+        try assertCommandSuccess(ui, #"{"kind":"view","op":"set_viewport_width","width":4}"#)
+        try assertCommandSuccess(ui, #"{"kind":"view","op":"set_wrap_mode","mode":"char"}"#)
+        try assertCommandSuccess(ui, #"{"kind":"view","op":"set_wrap_indent","indent":{"kind":"fixed_cells","cells":2}}"#)
+
+        let viewportJSON = try ui.executeCommandJSON(#"{"kind":"view","op":"get_viewport","start_row":0,"count":10}"#)
+        let data = try XCTUnwrap(viewportJSON.data(using: .utf8))
+        let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: data, options: []) as? [String: Any])
+        XCTAssertEqual(obj["kind"] as? String, "viewport")
+        let viewport = try XCTUnwrap(obj["viewport"] as? [String: Any])
+        let lines = try XCTUnwrap(viewport["lines"] as? [[String: Any]])
+        XCTAssertTrue(lines.contains { ($0["is_wrapped_part"] as? Bool) == true && ($0["segment_x_start_cells"] as? Int) == 2 })
+
+        try assertCommandSuccess(ui, #"{"kind":"style","op":"fold","start_line":0,"end_line":2}"#)
+        let foldedJSON = try ui.executeCommandJSON(#"{"kind":"view","op":"get_viewport","start_row":0,"count":10}"#)
+        let foldedData = try XCTUnwrap(foldedJSON.data(using: .utf8))
+        let foldedObj = try XCTUnwrap(JSONSerialization.jsonObject(with: foldedData, options: []) as? [String: Any])
+        let foldedViewport = try XCTUnwrap(foldedObj["viewport"] as? [String: Any])
+        let foldedLines = try XCTUnwrap(foldedViewport["lines"] as? [[String: Any]])
+        XCTAssertTrue(foldedLines.contains { ($0["is_fold_placeholder_appended"] as? Bool) == true })
+
+        try assertCommandSuccess(ui, #"{"kind":"style","op":"unfold_all"}"#)
+        let unfoldedJSON = try ui.executeCommandJSON(#"{"kind":"view","op":"get_viewport","start_row":0,"count":10}"#)
+        let unfoldedData = try XCTUnwrap(unfoldedJSON.data(using: .utf8))
+        let unfoldedObj = try XCTUnwrap(JSONSerialization.jsonObject(with: unfoldedData, options: []) as? [String: Any])
+        let unfoldedViewport = try XCTUnwrap(unfoldedObj["viewport"] as? [String: Any])
+        let unfoldedLines = try XCTUnwrap(unfoldedViewport["lines"] as? [[String: Any]])
+        XCTAssertFalse(unfoldedLines.contains { ($0["is_fold_placeholder_appended"] as? Bool) == true })
+    }
+
+    func testExecuteCommandJSONExposesSnippetAndAutoPairsCommands() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)
+            try assertCommandSuccess(
+                ui,
+                #"{"kind":"view","op":"set_auto_pairs_config","config":{"enabled":true,"pairs":[{"open":"<","close":">"}],"wrap_selection":true,"skip_over_closing":true,"delete_pair":true}}"#
+            )
+            try assertCommandSuccess(ui, #"{"kind":"edit","op":"type_char","ch":"<"}"#)
+            XCTAssertEqual(try ui.text(), "<>")
+        }
+
+        do {
+            let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)
+            try assertCommandSuccess(
+                ui,
+                #"{"kind":"edit","op":"apply_snippet","start":0,"end":0,"snippet":"println!(${1:msg})$0","additional_edits":[]}"#
+            )
+            XCTAssertEqual(try ui.text(), "println!(msg)")
+            XCTAssertTrue(try ui.hasActiveSnippetSession())
+
+            try assertCommandSuccess(ui, #"{"kind":"cursor","op":"snippet_next_placeholder"}"#)
+            XCTAssertFalse(try ui.hasActiveSnippetSession())
+        }
     }
 
     func testCloneViewSharesTextAndHasIndependentScrollState() throws {

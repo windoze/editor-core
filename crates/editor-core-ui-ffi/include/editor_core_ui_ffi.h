@@ -299,6 +299,12 @@ void editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_reveal_primary_caret(EditorUi* ui);
 
 int32_t editor_core_ui_ffi_editor_ui_insert_text(EditorUi* ui, const char* text_utf8);
+// Execute one editor command encoded as JSON and return command-result JSON.
+//
+// The returned string is owned by the caller and must be freed with
+// `editor_core_ui_ffi_string_free`.
+char* editor_core_ui_ffi_editor_ui_execute_command_json(EditorUi* ui,
+                                                        const char* command_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_insert_tab(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_insert_backtab(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_has_active_snippet_session(EditorUi* ui,
