@@ -62,6 +62,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.workspace_symbols"))
         XCTAssertTrue(ids.contains("lsp.show_last_symbols"))
         XCTAssertTrue(ids.contains("lsp.show_symbol_history"))
+        XCTAssertTrue(ids.contains("lsp.show_symbols_panel"))
         XCTAssertTrue(ids.contains("lsp.completion"))
         XCTAssertTrue(ids.contains("lsp.signature_help"))
         XCTAssertTrue(ids.contains("lsp.rename"))
@@ -990,6 +991,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_symbol_history", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_symbols_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.completion", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.signature_help", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.rename", in: menu))
@@ -1223,6 +1225,29 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(snapshot.symbols.map(\.name), ["Project", "openProject"])
         XCTAssertEqual(snapshot.placeholder, "Filter workspace symbols...")
 
+        XCTAssertTrue(vc.showLspSymbolPanel())
+        let persistentPanel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.lspSymbolPanel
+        })
+        XCTAssertEqual(persistentPanel.title, "Workspace Symbols: Project (2)")
+        let persistentRoot = try XCTUnwrap(persistentPanel.contentView)
+        let persistentSearchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.lspSymbolPanelSearchField,
+                in: persistentRoot
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(persistentSearchField.placeholderString, "Filter workspace symbols...")
+        let persistentTable = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.lspSymbolPanelTable,
+                in: persistentRoot
+            ) as? NSTableView
+        )
+        XCTAssertEqual(persistentTable.numberOfRows, 2)
+        XCTAssertEqual(vc._lspSymbolPanelSnapshotForTesting(), snapshot)
+        XCTAssertTrue(vc._lspSymbolPanelIsVisibleForTesting())
+
         panel.close()
         XCTAssertTrue(vc.showLastLspSymbolResults())
 
@@ -1257,6 +1282,9 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let history = vc._lspSymbolResultHistoryForTesting()
         XCTAssertEqual(history.map(\.title), ["Workspace Symbols: Project", "Workspace Symbols: Open"])
+        let updatedPanelSnapshot = try XCTUnwrap(vc._lspSymbolPanelSnapshotForTesting())
+        XCTAssertEqual(updatedPanelSnapshot.title, "Workspace Symbols: Open")
+        XCTAssertEqual(vc._lspSymbolPanelRowCountForTesting(), 1)
 
         XCTAssertTrue(vc.showLspSymbolHistory())
         let historyPanel = try XCTUnwrap(window.childWindows?.first {

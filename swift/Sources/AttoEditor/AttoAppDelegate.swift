@@ -823,6 +823,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.show_symbol_history", title: "LSP: Show Symbol History") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showLspSymbolHistory()
             },
+            .init(id: "lsp.show_symbols_panel", title: "LSP: Show Symbols Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspSymbolPanel()
+            },
             .init(id: "lsp.completion", title: "LSP: Completion") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showCompletionsInActiveTab()
             },

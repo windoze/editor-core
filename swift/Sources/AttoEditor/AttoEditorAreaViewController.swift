@@ -157,6 +157,18 @@ final class AttoEditorAreaViewController: NSViewController {
         lastLspSymbolResultSnapshot
     }
 
+    func _lspSymbolPanelSnapshotForTesting() -> LspSymbolResultSnapshot? {
+        lspSymbolPanelController?.currentSnapshot
+    }
+
+    func _lspSymbolPanelRowCountForTesting() -> Int {
+        lspSymbolPanelController?.rowCount ?? 0
+    }
+
+    func _lspSymbolPanelIsVisibleForTesting() -> Bool {
+        lspSymbolPanelController?.isVisible == true
+    }
+
     func _lspSymbolResultHistoryForTesting() -> [LspSymbolResultSnapshot] {
         lspSymbolResultHistory
     }
@@ -498,6 +510,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private var symbolContext: SymbolRequestContext?
     private var symbolPollTimer: DispatchSourceTimer?
     private var lspSymbolResultsController: AttoCommandPaletteController?
+    private var lspSymbolPanelController: AttoLspSymbolPanelController?
     private var lastLspSymbolResultSnapshot: LspSymbolResultSnapshot?
     private var lspSymbolResultHistory: [LspSymbolResultSnapshot] = []
     private var workspaceSymbolSearchContext: WorkspaceSymbolSearchContext?
@@ -4717,6 +4730,27 @@ final class AttoEditorAreaViewController: NSViewController {
         return true
     }
 
+    @discardableResult
+    func showLspSymbolPanel() -> Bool {
+        guard let snapshot = lastLspSymbolResultSnapshot, snapshot.symbols.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+        guard let window = view.window else {
+            return openLspSymbolSnapshot(snapshot)
+        }
+        let controller = lspSymbolPanelController ?? AttoLspSymbolPanelController(
+            titleForSymbol: { [weak self] symbol in
+                self?.displayTitle(for: symbol) ?? symbol.name
+            },
+            onOpen: { [weak self] target in
+                self?.navigateToLspTarget(target)
+            }
+        )
+        lspSymbolPanelController = controller
+        return controller.show(relativeTo: window, snapshot: snapshot)
+    }
+
     private func handleLspSymbolResultJSON(_ json: String, kind: LspSymbolRequestKind, tab: AttoEditorTab) -> Bool {
         let symbols: [AttoLspSymbolParser.Symbol]
         let placeholder: String
@@ -4770,6 +4804,7 @@ final class AttoEditorAreaViewController: NSViewController {
         if lspSymbolResultHistory.count > Self.maxLspResultHistoryEntries {
             lspSymbolResultHistory.removeFirst(lspSymbolResultHistory.count - Self.maxLspResultHistoryEntries)
         }
+        lspSymbolPanelController?.update(snapshot: snapshot)
     }
 
     @discardableResult

@@ -228,6 +228,79 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertTrue(controller.isVisible)
     }
 
+    func testLspSymbolPanelExposesStableIdentifiersAndFiltersRows() throws {
+        let fileURL = URL(fileURLWithPath: "/tmp/symbol-panel.swift")
+        let targetA = AttoLspDefinitionParser.Target(uri: fileURL.absoluteString, line: 0, utf16Character: 5)
+        let targetB = AttoLspDefinitionParser.Target(uri: fileURL.absoluteString, line: 8, utf16Character: 7)
+        let symbols = [
+            AttoLspSymbolParser.Symbol(
+                name: "openProject",
+                detail: "fn()",
+                kindLabel: "Function",
+                containerName: nil,
+                target: targetA,
+                depth: 0
+            ),
+            AttoLspSymbolParser.Symbol(
+                name: "Project",
+                detail: nil,
+                kindLabel: "Struct",
+                containerName: "Atto",
+                target: targetB,
+                depth: 0
+            ),
+        ]
+        let snapshot = AttoEditorAreaViewController.LspSymbolResultSnapshot(
+            title: "Document Symbols",
+            symbols: symbols,
+            placeholder: "Filter document symbols..."
+        )
+
+        var openedTargets: [AttoLspDefinitionParser.Target] = []
+        let controller = AttoLspSymbolPanelController(
+            titleForSymbol: { symbol in "\(symbol.name) [\(symbol.kindLabel ?? "Symbol")]" },
+            onOpen: { target in openedTargets.append(target) }
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 580),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 580))
+        window.makeKeyAndOrderFront(nil)
+
+        XCTAssertTrue(controller.show(relativeTo: window, snapshot: snapshot))
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        XCTAssertEqual(panel.identifier?.rawValue, AttoAccessibilityID.lspSymbolPanel)
+        XCTAssertEqual(panel.title, "Document Symbols (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspSymbolPanelRoot, in: root))
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspSymbolPanelSearchField, in: root) as? NSSearchField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspSymbolPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspSymbolPanelScrollView, in: root))
+        XCTAssertEqual(searchField.placeholderString, "Filter document symbols...")
+        XCTAssertEqual(table.numberOfRows, 2)
+
+        searchField.stringValue = "Struct"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 1)
+
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(openedTargets, [targetB])
+        XCTAssertTrue(controller.isVisible)
+    }
+
     func testCompletionPopupExposesStableIdentifiers() throws {
         let items = AttoLspCompletionParser.items(
             fromCompletionResultJSON: #"{"items":[{"label":"print","kind":3,"detail":"fn"}]}"#

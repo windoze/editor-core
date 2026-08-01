@@ -99,6 +99,14 @@ enum AttoAccessibilityID {
     static let lspLocationPanelRow = "AttoEditor.LSP.LocationPanel.Row"
     static let lspLocationPanelRowTitle = "AttoEditor.LSP.LocationPanel.RowTitle"
 
+    static let lspSymbolPanel = "AttoEditor.LSP.SymbolPanel.Panel"
+    static let lspSymbolPanelRoot = "AttoEditor.LSP.SymbolPanel.Root"
+    static let lspSymbolPanelSearchField = "AttoEditor.LSP.SymbolPanel.SearchField"
+    static let lspSymbolPanelTable = "AttoEditor.LSP.SymbolPanel.Table"
+    static let lspSymbolPanelScrollView = "AttoEditor.LSP.SymbolPanel.ScrollView"
+    static let lspSymbolPanelRow = "AttoEditor.LSP.SymbolPanel.Row"
+    static let lspSymbolPanelRowTitle = "AttoEditor.LSP.SymbolPanel.RowTitle"
+
     static func commandMenuItem(_ commandID: String) -> String {
         "AttoCommand.\(commandID)"
     }
