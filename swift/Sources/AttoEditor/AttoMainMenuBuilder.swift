@@ -93,6 +93,7 @@ enum AttoMainMenuBuilder {
         viewMenu.addItem(wrapMenuItem)
         viewMenu.addItem(.separator())
         viewMenu.addItem(commandItem(title: "Fold Selection", commandID: "editor.fold_selection", appDelegate: appDelegate))
+        viewMenu.addItem(commandItem(title: "Refresh Folding Ranges", commandID: "lsp.refresh_folding_ranges", appDelegate: appDelegate))
         viewMenu.addItem(commandItem(title: "Unfold at Cursor", commandID: "editor.unfold", appDelegate: appDelegate))
         viewMenu.addItem(commandItem(title: "Unfold All", commandID: "editor.unfold_all", appDelegate: appDelegate))
 

@@ -134,6 +134,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let item: AttoLspCodeActionParser.Item
     }
 
+    private struct FoldingRangesRequestContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
@@ -174,6 +179,9 @@ final class AttoEditorAreaViewController: NSViewController {
     private var codeActionResolveContext: CodeActionResolveContext?
     private var codeActionResolvePollTimer: DispatchSourceTimer?
     private var codeActionResultsController: AttoCommandPaletteController?
+
+    private var foldingRangesContext: FoldingRangesRequestContext?
+    private var foldingRangesPollTimer: DispatchSourceTimer?
 
     init(
         library: EditorCoreUIFFILibrary,
@@ -438,6 +446,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelSignatureHelpUI()
         cancelCompletionUI()
         cancelCodeActionUI()
+        cancelFoldingRangesUI()
 
         tabs = []
         selectedTabID = nil
@@ -717,6 +726,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelSignatureHelpUI()
         cancelCompletionUI()
         cancelCodeActionUI()
+        cancelFoldingRangesUI()
 
         showTabContent(tab)
         refreshTabBar()
@@ -950,6 +960,152 @@ final class AttoEditorAreaViewController: NSViewController {
             #"{"kind":"style","op":"unfold_all"}"#,
             treatsAsTextMutation: false
         )
+    }
+
+    @discardableResult
+    func refreshFoldingRangesInActiveTab(showFeedback: Bool = true) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Folding ranges are unavailable.\nLSP is not enabled for this document.",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelFoldingRangesUI()
+
+        do {
+            _ = try tab.editCore.editor.lspRequestFoldingRanges()
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Folding ranges request failed.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        foldingRangesContext = FoldingRangesRequestContext(tabID: tab.id, showFeedback: showFeedback)
+        startFoldingRangesPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
+        return true
+    }
+
+    @discardableResult
+    func applyFoldingRangesResultJSONToActiveTab(_ json: String, showFeedback: Bool = false) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try tab.editCore.editor.lspApplyFoldingRangesJSON(json)
+            tab.editCore.layoutSubtreeIfNeeded()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            derivedStateStore.refreshActive(editor: tab.editCore.editor)
+            updateStatusBar()
+
+            if showFeedback, Self.foldingRangesResultCount(json) == 0 {
+                showWorkspaceEditPopover(
+                    text: "No folding ranges are available for this document.",
+                    in: tab.editCore.editorView
+                )
+            }
+            return true
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Folding ranges could not be applied.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private func startFoldingRangesPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        foldingRangesPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.foldingRangesContext, ctx.tabID == tabID else {
+                self.cancelFoldingRangesUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
+                self.cancelFoldingRangesUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(text: "Folding ranges request timed out.", in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelFoldingRangesUI()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastFoldingRangesResultJSON()
+            } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelFoldingRangesUI()
+                if showFeedback {
+                    self.showWorkspaceEditPopover(
+                        text: "Folding ranges failed.\n\(error.localizedDescription)",
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+            guard let json else { return }
+
+            let showFeedback = ctx.showFeedback
+            self.cancelFoldingRangesUI()
+            _ = self.applyFoldingRangesResultJSONToActiveTab(json, showFeedback: showFeedback)
+        }
+
+        foldingRangesPollTimer = timer
+        timer.resume()
+    }
+
+    private static func foldingRangesResultCount(_ json: String) -> Int? {
+        guard let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data, options: [])
+        else {
+            return nil
+        }
+        if root is NSNull {
+            return 0
+        }
+        return (root as? [Any])?.count
     }
 
     func moveToMatchingBracketInActiveTab() {
@@ -3892,6 +4048,12 @@ final class AttoEditorAreaViewController: NSViewController {
 
         codeActionResultsController?.hide()
         codeActionResultsController = nil
+    }
+
+    private func cancelFoldingRangesUI() {
+        foldingRangesPollTimer?.cancel()
+        foldingRangesPollTimer = nil
+        foldingRangesContext = nil
     }
 }
 

@@ -54,6 +54,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.organize_imports"))
         XCTAssertTrue(ids.contains("lsp.fix_all"))
         XCTAssertTrue(ids.contains("lsp.problems"))
+        XCTAssertTrue(ids.contains("lsp.refresh_folding_ranges"))
     }
 
     func testCommandRegistryCarriesMetadataAndAvailability() throws {
@@ -86,6 +87,37 @@ final class AttoEditorCommandTests: XCTestCase {
         _ = vc.view
 
         XCTAssertFalse(vc.promptWorkspaceSymbolsInActiveTab(initialQuery: "app"))
+    }
+
+    func testApplyFoldingRangesResultUpdatesDerivedState() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("folds.txt")
+        try """
+        import A
+        import B
+        let value = 1
+        """.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(
+            vc.applyFoldingRangesResultJSONToActiveTab(
+                #"[{"startLine":0,"endLine":1,"kind":"imports"}]"#
+            )
+        )
+
+        let regions = vc._activeDerivedStateForTesting().foldingRegions.regions
+        XCTAssertEqual(regions.count, 1)
+        XCTAssertEqual(regions[0].startLine, 0)
+        XCTAssertEqual(regions[0].endLine, 1)
+        XCTAssertFalse(regions[0].isCollapsed)
+        XCTAssertEqual(regions[0].placeholder, "use ...")
     }
 
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
@@ -211,6 +243,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "view.focus_previous_pane", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.close_pane", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.fold_selection", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_folding_ranges", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.go_to_definition", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.find_references", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_symbols", in: menu))
