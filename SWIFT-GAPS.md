@@ -4,7 +4,7 @@
 
 本文记录当前 Swift 侧、FFI 层、`editor-core-ui` 适配层以及 AttoEditor App 层相对 `editor-core-*` 能力的功能缺口。这里的 “Swift UI” 指仓库中的 Swift/AppKit/Skia/Metal 集成，不是 Apple SwiftUI 框架。
 
-本文关注的是“能否从 Swift 产品层完整使用 `editor-core-*` 能力”，不是评价 Rust core 自身是否完整。总体结论是：**当前 Swift 路径已经能支撑一个可用编辑器主流程，但还不是 `editor-core-*` 的完整能力投影**。尤其对于“复刻 Sublime Text”这个目标，缺口主要集中在命令面、LSP 产品化、派生状态产品化/消费、多文档/分屏归属、Sublime 兼容行为和视觉/交互测试体系。其中多文档、tab、workspace、project/session 的状态归属已经明确：后续应收敛到 `editor-core` / `editor-core-ui` 的 workspace 模型，Swift/AppKit 侧不再新开或扩展一套长期独立的 workspace/tab/session 模型。
+本文关注的是“能否从 Swift 产品层完整使用 `editor-core-*` 能力”，不是评价 Rust core 自身是否完整。总体结论是：**当前 Swift 路径已经能支撑一个可用编辑器主流程，但还不是 `editor-core-*` 的完整能力投影**。尤其对于“复刻 Sublime Text”这个目标，缺口主要集中在命令面、LSP 产品化、派生状态产品化/消费、多文档/分屏归属、Sublime 兼容行为和视觉/交互测试体系。其中多文档、tab、workspace、project/session 的状态归属已经明确：后续应收敛到 `editor-core` / `editor-core-ui` 的 workspace 模型，Swift/AppKit 侧不再新开或扩展一套长期独立的 workspace/tab/session 模型。本文后续提到的 Sublime 兼容不包含 `.sublime-syntax` 语法定义扩展；AttoEditor 的语言语义、结构化高亮和智能能力重点走 Tree-sitter 与 LSP 路线，Sublime syntax 支持以现有 `editor-core-sublime` 能力为基线即可。
 
 ## 范围
 
@@ -19,7 +19,7 @@
 - `swift/Sources/EditorCoreUI/`：AppKit view 层。
 - `swift/Sources/AttoEditor/`：当前 macOS app 产品层。
 
-本文不把所有未实现的 Sublime 产品功能都算作 Rust core 缺口；很多属于 App 层、命令系统、设置系统或插件/包生态缺口。
+本文不把所有未实现的 Sublime 产品功能都算作 Rust core 缺口；很多属于 App 层、命令系统、设置系统或插件/包生态缺口。Sublime syntax 兼容不列为后续扩展目标，因为这一部分没有稳定公开规范可作为实现和验收依据。
 
 ## 当前可用基线
 
@@ -363,7 +363,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 ## Sublime 兼容缺口
 
-当前仓库已经有 Sublime 相关 crate 和 Swift/App 集成，但“复刻 Sublime Text”需要更宽的产品面。
+当前仓库已经有 Sublime 相关 crate 和 Swift/App 集成，但“复刻 Sublime Text”需要更宽的产品面。这里的 Sublime 兼容范围明确不包含继续扩展 `.sublime-syntax` 语法定义兼容性：AttoEditor 的主路线是 Tree-sitter + LSP，`editor-core-sublime` 现有 syntax 支持只作为已有文件/主题生态的基线能力保留，不作为 P0/P1/P2 的新增功能目标。
 
 已具备或部分具备：
 
@@ -373,9 +373,13 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 基础 tab、sidebar、minimap、find/replace。
 - 部分 command palette。
 
+非目标：
+
+- 扩展 `.sublime-syntax` 兼容覆盖率，或把 Sublime syntax 当作 AttoEditor 后续语义/高亮主路线。
+- 为没有公开规范文档的 Sublime syntax 细节建立新的兼容矩阵；已有 `editor-core-sublime` 行为作为当前基线即可。
+
 仍需审计或补齐：
 
-- `.sublime-syntax` 兼容覆盖率。
 - `.sublime-color-scheme` 兼容覆盖率。
 - `.tmTheme` 兼容覆盖率。
 - Sublime settings scope 继承规则。
@@ -500,7 +504,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - package resource loading。
 - command palette 覆盖。
 - quick panels/input panels/output panels。
-- Sublime theme/syntax 兼容矩阵。
+- Sublime theme 兼容矩阵；syntax 部分不扩展，维持现有 `editor-core-sublime` 基线。
 
 ### P2：视觉回归和黑盒自动化
 
