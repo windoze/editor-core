@@ -19,6 +19,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var keyBindings: [String: AttoKeyBinding]
     private var keySequences: [String: AttoKeySequence]
     private var keyBindingArguments: [String: AttoCommandArguments]
+    private let keymapResolver: ((AttoKeymapContext) -> AttoKeymapResolution)?
     private var pendingKeySequence: [AttoKeyBinding] = []
     private var keySequenceTimeoutTimer: Timer?
     private let keySequencePrefixTimeoutSeconds: TimeInterval
@@ -29,10 +30,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     var createDefaultWindowOnLaunch: Bool = true
 
     override init() {
-        let keymap = AttoKeymap.resolvedKeymap()
+        let keymapResolver: (AttoKeymapContext) -> AttoKeymapResolution = { context in
+            AttoKeymap.resolvedKeymap(context: context)
+        }
+        let keymap = keymapResolver(AttoKeymapContext())
         self.keyBindings = keymap.bindings
         self.keySequences = keymap.sequences
         self.keyBindingArguments = keymap.arguments
+        self.keymapResolver = keymapResolver
         self.keySequencePrefixTimeoutSeconds = 1.0
         super.init()
     }
@@ -42,11 +47,13 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         keyBindingArguments: [String: AttoCommandArguments] = [:],
         keySequences: [String: AttoKeySequence] = [:],
         keySequencePrefixTimeoutSeconds: TimeInterval = 1.0,
-        keySequenceStatusHandler: ((String?) -> Void)? = nil
+        keySequenceStatusHandler: ((String?) -> Void)? = nil,
+        keymapResolver: ((AttoKeymapContext) -> AttoKeymapResolution)? = nil
     ) {
         self.keyBindings = keyBindings
         self.keySequences = keySequences
         self.keyBindingArguments = keyBindingArguments
+        self.keymapResolver = keymapResolver
         self.keySequencePrefixTimeoutSeconds = keySequencePrefixTimeoutSeconds
         self.keySequenceStatusHandler = keySequenceStatusHandler
         super.init()
@@ -446,7 +453,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     @discardableResult
     private func executeCommandUsingKeymapArguments(commandID: String) -> Bool {
-        if let arguments = keyBindingArguments[commandID] {
+        executeCommandUsingKeymapArguments(commandID: commandID, keymap: keymapResolutionForCurrentContext())
+    }
+
+    @discardableResult
+    private func executeCommandUsingKeymapArguments(commandID: String, keymap: AttoKeymapResolution) -> Bool {
+        if let arguments = keymap.arguments[commandID] {
             executeCommand(id: commandID, arguments: arguments)
         } else {
             executeCommand(id: commandID)
@@ -464,28 +476,38 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     @discardableResult
     private func handleKeyBinding(_ binding: AttoKeyBinding) -> Bool {
+        let keymap = keymapResolutionForCurrentContext()
+
         if pendingKeySequence.isEmpty == false, binding == AttoKeymap.parseBinding("escape") {
             clearPendingKeySequence()
             return true
         }
 
         let candidate = pendingKeySequence + [binding]
-        if let commandID = commandID(forKeySequence: candidate) {
+        if let commandID = commandID(forKeySequence: candidate, keymap: keymap) {
             clearPendingKeySequence()
-            return executeCommandUsingKeymapArguments(commandID: commandID)
+            return executeCommandUsingKeymapArguments(commandID: commandID, keymap: keymap)
         }
 
-        if hasKeySequencePrefix(candidate) {
+        if hasKeySequencePrefix(candidate, keymap: keymap) {
             setPendingKeySequence(candidate)
             return true
+        }
+
+        if pendingKeySequence.isEmpty, let commandID = commandID(forKeyBinding: binding, keymap: keymap) {
+            return executeCommandUsingKeymapArguments(commandID: commandID, keymap: keymap)
         }
 
         let hadPending = pendingKeySequence.isEmpty == false
         clearPendingKeySequence()
 
-        if hadPending, hasKeySequencePrefix([binding]) {
+        if hadPending, hasKeySequencePrefix([binding], keymap: keymap) {
             setPendingKeySequence([binding])
             return true
+        }
+
+        if hadPending, let commandID = commandID(forKeyBinding: binding, keymap: keymap) {
+            return executeCommandUsingKeymapArguments(commandID: commandID, keymap: keymap)
         }
 
         return false
@@ -541,14 +563,37 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
     }
 
-    private func commandID(forKeySequence bindings: [AttoKeyBinding]) -> String? {
-        keySequences.first { _, sequence in
+    private func keymapResolutionForCurrentContext() -> AttoKeymapResolution {
+        guard let keymapResolver else {
+            return AttoKeymapResolution(
+                bindings: keyBindings,
+                sequences: keySequences,
+                arguments: keyBindingArguments,
+                conflicts: [],
+                sequenceConflicts: []
+            )
+        }
+        return keymapResolver(currentKeymapContext())
+    }
+
+    private func currentKeymapContext() -> AttoKeymapContext {
+        activeWindow()?.editorAreaController.keymapContextForActiveState() ?? AttoKeymapContext()
+    }
+
+    private func commandID(forKeySequence bindings: [AttoKeyBinding], keymap: AttoKeymapResolution) -> String? {
+        keymap.sequences.first { _, sequence in
             sequence.bindings == bindings
         }?.key
     }
 
-    private func hasKeySequencePrefix(_ bindings: [AttoKeyBinding]) -> Bool {
-        keySequences.values.contains { sequence in
+    private func commandID(forKeyBinding binding: AttoKeyBinding, keymap: AttoKeymapResolution) -> String? {
+        keymap.bindings.first { _, candidate in
+            candidate == binding
+        }?.key
+    }
+
+    private func hasKeySequencePrefix(_ bindings: [AttoKeyBinding], keymap: AttoKeymapResolution) -> Bool {
+        keymap.sequences.values.contains { sequence in
             guard sequence.bindings.count > bindings.count else { return false }
             return Array(sequence.bindings.prefix(bindings.count)) == bindings
         }
@@ -797,11 +842,15 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     }
 
     func _keyBindingArgumentsForTesting(commandID: String) -> AttoCommandArguments? {
-        keyBindingArguments[commandID]
+        keymapResolutionForCurrentContext().arguments[commandID]
     }
 
     func _keySequenceForTesting(commandID: String) -> AttoKeySequence? {
-        keySequences[commandID]
+        keymapResolutionForCurrentContext().sequences[commandID]
+    }
+
+    func _keymapContextForTesting() -> AttoKeymapContext {
+        currentKeymapContext()
     }
 
     func _pendingKeySequenceForTesting() -> [AttoKeyBinding] {
@@ -886,7 +935,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     }
 
     func keyBinding(forCommandID commandID: String) -> AttoKeyBinding? {
-        keyBindings[commandID]
+        keymapResolutionForCurrentContext().bindings[commandID]
     }
 
     private func editorCommandPaletteCommands() -> [AttoCommandPaletteCommand] {

@@ -66,6 +66,61 @@ final class AttoEditorAreaViewController: NSViewController {
         tabs.count > 1
     }
 
+    func keymapContextForActiveState() -> AttoKeymapContext {
+        var values: [String: AttoKeymapContextValue] = [
+            "has_active_editor": .bool(activeTab != nil),
+            "has_multiple_tabs": .bool(hasMultipleTabsForCommands),
+            "has_multiple_panes": .bool(hasMultiplePanesForCommands),
+        ]
+
+        guard let tab = activeTab else {
+            return AttoKeymapContext(values: values)
+        }
+
+        let language = AttoLanguageConfiguration.languageKey(
+            fileURL: tab.fileURL,
+            syntaxLanguageId: tab.syntaxLanguageId
+        )
+        if language.isEmpty == false {
+            values["syntax"] = .string(language)
+            values["selector"] = .string(Self.keymapSelector(forLanguage: language))
+        }
+        values["file_name"] = .string(tab.fileURL.lastPathComponent)
+        values["file_extension"] = .string(tab.fileURL.pathExtension.lowercased())
+        values["is_dirty"] = .bool(refreshTabDirtyState(tab))
+
+        do {
+            let selections = try tab.editCore.editor.selections()
+            let selectionEmptyValues = selections.ranges.map { range in
+                AttoKeymapContextValue.bool(range.start == range.end)
+            }
+            if selectionEmptyValues.count == 1, let only = selectionEmptyValues.first {
+                values["selection_empty"] = only
+            } else {
+                values["selection_empty"] = .list(selectionEmptyValues)
+            }
+            values["num_selections"] = .number(Double(selections.ranges.count))
+            values["has_multiple_selections"] = .bool(selections.ranges.count > 1)
+        } catch {
+            values["selection_empty"] = .bool(true)
+            values["num_selections"] = .number(1)
+            values["has_multiple_selections"] = .bool(false)
+        }
+
+        return AttoKeymapContext(values: values)
+    }
+
+    private static func keymapSelector(forLanguage language: String) -> String {
+        switch language {
+        case "markdown":
+            return "text.html.markdown"
+        case "text", "txt", "plain", "plaintext":
+            return "text.plain"
+        default:
+            return "source.\(language)"
+        }
+    }
+
     func _activeDerivedStateForTesting() -> AttoDerivedStateSnapshot {
         derivedStateStore.active
     }
@@ -7912,7 +7967,7 @@ private enum AttoLanguageConfiguration {
         }
     }
 
-    private static func languageKey(fileURL: URL, syntaxLanguageId: String?) -> String {
+    static func languageKey(fileURL: URL, syntaxLanguageId: String?) -> String {
         if let syntaxLanguageId {
             let language = syntaxLanguageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if language.isEmpty == false {

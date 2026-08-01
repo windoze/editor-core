@@ -658,6 +658,74 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(allResolution.bindings["test.all_not_string_selector"], AttoKeymap.parseBinding("cmd+4"))
     }
 
+    func testKeymapDynamicContextDispatchesActiveEditorBindings() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let keymapURL = tempDir.appendingPathComponent("keymap.json")
+        try """
+        [
+          {
+            "key": "cmd+1",
+            "command": "editor.duplicate_lines",
+            "context": [
+              { "key": "has_active_editor", "operand": true },
+              { "key": "selection_empty", "operand": false, "match_all": true },
+              { "key": "selector", "operator": "regex_contains", "operand": "source\\\\.swift", "match_all": true }
+            ]
+          },
+          {
+            "key": "cmd+2",
+            "command": "go.line",
+            "args": { "line": 2, "column": 1 },
+            "context": [
+              { "key": "file_extension", "operand": "swift" }
+            ]
+          }
+        ]
+        """.write(to: keymapURL, atomically: true, encoding: .utf8)
+
+        let env = [AttoKeymap.userKeymapEnv: keymapURL.path]
+        let delegate = AttoAppDelegate(
+            keyBindings: [:],
+            keymapResolver: { context in AttoKeymap.resolvedKeymap(env: env, context: context) }
+        )
+        let duplicateBinding = try XCTUnwrap(AttoKeymap.parseBinding("cmd+1"))
+        let goLineBinding = try XCTUnwrap(AttoKeymap.parseBinding("cmd+2"))
+
+        XCTAssertFalse(delegate._handleKeyBindingForTesting(duplicateBinding))
+
+        let fileURL = tempDir.appendingPathComponent("context.swift")
+        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 0, end: 0)], primaryIndex: 0)
+        XCTAssertFalse(delegate._handleKeyBindingForTesting(duplicateBinding))
+
+        try editorView.editor.setSelections([EcuSelectionRange(start: 0, end: 3)], primaryIndex: 0)
+        let keymapContext = delegate._keymapContextForTesting()
+        XCTAssertEqual(keymapContext.values["has_active_editor"], .bool(true))
+        XCTAssertEqual(keymapContext.values["file_extension"], .string("swift"))
+        XCTAssertEqual(keymapContext.values["selector"], .string("source.swift"))
+        XCTAssertEqual(keymapContext.values["selection_empty"], .bool(false))
+
+        XCTAssertTrue(delegate._handleKeyBindingForTesting(duplicateBinding))
+        XCTAssertEqual(try editorView.editor.text(), "abc\nabc\ndef\n")
+
+        XCTAssertEqual(delegate._keyBindingArgumentsForTesting(commandID: "go.line"), [
+            "line": .integer(2),
+            "column": .integer(1),
+        ])
+        XCTAssertTrue(delegate._handleKeyBindingForTesting(goLineBinding))
+        XCTAssertEqual(try editorView.editor.selectionOffsets().start, 4)
+    }
+
     func testKeymapUserBindingShadowsConflictingDefaultShortcut() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
