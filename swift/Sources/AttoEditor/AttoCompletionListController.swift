@@ -6,6 +6,8 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
     private var panel: NSPanel?
     private let tableView = AttoCompletionTableView(frame: .zero)
     private let scrollView = NSScrollView(frame: .zero)
+    private let previewScrollView = NSScrollView(frame: .zero)
+    private let previewTextView = NSTextView(frame: .zero)
 
     private var items: [AttoLspCompletionParser.Item] = []
     private var onCommit: ((AttoLspCompletionParser.Item) -> Void)?
@@ -32,6 +34,7 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         tableView.reloadData()
         tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
         tableView.scrollRowToVisible(0)
+        updatePreviewForSelectedRow()
 
         guard let panel else { return }
         position(panel: panel, relativeTo: editorView, anchorRect: anchorRect, itemCount: items.count)
@@ -44,11 +47,12 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         guard let panel else { return }
         panel.orderOut(nil)
         panel.parent?.removeChildWindow(panel)
+        previewTextView.string = ""
     }
 
     private func buildPanel() -> NSPanel {
         let panel = AttoCompletionPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 440, height: 220),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 240),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -68,7 +72,7 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         panel.contentView = root
 
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("completion"))
-        col.width = 420
+        col.width = 388
         tableView.addTableColumn(col)
         tableView.headerView = nil
         tableView.dataSource = self
@@ -91,12 +95,49 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         scrollView.drawsBackground = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
+        previewTextView.isEditable = false
+        previewTextView.isSelectable = true
+        previewTextView.drawsBackground = false
+        previewTextView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        previewTextView.textColor = NSColor(attoHex: 0xD4D4D4)
+        previewTextView.textContainerInset = NSSize(width: 8, height: 8)
+        previewTextView.textContainer?.lineFragmentPadding = 0
+        previewTextView.isVerticallyResizable = true
+        previewTextView.isHorizontallyResizable = false
+        previewTextView.autoresizingMask = [.width]
+        previewTextView.textContainer?.widthTracksTextView = true
+        previewTextView.textContainer?.containerSize = NSSize(
+            width: 260,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+
+        previewScrollView.documentView = previewTextView
+        previewScrollView.hasVerticalScroller = true
+        previewScrollView.drawsBackground = false
+        previewScrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        let separator = NSBox()
+        separator.boxType = .separator
+        separator.translatesAutoresizingMaskIntoConstraints = false
+
         root.addSubview(scrollView)
+        root.addSubview(separator)
+        root.addSubview(previewScrollView)
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: root.topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            scrollView.widthAnchor.constraint(equalToConstant: 400),
+
+            separator.leadingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            separator.topAnchor.constraint(equalTo: root.topAnchor, constant: 6),
+            separator.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -6),
+            separator.widthAnchor.constraint(equalToConstant: 1),
+
+            previewScrollView.leadingAnchor.constraint(equalTo: separator.trailingAnchor),
+            previewScrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            previewScrollView.topAnchor.constraint(equalTo: root.topAnchor),
+            previewScrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
         ])
 
         return panel
@@ -106,8 +147,8 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         guard let window = editorView.window else { return }
         let screen = window.screen ?? NSScreen.main
 
-        let width: CGFloat = 440
-        let height = min(CGFloat(10 * 24 + 10), max(58, CGFloat(min(itemCount, 10)) * 24 + 10))
+        let width: CGFloat = 680
+        let height = min(CGFloat(12 * 24 + 10), max(96, CGFloat(min(itemCount, 12)) * 24 + 10))
 
         let rectInWindow = editorView.convert(anchorRect, to: nil)
         let rectInScreen = window.convertToScreen(rectInWindow)
@@ -157,6 +198,10 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         return cell
     }
 
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        updatePreviewForSelectedRow()
+    }
+
     @objc private func doubleClicked(_ sender: Any?) {
         commitSelected()
     }
@@ -167,6 +212,15 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         let item = items[row]
         hide()
         onCommit?(item)
+    }
+
+    private func updatePreviewForSelectedRow() {
+        let row = tableView.selectedRow
+        guard row >= 0, row < items.count else {
+            previewTextView.string = ""
+            return
+        }
+        previewTextView.string = AttoLspCompletionParser.previewText(for: items[row]) ?? items[row].label
     }
 
     func windowDidResignKey(_ notification: Notification) {

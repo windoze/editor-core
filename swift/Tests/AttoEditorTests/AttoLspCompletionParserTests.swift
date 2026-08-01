@@ -11,7 +11,12 @@ final class AttoLspCompletionParserTests: XCTestCase {
             {
               "label": "print",
               "kind": 3,
-              "detail": "(value: Any)"
+              "detail": "(value: Any)",
+              "documentation": {
+                "kind": "markdown",
+                "value": "Writes a value."
+              },
+              "commitCharacters": ["(", "."]
             },
             {
               "label": "private",
@@ -25,8 +30,23 @@ final class AttoLspCompletionParserTests: XCTestCase {
         XCTAssertEqual(items.count, 2)
         XCTAssertEqual(items[0].label, "print")
         XCTAssertEqual(items[0].kindLabel, "Function")
+        XCTAssertEqual(items[0].documentation, "Writes a value.")
+        XCTAssertEqual(items[0].commitCharacters, ["(", "."])
         XCTAssertEqual(AttoLspCompletionParser.displayTitle(for: items[0]), "print  [Function] (value: Any)")
+        XCTAssertEqual(
+            AttoLspCompletionParser.previewText(for: items[0]),
+            "print\nFunction  (value: Any)\n\nWrites a value.\n\nCommit characters: ( ."
+        )
         XCTAssertEqual(AttoLspCompletionParser.displayTitle(for: items[1]), "private  [Keyword]")
+    }
+
+    func testCompletionPreviewParsesStringDocumentation() throws {
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(
+            fromCompletionResultJSON: #"[{"label":"map","documentation":"Transform values"}]"#
+        ).first)
+
+        XCTAssertEqual(item.documentation, "Transform values")
+        XCTAssertEqual(AttoLspCompletionParser.previewText(for: item), "map\n\nTransform values")
     }
 
     func testArrayCompletionResultParsesItems() throws {

@@ -5,6 +5,8 @@ enum AttoLspCompletionParser {
     struct Item {
         let label: String
         let detail: String?
+        let documentation: String?
+        let commitCharacters: [String]
         let kind: Int?
         let kindLabel: String?
         let filterText: String?
@@ -63,6 +65,34 @@ enum AttoLspCompletionParser {
             return item.label
         }
         return "\(item.label)  \(suffix.joined(separator: " "))"
+    }
+
+    static func previewText(for item: Item) -> String? {
+        var lines: [String] = [item.label]
+
+        var metadata: [String] = []
+        if let kindLabel = item.kindLabel {
+            metadata.append(kindLabel)
+        }
+        if let detail = item.detail, detail.isEmpty == false {
+            metadata.append(detail)
+        }
+        if metadata.isEmpty == false {
+            lines.append(metadata.joined(separator: "  "))
+        }
+
+        if let documentation = item.documentation, documentation.isEmpty == false {
+            lines.append("")
+            lines.append(documentation)
+        }
+
+        if item.commitCharacters.isEmpty == false {
+            lines.append("")
+            lines.append("Commit characters: \(item.commitCharacters.joined(separator: " "))")
+        }
+
+        let text = lines.joined(separator: "\n")
+        return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
     }
 
     static func identifierFallbackRange(in text: String, caretOffset: UInt32) -> (start: UInt32, end: UInt32) {
@@ -128,6 +158,8 @@ enum AttoLspCompletionParser {
         return Item(
             label: label,
             detail: stringValue(dict["detail"]),
+            documentation: documentationText(dict["documentation"]),
+            commitCharacters: stringArray(dict["commitCharacters"]),
             kind: kind,
             kindLabel: kind.flatMap(kindLabel),
             filterText: stringValue(dict["filterText"]),
@@ -221,6 +253,28 @@ enum AttoLspCompletionParser {
 
     private static func stringValue(_ any: Any?) -> String? {
         any as? String
+    }
+
+    private static func documentationText(_ any: Any?) -> String? {
+        if let s = any as? String {
+            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : s
+        }
+        if let dict = any as? [String: Any],
+           let value = dict["value"] as? String
+        {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : value
+        }
+        return nil
+    }
+
+    private static func stringArray(_ any: Any?) -> [String] {
+        guard let arr = any as? [Any] else { return [] }
+        return arr.compactMap { value in
+            guard let string = value as? String, string.isEmpty == false else { return nil }
+            return string
+        }
     }
 
     private static func intValue(_ any: Any?) -> Int? {
