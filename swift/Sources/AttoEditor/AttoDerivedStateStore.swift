@@ -28,8 +28,14 @@ struct AttoDerivedStateSnapshot: Equatable {
         return count == 1 ? "Folded: 1" : "Folded: \(count)"
     }
 
+    var codeLensStatusText: String? {
+        let count = AttoLspCodeLensParser.items(fromDecorationsSnapshot: decorations).count
+        guard count > 0 else { return nil }
+        return count == 1 ? "Code Lens: 1" : "Code Lens: \(count)"
+    }
+
     var statusBarLeftText: String? {
-        let parts = [problemsStatusText, foldedStatusText].compactMap { $0 }
+        let parts = [problemsStatusText, foldedStatusText, codeLensStatusText].compactMap { $0 }
         guard parts.isEmpty == false else { return nil }
         return parts.joined(separator: " | ")
     }
