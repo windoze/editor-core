@@ -181,6 +181,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 99 已完成：AttoEditor 新增 `lsp.pick_document_color` 命令和 Go 菜单入口；document color result 可进入直接 color picker 路径，单个颜色会直接打开 `NSColorPanel`，多个颜色先用色块 quick panel 选择目标，选中颜色变化后继续复用既有 `textDocument/colorPresentation` 请求和 apply 链路。测试覆盖命令/菜单注册，以及注入 picker 时的初始颜色和 range selection。
 - 2026-08-02 阶段 100 已完成：AttoEditor 新增通用 `editor.apply_snippet` App command 和 Edit 菜单入口；命令可通过输入框接收 editor-core snippet 字符串，并应用到当前 primary selection range，继续使用既有 `EditorUI.applySnippet` 和 snippet placeholder session。测试覆盖命令/菜单注册、文本插入和 active snippet session。
 - 2026-08-02 阶段 101 已完成：AttoEditor 的 `editor.add_next_occurrence` / `editor.add_all_occurrences` 命令从静态 JSON 默认参数改为调用 Swift typed API，并消费 Find bar 当前 case-sensitive / whole-word / regex search options。测试覆盖关闭 `Aa` 后 add-all occurrence 会按大小写不敏感选中所有匹配。
+- 2026-08-02 阶段 102 已完成：AttoEditor comment toggle 新增用户语言级 comment configuration override，`AttoPreferences` 可按 normalized language key 存储 line/block comment token，`editor.toggle_line_comment` 会优先使用用户覆盖再回落到内置语言默认。测试覆盖 preferences 存取归一化/清除，以及 `.py` 文件按用户覆盖 token 注释。
 
 ## 分层结论
 
@@ -229,7 +230,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | move lines up/down | 有 | 有 | Swift 有 typed `moveLinesUp()` / `moveLinesDown()`；AttoEditor command palette、菜单和默认 keymap 有 `editor.move_lines_up/down` | P0 菜单和 arrow-key 默认 keymap 接线完成。 |
 | join lines | 有 | 有 | Swift 有 typed `joinLines()`；AttoEditor command palette、菜单和 keymap 有 `editor.join_lines` | P0 接线和基础启用/禁用状态模型已补齐。 |
 | split line | 有 | 有 | Swift 有 typed `splitLine()`；AttoEditor command palette 和菜单有 `editor.split_line` | P0 菜单接线完成；可配置 keymap 可覆盖。 |
-| toggle comment | 有 | 有 | Swift 有 typed `toggleComment(_:)`；AttoEditor command palette、菜单和 keymap 有 `editor.toggle_line_comment`，并按语言配置向 core 传 `line` / `block_start` / `block_end` comment config | 基础 line/block comment config 桥接已补齐；仍缺用户 settings scope 覆盖。 |
+| toggle comment | 有 | 有 | Swift 有 typed `toggleComment(_:)`；AttoEditor command palette、菜单和 keymap 有 `editor.toggle_line_comment`，并按语言配置向 core 传 `line` / `block_start` / `block_end` comment config；用户可通过 preferences 按 language key 覆盖 line/block comment token | 基础 line/block comment config 桥接和用户 settings 覆盖已补齐。 |
 | general `ApplyTextEdits` | 有 | 有 | Swift 有 typed `applyTextEdits(_:)`；Rust UI 也有 LSP text edit apply helper；completion popup 可应用 textEdit/additionalTextEdits | LSP code action、rename 等仍需要产品化接线。 |
 | `DeleteToPrevTabStop` | 有 | 有 | Swift 有 typed `deleteToPrevTabStop()`；AttoEditor command palette 和菜单有 `editor.delete_to_prev_tab_stop` | P0 菜单接线完成；可配置 keymap 可覆盖。 |
 | explicit indent/outdent commands | 有 | 有 | Swift 有 typed `indent()` / `outdent()`；Tab/Backtab 主路径可用；AttoEditor command palette 和菜单有 `editor.indent/outdent` | P0 菜单接线完成；Tab/Backtab 仍走文本系统主路径。 |
@@ -616,7 +617,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 | Feature | Core | core FFI | UI Rust | UI FFI | Swift `EditorUI` | Atto command | Tests |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | duplicate line | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
-| toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap | yes |
+| toggle comment | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap + language comment settings override | yes |
 | apply snippet | yes | yes, via JSON | yes | yes, via JSON | yes, typed + JSON | yes, generic apply-snippet command + completion apply + Tab/Backtab placeholder path + explicit placeholder commands | yes |
 | add occurrence | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, command palette/menu/keymap + Find bar search options | yes |
 | selection/multicursor | yes | yes | yes | yes, via JSON | yes, typed + JSON | yes, common commands in command palette/menu; select line has default keymap | yes |

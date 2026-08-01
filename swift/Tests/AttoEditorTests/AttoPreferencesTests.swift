@@ -169,4 +169,21 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertNil(prefs.storedWrapIndent)
         XCTAssertEqual(prefs.effectiveWrapIndent, .sameAsLineIndent)
     }
+
+    func testCommentConfigurationOverridesNormalizeStoreAndClear() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        let prefs = AttoPreferences(defaults: defaults, env: [:])
+        XCTAssertEqual(prefs.storedCommentConfigurations, [:])
+
+        let config = AttoCommentConfiguration.lineAndBlock(";;", "#|", "|#")
+        prefs.setCommentConfiguration(config, forLanguageKey: "  Lisp  ")
+
+        XCTAssertEqual(prefs.storedCommentConfigurations, ["lisp": config])
+        XCTAssertEqual(prefs.commentConfigurationOverride(forLanguageKey: "LISP"), config)
+
+        prefs.setCommentConfiguration(nil, forLanguageKey: "lisp")
+        XCTAssertEqual(prefs.storedCommentConfigurations, [:])
+        XCTAssertNil(prefs.commentConfigurationOverride(forLanguageKey: "lisp"))
+    }
 }

@@ -1637,6 +1637,34 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "# print(1)\n")
     }
 
+    func testToggleLineCommentUsesUserLanguageOverride() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let suiteName = "atto_command_comment_override_\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let preferences = AttoPreferences(defaults: defaults, env: [:])
+        preferences.setCommentConfiguration(.line("##"), forLanguageKey: "python")
+
+        let fileURL = tempDir.appendingPathComponent("script.py")
+        try "print(1)\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir, preferences: preferences)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 0, end: 0)], primaryIndex: 0)
+
+        XCTAssertTrue(vc.toggleLineCommentInActiveTab())
+        XCTAssertEqual(try editorView.editor.text(), "## print(1)\n")
+    }
+
     func testToggleCommentUsesBlockLanguageConfig() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -2045,11 +2073,15 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(coreSnapshot.tabs[0].activeViewIndex, 0)
     }
 
-    private func makeEditorArea(workspaceRootURL: URL) -> AttoEditorAreaViewController {
+    private func makeEditorArea(
+        workspaceRootURL: URL,
+        preferences: AttoPreferences = .shared
+    ) -> AttoEditorAreaViewController {
         AttoEditorAreaViewController(
             library: EditorCoreUIFFILibrary(),
             theme: EditorCoreSkiaTheme.defaultLight(),
-            workspaceRootURL: workspaceRootURL
+            workspaceRootURL: workspaceRootURL,
+            preferences: preferences
         )
     }
 

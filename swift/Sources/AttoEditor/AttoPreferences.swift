@@ -1,6 +1,44 @@
 import EditorCoreUIFFI
 import Foundation
 
+struct AttoCommentConfiguration: Equatable {
+    var line: String?
+    var blockStart: String?
+    var blockEnd: String?
+
+    var jsonObject: [String: String] {
+        var out: [String: String] = [:]
+        if let line { out["line"] = line }
+        if let blockStart { out["block_start"] = blockStart }
+        if let blockEnd { out["block_end"] = blockEnd }
+        return out
+    }
+
+    var normalized: Self? {
+        let line = line?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let blockStart = blockStart?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let blockEnd = blockEnd?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+
+        if blockStart != nil, blockEnd == nil { return nil }
+        if blockStart == nil, blockEnd != nil { return nil }
+        if line == nil, blockStart == nil { return nil }
+
+        return Self(line: line, blockStart: blockStart, blockEnd: blockEnd)
+    }
+
+    static func line(_ token: String) -> Self {
+        Self(line: token, blockStart: nil, blockEnd: nil)
+    }
+
+    static func block(_ start: String, _ end: String) -> Self {
+        Self(line: nil, blockStart: start, blockEnd: end)
+    }
+
+    static func lineAndBlock(_ line: String, _ start: String, _ end: String) -> Self {
+        Self(line: line, blockStart: start, blockEnd: end)
+    }
+}
+
 extension Notification.Name {
     static let attoPreferencesDidChange = Notification.Name("AttoEditor.attoPreferencesDidChange")
 }
@@ -23,6 +61,7 @@ final class AttoPreferences: NSObject {
         static let wrapMode = "AttoEditor.preferences.wrapMode"
         static let wrapIndent = "AttoEditor.preferences.wrapIndent"
         static let themeName = "AttoEditor.preferences.themeName"
+        static let commentConfigurations = "AttoEditor.preferences.commentConfigurations"
     }
 
     private let defaults: UserDefaults
@@ -132,6 +171,10 @@ final class AttoPreferences: NSObject {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    var storedCommentConfigurations: [String: AttoCommentConfiguration] {
+        commentConfigurationStorage().compactMapValues(Self.parseCommentConfiguration)
+    }
+
     func setFontFaces(_ faces: [String]) {
         let normalized = Self.normalizeFontFaces(faces)
         defaults.set(normalized, forKey: Keys.fontFaces)
@@ -182,6 +225,29 @@ final class AttoPreferences: NSObject {
             defaults.set(trimmed, forKey: Keys.themeName)
         } else {
             defaults.removeObject(forKey: Keys.themeName)
+        }
+        postDidChange()
+    }
+
+    func commentConfigurationOverride(forLanguageKey languageKey: String) -> AttoCommentConfiguration? {
+        storedCommentConfigurations[Self.normalizeCommentConfigurationKey(languageKey)]
+    }
+
+    func setCommentConfiguration(_ configuration: AttoCommentConfiguration?, forLanguageKey rawKey: String) {
+        let key = Self.normalizeCommentConfigurationKey(rawKey)
+        guard key.isEmpty == false else { return }
+
+        var storage = commentConfigurationStorage()
+        if let normalized = configuration?.normalized {
+            storage[key] = Self.commentConfigurationStorageObject(normalized)
+        } else {
+            storage.removeValue(forKey: key)
+        }
+
+        if storage.isEmpty {
+            defaults.removeObject(forKey: Keys.commentConfigurations)
+        } else {
+            defaults.set(storage, forKey: Keys.commentConfigurations)
         }
         postDidChange()
     }
@@ -266,6 +332,39 @@ final class AttoPreferences: NSObject {
         return min(max(v, 6.0), 72.0)
     }
 
+    static func normalizeCommentConfigurationKey(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func commentConfigurationStorage() -> [String: [String: String]] {
+        guard let raw = defaults.dictionary(forKey: Keys.commentConfigurations) else { return [:] }
+
+        var out: [String: [String: String]] = [:]
+        for (rawKey, rawValue) in raw {
+            let key = Self.normalizeCommentConfigurationKey(rawKey)
+            guard key.isEmpty == false else { continue }
+
+            if let value = rawValue as? [String: String] {
+                out[key] = value
+            } else if let value = rawValue as? [String: Any] {
+                out[key] = value.compactMapValues { $0 as? String }
+            }
+        }
+        return out
+    }
+
+    private static func parseCommentConfiguration(_ raw: [String: String]) -> AttoCommentConfiguration? {
+        AttoCommentConfiguration(
+            line: raw["line"],
+            blockStart: raw["block_start"],
+            blockEnd: raw["block_end"]
+        ).normalized
+    }
+
+    private static func commentConfigurationStorageObject(_ configuration: AttoCommentConfiguration) -> [String: String] {
+        configuration.jsonObject
+    }
+
     private static func parseBoolEnv(_ raw: String?) -> Bool? {
         guard let raw else { return nil }
         switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
@@ -320,5 +419,11 @@ final class AttoPreferences: NSObject {
 
     private func postDidChange() {
         NotificationCenter.default.post(name: .attoPreferencesDidChange, object: self)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

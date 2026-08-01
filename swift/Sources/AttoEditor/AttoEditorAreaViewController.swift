@@ -1756,7 +1756,8 @@ final class AttoEditorAreaViewController: NSViewController {
             "op": "toggle_comment",
             "config": AttoLanguageConfiguration.commentConfig(
                 fileURL: tab.fileURL,
-                syntaxLanguageId: tab.syntaxLanguageId
+                syntaxLanguageId: tab.syntaxLanguageId,
+                preferences: preferences
             ).jsonObject,
         ])
     }
@@ -7860,32 +7861,6 @@ private enum AttoLspLanguageId {
 }
 
 private enum AttoLanguageConfiguration {
-    struct CommentConfiguration {
-        var line: String?
-        var blockStart: String?
-        var blockEnd: String?
-
-        var jsonObject: [String: String] {
-            var out: [String: String] = [:]
-            if let line { out["line"] = line }
-            if let blockStart { out["block_start"] = blockStart }
-            if let blockEnd { out["block_end"] = blockEnd }
-            return out
-        }
-
-        static func line(_ token: String) -> Self {
-            Self(line: token, blockStart: nil, blockEnd: nil)
-        }
-
-        static func block(_ start: String, _ end: String) -> Self {
-            Self(line: nil, blockStart: start, blockEnd: end)
-        }
-
-        static func lineAndBlock(_ line: String, _ start: String, _ end: String) -> Self {
-            Self(line: line, blockStart: start, blockEnd: end)
-        }
-    }
-
     static func indentationConfig(fileURL: URL, syntaxLanguageId: String?) -> EcuIndentationConfig {
         let language = languageKey(fileURL: fileURL, syntaxLanguageId: syntaxLanguageId)
         return EcuIndentationConfig(
@@ -7895,8 +7870,17 @@ private enum AttoLanguageConfiguration {
         )
     }
 
-    static func commentConfig(fileURL: URL, syntaxLanguageId: String?) -> CommentConfiguration {
+    @MainActor
+    static func commentConfig(
+        fileURL: URL,
+        syntaxLanguageId: String?,
+        preferences: AttoPreferences
+    ) -> AttoCommentConfiguration {
         let language = languageKey(fileURL: fileURL, syntaxLanguageId: syntaxLanguageId)
+        if let override = preferences.commentConfigurationOverride(forLanguageKey: language) {
+            return override
+        }
+
         switch language {
         case "python", "ruby", "shell", "bash", "sh", "zsh", "toml", "yaml", "makefile", "make":
             return .line("#")
