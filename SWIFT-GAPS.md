@@ -115,6 +115,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 34 已完成：AttoEditor 新增基础语言配置表，按 syntax language id 或文件扩展名把 `EcuIndentationConfig` 应用到新打开 editor、手动语言切换和 split clone；toggle comment 也改为消费同一语言配置入口，避免 comment token 与 indentation language 推断分叉。
 - 2026-08-01 阶段 35 已完成：AttoEditor command registry 新增基础 group / requiresEditor / isEnabled 元数据；菜单 validation、command palette disabled state 和 `executeCommand(id:)` 会共用同一套 command availability 规则，编辑器命令在没有 active editor 时不再静默 no-op。
 - 2026-08-01 阶段 36 已完成：AttoEditor keymap 新增 arrow/navigation function-key token 解析，并为 `editor.move_lines_up` / `editor.move_lines_down` 建立 `super+ctrl+up/down` 默认绑定；Edit 菜单可通过同一 command id 显示并触发对应快捷键。
+- 2026-08-01 阶段 37 已完成：AttoEditor 主菜单新增独立 Selection 菜单分组，`select word/line`、`expand selection`、`add cursor above/below` 和 occurrence 命令继续复用统一 command id、keymap 与菜单 validation 路径。
 
 ## 分层结论
 
@@ -170,7 +171,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 | `EndUndoGroup` | 有 | 有 | Swift 有 typed `endUndoGroup()` | App 层复合命令还未统一使用。 |
 | logical `MoveTo` / `MoveBy` | 有 | 有 | Swift 有 typed `moveTo(line:column:)` / `moveBy(deltaLine:deltaColumn:)`，也可通过 selection/conversion 间接达成 | 仍缺面向用户的参数化 App command。 |
 | visual movement commands | 有 | 有 | Swift 可通过 `executeCommandJSON` 调用，AppKit key handling 覆盖一部分 | 仍缺 App command coverage matrix。 |
-| selection / multicursor commands | 有 | 有 | Swift UI FFI 有 typed select word/line、expand selection、add cursor above/below，也可通过 UI JSON 调用；AttoEditor command palette 和菜单有 `editor.select_word` / `editor.select_line` / `editor.expand_selection` / `editor.add_cursor_above` / `editor.add_cursor_below`；keymap 已支持 arrow/navigation function-key token | 常用 App command 已补齐；仍缺完整 Selection 菜单分组和所有视觉移动命令矩阵。 |
+| selection / multicursor commands | 有 | 有 | Swift UI FFI 有 typed select word/line、expand selection、add cursor above/below，也可通过 UI JSON 调用；AttoEditor command palette 和 Selection 菜单有 `editor.select_word` / `editor.select_line` / `editor.expand_selection` / `editor.add_cursor_above` / `editor.add_cursor_below`；keymap 已支持 arrow/navigation function-key token | 常用 App command 和 Selection 菜单分组已补齐；仍缺所有视觉移动命令矩阵。 |
 | `MoveToMatchingBracket` | 有 | headless FFI 缺 | Swift UI 有公开方法 | headless 和 UI command 面不一致。 |
 | add occurrence options | 有 | 有 | Swift typed `addNextOccurrence(options:)` / `addAllOccurrences(options:)` 已支持 options；AttoEditor command palette、菜单和 keymap 有 `editor.add_next_occurrence` / `editor.add_all_occurrences` 默认 options 入口 | 默认 App command/keymap 已补齐；仍缺 settings/search-options 接线。 |
 | `SetWrapMode` | 有 | 有 | Swift 有 typed `setWrapMode(_:)`；AttoEditor command palette、菜单和 keymap 有 wrap off/char/word；preferences 有持久化 wrap mode 并会应用到新建和已打开 editor | App settings 接线已补齐。 |
@@ -476,6 +477,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor 会按语言/扩展名应用基础 indentation config。
 - 已完成：AttoEditor command registry 已接入基础 group/requiresEditor/isEnabled 元数据，菜单、palette 和 `executeCommand(id:)` 共用同一启用状态。
 - 已完成：AttoEditor keymap 已支持 arrow/navigation function-key token，move lines up/down 已有默认 arrow-key 绑定。
+- 已完成：AttoEditor 主菜单已有独立 Selection 菜单分组，常用 selection/multicursor 命令复用统一 command id。
 - 已完成：AttoEditor command palette 为一批 Sublime 基础编辑命令建立稳定 command id。
 - 已完成：为高频命令补 typed Swift convenience API。
 - 已完成：把 App command id 统一接入主菜单和初步用户可配置 keymap。

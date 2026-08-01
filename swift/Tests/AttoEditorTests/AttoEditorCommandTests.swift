@@ -186,13 +186,17 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.snippet_next_placeholder", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.snippet_prev_placeholder", in: menu))
+
+        let selectionMenu = try XCTUnwrap(topLevelMenu(title: "Selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.add_next_occurrence", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.add_all_occurrences", in: menu))
-        XCTAssertNotNil(findMenuItem(commandID: "editor.select_word", in: menu))
-        XCTAssertNotNil(findMenuItem(commandID: "editor.select_line", in: menu))
-        XCTAssertNotNil(findMenuItem(commandID: "editor.expand_selection", in: menu))
-        XCTAssertNotNil(findMenuItem(commandID: "editor.add_cursor_above", in: menu))
-        XCTAssertNotNil(findMenuItem(commandID: "editor.add_cursor_below", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.select_word", in: selectionMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.select_line", in: selectionMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.expand_selection", in: selectionMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.add_cursor_above", in: selectionMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.add_cursor_below", in: selectionMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.add_next_occurrence", in: selectionMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "editor.add_all_occurrences", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.focus_next_pane", in: menu))
@@ -555,6 +559,15 @@ final class AttoEditorCommandTests: XCTestCase {
             }
             if let submenu = item.submenu, let found = findMenuItem(commandID: commandID, in: submenu) {
                 return found
+            }
+        }
+        return nil
+    }
+
+    private func topLevelMenu(title: String, in menu: NSMenu) -> NSMenu? {
+        for item in menu.items {
+            if item.submenu?.title == title {
+                return item.submenu
             }
         }
         return nil
