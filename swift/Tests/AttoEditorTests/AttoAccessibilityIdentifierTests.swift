@@ -115,6 +115,59 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.commandPaletteScrollView(prefix: prefix), in: root))
     }
 
+    func testCommandPaletteSupportsInitialQueryAndDynamicReload() throws {
+        let prefix = "AttoEditor.DynamicPalette"
+        var commands = [
+            AttoCommandPaletteCommand(id: "symbol.alpha", title: "Alpha Symbol") {},
+            AttoCommandPaletteCommand(id: "symbol.beta", title: "Beta Symbol") {},
+        ]
+        var searchChanges: [String] = []
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: prefix,
+            filtersCommands: false,
+            searchTextDidChange: { searchChanges.append($0) },
+            commandsProvider: { commands }
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        window.makeKeyAndOrderFront(nil)
+        controller.show(relativeTo: window, placeholder: "Search symbols...", initialQuery: "Project")
+
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: prefix), in: root) as? NSSearchField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.commandPaletteTable(prefix: prefix), in: root) as? NSTableView
+        )
+
+        XCTAssertEqual(searchField.placeholderString, "Search symbols...")
+        XCTAssertEqual(searchField.stringValue, "Project")
+        XCTAssertEqual(table.numberOfRows, 2)
+
+        commands = [
+            AttoCommandPaletteCommand(id: "symbol.gamma", title: "Gamma Result") {},
+        ]
+        controller.reloadCommands()
+        XCTAssertEqual(table.numberOfRows, 1)
+
+        searchField.stringValue = "Gamma"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(searchChanges, ["Gamma"])
+        XCTAssertEqual(table.numberOfRows, 1)
+    }
+
     func testCompletionPopupExposesStableIdentifiers() throws {
         let items = AttoLspCompletionParser.items(
             fromCompletionResultJSON: #"{"items":[{"label":"print","kind":3,"detail":"fn"}]}"#

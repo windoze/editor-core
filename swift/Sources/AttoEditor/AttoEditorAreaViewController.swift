@@ -283,6 +283,12 @@ final class AttoEditorAreaViewController: NSViewController {
         let kind: LspSymbolRequestKind
     }
 
+    private struct WorkspaceSymbolSearchContext {
+        let tabID: UUID
+        let requestID: Int
+        let query: String
+    }
+
     private struct HierarchyPrepareContext {
         let tabID: UUID
         let kind: LspHierarchyRequestKind
@@ -397,6 +403,12 @@ final class AttoEditorAreaViewController: NSViewController {
     private var lspSymbolResultsController: AttoCommandPaletteController?
     private var lastLspSymbolResultSnapshot: LspSymbolResultSnapshot?
     private var lspSymbolResultHistory: [LspSymbolResultSnapshot] = []
+    private var workspaceSymbolSearchContext: WorkspaceSymbolSearchContext?
+    private var workspaceSymbolSearchDebounceTimer: DispatchSourceTimer?
+    private var workspaceSymbolSearchPollTimer: DispatchSourceTimer?
+    private var workspaceSymbolSearchRequestID: Int = 0
+    private var workspaceSymbolSearchQuery: String = ""
+    private var workspaceSymbolSearchResults: [AttoLspSymbolParser.Symbol] = []
     private var hierarchyPrepareContext: HierarchyPrepareContext?
     private var hierarchyPreparePollTimer: DispatchSourceTimer?
     private var hierarchyChildrenContext: HierarchyChildrenContext?
@@ -3962,28 +3974,181 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func promptWorkspaceSymbolsInActiveTab(initialQuery: String = "") -> Bool {
-        guard activeTab != nil else {
+        guard let tab = activeTab else {
             NSSound.beep()
             return false
         }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            showWorkspaceEditPopover(
+                text: AttoLspSymbolRequestFeedback.unavailableMessage(kind: .workspace),
+                in: tab.editCore.editorView
+            )
+            NSSound.beep()
+            return false
+        }
+        guard let window = view.window else {
+            return showWorkspaceSymbolsInActiveTab(query: initialQuery.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
 
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.stringValue = initialQuery
-        field.placeholderString = "Symbol query"
-        field.selectText(nil)
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
 
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "Workspace Symbols"
-        alert.informativeText = "Enter a symbol query for the workspace."
-        alert.addButton(withTitle: "Search")
-        alert.addButton(withTitle: "Cancel")
-        alert.accessoryView = field
+        workspaceSymbolSearchQuery = initialQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        workspaceSymbolSearchResults = []
 
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return false }
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.WorkspaceSymbolSearch",
+            filtersCommands: false,
+            searchTextDidChange: { [weak self] query in
+                self?.scheduleWorkspaceSymbolSearch(query: query)
+            },
+            commandsProvider: { [weak self] in
+                self?.workspaceSymbolSearchCommands() ?? []
+            }
+        )
+        lspSymbolResultsController = controller
+        controller.show(
+            relativeTo: window,
+            placeholder: "Search workspace symbols...",
+            initialQuery: workspaceSymbolSearchQuery
+        )
+        requestWorkspaceSymbolSearch(query: workspaceSymbolSearchQuery)
+        return true
+    }
 
-        return showWorkspaceSymbolsInActiveTab(query: field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
+    private func workspaceSymbolSearchCommands() -> [AttoCommandPaletteCommand] {
+        let query = workspaceSymbolSearchQuery
+        let symbols = workspaceSymbolSearchResults
+        return symbols.enumerated().map { idx, symbol in
+            AttoCommandPaletteCommand(
+                id: "lsp.workspace_symbol_search.\(idx)",
+                title: displayTitle(for: symbol)
+            ) { [weak self] in
+                self?.openWorkspaceSymbolSearchResult(symbol, symbols: symbols, query: query)
+            }
+        }
+    }
+
+    private func scheduleWorkspaceSymbolSearch(query: String) {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        workspaceSymbolSearchQuery = trimmedQuery
+        workspaceSymbolSearchResults = []
+        lspSymbolResultsController?.reloadCommands()
+
+        workspaceSymbolSearchDebounceTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.18)
+        timer.setEventHandler { [weak self] in
+            self?.requestWorkspaceSymbolSearch(query: trimmedQuery)
+        }
+        workspaceSymbolSearchDebounceTimer = timer
+        timer.resume()
+    }
+
+    private func requestWorkspaceSymbolSearch(query: String) {
+        guard let tab = activeTab else {
+            cancelSymbolUI()
+            return
+        }
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            workspaceSymbolSearchResults = []
+            lspSymbolResultsController?.reloadCommands()
+            return
+        }
+
+        workspaceSymbolSearchDebounceTimer?.cancel()
+        workspaceSymbolSearchDebounceTimer = nil
+        workspaceSymbolSearchPollTimer?.cancel()
+
+        workspaceSymbolSearchRequestID += 1
+        let requestID = workspaceSymbolSearchRequestID
+        workspaceSymbolSearchContext = WorkspaceSymbolSearchContext(
+            tabID: tab.id,
+            requestID: requestID,
+            query: query
+        )
+
+        do {
+            _ = try tab.editCore.editor.lspRequestWorkspaceSymbols(query: query)
+        } catch {
+            workspaceSymbolSearchContext = nil
+            workspaceSymbolSearchResults = []
+            lspSymbolResultsController?.reloadCommands()
+            return
+        }
+
+        startWorkspaceSymbolSearchPollTimer(tabID: tab.id, requestID: requestID)
+    }
+
+    private func startWorkspaceSymbolSearchPollTimer(tabID: UUID, requestID: Int) {
+        workspaceSymbolSearchPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let ctx = self.workspaceSymbolSearchContext,
+                  ctx.tabID == tabID,
+                  ctx.requestID == requestID
+            else {
+                timer.cancel()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                self.workspaceSymbolSearchPollTimer?.cancel()
+                self.workspaceSymbolSearchPollTimer = nil
+                self.workspaceSymbolSearchContext = nil
+                timer.cancel()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelSymbolUI()
+                timer.cancel()
+                return
+            }
+
+            let json: String?
+            do {
+                json = try tab.editCore.editor.lspTakeLastWorkspaceSymbolsResultJSON()
+            } catch {
+                return
+            }
+            guard let json else { return }
+
+            self.workspaceSymbolSearchPollTimer?.cancel()
+            self.workspaceSymbolSearchPollTimer = nil
+            self.workspaceSymbolSearchContext = nil
+            if ctx.query == self.workspaceSymbolSearchQuery {
+                self.workspaceSymbolSearchResults = AttoLspSymbolParser.workspaceSymbols(fromResultJSON: json)
+                self.lspSymbolResultsController?.reloadCommands()
+            }
+            timer.cancel()
+        }
+
+        workspaceSymbolSearchPollTimer = timer
+        timer.resume()
+    }
+
+    private func openWorkspaceSymbolSearchResult(
+        _ symbol: AttoLspSymbolParser.Symbol,
+        symbols: [AttoLspSymbolParser.Symbol],
+        query: String
+    ) {
+        let snapshot = LspSymbolResultSnapshot(
+            title: workspaceSymbolTitle(query: query),
+            symbols: symbols,
+            placeholder: "Search workspace symbols..."
+        )
+        recordLspSymbolResultSnapshot(snapshot)
+        navigateToLspTarget(symbol.target)
     }
 
     private func requestLspSymbols(kind: LspSymbolRequestKind) -> Bool {
@@ -4178,8 +4343,7 @@ final class AttoEditorAreaViewController: NSViewController {
         case .workspace(let query):
             symbols = AttoLspSymbolParser.workspaceSymbols(fromResultJSON: json)
             placeholder = "Filter workspace symbols..."
-            let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            title = trimmedQuery.isEmpty ? "Workspace Symbols" : "Workspace Symbols: \(trimmedQuery)"
+            title = workspaceSymbolTitle(query: query)
         }
 
         if symbols.isEmpty {
@@ -4218,6 +4382,11 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func symbolHistoryTitle(for snapshot: LspSymbolResultSnapshot) -> String {
         "\(snapshot.title): \(snapshot.symbols.count) results"
+    }
+
+    private func workspaceSymbolTitle(query: String) -> String {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedQuery.isEmpty ? "Workspace Symbols" : "Workspace Symbols: \(trimmedQuery)"
     }
 
     private func showLspSymbolResults(_ symbols: [AttoLspSymbolParser.Symbol], placeholder: String) {
@@ -6965,10 +7134,22 @@ final class AttoEditorAreaViewController: NSViewController {
         symbolPollTimer?.cancel()
         symbolPollTimer = nil
         symbolContext = nil
+        cancelWorkspaceSymbolSearchRequestOnly()
         lspSymbolResultsController?.hide()
         lspSymbolResultsController = nil
         cancelProblemsUI()
         cancelWorkspaceDiagnosticsUI()
+    }
+
+    private func cancelWorkspaceSymbolSearchRequestOnly() {
+        workspaceSymbolSearchDebounceTimer?.cancel()
+        workspaceSymbolSearchDebounceTimer = nil
+
+        workspaceSymbolSearchPollTimer?.cancel()
+        workspaceSymbolSearchPollTimer = nil
+
+        workspaceSymbolSearchContext = nil
+        workspaceSymbolSearchResults = []
     }
 
     private func cancelHierarchyUI() {

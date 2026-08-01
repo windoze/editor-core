@@ -50,6 +50,8 @@ struct AttoCommandPaletteCommand {
 final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
     private let commandsProvider: () -> [AttoCommandPaletteCommand]
     private let accessibilityPrefix: String
+    private let filtersCommands: Bool
+    private let searchTextDidChange: ((String) -> Void)?
 
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
@@ -61,23 +63,26 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
 
     init(
         accessibilityPrefix: String = "AttoEditor.CommandPalette",
+        filtersCommands: Bool = true,
+        searchTextDidChange: ((String) -> Void)? = nil,
         commandsProvider: @escaping () -> [AttoCommandPaletteCommand]
     ) {
         self.accessibilityPrefix = accessibilityPrefix
+        self.filtersCommands = filtersCommands
+        self.searchTextDidChange = searchTextDidChange
         self.commandsProvider = commandsProvider
         super.init()
     }
 
-    func show(relativeTo window: NSWindow, placeholder: String = "Type a command…") {
+    func show(relativeTo window: NSWindow, placeholder: String = "Type a command…", initialQuery: String = "") {
         if panel == nil {
             panel = buildPanel()
         }
 
         searchField.placeholderString = placeholder
-        searchField.stringValue = ""
+        searchField.stringValue = initialQuery
 
-        allCommands = commandsProvider()
-        applyFilter()
+        reloadCommands()
 
         guard let panel else { return }
         position(panel: panel, relativeTo: window)
@@ -91,6 +96,11 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         guard let panel else { return }
         panel.orderOut(nil)
         panel.parent?.removeChildWindow(panel)
+    }
+
+    func reloadCommands() {
+        allCommands = commandsProvider()
+        applyFilter()
     }
 
     // MARK: - Panel
@@ -201,7 +211,9 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
 
     private func applyFilter() {
         let q = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if q.isEmpty {
+        if filtersCommands == false {
+            filteredCommands = allCommands
+        } else if q.isEmpty {
             filteredCommands = allCommands
         } else {
             let scored = allCommands.compactMap { cmd -> (AttoCommandPaletteCommand, Int)? in
@@ -293,6 +305,7 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
     // MARK: - NSTextFieldDelegate
 
     func controlTextDidChange(_ obj: Notification) {
+        searchTextDidChange?(searchField.stringValue)
         applyFilter()
     }
 
