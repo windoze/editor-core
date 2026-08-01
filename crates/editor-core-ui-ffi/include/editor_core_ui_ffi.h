@@ -260,6 +260,35 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_signature_help(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_signature_help_json(EditorUi* ui,
                                                                        uint8_t* out_has_result,
                                                                        char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_prepare_rename(EditorUi* ui,
+                                                                uint32_t line,
+                                                                uint32_t column,
+                                                                uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_prepare_rename_json(EditorUi* ui,
+                                                                       uint8_t* out_has_result,
+                                                                       char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_rename(EditorUi* ui,
+                                                        uint32_t line,
+                                                        uint32_t column,
+                                                        const char* new_name_utf8,
+                                                        uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_rename_json(EditorUi* ui,
+                                                               uint8_t* out_has_result,
+                                                               char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_code_action(EditorUi* ui,
+                                                             uint32_t start_offset,
+                                                             uint32_t end_offset,
+                                                             const char* context_json_utf8,
+                                                             uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_code_action_json(EditorUi* ui,
+                                                                    uint8_t* out_has_result,
+                                                                    char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_code_action_resolve(EditorUi* ui,
+                                                                     const char* action_json_utf8,
+                                                                     uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_code_action_resolve_json(EditorUi* ui,
+                                                                            uint8_t* out_has_result,
+                                                                            char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_symbols(EditorUi* ui,
                                                                   uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_document_symbols_json(EditorUi* ui,

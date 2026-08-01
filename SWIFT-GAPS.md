@@ -69,6 +69,8 @@ Swift 侧已经具备以下基础能力：
 - 阶段 9 尚未完成 signature help trigger characters / 自动弹出、active parameter 富格式高亮、typed result model 和空结果/错误展示。
 - 2026-08-01 阶段 10 已完成：AttoEditor 新增 LSP completion popup 主路径，命令 `lsp.completion` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspCompletionParser` 和 caret-anchored completion list，覆盖 CompletionList/CompletionItem、TextEdit、InsertReplaceEdit insert range、additionalTextEdits、snippet insertion 和 fallback identifier-prefix replacement。
 - 阶段 10 尚未完成 completionItem/resolve、commit characters、自动触发/增量过滤、跨文件 workspace edit、rich documentation/detail preview 和更完整的 typed result model。
+- 2026-08-01 阶段 11 已完成：Swift UI binding 新增 rename / prepare rename / code action / code action resolve 的 raw async request/take API，覆盖 Rust `editor-core-lsp` 已有的 `textDocument/prepareRename`、`textDocument/rename`、`textDocument/codeAction` 和 `codeAction/resolve` 请求路径。
+- 阶段 11 尚未完成 AttoEditor App 层 rename 输入框、WorkspaceEdit 应用/预览、code action quick panel、resolve 后应用 edit/command，以及相关 typed result model。
 
 ## 分层结论
 
@@ -149,7 +151,7 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - LSP enable/status。
 - hover。
 - definition。
-- declaration / type definition / implementation / references / completion / signature help / document symbols / workspace symbols 的 Swift UI raw async request/take API。
+- declaration / type definition / implementation / references / completion / signature help / prepare rename / rename / code action / code action resolve / document symbols / workspace symbols 的 Swift UI raw async request/take API。
 - AttoEditor App command/menu 已覆盖 go to definition/declaration/type definition/implementation/find references，其中 references 多结果有轻量可过滤结果 palette。
 - AttoEditor App command/menu 已覆盖 completion popup 主路径。
 - AttoEditor App command/menu 已覆盖 signature help popup 主路径。
@@ -169,8 +171,8 @@ AttoEditor 已经可以编辑、搜索、替换、渲染、切换主题/语法�
 - references 结果列表已有轻量 palette，但还不是完整结果面板。
 - completion popup 主路径已有；仍缺 completion resolve、commit characters、自动触发/增量过滤、rich documentation/detail preview 和 workspace edit。
 - signature help popup 主路径已有；仍缺 trigger characters / 自动弹出、active parameter 富格式高亮和 typed result model。
-- rename / prepare rename。
-- code action / code action resolve / execute command。
+- rename / prepare rename raw API 已有；仍缺 App 输入 UI、WorkspaceEdit 应用/预览和结果模型。
+- code action / code action resolve raw API 已有；仍缺 App quick panel、resolve 后应用 edit/command、workspace/executeCommand。
 - code lens resolve / command execution。
 - outline / document symbols 已有 quick panel 主路径，但还缺持久 Outline panel。
 - workspace symbols 已有 quick panel 主路径，但还缺增量查询/输入面板和完整结果模型。

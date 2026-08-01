@@ -394,6 +394,71 @@ public final class EditorUI {
         }
     }
 
+    public func lspRequestPrepareRename(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
+        try lspRequestPosition(
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            context: "editor_ui_lsp_request_prepare_rename"
+        ) { line, column, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_prepare_rename(handle, line, column, out)
+        }
+    }
+
+    public func lspTakeLastPrepareRenameResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_prepare_rename_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_prepare_rename_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestRename(logicalLine: UInt32, logicalColumn: UInt32, newName: String) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = newName.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_lsp_request_rename(handle, logicalLine, logicalColumn, cstr, &out)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_rename")
+        return out
+    }
+
+    public func lspTakeLastRenameResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_rename_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_rename_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestCodeAction(
+        startOffset: UInt32,
+        endOffset: UInt32,
+        contextJSON: String = #"{"diagnostics":[]}"#
+    ) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = contextJSON.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_lsp_request_code_action(handle, startOffset, endOffset, cstr, &out)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_code_action")
+        return out
+    }
+
+    public func lspTakeLastCodeActionResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_code_action_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_code_action_json(handle, has, ptr)
+        }
+    }
+
+    public func lspRequestCodeActionResolve(actionJSON: String) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = actionJSON.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_lsp_request_code_action_resolve(handle, cstr, &out)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_code_action_resolve")
+        return out
+    }
+
+    public func lspTakeLastCodeActionResolveResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_code_action_resolve_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_code_action_resolve_json(handle, has, ptr)
+        }
+    }
+
     public func lspRequestDocumentSymbols() throws -> UInt64 {
         var out: UInt64 = 0
         let status = editor_core_ui_ffi_editor_ui_lsp_request_document_symbols(handle, &out)

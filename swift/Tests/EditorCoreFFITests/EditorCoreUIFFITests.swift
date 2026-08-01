@@ -666,6 +666,10 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertThrowsError(try ui.lspRequestReferences(logicalLine: 0, logicalColumn: 0))
         XCTAssertThrowsError(try ui.lspRequestCompletion(logicalLine: 0, logicalColumn: 0))
         XCTAssertThrowsError(try ui.lspRequestSignatureHelp(logicalLine: 0, logicalColumn: 0))
+        XCTAssertThrowsError(try ui.lspRequestPrepareRename(logicalLine: 0, logicalColumn: 0))
+        XCTAssertThrowsError(try ui.lspRequestRename(logicalLine: 0, logicalColumn: 0, newName: "world"))
+        XCTAssertThrowsError(try ui.lspRequestCodeAction(startOffset: 0, endOffset: 0))
+        XCTAssertThrowsError(try ui.lspRequestCodeActionResolve(actionJSON: #"{"title":"Fix"}"#))
         XCTAssertThrowsError(try ui.lspRequestDocumentSymbols())
         XCTAssertThrowsError(try ui.lspRequestWorkspaceSymbols(query: "hello"))
 
@@ -677,6 +681,10 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertNil(try ui.lspTakeLastReferencesResultJSON())
         XCTAssertNil(try ui.lspTakeLastCompletionResultJSON())
         XCTAssertNil(try ui.lspTakeLastSignatureHelpResultJSON())
+        XCTAssertNil(try ui.lspTakeLastPrepareRenameResultJSON())
+        XCTAssertNil(try ui.lspTakeLastRenameResultJSON())
+        XCTAssertNil(try ui.lspTakeLastCodeActionResultJSON())
+        XCTAssertNil(try ui.lspTakeLastCodeActionResolveResultJSON())
         XCTAssertNil(try ui.lspTakeLastDocumentSymbolsResultJSON())
         XCTAssertNil(try ui.lspTakeLastWorkspaceSymbolsResultJSON())
     }
