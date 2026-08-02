@@ -684,6 +684,14 @@
 ### 提交
 
 - `feat(lsp): bind workspace lifecycle to projects`
+- 中间提交：`feat(ui): bind lsp workspace folders to roots`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 `EditorUi::lsp_enable_stdio(...)` 从传入 root URI 派生 LSP `WorkspaceFolder`，并同时写入 initialize params 的 `workspaceFolders` 与 `LspClient` 响应 `workspace/workspaceFolders` 的 root 列表。
+  - 提交边界：只补单 root LSP workspace folder 投影，不改变 Swift `lspEnable(...)` API、AttoEditor LSP command discovery、共享 LSP session key、`MultiDocumentEditorUi` 多 root ABI、workspace folder didChange、project open/close lifecycle 或 server restart 策略。
+  - 验证记录：
+    - `cargo test -p editor-core-ui lsp_enable_stdio_projects_root_uri_to_workspace_folders`
+    - `cargo test -p editor-core-ui lsp_request_events_record_start_completion_and_result_sequence`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

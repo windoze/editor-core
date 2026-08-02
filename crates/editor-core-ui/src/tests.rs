@@ -62,21 +62,92 @@ fn lsp_capture_server_script(
     capture_path: &std::path::Path,
     capabilities: serde_json::Value,
 ) -> String {
-    let body = serde_json::json!({
+    lsp_capture_server_script_with_messages(
+        capture_path,
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": { "capabilities": capabilities },
+        })],
+    )
+}
+
+fn lsp_capture_server_script_with_messages(
+    capture_path: &std::path::Path,
+    messages: &[serde_json::Value],
+) -> String {
+    let mut script = String::new();
+    for message in messages {
+        let body = message.to_string();
+        script.push_str(
+            format!(
+                "body={}; printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${{#body}}\" \"$body\"; ",
+                shell_quote(&body),
+            )
+            .as_str(),
+        );
+    }
+    script.push_str(
+        format!(
+            "cat > {}",
+            shell_quote(capture_path.to_string_lossy().as_ref())
+        )
+        .as_str(),
+    );
+    script
+}
+
+fn lsp_initialize_response(capabilities: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
         "result": { "capabilities": capabilities },
     })
-    .to_string();
-    format!(
-        "body={}; printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${{#body}}\" \"$body\"; cat > {}",
-        shell_quote(&body),
-        shell_quote(capture_path.to_string_lossy().as_ref())
-    )
 }
 
 fn captured_lsp_stdin(path: &std::path::Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
+}
+
+fn captured_lsp_json_messages(path: &std::path::Path) -> Vec<serde_json::Value> {
+    let captured = captured_lsp_stdin(path);
+    let bytes = captured.as_bytes();
+    let mut offset = 0;
+    let mut out = Vec::new();
+
+    while offset < bytes.len() {
+        let Some(header_end_rel) = bytes[offset..]
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+        else {
+            break;
+        };
+        let header_end = offset + header_end_rel;
+        let header = std::str::from_utf8(&bytes[offset..header_end]).unwrap_or("");
+        let Some(content_len) = header.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.trim()
+                .eq_ignore_ascii_case("Content-Length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        }) else {
+            break;
+        };
+
+        let body_start = header_end + 4;
+        let body_end = body_start + content_len;
+        if body_end > bytes.len() {
+            break;
+        }
+
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes[body_start..body_end])
+        {
+            out.push(value);
+        }
+        offset = body_end;
+    }
+
+    out
 }
 
 fn wait_for_captured_lsp_stdin(path: &std::path::Path, needle: &str) -> String {
@@ -358,6 +429,59 @@ fn lsp_request_events_record_start_completion_and_result_sequence() {
     assert_eq!(after_started["latest_sequence"], 2);
     assert_eq!(after_started["events"].as_array().unwrap().len(), 1);
     assert_eq!(after_started["events"][0]["status"], "success");
+
+    ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
+fn lsp_enable_stdio_projects_root_uri_to_workspace_folders() {
+    let capture_path = unique_temp_path("workspace-folders");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root_name = format!("editor-core-ui-workspace-folders-{stamp}");
+    let root_uri = format!("file:///tmp/{root_name}");
+    let doc_uri = format!("{root_uri}/main.rs");
+    let script = lsp_capture_server_script_with_messages(
+        &capture_path,
+        &[
+            lsp_initialize_response(serde_json::json!({})),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 99,
+                "method": "workspace/workspaceFolders",
+                "params": null,
+            }),
+        ],
+    );
+    let args = vec!["-c".to_string(), script];
+
+    let mut ui = EditorUi::new("fn main() {}\n", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+    let _ = ui.poll_processing().unwrap();
+    let _ = wait_for_captured_lsp_stdin(&capture_path, "\"id\":99");
+
+    let messages = captured_lsp_json_messages(&capture_path);
+    let initialize = messages
+        .iter()
+        .find(|message| message["method"] == "initialize")
+        .expect("missing initialize request");
+    assert_eq!(initialize["params"]["rootUri"], root_uri);
+    assert_eq!(initialize["params"]["workspaceFolders"][0]["uri"], root_uri);
+    assert_eq!(
+        initialize["params"]["workspaceFolders"][0]["name"],
+        root_name
+    );
+
+    let workspace_folders_response = messages
+        .iter()
+        .find(|message| message["id"] == 99)
+        .expect("missing workspace/workspaceFolders response");
+    assert_eq!(workspace_folders_response["result"][0]["uri"], root_uri);
+    assert_eq!(workspace_folders_response["result"][0]["name"], root_name);
 
     ui.lsp_disable();
     let _ = std::fs::remove_file(capture_path);

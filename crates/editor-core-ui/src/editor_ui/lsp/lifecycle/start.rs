@@ -2,7 +2,7 @@ use super::*;
 
 mod capabilities;
 
-use capabilities::default_initialize_params;
+use capabilities::{default_initialize_params, default_workspace_folders};
 
 impl EditorUi {
     /// Enable an LSP session (stdio) for the current document.
@@ -35,6 +35,7 @@ impl EditorUi {
                 .map_err(|e| UiError::Processor(format!("{e:?}")))?
         };
 
+        let workspace_folders = default_workspace_folders(root_uri);
         let init_params = default_initialize_params(root_uri);
 
         let mut cmd_proc = std::process::Command::new(cmd);
@@ -43,7 +44,7 @@ impl EditorUi {
 
         let start = LspSessionStartOptions {
             cmd: cmd_proc,
-            workspace_folders: Vec::new(),
+            workspace_folders,
             initialize_params: init_params,
             initialize_timeout: Duration::from_secs(6),
             document: LspDocument {
