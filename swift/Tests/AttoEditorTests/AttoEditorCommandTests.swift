@@ -64,6 +64,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.show_last_symbols"))
         XCTAssertTrue(ids.contains("lsp.show_symbol_history"))
         XCTAssertTrue(ids.contains("lsp.show_symbols_panel"))
+        XCTAssertTrue(ids.contains("lsp.show_workspace_outline_panel"))
         XCTAssertTrue(ids.contains("lsp.completion"))
         XCTAssertTrue(ids.contains("lsp.signature_help"))
         XCTAssertTrue(ids.contains("lsp.rename"))
@@ -1798,6 +1799,104 @@ final class AttoEditorCommandTests: XCTestCase {
 
         XCTAssertFalse(vc.showWorkspaceSymbolResultJSONInActiveTab("[]", query: "  App  "))
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Workspace symbols: no results")
+    }
+
+    func testWorkspaceOutlinePanelAggregatesDocumentSymbolSnapshots() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let appURL = tempDir.appendingPathComponent("App.swift")
+        let modelURL = tempDir.appendingPathComponent("Model.swift")
+        try "struct App {\n  func run() {}\n}\n".write(to: appURL, atomically: true, encoding: .utf8)
+        try "final class Model {}\n".write(to: modelURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+
+        vc.openFile(url: appURL, mode: .pinned)
+        XCTAssertTrue(vc.showDocumentSymbolResultJSONInActiveTab("""
+        [
+          {
+            "name": "App",
+            "kind": 23,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 2, "character": 1 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 7 },
+              "end": { "line": 0, "character": 10 }
+            },
+            "children": [
+              {
+                "name": "run",
+                "detail": "fn()",
+                "kind": 12,
+                "range": {
+                  "start": { "line": 1, "character": 2 },
+                  "end": { "line": 1, "character": 15 }
+                },
+                "selectionRange": {
+                  "start": { "line": 1, "character": 7 },
+                  "end": { "line": 1, "character": 10 }
+                }
+              }
+            ]
+          }
+        ]
+        """))
+
+        vc.openFile(url: modelURL, mode: .pinned)
+        XCTAssertTrue(vc.showDocumentSymbolResultJSONInActiveTab("""
+        [
+          {
+            "name": "Model",
+            "kind": 5,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 20 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 12 },
+              "end": { "line": 0, "character": 17 }
+            }
+          }
+        ]
+        """))
+
+        let outline = vc._workspaceOutlineSnapshotForTesting()
+        XCTAssertEqual(outline.documents.map(\.title), ["App.swift", "Model.swift"])
+        XCTAssertEqual(outline.documents.map(\.symbolCount), [2, 1])
+        XCTAssertEqual(outline.symbols.map(\.name), ["App", "run", "Model"])
+        XCTAssertEqual(outline.symbols.map(\.containerName), ["App.swift", "App.swift", "Model.swift"])
+
+        XCTAssertTrue(vc.showWorkspaceOutlinePanel())
+        let persistentPanel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.lspSymbolPanel
+        })
+        XCTAssertEqual(persistentPanel.title, "Workspace Outline (3)")
+        let persistentRoot = try XCTUnwrap(persistentPanel.contentView)
+        let persistentSearchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.lspSymbolPanelSearchField,
+                in: persistentRoot
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(persistentSearchField.placeholderString, "Filter workspace outline...")
+        let persistentMetadataLabel = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.lspSymbolPanelMetadataLabel,
+                in: persistentRoot
+            ) as? NSTextField
+        )
+        XCTAssertEqual(
+            persistentMetadataLabel.stringValue,
+            "Fresh | Result #3 | symbols | Workspace Outline: 2 files, 3 symbols"
+        )
+        XCTAssertEqual(vc._lspSymbolPanelRowCountForTesting(), 3)
+        XCTAssertEqual(vc._lspSymbolPanelSnapshotForTesting()?.symbols.map(\.name), ["App", "run", "Model"])
     }
 
     func testWorkspaceSymbolResultCanBeReopened() throws {

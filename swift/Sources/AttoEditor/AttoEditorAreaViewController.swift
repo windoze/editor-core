@@ -198,6 +198,10 @@ final class AttoEditorAreaViewController: NSViewController {
         lspSymbolPanelController?.isVisible == true
     }
 
+    func _workspaceOutlineSnapshotForTesting() -> AttoWorkspaceOutlineSnapshot {
+        workspaceOutlineStore.snapshot
+    }
+
     func _lspSymbolResultHistoryForTesting() -> [LspSymbolResultSnapshot] {
         lspSymbolResultStore.history
     }
@@ -864,6 +868,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private let lspSymbolResultStore = AttoLspResultLifecycleStore<LspSymbolResultSnapshot>(
         maxHistoryEntries: maxLspResultHistoryEntries
     )
+    private let workspaceOutlineStore = AttoWorkspaceOutlineStore()
     private var workspaceSymbolSearchContext: WorkspaceSymbolSearchContext?
     private var workspaceSymbolSearchDebounceTimer: DispatchSourceTimer?
     private var workspaceSymbolSearchPollTimer: DispatchSourceTimer?
@@ -5909,6 +5914,37 @@ final class AttoEditorAreaViewController: NSViewController {
         return controller.show(relativeTo: window, entry: entry)
     }
 
+    @discardableResult
+    func showWorkspaceOutlinePanel() -> Bool {
+        let snapshot = workspaceOutlineSymbolSnapshot()
+        guard snapshot.symbols.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        let entry = lspSymbolResultStore.makeCurrent(
+            snapshot,
+            family: "symbols",
+            title: workspaceOutlineHistoryTitle(for: workspaceOutlineStore.snapshot)
+        )
+        lspSymbolPanelController?.update(entry: entry)
+
+        guard let window = view.window else {
+            navigateToLspTarget(snapshot.symbols[0].target)
+            return true
+        }
+        let controller = lspSymbolPanelController ?? AttoLspSymbolPanelController(
+            titleForSymbol: { [weak self] symbol in
+                self?.displayTitle(for: symbol) ?? symbol.name
+            },
+            onOpen: { [weak self] target in
+                self?.navigateToLspTarget(target)
+            }
+        )
+        lspSymbolPanelController = controller
+        return controller.show(relativeTo: window, entry: entry)
+    }
+
     private func handleLspDocumentSymbolResult(
         _ result: EcuLspDocumentSymbolResult,
         tab: AttoEditorTab
@@ -5927,6 +5963,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let symbols = typedSnapshotSymbols.isEmpty
             ? AttoLspSymbolParser.documentSymbols(fromResult: result, documentURI: tab.fileURL.absoluteString)
             : typedSnapshotSymbols
+        updateWorkspaceOutline(tab: tab, symbols: symbols)
         return finishLspSymbolResult(
             symbols,
             kind: .document,
@@ -5982,7 +6019,31 @@ final class AttoEditorAreaViewController: NSViewController {
             title = workspaceSymbolTitle(query: query)
         }
 
+        if case .document = kind {
+            updateWorkspaceOutline(tab: tab, symbols: symbols)
+        }
         return finishLspSymbolResult(symbols, kind: kind, title: title, placeholder: placeholder, tab: tab)
+    }
+
+    private func updateWorkspaceOutline(tab: AttoEditorTab, symbols: [AttoLspSymbolParser.Symbol]) {
+        workspaceOutlineStore.upsertDocument(
+            tabID: tab.id,
+            coreTabID: tab.coreTabID,
+            fileURL: tab.fileURL,
+            symbols: symbols
+        )
+        guard lspSymbolPanelController?.isVisible == true,
+              lspSymbolResultStore.currentEntry?.title.hasPrefix("Workspace Outline") == true
+        else {
+            return
+        }
+        let snapshot = workspaceOutlineSymbolSnapshot()
+        let entry = lspSymbolResultStore.makeCurrent(
+            snapshot,
+            family: "symbols",
+            title: workspaceOutlineHistoryTitle(for: workspaceOutlineStore.snapshot)
+        )
+        lspSymbolPanelController?.update(entry: entry)
     }
 
     private func finishLspSymbolResult(
@@ -6054,6 +6115,22 @@ final class AttoEditorAreaViewController: NSViewController {
     private func workspaceSymbolTitle(query: String) -> String {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedQuery.isEmpty ? "Workspace Symbols" : "Workspace Symbols: \(trimmedQuery)"
+    }
+
+    private func workspaceOutlineSymbolSnapshot() -> LspSymbolResultSnapshot {
+        LspSymbolResultSnapshot(
+            title: "Workspace Outline",
+            symbols: workspaceOutlineStore.snapshot.symbols,
+            placeholder: "Filter workspace outline..."
+        )
+    }
+
+    private func workspaceOutlineHistoryTitle(for snapshot: AttoWorkspaceOutlineSnapshot) -> String {
+        let fileCount = snapshot.documents.count
+        let symbolCount = snapshot.symbols.count
+        let fileLabel = fileCount == 1 ? "1 file" : "\(fileCount) files"
+        let symbolLabel = symbolCount == 1 ? "1 symbol" : "\(symbolCount) symbols"
+        return "Workspace Outline: \(fileLabel), \(symbolLabel)"
     }
 
     private func showLspSymbolResults(_ symbols: [AttoLspSymbolParser.Symbol], placeholder: String) {

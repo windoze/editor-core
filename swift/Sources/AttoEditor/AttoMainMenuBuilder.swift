@@ -154,6 +154,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Fix All", commandID: "lsp.fix_all", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Workspace Diagnostics", commandID: "lsp.workspace_diagnostics", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Show Workspace Problems Panel", commandID: "lsp.show_workspace_problems_panel", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Show Workspace Outline Panel", commandID: "lsp.show_workspace_outline_panel", appDelegate: appDelegate))
 
         return mainMenu
     }
