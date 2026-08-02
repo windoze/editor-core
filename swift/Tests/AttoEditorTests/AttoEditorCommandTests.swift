@@ -4703,6 +4703,42 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(window.title, "AttoEditor — second-active.txt")
     }
 
+    func testRefreshTabBarProjectsAppKitContentToCoreActiveTab() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-content.txt")
+        let secondURL = tempDir.appendingPathComponent("second-content.txt")
+        let thirdURL = tempDir.appendingPathComponent("third-content.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "third".write(to: thirdURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.openFile(url: thirdURL, mode: .pinned)
+
+        let secondTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == secondURL.standardizedFileURL })
+        let thirdTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == thirdURL.standardizedFileURL })
+        XCTAssertEqual(vc.selectedTabID, thirdTab.id)
+        XCTAssertTrue(vc.contentHostView.subviews.contains { $0 === thirdTab.editCore })
+
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setActiveTab(try XCTUnwrap(secondTab.coreTabID))
+        XCTAssertEqual(vc.activeTab?.id, secondTab.id)
+        XCTAssertTrue(vc.contentHostView.subviews.contains { $0 === thirdTab.editCore })
+
+        vc.refreshTabBar()
+
+        XCTAssertEqual(vc.selectedTabID, secondTab.id)
+        XCTAssertTrue(vc.contentHostView.subviews.contains { $0 === secondTab.editCore })
+        XCTAssertFalse(vc.contentHostView.subviews.contains { $0 === thirdTab.editCore })
+    }
+
     func testSessionRestoreRestoresSplitPanesIntoCoreMirror() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

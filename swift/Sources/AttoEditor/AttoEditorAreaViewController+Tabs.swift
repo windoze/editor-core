@@ -732,6 +732,7 @@ extension AttoEditorAreaViewController {
                 snapshot: projection.snapshot,
                 projectedTabs: projectedTabs
             ) ?? selectedTabID
+            syncAppKitActiveTabProjection(selectedID: selectedID, focusEditor: false)
             tabBarView.updateTabs(
                 tabs: projectedTabs.map { projected in
                     let isDirty = projectedDirtyState(tab: projected.tab, coreTab: projected.coreTab)
@@ -758,6 +759,28 @@ extension AttoEditorAreaViewController {
             selectedID: selectedTabID
         )
         onOpenFilesChanged?(openFileItems(), selectedTabID)
+    }
+
+    @discardableResult
+    private func syncAppKitActiveTabProjection(selectedID: UUID?, focusEditor: Bool) -> Bool {
+        guard let selectedID,
+              selectedID != selectedTabID,
+              let tab = tabs.first(where: { $0.id == selectedID })
+        else {
+            return false
+        }
+
+        selectedTabID = selectedID
+        showTabContent(tab)
+        attachStatusObserver(to: tab.editCore.editorView)
+        updateAlwaysPollProcessingForSelectedTab()
+        updateStatusBar()
+        updateWindowTitle()
+        if focusEditor {
+            tab.editCore.focusEditor()
+        }
+        applyFindStateToActiveTab()
+        return true
     }
 
     private func projectedSelectedTabID(
