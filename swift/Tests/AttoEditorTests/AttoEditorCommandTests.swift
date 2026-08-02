@@ -2013,6 +2013,45 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(offsets.end, 21)
     }
 
+    func testApplyTypedSelectionRangeResultExpandsActiveSelection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("typed-selection.txt")
+        try "let value = call(arg)\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 17, end: 20)], primaryIndex: 0)
+
+        let result = try JSONDecoder().decode(EcuLspSelectionRangeResult.self, from: Data("""
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 17 },
+              "end": { "line": 0, "character": 20 }
+            },
+            "parent": {
+              "range": {
+                "start": { "line": 0, "character": 12 },
+                "end": { "line": 0, "character": 21 }
+              }
+            }
+          }
+        ]
+        """.utf8))
+
+        XCTAssertTrue(vc.applySelectionRangeResultToActiveTab(result))
+        let offsets = try editorView.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 12)
+        XCTAssertEqual(offsets.end, 21)
+    }
+
     func testApplySelectionRangeResultExpandsMultipleSelectionsByResultOrder() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

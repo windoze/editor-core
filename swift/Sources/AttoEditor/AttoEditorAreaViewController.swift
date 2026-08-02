@@ -2307,11 +2307,64 @@ final class AttoEditorAreaViewController: NSViewController {
 
         do {
             let text = try tab.editCore.editor.text()
-            let selections = try tab.editCore.editor.selections()
             let candidateChains = AttoLspSelectionRangeParser.candidateChains(
                 fromResultJSON: json,
                 documentText: text
             )
+            return applySelectionRangeCandidateChainsToActiveTab(candidateChains, showFeedback: showFeedback)
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Selection range could not be applied.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
+    func applySelectionRangeResultToActiveTab(
+        _ result: EcuLspSelectionRangeResult,
+        showFeedback: Bool = false
+    ) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let text = try tab.editCore.editor.text()
+            let candidateChains = AttoLspSelectionRangeParser.candidateChains(
+                from: result,
+                documentText: text
+            )
+            return applySelectionRangeCandidateChainsToActiveTab(candidateChains, showFeedback: showFeedback)
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Selection range could not be applied.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
+    private func applySelectionRangeCandidateChainsToActiveTab(
+        _ candidateChains: [[AttoLspSelectionRangeParser.Candidate]],
+        showFeedback: Bool = false
+    ) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let selections = try tab.editCore.editor.selections()
 
             var nextRanges: [EcuSelectionRange] = []
             nextRanges.reserveCapacity(selections.ranges.count)
@@ -2393,9 +2446,9 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspSelectionRangeResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastSelectionRangeResultJSON()
+                result = try tab.editCore.editor.lspTakeLastSelectionRangeResult()
             } catch {
                 let showFeedback = ctx.showFeedback
                 self.cancelSelectionRangeUI()
@@ -2408,11 +2461,11 @@ final class AttoEditorAreaViewController: NSViewController {
                 NSSound.beep()
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             let showFeedback = ctx.showFeedback
             self.cancelSelectionRangeUI()
-            _ = self.applySelectionRangeResultJSONToActiveTab(json, showFeedback: showFeedback)
+            _ = self.applySelectionRangeResultToActiveTab(result, showFeedback: showFeedback)
         }
 
         selectionRangePollTimer = timer

@@ -1,3 +1,4 @@
+import EditorCoreUIFFI
 import Foundation
 
 enum AttoLspSelectionRangeParser {
@@ -16,8 +17,26 @@ enum AttoLspSelectionRangeParser {
         return out
     }
 
+    static func candidates(from result: EcuLspSelectionRangeResult, documentText: String) -> [Candidate] {
+        var out: [Candidate] = []
+        var seen = Set<String>()
+        for root in result.roots {
+            appendCandidates(from: root, documentText: documentText, into: &out, seen: &seen)
+        }
+        return out
+    }
+
     static func candidateChains(fromResultJSON json: String, documentText: String) -> [[Candidate]] {
         resultRoots(fromResultJSON: json).map { root in
+            var out: [Candidate] = []
+            var seen = Set<String>()
+            appendCandidates(from: root, documentText: documentText, into: &out, seen: &seen)
+            return out
+        }
+    }
+
+    static func candidateChains(from result: EcuLspSelectionRangeResult, documentText: String) -> [[Candidate]] {
+        result.roots.map { root in
             var out: [Candidate] = []
             var seen = Set<String>()
             appendCandidates(from: root, documentText: documentText, into: &out, seen: &seen)
@@ -76,6 +95,23 @@ enum AttoLspSelectionRangeParser {
         }
     }
 
+    private static func appendCandidates(
+        from selectionRange: EcuLspSelectionRange,
+        documentText: String,
+        into out: inout [Candidate],
+        seen: inout Set<String>
+    ) {
+        let candidate = candidate(from: selectionRange.range, documentText: documentText)
+        let key = "\(candidate.start):\(candidate.end)"
+        if seen.insert(key).inserted {
+            out.append(candidate)
+        }
+
+        if let parent = selectionRange.parent {
+            appendCandidates(from: parent, documentText: documentText, into: &out, seen: &seen)
+        }
+    }
+
     private static func candidate(from any: Any?, documentText: String) -> Candidate? {
         guard let range = any as? [String: Any],
               let start = range["start"] as? [String: Any],
@@ -97,6 +133,21 @@ enum AttoLspSelectionRangeParser {
             inText: documentText,
             line: endLine,
             utf16Character: endCharacter
+        )
+
+        return Candidate(start: min(startOffset, endOffset), end: max(startOffset, endOffset))
+    }
+
+    private static func candidate(from range: EcuLspRange, documentText: String) -> Candidate {
+        let startOffset = AttoLspDefinitionParser.charOffsetForLspPosition(
+            inText: documentText,
+            line: Int(range.start.line),
+            utf16Character: Int(range.start.utf16Character)
+        )
+        let endOffset = AttoLspDefinitionParser.charOffsetForLspPosition(
+            inText: documentText,
+            line: Int(range.end.line),
+            utf16Character: Int(range.end.utf16Character)
         )
 
         return Candidate(start: min(startOffset, endOffset), end: max(startOffset, endOffset))

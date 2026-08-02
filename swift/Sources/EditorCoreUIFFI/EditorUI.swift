@@ -829,6 +829,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastSelectionRangeResult() throws -> EcuLspSelectionRangeResult? {
+        guard let json = try lspTakeLastSelectionRangeResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspSelectionRangeResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_selection_range_decode"
+        )
+    }
+
     public func lspRequestLinkedEditingRange(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
         try lspRequestPosition(
             logicalLine: logicalLine,

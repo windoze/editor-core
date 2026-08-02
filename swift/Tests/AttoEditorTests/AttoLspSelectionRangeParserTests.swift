@@ -1,7 +1,12 @@
 @testable import AttoEditor
+import EditorCoreUIFFI
 import XCTest
 
 final class AttoLspSelectionRangeParserTests: XCTestCase {
+    private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
+        try JSONDecoder().decode(T.self, from: Data(json.utf8))
+    }
+
     func testCandidatesFlattenParentChainAndConvertUTF16Positions() {
         let text = "a\u{1F600}b(c)\n"
         let json = """
@@ -29,6 +34,41 @@ final class AttoLspSelectionRangeParserTests: XCTestCase {
 
         XCTAssertEqual(
             AttoLspSelectionRangeParser.candidates(fromResultJSON: json, documentText: text),
+            [
+                .init(start: 4, end: 5),
+                .init(start: 2, end: 6),
+                .init(start: 0, end: 6),
+            ]
+        )
+    }
+
+    func testTypedCandidatesFlattenParentChainAndConvertUTF16Positions() throws {
+        let text = "a\u{1F600}b(c)\n"
+        let result = try decode(EcuLspSelectionRangeResult.self, """
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 5 },
+              "end": { "line": 0, "character": 6 }
+            },
+            "parent": {
+              "range": {
+                "start": { "line": 0, "character": 3 },
+                "end": { "line": 0, "character": 7 }
+              },
+              "parent": {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 7 }
+                }
+              }
+            }
+          }
+        ]
+        """)
+
+        XCTAssertEqual(
+            AttoLspSelectionRangeParser.candidates(from: result, documentText: text),
             [
                 .init(start: 4, end: 5),
                 .init(start: 2, end: 6),
