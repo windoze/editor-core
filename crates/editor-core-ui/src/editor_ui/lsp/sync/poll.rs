@@ -3,15 +3,15 @@ use super::super::super::*;
 impl EditorUi {
     pub(crate) fn poll_lsp_best_effort(&mut self) -> Result<bool, UiError> {
         let (shared, doc_uri) = {
-            let mut doc = self.lock_doc();
+            let doc = self.lock_doc();
             let Some(shared) = doc.lsp.clone() else {
                 return Ok(false);
             };
-            let Some(doc_uri) = doc.lsp_document_uri.clone() else {
-                doc.lsp_fail("LSP document URI missing");
-                return Ok(false);
-            };
-            (shared, doc_uri)
+            (shared, doc.lsp_document_uri.clone())
+        };
+        let Some(doc_uri) = doc_uri else {
+            self.fail_lsp_and_record_status("LSP document URI missing");
+            return Ok(false);
         };
 
         let mut applied = false;
@@ -20,7 +20,8 @@ impl EditorUi {
             let line_index = match doc.ws.buffer_line_index(doc.buffer_id) {
                 Ok(idx) => idx,
                 Err(_) => {
-                    doc.lsp_fail("LSP buffer line index unavailable");
+                    drop(doc);
+                    self.fail_lsp_and_record_status("LSP buffer line index unavailable");
                     return Ok(false);
                 }
             };
@@ -30,24 +31,30 @@ impl EditorUi {
             }) {
                 Ok(edits) => edits,
                 Err(reason) => {
-                    doc.lsp_fail(reason);
+                    drop(doc);
+                    self.fail_lsp_and_record_status(reason);
                     return Ok(false);
                 }
             };
-            applied |= doc.apply_lsp_processing_edits(self.view_id, edits)?;
+            match doc.apply_lsp_processing_edits(self.view_id, edits) {
+                Ok(value) => applied |= value,
+                Err(err) => {
+                    drop(doc);
+                    self.record_lsp_status_state_event();
+                    return Err(err);
+                }
+            }
         }
 
         if let Err(err) = self.maybe_request_lsp_aux() {
-            let mut doc = self.lock_doc();
-            doc.lsp_fail(err.to_string());
+            self.fail_lsp_and_record_status(err.to_string());
             return Ok(false);
         }
 
         let events = match shared.with_session_mut(|session| Ok(session.drain_events())) {
             Ok(events) => events,
             Err(reason) => {
-                let mut doc = self.lock_doc();
-                doc.lsp_fail(reason);
+                self.fail_lsp_and_record_status(reason);
                 return Ok(false);
             }
         };

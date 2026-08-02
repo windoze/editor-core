@@ -6,6 +6,10 @@ impl EditorUi {
     /// This is intended for UI status bars and debugging overlays. The schema is stable-ish but
     /// not yet versioned; callers should treat unknown fields as optional.
     pub fn lsp_status_json(&self) -> String {
+        self.lsp_status_value().to_string()
+    }
+
+    pub(crate) fn lsp_status_value(&self) -> serde_json::Value {
         let (shared, last_cmd, last_error) = {
             let doc = self.lock_doc();
             (
@@ -100,6 +104,5 @@ impl EditorUi {
             "capabilities": capabilities,
             "workspace_folders": workspace_folders,
         })
-        .to_string()
     }
 }

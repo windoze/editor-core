@@ -215,6 +215,7 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
     public let sourceSequence: UInt64
     public let lspRequest: EcuLspRequestEvent?
     public let lspResult: EcuLspResultEvent?
+    public let lspStatus: EcuLspStatusSnapshot?
     public let text: EcuEditorUITextStateEvent?
     public let dirty: EcuEditorUIDirtyStateEvent?
     public let selection: EcuEditorUISelectionStateEvent?
@@ -231,6 +232,7 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
         case sourceSequence = "source_sequence"
         case lspRequest = "lsp_request"
         case lspResult = "lsp_result"
+        case lspStatus = "lsp_status"
         case text
         case dirty
         case selection

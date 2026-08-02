@@ -612,6 +612,15 @@ fn lsp_status_reports_current_workspace_folders() {
     assert_eq!(status["workspace_folders"][0]["uri"], old_root_uri);
     assert_eq!(status["workspace_folders"][0]["name"], old_root_name);
 
+    let enabled_events = ui.state_events_after(0);
+    assert_eq!(enabled_events.events.len(), 1);
+    assert_eq!(enabled_events.events[0].kind, "lsp_status_changed");
+    assert_eq!(enabled_events.events[0].family, "lsp");
+    assert_eq!(
+        enabled_events.events[0].lsp_status.as_ref().unwrap()["workspace_folders"][0]["uri"],
+        old_root_uri
+    );
+
     ui.lsp_did_change_workspace_folders_json(
         &serde_json::json!([{ "uri": new_root_uri, "name": new_root_name }]).to_string(),
         &serde_json::json!([{ "uri": old_root_uri, "name": old_root_name }]).to_string(),
@@ -623,7 +632,22 @@ fn lsp_status_reports_current_workspace_folders() {
     assert_eq!(status["workspace_folders"][0]["uri"], new_root_uri);
     assert_eq!(status["workspace_folders"][0]["name"], new_root_name);
 
+    let changed_events = ui.state_events_after(enabled_events.latest_sequence);
+    assert_eq!(changed_events.events.len(), 1);
+    assert_eq!(changed_events.events[0].kind, "lsp_status_changed");
+    assert_eq!(
+        changed_events.events[0].lsp_status.as_ref().unwrap()["workspace_folders"][0]["uri"],
+        new_root_uri
+    );
+
     ui.lsp_disable();
+    let disabled_events = ui.state_events_after(changed_events.latest_sequence);
+    assert_eq!(disabled_events.events.len(), 1);
+    assert_eq!(disabled_events.events[0].kind, "lsp_status_changed");
+    assert_eq!(
+        disabled_events.events[0].lsp_status.as_ref().unwrap()["availability"],
+        "disabled"
+    );
     let _ = std::fs::remove_file(capture_path);
 }
 
@@ -713,14 +737,22 @@ fn editor_ui_state_events_project_lsp_request_and_result_events() {
     ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
         .unwrap();
 
-    assert_eq!(ui.state_events_latest_sequence(), 0);
-    assert!(ui.state_events_after(0).events.is_empty());
+    let enabled = ui.state_events_after(0);
+    assert_eq!(enabled.latest_sequence, 1);
+    assert_eq!(enabled.events.len(), 1);
+    assert_eq!(enabled.events[0].kind, "lsp_status_changed");
+    assert_eq!(enabled.events[0].family, "lsp");
+    assert_eq!(
+        enabled.events[0].lsp_status.as_ref().unwrap()["availability"],
+        "enabled"
+    );
+    let baseline = enabled.latest_sequence;
 
     let request_id = ui.lsp_request_hover(0, 1).unwrap();
-    let started = ui.state_events_after(0);
-    assert_eq!(started.latest_sequence, 1);
+    let started = ui.state_events_after(baseline);
+    assert_eq!(started.latest_sequence, baseline + 1);
     assert_eq!(started.events.len(), 1);
-    assert_eq!(started.events[0].sequence, 1);
+    assert_eq!(started.events[0].sequence, baseline + 1);
     assert_eq!(started.events[0].kind, "lsp_request");
     assert_eq!(started.events[0].family, "hover");
     assert_eq!(started.events[0].source_sequence, 1);
@@ -739,8 +771,8 @@ fn editor_ui_state_events_project_lsp_request_and_result_events() {
     })])
     .unwrap();
 
-    let events = ui.state_events_after(0);
-    assert_eq!(events.latest_sequence, 3);
+    let events = ui.state_events_after(baseline);
+    assert_eq!(events.latest_sequence, baseline + 3);
     assert_eq!(
         events
             .events
@@ -764,8 +796,8 @@ fn editor_ui_state_events_project_lsp_request_and_result_events() {
     );
 
     let after_started: serde_json::Value =
-        serde_json::from_str(&ui.state_events_json(1).unwrap()).unwrap();
-    assert_eq!(after_started["latest_sequence"], 3);
+        serde_json::from_str(&ui.state_events_json(started.latest_sequence).unwrap()).unwrap();
+    assert_eq!(after_started["latest_sequence"], baseline + 3);
     assert_eq!(after_started["events"].as_array().unwrap().len(), 2);
     assert_eq!(after_started["events"][0]["kind"], "lsp_result");
     assert_eq!(
@@ -2029,6 +2061,21 @@ fn poll_processing_reports_lsp_failure_without_applied_success() {
             .as_str()
             .is_some_and(|detail| detail.contains("LSP session is not available")),
         "unexpected LSP status: {status}"
+    );
+
+    let events = ui.state_events_after(0);
+    assert_eq!(events.events.len(), 1);
+    assert_eq!(events.events[0].kind, "lsp_status_changed");
+    assert_eq!(
+        events.events[0].lsp_status.as_ref().unwrap()["availability"],
+        "failed"
+    );
+    assert!(
+        events.events[0].lsp_status.as_ref().unwrap()["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("LSP session is not available")),
+        "unexpected LSP status event: {:?}",
+        events.events[0].lsp_status
     );
 }
 

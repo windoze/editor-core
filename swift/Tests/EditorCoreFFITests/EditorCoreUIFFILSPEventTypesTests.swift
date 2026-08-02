@@ -116,7 +116,7 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
     func testEditorUIStateEventsExposeTypedKindsAndNestedPayloads() throws {
         let snapshot = try decode(EcuEditorUIStateEventsSnapshot.self, """
         {
-          "latest_sequence": 2,
+          "latest_sequence": 3,
           "events": [
             {
               "sequence": 1,
@@ -156,12 +156,32 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
                 "has_result": false,
                 "result_json_len": 0
               }
+            },
+            {
+              "sequence": 3,
+              "kind": "lsp_status_changed",
+              "family": "lsp",
+              "title": "LSP status changed",
+              "view_id": 3,
+              "source_sequence": 3,
+              "lsp_status": {
+                "availability": "enabled",
+                "state": "ready",
+                "server": { "name": "rust-analyzer" },
+                "workspace_folders": [
+                  { "uri": "file:///tmp/editor-core", "name": "editor-core" }
+                ],
+                "capabilities": {
+                  "semantic_tokens": true,
+                  "completion": { "supported": true }
+                }
+              }
             }
           ]
         }
         """)
 
-        XCTAssertEqual(snapshot.latestSequence, 2)
+        XCTAssertEqual(snapshot.latestSequence, 3)
         XCTAssertEqual(snapshot.events[0].kindValue, .lspRequest)
         XCTAssertEqual(snapshot.events[0].familyKind, .hover)
         XCTAssertEqual(snapshot.events[0].sourceSequence, 10)
@@ -173,7 +193,18 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         XCTAssertEqual(snapshot.events[1].lspResult?.slotKind, .unknown("future_slot"))
         XCTAssertEqual(snapshot.events[1].lspResult?.statusKind, .unknown("future_status"))
         XCTAssertNil(snapshot.events[1].lspRequest)
+        XCTAssertEqual(snapshot.events[2].kindValue, .lspStatusChanged)
+        XCTAssertEqual(snapshot.events[2].familyKind, .lsp)
+        XCTAssertEqual(snapshot.events[2].lspStatus?.availability, .enabled)
+        XCTAssertEqual(snapshot.events[2].lspStatus?.state, .ready)
+        XCTAssertEqual(snapshot.events[2].lspStatus?.server?.name, "rust-analyzer")
+        XCTAssertEqual(snapshot.events[2].lspStatus?.workspaceFolders, [
+            EcuLspWorkspaceFolder(uri: "file:///tmp/editor-core", name: "editor-core"),
+        ])
+        XCTAssertEqual(snapshot.events[2].lspStatus?.capabilities?.semanticTokens, true)
         XCTAssertEqual(EcuEditorUIStateEventKind.unknown("future").rawValue, "future")
+        XCTAssertEqual(EcuEditorUIStateEventKind.lspStatusChanged.rawValue, "lsp_status_changed")
+        XCTAssertEqual(EcuLspEventFamily.lsp.rawValue, "lsp")
     }
 
     func testEditorUIStateEventsDecodeDocumentPayloads() throws {

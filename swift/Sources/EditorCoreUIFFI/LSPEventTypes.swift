@@ -20,6 +20,7 @@ public enum EcuLspEventFamily: Hashable, Sendable {
     case formatting
     case document
     case derivedState
+    case lsp
     case unknown(String)
 
     public init(rawValue: String) {
@@ -62,6 +63,8 @@ public enum EcuLspEventFamily: Hashable, Sendable {
             self = .document
         case "derived_state":
             self = .derivedState
+        case "lsp":
+            self = .lsp
         default:
             self = .unknown(rawValue)
         }
@@ -107,6 +110,8 @@ public enum EcuLspEventFamily: Hashable, Sendable {
             return "document"
         case .derivedState:
             return "derived_state"
+        case .lsp:
+            return "lsp"
         case let .unknown(rawValue):
             return rawValue
         }
@@ -123,6 +128,7 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
     case layoutChanged
     case derivedStateChanged
     case derivedStateStale
+    case lspStatusChanged
     case unknown(String)
 
     public init(rawValue: String) {
@@ -145,6 +151,8 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
             self = .derivedStateChanged
         case "derived_state_stale":
             self = .derivedStateStale
+        case "lsp_status_changed":
+            self = .lspStatusChanged
         default:
             self = .unknown(rawValue)
         }
@@ -170,6 +178,8 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
             return "derived_state_changed"
         case .derivedStateStale:
             return "derived_state_stale"
+        case .lspStatusChanged:
+            return "lsp_status_changed"
         case let .unknown(rawValue):
             return rawValue
         }

@@ -25,6 +25,8 @@ pub struct EditorUiStateEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lsp_result: Option<EditorLspResultEvent>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub lsp_status: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<EditorUiTextStateEvent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<EditorUiDirtyStateEvent>,
@@ -221,6 +223,7 @@ impl EditorUiDoc {
             source_sequence: source.sequence,
             lsp_request: Some(source),
             lsp_result: None,
+            lsp_status: None,
             text: None,
             dirty: None,
             selection: None,
@@ -243,6 +246,31 @@ impl EditorUiDoc {
             source_sequence: source.sequence,
             lsp_request: None,
             lsp_result: Some(source),
+            lsp_status: None,
+            text: None,
+            dirty: None,
+            selection: None,
+            viewport: None,
+            layout: None,
+            derived_state: None,
+        })
+    }
+
+    pub(crate) fn record_state_event_from_lsp_status_changed(
+        &mut self,
+        view_id: ViewId,
+        status: serde_json::Value,
+    ) -> u64 {
+        self.record_state_event(EditorUiStateEvent {
+            sequence: 0,
+            kind: "lsp_status_changed".to_string(),
+            family: "lsp".to_string(),
+            title: "LSP status changed".to_string(),
+            view_id: view_id.get(),
+            source_sequence: 0,
+            lsp_request: None,
+            lsp_result: None,
+            lsp_status: Some(status),
             text: None,
             dirty: None,
             selection: None,
@@ -269,6 +297,7 @@ impl EditorUiDoc {
             source_sequence: self.text_version,
             lsp_request: None,
             lsp_result: None,
+            lsp_status: None,
             text: Some(EditorUiTextStateEvent {
                 text_version: self.text_version,
                 char_len,
@@ -296,6 +325,7 @@ impl EditorUiDoc {
             source_sequence: 0,
             lsp_request: None,
             lsp_result: None,
+            lsp_status: None,
             text: None,
             dirty: Some(EditorUiDirtyStateEvent { is_modified }),
             selection: None,
@@ -362,6 +392,7 @@ impl EditorUiDoc {
             source_sequence: selection.view_version,
             lsp_request: None,
             lsp_result: None,
+            lsp_status: None,
             text: None,
             dirty: None,
             selection: Some(selection),
@@ -410,6 +441,7 @@ impl EditorUiDoc {
             source_sequence: viewport.view_version,
             lsp_request: None,
             lsp_result: None,
+            lsp_status: None,
             text: None,
             dirty: None,
             selection: None,
@@ -433,6 +465,7 @@ impl EditorUiDoc {
             source_sequence: 0,
             lsp_request: None,
             lsp_result: None,
+            lsp_status: None,
             text: None,
             dirty: None,
             selection: None,
@@ -456,6 +489,7 @@ impl EditorUiDoc {
             source_sequence: derived_state.text_version,
             lsp_request: None,
             lsp_result: None,
+            lsp_status: None,
             text: None,
             dirty: None,
             selection: None,
@@ -489,6 +523,7 @@ impl EditorUiDoc {
             source_sequence: derived_state.text_version,
             lsp_request: None,
             lsp_result: None,
+            lsp_status: None,
             text: None,
             dirty: None,
             selection: None,
@@ -582,5 +617,19 @@ impl EditorUi {
     pub fn state_events_json(&self, after_sequence: u64) -> Result<String, UiError> {
         serde_json::to_string(&self.state_events_after(after_sequence))
             .map_err(|e| UiError::Processor(e.to_string()))
+    }
+
+    pub(crate) fn record_lsp_status_state_event(&self) -> u64 {
+        let status = self.lsp_status_value();
+        let mut doc = self.lock_doc();
+        doc.record_state_event_from_lsp_status_changed(self.view_id, status)
+    }
+
+    pub(crate) fn fail_lsp_and_record_status(&self, reason: impl Into<String>) -> u64 {
+        {
+            let mut doc = self.lock_doc();
+            doc.lsp_fail(reason.into());
+        }
+        self.record_lsp_status_state_event()
     }
 }

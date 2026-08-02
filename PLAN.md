@@ -775,6 +775,17 @@
     - `swift test --package-path swift --filter AttoLspStatusFormatterTests`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ui): emit lsp status state events`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把阶段 255 的 LSP status snapshot 纳入统一 `EditorUiStateEvent`，让 Swift/App 可通过 state event stream 订阅 enable/disable、workspace folder didChange 和部分 polling failure 的 LSP status 变化。
+  - 提交边界：只新增 `lsp_status_changed` state event kind、`lsp` family 和可选 `lsp_status` payload，并补 Swift typed decode；不新增 C ABI 函数，不改变现有 `state_events_json` ABI，不实现完整低层 `lsp_fail(...)` 覆盖、server progress 去重、server process health event、project-level status 聚合消费或 UI panel 自动刷新。
+  - 验证记录：
+    - `cargo test -p editor-core-ui editor_ui_state_events_project_lsp_request_and_result_events`
+    - `cargo test -p editor-core-ui lsp_status_reports_current_workspace_folders`
+    - `cargo test -p editor-core-ui poll_processing_reports_lsp_failure_without_applied_success`
+    - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFILSPEventTypesTests`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

@@ -18,7 +18,9 @@ impl EditorUi {
 
         shared
             .with_session_mut(|lsp| lsp.did_change_workspace_folders(added, removed))
-            .map_err(UiError::Processor)
+            .map_err(UiError::Processor)?;
+        self.record_lsp_status_state_event();
+        Ok(())
     }
 }
 

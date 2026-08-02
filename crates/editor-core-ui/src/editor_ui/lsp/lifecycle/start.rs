@@ -63,8 +63,7 @@ impl EditorUi {
         let shared = match get_or_start_shared_lsp_session(key, start) {
             Ok(shared) => shared,
             Err(err) => {
-                let mut doc = self.lock_doc();
-                doc.lsp_fail(err.to_string());
+                self.fail_lsp_and_record_status(err.to_string());
                 return Err(err);
             }
         };
@@ -85,8 +84,7 @@ impl EditorUi {
                 initial_text_clone,
             )
         }) {
-            let mut doc = self.lock_doc();
-            doc.lsp_fail(err.clone());
+            self.fail_lsp_and_record_status(err.clone());
             return Err(UiError::Processor(err));
         }
 
@@ -107,12 +105,16 @@ impl EditorUi {
             doc.lsp_clear_result_state();
             doc.lsp_latest_on_type_formatting_request_id.clear();
         }
+        self.record_lsp_status_state_event();
         Ok(())
     }
 
     pub fn lsp_disable(&mut self) {
-        let mut doc = self.lock_doc();
-        doc.lsp_disable();
+        {
+            let mut doc = self.lock_doc();
+            doc.lsp_disable();
+        }
+        self.record_lsp_status_state_event();
     }
 
     pub fn lsp_is_enabled(&self) -> bool {
