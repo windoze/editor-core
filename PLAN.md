@@ -955,6 +955,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthRecordsStatusSnapshots`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthPanelShowsRecordedStatusSnapshots`
     - `git diff --check`
+- 中间提交：`feat(app): bound lsp process health log`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；在阶段 274 的 JSONL process health log 基础上补 retention/清理起点，避免日志无限增长。
+  - 提交边界：`AttoProjectLspProcessHealthLogStore` 新增 `maxPersistedEntries`，默认保留最近 2000 条 JSONL 记录；每次 append 后按全局最新行清理旧记录，`loadRecent(...)` 继续按 workspace root URI 过滤。不新增 Rust/C ABI，不改变日志记录 schema、不新增 UI、不实现按 workspace 独立配额、大小/时间轮转、导出/查询 UI、自动崩溃恢复、更深层 core-owned LSP ownership schema 或完整 dashboard 级健康视图。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStoreRetainsLatestEntries`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStoreAppendsAndLoadsRecentWorkspaceEntries`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

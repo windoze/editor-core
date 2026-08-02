@@ -31,11 +31,14 @@ struct AttoProjectLspProcessHealthLogEntry: Codable, Equatable {
 
 struct AttoProjectLspProcessHealthLogStore: Sendable {
     let logFileURL: URL
+    let maxPersistedEntries: Int
 
     init(
-        logFileURL: URL = AttoProjectLspProcessHealthLogStore.defaultLogFileURL()
+        logFileURL: URL = AttoProjectLspProcessHealthLogStore.defaultLogFileURL(),
+        maxPersistedEntries: Int = 2_000
     ) {
         self.logFileURL = logFileURL
+        self.maxPersistedEntries = max(1, maxPersistedEntries)
     }
 
     static func defaultLogFileURL(fileManager: FileManager = .default) -> URL {
@@ -94,15 +97,20 @@ struct AttoProjectLspProcessHealthLogStore: Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        var line = try encoder.encode(entry)
-        line.append(0x0A)
+        let line = String(decoding: try encoder.encode(entry), as: UTF8.self)
 
         if fileManager.fileExists(atPath: logFileURL.path) {
-            var data = try Data(contentsOf: logFileURL)
-            data.append(line)
-            try data.write(to: logFileURL, options: [.atomic])
+            let existingData = try Data(contentsOf: logFileURL)
+            let existingText = String(data: existingData, encoding: .utf8) ?? ""
+            var lines = existingText.split(whereSeparator: \.isNewline).map(String.init)
+            lines.append(line)
+            if lines.count > maxPersistedEntries {
+                lines = Array(lines.suffix(maxPersistedEntries))
+            }
+            let output = lines.joined(separator: "\n") + "\n"
+            try output.write(to: logFileURL, atomically: true, encoding: .utf8)
         } else {
-            try line.write(to: logFileURL, options: [.atomic])
+            try (line + "\n").write(to: logFileURL, atomically: true, encoding: .utf8)
         }
     }
 

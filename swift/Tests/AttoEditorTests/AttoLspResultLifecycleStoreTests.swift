@@ -419,4 +419,44 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         let rawLog = try String(contentsOf: logURL, encoding: .utf8)
         XCTAssertEqual(rawLog.split(whereSeparator: \.isNewline).count, 3)
     }
+
+    func testProjectLspProcessHealthLogStoreRetainsLatestEntries() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoProjectLspProcessHealthLogRetentionTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let root = tempDir.appendingPathComponent("workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let logURL = tempDir.appendingPathComponent("lsp-process-health.jsonl")
+        let logStore = AttoProjectLspProcessHealthLogStore(logFileURL: logURL, maxPersistedEntries: 2)
+        for sequence in UInt64(1)...UInt64(3) {
+            try logStore.append(
+                event: AttoProjectLspProcessHealthEvent(
+                    sequence: sequence,
+                    sourceSequence: sequence + 100,
+                    tabId: sequence,
+                    viewIndex: 0,
+                    viewId: sequence + 1_000,
+                    serverName: "fake-lsp-\(sequence)",
+                    serverCommand: "fake-lsp",
+                    availability: "enabled",
+                    state: "ready",
+                    detail: nil,
+                    process: EcuLspProcessStatus(pid: UInt32(sequence), state: .running)
+                ),
+                workspaceRootURL: root,
+                recordedAt: Date(timeIntervalSince1970: TimeInterval(1_785_715_200 + sequence))
+            )
+        }
+
+        let entries = logStore.loadRecent(workspaceRootURL: root, limit: 10)
+        XCTAssertEqual(entries.map(\.sequence), [2, 3])
+        XCTAssertEqual(entries.map(\.serverName), ["fake-lsp-2", "fake-lsp-3"])
+
+        let rawLog = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(rawLog.split(whereSeparator: \.isNewline).count, 2)
+        XCTAssertFalse(rawLog.contains("fake-lsp-1"))
+    }
 }
