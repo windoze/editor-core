@@ -6,6 +6,10 @@
 
 本文关注的是“能否从 Swift 产品层完整使用 `editor-core-*` 能力”，不是评价 Rust core 自身是否完整。总体结论是：**当前 Swift 路径已经能支撑一个可用编辑器主流程，但还不是 `editor-core-*` 的完整能力投影**。尤其对于“复刻 Sublime Text”这个目标，缺口主要集中在命令面、LSP 产品化、派生状态产品化/消费、多文档/分屏归属、Sublime 兼容行为和视觉/交互测试体系。其中多文档、tab、workspace、project/session 的状态归属已经明确：后续应收敛到 `editor-core` / `editor-core-ui` 的 workspace 模型，Swift/AppKit 侧不再新开或扩展一套长期独立的 workspace/tab/session 模型。本文后续提到的 Sublime 兼容不包含 `.sublime-syntax` 语法定义扩展；AttoEditor 的语言语义、结构化高亮和智能能力重点走 Tree-sitter 与 LSP 路线，Sublime syntax 支持以现有 `editor-core-sublime` 能力为基线即可。因此，后续 Swift gaps 的验收口径不把“提高 Sublime syntax 覆盖率”列为待补功能。
 
+## 执行计划
+
+整个 Swift gaps 收敛任务按照 `PLAN.md` 中的执行计划推进。后续实现以 `PLAN.md` 的阶段划分、提交边界、验证命令和最终完成标准为准；本文继续作为缺口审计与状态记录，随着各阶段完成同步更新对应 gap 的完成证据、剩余风险或 out-of-scope 说明。
+
 ## 范围
 
 本次审计覆盖这些路径：
