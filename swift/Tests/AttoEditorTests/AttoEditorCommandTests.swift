@@ -5220,6 +5220,36 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNil(snapshot.activeTabId)
     }
 
+    func testCloseTabCallbackUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("close-local.txt")
+        let projectedURL = tempDir.appendingPathComponent("close-projected.txt")
+        try "close".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        var closedURLs: [URL] = []
+        vc.onDidCloseFile = { closedURLs.append($0.standardizedFileURL) }
+        vc.closeTab(id: tab.id)
+
+        XCTAssertTrue(vc.tabs.isEmpty)
+        XCTAssertEqual(closedURLs, [projectedURL.standardizedFileURL])
+    }
+
     func testSessionSnapshotUsesCoreTabProjectionWhenAvailable() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

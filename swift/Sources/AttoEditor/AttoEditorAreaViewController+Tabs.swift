@@ -752,7 +752,7 @@ extension AttoEditorAreaViewController {
             }
         }
 
-        let url = tab.fileURL
+        let url = projectedFileURL(for: tab)
         let wasSelected = (selectedTabID == id)
         closeCoreTab(tab)
         clearDiagnosticsLifecycleState(forTabID: tab.id)
