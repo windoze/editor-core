@@ -1032,6 +1032,107 @@ fn multi_document_lsp_request_events_aggregate_tab_and_view_context() {
 }
 
 #[test]
+fn multi_document_state_events_aggregate_editor_state_event_context() {
+    let mut multi = MultiDocumentEditorUi::new();
+    let first_tab = multi.open_tab("abc", 80);
+    let second_tab = multi.open_tab("def", 80);
+
+    multi.set_active_tab(first_tab).unwrap();
+    {
+        let editor = multi.active_editor_mut().unwrap();
+        let view_id = editor.view_id;
+        let mut doc = editor.lock_doc();
+        doc.lsp_client_requests.insert(
+            51,
+            LspClientRequest::Result {
+                view: view_id,
+                slot: LspResultSlot::Hover,
+            },
+        );
+        doc.lsp_latest_result_request_id
+            .insert((view_id, LspResultSlot::Hover), 51);
+    }
+    multi
+        .active_editor_mut()
+        .unwrap()
+        .handle_lsp_events(vec![LspEvent::Response(editor_core_lsp::LspResponse {
+            id: 51,
+            method: "textDocument/hover".to_string(),
+            uri: None,
+            result: Some(serde_json::json!({ "contents": "hello" })),
+            error: None,
+        })])
+        .unwrap();
+
+    multi.set_active_tab(second_tab).unwrap();
+    {
+        let editor = multi.active_editor_mut().unwrap();
+        let view_id = editor.view_id;
+        let mut doc = editor.lock_doc();
+        doc.record_lsp_request_started(view_id, LspResultSlot::CodeAction, 52);
+    }
+
+    let snapshot = multi.state_events_after(0);
+    assert_eq!(snapshot.latest_sequence, 3);
+    assert_eq!(snapshot.events.len(), 3);
+    assert_eq!(
+        snapshot
+            .events
+            .iter()
+            .map(|event| (event.tab_id, event.kind.as_str(), event.family.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            (first_tab.get(), "lsp_result", "hover"),
+            (first_tab.get(), "lsp_request", "hover"),
+            (second_tab.get(), "lsp_request", "actions"),
+        ]
+    );
+    assert_eq!(snapshot.events[0].view_index, 0);
+    assert_eq!(snapshot.events[0].source_sequence, 1);
+    assert_eq!(
+        snapshot.events[0]
+            .state_event
+            .lsp_result
+            .as_ref()
+            .unwrap()
+            .status,
+        "success"
+    );
+    assert_eq!(
+        snapshot.events[1]
+            .state_event
+            .lsp_request
+            .as_ref()
+            .unwrap()
+            .phase,
+        "completed"
+    );
+    assert_eq!(
+        snapshot.events[2]
+            .state_event
+            .lsp_request
+            .as_ref()
+            .unwrap()
+            .phase,
+        "started"
+    );
+
+    let repeat = multi.state_events_after(0);
+    assert_eq!(repeat.latest_sequence, 3);
+    assert_eq!(repeat.events.len(), 3);
+
+    let after_first: serde_json::Value =
+        serde_json::from_str(&multi.state_events_json(1).unwrap()).unwrap();
+    assert_eq!(after_first["latest_sequence"], 3);
+    assert_eq!(after_first["events"].as_array().unwrap().len(), 2);
+    assert_eq!(after_first["events"][0]["kind"], "lsp_request");
+    assert_eq!(
+        after_first["events"][0]["state_event"]["lsp_request"]["phase"],
+        "completed"
+    );
+}
+
+#[test]
 fn lsp_processing_edit_apply_failure_records_status_and_returns_error() {
     let ui = EditorUi::new("abc", 80);
 

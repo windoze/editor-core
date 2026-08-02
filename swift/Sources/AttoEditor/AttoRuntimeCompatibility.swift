@@ -137,6 +137,11 @@ struct AttoRuntimeCompatibility {
             name: "Editor UI state events",
             reason: "Host UI can drain per-editor state changes through one cursor; Swift falls back to family-specific event streams when unavailable."
         ),
+        RuntimeFeature(
+            feature: .multiDocumentStateEvents,
+            name: "multi-document state events",
+            reason: "Project-level UI can drain state changes aggregated across tabs and split views; Swift falls back to family-specific multi-document event streams when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

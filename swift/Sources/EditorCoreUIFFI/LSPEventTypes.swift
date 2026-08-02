@@ -658,3 +658,13 @@ public extension EcuMultiDocumentLSPRequestEvent {
         EcuLspRequestStatus(rawValue: status)
     }
 }
+
+public extension EcuMultiDocumentStateEvent {
+    var kindValue: EcuEditorUIStateEventKind {
+        EcuEditorUIStateEventKind(rawValue: kind)
+    }
+
+    var familyKind: EcuLspEventFamily {
+        EcuLspEventFamily(rawValue: family)
+    }
+}

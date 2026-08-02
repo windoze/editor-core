@@ -92,6 +92,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentLSPRequestEvents))
         XCTAssertTrue(info.supports(.lspRequestCancelTimeoutEvents))
         XCTAssertTrue(info.supports(.editorUIStateEvents))
+        XCTAssertTrue(info.supports(.multiDocumentStateEvents))
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {
@@ -120,6 +121,11 @@ final class EditorCoreUIFFITests: XCTestCase {
     func testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)
+
+        XCTAssertEqual(try multi.stateEventsLatestSequence(), 0)
+        let stateEvents = try multi.stateEvents()
+        XCTAssertEqual(stateEvents.latestSequence, 0)
+        XCTAssertTrue(stateEvents.events.isEmpty)
 
         let alpha = try multi.openTab(text: "alpha world", viewportWidthCells: 80)
         let beta = try multi.openTab(text: "beta world", viewportWidthCells: 80)

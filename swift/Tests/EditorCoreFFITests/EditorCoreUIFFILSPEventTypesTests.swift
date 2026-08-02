@@ -176,6 +176,56 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         XCTAssertEqual(EcuEditorUIStateEventKind.unknown("future").rawValue, "future")
     }
 
+    func testMultiDocumentStateEventsExposeTypedKindsAndNestedPayloads() throws {
+        let snapshot = try decode(EcuMultiDocumentStateEventsSnapshot.self, """
+        {
+          "latest_sequence": 1,
+          "events": [
+            {
+              "sequence": 1,
+              "tab_id": 7,
+              "view_index": 2,
+              "view_id": 9,
+              "source_sequence": 4,
+              "kind": "lsp_request",
+              "family": "actions",
+              "title": "LSP Code Action: pending",
+              "state_event": {
+                "sequence": 4,
+                "kind": "lsp_request",
+                "family": "actions",
+                "title": "LSP Code Action: pending",
+                "view_id": 9,
+                "source_sequence": 8,
+                "lsp_request": {
+                  "sequence": 8,
+                  "family": "actions",
+                  "title": "LSP Code Action: pending",
+                  "slot": "code_action",
+                  "method": "textDocument/codeAction",
+                  "view_id": 9,
+                  "request_id": 77,
+                  "phase": "started",
+                  "status": "pending"
+                }
+              }
+            }
+          ]
+        }
+        """)
+
+        let event = try XCTUnwrap(snapshot.events.first)
+        XCTAssertEqual(snapshot.latestSequence, 1)
+        XCTAssertEqual(event.tabId, 7)
+        XCTAssertEqual(event.viewIndex, 2)
+        XCTAssertEqual(event.viewId, 9)
+        XCTAssertEqual(event.kindValue, .lspRequest)
+        XCTAssertEqual(event.familyKind, .actions)
+        XCTAssertEqual(event.stateEvent.kindValue, .lspRequest)
+        XCTAssertEqual(event.stateEvent.lspRequest?.slotKind, .codeAction)
+        XCTAssertEqual(event.stateEvent.lspRequest?.requestId, 77)
+    }
+
     func testWorkspaceDiagnosticsExposeTypedKinds() throws {
         let snapshot = try decode(EcuWorkspaceDiagnosticsSnapshot.self, """
         {

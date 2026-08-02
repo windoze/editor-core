@@ -54,8 +54,9 @@ pub use lsp_request_events::{EditorLspRequestEvent, EditorLspRequestEventsSnapsh
 pub use lsp_result_events::{EditorLspResultEvent, EditorLspResultEventsSnapshot};
 pub use multi_document::{
     MultiDocumentEditorUi, MultiDocumentLspRequestEvent, MultiDocumentLspRequestEventsSnapshot,
-    MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot, TabId, TabSearchResult,
-    WorkspaceDiagnostic, WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
+    MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot, MultiDocumentStateEvent,
+    MultiDocumentStateEventsSnapshot, TabId, TabSearchResult, WorkspaceDiagnostic,
+    WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
     WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
     WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
 };

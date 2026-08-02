@@ -52,6 +52,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspRequestCancelTimeoutEvents })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspSemanticTokensRequests })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .editorUIStateEvents })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentStateEvents })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing UI FFI features"))
     }
 
@@ -81,6 +82,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
                 EditorCoreUIFFIFeatures.lspRequestCancelTimeoutEvents.rawValue,
                 EditorCoreUIFFIFeatures.lspSemanticTokensRequests.rawValue,
                 EditorCoreUIFFIFeatures.editorUIStateEvents.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentStateEvents.rawValue,
             ])
         )
         XCTAssertTrue(report.diagnosticMessage.contains("Unavailable optional UI FFI features"))

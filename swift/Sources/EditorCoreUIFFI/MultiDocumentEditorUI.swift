@@ -261,6 +261,40 @@ public struct EcuMultiDocumentLSPRequestEventsSnapshot: Decodable, Equatable, Se
     }
 }
 
+public struct EcuMultiDocumentStateEvent: Decodable, Equatable, Sendable {
+    public let sequence: UInt64
+    public let tabId: UInt64
+    public let viewIndex: Int
+    public let viewId: UInt64
+    public let sourceSequence: UInt64
+    public let kind: String
+    public let family: String
+    public let title: String
+    public let stateEvent: EcuEditorUIStateEvent
+
+    private enum CodingKeys: String, CodingKey {
+        case sequence
+        case tabId = "tab_id"
+        case viewIndex = "view_index"
+        case viewId = "view_id"
+        case sourceSequence = "source_sequence"
+        case kind
+        case family
+        case title
+        case stateEvent = "state_event"
+    }
+}
+
+public struct EcuMultiDocumentStateEventsSnapshot: Decodable, Equatable, Sendable {
+    public let latestSequence: UInt64
+    public let events: [EcuMultiDocumentStateEvent]
+
+    private enum CodingKeys: String, CodingKey {
+        case latestSequence = "latest_sequence"
+        case events
+    }
+}
+
 public final class MultiDocumentEditorUI {
     public let library: EditorCoreUIFFILibrary
     private let handle: OpaquePointer
@@ -604,6 +638,27 @@ public final class MultiDocumentEditorUI {
             EcuMultiDocumentLSPRequestEventsSnapshot.self,
             from: lspRequestEventsJSON(after: sequence),
             context: "multi_document_lsp_request_events_decode"
+        )
+    }
+
+    public func stateEventsLatestSequence() throws -> UInt64 {
+        var sequence: UInt64 = 0
+        let status = editor_core_ui_ffi_multi_document_state_events_latest_sequence(handle, &sequence)
+        try library.ensureStatus(status, context: "multi_document_state_events_latest_sequence")
+        return sequence
+    }
+
+    public func stateEventsJSON(after sequence: UInt64 = 0) throws -> String {
+        try ffiStringResult(context: "multi_document_state_events_json") {
+            editor_core_ui_ffi_multi_document_state_events_json(handle, sequence)
+        }
+    }
+
+    public func stateEvents(after sequence: UInt64 = 0) throws -> EcuMultiDocumentStateEventsSnapshot {
+        try decode(
+            EcuMultiDocumentStateEventsSnapshot.self,
+            from: stateEventsJSON(after: sequence),
+            context: "multi_document_state_events_decode"
         )
     }
 

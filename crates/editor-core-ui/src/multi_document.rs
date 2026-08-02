@@ -4,10 +4,12 @@ use std::collections::BTreeMap;
 
 mod lsp_request_events;
 mod lsp_result_events;
+mod state_events;
 mod workspace_diagnostics;
 
 pub use lsp_request_events::{MultiDocumentLspRequestEvent, MultiDocumentLspRequestEventsSnapshot};
 pub use lsp_result_events::{MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot};
+pub use state_events::{MultiDocumentStateEvent, MultiDocumentStateEventsSnapshot};
 pub use workspace_diagnostics::{
     WorkspaceDiagnostic, WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
     WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
@@ -71,6 +73,7 @@ pub struct MultiDocumentEditorUi {
     workspace_diagnostics: WorkspaceDiagnosticsStore,
     lsp_result_events: lsp_result_events::MultiDocumentLspResultEventStore,
     lsp_request_events: lsp_request_events::MultiDocumentLspRequestEventStore,
+    state_events: state_events::MultiDocumentStateEventStore,
 }
 
 impl MultiDocumentEditorUi {
@@ -644,6 +647,29 @@ impl MultiDocumentEditorUi {
         self.lsp_request_events
             .refresh_from_tabs(&self.tabs, &self.tab_order);
         self.lsp_request_events
+            .events_after_json(after_sequence)
+            .map_err(|err| UiError::Processor(err.to_string()))
+    }
+
+    /// Refresh and return latest aggregated state event sequence across tabs/views.
+    pub fn state_events_latest_sequence(&mut self) -> u64 {
+        self.state_events
+            .refresh_from_tabs(&self.tabs, &self.tab_order);
+        self.state_events.latest_sequence()
+    }
+
+    /// Refresh and return aggregated state events newer than `after_sequence`.
+    pub fn state_events_after(&mut self, after_sequence: u64) -> MultiDocumentStateEventsSnapshot {
+        self.state_events
+            .refresh_from_tabs(&self.tabs, &self.tab_order);
+        self.state_events.events_after(after_sequence)
+    }
+
+    /// Refresh and return aggregated state events newer than `after_sequence` as JSON.
+    pub fn state_events_json(&mut self, after_sequence: u64) -> Result<String, UiError> {
+        self.state_events
+            .refresh_from_tabs(&self.tabs, &self.tab_order);
+        self.state_events
             .events_after_json(after_sequence)
             .map_err(|err| UiError::Processor(err.to_string()))
     }

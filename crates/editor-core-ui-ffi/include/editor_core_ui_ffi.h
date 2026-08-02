@@ -153,6 +153,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_LSP_AUXILIARY_REQUESTS    (1ull << 14)
 #define ECU_FEATURE_LSP_AUXILIARY_RESOLVE_REQUESTS (1ull << 15)
 #define ECU_FEATURE_EDITOR_UI_STATE_EVENTS    (1ull << 16)
+#define ECU_FEATURE_MULTI_DOCUMENT_STATE_EVENTS (1ull << 17)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 
 MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);
@@ -252,6 +253,11 @@ int32_t editor_core_ui_ffi_multi_document_lsp_request_events_latest_sequence(
     uint64_t* out_sequence);
 char* editor_core_ui_ffi_multi_document_lsp_request_events_json(MultiDocumentEditorUi* multi,
                                                                 uint64_t after_sequence);
+int32_t editor_core_ui_ffi_multi_document_state_events_latest_sequence(
+    MultiDocumentEditorUi* multi,
+    uint64_t* out_sequence);
+char* editor_core_ui_ffi_multi_document_state_events_json(MultiDocumentEditorUi* multi,
+                                                          uint64_t after_sequence);
 int32_t editor_core_ui_ffi_multi_document_clear_workspace_diagnostics(
     MultiDocumentEditorUi* multi);
 
