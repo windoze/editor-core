@@ -743,6 +743,86 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
     }
 
+    func testMultiDocumentEditorUIAppliesWorkspaceEditDocumentChangesInOrder() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-workspace-order-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("src", isDirectory: true), withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let draft = root.appendingPathComponent("src/Draft.swift")
+        let finalFile = root.appendingPathComponent("src/Final.swift")
+        let draftURI = draft.absoluteString
+        let finalURI = finalFile.absoluteString
+        try multi.setWorkspaceRoots([root.absoluteString])
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "create",
+              "uri": "\(draftURI)"
+            },
+            {
+              "textDocument": {
+                "uri": "\(draftURI)",
+                "version": null
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "draft\\n"
+                }
+              ]
+            },
+            {
+              "kind": "rename",
+              "oldUri": "\(draftURI)",
+              "newUri": "\(finalURI)"
+            },
+            {
+              "textDocument": {
+                "uri": "\(finalURI)",
+                "version": null
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "final "
+                }
+              ]
+            }
+          ]
+        }
+        """
+
+        let preview = try multi.previewWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertFalse(preview.applied)
+        XCTAssertTrue(preview.skippedURIs.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: draft.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: finalFile.path))
+
+        let applied = try multi.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertTrue(applied.applied)
+        XCTAssertEqual(applied.appliedEditCount, 2)
+        XCTAssertEqual(applied.appliedResourceOperationCount, 2)
+        XCTAssertTrue(applied.skippedURIs.isEmpty)
+        XCTAssertTrue(applied.appliedURIs.contains(draftURI))
+        XCTAssertTrue(applied.appliedURIs.contains(finalURI))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: draft.path))
+        XCTAssertEqual(try String(contentsOf: finalFile, encoding: .utf8), "final draft\n")
+        XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
+    }
+
     func testMultiDocumentEditorUIReportsWorkspaceEditVersionMismatch() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)

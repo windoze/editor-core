@@ -799,6 +799,110 @@ fn ffi_multi_document_applies_unopened_workspace_file_resource_operations() {
 }
 
 #[test]
+fn ffi_multi_document_applies_workspace_edit_document_changes_in_order() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let root = std::env::temp_dir().join(format!(
+        "editor-core-ui-ffi-workspace-order-root-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    let draft = root.join("src").join("Draft.swift");
+    let final_file = root.join("src").join("Final.swift");
+
+    let root_uri = format!("file://{}", root.to_string_lossy());
+    let draft_uri = format!("file://{}", draft.to_string_lossy());
+    let final_uri = format!("file://{}", final_file.to_string_lossy());
+
+    let roots = CString::new(serde_json::json!([root_uri]).to_string()).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let workspace_edit = CString::new(
+        serde_json::json!({
+            "documentChanges": [
+                { "kind": "create", "uri": draft_uri.as_str() },
+                {
+                    "textDocument": { "uri": draft_uri.as_str(), "version": null },
+                    "edits": [
+                        {
+                            "range": {
+                                "start": { "line": 0, "character": 0 },
+                                "end": { "line": 0, "character": 0 }
+                            },
+                            "newText": "draft\n"
+                        }
+                    ]
+                },
+                {
+                    "kind": "rename",
+                    "oldUri": draft_uri.as_str(),
+                    "newUri": final_uri.as_str()
+                },
+                {
+                    "textDocument": { "uri": final_uri.as_str(), "version": null },
+                    "edits": [
+                        {
+                            "range": {
+                                "start": { "line": 0, "character": 0 },
+                                "end": { "line": 0, "character": 0 }
+                            },
+                            "newText": "final "
+                        }
+                    ]
+                }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let preview_ptr = editor_core_ui_ffi_multi_document_preview_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!preview_ptr.is_null());
+    let preview_json = unsafe { std::ffi::CStr::from_ptr(preview_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(preview_ptr) };
+    let preview: serde_json::Value = serde_json::from_str(&preview_json).unwrap();
+    assert_eq!(preview["skipped_uris"].as_array().unwrap().len(), 0);
+    assert!(!draft.exists());
+    assert!(!final_file.exists());
+
+    let apply_ptr = editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!apply_ptr.is_null());
+    let apply_json = unsafe { std::ffi::CStr::from_ptr(apply_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(apply_ptr) };
+    let applied: serde_json::Value = serde_json::from_str(&apply_json).unwrap();
+    assert_eq!(applied["applied"], true);
+    assert_eq!(applied["applied_edit_count"], 2);
+    assert_eq!(applied["applied_resource_operation_count"], 2);
+    assert_eq!(applied["skipped_uris"].as_array().unwrap().len(), 0);
+    assert!(!draft.exists());
+    assert_eq!(
+        std::fs::read_to_string(&final_file).unwrap(),
+        "final draft\n"
+    );
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn ffi_editor_ui_lsp_result_events_snapshot_empty() {
     assert_ne!(
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_RESULT_EVENTS,

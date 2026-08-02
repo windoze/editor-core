@@ -231,6 +231,17 @@
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAppliesUnopenedWorkspaceFileTextEdits`
     - `swift test --package-path swift --filter EditorCoreUIFFITests`
     - `git diff --check`
+- 中间提交：`feat(ui): preserve workspace edit document change order`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；让 `MultiDocumentEditorUi` transaction 按 `WorkspaceEdit.documentChanges` 顺序交错执行 text edits 和 resource operations，而不是先执行全部 resource operations 再按 URI 批量执行 text edits。
+  - 提交边界：只调整 Rust transaction 内部 step planning/apply 顺序，补 planned resource URI state 支持前序 create/delete/rename 对后续 resource operation 预检的影响，并覆盖 C ABI JSON 和 Swift typed wrapper 测试；不新增 ABI 函数；不引入 atomic rollback / undo grouping；不切换 AttoEditor App 主路径。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui --package editor-core-ui-ffi`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests`
+    - `cargo test -p editor-core-ui-ffi`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAppliesWorkspaceEditDocumentChangesInOrder`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

@@ -624,6 +624,196 @@ fn multi_document_ui_applies_unopened_workspace_file_resource_operations() {
 }
 
 #[test]
+fn multi_document_ui_applies_unopened_document_changes_in_order() {
+    let root = unique_test_dir("editor-core-ui-workspace-resource-order-root");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+
+    let draft = root.join("src").join("Draft.swift");
+    let final_file = root.join("src").join("Final.swift");
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let draft_uri = path_to_file_uri(draft.as_path());
+    let final_uri = path_to_file_uri(final_file.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+
+    let edit = json!({
+        "documentChanges": [
+            {
+                "kind": "create",
+                "uri": draft_uri.as_str()
+            },
+            {
+                "textDocument": {
+                    "uri": draft_uri.as_str(),
+                    "version": null
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 0 }
+                        },
+                        "newText": "draft\n"
+                    }
+                ]
+            },
+            {
+                "kind": "rename",
+                "oldUri": draft_uri.as_str(),
+                "newUri": final_uri.as_str()
+            },
+            {
+                "textDocument": {
+                    "uri": final_uri.as_str(),
+                    "version": null
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 0 }
+                        },
+                        "newText": "final "
+                    }
+                ]
+            }
+        ]
+    })
+    .to_string();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(edit.as_str())
+        .unwrap();
+    assert!(preview.skipped_uris.is_empty());
+    assert!(!draft.exists());
+    assert!(!final_file.exists());
+
+    let applied = ui.apply_workspace_edit_transaction(edit.as_str()).unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_resource_operation_count, 2);
+    assert_eq!(applied.applied_edit_count, 2);
+    assert!(applied.applied_uris.contains(&draft_uri));
+    assert!(applied.applied_uris.contains(&final_uri));
+    assert!(applied.skipped_uris.is_empty());
+    assert!(!draft.exists());
+    assert_eq!(
+        std::fs::read_to_string(&final_file).unwrap(),
+        "final draft\n"
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn multi_document_ui_applies_open_tab_document_changes_in_order() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let tab = ui.open_tab("old\n", 80);
+    ui.set_tab_document_uri(tab, Some("file:///tmp/project/Old.swift".to_string()))
+        .unwrap();
+
+    let edit = r#"{
+      "documentChanges": [
+        {
+          "textDocument": {
+            "uri": "file:///tmp/project/Old.swift",
+            "version": null
+          },
+          "edits": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 0 }
+              },
+              "newText": "first "
+            }
+          ]
+        },
+        {
+          "kind": "rename",
+          "oldUri": "file:///tmp/project/Old.swift",
+          "newUri": "file:///tmp/project/New.swift"
+        },
+        {
+          "textDocument": {
+            "uri": "file:///tmp/project/New.swift",
+            "version": null
+          },
+          "edits": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 0 }
+              },
+              "newText": "second "
+            }
+          ]
+        }
+      ]
+    }"#;
+
+    let applied = ui.apply_workspace_edit_transaction(edit).unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_resource_operation_count, 1);
+    assert_eq!(applied.applied_edit_count, 2);
+    assert!(applied.skipped_uris.is_empty());
+    assert_eq!(
+        ui.tab_document_uri(tab),
+        Some("file:///tmp/project/New.swift")
+    );
+    assert_eq!(ui.tab_text(tab).unwrap(), "second first old\n");
+}
+
+#[test]
+fn multi_document_ui_keeps_prior_text_edit_when_later_resource_operation_is_skipped() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let tab = ui.open_tab("old\n", 80);
+    ui.set_tab_document_uri(tab, Some("file:///tmp/project/Old.swift".to_string()))
+        .unwrap();
+
+    let edit = r#"{
+      "documentChanges": [
+        {
+          "textDocument": {
+            "uri": "file:///tmp/project/Old.swift",
+            "version": null
+          },
+          "edits": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 0 }
+              },
+              "newText": "first "
+            }
+          ]
+        },
+        {
+          "kind": "create",
+          "uri": "file:///tmp/project/Old.swift"
+        }
+      ]
+    }"#;
+
+    let applied = ui.apply_workspace_edit_transaction(edit).unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_edit_count, 1);
+    assert_eq!(applied.applied_resource_operation_count, 0);
+    assert!(
+        applied
+            .skipped_uris
+            .contains(&"file:///tmp/project/Old.swift".to_string())
+    );
+    assert!(applied.skipped_details.iter().any(|detail| {
+        detail.uri == "file:///tmp/project/Old.swift"
+            && detail.operation.as_deref() == Some("create")
+            && detail.reason == "resource_operation_create_exists"
+    }));
+    assert_eq!(ui.tab_text(tab).unwrap(), "first old\n");
+}
+
+#[test]
 fn multi_document_ui_skips_unopened_rename_to_open_tab_target() {
     let root = unique_test_dir("editor-core-ui-workspace-resource-open-target");
     std::fs::create_dir_all(root.join("src")).unwrap();
