@@ -35,6 +35,7 @@
 - 新增状态事实源时优先放在 core / `editor-core-ui` / `MultiDocumentEditorUi`，Swift 只做 projection 和 UI binding。
 - 对 UI 行为改动，至少补 AppKit component test；对可视外观、布局或 renderer 行为，补截图/pixel/AX 测试。
 - 每个阶段提交前至少运行 targeted tests；跨 ABI 或 App 主路径阶段还要运行 Swift targeted tests；里程碑阶段运行更大的 test set。
+- 每个提交都必须在本文件的对应阶段章节中注明所属任务、提交边界和验证记录；`SWIFT-GAPS.md` 只作为任务范围参考与 gap 状态审计，不作为提交索引或执行计划来源。
 
 ## 阶段 0: 基线冻结与缺口矩阵
 
@@ -57,6 +58,7 @@
 ### 提交
 
 - `docs: map remaining swift gaps`
+- 文档执行约束维护：声明后续提交归属必须记录在 `PLAN.md` 对应阶段章节，`SWIFT-GAPS.md` 仅保留为任务范围参考和 gap 状态审计；提交边界为文档规则更新，验证记录为 `git diff --check`。
 
 ## 阶段 1: Semantic Tokens typed payload 与主路径消费
 
