@@ -3260,6 +3260,63 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(secondItem.isDirty)
     }
 
+    func testWorkspaceEditOpenTabProjectionCreatesUndoGroups() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("undo-first.txt")
+        let secondURL = tempDir.appendingPathComponent("undo-second.txt")
+        try "abc\n".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "def\n".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.selectFile(url: firstURL)
+        allowWorkspaceEditPreviewConfirmation(vc)
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "\(firstURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "B"
+              }
+            ],
+            "\(secondURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "E"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+
+        var editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "aBc\n")
+        editorView.undo(nil)
+        XCTAssertEqual(try editorView.editor.text(), "abc\n")
+
+        vc.selectFile(url: secondURL)
+        editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "dEf\n")
+        editorView.undo(nil)
+        XCTAssertEqual(try editorView.editor.text(), "def\n")
+    }
+
     func testWorkspaceEditResourceOperationsApplyToUnopenedLocalFiles() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

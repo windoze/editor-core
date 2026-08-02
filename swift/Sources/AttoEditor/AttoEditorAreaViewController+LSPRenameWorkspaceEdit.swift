@@ -554,6 +554,7 @@ extension AttoEditorAreaViewController {
             _ = try tab.editCore.editor.applyTextEdits([
                 EcuTextEdit(start: 0, end: fullRange, text: text),
             ])
+            try tab.editCore.editor.endUndoGroup()
         }
         if markSaved {
             try tab.editCore.editor.markSaved()
@@ -817,6 +818,9 @@ extension AttoEditorAreaViewController {
             _ = try tab.editCore.editor.applyTextEdits([
                 EcuTextEdit(start: 0, end: fullRange, text: text),
             ])
+            if oldText != text {
+                try tab.editCore.editor.endUndoGroup()
+            }
             if markSaved {
                 try tab.editCore.editor.markSaved()
                 tab.isDirty = false

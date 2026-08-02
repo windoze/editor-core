@@ -317,6 +317,13 @@
     - `cargo build -p editor-core-ui-ffi --release`
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAtomicWorkspaceEditPreflightSkipsWithoutMutating`
     - `git diff --check`
+- 中间提交：`feat(app): group workspace edit projection undo`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；让 AttoEditor App 从 core transaction snapshot 投影回已打开 tab 时，为每个发生文本变化的打开 tab 封闭用户可见 undo group。
+  - 提交边界：只调整 App 层 `syncAppTabsFromCoreWorkspaceEditTransaction` 使用的文本投影 helper 和旧 Swift fallback 的打开 tab 替换 helper；打开 tab 文本发生变化后显式调用 `EditorUI.endUndoGroup()`，使用户对该 tab 执行一次 Undo 可以回到 WorkspaceEdit 应用前文本。本提交不新增 ABI，不改变 core transaction result schema，不实现跨文件全局 undo command、未打开文件/resource operation 的用户级 undo，或更深层 conflict UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditOpenTabProjectionCreatesUndoGroups`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEdit`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 
