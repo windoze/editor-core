@@ -82,6 +82,38 @@ public struct EcuLspRequestEventsSnapshot: Decodable, Equatable, Sendable {
     }
 }
 
+public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
+    public let sequence: UInt64
+    public let kind: String
+    public let family: String
+    public let title: String
+    public let viewId: UInt64
+    public let sourceSequence: UInt64
+    public let lspRequest: EcuLspRequestEvent?
+    public let lspResult: EcuLspResultEvent?
+
+    enum CodingKeys: String, CodingKey {
+        case sequence
+        case kind
+        case family
+        case title
+        case viewId = "view_id"
+        case sourceSequence = "source_sequence"
+        case lspRequest = "lsp_request"
+        case lspResult = "lsp_result"
+    }
+}
+
+public struct EcuEditorUIStateEventsSnapshot: Decodable, Equatable, Sendable {
+    public let latestSequence: UInt64
+    public let events: [EcuEditorUIStateEvent]
+
+    enum CodingKeys: String, CodingKey {
+        case latestSequence = "latest_sequence"
+        case events
+    }
+}
+
 public final class EditorUI {
     public let library: EditorCoreUIFFILibrary
     private let handle: OpaquePointer
@@ -355,6 +387,33 @@ public final class EditorUI {
             EcuLspRequestEventsSnapshot.self,
             from: lspRequestEventsJSON(after: sequence),
             context: "editor_ui_lsp_request_events"
+        )
+    }
+
+    public func stateEventsLatestSequence() throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_state_events_latest_sequence(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_state_events_latest_sequence")
+        return out
+    }
+
+    public func stateEventsJSON(after sequence: UInt64 = 0) throws -> String {
+        guard let ptr = editor_core_ui_ffi_editor_ui_state_events_json(handle, sequence) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_state_events_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func stateEvents(after sequence: UInt64 = 0) throws -> EcuEditorUIStateEventsSnapshot {
+        try Self.decodeSnapshot(
+            EcuEditorUIStateEventsSnapshot.self,
+            from: stateEventsJSON(after: sequence),
+            context: "editor_ui_state_events"
         )
     }
 

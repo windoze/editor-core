@@ -54,7 +54,7 @@ impl EditorUiDoc {
         let sequence = self.next_lsp_result_event_sequence;
         self.next_lsp_result_event_sequence = self.next_lsp_result_event_sequence.saturating_add(1);
 
-        self.lsp_result_events.push_back(EditorLspResultEvent {
+        let event = EditorLspResultEvent {
             sequence,
             family: slot.family().to_string(),
             title: format!("{}: {}", slot.title(), status.as_str()),
@@ -67,7 +67,9 @@ impl EditorUiDoc {
             result_json_len,
             error_code: error.map(|err| err.code),
             error_message: error.map(|err| err.message.clone()),
-        });
+        };
+        self.lsp_result_events.push_back(event.clone());
+        self.record_state_event_from_lsp_result(event);
 
         while self.lsp_result_events.len() > MAX_LSP_RESULT_EVENTS {
             self.lsp_result_events.pop_front();

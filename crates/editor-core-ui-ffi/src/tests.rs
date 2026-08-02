@@ -488,6 +488,39 @@ fn ffi_editor_ui_lsp_request_events_snapshot_empty() {
 }
 
 #[test]
+fn ffi_editor_ui_state_events_snapshot_empty() {
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_EDITOR_UI_STATE_EVENTS,
+        0
+    );
+
+    let initial = CString::new("abc").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+
+    let mut latest_sequence: u64 = u64::MAX;
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_editor_ui_state_events_latest_sequence(ui, &mut latest_sequence)
+        },
+        ECU_OK
+    );
+    assert_eq!(latest_sequence, 0);
+
+    let events_ptr = editor_core_ui_ffi_editor_ui_state_events_json(ui, 0);
+    assert!(!events_ptr.is_null());
+    let events_json = unsafe { std::ffi::CStr::from_ptr(events_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(events_ptr) };
+    let events: serde_json::Value = serde_json::from_str(&events_json).unwrap();
+    assert_eq!(events["latest_sequence"], 0);
+    assert_eq!(events["events"].as_array().unwrap().len(), 0);
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
 fn ffi_multi_document_lsp_result_events_snapshot_empty() {
     assert_ne!(
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_LSP_RESULT_EVENTS,

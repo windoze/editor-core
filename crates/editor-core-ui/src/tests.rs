@@ -364,6 +364,86 @@ fn lsp_request_events_record_start_completion_and_result_sequence() {
 }
 
 #[test]
+fn editor_ui_state_events_project_lsp_request_and_result_events() {
+    let capture_path = unique_temp_path("state-events");
+    let script = lsp_capture_server_script(&capture_path, serde_json::json!({}));
+    let args = vec!["-c".to_string(), script];
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root_uri = format!("file:///tmp/editor-core-ui-state-events-{stamp}");
+    let doc_uri = format!("{root_uri}/main.rs");
+
+    let mut ui = EditorUi::new("abc", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+
+    assert_eq!(ui.state_events_latest_sequence(), 0);
+    assert!(ui.state_events_after(0).events.is_empty());
+
+    let request_id = ui.lsp_request_hover(0, 1).unwrap();
+    let started = ui.state_events_after(0);
+    assert_eq!(started.latest_sequence, 1);
+    assert_eq!(started.events.len(), 1);
+    assert_eq!(started.events[0].sequence, 1);
+    assert_eq!(started.events[0].kind, "lsp_request");
+    assert_eq!(started.events[0].family, "hover");
+    assert_eq!(started.events[0].source_sequence, 1);
+    assert_eq!(
+        started.events[0].lsp_request.as_ref().unwrap().request_id,
+        request_id
+    );
+    assert!(started.events[0].lsp_result.is_none());
+
+    ui.handle_lsp_events(vec![LspEvent::Response(editor_core_lsp::LspResponse {
+        id: request_id,
+        method: "textDocument/hover".to_string(),
+        uri: None,
+        result: Some(serde_json::json!({ "contents": "hello" })),
+        error: None,
+    })])
+    .unwrap();
+
+    let events = ui.state_events_after(0);
+    assert_eq!(events.latest_sequence, 3);
+    assert_eq!(
+        events
+            .events
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect::<Vec<_>>(),
+        vec!["lsp_request", "lsp_result", "lsp_request"]
+    );
+    assert_eq!(events.events[1].source_sequence, 1);
+    assert_eq!(
+        events.events[1].lsp_result.as_ref().unwrap().status,
+        "success"
+    );
+    assert_eq!(
+        events.events[2]
+            .lsp_request
+            .as_ref()
+            .unwrap()
+            .result_sequence,
+        Some(1)
+    );
+
+    let after_started: serde_json::Value =
+        serde_json::from_str(&ui.state_events_json(1).unwrap()).unwrap();
+    assert_eq!(after_started["latest_sequence"], 3);
+    assert_eq!(after_started["events"].as_array().unwrap().len(), 2);
+    assert_eq!(after_started["events"][0]["kind"], "lsp_result");
+    assert_eq!(
+        after_started["events"][1]["lsp_request"]["phase"],
+        "completed"
+    );
+
+    ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
 fn lsp_derived_request_events_record_semantic_and_folding_lifecycle() {
     let mut ui = EditorUi::new("abc", 80);
 

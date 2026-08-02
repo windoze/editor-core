@@ -103,6 +103,34 @@ public enum EcuLspEventFamily: Hashable, Sendable {
     }
 }
 
+public enum EcuEditorUIStateEventKind: Hashable, Sendable {
+    case lspRequest
+    case lspResult
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "lsp_request":
+            self = .lspRequest
+        case "lsp_result":
+            self = .lspResult
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .lspRequest:
+            return "lsp_request"
+        case .lspResult:
+            return "lsp_result"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
 public enum EcuLspResultSlot: Hashable, Sendable {
     case hover
     case definition
@@ -556,6 +584,16 @@ public extension EcuLspRequestEvent {
 
     var statusKind: EcuLspRequestStatus {
         EcuLspRequestStatus(rawValue: status)
+    }
+}
+
+public extension EcuEditorUIStateEvent {
+    var kindValue: EcuEditorUIStateEventKind {
+        EcuEditorUIStateEventKind(rawValue: kind)
+    }
+
+    var familyKind: EcuLspEventFamily {
+        EcuLspEventFamily(rawValue: family)
     }
 }
 

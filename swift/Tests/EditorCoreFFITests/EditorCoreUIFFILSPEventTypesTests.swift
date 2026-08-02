@@ -113,6 +113,69 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         XCTAssertEqual(snapshot.events[2].statusKind.rawValue, "future_status")
     }
 
+    func testEditorUIStateEventsExposeTypedKindsAndNestedPayloads() throws {
+        let snapshot = try decode(EcuEditorUIStateEventsSnapshot.self, """
+        {
+          "latest_sequence": 2,
+          "events": [
+            {
+              "sequence": 1,
+              "kind": "lsp_request",
+              "family": "hover",
+              "title": "LSP Hover: pending",
+              "view_id": 3,
+              "source_sequence": 10,
+              "lsp_request": {
+                "sequence": 10,
+                "family": "hover",
+                "title": "LSP Hover: pending",
+                "slot": "hover",
+                "method": "textDocument/hover",
+                "view_id": 3,
+                "request_id": 44,
+                "phase": "started",
+                "status": "pending"
+              }
+            },
+            {
+              "sequence": 2,
+              "kind": "lsp_result",
+              "family": "future_family",
+              "title": "Future result",
+              "view_id": 3,
+              "source_sequence": 11,
+              "lsp_result": {
+                "sequence": 11,
+                "family": "future_family",
+                "title": "Future result",
+                "slot": "future_slot",
+                "method": "future/method",
+                "view_id": 3,
+                "request_id": 44,
+                "status": "future_status",
+                "has_result": false,
+                "result_json_len": 0
+              }
+            }
+          ]
+        }
+        """)
+
+        XCTAssertEqual(snapshot.latestSequence, 2)
+        XCTAssertEqual(snapshot.events[0].kindValue, .lspRequest)
+        XCTAssertEqual(snapshot.events[0].familyKind, .hover)
+        XCTAssertEqual(snapshot.events[0].sourceSequence, 10)
+        XCTAssertEqual(snapshot.events[0].lspRequest?.slotKind, .hover)
+        XCTAssertEqual(snapshot.events[0].lspRequest?.phaseKind, .started)
+        XCTAssertNil(snapshot.events[0].lspResult)
+        XCTAssertEqual(snapshot.events[1].kindValue, .lspResult)
+        XCTAssertEqual(snapshot.events[1].familyKind, .unknown("future_family"))
+        XCTAssertEqual(snapshot.events[1].lspResult?.slotKind, .unknown("future_slot"))
+        XCTAssertEqual(snapshot.events[1].lspResult?.statusKind, .unknown("future_status"))
+        XCTAssertNil(snapshot.events[1].lspRequest)
+        XCTAssertEqual(EcuEditorUIStateEventKind.unknown("future").rawValue, "future")
+    }
+
     func testWorkspaceDiagnosticsExposeTypedKinds() throws {
         let snapshot = try decode(EcuWorkspaceDiagnosticsSnapshot.self, """
         {

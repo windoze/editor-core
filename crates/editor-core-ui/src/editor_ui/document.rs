@@ -34,6 +34,8 @@ impl EditorUi {
             next_lsp_result_event_sequence: 1,
             lsp_request_events: std::collections::VecDeque::new(),
             next_lsp_request_event_sequence: 1,
+            state_events: std::collections::VecDeque::new(),
+            next_state_event_sequence: 1,
             text_version: 0,
         }));
         Self {

@@ -24,6 +24,8 @@ mod prelude;
 mod render_helpers;
 #[path = "lib/state/mod.rs"]
 mod state;
+#[path = "lib/state_events.rs"]
+mod state_events;
 #[path = "lib/theme.rs"]
 mod theme;
 #[path = "lib/treesitter_worker.rs"]
@@ -58,6 +60,7 @@ pub use multi_document::{
     WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
 };
 pub use state::EditorUi;
+pub use state_events::{EditorUiStateEvent, EditorUiStateEventsSnapshot};
 pub use theme::{ChromeTheme, DamageRect};
 pub use windowing::{WindowingError, rgba8_to_argb_u32};
 

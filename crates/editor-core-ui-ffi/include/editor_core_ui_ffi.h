@@ -152,6 +152,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_LSP_SEMANTIC_TOKENS_REQUESTS (1ull << 13)
 #define ECU_FEATURE_LSP_AUXILIARY_REQUESTS    (1ull << 14)
 #define ECU_FEATURE_LSP_AUXILIARY_RESOLVE_REQUESTS (1ull << 15)
+#define ECU_FEATURE_EDITOR_UI_STATE_EVENTS    (1ull << 16)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 
 MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);
@@ -324,6 +325,10 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_events_latest_sequence(EditorUi
                                                                         uint64_t* out_sequence);
 char* editor_core_ui_ffi_editor_ui_lsp_request_events_json(EditorUi* ui,
                                                            uint64_t after_sequence);
+int32_t editor_core_ui_ffi_editor_ui_state_events_latest_sequence(EditorUi* ui,
+                                                                  uint64_t* out_sequence);
+char* editor_core_ui_ffi_editor_ui_state_events_json(EditorUi* ui,
+                                                     uint64_t after_sequence);
 int32_t editor_core_ui_ffi_editor_ui_lsp_cancel_request(EditorUi* ui,
                                                         uint64_t request_id,
                                                         uint8_t* out_recorded);

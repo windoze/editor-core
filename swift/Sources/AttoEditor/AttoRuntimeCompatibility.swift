@@ -132,6 +132,11 @@ struct AttoRuntimeCompatibility {
             name: "LSP semantic tokens requests",
             reason: "Semantic highlighting refresh can consume typed semantic tokens full/delta/range payloads; Swift falls back to automatic processing when unavailable."
         ),
+        RuntimeFeature(
+            feature: .editorUIStateEvents,
+            name: "Editor UI state events",
+            reason: "Host UI can drain per-editor state changes through one cursor; Swift falls back to family-specific event streams when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

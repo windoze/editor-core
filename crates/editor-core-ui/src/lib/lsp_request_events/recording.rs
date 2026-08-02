@@ -118,7 +118,7 @@ impl EditorUiDoc {
         self.next_lsp_request_event_sequence =
             self.next_lsp_request_event_sequence.saturating_add(1);
 
-        self.lsp_request_events.push_back(EditorLspRequestEvent {
+        let event = EditorLspRequestEvent {
             sequence,
             family: slot.family().to_string(),
             title: format!("{}: {}", slot.title(), status.as_str()),
@@ -131,7 +131,9 @@ impl EditorUiDoc {
             result_sequence,
             error_code: error.map(|err| err.code),
             error_message: error.map(|err| err.message.clone()),
-        });
+        };
+        self.lsp_request_events.push_back(event.clone());
+        self.record_state_event_from_lsp_request(event);
 
         while self.lsp_request_events.len() > MAX_LSP_REQUEST_EVENTS {
             self.lsp_request_events.pop_front();
