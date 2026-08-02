@@ -59,6 +59,7 @@ impl EditorUi {
             }
         };
         applied |= self.handle_lsp_events(events)?;
+        self.record_lsp_status_state_event_if_changed();
         Ok(applied)
     }
 }

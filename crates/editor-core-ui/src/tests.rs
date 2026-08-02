@@ -652,6 +652,73 @@ fn lsp_status_reports_current_workspace_folders() {
 }
 
 #[test]
+fn lsp_progress_activity_emits_deduped_status_events() {
+    let capture_path = unique_temp_path("progress-status-events");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root_uri = format!("file:///tmp/editor-core-ui-progress-status-{stamp}");
+    let doc_uri = format!("{root_uri}/main.rs");
+    let script = lsp_capture_server_script_with_messages(
+        &capture_path,
+        &[
+            lsp_initialize_response(serde_json::json!({})),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "$/progress",
+                "params": {
+                    "token": "index",
+                    "value": {
+                        "kind": "begin",
+                        "title": "Indexing",
+                        "message": "crate graph",
+                        "percentage": 42
+                    }
+                }
+            }),
+        ],
+    );
+    let args = vec!["-c".to_string(), script];
+
+    let mut ui = EditorUi::new("fn main() {}\n", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+
+    let enabled_events = ui.state_events_after(0);
+    assert_eq!(enabled_events.events.len(), 1);
+    assert_eq!(
+        enabled_events.events[0].lsp_status.as_ref().unwrap()["state"],
+        "ready"
+    );
+
+    let _ = ui.poll_processing().unwrap();
+    let activity_events = ui.state_events_after(enabled_events.latest_sequence);
+    let activity_status_events = activity_events
+        .events
+        .iter()
+        .filter(|event| event.kind == "lsp_status_changed")
+        .collect::<Vec<_>>();
+    assert_eq!(activity_status_events.len(), 1);
+    let status = activity_status_events[0].lsp_status.as_ref().unwrap();
+    assert_eq!(status["state"], "indexing");
+    assert_eq!(status["activity"]["title"], "Indexing");
+    assert_eq!(status["activity"]["message"], "crate graph");
+    assert_eq!(status["activity"]["percentage"], 42);
+
+    let _ = ui.poll_processing().unwrap();
+    let repeated = ui.state_events_after(activity_events.latest_sequence);
+    assert!(
+        repeated.events.is_empty(),
+        "unchanged LSP activity should not emit duplicate status events: {:?}",
+        repeated.events
+    );
+
+    ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
 fn lsp_document_lifecycle_notifications_are_exposed() {
     let capture_path = unique_temp_path("document-save-close");
     let stamp = std::time::SystemTime::now()

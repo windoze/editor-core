@@ -21,6 +21,7 @@ impl EditorUi {
             lsp_document_uri: None,
             lsp_last_cmd: None,
             lsp_last_error: None,
+            lsp_last_status_event_signature: None,
             lsp_delta_calc: None,
             lsp_aux_refresh_due: None,
             lsp_inlay_in_flight: false,

@@ -25,6 +25,10 @@ fn lsp_failed_status_value(command: Option<&str>, detail: String) -> serde_json:
     })
 }
 
+fn lsp_status_event_signature(status: &serde_json::Value) -> String {
+    status.to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct EditorUiStateEvent {
     pub sequence: u64,
@@ -301,6 +305,7 @@ impl EditorUiDoc {
         let reason = reason.into();
         self.lsp_fail(reason.clone());
         let status = lsp_failed_status_value(self.lsp_last_cmd.as_deref(), reason);
+        self.lsp_last_status_event_signature = Some(lsp_status_event_signature(&status));
         self.record_state_event_from_lsp_status_changed(view_id, status)
     }
 
@@ -645,8 +650,21 @@ impl EditorUi {
 
     pub(crate) fn record_lsp_status_state_event(&self) -> u64 {
         let status = self.lsp_status_value();
+        let signature = lsp_status_event_signature(&status);
         let mut doc = self.lock_doc();
+        doc.lsp_last_status_event_signature = Some(signature);
         doc.record_state_event_from_lsp_status_changed(self.view_id, status)
+    }
+
+    pub(crate) fn record_lsp_status_state_event_if_changed(&self) -> Option<u64> {
+        let status = self.lsp_status_value();
+        let signature = lsp_status_event_signature(&status);
+        let mut doc = self.lock_doc();
+        if doc.lsp_last_status_event_signature.as_deref() == Some(signature.as_str()) {
+            return None;
+        }
+        doc.lsp_last_status_event_signature = Some(signature);
+        Some(doc.record_state_event_from_lsp_status_changed(self.view_id, status))
     }
 
     pub(crate) fn fail_lsp_and_record_status(&self, reason: impl Into<String>) -> u64 {

@@ -20,6 +20,7 @@ pub(crate) struct EditorUiDoc {
     pub(crate) lsp_document_uri: Option<String>,
     pub(crate) lsp_last_cmd: Option<String>,
     pub(crate) lsp_last_error: Option<String>,
+    pub(crate) lsp_last_status_event_signature: Option<String>,
     pub(crate) lsp_delta_calc: Option<DeltaCalculator>,
     pub(crate) lsp_aux_refresh_due: Option<Instant>,
     pub(crate) lsp_inlay_in_flight: bool,

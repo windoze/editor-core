@@ -823,6 +823,17 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspPanelRecordsStatusFailures`
     - `git diff --check`
+- 中间提交：`feat(ui): emit lsp activity status events`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；继续补齐 server progress/activity 可观测性，让 LSP `$/progress` 导出的 client-side activity/state 变化进入统一 `lsp_status_changed` state event stream。
+  - 提交边界：只在 `EditorUi` 侧记录最近一次 LSP status event signature，并在 `poll_processing()` 后对变化后的 status 发出去重的 `lsp_status_changed`；payload 复用既有 `lsp_status` shape，不新增 Rust/C ABI 或 Swift wrapper 字段，不改变 project-level event store/panel 行为，不实现 server process health monitor、server restart、project open/close 批量 LSP session 管理、完整 progress history 或 dashboard 级健康视图。
+  - 验证记录：
+    - `cargo test -p editor-core-ui lsp_progress_activity_emits_deduped_status_events`
+    - `cargo test -p editor-core-ui lsp_status_reports_current_workspace_folders`
+    - `cargo test -p editor-core-ui poll_processing_reports_lsp_failure_without_applied_success`
+    - `cargo test -p editor-core-ui editor_ui_state_events_project_lsp_request_and_result_events`
+    - `cargo test -p editor-core-ui`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
