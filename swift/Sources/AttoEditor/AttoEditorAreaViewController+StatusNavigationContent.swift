@@ -407,6 +407,49 @@ extension AttoEditorAreaViewController {
     }
 
     @discardableResult
+    func showProjectLspStatusEventsPanel() -> Bool {
+        drainProjectLspPanelLifecycleEvents()
+
+        let events = Array(projectLspPanelErrorEventStore.events.reversed())
+        guard events.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+        guard let window = view.window else {
+            return false
+        }
+
+        let commands = events.enumerated().map { idx, event in
+            AttoCommandPaletteCommand(
+                id: "lsp.project_status_event.\(idx)",
+                title: Self.projectLspStatusEventTitle(event)
+            ) {}
+        }
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.ProjectStatusEvents",
+            commandsProvider: { commands }
+        )
+        projectLspStatusEventsController = controller
+        controller.show(relativeTo: window, placeholder: "Filter LSP status events...")
+        return true
+    }
+
+    static func projectLspStatusEventTitle(_ event: AttoProjectLspPanelErrorEvent) -> String {
+        let source = event.source.rawValue.capitalized
+        let scope: String = {
+            if let tabId = event.tabId {
+                if let viewIndex = event.viewIndex {
+                    return "tab \(tabId), view \(viewIndex + 1)"
+                }
+                return "tab \(tabId)"
+            }
+            return "project"
+        }()
+        let sourceSequence = event.sourceSequence > 0 ? " #\(event.sourceSequence)" : ""
+        return "\(source)\(sourceSequence) [\(scope)] \(event.message)"
+    }
+
+    @discardableResult
     func recordProjectLspStatusFailure(
         sourceSequence: UInt64,
         tabId: UInt64?,

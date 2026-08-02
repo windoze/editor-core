@@ -90,6 +90,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.problems"))
         XCTAssertTrue(ids.contains("lsp.workspace_diagnostics"))
         XCTAssertTrue(ids.contains("lsp.show_workspace_problems_panel"))
+        XCTAssertTrue(ids.contains("lsp.show_project_lsp_status"))
         XCTAssertTrue(ids.contains("lsp.document_colors"))
         XCTAssertTrue(ids.contains("lsp.pick_document_color"))
         XCTAssertTrue(ids.contains("lsp.refresh_folding_ranges"))
@@ -1453,6 +1454,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.problems", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_diagnostics", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workspace_problems_panel", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_project_lsp_status", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.pick_document_color", in: menu))
     }
@@ -1967,6 +1969,51 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(events[0].title.contains("LSP fake-lsp"))
         XCTAssertTrue(events[0].title.contains("Failed"))
         XCTAssertTrue(events[0].message.contains("server exited"))
+    }
+
+    func testProjectLspStatusEventsPanelShowsRecordedFailures() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+
+        XCTAssertFalse(vc.showProjectLspStatusEventsPanel())
+        XCTAssertTrue(vc._recordProjectLspStatusFailureForTesting(status: EcuLspStatusSnapshot(
+            availability: .failed,
+            state: .failed,
+            server: EcuLspServerStatus(name: "fake-lsp", version: nil, command: "fake-lsp"),
+            activity: nil,
+            detail: "server exited",
+            capabilities: nil,
+            workspaceFolders: []
+        )))
+        XCTAssertTrue(vc.showProjectLspStatusEventsPanel())
+
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.ProjectStatusEvents")
+        })
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.LSP.ProjectStatusEvents"),
+                in: root
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter LSP status events...")
+        let table = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.ProjectStatusEvents"),
+                in: root
+            ) as? NSTableView
+        )
+        XCTAssertEqual(table.numberOfRows, 1)
+        let cell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(cell.textField?.stringValue.contains("Status") == true)
+        XCTAssertTrue(cell.textField?.stringValue.contains("server exited") == true)
     }
 
     func testEmptyLocationResultUsesUnifiedFeedbackStatus() throws {

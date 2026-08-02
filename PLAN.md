@@ -814,6 +814,15 @@
     - `swift test --package-path swift --filter EditorCoreUIFFILSPEventTypesTests.testMultiDocumentStateEventsExposeTypedKindsAndNestedPayloads`
     - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspPanelErrorEventStoreBoundsAndFiltersBySequence`
     - `git diff --check`
+- 中间提交：`feat(app): show project lsp status events`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把阶段 259 的 project LSP event store 暴露为用户可打开的轻量 status events 面板，并接入 command registry 与 Go 菜单。
+  - 提交边界：只新增 Swift/App 级 `lsp.show_project_lsp_status` 命令、菜单项、`AttoEditor.LSP.ProjectStatusEvents` command-palette panel 和测试；面板展示 project LSP event store 中的 request/result/status 错误事件，不新增 Rust/C ABI，不改变 core event schema，不实现 server progress/activity/process health monitor、server restart、project open/close 批量 LSP session 管理或完整 dashboard 级健康视图。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspStatusEventsPanelShowsRecordedFailures`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspPanelRecordsStatusFailures`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

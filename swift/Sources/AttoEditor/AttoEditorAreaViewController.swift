@@ -923,6 +923,7 @@ final class AttoEditorAreaViewController: NSViewController {
     let projectLspPanelErrorEventStore = AttoProjectLspPanelErrorEventStore(
         maxHistoryEntries: maxLspResultEventHistoryEntries
     )
+    var projectLspStatusEventsController: AttoCommandPaletteController?
     var coreLspRequestEventCursor: UInt64 = 0
     var coreLspResultEventCursor: UInt64 = 0
     var coreLspStateEventCursor: UInt64 = 0
