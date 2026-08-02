@@ -74,6 +74,7 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
     public let appliedURI: String?
     public let appliedURIs: [String]
     public let appliedEditCount: Int
+    public let appliedResourceOperationCount: Int
     public let skippedURIs: [String]
     public let unsupportedOperationURIs: [String]
     public let documents: [EcuWorkspaceEditTransactionDocument]
@@ -84,6 +85,7 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
         case appliedURI = "applied_uri"
         case appliedURIs = "applied_uris"
         case appliedEditCount = "applied_edit_count"
+        case appliedResourceOperationCount = "applied_resource_operation_count"
         case skippedURIs = "skipped_uris"
         case unsupportedOperationURIs = "unsupported_operation_uris"
         case documents

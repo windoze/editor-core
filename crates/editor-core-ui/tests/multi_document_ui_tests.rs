@@ -320,6 +320,7 @@ fn multi_document_ui_previews_and_applies_workspace_edit_transactions() {
     assert!(applied.applied);
     assert_eq!(applied.applied_uris, vec!["file:///tmp/project/App.swift"]);
     assert_eq!(applied.applied_edit_count, 1);
+    assert_eq!(applied.applied_resource_operation_count, 0);
     assert_eq!(ui.tab_text(app).unwrap(), "App\n");
     assert_eq!(ui.tab_text(model).unwrap(), "model\n");
     assert_eq!(
@@ -346,6 +347,83 @@ fn multi_document_ui_previews_and_applies_workspace_edit_transactions() {
         serde_json::from_str(&ui.workspace_edit_transaction_events_json(0).unwrap()).unwrap();
     assert_eq!(events_json["latest_sequence"], 1);
     assert_eq!(events_json["events"][0]["result"]["mode"], "apply");
+}
+
+#[test]
+fn multi_document_ui_applies_open_tab_resource_operations() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let old = ui.open_tab("old\n", 80);
+    let delete = ui.open_tab("delete\n", 80);
+    let overwrite = ui.open_tab("existing\n", 80);
+    ui.set_tab_document_uri(old, Some("file:///tmp/project/Old.swift".to_string()))
+        .unwrap();
+    ui.set_tab_document_uri(delete, Some("file:///tmp/project/Delete.swift".to_string()))
+        .unwrap();
+    ui.set_tab_document_uri(
+        overwrite,
+        Some("file:///tmp/project/Overwrite.swift".to_string()),
+    )
+    .unwrap();
+
+    let edit = r#"{
+      "documentChanges": [
+        {
+          "kind": "rename",
+          "oldUri": "file:///tmp/project/Old.swift",
+          "newUri": "file:///tmp/project/Renamed.swift"
+        },
+        {
+          "textDocument": {
+            "uri": "file:///tmp/project/Renamed.swift",
+            "version": null
+          },
+          "edits": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 0 }
+              },
+              "newText": "renamed "
+            }
+          ]
+        },
+        {
+          "kind": "delete",
+          "uri": "file:///tmp/project/Delete.swift"
+        },
+        {
+          "kind": "create",
+          "uri": "file:///tmp/project/Overwrite.swift",
+          "options": { "overwrite": true }
+        }
+      ]
+    }"#;
+
+    let preview = ui.preview_workspace_edit_transaction(edit).unwrap();
+    assert!(preview.skipped_uris.is_empty());
+    assert!(preview.unsupported_operation_uris.is_empty());
+    let renamed_preview = preview
+        .documents
+        .iter()
+        .find(|doc| doc.uri == "file:///tmp/project/Renamed.swift")
+        .unwrap();
+    assert_eq!(renamed_preview.tab_id, Some(old.get()));
+    assert!(renamed_preview.is_open);
+
+    let applied = ui.apply_workspace_edit_transaction(edit).unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_edit_count, 1);
+    assert_eq!(applied.applied_resource_operation_count, 3);
+    assert!(applied.skipped_uris.is_empty());
+    assert!(applied.unsupported_operation_uris.is_empty());
+    assert_eq!(
+        ui.tab_document_uri(old),
+        Some("file:///tmp/project/Renamed.swift")
+    );
+    assert_eq!(ui.tab_text(old).unwrap(), "renamed old\n");
+    assert!(!ui.tab_ids().contains(&delete));
+    assert_eq!(ui.tab_text(overwrite).unwrap(), "");
+    assert!(!ui.is_tab_modified(overwrite).unwrap());
 }
 
 #[test]

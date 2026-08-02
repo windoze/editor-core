@@ -617,7 +617,13 @@ impl MultiDocumentEditorUi {
         &mut self,
         workspace_edit_json: &str,
     ) -> Result<WorkspaceEditTransactionResult, UiError> {
-        let result = workspace_edit::apply(&mut self.tabs, &self.tab_order, workspace_edit_json)?;
+        let result = workspace_edit::apply(
+            &mut self.tabs,
+            &mut self.tab_order,
+            &mut self.active_tab,
+            &mut self.preview_tab,
+            workspace_edit_json,
+        )?;
         self.workspace_edit_transactions
             .record("apply", result.clone());
         Ok(result)

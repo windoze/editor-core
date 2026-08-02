@@ -334,6 +334,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     assert_eq!(apply_value["mode"], "apply");
     assert_eq!(apply_value["applied"], true);
     assert_eq!(apply_value["applied_uris"][0], "file:///project/Beta.swift");
+    assert_eq!(apply_value["applied_resource_operation_count"], 0);
 
     let mut transaction_event_sequence = 0u64;
     assert_eq!(

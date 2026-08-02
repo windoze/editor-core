@@ -398,6 +398,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(transactionApply.applied)
         XCTAssertEqual(transactionApply.appliedURIs, ["file:///project/Beta.swift"])
         XCTAssertEqual(transactionApply.appliedEditCount, 1)
+        XCTAssertEqual(transactionApply.appliedResourceOperationCount, 0)
 
         XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
         let transactionEvents = try multi.workspaceEditTransactionEvents()
@@ -518,6 +519,49 @@ final class EditorCoreUIFFITests: XCTestCase {
 
         XCTAssertTrue(try multi.closeTab(beta))
         XCTAssertNil(try multi.activeTabId())
+    }
+
+    func testMultiDocumentEditorUIAppliesOpenTabResourceOperations() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+
+        let tab = try multi.openTab(text: "beta saved mirror", viewportWidthCells: 80)
+        try multi.setTabDocumentURI("file:///project/Beta.swift", tabId: tab)
+
+        let resourceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "rename",
+              "oldUri": "file:///project/Beta.swift",
+              "newUri": "file:///project/Renamed.swift"
+            },
+            {
+              "textDocument": {
+                "uri": "file:///project/Renamed.swift",
+                "version": null
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 4 }
+                  },
+                  "newText": "RENAMED"
+                }
+              ]
+            }
+          ]
+        }
+        """
+
+        let resourceApply = try multi.applyWorkspaceEditTransaction(resourceEdit)
+        XCTAssertTrue(resourceApply.applied)
+        XCTAssertEqual(resourceApply.appliedEditCount, 1)
+        XCTAssertEqual(resourceApply.appliedResourceOperationCount, 1)
+        XCTAssertEqual(try multi.tabDocumentURI(tabId: tab), "file:///project/Renamed.swift")
+        XCTAssertEqual(try multi.tabText(tabId: tab), "RENAMED saved mirror")
+        XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
     }
 
     func testParagraphSelectionAPIs() throws {
