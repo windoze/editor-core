@@ -1,5 +1,9 @@
 use super::*;
 
+mod capabilities;
+
+use capabilities::default_initialize_params;
+
 impl EditorUi {
     /// Enable an LSP session (stdio) for the current document.
     ///
@@ -30,33 +34,7 @@ impl EditorUi {
                 .map_err(|e| UiError::Processor(format!("{e:?}")))?
         };
 
-        let token_types = editor_core_lsp::CANONICAL_SEMANTIC_TOKEN_TYPES;
-        let token_modifiers = editor_core_lsp::CANONICAL_SEMANTIC_TOKEN_MODIFIERS;
-        let init_params = serde_json::json!({
-            "processId": std::process::id(),
-            "rootUri": root_uri,
-            "capabilities": {
-                "textDocument": {
-                    "semanticTokens": {
-                        "dynamicRegistration": false,
-                        "requests": { "range": false, "full": { "delta": false } },
-                        "tokenTypes": token_types,
-                        "tokenModifiers": token_modifiers,
-                        "formats": ["relative"],
-                        "multilineTokenSupport": true,
-                        "overlappingTokenSupport": false,
-                    },
-                    "foldingRange": {
-                        "dynamicRegistration": false,
-                        "lineFoldingOnly": true,
-                    },
-                    "inlayHint": { "dynamicRegistration": false },
-                    "codeLens": { "dynamicRegistration": false },
-                    "documentLink": { "dynamicRegistration": false },
-                },
-            },
-            "clientInfo": { "name": "editor-core ui" },
-        });
+        let init_params = default_initialize_params(root_uri);
 
         let mut cmd_proc = std::process::Command::new(cmd);
         cmd_proc.args(args);

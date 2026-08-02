@@ -4,6 +4,10 @@ use super::super::text_run_buffer::*;
 use super::super::*;
 use super::RenderTextCell;
 
+mod runs;
+
+use runs::append_cell_text_run;
+
 #[allow(clippy::too_many_arguments)]
 pub(in crate::renderer) fn draw_text_runs_for_cells<C: RenderTextCell>(
     renderer: &mut SkiaRenderer,
@@ -53,81 +57,18 @@ pub(in crate::renderer) fn draw_text_runs_for_cells<C: RenderTextCell>(
             flush_decoration_run(&mut decoration_runs, &mut strike_run);
         }
 
-        let ch = cell.ch();
-        let eligible_for_ligatures = config.enable_ligatures && cell.width() == 1 && ch.is_ascii();
-        if eligible_for_ligatures {
-            let font_index = renderer.font_index_for_char(ch, font_variant);
-            let can_extend = pending.as_ref().is_some_and(|r| {
-                r.font_variant == font_variant
-                    && r.font_index == font_index
-                    && r.fg == fg
-                    && matches!(r.kind, PendingRunKind::LigatureText { .. })
-            });
-            if !can_extend {
-                flush_pending_run(
-                    renderer,
-                    canvas,
-                    &mut pending,
-                    text_origin_x,
-                    baseline_y,
-                    config,
-                );
-                pending = Some(PendingRun {
-                    start_x_cells: x_cells,
-                    font_variant,
-                    font_index,
-                    fg,
-                    kind: PendingRunKind::LigatureText {
-                        text: String::new(),
-                    },
-                });
-            }
-
-            if let Some(r) = pending.as_mut()
-                && let PendingRunKind::LigatureText { text } = &mut r.kind
-            {
-                text.push(ch);
-            }
-        } else {
-            let font_index = renderer.font_index_for_char(ch, font_variant);
-            let can_extend = pending.as_ref().is_some_and(|r| {
-                r.font_variant == font_variant
-                    && r.font_index == font_index
-                    && r.fg == fg
-                    && matches!(r.kind, PendingRunKind::Glyphs { .. })
-            });
-            if !can_extend {
-                flush_pending_run(
-                    renderer,
-                    canvas,
-                    &mut pending,
-                    text_origin_x,
-                    baseline_y,
-                    config,
-                );
-                pending = Some(PendingRun {
-                    start_x_cells: x_cells,
-                    font_variant,
-                    font_index,
-                    fg,
-                    kind: PendingRunKind::Glyphs {
-                        glyphs: Vec::new(),
-                        positions: Vec::new(),
-                    },
-                });
-            }
-
-            if let Some(r) = pending.as_mut()
-                && let PendingRunKind::Glyphs { glyphs, positions } = &mut r.kind
-            {
-                let font = renderer.font_for_variant_index(font_variant, font_index);
-                let glyph = font.unichar_to_glyph(ch as u32 as i32);
-                let rel_x_px =
-                    (x_cells.saturating_sub(r.start_x_cells) as f32) * config.cell_width_px;
-                glyphs.push(glyph);
-                positions.push(Point::new(rel_x_px, 0.0));
-            }
-        }
+        append_cell_text_run(
+            renderer,
+            canvas,
+            &mut pending,
+            cell,
+            x_cells,
+            fg,
+            font_variant,
+            text_origin_x,
+            baseline_y,
+            config,
+        );
 
         x_cells = x_cells.saturating_add(cell.width() as u32);
     }
