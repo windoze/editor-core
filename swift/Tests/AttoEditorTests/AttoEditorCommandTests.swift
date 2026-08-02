@@ -1703,6 +1703,17 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(persistentMetadataLabel.stringValue, "Fresh | Result #2 | locations | \(updatedPanelEntry.title)")
         XCTAssertEqual(vc._lspLocationPanelRowCountForTesting(), 1)
 
+        let activeEditorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        activeEditorView.editor.lspDisable()
+        XCTAssertFalse(vc.goToImplementationInActiveTab())
+        let errorPanelEntry = try XCTUnwrap(vc._lspLocationPanelEntryForTesting())
+        XCTAssertEqual(errorPanelEntry.sequence, updatedPanelEntry.sequence)
+        XCTAssertEqual(errorPanelEntry.state, .error(message: "Implementation: unavailable"))
+        XCTAssertEqual(
+            persistentMetadataLabel.stringValue,
+            "Error: Implementation: unavailable | Result #2 | locations | \(updatedPanelEntry.title)"
+        )
+
         XCTAssertTrue(vc.showLspLocationHistory())
         let historyPanel = try XCTUnwrap(window.childWindows?.first {
             $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.LocationHistory")
@@ -1925,6 +1936,17 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(updatedPanelEntry.snapshot, updatedPanelSnapshot)
         XCTAssertEqual(persistentMetadataLabel.stringValue, "Fresh | Result #2 | symbols | Workspace Symbols: Open: 1 results")
         XCTAssertEqual(vc._lspSymbolPanelRowCountForTesting(), 1)
+
+        let activeEditorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        activeEditorView.editor.lspDisable()
+        XCTAssertFalse(vc.showWorkspaceSymbolsInActiveTab(query: "Broken"))
+        let errorPanelEntry = try XCTUnwrap(vc._lspSymbolPanelEntryForTesting())
+        XCTAssertEqual(errorPanelEntry.sequence, updatedPanelEntry.sequence)
+        XCTAssertEqual(errorPanelEntry.state, .error(message: "Workspace symbols: unavailable"))
+        XCTAssertEqual(
+            persistentMetadataLabel.stringValue,
+            "Error: Workspace symbols: unavailable | Result #2 | symbols | Workspace Symbols: Open: 1 results"
+        )
 
         XCTAssertTrue(vc.showLspSymbolHistory())
         let historyPanel = try XCTUnwrap(window.childWindows?.first {

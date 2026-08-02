@@ -4247,6 +4247,18 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    private func markCurrentLspLocationResultError(_ message: AttoLspResultFeedback.Message) {
+        if let entry = lspLocationResultStore.updateCurrentState(.error(message: message.statusText)) {
+            lspLocationPanelController?.update(entry: entry)
+        }
+    }
+
+    private func markCurrentLspSymbolResultError(_ message: AttoLspResultFeedback.Message) {
+        if let entry = lspSymbolResultStore.updateCurrentState(.error(message: message.statusText)) {
+            lspSymbolPanelController?.update(entry: entry)
+        }
+    }
+
     private func clearActiveDiagnosticsStaleIfDiagnosticsChanged(
         for tab: AttoEditorTab,
         diagnostics: [EcuDiagnostic]
@@ -4979,7 +4991,9 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let tab = activeTab else { return false }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
             if showFeedback {
-                presentLspResultFeedback(AttoLspResultFeedback.unavailable(kind.feedbackFeature), in: tab.editCore.editorView)
+                let message = AttoLspResultFeedback.unavailable(kind.feedbackFeature)
+                markCurrentLspLocationResultError(message)
+                presentLspResultFeedback(message, in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -5005,10 +5019,12 @@ final class AttoEditorAreaViewController: NSViewController {
         } catch {
             cancelDefinitionUI()
             if showFeedback {
-                presentLspResultFeedback(
-                    AttoLspResultFeedback.requestFailed(kind.feedbackFeature, errorDescription: error.localizedDescription),
-                    in: tab.editCore.editorView
+                let message = AttoLspResultFeedback.requestFailed(
+                    kind.feedbackFeature,
+                    errorDescription: error.localizedDescription
                 )
+                markCurrentLspLocationResultError(message)
+                presentLspResultFeedback(message, in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -5052,7 +5068,9 @@ final class AttoEditorAreaViewController: NSViewController {
                 let editorView = self.activeTab?.editCore.editorView
                 self.cancelDefinitionUI()
                 if showFeedback, let editorView {
-                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(feature), in: editorView)
+                    let message = AttoLspResultFeedback.timeout(feature)
+                    self.markCurrentLspLocationResultError(message)
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 return
             }
@@ -5071,10 +5089,9 @@ final class AttoEditorAreaViewController: NSViewController {
                 let feature = ctx.kind.feedbackFeature
                 self.cancelDefinitionUI()
                 if showFeedback {
-                    self.presentLspResultFeedback(
-                        AttoLspResultFeedback.failed(feature, errorDescription: error.localizedDescription),
-                        in: tab.editCore.editorView
-                    )
+                    let message = AttoLspResultFeedback.failed(feature, errorDescription: error.localizedDescription)
+                    self.markCurrentLspLocationResultError(message)
+                    self.presentLspResultFeedback(message, in: tab.editCore.editorView)
                 }
                 timer.cancel()
                 return
@@ -5520,7 +5537,9 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
-            presentLspResultFeedback(AttoLspResultFeedback.unavailable(kind.feedbackFeature), in: tab.editCore.editorView)
+            let message = AttoLspResultFeedback.unavailable(kind.feedbackFeature)
+            markCurrentLspSymbolResultError(message)
+            presentLspResultFeedback(message, in: tab.editCore.editorView)
             NSSound.beep()
             return false
         }
@@ -5543,10 +5562,12 @@ final class AttoEditorAreaViewController: NSViewController {
             }
         } catch {
             cancelSymbolUI()
-            presentLspResultFeedback(
-                AttoLspResultFeedback.requestFailed(kind.feedbackFeature, errorDescription: error.localizedDescription),
-                in: tab.editCore.editorView
+            let message = AttoLspResultFeedback.requestFailed(
+                kind.feedbackFeature,
+                errorDescription: error.localizedDescription
             )
+            markCurrentLspSymbolResultError(message)
+            presentLspResultFeedback(message, in: tab.editCore.editorView)
             NSSound.beep()
             return false
         }
@@ -5573,6 +5594,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 let message = AttoLspResultFeedback.timeout(ctx.kind.feedbackFeature)
                 self.cancelSymbolUI()
                 if let tab, tab.id == tabID {
+                    self.markCurrentLspSymbolResultError(message)
                     self.presentLspResultFeedback(message, in: tab.editCore.editorView)
                 }
                 NSSound.beep()
@@ -5608,6 +5630,7 @@ final class AttoEditorAreaViewController: NSViewController {
                     errorDescription: error.localizedDescription
                 )
                 self.cancelSymbolUI()
+                self.markCurrentLspSymbolResultError(message)
                 self.presentLspResultFeedback(message, in: tab.editCore.editorView)
                 NSSound.beep()
                 return
