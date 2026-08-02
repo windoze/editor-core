@@ -588,6 +588,15 @@ final class AttoEditorAreaViewController: NSViewController {
     private enum DocumentColorResultMode {
         case presentations
         case picker
+
+        var lifecycleMode: String {
+            switch self {
+            case .presentations:
+                return "presentations"
+            case .picker:
+                return "picker"
+            }
+        }
     }
 
     private struct DocumentColorRequestContext {
@@ -2696,6 +2705,7 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
 
+        recordDocumentColorResultLifecycle(items: items, mode: mode)
         switch mode {
         case .presentations:
             showDocumentColorResults(items, tabID: tab.id)
@@ -2703,6 +2713,17 @@ final class AttoEditorAreaViewController: NSViewController {
             showDocumentColorPickerResults(items, tabID: tab.id)
         }
         return true
+    }
+
+    private func recordDocumentColorResultLifecycle(
+        items: [AttoLspDocumentColorParser.Item],
+        mode: DocumentColorResultMode
+    ) {
+        lspResultEventStream.record(
+            family: "document_colors",
+            title: items.count == 1 ? "Document Colors: 1 color" : "Document Colors: \(items.count) colors",
+            payload: .documentColors(mode: mode.lifecycleMode, itemCount: items.count)
+        )
     }
 
     private func showDocumentColorResults(_ items: [AttoLspDocumentColorParser.Item], tabID: UUID) {
@@ -3031,6 +3052,7 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
 
+        recordColorPresentationResultLifecycle(presentations: presentations)
         guard let window = view.window else {
             return applyColorPresentationToActiveTab(presentations[0], showFeedback: showFeedback)
         }
@@ -3053,6 +3075,22 @@ final class AttoEditorAreaViewController: NSViewController {
         colorPresentationResultsController = controller
         controller.show(relativeTo: window, placeholder: "Filter color presentations...")
         return true
+    }
+
+    private func recordColorPresentationResultLifecycle(
+        presentations: [AttoLspDocumentColorParser.Presentation]
+    ) {
+        let title: String
+        if presentations.count == 1 {
+            title = "Color Presentations: 1 presentation"
+        } else {
+            title = "Color Presentations: \(presentations.count) presentations"
+        }
+        lspResultEventStream.record(
+            family: "color_presentations",
+            title: title,
+            payload: .colorPresentations(itemCount: presentations.count)
+        )
     }
 
     @discardableResult

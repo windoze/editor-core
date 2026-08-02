@@ -1773,6 +1773,67 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(window.title.contains("●"))
     }
 
+    func testDocumentColorResultsRecordLspResultEvents() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("color-events.txt")
+        try "let color = \"#ff0000\"\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        let tabID = try XCTUnwrap(vc.openFileItems().first?.id)
+        let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
+
+        let documentColorJSON = """
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 13 },
+              "end": { "line": 0, "character": 20 }
+            },
+            "color": { "red": 1, "green": 0, "blue": 0, "alpha": 1 }
+          }
+        ]
+        """
+        XCTAssertTrue(vc.showDocumentColorResultJSONInActiveTab(documentColorJSON))
+        let item = try XCTUnwrap(AttoLspDocumentColorParser.items(
+            fromDocumentColorResultJSON: documentColorJSON,
+            documentText: try editorView.editor.text()
+        ).first)
+
+        XCTAssertTrue(vc.showColorPresentationResultJSONInActiveTab("""
+        [
+          {
+            "label": "rgb(255, 0, 0)",
+            "textEdit": {
+              "range": {
+                "start": { "line": 0, "character": 13 },
+                "end": { "line": 0, "character": 20 }
+              },
+              "newText": "rgb(255, 0, 0)"
+            }
+          },
+          { "label": "#ff0000" }
+        ]
+        """, item: item, tabID: tabID))
+
+        let events = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
+            .filter { $0.family == "document_colors" || $0.family == "color_presentations" }
+        XCTAssertEqual(events.map(\.family), ["document_colors", "color_presentations"])
+        XCTAssertEqual(
+            events.map(\.payload),
+            [
+                .documentColors(mode: "presentations", itemCount: 1),
+                .colorPresentations(itemCount: 2),
+            ]
+        )
+    }
+
     func testApplySnippetCommandUsesPrimarySelection() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
