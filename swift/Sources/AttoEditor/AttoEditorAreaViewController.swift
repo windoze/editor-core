@@ -303,6 +303,14 @@ final class AttoEditorAreaViewController: NSViewController {
         ) != nil
     }
 
+    func _setProjectLspAutoRestartNowProviderForTesting(_ provider: @escaping () -> Date) {
+        projectLspAutoRestartNowProvider = provider
+    }
+
+    func _projectLspAutoRestartAttemptsForTesting(tabId: UInt64) -> Int {
+        projectLspAutoRestartStatesByTabID[tabId]?.attempts ?? 0
+    }
+
     func _showCodeActionResultJSONForTesting(
         _ json: String,
         onlyKinds: [String] = [],
@@ -954,7 +962,8 @@ final class AttoEditorAreaViewController: NSViewController {
     var projectLspProcessHealthController: AttoCommandPaletteController?
     var projectLspProcessHealthLogController: AttoCommandPaletteController?
     var projectLspDashboardController: AttoCommandPaletteController?
-    var projectLspAutoRestartAttemptedTabIDs: Set<UInt64> = []
+    var projectLspAutoRestartStatesByTabID: [UInt64: ProjectLspAutoRestartState] = [:]
+    var projectLspAutoRestartNowProvider: () -> Date = Date.init
     var coreLspRequestEventCursor: UInt64 = 0
     var coreLspResultEventCursor: UInt64 = 0
     var coreLspStateEventCursor: UInt64 = 0
@@ -1651,6 +1660,12 @@ struct AttoLspServerLaunchConfig: Equatable {
     let command: String
     let args: String?
     let languageId: String
+}
+
+@MainActor
+struct ProjectLspAutoRestartState: Equatable {
+    var attempts: Int
+    var nextAllowedAt: Date
 }
 
 @MainActor

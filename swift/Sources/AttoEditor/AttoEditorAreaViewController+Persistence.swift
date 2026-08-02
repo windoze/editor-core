@@ -566,13 +566,16 @@ extension AttoEditorAreaViewController {
            status.availability != .failed,
            status.state != .failed
         {
-            projectLspAutoRestartAttemptedTabIDs.remove(tabId)
+            projectLspAutoRestartStatesByTabID.removeValue(forKey: tabId)
             return false
         }
 
+        let now = projectLspAutoRestartNowProvider()
+        let currentState = projectLspAutoRestartStatesByTabID[tabId]
         guard process.state == .exited,
               status.availability == .failed || status.state == .failed,
-              projectLspAutoRestartAttemptedTabIDs.contains(tabId) == false
+              (currentState?.attempts ?? 0) < Self.maxProjectLspAutoRestartAttempts,
+              currentState.map({ now >= $0.nextAllowedAt }) ?? true
         else {
             return false
         }
@@ -583,7 +586,11 @@ extension AttoEditorAreaViewController {
             return false
         }
 
-        projectLspAutoRestartAttemptedTabIDs.insert(tabId)
+        let attempts = (currentState?.attempts ?? 0) + 1
+        projectLspAutoRestartStatesByTabID[tabId] = ProjectLspAutoRestartState(
+            attempts: attempts,
+            nextAllowedAt: now.addingTimeInterval(Self.projectLspAutoRestartDelay(forAttempt: attempts))
+        )
         do {
             try restartLspServer(for: target.tab, documentURL: target.fileURL, config: config)
             updateAlwaysPollProcessingForSelectedTab()
@@ -601,6 +608,14 @@ extension AttoEditorAreaViewController {
             )
             return false
         }
+    }
+
+    private static let maxProjectLspAutoRestartAttempts = 3
+    private static let projectLspAutoRestartBaseDelay: TimeInterval = 5
+
+    private static func projectLspAutoRestartDelay(forAttempt attempt: Int) -> TimeInterval {
+        let exponent = max(0, attempt - 1)
+        return projectLspAutoRestartBaseDelay * pow(2, Double(exponent))
     }
 
     private func restartLspServer(

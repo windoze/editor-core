@@ -5810,6 +5810,94 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server auto-restarted")
     }
 
+    func testProjectLspAutoRestartUsesBackoffAndResetsAfterHealthyStatus() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("auto_restart_backoff.txt")
+        try "restart".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("auto-restart-backoff-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("auto-restart-backoff-fake-lsp.sh")
+        try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        var now = Date(timeIntervalSince1970: 10_000)
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        vc._setProjectLspAutoRestartNowProviderForTesting { now }
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        let config = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try tab.editCore.editor.lspEnable(
+            command: config.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+        tab.lspServerConfig = config
+        defer { tab.editCore.editor.lspDisable() }
+
+        _ = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        let failedStatus = EcuLspStatusSnapshot(
+            availability: .failed,
+            state: .failed,
+            server: EcuLspServerStatus(name: "fake-lsp", version: nil, command: scriptURL.path),
+            activity: nil,
+            detail: "server exited",
+            capabilities: nil,
+            process: EcuLspProcessStatus(pid: 321, state: .exited, exitCode: 9, stderrTail: "crash"),
+            workspaceFolders: []
+        )
+        let healthyStatus = EcuLspStatusSnapshot(
+            availability: .enabled,
+            state: .ready,
+            server: EcuLspServerStatus(name: "fake-lsp", version: nil, command: scriptURL.path),
+            activity: nil,
+            detail: nil,
+            capabilities: nil,
+            process: EcuLspProcessStatus(pid: 322, state: .running),
+            workspaceFolders: []
+        )
+
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: failedStatus))
+        XCTAssertEqual(vc._projectLspAutoRestartAttemptsForTesting(tabId: coreTabID), 1)
+        var captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#,
+            minimumOccurrences: 2
+        )
+        XCTAssertEqual(occurrenceCount(of: "--session--", in: captured), 2, captured)
+
+        now = Date(timeIntervalSince1970: 10_004)
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: failedStatus))
+        XCTAssertEqual(vc._projectLspAutoRestartAttemptsForTesting(tabId: coreTabID), 1)
+        captured = try String(contentsOf: captureURL, encoding: .utf8)
+        XCTAssertEqual(occurrenceCount(of: "--session--", in: captured), 2, captured)
+
+        now = Date(timeIntervalSince1970: 10_006)
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: failedStatus))
+        XCTAssertEqual(vc._projectLspAutoRestartAttemptsForTesting(tabId: coreTabID), 2)
+        captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#,
+            minimumOccurrences: 3
+        )
+        XCTAssertEqual(occurrenceCount(of: "--session--", in: captured), 3, captured)
+
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: healthyStatus))
+        XCTAssertEqual(vc._projectLspAutoRestartAttemptsForTesting(tabId: coreTabID), 0)
+    }
+
     func testRestartProjectLspServersRequiresConfiguredTabs() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

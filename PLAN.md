@@ -1034,6 +1034,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `git diff --check`
+- 中间提交：`feat(app): back off lsp auto restart`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把阶段 283 的 failed/exited 自动恢复起点推进为有界退避策略。
+  - 提交边界：AttoEditor 现在按 core tab id 记录自动恢复 attempts 与 `nextAllowedAt`，默认最多 3 次，并按 5s/10s/20s 退避；healthy running status 会清除该 tab 的 recovery state。该提交不新增 Rust/C ABI，不改变 core LSP ownership schema、不实现跨 project recovery policy、用户配置项或完整 dashboard 产品化。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoRestartUsesBackoffAndResetsAfterHealthyStatus`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthAutoRestartsExitedConfiguredTab`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
