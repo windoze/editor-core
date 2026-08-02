@@ -5,6 +5,7 @@ public struct EcuMultiDocumentTabSnapshot: Decodable, Equatable, Sendable {
     public let id: UInt64
     public let title: String?
     public let documentURI: String?
+    public let languageId: String?
     public let isPreview: Bool
     public let isActive: Bool
     public let isModified: Bool
@@ -15,11 +16,25 @@ public struct EcuMultiDocumentTabSnapshot: Decodable, Equatable, Sendable {
         case id
         case title
         case documentURI = "document_uri"
+        case languageId = "language_id"
         case isPreview = "is_preview"
         case isActive = "is_active"
         case isModified = "is_modified"
         case viewCount = "view_count"
         case activeViewIndex = "active_view_index"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UInt64.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI)
+        languageId = try container.decodeIfPresent(String.self, forKey: .languageId)
+        isPreview = try container.decodeIfPresent(Bool.self, forKey: .isPreview) ?? false
+        isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive) ?? false
+        isModified = try container.decodeIfPresent(Bool.self, forKey: .isModified) ?? false
+        viewCount = try container.decodeIfPresent(UInt32.self, forKey: .viewCount) ?? 0
+        activeViewIndex = try container.decodeIfPresent(UInt32.self, forKey: .activeViewIndex) ?? 0
     }
 }
 
@@ -752,6 +767,27 @@ public final class MultiDocumentEditorUI {
             status = editor_core_ui_ffi_multi_document_set_tab_document_uri(handle, tabId, nil)
         }
         try library.ensureStatus(status, context: "multi_document_set_tab_document_uri")
+    }
+
+    public func tabLanguageId(tabId: UInt64) throws -> String? {
+        var out: UnsafeMutablePointer<CChar>?
+        let status = editor_core_ui_ffi_multi_document_tab_language_id(handle, tabId, &out)
+        try library.ensureStatus(status, context: "multi_document_tab_language_id")
+        guard let out else { return nil }
+        defer { editor_core_ui_ffi_string_free(out) }
+        return String(cString: out)
+    }
+
+    public func setTabLanguageId(_ languageId: String?, tabId: UInt64) throws {
+        let status: Int32
+        if let languageId {
+            status = languageId.withCString { languageIdPtr in
+                editor_core_ui_ffi_multi_document_set_tab_language_id(handle, tabId, languageIdPtr)
+            }
+        } else {
+            status = editor_core_ui_ffi_multi_document_set_tab_language_id(handle, tabId, nil)
+        }
+        try library.ensureStatus(status, context: "multi_document_set_tab_language_id")
     }
 
     public func isPreviewTab(_ tabId: UInt64) throws -> Bool {

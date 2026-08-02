@@ -160,6 +160,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_EVENTS (1ull << 21)
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS (1ull << 22)
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO (1ull << 23)
+#define ECU_FEATURE_MULTI_DOCUMENT_TAB_LANGUAGE_ID (1ull << 24)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 
 MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);
@@ -187,6 +188,12 @@ int32_t editor_core_ui_ffi_multi_document_tab_document_uri(MultiDocumentEditorUi
 int32_t editor_core_ui_ffi_multi_document_set_tab_document_uri(MultiDocumentEditorUi* multi,
                                                                uint64_t tab_id,
                                                                const char* document_uri_utf8);
+int32_t editor_core_ui_ffi_multi_document_tab_language_id(MultiDocumentEditorUi* multi,
+                                                          uint64_t tab_id,
+                                                          char** out_language_id_utf8);
+int32_t editor_core_ui_ffi_multi_document_set_tab_language_id(MultiDocumentEditorUi* multi,
+                                                              uint64_t tab_id,
+                                                              const char* language_id_utf8);
 int32_t editor_core_ui_ffi_multi_document_set_workspace_roots_json(
     MultiDocumentEditorUi* multi,
     const char* roots_json_utf8);

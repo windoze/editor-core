@@ -1894,6 +1894,30 @@ fn multi_document_tracks_project_lsp_server_configs() {
 }
 
 #[test]
+fn multi_document_tracks_tab_language_metadata() {
+    let mut multi = MultiDocumentEditorUi::new();
+    let tab_id = multi.open_tab("fn main() {}\n", 80);
+
+    assert_eq!(multi.tab_language_id(tab_id), None);
+
+    multi
+        .set_tab_language_id(tab_id, Some(" rust ".to_string()))
+        .unwrap();
+    assert_eq!(multi.tab_language_id(tab_id), Some("rust"));
+
+    multi
+        .set_tab_language_id(tab_id, Some("  ".to_string()))
+        .unwrap();
+    assert_eq!(multi.tab_language_id(tab_id), None);
+
+    assert!(
+        multi
+            .set_tab_language_id(TabId::from_raw(999), Some("rust".to_string()))
+            .is_err()
+    );
+}
+
+#[test]
 fn multi_document_lsp_result_events_aggregate_tab_and_view_context() {
     let mut multi = MultiDocumentEditorUi::new();
     let first_tab = multi.open_tab("abc", 80);

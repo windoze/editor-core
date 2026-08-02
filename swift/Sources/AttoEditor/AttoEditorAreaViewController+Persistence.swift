@@ -62,9 +62,28 @@ extension AttoEditorAreaViewController {
     }
 
     func applyLanguageConfiguration(for tab: AttoEditorTab) {
+        syncCoreTabLanguageId(tab)
         let fileURL = projectedFileURL(for: tab)
         for editCore in tab.panes {
             applyLanguageConfiguration(fileURL: fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: editCore)
+        }
+    }
+
+    func syncCoreTabLanguageId(_ tab: AttoEditorTab) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+
+        let fileURL = projectedFileURL(for: tab)
+        let languageId = AttoLanguageConfiguration.languageKey(
+            fileURL: fileURL,
+            syntaxLanguageId: tab.syntaxLanguageId
+        )
+        do {
+            try coreDocuments.setTabLanguageId(
+                languageId.isEmpty ? nil : languageId,
+                tabId: coreTabID
+            )
+        } catch {
+            NSLog("AttoEditor: core multi-document setTabLanguageId failed: %@", String(describing: error))
         }
     }
 
@@ -192,6 +211,7 @@ extension AttoEditorAreaViewController {
             editCore: editCore
         )
         tab.lspServerConfig = syntaxSupport.lspServerConfig
+        syncCoreTabLanguageId(tab)
         configureEditCoreHooks(editCore, tabID: tabId)
         return tab
     }

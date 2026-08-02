@@ -235,6 +235,14 @@ replaces the core-owned root list, and returns `{ "added": WorkspaceFolder[], "r
 WorkspaceFolder[] }` so host UIs can drive `workspace/didChangeWorkspaceFolders` from the
 core-owned project/workspace model instead of maintaining a parallel Swift-side root diff.
 
+Open-tab metadata is part of the same core-owned multi-document model. Hosts can set or clear
+document URI metadata with `editor_core_ui_ffi_multi_document_set_tab_document_uri(...)` and
+language metadata with `editor_core_ui_ffi_multi_document_set_tab_language_id(...)`. The snapshot
+JSON includes these fields as `document_uri` and `language_id` on each tab. Language ids are
+trimmed and empty values are represented as null, giving project-level LSP lifecycle planning a
+stable way to match open documents to project server configs without treating Swift/AppKit tab
+state as the long-term owner.
+
 Project-level LSP launch metadata is also a JSON control-plane surface on `MultiDocumentEditorUi`.
 `editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(MultiDocumentEditorUi* multi,
 const char* configs_json_utf8)` accepts a UTF-8 JSON array of server configs with `key`,

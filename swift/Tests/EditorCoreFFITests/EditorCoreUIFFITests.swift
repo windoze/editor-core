@@ -99,6 +99,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransactionEvents))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceRoots))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransactionUndo))
+        XCTAssertTrue(info.supports(.multiDocumentTabLanguageID))
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {
@@ -340,6 +341,8 @@ final class EditorCoreUIFFITests: XCTestCase {
         try multi.setTabTitle("Beta", tabId: beta)
         try multi.setTabDocumentURI("file:///project/Beta.swift", tabId: beta)
         XCTAssertEqual(try multi.tabDocumentURI(tabId: beta), "file:///project/Beta.swift")
+        try multi.setTabLanguageId(" swift ", tabId: beta)
+        XCTAssertEqual(try multi.tabLanguageId(tabId: beta), "swift")
         try multi.setWorkspaceRoots([
             "file:///project",
             "file:///project",
@@ -392,6 +395,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         let movedSnapshot = try multi.snapshot()
         XCTAssertEqual(movedSnapshot.tabs.map(\.id), [beta, alpha])
         XCTAssertEqual(movedSnapshot.tabs.first?.documentURI, "file:///project/Beta.swift")
+        XCTAssertEqual(movedSnapshot.tabs.first?.languageId, "swift")
         XCTAssertTrue(try multi.moveTab(fromIndex: 0, toIndex: 1))
         XCTAssertEqual(try multi.snapshot().tabs.map(\.id), [alpha, beta])
 

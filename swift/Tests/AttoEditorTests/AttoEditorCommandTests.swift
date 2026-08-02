@@ -5848,6 +5848,7 @@ final class AttoEditorCommandTests: XCTestCase {
         vc._setLspEnvironmentProviderForTesting { ["ATTO_EDITOR_DISABLE_LSP": "1"] }
         vc.openFile(url: rustURL, mode: .pinned)
         let rustTab = try XCTUnwrap(vc.activeTab)
+        XCTAssertEqual(try vc._coreMultiDocumentSnapshotForTesting()?.tabs.first?.languageId, "rust")
         let rustConfig = AttoLspServerLaunchConfig(
             command: "/usr/bin/rust-analyzer",
             args: "--stdio --log-file",
@@ -5870,6 +5871,7 @@ final class AttoEditorCommandTests: XCTestCase {
 
         vc.openFile(url: swiftURL, mode: .pinned)
         let swiftTab = try XCTUnwrap(vc.activeTab)
+        XCTAssertEqual(try vc._coreMultiDocumentSnapshotForTesting()?.tabs.last?.languageId, "swift")
         let swiftConfig = AttoLspServerLaunchConfig(
             command: "/usr/bin/sourcekit-lsp",
             args: nil,

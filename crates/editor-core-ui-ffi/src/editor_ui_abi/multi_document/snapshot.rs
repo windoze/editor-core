@@ -18,6 +18,7 @@ fn multi_document_snapshot_value(
                 "id": tab_id.get(),
                 "title": multi.tab_title(tab_id),
                 "document_uri": multi.tab_document_uri(tab_id),
+                "language_id": multi.tab_language_id(tab_id),
                 "is_preview": multi.is_preview_tab(tab_id).unwrap_or(false),
                 "is_active": multi.active_tab_id() == Some(tab_id),
                 "is_modified": multi

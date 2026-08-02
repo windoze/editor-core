@@ -85,6 +85,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_TAB_LANGUAGE_ID,
+        0
+    );
 }
 
 #[test]
@@ -127,6 +131,26 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         .into_owned();
     unsafe { editor_core_ui_ffi_string_free(beta_uri_ptr) };
     assert_eq!(beta_uri_value, "file:///project/Beta.swift");
+    let beta_language = CString::new(" swift ").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_language_id(
+            multi,
+            beta_id,
+            beta_language.as_ptr(),
+        ),
+        ECU_OK
+    );
+    let mut beta_language_ptr: *mut c_char = std::ptr::null_mut();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_tab_language_id(multi, beta_id, &mut beta_language_ptr,),
+        ECU_OK
+    );
+    assert!(!beta_language_ptr.is_null());
+    let beta_language_value = unsafe { std::ffi::CStr::from_ptr(beta_language_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(beta_language_ptr) };
+    assert_eq!(beta_language_value, "swift");
     assert_eq!(
         editor_core_ui_ffi_multi_document_set_active_tab(multi, beta_id),
         ECU_OK
@@ -155,6 +179,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         snapshot_value["workspace_roots"],
         serde_json::json!(["file:///project", "file:///other"])
     );
+    assert_eq!(snapshot_value["tabs"][1]["language_id"], "swift");
     let changed_roots = CString::new(
         r#"[
           "file:///other",

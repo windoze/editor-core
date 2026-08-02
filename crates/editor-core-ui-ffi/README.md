@@ -69,6 +69,29 @@ didSave `text_utf8` may be null for callers that do not include the optional sav
 These calls target the active UI-owned LSP session and return an error status when LSP is not
 enabled.
 
+## Multi-document Tab Metadata
+
+The multi-document model stores document URI and language id metadata per tab. The snapshot JSON
+includes both values as `document_uri` and `language_id`, and callers can update them independently:
+
+```c
+int32_t editor_core_ui_ffi_multi_document_set_tab_document_uri(
+    MultiDocumentEditorUi* multi,
+    uint64_t tab_id,
+    const char* document_uri_utf8
+);
+
+int32_t editor_core_ui_ffi_multi_document_set_tab_language_id(
+    MultiDocumentEditorUi* multi,
+    uint64_t tab_id,
+    const char* language_id_utf8
+);
+```
+
+Passing null clears the corresponding value. Language ids are trimmed and empty values are stored
+as null. This metadata is used by project/workspace features to reason about open documents without
+maintaining a parallel host-side tab identity model.
+
 ## Multi-document Workspace Roots
 
 The multi-document model owns workspace root URI metadata for project-level features. Existing

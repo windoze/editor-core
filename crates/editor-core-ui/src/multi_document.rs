@@ -57,6 +57,7 @@ pub struct TabSearchResult {
 struct TabEntry {
     title: Option<String>,
     document_uri: Option<String>,
+    language_id: Option<String>,
     views: Vec<EditorUi>,
     active_view: usize,
     is_preview: bool,
@@ -186,6 +187,7 @@ impl MultiDocumentEditorUi {
                 entry.active_view = 0;
                 entry.title = None;
                 entry.document_uri = None;
+                entry.language_id = None;
                 entry.is_preview = true;
             }
             return prev;
@@ -212,6 +214,7 @@ impl MultiDocumentEditorUi {
             TabEntry {
                 title: None,
                 document_uri: None,
+                language_id: None,
                 views: vec![ui],
                 active_view: 0,
                 is_preview,
@@ -399,6 +402,27 @@ impl MultiDocumentEditorUi {
             .get_mut(&tab_id)
             .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
         tab.document_uri = document_uri;
+        Ok(())
+    }
+
+    /// Get the language id associated with a tab, if one is known.
+    pub fn tab_language_id(&self, tab_id: TabId) -> Option<&str> {
+        self.tabs.get(&tab_id)?.language_id.as_deref()
+    }
+
+    /// Set or clear the language id associated with a tab.
+    pub fn set_tab_language_id(
+        &mut self,
+        tab_id: TabId,
+        language_id: Option<String>,
+    ) -> Result<(), UiError> {
+        let tab = self
+            .tabs
+            .get_mut(&tab_id)
+            .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
+        tab.language_id = language_id
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         Ok(())
     }
 

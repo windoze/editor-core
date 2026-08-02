@@ -1125,6 +1125,19 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeAutoStartsConfiguredOpenTabLsp`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartProjectLspServersRestartsConfiguredOpenTabs`
     - `git diff --check`
+- 中间提交：`feat(ui): store tab language metadata`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；为后续 core-owned project LSP typed lifecycle plan 补齐每个 open tab 的语言身份，让 `MultiDocumentEditorUi` 不只知道 document URI，也能知道该文档应匹配哪个 language id。
+  - 提交边界：`MultiDocumentEditorUi` 新增 tab-level `language_id` metadata、query/set API 和 snapshot 字段；C ABI/header 新增 `editor_core_ui_ffi_multi_document_tab_language_id(...)` / `editor_core_ui_ffi_multi_document_set_tab_language_id(...)` 与 feature bit；Swift wrapper 新增 `EcuMultiDocumentTabSnapshot.languageId`、`tabLanguageId(...)`、`setTabLanguageId(...)`；AttoEditor 在 tab 语言配置应用时把归一化 language key 同步到 core tab。该提交不改变 LSP server 启动/停止/restart 行为，不实现 project server start plan、typed lifecycle 启停、跨独立 project session 合并或 dashboard 产品化。
+  - 验证记录：
+    - `cargo test -p editor-core-ui --release multi_document_tracks_tab_language_metadata`
+    - `cargo test -p editor-core-ui-ffi --release ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `cargo test -p editor-core-ui-ffi --release ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspLaunchConfigsSyncToCoreProjectStore`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
