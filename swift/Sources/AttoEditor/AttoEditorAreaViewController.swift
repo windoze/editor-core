@@ -297,7 +297,7 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let tab = activeTab else { return false }
         let context = RenameRequestContext(
             tabID: tab.id,
-            documentURI: tab.fileURL.absoluteString,
+            documentURI: projectedFileURL(for: tab).absoluteString,
             newName: newName,
             showFeedback: showFeedback
         )

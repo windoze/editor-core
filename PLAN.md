@@ -568,6 +568,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testResolvedInlayHintUsesCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testTypedAuxiliaryResultSummariesUseTypedPayload`
     - `git diff --check`
+- 中间提交：`feat(app): apply rename edits from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor rename request/result context 在应用 WorkspaceEdit 时使用 core tab snapshot 的 `document_uri` 投影。
+  - 提交边界：只迁移 `RenameRequestContext.documentURI` 的来源，包括实际 rename 请求和测试 hook；不改变 prepareRename/rename request lifecycle、WorkspaceEdit transaction/apply/undo 语义、rename UI 或真实 `tab.fileURL` 同步策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRenameResultUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRenameResultRecordsLspResultEvent`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

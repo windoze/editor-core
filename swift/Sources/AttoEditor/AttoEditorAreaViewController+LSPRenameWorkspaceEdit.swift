@@ -108,7 +108,7 @@ extension AttoEditorAreaViewController {
             )
             renameContext = RenameRequestContext(
                 tabID: tab.id,
-                documentURI: tab.fileURL.absoluteString,
+                documentURI: projectedFileURL(for: tab).absoluteString,
                 newName: trimmed,
                 showFeedback: showFeedback
             )
