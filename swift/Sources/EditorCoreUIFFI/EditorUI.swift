@@ -547,6 +547,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastCompletionResult() throws -> EcuLspCompletionResult? {
+        guard let json = try lspTakeLastCompletionResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspCompletionResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_completion_decode"
+        )
+    }
+
     public func lspRequestCompletionItemResolve(itemJSON: String) throws -> UInt64 {
         var out: UInt64 = 0
         let status = itemJSON.withCString { cstr in
@@ -560,6 +569,15 @@ public final class EditorUI {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_completion_item_resolve_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_completion_item_resolve_json(handle, has, ptr)
         }
+    }
+
+    public func lspTakeLastCompletionItemResolveResult() throws -> EcuLspCompletionItem? {
+        guard let json = try lspTakeLastCompletionItemResolveResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspCompletionItem.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_completion_item_resolve_decode"
+        )
     }
 
     public func lspRequestSignatureHelp(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
