@@ -70,10 +70,24 @@ final class AttoLspResultFeedbackTests: XCTestCase {
             )
         )
         XCTAssertEqual(
+            AttoLspResultFeedback.timeout(.inlayHintResolve),
+            AttoLspResultFeedback.Message(
+                statusText: "Inlay hint resolve: timed out",
+                detailText: "Inlay hint resolve request timed out."
+            )
+        )
+        XCTAssertEqual(
             AttoLspResultFeedback.empty(.documentLinkResolve),
             AttoLspResultFeedback.Message(
                 statusText: "Document link resolve: no results",
                 detailText: "Resolved document link has no target."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.inlayHintResolve),
+            AttoLspResultFeedback.Message(
+                statusText: "Inlay hint resolve: no results",
+                detailText: "Resolved inlay hint has no tooltip, edits, or command."
             )
         )
         XCTAssertEqual(

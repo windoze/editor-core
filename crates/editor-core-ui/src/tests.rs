@@ -2371,6 +2371,42 @@ fn ui_inlay_hints_affect_hit_testing_and_view_point_mapping() {
 }
 
 #[test]
+fn ui_inlay_hint_hit_test_returns_payload_json() {
+    let mut ui = EditorUi::new("ab\n", 80);
+    ui.set_render_config(RenderConfig {
+        width_px: 200,
+        height_px: 40,
+        cell_width_px: 10.0,
+        line_height_px: 20.0,
+        padding_x_px: 0.0,
+        padding_y_px: 0.0,
+        ..RenderConfig::default()
+    });
+    ui.set_viewport_px(200, 40, 1.0).unwrap();
+
+    ui.lsp_apply_inlay_hints_json(
+        r#"[
+              {
+                "position": { "line": 0, "character": 1 },
+                "label": ": Int",
+                "data": { "id": 42 }
+              }
+            ]"#,
+    )
+    .unwrap();
+
+    let (x, y) = ui.char_offset_to_view_point_px(1).unwrap();
+    let json = ui
+        .inlay_hint_json_at_view_point_px(x + 1.0, y + 1.0)
+        .expect("expected inlay hint json at point");
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v["label"], ": Int");
+    assert_eq!(v["data"]["id"], 42);
+
+    assert!(ui.inlay_hint_json_at_view_point_px(1.0, y + 1.0).is_none());
+}
+
+#[test]
 fn ui_gutter_click_toggles_fold_state() {
     let text = "fn main() {\n  let x = 1;\n}\n";
     let mut ui = EditorUi::new(text, 80);

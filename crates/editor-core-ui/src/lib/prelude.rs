@@ -5,9 +5,9 @@ pub(crate) use editor_core::workspace::{BufferId, ViewId, Workspace};
 pub(crate) use editor_core::{
     AutoPairsConfig, Command, CommandResult, CursorCommand, DecorationKind, DecorationLayerId,
     DecorationPlacement, DiagnosticSeverity, DocumentSymbol, EditCommand, ExpandSelectionDirection,
-    ExpandSelectionUnit, FoldRegion, IME_MARKED_TEXT_STYLE_ID, Interval, MATCH_HIGHLIGHT_STYLE_ID,
-    Position, ProcessingEdit, SearchOptions, Selection, SelectionDirection, StyleCommand,
-    StyleLayerId, SymbolKind, ViewCommand,
+    ExpandSelectionUnit, FoldRegion, IME_MARKED_TEXT_STYLE_ID, INLAY_HINT_STYLE_ID, Interval,
+    MATCH_HIGHLIGHT_STYLE_ID, Position, ProcessingEdit, SearchOptions, Selection,
+    SelectionDirection, StyleCommand, StyleLayerId, SymbolKind, ViewCommand,
 };
 pub(crate) use editor_core_lsp::{
     DeltaCalculator, LspContentChange, LspDocument, LspEvent, LspNotification, LspResponseError,

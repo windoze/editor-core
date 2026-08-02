@@ -698,6 +698,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let showFeedback: Bool
     }
 
+    private struct InlayHintResolveContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
     private struct DocumentLinkResolveContext {
         let tabID: UUID
         let showFeedback: Bool
@@ -859,6 +864,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var codeLensResultsController: AttoCommandPaletteController?
     private var auxiliaryRefreshContext: AuxiliaryRefreshContext?
     private var auxiliaryRefreshPollTimer: DispatchSourceTimer?
+    private var inlayHintResolveContext: InlayHintResolveContext?
+    private var inlayHintResolvePollTimer: DispatchSourceTimer?
     private var documentLinkResolveContext: DocumentLinkResolveContext?
     private var documentLinkResolvePollTimer: DispatchSourceTimer?
     private var executeCommandContext: ExecuteCommandRequestContext?
@@ -4616,6 +4623,10 @@ final class AttoEditorAreaViewController: NSViewController {
             guard let editCore else { return false }
             return self?.handleDocumentLinkClick(json: json, tabID: tabID, editorView: editCore.editorView) ?? false
         }
+        editCore.editorView.onInlayHintClick = { [weak self, weak editCore] json in
+            guard let editCore else { return false }
+            return self?.handleInlayHintClick(json: json, tabID: tabID, editorView: editCore.editorView) ?? false
+        }
         editCore.editorView.onCodeLensClick = { [weak self] json in
             self?.handleCodeLensClick(json: json, tabID: tabID) ?? false
         }
@@ -7150,6 +7161,9 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelLinkedEditingUI()
         cancelDocumentColorUI()
         cancelAuxiliaryRefreshUI()
+        cancelInlayHintResolveUI()
+        cancelInlayHintResolveUI()
+        cancelInlayHintResolveUI()
         cancelDocumentLinkResolveUI()
 
         do {
@@ -7336,6 +7350,153 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     @discardableResult
+    private func handleInlayHintClick(json: String, tabID: UUID, editorView: EditorCoreSkiaView) -> Bool {
+        guard activeTab?.id == tabID else { return false }
+        return requestInlayHintResolve(json: json, tabID: tabID, editorView: editorView)
+    }
+
+    @discardableResult
+    private func requestInlayHintResolve(
+        json: String,
+        tabID: UUID,
+        editorView: EditorCoreSkiaView,
+        showFeedback: Bool = true
+    ) -> Bool {
+        guard let tab = activeTab, tab.id == tabID else {
+            NSSound.beep()
+            return false
+        }
+
+        guard (try? editorView.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.inlayHintResolve), in: editorView)
+            }
+            NSSound.beep()
+            return false
+        }
+
+        cancelInlayHintResolveUI()
+        cancelDocumentLinkResolveUI()
+
+        do {
+            _ = try editorView.editor.lspRequestInlayHintResolve(hintJSON: json)
+        } catch {
+            if showFeedback {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(.inlayHintResolve, errorDescription: error.localizedDescription),
+                    in: editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        inlayHintResolveContext = InlayHintResolveContext(tabID: tabID, showFeedback: showFeedback)
+        editorView.kickProcessingPoll()
+        updateStatusBar()
+        startInlayHintResolvePollTimer(tabID: tabID, editorView: editorView)
+        return true
+    }
+
+    private func startInlayHintResolvePollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        inlayHintResolvePollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.inlayHintResolveContext, ctx.tabID == tabID else {
+                self.cancelInlayHintResolveUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
+                self.cancelInlayHintResolveUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.inlayHintResolve), in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard self.activeTab?.id == tabID else {
+                self.cancelInlayHintResolveUI()
+                return
+            }
+
+            let result: EcuLspInlayHint?
+            do {
+                result = try editorView.editor.lspTakeLastInlayHintResolveResult()
+            } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelInlayHintResolveUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(.inlayHintResolve, errorDescription: error.localizedDescription),
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+            guard let result else { return }
+
+            let showFeedback = ctx.showFeedback
+            self.cancelInlayHintResolveUI()
+            guard self.consumeResolvedInlayHint(result, in: editorView, showFeedback: showFeedback) else {
+                if showFeedback {
+                    self.presentLspResultFeedback(AttoLspResultFeedback.empty(.inlayHintResolve), in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+        }
+
+        inlayHintResolvePollTimer = timer
+        timer.resume()
+    }
+
+    @discardableResult
+    private func consumeResolvedInlayHint(
+        _ hint: EcuLspInlayHint,
+        in editorView: EditorCoreSkiaView,
+        showFeedback: Bool
+    ) -> Bool {
+        var didHandle = false
+        var attemptedEdit = false
+
+        if let tab = activeTab,
+           let workspaceEditJSON = AttoLspInlayHintResolver.workspaceEditJSON(
+               for: hint,
+               documentURI: tab.fileURL.absoluteString
+           )
+        {
+            attemptedEdit = true
+            didHandle = applyWorkspaceEditJSONToActiveTab(
+                workspaceEditJSON,
+                documentURI: tab.fileURL.absoluteString
+            ) || didHandle
+        }
+
+        if let command = AttoLspInlayHintResolver.command(for: hint) {
+            didHandle = requestExecuteCommandJSON(command.commandJSON, commandTitle: command.title) || didHandle
+        }
+
+        if let text = AttoLspInlayHintResolver.displayText(for: hint) {
+            if showFeedback {
+                setTransientStatusText("Inlay hint resolve: resolved")
+                showWorkspaceEditPopover(text: text, in: editorView)
+            }
+            didHandle = true
+        }
+
+        return didHandle || attemptedEdit
+    }
+
+    @discardableResult
     private func handleDocumentLinkClick(json: String, tabID: UUID, editorView: EditorCoreSkiaView) -> Bool {
         guard activeTab?.id == tabID else { return false }
         if let url = EditorCoreSkiaView.documentLinkTargetURL(from: json) {
@@ -7360,6 +7521,7 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
 
+        cancelInlayHintResolveUI()
         cancelDocumentLinkResolveUI()
 
         do {
@@ -9712,6 +9874,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         cancelCodeLensUI()
         cancelAuxiliaryRefreshUI()
+        cancelInlayHintResolveUI()
         cancelDocumentLinkResolveUI()
         cancelExecuteCommandUI()
     }
@@ -9733,6 +9896,12 @@ final class AttoEditorAreaViewController: NSViewController {
         auxiliaryRefreshPollTimer?.cancel()
         auxiliaryRefreshPollTimer = nil
         auxiliaryRefreshContext = nil
+    }
+
+    private func cancelInlayHintResolveUI() {
+        inlayHintResolvePollTimer?.cancel()
+        inlayHintResolvePollTimer = nil
+        inlayHintResolveContext = nil
     }
 
     private func cancelDocumentLinkResolveUI() {

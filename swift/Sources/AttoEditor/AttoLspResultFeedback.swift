@@ -10,6 +10,7 @@ enum AttoLspResultFeedback {
         case foldingRanges
         case semanticTokens
         case inlayHints
+        case inlayHintResolve
         case documentLinks
         case documentLinkResolve
         case definition
@@ -43,6 +44,8 @@ enum AttoLspResultFeedback {
                 return "Semantic tokens"
             case .inlayHints:
                 return "Inlay hints"
+            case .inlayHintResolve:
+                return "Inlay hint resolve"
             case .documentLinks:
                 return "Document links"
             case .documentLinkResolve:
@@ -120,6 +123,8 @@ enum AttoLspResultFeedback {
                 return "Semantic tokens are unavailable."
             case .inlayHints:
                 return "Inlay hints are unavailable."
+            case .inlayHintResolve:
+                return "Inlay hint resolve is unavailable."
             case .documentLinks:
                 return "Document links are unavailable."
             case .documentLinkResolve:
@@ -179,6 +184,8 @@ enum AttoLspResultFeedback {
                 return "No semantic tokens are available for this document."
             case .inlayHints:
                 return "No inlay hints are available for this document."
+            case .inlayHintResolve:
+                return "Resolved inlay hint has no tooltip, edits, or command."
             case .documentLinks:
                 return "No document links are available for this document."
             case .documentLinkResolve:

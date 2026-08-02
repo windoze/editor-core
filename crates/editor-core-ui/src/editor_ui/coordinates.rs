@@ -137,6 +137,83 @@ impl EditorUi {
         self.document_link_json_at_char_offset(off)
     }
 
+    /// Hit-test and return the raw LSP `InlayHint` JSON (if any) at the given view point.
+    ///
+    /// Inlay hints are inline virtual text. This intentionally checks the composed virtual cells
+    /// first so clicking an inlay hint anchored at a document offset does not fall through to the
+    /// document character at that same offset.
+    pub fn inlay_hint_json_at_view_point_px(&mut self, x_px: f32, y_px: f32) -> Option<String> {
+        if !self.has_virtual_text_decorations() {
+            return None;
+        }
+
+        let (_start_composed, _row_count, grid) = self.composed_viewport_grid();
+        if grid.lines.is_empty() {
+            return None;
+        }
+
+        let (local_row, x_cells) = self.pixel_to_local_row_col(x_px, y_px);
+        let line = grid.lines.get(local_row)?;
+        if !matches!(line.kind, ComposedLineKind::Document { .. }) {
+            return None;
+        }
+
+        let mut x = 0usize;
+        let mut hit: Option<(usize, usize)> = None;
+        for (idx, cell) in line.cells.iter().enumerate() {
+            let w = cell.width.max(1);
+            if x_cells < x.saturating_add(w) {
+                if let ComposedCellSource::Virtual { anchor_offset } = cell.source
+                    && cell.styles.contains(&INLAY_HINT_STYLE_ID)
+                {
+                    hit = Some((idx, anchor_offset));
+                }
+                break;
+            }
+            x = x.saturating_add(w);
+        }
+
+        let (hit_idx, anchor_offset) = hit?;
+        let run_text: String = line
+            .cells
+            .iter()
+            .skip(hit_idx)
+            .take_while(|cell| {
+                matches!(
+                    cell.source,
+                    ComposedCellSource::Virtual { anchor_offset: off } if off == anchor_offset
+                ) && cell.styles.contains(&INLAY_HINT_STYLE_ID)
+            })
+            .map(|cell| cell.ch)
+            .collect();
+
+        let doc = self.lock_doc();
+        let layer = doc
+            .ws
+            .buffer_decorations(self.buffer_id)
+            .ok()?
+            .get(&DecorationLayerId::INLAY_HINTS)?;
+
+        layer
+            .iter()
+            .filter(|d| {
+                d.kind == DecorationKind::InlayHint
+                    && d.placement != DecorationPlacement::AboveLine
+                    && d.range.start == anchor_offset
+                    && d.range.end == anchor_offset
+            })
+            .find(|d| d.text.as_deref() == Some(run_text.as_str()))
+            .or_else(|| {
+                layer.iter().find(|d| {
+                    d.kind == DecorationKind::InlayHint
+                        && d.placement != DecorationPlacement::AboveLine
+                        && d.range.start == anchor_offset
+                        && d.range.end == anchor_offset
+                })
+            })
+            .and_then(|d| d.data_json.clone())
+    }
+
     /// Hit-test and return the raw LSP `CodeLens` JSON (if any) at the given view point.
     ///
     /// Code lens is rendered as above-line virtual text. Unlike document-link hit-testing, this

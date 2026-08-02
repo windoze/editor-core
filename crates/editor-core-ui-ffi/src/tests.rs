@@ -2298,6 +2298,92 @@ fn ffi_code_lens_hit_test_returns_payload_json() {
 }
 
 #[test]
+fn ffi_inlay_hint_hit_test_returns_payload_json() {
+    let initial = CString::new("ab\n").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+    assert_eq!(
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 10.0, 10.0, 0.0, 0.0),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 200, 40, 1.0),
+        ECU_OK
+    );
+
+    let result = CString::new(
+        r#"[
+          {
+            "position": { "line": 0, "character": 1 },
+            "label": ": Int",
+            "data": { "id": 42 }
+          }
+        ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_json(ui, result.as_ptr()),
+        ECU_OK
+    );
+
+    let mut x: c_float = 0.0;
+    let mut y: c_float = 0.0;
+    let mut lh: c_float = 0.0;
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_editor_ui_char_offset_to_view_point(ui, 1, &mut x, &mut y, &mut lh)
+        },
+        ECU_OK
+    );
+    assert!(lh > 0.0);
+
+    let mut has: u8 = 0;
+    let mut json_ptr: *mut c_char = ptr::null_mut();
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_editor_ui_get_inlay_hint_json_at_view_point(
+                ui,
+                x + 1.0,
+                y + 1.0,
+                &mut has,
+                &mut json_ptr,
+            )
+        },
+        ECU_OK
+    );
+    assert_eq!(has, 1);
+    assert!(!json_ptr.is_null());
+
+    let json = unsafe { CStr::from_ptr(json_ptr) }
+        .to_str()
+        .unwrap()
+        .to_string();
+    unsafe { editor_core_ui_ffi_string_free(json_ptr) };
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["label"], ": Int");
+    assert_eq!(value["data"]["id"], 42);
+
+    let mut has2: u8 = 9;
+    let mut json_ptr2: *mut c_char = ptr::null_mut();
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_editor_ui_get_inlay_hint_json_at_view_point(
+                ui,
+                1.0,
+                y + 1.0,
+                &mut has2,
+                &mut json_ptr2,
+            )
+        },
+        ECU_OK
+    );
+    assert_eq!(has2, 0);
+    assert!(json_ptr2.is_null());
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
 fn ffi_lsp_document_links_affect_rendering() {
     // Use a space in the document link range so glyph rasterization does not affect the pixel sample.
     let initial = CString::new("a c\n").unwrap();

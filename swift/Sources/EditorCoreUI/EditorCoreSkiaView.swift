@@ -143,6 +143,12 @@ public final class EditorCoreSkiaView: MTKView {
     /// Hosts can use this to run `documentLink/resolve` and open the resolved target.
     public var onDocumentLinkClick: ((String) -> Bool)?
 
+    /// Called when Cmd-click hits LSP inlay hint virtual text.
+    ///
+    /// The payload is the raw `InlayHint` JSON returned by the Rust hit-test. Hosts can use this
+    /// to run `inlayHint/resolve` and display or apply the resolved hint.
+    public var onInlayHintClick: ((String) -> Bool)?
+
     /// Called when Cmd-click hits LSP code lens virtual text.
     ///
     /// The payload is the raw `CodeLens` JSON returned by the Rust hit-test. Hosts should parse and
@@ -1603,6 +1609,10 @@ public final class EditorCoreSkiaView: MTKView {
                     return
                 }
 
+                if event.clickCount == 1, performInlayHintClickIfPresent(xPx: xPx, yPx: yPx) {
+                    return
+                }
+
                 if event.clickCount == 1, openDocumentLinkIfPresent(xPx: xPx, yPx: yPx) {
                     return
                 }
@@ -1656,6 +1666,21 @@ public final class EditorCoreSkiaView: MTKView {
                 return true
             }
             return onDocumentLinkClick?(json) ?? false
+        } catch {
+            return false
+        }
+    }
+
+    /// Try to resolve an LSP inlay hint at the given view point (in backing pixels).
+    ///
+    /// Returns `true` when an inlay hint was found and the host handled it.
+    @discardableResult
+    public func performInlayHintClickIfPresent(xPx: Float, yPx: Float) -> Bool {
+        do {
+            guard let json = try editor.inlayHintJSONAtViewPoint(xPx: xPx, yPx: yPx) else {
+                return false
+            }
+            return onInlayHintClick?(json) ?? false
         } catch {
             return false
         }

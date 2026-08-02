@@ -431,6 +431,32 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Document link resolve: unavailable")
     }
 
+    func testInlayHintClickUsesResolveFeedbackWhenLspDisabled() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("hints.txt")
+        try "ab\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        let hintJSON = """
+        {
+          "position": { "line": 0, "character": 1 },
+          "label": ": Int",
+          "data": { "id": 42 }
+        }
+        """
+        XCTAssertFalse(editorView.onInlayHintClick?(hintJSON) ?? true)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Inlay hint resolve: unavailable")
+    }
+
     func testCodeLensAtCursorFiltersActionsToCurrentLine() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

@@ -163,6 +163,65 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_document_link_json_at_
     }
 }
 
+/// Hit-test a view point and return the raw LSP `InlayHint` JSON payload (if present).
+///
+/// - `out_has_hint` is set to 1 when an inlay hint is present.
+/// - `out_json_utf8` receives a newly allocated string that must be freed with
+///   `editor_core_ui_ffi_string_free` (or is set to NULL when no inlay hint is present).
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_has_hint` must be a valid pointer to a `u8`.
+/// `out_json_utf8` must be a valid pointer to a `*mut c_char`, or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_get_inlay_hint_json_at_view_point(
+    ui: *mut EditorUi,
+    x_px: c_float,
+    y_px: c_float,
+    out_has_hint: *mut u8,
+    out_json_utf8: *mut *mut c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_has_hint.is_null() {
+            return Err(invalid_argument("out_has_hint is null"));
+        }
+
+        unsafe {
+            *out_has_hint = 0;
+        }
+        if !out_json_utf8.is_null() {
+            unsafe {
+                *out_json_utf8 = ptr::null_mut();
+            }
+        }
+
+        let Some(json) = ui.inlay_hint_json_at_view_point_px(x_px, y_px) else {
+            return Ok(ECU_OK);
+        };
+
+        unsafe {
+            *out_has_hint = 1;
+        }
+
+        if out_json_utf8.is_null() {
+            return Ok(ECU_OK);
+        }
+
+        unsafe {
+            *out_json_utf8 = make_c_string_ptr(json);
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Hit-test a view point and return the raw LSP `CodeLens` JSON payload (if present).
 ///
 /// - `out_has_lens` is set to 1 when a code lens is present.
