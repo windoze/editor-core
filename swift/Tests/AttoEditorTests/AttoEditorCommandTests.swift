@@ -2902,6 +2902,62 @@ final class AttoEditorCommandTests: XCTestCase {
         )
     }
 
+    func testPrepareRenameDialogSeedUsesTypedResult() throws {
+        let fallback = AttoLspRenameSupport.DialogSeed(initialName: "fallback", placeholder: "Fallback")
+        let placeholder = try JSONDecoder().decode(EcuLspPrepareRenameResult.self, from: Data("""
+        {
+          "range": {
+            "start": { "line": 0, "character": 4 },
+            "end": { "line": 0, "character": 9 }
+          },
+          "placeholder": "serverName"
+        }
+        """.utf8))
+
+        XCTAssertEqual(
+            AttoLspRenameSupport.dialogSeed(
+                documentText: "let alpha = beta\n",
+                selectedText: "",
+                caretOffset: 0,
+                prepareRenameResult: placeholder,
+                fallback: fallback
+            ),
+            AttoLspRenameSupport.DialogSeed(initialName: "serverName", placeholder: "serverName")
+        )
+
+        let rangeOnly = try JSONDecoder().decode(EcuLspPrepareRenameResult.self, from: Data("""
+        {
+          "start": { "line": 0, "character": 4 },
+          "end": { "line": 0, "character": 9 }
+        }
+        """.utf8))
+        XCTAssertEqual(
+            AttoLspRenameSupport.dialogSeed(
+                documentText: "let alpha = beta\n",
+                selectedText: "",
+                caretOffset: 0,
+                prepareRenameResult: rangeOnly,
+                fallback: fallback
+            ),
+            AttoLspRenameSupport.DialogSeed(initialName: "alpha", placeholder: "Fallback")
+        )
+
+        let defaultBehavior = try JSONDecoder().decode(
+            EcuLspPrepareRenameResult.self,
+            from: Data(#"{"defaultBehavior":true}"#.utf8)
+        )
+        XCTAssertEqual(
+            AttoLspRenameSupport.dialogSeed(
+                documentText: "let alpha = beta\n",
+                selectedText: "",
+                caretOffset: 0,
+                prepareRenameResult: defaultBehavior,
+                fallback: fallback
+            ),
+            fallback
+        )
+    }
+
     func testToggleLineCommentUsesFileLanguageDefault() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

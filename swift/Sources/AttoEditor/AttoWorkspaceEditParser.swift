@@ -1,3 +1,4 @@
+import EditorCoreUIFFI
 import Foundation
 
 enum AttoWorkspaceEditParser {
@@ -153,6 +154,58 @@ enum AttoWorkspaceEditParser {
         )
     }
 
+    static func parse(_ workspaceEdit: EcuLspWorkspaceEdit) -> ParseResult {
+        var documentsByURI: [String: [TextEdit]] = [:]
+        var documentOrder: [String] = []
+        var resourceOperations: [ResourceOperation] = []
+        var unsupportedURIs: [String] = []
+
+        for uri in workspaceEdit.changes.keys.sorted() {
+            appendDocumentURI(uri, to: &documentOrder, documentsByURI: &documentsByURI)
+            documentsByURI[uri, default: []].append(contentsOf: textEdits(from: workspaceEdit.changes[uri] ?? []))
+        }
+
+        for change in workspaceEdit.documentChanges {
+            switch change {
+            case .textDocumentEdit(let edit):
+                let uri = edit.textDocument.uri
+                appendDocumentURI(uri, to: &documentOrder, documentsByURI: &documentsByURI)
+                documentsByURI[uri, default: []].append(contentsOf: textEdits(from: edit.edits))
+            case .createFile(let operation):
+                resourceOperations.append(.create(ResourceOperation.CreateFile(
+                    uri: operation.uri,
+                    overwrite: operation.options?.overwrite ?? false,
+                    ignoreIfExists: operation.options?.ignoreIfExists ?? false
+                )))
+            case .renameFile(let operation):
+                resourceOperations.append(.rename(ResourceOperation.RenameFile(
+                    oldURI: operation.oldUri,
+                    newURI: operation.newUri,
+                    overwrite: operation.options?.overwrite ?? false,
+                    ignoreIfExists: operation.options?.ignoreIfExists ?? false
+                )))
+            case .deleteFile(let operation):
+                resourceOperations.append(.delete(ResourceOperation.DeleteFile(
+                    uri: operation.uri,
+                    recursive: operation.options?.recursive ?? false,
+                    ignoreIfNotExists: operation.options?.ignoreIfNotExists ?? false
+                )))
+            case .unknown(let raw):
+                unsupportedURIs.append(contentsOf: resourceOperationURIs(from: raw))
+            }
+        }
+
+        let documents = documentOrder.map { uri in
+            DocumentEdit(uri: uri, edits: documentsByURI[uri] ?? [])
+        }
+
+        return ParseResult(
+            documents: documents,
+            resourceOperations: resourceOperations,
+            unsupportedURIs: uniqueSorted(unsupportedURIs)
+        )
+    }
+
     static func apply(_ document: DocumentEdit, to text: String) -> ApplyResult? {
         let hasOverlappingEdits = document.hasOverlappingEdits
         guard hasOverlappingEdits == false else {
@@ -232,6 +285,24 @@ enum AttoWorkspaceEditParser {
         }
     }
 
+    private static func textEdits(from edits: [EcuLspTextEdit]) -> [TextEdit] {
+        edits.map { edit in
+            TextEdit(
+                range: Range(
+                    start: Position(
+                        line: Int(edit.range.start.line),
+                        utf16Character: Int(edit.range.start.utf16Character)
+                    ),
+                    end: Position(
+                        line: Int(edit.range.end.line),
+                        utf16Character: Int(edit.range.end.utf16Character)
+                    )
+                ),
+                newText: edit.newText
+            )
+        }
+    }
+
     private static func range(from object: [String: Any]) -> Range? {
         guard let startObject = object["start"] as? [String: Any],
               let endObject = object["end"] as? [String: Any],
@@ -253,6 +324,19 @@ enum AttoWorkspaceEditParser {
     }
 
     private static func resourceOperationURIs(from object: [String: Any]) -> [String] {
+        switch stringValue(object["kind"]) {
+        case "create", "delete":
+            return stringValue(object["uri"]).map { [$0] } ?? []
+        case "rename":
+            return [stringValue(object["oldUri"]), stringValue(object["newUri"])].compactMap { $0 }
+        default:
+            return [stringValue(object["uri"]), stringValue(object["oldUri"]), stringValue(object["newUri"])]
+                .compactMap { $0 }
+        }
+    }
+
+    private static func resourceOperationURIs(from value: EcuJSONValue) -> [String] {
+        guard case let .object(object) = value else { return [] }
         switch stringValue(object["kind"]) {
         case "create", "delete":
             return stringValue(object["uri"]).map { [$0] } ?? []
@@ -311,6 +395,11 @@ enum AttoWorkspaceEditParser {
     private static func stringValue(_ any: Any?) -> String? {
         if let value = any as? String { return value }
         return nil
+    }
+
+    private static func stringValue(_ value: EcuJSONValue?) -> String? {
+        guard case let .string(value) = value else { return nil }
+        return value
     }
 
     private static func uniqueSorted(_ values: [String]) -> [String] {

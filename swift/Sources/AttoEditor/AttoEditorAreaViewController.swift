@@ -7319,12 +7319,43 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func applyWorkspaceEditJSONToActiveTab(_ workspaceEditJSON: String, documentURI: String? = nil) -> Bool {
-        guard let initialActiveTab = activeTab else {
+        guard activeTab != nil else {
             NSSound.beep()
             return false
         }
 
         guard let workspaceEdit = AttoWorkspaceEditParser.parse(workspaceEditJSON) else {
+            NSSound.beep()
+            return false
+        }
+
+        return applyWorkspaceEditToActiveTab(
+            workspaceEdit,
+            workspaceEditJSON: workspaceEditJSON,
+            documentURI: documentURI
+        )
+    }
+
+    @discardableResult
+    func applyWorkspaceEditToActiveTab(_ workspaceEdit: EcuLspWorkspaceEdit, documentURI: String? = nil) -> Bool {
+        guard let workspaceEditJSON = workspaceEdit.rawJSONString else {
+            NSSound.beep()
+            return false
+        }
+        return applyWorkspaceEditToActiveTab(
+            AttoWorkspaceEditParser.parse(workspaceEdit),
+            workspaceEditJSON: workspaceEditJSON,
+            documentURI: documentURI
+        )
+    }
+
+    @discardableResult
+    private func applyWorkspaceEditToActiveTab(
+        _ workspaceEdit: AttoWorkspaceEditParser.ParseResult,
+        workspaceEditJSON: String,
+        documentURI: String? = nil
+    ) -> Bool {
+        guard let initialActiveTab = activeTab else {
             NSSound.beep()
             return false
         }
@@ -7731,17 +7762,17 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspPrepareRenameResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastPrepareRenameResultJSON()
+                result = try tab.editCore.editor.lspTakeLastPrepareRenameResult()
             } catch {
                 return
             }
 
-            if let json {
+            if let result {
                 self.cancelRenamePrepareUI()
                 let seed = self.renameDialogSeedInActiveTab(
-                    prepareRenameResultJSON: json,
+                    prepareRenameResult: result,
                     fallback: ctx.fallbackSeed
                 )
                 _ = self.showRenameDialog(seed: seed)
@@ -7786,18 +7817,18 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspWorkspaceEdit?
             do {
-                json = try tab.editCore.editor.lspTakeLastRenameResultJSON()
+                result = try tab.editCore.editor.lspTakeLastRenameResult()
             } catch {
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             self.renamePollTimer?.cancel()
             self.renamePollTimer = nil
             self.renameContext = nil
-            _ = self.applyRenameResultJSON(json, context: ctx)
+            _ = self.applyRenameResult(result, context: ctx)
             timer.cancel()
         }
 
@@ -7812,6 +7843,13 @@ final class AttoEditorAreaViewController: NSViewController {
         return applied
     }
 
+    @discardableResult
+    private func applyRenameResult(_ workspaceEdit: EcuLspWorkspaceEdit, context: RenameRequestContext) -> Bool {
+        let applied = applyWorkspaceEditToActiveTab(workspaceEdit, documentURI: context.documentURI)
+        recordRenameResultLifecycle(workspaceEdit, newName: context.newName, applied: applied)
+        return applied
+    }
+
     private func recordRenameResultLifecycle(_ json: String, newName: String, applied: Bool) {
         let workspaceEdit = AttoWorkspaceEditParser.parse(json)
         lspResultEventStream.record(
@@ -7821,6 +7859,20 @@ final class AttoEditorAreaViewController: NSViewController {
                 newName: newName,
                 documentCount: workspaceEdit?.documents.count ?? 0,
                 resourceOperationCount: workspaceEdit?.resourceOperations.count ?? 0,
+                applied: applied
+            )
+        )
+    }
+
+    private func recordRenameResultLifecycle(_ workspaceEdit: EcuLspWorkspaceEdit, newName: String, applied: Bool) {
+        let parsed = AttoWorkspaceEditParser.parse(workspaceEdit)
+        lspResultEventStream.record(
+            family: "rename",
+            title: "Rename: \(newName)",
+            payload: .rename(
+                newName: newName,
+                documentCount: parsed.documents.count,
+                resourceOperationCount: parsed.resourceOperations.count,
                 applied: applied
             )
         )
@@ -7850,6 +7902,37 @@ final class AttoEditorAreaViewController: NSViewController {
                 selectedText: selected,
                 caretOffset: offsets.end,
                 prepareRenameResultJSON: prepareRenameResultJSON,
+                fallback: fallback
+            )
+        } catch {
+            return fallbackSeed ?? AttoLspRenameSupport.DialogSeed(initialName: "", placeholder: nil)
+        }
+    }
+
+    private func renameDialogSeedInActiveTab(
+        prepareRenameResult: EcuLspPrepareRenameResult?,
+        fallback fallbackSeed: AttoLspRenameSupport.DialogSeed? = nil
+    ) -> AttoLspRenameSupport.DialogSeed {
+        guard let tab = activeTab else {
+            return fallbackSeed ?? AttoLspRenameSupport.DialogSeed(initialName: "", placeholder: nil)
+        }
+        do {
+            let selected = try tab.editCore.editor.selectedText()
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let text = try tab.editCore.editor.text()
+            let fallback = fallbackSeed ?? AttoLspRenameSupport.DialogSeed(
+                initialName: AttoLspRenameSupport.candidateName(
+                    documentText: text,
+                    selectedText: selected,
+                    caretOffset: offsets.end
+                ),
+                placeholder: nil
+            )
+            return AttoLspRenameSupport.dialogSeed(
+                documentText: text,
+                selectedText: selected,
+                caretOffset: offsets.end,
+                prepareRenameResult: prepareRenameResult,
                 fallback: fallback
             )
         } catch {
@@ -8539,6 +8622,19 @@ enum AttoLspRenameSupport {
             placeholder: nil
         )
 
+        if let prepareRenameResultJSON,
+           let data = prepareRenameResultJSON.data(using: .utf8),
+           let result = try? JSONDecoder().decode(EcuLspPrepareRenameResult.self, from: data)
+        {
+            return dialogSeed(
+                documentText: documentText,
+                selectedText: selectedText,
+                caretOffset: caretOffset,
+                prepareRenameResult: result,
+                fallback: fallback
+            )
+        }
+
         guard let prepareRenameResultJSON,
               let data = prepareRenameResultJSON.data(using: .utf8),
               let value = try? JSONSerialization.jsonObject(with: data, options: [])
@@ -8571,6 +8667,45 @@ enum AttoLspRenameSupport {
         }
 
         return fallback
+    }
+
+    static func dialogSeed(
+        documentText: String,
+        selectedText: String,
+        caretOffset: UInt32,
+        prepareRenameResult: EcuLspPrepareRenameResult?,
+        fallback: DialogSeed? = nil
+    ) -> DialogSeed {
+        let fallback = fallback ?? DialogSeed(
+            initialName: candidateName(
+                documentText: documentText,
+                selectedText: selectedText,
+                caretOffset: caretOffset
+            ),
+            placeholder: nil
+        )
+
+        guard let prepareRenameResult else {
+            return fallback
+        }
+
+        if prepareRenameResult.shape == .none {
+            return fallback
+        }
+
+        if prepareRenameResult.defaultBehavior == true {
+            return fallback
+        }
+
+        guard let range = prepareRenameResult.range else {
+            return fallback
+        }
+
+        let placeholder = prepareRenameResult.placeholder?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rangeName = text(inLspRange: range, documentText: documentText)
+        let initial = nonEmpty(placeholder) ?? nonEmpty(rangeName) ?? fallback.initialName
+        let outputPlaceholder = prepareRenameResult.shape == .range ? fallback.placeholder : nonEmpty(placeholder)
+        return DialogSeed(initialName: initial, placeholder: outputPlaceholder)
     }
 
     private static func isIdentifierCharacter(_ ch: Character) -> Bool {
@@ -8620,6 +8755,22 @@ enum AttoLspRenameSupport {
         return String(scalars[startIndex..<endIndex])
     }
 
+    private static func text(inLspRange range: EcuLspRange, documentText: String) -> String? {
+        let lines = documentText.split(separator: "\n", omittingEmptySubsequences: false)
+        guard let startOffset = scalarOffset(forLspPosition: range.start, lines: lines),
+              let endOffset = scalarOffset(forLspPosition: range.end, lines: lines),
+              startOffset <= endOffset,
+              endOffset <= documentText.unicodeScalars.count
+        else {
+            return nil
+        }
+
+        let scalars = documentText.unicodeScalars
+        let startIndex = scalars.index(scalars.startIndex, offsetBy: startOffset)
+        let endIndex = scalars.index(scalars.startIndex, offsetBy: endOffset)
+        return String(scalars[startIndex..<endIndex])
+    }
+
     private static func scalarOffset(
         forLspPosition position: [String: Any],
         lines: [String.SubSequence]
@@ -8627,6 +8778,25 @@ enum AttoLspRenameSupport {
         guard let lineNumber = intValue(position["line"]),
               let utf16Column = intValue(position["character"]),
               lineNumber >= 0,
+              utf16Column >= 0,
+              lineNumber < lines.count
+        else {
+            return nil
+        }
+
+        let preceding = lines.prefix(lineNumber).reduce(0) { total, line in
+            total + line.unicodeScalars.count + 1
+        }
+        return preceding + scalarOffset(fromUTF16Offset: utf16Column, in: lines[lineNumber])
+    }
+
+    private static func scalarOffset(
+        forLspPosition position: EcuLspPosition,
+        lines: [String.SubSequence]
+    ) -> Int? {
+        let lineNumber = Int(position.line)
+        let utf16Column = Int(position.utf16Character)
+        guard lineNumber >= 0,
               utf16Column >= 0,
               lineNumber < lines.count
         else {

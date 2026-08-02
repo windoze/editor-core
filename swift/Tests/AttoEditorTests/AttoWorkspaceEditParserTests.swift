@@ -1,4 +1,5 @@
 @testable import AttoEditor
+import EditorCoreUIFFI
 import XCTest
 
 final class AttoWorkspaceEditParserTests: XCTestCase {
@@ -81,6 +82,66 @@ final class AttoWorkspaceEditParserTests: XCTestCase {
                 "file:///project/b.swift",
             ]
         )
+    }
+
+    func testParseTypedWorkspaceEditMatchesJSONPath() throws {
+        let edit = try JSONDecoder().decode(EcuLspWorkspaceEdit.self, from: Data("""
+        {
+          "changes": {
+            "file:///project/a.swift": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 1 }
+                },
+                "newText": "A"
+              }
+            ]
+          },
+          "documentChanges": [
+            {
+              "textDocument": { "uri": "file:///project/b.swift", "version": 1 },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 1, "character": 2 },
+                    "end": { "line": 1, "character": 3 }
+                  },
+                  "newText": "B"
+                }
+              ]
+            },
+            { "kind": "create", "uri": "file:///project/new.swift", "options": { "overwrite": true } },
+            {
+              "kind": "rename",
+              "oldUri": "file:///project/old.swift",
+              "newUri": "file:///project/renamed.swift",
+              "options": { "ignoreIfExists": true }
+            },
+            { "kind": "delete", "uri": "file:///project/remove.swift", "options": { "recursive": true } }
+          ]
+        }
+        """.utf8))
+
+        let parsed = AttoWorkspaceEditParser.parse(edit)
+
+        XCTAssertEqual(parsed.documents.map(\.uri), ["file:///project/a.swift", "file:///project/b.swift"])
+        XCTAssertEqual(parsed.documents[0].edits.first?.newText, "A")
+        XCTAssertEqual(parsed.documents[1].edits.first?.range.start.line, 1)
+        XCTAssertEqual(
+            parsed.resourceOperations,
+            [
+                .create(.init(uri: "file:///project/new.swift", overwrite: true, ignoreIfExists: false)),
+                .rename(.init(
+                    oldURI: "file:///project/old.swift",
+                    newURI: "file:///project/renamed.swift",
+                    overwrite: false,
+                    ignoreIfExists: true
+                )),
+                .delete(.init(uri: "file:///project/remove.swift", recursive: true, ignoreIfNotExists: false)),
+            ]
+        )
+        XCTAssertEqual(parsed.unsupportedURIs, [])
     }
 
     func testApplyUsesLspUTF16PositionsAgainstUnicodeScalarOffsets() throws {

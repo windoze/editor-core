@@ -657,6 +657,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastPrepareRenameResult() throws -> EcuLspPrepareRenameResult? {
+        guard let json = try lspTakeLastPrepareRenameResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspPrepareRenameResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_prepare_rename_decode"
+        )
+    }
+
     public func lspRequestRename(logicalLine: UInt32, logicalColumn: UInt32, newName: String) throws -> UInt64 {
         var out: UInt64 = 0
         let status = newName.withCString { cstr in
@@ -670,6 +679,15 @@ public final class EditorUI {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_rename_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_rename_json(handle, has, ptr)
         }
+    }
+
+    public func lspTakeLastRenameResult() throws -> EcuLspWorkspaceEdit? {
+        guard let json = try lspTakeLastRenameResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspWorkspaceEdit.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_rename_decode"
+        )
     }
 
     public func lspRequestCodeAction(
