@@ -460,6 +460,71 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         XCTAssertFalse(rawLog.contains("fake-lsp-1"))
     }
 
+    func testProjectLspProcessHealthLogStoreExportsWorkspaceEntries() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoProjectLspProcessHealthLogExportTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let rootA = tempDir.appendingPathComponent("workspace-a", isDirectory: true)
+        let rootB = tempDir.appendingPathComponent("workspace-b", isDirectory: true)
+        let rootC = tempDir.appendingPathComponent("workspace-c", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: rootB, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: rootC, withIntermediateDirectories: true)
+
+        let logURL = tempDir.appendingPathComponent("lsp-process-health.jsonl")
+        let logStore = AttoProjectLspProcessHealthLogStore(logFileURL: logURL)
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 1,
+                sourceSequence: 101,
+                tabId: 1,
+                viewIndex: 0,
+                viewId: 1001,
+                serverName: "root-a-lsp",
+                serverCommand: "root-a-lsp",
+                availability: "failed",
+                state: "failed",
+                detail: "root a",
+                process: EcuLspProcessStatus(pid: 11, state: .exited, exitCode: 1)
+            ),
+            workspaceRootURL: rootA,
+            recordedAt: Date(timeIntervalSince1970: 1_785_715_200)
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 2,
+                sourceSequence: 102,
+                tabId: 2,
+                viewIndex: 0,
+                viewId: 1002,
+                serverName: "root-b-lsp",
+                serverCommand: "root-b-lsp",
+                availability: "enabled",
+                state: "ready",
+                detail: nil,
+                process: EcuLspProcessStatus(pid: 12, state: .running)
+            ),
+            workspaceRootURL: rootB,
+            recordedAt: Date(timeIntervalSince1970: 1_785_715_201)
+        )
+
+        let exportedText = try logStore.exportJSONL(workspaceRootURL: rootA)
+        XCTAssertTrue(exportedText.contains("root-a-lsp"))
+        XCTAssertFalse(exportedText.contains("root-b-lsp"))
+        XCTAssertEqual(exportedText.split(whereSeparator: \.isNewline).count, 1)
+
+        let exportURL = tempDir.appendingPathComponent("exports/root-a-health.jsonl")
+        XCTAssertEqual(try logStore.exportJSONL(workspaceRootURL: rootA, to: exportURL), 1)
+        let writtenText = try String(contentsOf: exportURL, encoding: .utf8)
+        XCTAssertEqual(writtenText, exportedText)
+
+        let emptyExportURL = tempDir.appendingPathComponent("exports/root-c-health.jsonl")
+        XCTAssertEqual(try logStore.exportJSONL(workspaceRootURL: rootC, to: emptyExportURL), 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: emptyExportURL.path))
+    }
+
     func testProjectLspProcessHealthLogStoreClearsWorkspaceEntries() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoProjectLspProcessHealthLogClearTests-\(UUID().uuidString)", isDirectory: true)

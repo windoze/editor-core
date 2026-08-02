@@ -146,6 +146,34 @@ struct AttoProjectLspProcessHealthLogStore: Sendable {
         return entries
     }
 
+    func exportJSONL(
+        workspaceRootURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> String {
+        let lines = try matchingJSONLLines(workspaceRootURL: workspaceRootURL, fileManager: fileManager)
+        return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n"
+    }
+
+    @discardableResult
+    func exportJSONL(
+        workspaceRootURL: URL,
+        to destinationURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> Int {
+        let lines = try matchingJSONLLines(workspaceRootURL: workspaceRootURL, fileManager: fileManager)
+        guard lines.isEmpty == false else {
+            return 0
+        }
+
+        try fileManager.createDirectory(
+            at: destinationURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let output = lines.joined(separator: "\n") + "\n"
+        try output.write(to: destinationURL, atomically: true, encoding: .utf8)
+        return lines.count
+    }
+
     @discardableResult
     func clear(
         workspaceRootURL: URL,
@@ -185,5 +213,31 @@ struct AttoProjectLspProcessHealthLogStore: Sendable {
         let output = keptLines.isEmpty ? "" : keptLines.joined(separator: "\n") + "\n"
         try output.write(to: logFileURL, atomically: true, encoding: .utf8)
         return removedCount
+    }
+
+    private func matchingJSONLLines(
+        workspaceRootURL: URL,
+        fileManager: FileManager
+    ) throws -> [String] {
+        guard fileManager.fileExists(atPath: logFileURL.path) else {
+            return []
+        }
+
+        let rootURI = workspaceRootURL.standardizedFileURL.absoluteString
+        let data = try Data(contentsOf: logFileURL)
+        let text = String(data: data, encoding: .utf8) ?? ""
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        return text.split(whereSeparator: \.isNewline).compactMap { line in
+            let rawLine = String(line)
+            guard let lineData = rawLine.data(using: .utf8),
+                  let entry = try? decoder.decode(AttoProjectLspProcessHealthLogEntry.self, from: lineData),
+                  entry.workspaceRootURI == rootURI
+            else {
+                return nil
+            }
+            return rawLine
+        }
     }
 }

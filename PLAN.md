@@ -979,6 +979,15 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `git diff --check`
+- 中间提交：`feat(app): export lsp process health log`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；在阶段 274-277 的 JSONL process health log 基础上补当前 workspace root 的导出入口。
+  - 提交边界：`AttoProjectLspProcessHealthLogStore` 新增按 workspace root URI 过滤的 JSONL export API，可返回字符串或写入目标文件；AttoEditor 新增 Swift/App 级 `lsp.export_project_lsp_health_log` 命令、Go 菜单项和 Save Panel 入口。该提交不新增 Rust/C ABI，不改变日志记录 schema、不实现确认弹窗、复杂查询/filter DSL、按 workspace 独立配额、大小/时间轮转、自动崩溃恢复、更深层 core-owned LSP ownership schema 或完整 dashboard 级健康视图。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStoreExportsWorkspaceEntries`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testExportProjectLspProcessHealthLogExportsCurrentWorkspaceOnly`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

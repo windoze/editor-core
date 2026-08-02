@@ -536,6 +536,40 @@ extension AttoEditorAreaViewController {
         }
     }
 
+    @discardableResult
+    func exportProjectLspProcessHealthLog() -> Bool {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.prompt = "Export"
+        panel.message = "Export process health log entries for the current workspace."
+        panel.directoryURL = workspaceRootURL
+        panel.nameFieldStringValue = Self.projectLspProcessHealthLogExportFileName(workspaceRootURL: workspaceRootURL)
+
+        guard panel.runModal() == .OK, let url = panel.url?.standardizedFileURL else {
+            return false
+        }
+        return exportProjectLspProcessHealthLog(to: url)
+    }
+
+    @discardableResult
+    func exportProjectLspProcessHealthLog(to destinationURL: URL) -> Bool {
+        do {
+            let exportedCount = try projectLspProcessHealthLogStore.exportJSONL(
+                workspaceRootURL: workspaceRootURL,
+                to: destinationURL.standardizedFileURL
+            )
+            if exportedCount == 0 {
+                NSSound.beep()
+                return false
+            }
+            return true
+        } catch {
+            NSLog("AttoEditor: failed to export project LSP process health log: %@", String(describing: error))
+            NSSound.beep()
+            return false
+        }
+    }
+
     static func projectLspStatusEventTitle(_ event: AttoProjectLspPanelErrorEvent) -> String {
         let source = event.source.rawValue.capitalized
         let scope = projectLspEventScope(tabId: event.tabId, viewIndex: event.viewIndex)
@@ -646,6 +680,14 @@ extension AttoEditorAreaViewController {
             return nil
         }
         return compacted
+    }
+
+    private static func projectLspProcessHealthLogExportFileName(workspaceRootURL: URL) -> String {
+        let rawName = workspaceRootURL.lastPathComponent.isEmpty ? "workspace" : workspaceRootURL.lastPathComponent
+        let safeName = rawName
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: " ", with: "-")
+        return "atto-lsp-process-health-\(safeName).jsonl"
     }
 
     @discardableResult
