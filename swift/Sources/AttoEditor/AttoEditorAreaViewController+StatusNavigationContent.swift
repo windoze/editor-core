@@ -610,14 +610,20 @@ extension AttoEditorAreaViewController {
             ) {})
         }
 
-        commands.append(contentsOf: projectLspDashboardServerGroups(
+        let serverGroups = projectLspDashboardServerGroups(
             healthEvents: healthEvents,
             persistedEntries: persistedEntries
-        ).enumerated().map { idx, group in
+        )
+
+        commands.append(contentsOf: serverGroups.enumerated().map { idx, group in
             AttoCommandPaletteCommand(
                 id: "lsp.project_dashboard.server_group.\(idx)",
                 title: Self.projectLspDashboardServerGroupTitle(group)
             ) {}
+        })
+
+        commands.append(contentsOf: serverGroups.enumerated().map { idx, group in
+            projectLspDashboardServerRecoveryActionCommand(group: group, index: idx)
         })
 
         commands.append(contentsOf: statusEvents.enumerated().map { idx, event in
@@ -795,7 +801,14 @@ extension AttoEditorAreaViewController {
             groups[identity.key] = group
         }
 
-        return groups.values.sorted { lhs, rhs in
+        return groups.values.map { group in
+            var group = group
+            group.recoveryDisabled = preferences.isLspAutoRestartDisabledForServer(
+                serverName: group.displayName,
+                serverCommand: nil
+            )
+            return group
+        }.sorted { lhs, rhs in
             if lhs.latestSequence != rhs.latestSequence {
                 return lhs.latestSequence > rhs.latestSequence
             }
@@ -811,6 +824,7 @@ extension AttoEditorAreaViewController {
         var persistedFailedCount: Int = 0
         var latestProcessState: String?
         var latestSequence: UInt64 = 0
+        var recoveryDisabled: Bool = false
 
         mutating func recordHealth(availability: String, state: String, processState: String, sequence: UInt64) {
             healthEventCount += 1
@@ -852,7 +866,28 @@ extension AttoEditorAreaViewController {
 
     private static func projectLspDashboardServerGroupTitle(_ group: ProjectLspDashboardServerGroup) -> String {
         let latestProcess = group.latestProcessState.map { ", latest process \($0)" } ?? ""
-        return "Server - \(group.displayName): health events \(group.healthEventCount) failed \(group.healthFailedCount), persisted logs \(group.persistedLogCount) failed \(group.persistedFailedCount)\(latestProcess)"
+        let recovery = group.recoveryDisabled ? "recovery disabled" : "recovery enabled"
+        return "Server - \(group.displayName): health events \(group.healthEventCount) failed \(group.healthFailedCount), persisted logs \(group.persistedLogCount) failed \(group.persistedFailedCount), \(recovery)\(latestProcess)"
+    }
+
+    private func projectLspDashboardServerRecoveryActionCommand(
+        group: ProjectLspDashboardServerGroup,
+        index: Int
+    ) -> AttoCommandPaletteCommand {
+        let verb = group.recoveryDisabled ? "Enable" : "Disable"
+        return AttoCommandPaletteCommand(
+            id: "lsp.project_dashboard.server_recovery.\(index)",
+            title: "Recovery Action - \(verb) auto-restart for \(group.displayName)"
+        ) { [weak self] in
+            guard let self else { return }
+            let disabled = group.recoveryDisabled == false
+            self.preferences.setLspAutoRestartDisabled(
+                disabled,
+                forServerName: group.displayName,
+                serverCommand: nil
+            )
+            self.setTransientStatusText("LSP auto-restart \(disabled ? "disabled" : "enabled") for \(group.displayName)")
+        }
     }
 
     private static func formatProjectLspDashboardSeconds(_ seconds: Double) -> String {

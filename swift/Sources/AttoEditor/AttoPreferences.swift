@@ -65,6 +65,7 @@ final class AttoPreferences: NSObject {
         static let lspAutoRestartEnabled = "AttoEditor.preferences.lspAutoRestartEnabled"
         static let lspAutoRestartMaxAttempts = "AttoEditor.preferences.lspAutoRestartMaxAttempts"
         static let lspAutoRestartBaseDelaySeconds = "AttoEditor.preferences.lspAutoRestartBaseDelaySeconds"
+        static let lspAutoRestartDisabledServerKeys = "AttoEditor.preferences.lspAutoRestartDisabledServerKeys"
     }
 
     private let defaults: UserDefaults
@@ -234,6 +235,12 @@ final class AttoPreferences: NSObject {
         return nil
     }
 
+    var storedLspAutoRestartDisabledServerKeys: [String] {
+        Self.normalizeLspAutoRestartServerKeys(
+            defaults.stringArray(forKey: Keys.lspAutoRestartDisabledServerKeys) ?? []
+        )
+    }
+
     func setFontFaces(_ faces: [String]) {
         let normalized = Self.normalizeFontFaces(faces)
         defaults.set(normalized, forKey: Keys.fontFaces)
@@ -300,6 +307,36 @@ final class AttoPreferences: NSObject {
 
     func setLspAutoRestartBaseDelaySeconds(_ seconds: Double) {
         defaults.set(Self.normalizeLspAutoRestartBaseDelaySeconds(seconds), forKey: Keys.lspAutoRestartBaseDelaySeconds)
+        postDidChange()
+    }
+
+    func isLspAutoRestartDisabledForServer(serverName: String?, serverCommand: String?) -> Bool {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return false
+        }
+        return storedLspAutoRestartDisabledServerKeys.contains(key)
+    }
+
+    func setLspAutoRestartDisabled(
+        _ disabled: Bool,
+        forServerName serverName: String?,
+        serverCommand: String?
+    ) {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return
+        }
+        var keys = Set(storedLspAutoRestartDisabledServerKeys)
+        if disabled {
+            keys.insert(key)
+        } else {
+            keys.remove(key)
+        }
+        let sorted = keys.sorted()
+        if sorted.isEmpty {
+            defaults.removeObject(forKey: Keys.lspAutoRestartDisabledServerKeys)
+        } else {
+            defaults.set(sorted, forKey: Keys.lspAutoRestartDisabledServerKeys)
+        }
         postDidChange()
     }
 
@@ -413,6 +450,20 @@ final class AttoPreferences: NSObject {
     private static func normalizeLspAutoRestartBaseDelaySeconds(_ v: Double) -> Double {
         guard v.isFinite else { return 5.0 }
         return min(max(v, 0.0), 3_600.0)
+    }
+
+    static func lspAutoRestartServerKey(serverName: String?, serverCommand: String?) -> String? {
+        let raw = serverName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? serverCommand?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        guard let raw else { return nil }
+        return raw.lowercased()
+    }
+
+    private static func normalizeLspAutoRestartServerKeys(_ keys: [String]) -> [String] {
+        Array(Set(keys.compactMap { raw in
+            let key = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return key.isEmpty ? nil : key
+        })).sorted()
     }
 
     static func normalizeCommentConfigurationKey(_ raw: String) -> String {

@@ -576,6 +576,10 @@ extension AttoEditorAreaViewController {
         guard process.state == .exited,
               status.availability == .failed || status.state == .failed,
               preferences.effectiveLspAutoRestartEnabled,
+              preferences.isLspAutoRestartDisabledForServer(
+                  serverName: status.server?.name,
+                  serverCommand: status.server?.command
+              ) == false,
               maxAttempts > 0,
               (currentState?.attempts ?? 0) < maxAttempts,
               currentState.map({ now >= $0.nextAllowedAt }) ?? true

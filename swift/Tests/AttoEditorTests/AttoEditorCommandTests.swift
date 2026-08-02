@@ -2241,7 +2241,7 @@ final class AttoEditorCommandTests: XCTestCase {
                 in: root
             ) as? NSTableView
         )
-        XCTAssertEqual(table.numberOfRows, 11)
+        XCTAssertEqual(table.numberOfRows, 12)
 
         let summaryCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("Summary -") == true)
@@ -2288,16 +2288,27 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(serverTitle.contains("Server - fake-lsp"), serverTitle)
         XCTAssertTrue(serverTitle.contains("health events 1 failed 1"), serverTitle)
         XCTAssertTrue(serverTitle.contains("persisted logs 1 failed 1"), serverTitle)
+        XCTAssertTrue(serverTitle.contains("recovery enabled"), serverTitle)
         XCTAssertTrue(serverTitle.contains("latest process exited"), serverTitle)
 
-        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 9, makeIfNecessary: true) as? NSTableCellView)
+        let serverActionCell = try XCTUnwrap(table.view(atColumn: 0, row: 9, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(
+            (serverActionCell.textField?.stringValue ?? "").contains("Recovery Action - Disable auto-restart for fake-lsp")
+        )
+
+        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 10, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("Status -") == true)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("server exited") == true)
 
-        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 10, makeIfNecessary: true) as? NSTableCellView)
+        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 11, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("Health -") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("fake-lsp") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("dashboard stderr") == true)
+
+        XCTAssertFalse(preferences.isLspAutoRestartDisabledForServer(serverName: "fake-lsp", serverCommand: nil))
+        XCTAssertTrue(vc._runProjectLspDashboardCommandForTesting(id: "lsp.project_dashboard.server_recovery.0"))
+        XCTAssertTrue(preferences.isLspAutoRestartDisabledForServer(serverName: "fake-lsp", serverCommand: nil))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP auto-restart disabled for fake-lsp")
 
         XCTAssertEqual(preferences.effectiveLspAutoRestartMaxAttempts, 7)
         XCTAssertTrue(vc._runProjectLspDashboardCommandForTesting(
@@ -5925,6 +5936,72 @@ final class AttoEditorCommandTests: XCTestCase {
         try "restart".write(to: fileURL, atomically: true, encoding: .utf8)
         let captureURL = tempDir.appendingPathComponent("auto-restart-disabled-lsp-stdin.txt")
         let scriptURL = tempDir.appendingPathComponent("auto-restart-disabled-fake-lsp.sh")
+        try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir, preferences: preferences)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        let config = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try tab.editCore.editor.lspEnable(
+            command: config.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+        tab.lspServerConfig = config
+        defer { tab.editCore.editor.lspDisable() }
+
+        _ = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: EcuLspStatusSnapshot(
+            availability: .failed,
+            state: .failed,
+            server: EcuLspServerStatus(name: "fake-lsp", version: nil, command: scriptURL.path),
+            activity: nil,
+            detail: "server exited",
+            capabilities: nil,
+            process: EcuLspProcessStatus(
+                pid: 321,
+                state: .exited,
+                exitCode: 9,
+                stderrTail: "crash"
+            ),
+            workspaceFolders: []
+        )))
+
+        let captured = try String(contentsOf: captureURL, encoding: .utf8)
+        XCTAssertEqual(vc._projectLspAutoRestartAttemptsForTesting(tabId: coreTabID), 0)
+        XCTAssertEqual(occurrenceCount(of: #""method":"textDocument/didOpen""#, in: captured), 1, captured)
+        XCTAssertEqual(occurrenceCount(of: "--session--", in: captured), 1, captured)
+    }
+
+    func testProjectLspAutoRestartCanBeDisabledForServerByPreferences() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let suiteName = "atto_command_lsp_auto_restart_server_\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = AttoPreferences(defaults: defaults, env: [:])
+        preferences.setLspAutoRestartDisabled(true, forServerName: "fake-lsp", serverCommand: nil)
+        XCTAssertTrue(preferences.effectiveLspAutoRestartEnabled)
+
+        let fileURL = tempDir.appendingPathComponent("auto_restart_server_disabled.txt")
+        try "restart".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("auto-restart-server-disabled-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("auto-restart-server-disabled-fake-lsp.sh")
         try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
 
         let vc = makeEditorArea(workspaceRootURL: tempDir, preferences: preferences)

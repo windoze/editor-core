@@ -162,6 +162,32 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.effectiveLspAutoRestartBaseDelaySeconds, 0.0)
     }
 
+    func testLspAutoRestartServerDisableListNormalizesAndToggles() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        let prefs = AttoPreferences(defaults: defaults, env: [:])
+        XCTAssertEqual(prefs.storedLspAutoRestartDisabledServerKeys, [])
+        XCTAssertEqual(
+            AttoPreferences.lspAutoRestartServerKey(serverName: "  Fake-LSP  ", serverCommand: "/bin/fake-lsp"),
+            "fake-lsp"
+        )
+        XCTAssertEqual(
+            AttoPreferences.lspAutoRestartServerKey(serverName: nil, serverCommand: "  /BIN/Fake-LSP  "),
+            "/bin/fake-lsp"
+        )
+
+        prefs.setLspAutoRestartDisabled(true, forServerName: " Fake-LSP ", serverCommand: nil)
+        XCTAssertTrue(prefs.isLspAutoRestartDisabledForServer(serverName: "fake-lsp", serverCommand: nil))
+        XCTAssertEqual(prefs.storedLspAutoRestartDisabledServerKeys, ["fake-lsp"])
+
+        prefs.setLspAutoRestartDisabled(true, forServerName: nil, serverCommand: " /bin/Other-LSP ")
+        XCTAssertEqual(prefs.storedLspAutoRestartDisabledServerKeys, ["/bin/other-lsp", "fake-lsp"])
+
+        prefs.setLspAutoRestartDisabled(false, forServerName: "FAKE-LSP", serverCommand: nil)
+        XCTAssertFalse(prefs.isLspAutoRestartDisabledForServer(serverName: "fake-lsp", serverCommand: nil))
+        XCTAssertEqual(prefs.storedLspAutoRestartDisabledServerKeys, ["/bin/other-lsp"])
+    }
+
     func testWrapModeDefaultEnvAndStoredPreference() {
         let (defaults, _) = makeIsolatedDefaults()
 
