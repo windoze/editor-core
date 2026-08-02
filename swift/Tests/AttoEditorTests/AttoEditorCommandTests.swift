@@ -4843,6 +4843,45 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try coreDocuments.snapshot().tabs.count, 2)
     }
 
+    func testOpenFileLocationUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-location-uri.txt")
+        let secondURL = tempDir.appendingPathComponent("second-location-uri.txt")
+        let renamedURL = tempDir.appendingPathComponent("renamed-location-uri.txt")
+        try "aa\nbb\ncc\n".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "renamed".write(to: renamedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+
+        let firstTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == firstURL.standardizedFileURL })
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            renamedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(firstTab.coreTabID)
+        )
+
+        XCTAssertTrue(vc.openFile(
+            url: renamedURL,
+            mode: .pinned,
+            location: .init(line1: 2, column1: 2)
+        ))
+        XCTAssertEqual(vc.tabs.count, 2)
+        XCTAssertEqual(vc.selectedTabID, firstTab.id)
+
+        let offsets = try firstTab.editCore.editor.selectionOffsets()
+        let position = try firstTab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+        XCTAssertEqual(position.line, 1)
+        XCTAssertEqual(position.column, 1)
+    }
+
     func testActiveTabProjectionUsesCoreActiveTabWhenAvailable() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

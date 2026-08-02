@@ -518,6 +518,14 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileProjectionUsesCoreTabSnapshotWhenAvailable`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testRefreshTabBarProjectsAppKitContentToCoreActiveTab`
     - `git diff --check`
+- 中间提交：`feat(app): navigate opened files from core tabs`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 用 `openFile(url:mode:location:)` 打开 core-projected existing tab 时，location navigation 的 URL 校验也按 core `document_uri` 投影执行。
+  - 提交边界：新增 projected file URL helper，并只迁移 open-with-location 的 active-tab URL guard；不主动重写 `tab.fileURL`，不新增 Rust/FFI ABI，不改变 LSP location parser、jump history、session schema 或 pane layout tree。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileLocationUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testSelectAndOpenFileUseCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileProjectionUsesCoreTabSnapshotWhenAvailable`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

@@ -137,6 +137,16 @@ extension AttoEditorAreaViewController {
         return tabs.first { $0.fileURL.standardizedFileURL == target }
     }
 
+    private func projectedFileURL(for tab: AttoEditorTab) -> URL {
+        if let projection = makeCoreProjectedTabs(),
+           let projected = projection.tabs.first(where: { $0.tab.id == tab.id })
+        {
+            return projected.fileURL.standardizedFileURL
+        }
+
+        return tab.fileURL.standardizedFileURL
+    }
+
     func restoreSession(tabs tabSnapshots: [AttoTabSnapshot], selectedTabIndex: Int?) {
         isRestoringSession = true
         defer { isRestoringSession = false }
@@ -448,7 +458,7 @@ extension AttoEditorAreaViewController {
         let ok = openFile(url: url, mode: mode)
         guard ok else { return false }
         guard let location else { return true }
-        guard let tab = activeTab, tab.fileURL.standardizedFileURL == url.standardizedFileURL else { return true }
+        guard let tab = activeTab, projectedFileURL(for: tab) == url.standardizedFileURL else { return true }
         navigate(tab: tab, to: location)
         return true
     }
