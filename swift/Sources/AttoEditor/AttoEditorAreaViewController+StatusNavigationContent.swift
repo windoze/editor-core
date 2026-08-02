@@ -8,6 +8,9 @@ extension AttoEditorAreaViewController {
     // MARK: - Status bar
 
     var activeTab: AttoEditorTab? {
+        if let coreActiveTab = coreProjectedActiveTab() {
+            return coreActiveTab
+        }
         guard let selectedTabID else { return nil }
         return tabs.first(where: { $0.id == selectedTabID })
     }

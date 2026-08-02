@@ -472,6 +472,14 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileProjectionUsesCoreTabSnapshotWhenAvailable`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testSessionSnapshotUsesCoreTabProjectionWhenAvailable`
     - `git diff --check`
+- 中间提交：`feat(app): project active tab from core tabs`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor active-tab 查询在 core snapshot 可用时消费 `MultiDocumentEditorUI.snapshot()` 中的 active tab，而不是只读 Swift `selectedTabID`。
+  - 提交边界：只调整 `activeTab` 读取路径，并让 command keymap context、窗口标题等既有 active-tab 消费者自然跟随 core active tab；保留 Swift `selectedTabID` fallback。本提交不自动切换 AppKit content view，不改变 tab selection command，不新增 Rust/FFI ABI，也不实现 pane layout tree。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testActiveTabProjectionUsesCoreActiveTabWhenAvailable`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileProjectionUsesCoreTabSnapshotWhenAvailable`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMoveTabCommandsReorderAppKitProjectionAndCoreMirror`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

@@ -4669,6 +4669,40 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(callbackSelectedID, secondTab.id)
     }
 
+    func testActiveTabProjectionUsesCoreActiveTabWhenAvailable() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-active.txt")
+        let secondURL = tempDir.appendingPathComponent("second-active.txt")
+        let thirdURL = tempDir.appendingPathComponent("third-active.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "third".write(to: thirdURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.openFile(url: thirdURL, mode: .pinned)
+        XCTAssertEqual(vc.selectedTabID, vc.tabs.first { $0.fileURL.standardizedFileURL == thirdURL.standardizedFileURL }?.id)
+
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        let secondTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == secondURL.standardizedFileURL })
+        let secondCoreTabID = try XCTUnwrap(secondTab.coreTabID)
+        try coreDocuments.setActiveTab(secondCoreTabID)
+
+        XCTAssertEqual(vc.activeTab?.id, secondTab.id)
+        let keymapContext = vc.keymapContextForActiveState()
+        XCTAssertEqual(keymapContext.values["file_name"], .string("second-active.txt"))
+        XCTAssertEqual(keymapContext.values["file_extension"], .string("txt"))
+
+        vc.updateWindowTitle()
+        XCTAssertEqual(window.title, "AttoEditor — second-active.txt")
+    }
+
     func testSessionRestoreRestoresSplitPanesIntoCoreMirror() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

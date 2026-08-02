@@ -103,6 +103,18 @@ extension AttoEditorAreaViewController {
         return (snapshot: coreSnapshot, tabs: projectedTabs)
     }
 
+    func coreProjectedActiveTab() -> AttoEditorTab? {
+        guard let projection = makeCoreProjectedTabs(),
+              let selectedID = projectedSelectedTabID(
+                  snapshot: projection.snapshot,
+                  projectedTabs: projection.tabs
+              )
+        else {
+            return nil
+        }
+        return projection.tabs.first(where: { $0.tab.id == selectedID })?.tab
+    }
+
     private func sessionFileURL(for coreTab: EcuMultiDocumentTabSnapshot, fallback: URL) -> URL {
         if let documentURI = coreTab.documentURI,
            let url = URL(string: documentURI),
