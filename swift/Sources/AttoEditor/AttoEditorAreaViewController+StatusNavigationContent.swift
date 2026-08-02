@@ -487,6 +487,37 @@ extension AttoEditorAreaViewController {
         return true
     }
 
+    @discardableResult
+    func showProjectLspProcessHealthLogPanel() -> Bool {
+        drainProjectLspPanelLifecycleEvents()
+
+        let entries = Array(projectLspProcessHealthLogStore.loadRecent(
+            workspaceRootURL: workspaceRootURL,
+            limit: Self.maxLspResultEventHistoryEntries
+        ).reversed())
+        guard entries.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+        guard let window = view.window else {
+            return false
+        }
+
+        let commands = entries.enumerated().map { idx, entry in
+            AttoCommandPaletteCommand(
+                id: "lsp.project_process_health_log_entry.\(idx)",
+                title: Self.projectLspProcessHealthLogEntryTitle(entry)
+            ) {}
+        }
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.ProjectProcessHealthLog",
+            commandsProvider: { commands }
+        )
+        projectLspProcessHealthLogController = controller
+        controller.show(relativeTo: window, placeholder: "Filter LSP process health log...")
+        return true
+    }
+
     static func projectLspStatusEventTitle(_ event: AttoProjectLspPanelErrorEvent) -> String {
         let source = event.source.rawValue.capitalized
         let scope = projectLspEventScope(tabId: event.tabId, viewIndex: event.viewIndex)

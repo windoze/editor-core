@@ -92,6 +92,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.show_workspace_problems_panel"))
         XCTAssertTrue(ids.contains("lsp.show_project_lsp_status"))
         XCTAssertTrue(ids.contains("lsp.show_project_lsp_health"))
+        XCTAssertTrue(ids.contains("lsp.show_project_lsp_health_log"))
         XCTAssertTrue(ids.contains("lsp.restart_server"))
         XCTAssertTrue(ids.contains("lsp.restart_project_servers"))
         XCTAssertTrue(ids.contains("lsp.document_colors"))
@@ -1459,6 +1460,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workspace_problems_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_project_lsp_status", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_project_lsp_health", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_project_lsp_health_log", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_server", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_project_servers", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
@@ -2211,6 +2213,88 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(cell.textField?.stringValue.contains("persisted-lsp") == true)
         XCTAssertTrue(cell.textField?.stringValue.contains("process exited pid 999 exit 12") == true)
         XCTAssertTrue(cell.textField?.stringValue.contains("persisted stderr") == true)
+    }
+
+    func testProjectLspProcessHealthLogPanelShowsPersistedLog() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let otherRoot = tempDir.appendingPathComponent("other", isDirectory: true)
+        try FileManager.default.createDirectory(at: otherRoot, withIntermediateDirectories: true)
+        let logStore = AttoProjectLspProcessHealthLogStore(
+            logFileURL: tempDir.appendingPathComponent("lsp-health.jsonl")
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 1,
+                sourceSequence: 10,
+                tabId: 1,
+                viewIndex: 0,
+                viewId: 100,
+                serverName: "other-lsp",
+                serverCommand: "other-lsp",
+                availability: "failed",
+                state: "failed",
+                detail: "other exit",
+                process: EcuLspProcessStatus(pid: 100, state: .exited, exitCode: 1)
+            ),
+            workspaceRootURL: otherRoot,
+            recordedAt: Date(timeIntervalSince1970: 1_785_715_200)
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 2,
+                sourceSequence: 20,
+                tabId: 2,
+                viewIndex: 1,
+                viewId: 200,
+                serverName: "persisted-lsp",
+                serverCommand: "persisted-lsp",
+                availability: "failed",
+                state: "failed",
+                detail: "persisted exit",
+                process: EcuLspProcessStatus(
+                    pid: 999,
+                    state: .exited,
+                    exitCode: 12,
+                    stderrTail: "persisted stderr"
+                )
+            ),
+            workspaceRootURL: tempDir,
+            recordedAt: Date(timeIntervalSince1970: 1_785_715_201)
+        )
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir, projectLspProcessHealthLogStore: logStore)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+
+        XCTAssertTrue(vc.showProjectLspProcessHealthLogPanel())
+
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.ProjectProcessHealthLog")
+        })
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.LSP.ProjectProcessHealthLog"),
+                in: root
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter LSP process health log...")
+        let table = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.ProjectProcessHealthLog"),
+                in: root
+            ) as? NSTableView
+        )
+        XCTAssertEqual(table.numberOfRows, 1)
+        let cell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(cell.textField?.stringValue.contains("persisted-lsp") == true)
+        XCTAssertTrue(cell.textField?.stringValue.contains("process exited pid 999 exit 12") == true)
+        XCTAssertTrue(cell.textField?.stringValue.contains("persisted stderr") == true)
+        XCTAssertFalse(cell.textField?.stringValue.contains("other-lsp") == true)
     }
 
     func testEmptyLocationResultUsesUnifiedFeedbackStatus() throws {

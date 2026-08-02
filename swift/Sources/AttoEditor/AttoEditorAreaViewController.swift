@@ -952,6 +952,7 @@ final class AttoEditorAreaViewController: NSViewController {
     let projectLspProcessHealthLogStore: AttoProjectLspProcessHealthLogStore
     var projectLspStatusEventsController: AttoCommandPaletteController?
     var projectLspProcessHealthController: AttoCommandPaletteController?
+    var projectLspProcessHealthLogController: AttoCommandPaletteController?
     var coreLspRequestEventCursor: UInt64 = 0
     var coreLspResultEventCursor: UInt64 = 0
     var coreLspStateEventCursor: UInt64 = 0
