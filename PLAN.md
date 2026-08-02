@@ -1019,6 +1019,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthLogPanelUsesFieldFilterQuery`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthLogPanelShowsPersistedLog`
     - `git diff --check`
+- 中间提交：`feat(app): auto-restart exited lsp servers`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；在阶段 262-282 的 process health 可观测性、restart command 和 log 基础上补自动崩溃恢复起点。
+  - 提交边界：AttoEditor 在记录 process health status 时，如果事件带 core tab id、status/process 明确为 failed/exited、tab 仍打开且保存了 LSP launch config，则复用现有 `restartLspServer(...)` pipeline 自动重启该 tab 的 LSP session；同一 tab 在收到新的 healthy running status 前只自动尝试一次，避免崩溃循环。本提交不新增 Rust/C ABI，不改变 core LSP ownership schema、不实现跨 project recovery policy、指数退避、用户配置项或完整 dashboard 级健康视图。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthAutoRestartsExitedConfiguredTab`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerRestartsActiveTabSession`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

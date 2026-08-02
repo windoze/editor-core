@@ -808,6 +808,7 @@ extension AttoEditorAreaViewController {
         } catch {
             NSLog("AttoEditor: failed to persist project LSP process health event: %@", String(describing: error))
         }
+        attemptProjectLspAutoRestart(tabId: tabId, status: status)
         return event
     }
 

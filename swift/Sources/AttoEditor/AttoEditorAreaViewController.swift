@@ -953,6 +953,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var projectLspStatusEventsController: AttoCommandPaletteController?
     var projectLspProcessHealthController: AttoCommandPaletteController?
     var projectLspProcessHealthLogController: AttoCommandPaletteController?
+    var projectLspAutoRestartAttemptedTabIDs: Set<UInt64> = []
     var coreLspRequestEventCursor: UInt64 = 0
     var coreLspResultEventCursor: UInt64 = 0
     var coreLspStateEventCursor: UInt64 = 0

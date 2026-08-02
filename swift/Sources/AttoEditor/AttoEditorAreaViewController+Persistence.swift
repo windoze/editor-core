@@ -556,6 +556,53 @@ extension AttoEditorAreaViewController {
         return false
     }
 
+    @discardableResult
+    func attemptProjectLspAutoRestart(tabId: UInt64?, status: EcuLspStatusSnapshot?) -> Bool {
+        guard let tabId, let status, let process = status.process else {
+            return false
+        }
+
+        if process.state == .running,
+           status.availability != .failed,
+           status.state != .failed
+        {
+            projectLspAutoRestartAttemptedTabIDs.remove(tabId)
+            return false
+        }
+
+        guard process.state == .exited,
+              status.availability == .failed || status.state == .failed,
+              projectLspAutoRestartAttemptedTabIDs.contains(tabId) == false
+        else {
+            return false
+        }
+
+        guard let target = coreProjectedTabsForWorkspaceLifecycle().first(where: { $0.tab.coreTabID == tabId }),
+              let config = target.tab.lspServerConfig
+        else {
+            return false
+        }
+
+        projectLspAutoRestartAttemptedTabIDs.insert(tabId)
+        do {
+            try restartLspServer(for: target.tab, documentURL: target.fileURL, config: config)
+            updateAlwaysPollProcessingForSelectedTab()
+            updateStatusBar()
+            setTransientStatusText("LSP server auto-restarted")
+            return true
+        } catch {
+            target.tab.lspServerConfig = config
+            updateAlwaysPollProcessingForSelectedTab()
+            updateStatusBar()
+            NSLog(
+                "AttoEditor: project LSP auto-restart failed for %@: %@",
+                target.fileURL.path,
+                String(describing: error)
+            )
+            return false
+        }
+    }
+
     private func restartLspServer(
         for tab: AttoEditorTab,
         documentURL: URL,
