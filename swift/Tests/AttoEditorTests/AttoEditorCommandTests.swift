@@ -2126,6 +2126,25 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Rename: no results")
     }
 
+    func testEmptyHierarchyResultsUseUnifiedFeedbackStatus() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("empty-hierarchy.swift")
+        try "func caller() {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc._showHierarchyResultJSONForTesting("[]", kind: "callIncoming", showFeedback: true))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Call hierarchy: no results")
+
+        XCTAssertFalse(vc._showHierarchyResultJSONForTesting("[]", kind: "typeSupertypes", showFeedback: true))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Type hierarchy: no results")
+    }
+
     func testDocumentColorResultsRecordLspResultEvents() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

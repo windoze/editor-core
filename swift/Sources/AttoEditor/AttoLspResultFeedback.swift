@@ -22,6 +22,8 @@ enum AttoLspResultFeedback {
         case rename
         case codeActions
         case codeActionResolve
+        case callHierarchy
+        case typeHierarchy
         case selectionRange
         case signatureHelp
         case linkedEditing
@@ -60,6 +62,10 @@ enum AttoLspResultFeedback {
                 return "Code actions"
             case .codeActionResolve:
                 return "Code action resolve"
+            case .callHierarchy:
+                return "Call hierarchy"
+            case .typeHierarchy:
+                return "Type hierarchy"
             case .selectionRange:
                 return "Selection range"
             case .signatureHelp:
@@ -123,6 +129,10 @@ enum AttoLspResultFeedback {
                 return "Code actions are unavailable."
             case .codeActionResolve:
                 return "Code action resolve is unavailable."
+            case .callHierarchy:
+                return "Call hierarchy is unavailable."
+            case .typeHierarchy:
+                return "Type hierarchy is unavailable."
             case .selectionRange:
                 return "Selection range is unavailable."
             case .signatureHelp:
@@ -168,6 +178,10 @@ enum AttoLspResultFeedback {
                 return "No code actions are available here."
             case .codeActionResolve:
                 return "Resolved code action has no edits or command."
+            case .callHierarchy:
+                return "No call hierarchy results are available here."
+            case .typeHierarchy:
+                return "No type hierarchy results are available here."
             case .selectionRange:
                 return "No larger selection range is available."
             case .signatureHelp:

@@ -261,7 +261,7 @@ Swift 侧已经具备以下基础能力：
 | document symbols / workspace symbols | 已有 request/take | 已有 symbols typed payload | quick panel、incremental workspace symbol panel、outline/persistent panel 已消费 typed payload；阶段 167 已让显式 symbols 命令的 unavailable/request failed/failed/timeout/empty 接入统一 feedback | result/request events 和 history entry 已有 | 状态订阅驱动 outline/symbols refresh 与 stale 展示 |
 | formatting / range formatting / on-type formatting | document/range/on-type blocking apply 已有；on-type async lifecycle 已有 | 已有 `EditorCoreLSPFormattingResult` outcome，但不是通用 LSP payload envelope | document/selection format command 和 on-type trigger path 已有 | on-type request lifecycle 已覆盖，status/detail 可记录异步失败 | 统一 feedback；格式化 edit apply 后续纳入 core-owned WorkspaceEdit/current-document transaction 语义 |
 | document color / color presentation | 已有 request/take | 已有 color typed payload | color quick panel、direct color picker、presentation apply 已消费 typed payload；阶段 169 已让显式 document color / color presentation 的 unavailable/request failed/failed/timeout/empty/apply failed 接入统一 feedback | result/request events 已覆盖 | 持久颜色面板、多文档/workspace 聚合；状态订阅驱动 stale/metadata |
-| call hierarchy / type hierarchy | 已有 prepare/children request/take | 已有 hierarchy typed payload | 基础 quick panel 导航和 children request 已消费 typed payload | result/request events 已覆盖 | 持久树状面板、展开/刷新、跨文件聚合和统一 feedback |
+| call hierarchy / type hierarchy | 已有 prepare/children request/take | 已有 hierarchy typed payload | 基础 quick panel 导航和 children request 已消费 typed payload；阶段 171 已让显式 call/type hierarchy 的 unavailable/request failed/failed/timeout/empty 接入统一 feedback | result/request events 已覆盖 | 持久树状面板、展开/刷新、跨文件聚合；状态订阅驱动 stale/metadata |
 | diagnostics pull / publish diagnostics projection | pull request/take 已有；publish notification projection 已有 | pull diagnostics typed payload 已有；publish 走 derived-state/workspace store projection | Problems quick/persistent/workspace panel、markers、status summary 已消费 unified model；阶段 163 已让 workspace diagnostics 显式请求/空结果/超时进入统一 feedback 起点 | diagnostics lifecycle、workspace diagnostics events、request/result events 已覆盖 | 状态订阅模型驱动 stale/refresh；统一 feedback 中继续保留 pull error/partial result 元数据 |
 | selection range | 已有 request/take | 已有 selection range typed payload | expand-selection 主路径已消费 typed payload；阶段 163 已接入统一 feedback 起点 | result/request events 已覆盖 | 多光标 session state 后续由状态订阅驱动，继续补 event-driven feedback |
 | linked editing | 已有 request/take | 已有 linked editing typed payload | linked editing multi-cursor/session 主路径已消费 typed payload；阶段 163 已接入统一 feedback 起点 | result/request events 已覆盖 | session lifecycle 与状态订阅统一，继续补 event-driven feedback |
@@ -279,7 +279,7 @@ Swift 侧已经具备以下基础能力：
 
 本阶段已迁移这些用户可见路径：folding ranges refresh/apply、semantic tokens typed apply、selection range、linked editing、code lens refresh、workspace diagnostics 的空结果/失败/超时/不可用反馈。测试新增 `AttoLspResultFeedbackTests`，并用 `AttoEditorCommandTests/testUnifiedLspFeedbackUpdatesTransientStatusForEmptyFoldingRanges` 验证 App 主路径会写入 transient status。
 
-阶段 163 仍只是统一 feedback 的第一步：hover、signature help、completion、location、symbols、rename/code action、document color、hierarchy 等路径当时仍有各自的 popup/panel/formatter 逻辑；阶段 164-170 已继续迁移 hover typed payload、signature help、location、symbols、completion、document color / color presentation 以及 rename/code action 显式命令反馈。下一步应继续把 hierarchy 等路径接入同一个 feedback sink，并让 core-owned request/result/state event stream 驱动 feedback 的生命周期、stale/refresh 展示和 result panel metadata。
+阶段 163 仍只是统一 feedback 的第一步：hover、signature help、completion、location、symbols、rename/code action、document color、hierarchy 等路径当时仍有各自的 popup/panel/formatter 逻辑；阶段 164-171 已继续迁移 hover typed payload、signature help、location、symbols、completion、document color / color presentation、rename/code action 以及 call/type hierarchy 显式命令反馈。下一步应继续把 formatting、inlay hints、document links 等剩余路径接入同一个 feedback sink，并让 core-owned request/result/state event stream 驱动 feedback 的生命周期、stale/refresh 展示和 result panel metadata。
 
 ## 阶段 164: Hover typed payload wrapper
 
@@ -322,6 +322,12 @@ AttoEditor `AttoLspSignatureHelpFormatter` 已改为直接消费 UIFFI typed res
 2026-08-02 阶段 170 已把显式 rename 与 code action 用户路径接入统一 feedback：`AttoLspResultFeedback` 新增 rename、code actions 和 code action resolve feature。显式 rename 的 LSP disabled、request failed、take failed、timeout、空 WorkspaceEdit / 无法解码结果会写入 transient status 并复用 detail popover；prepareRename 仍保留失败时回退本地候选名的低摩擦行为。
 
 本阶段还让 code action / resolve 的 LSP disabled、request failed、take failed、timeout、empty result、disabled action 和 resolve 后无可应用 edit/command 走同一个 feedback sink。既有 quick panel、kind filter、WorkspaceEdit apply summary、executeCommand result HUD 和 result lifecycle event 行为不变；剩余工作转为 core-owned WorkspaceEdit 跨文件事务、executeCommand typed result model，以及由状态订阅驱动的 stale/metadata 展示。
+
+## 阶段 171: Hierarchy feedback unification
+
+2026-08-02 阶段 171 已把显式 call hierarchy / type hierarchy 用户路径接入统一 feedback：`AttoLspResultFeedback` 新增 call hierarchy 和 type hierarchy feature，prepare 请求和 children 请求的 LSP disabled、position failed、request failed、take failed、timeout 与 empty result 都会写入 transient status 并复用 detail popover。
+
+本阶段保留现有 prepare root 选择、single-root 自动进入 children 请求、children quick panel 导航和 typed payload parser 行为不变，只把原本静默或仅 beep 的失败/空结果路径接入统一 feedback。后续 hierarchy family 的剩余工作仍是持久树状面板、层级展开/刷新、跨文件/workspace 聚合，以及状态订阅驱动 stale/metadata。
 
 ## 分层结论
 

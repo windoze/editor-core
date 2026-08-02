@@ -174,6 +174,20 @@ final class AttoLspResultFeedbackTests: XCTestCase {
                 detailText: "Code action resolve request timed out."
             )
         )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.callHierarchy),
+            AttoLspResultFeedback.Message(
+                statusText: "Call hierarchy: no results",
+                detailText: "No call hierarchy results are available here."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.requestFailed(.typeHierarchy, errorDescription: "server busy"),
+            AttoLspResultFeedback.Message(
+                statusText: "Type hierarchy: request failed",
+                detailText: "Type hierarchy request failed.\nserver busy"
+            )
+        )
     }
 
     func testRefreshSummaryFormatsSingularAndPluralCounts() {
