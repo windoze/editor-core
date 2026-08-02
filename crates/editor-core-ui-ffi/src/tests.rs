@@ -76,6 +76,11 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags()
+            & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_EVENTS,
+        0
+    );
 }
 
 #[test]
@@ -329,6 +334,34 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     assert_eq!(apply_value["mode"], "apply");
     assert_eq!(apply_value["applied"], true);
     assert_eq!(apply_value["applied_uris"][0], "file:///project/Beta.swift");
+
+    let mut transaction_event_sequence = 0u64;
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_latest_sequence(
+                multi,
+                &mut transaction_event_sequence,
+            )
+        },
+        ECU_OK
+    );
+    assert_eq!(transaction_event_sequence, 1);
+    let transaction_events_ptr =
+        editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_json(multi, 0);
+    assert!(!transaction_events_ptr.is_null());
+    let transaction_events_json = unsafe { std::ffi::CStr::from_ptr(transaction_events_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(transaction_events_ptr) };
+    let transaction_events_value: serde_json::Value =
+        serde_json::from_str(&transaction_events_json).unwrap();
+    assert_eq!(transaction_events_value["latest_sequence"], 1);
+    assert_eq!(transaction_events_value["events"][0]["operation"], "apply");
+    assert_eq!(
+        transaction_events_value["events"][0]["result"]["applied_uris"][0],
+        "file:///project/Beta.swift"
+    );
+
     let edited_beta_text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, beta_id);
     assert!(!edited_beta_text_ptr.is_null());
     let edited_beta_text = unsafe { std::ffi::CStr::from_ptr(edited_beta_text_ptr) }

@@ -330,10 +330,22 @@ fn multi_document_ui_previews_and_applies_workspace_edit_transactions() {
         ]
     );
 
+    let events = ui.workspace_edit_transaction_events_after(0);
+    assert_eq!(events.latest_sequence, 1);
+    assert_eq!(events.events.len(), 1);
+    assert_eq!(events.events[0].sequence, 1);
+    assert_eq!(events.events[0].operation, "apply");
+    assert_eq!(events.events[0].result.applied_uris, applied.applied_uris);
+
     let json: serde_json::Value =
         serde_json::from_str(&ui.preview_workspace_edit_transaction_json(edit).unwrap()).unwrap();
     assert_eq!(json["mode"], "preview");
     assert_eq!(json["documents"][0]["uri"], "file:///tmp/project/App.swift");
+
+    let events_json: serde_json::Value =
+        serde_json::from_str(&ui.workspace_edit_transaction_events_json(0).unwrap()).unwrap();
+    assert_eq!(events_json["latest_sequence"], 1);
+    assert_eq!(events_json["events"][0]["result"]["mode"], "apply");
 }
 
 #[test]

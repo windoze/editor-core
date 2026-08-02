@@ -3,7 +3,9 @@ use crate::UiError;
 use editor_core_lsp::{summarize_workspace_edit, workspace_edit_text_edits};
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+const MAX_WORKSPACE_EDIT_TRANSACTION_EVENTS: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct WorkspaceEditTransactionDocument {
@@ -24,6 +26,75 @@ pub struct WorkspaceEditTransactionResult {
     pub skipped_uris: Vec<String>,
     pub unsupported_operation_uris: Vec<String>,
     pub documents: Vec<WorkspaceEditTransactionDocument>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct WorkspaceEditTransactionEvent {
+    pub sequence: u64,
+    pub operation: String,
+    pub result: WorkspaceEditTransactionResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct WorkspaceEditTransactionEventsSnapshot {
+    pub latest_sequence: u64,
+    pub events: Vec<WorkspaceEditTransactionEvent>,
+}
+
+#[derive(Default)]
+pub(crate) struct WorkspaceEditTransactionEventStore {
+    next_sequence: u64,
+    events: VecDeque<WorkspaceEditTransactionEvent>,
+}
+
+impl WorkspaceEditTransactionEventStore {
+    pub(crate) fn record(
+        &mut self,
+        operation: impl Into<String>,
+        result: WorkspaceEditTransactionResult,
+    ) {
+        if self.next_sequence == 0 {
+            self.next_sequence = 1;
+        }
+        let sequence = self.next_sequence;
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        self.events.push_back(WorkspaceEditTransactionEvent {
+            sequence,
+            operation: operation.into(),
+            result,
+        });
+
+        while self.events.len() > MAX_WORKSPACE_EDIT_TRANSACTION_EVENTS {
+            self.events.pop_front();
+        }
+    }
+
+    pub(crate) fn latest_sequence(&self) -> u64 {
+        self.next_sequence.saturating_sub(1)
+    }
+
+    pub(crate) fn events_after(
+        &self,
+        after_sequence: u64,
+    ) -> WorkspaceEditTransactionEventsSnapshot {
+        WorkspaceEditTransactionEventsSnapshot {
+            latest_sequence: self.latest_sequence(),
+            events: self
+                .events
+                .iter()
+                .filter(|event| event.sequence > after_sequence)
+                .cloned()
+                .collect(),
+        }
+    }
+
+    pub(crate) fn events_after_json(&self, after_sequence: u64) -> Result<String, UiError> {
+        serde_json::to_string(&self.events_after(after_sequence)).map_err(|err| {
+            UiError::Processor(format!(
+                "failed to encode workspace edit transaction events: {err}"
+            ))
+        })
+    }
 }
 
 pub(super) fn preview(
@@ -97,14 +168,6 @@ pub(super) fn preview_json(
     workspace_edit_json: &str,
 ) -> Result<String, UiError> {
     encode(preview(tabs, tab_order, workspace_edit_json)?)
-}
-
-pub(super) fn apply_json(
-    tabs: &mut BTreeMap<TabId, TabEntry>,
-    tab_order: &[TabId],
-    workspace_edit_json: &str,
-) -> Result<String, UiError> {
-    encode(apply(tabs, tab_order, workspace_edit_json)?)
 }
 
 struct WorkspaceEditTransactionPlan {

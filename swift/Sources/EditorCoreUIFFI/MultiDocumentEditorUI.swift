@@ -90,6 +90,22 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
     }
 }
 
+public struct EcuWorkspaceEditTransactionEvent: Decodable, Equatable, Sendable {
+    public let sequence: UInt64
+    public let operation: String
+    public let result: EcuWorkspaceEditTransactionResult
+}
+
+public struct EcuWorkspaceEditTransactionEventsSnapshot: Decodable, Equatable, Sendable {
+    public let latestSequence: UInt64
+    public let events: [EcuWorkspaceEditTransactionEvent]
+
+    private enum CodingKeys: String, CodingKey {
+        case latestSequence = "latest_sequence"
+        case events
+    }
+}
+
 public struct EcuWorkspaceDiagnosticTarget: Decodable, Equatable, Sendable {
     public let uri: String
     public let line: UInt32
@@ -638,6 +654,27 @@ public final class MultiDocumentEditorUI {
             EcuWorkspaceEditTransactionResult.self,
             from: applyWorkspaceEditTransactionJSON(workspaceEditJSON),
             context: "multi_document_apply_workspace_edit_transaction_decode"
+        )
+    }
+
+    public func workspaceEditTransactionEventsLatestSequence() throws -> UInt64 {
+        var sequence: UInt64 = 0
+        let status = editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_latest_sequence(handle, &sequence)
+        try library.ensureStatus(status, context: "multi_document_workspace_edit_transaction_events_latest_sequence")
+        return sequence
+    }
+
+    public func workspaceEditTransactionEventsJSON(after sequence: UInt64 = 0) throws -> String {
+        try ffiStringResult(context: "multi_document_workspace_edit_transaction_events_json") {
+            editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_json(handle, sequence)
+        }
+    }
+
+    public func workspaceEditTransactionEvents(after sequence: UInt64 = 0) throws -> EcuWorkspaceEditTransactionEventsSnapshot {
+        try decode(
+            EcuWorkspaceEditTransactionEventsSnapshot.self,
+            from: workspaceEditTransactionEventsJSON(after: sequence),
+            context: "multi_document_workspace_edit_transaction_events_decode"
         )
     }
 

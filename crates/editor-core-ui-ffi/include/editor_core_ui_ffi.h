@@ -157,6 +157,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT (1ull << 18)
 #define ECU_FEATURE_MULTI_DOCUMENT_TAB_DOCUMENT_URI (1ull << 19)
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION (1ull << 20)
+#define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_EVENTS (1ull << 21)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 
 MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);
@@ -249,6 +250,12 @@ char* editor_core_ui_ffi_multi_document_preview_workspace_edit_transaction_json(
 char* editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
     MultiDocumentEditorUi* multi,
     const char* workspace_edit_json_utf8);
+int32_t editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_latest_sequence(
+    MultiDocumentEditorUi* multi,
+    uint64_t* out_sequence);
+char* editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_json(
+    MultiDocumentEditorUi* multi,
+    uint64_t after_sequence);
 char* editor_core_ui_ffi_multi_document_apply_workspace_diagnostics_json(
     MultiDocumentEditorUi* multi,
     const char* result_json_utf8);

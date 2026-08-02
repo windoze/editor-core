@@ -17,7 +17,10 @@ pub use workspace_diagnostics::{
     WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
     WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
 };
-pub use workspace_edit::{WorkspaceEditTransactionDocument, WorkspaceEditTransactionResult};
+pub use workspace_edit::{
+    WorkspaceEditTransactionDocument, WorkspaceEditTransactionEvent,
+    WorkspaceEditTransactionEventsSnapshot, WorkspaceEditTransactionResult,
+};
 pub use workspace_outline::{WorkspaceOutlineDocument, WorkspaceOutlineSnapshot};
 
 /// Opaque id for an open tab/document managed by [`MultiDocumentEditorUi`].
@@ -79,6 +82,7 @@ pub struct MultiDocumentEditorUi {
     lsp_result_events: lsp_result_events::MultiDocumentLspResultEventStore,
     lsp_request_events: lsp_request_events::MultiDocumentLspRequestEventStore,
     state_events: state_events::MultiDocumentStateEventStore,
+    workspace_edit_transactions: workspace_edit::WorkspaceEditTransactionEventStore,
 }
 
 impl MultiDocumentEditorUi {
@@ -613,7 +617,10 @@ impl MultiDocumentEditorUi {
         &mut self,
         workspace_edit_json: &str,
     ) -> Result<WorkspaceEditTransactionResult, UiError> {
-        workspace_edit::apply(&mut self.tabs, &self.tab_order, workspace_edit_json)
+        let result = workspace_edit::apply(&mut self.tabs, &self.tab_order, workspace_edit_json)?;
+        self.workspace_edit_transactions
+            .record("apply", result.clone());
+        Ok(result)
     }
 
     /// Apply an LSP `WorkspaceEdit` to matching open tabs owned by this model as JSON.
@@ -621,7 +628,35 @@ impl MultiDocumentEditorUi {
         &mut self,
         workspace_edit_json: &str,
     ) -> Result<String, UiError> {
-        workspace_edit::apply_json(&mut self.tabs, &self.tab_order, workspace_edit_json)
+        let result = self.apply_workspace_edit_transaction(workspace_edit_json)?;
+        serde_json::to_string(&result).map_err(|err| {
+            UiError::Processor(format!(
+                "failed to encode workspace edit transaction: {err}"
+            ))
+        })
+    }
+
+    /// Return latest WorkspaceEdit transaction event sequence.
+    pub fn workspace_edit_transaction_events_latest_sequence(&self) -> u64 {
+        self.workspace_edit_transactions.latest_sequence()
+    }
+
+    /// Return WorkspaceEdit transaction events newer than `after_sequence`.
+    pub fn workspace_edit_transaction_events_after(
+        &self,
+        after_sequence: u64,
+    ) -> WorkspaceEditTransactionEventsSnapshot {
+        self.workspace_edit_transactions
+            .events_after(after_sequence)
+    }
+
+    /// Return WorkspaceEdit transaction events newer than `after_sequence` as JSON.
+    pub fn workspace_edit_transaction_events_json(
+        &self,
+        after_sequence: u64,
+    ) -> Result<String, UiError> {
+        self.workspace_edit_transactions
+            .events_after_json(after_sequence)
     }
 
     /// Clear the project/workspace diagnostic state owned by this multi-document UI model.

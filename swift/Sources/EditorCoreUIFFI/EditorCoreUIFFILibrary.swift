@@ -81,6 +81,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let workspaceOutlineSnapshot = Self(rawValue: 1 << 18)
     public static let multiDocumentTabDocumentURI = Self(rawValue: 1 << 19)
     public static let multiDocumentWorkspaceEditTransaction = Self(rawValue: 1 << 20)
+    public static let multiDocumentWorkspaceEditTransactionEvents = Self(rawValue: 1 << 21)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

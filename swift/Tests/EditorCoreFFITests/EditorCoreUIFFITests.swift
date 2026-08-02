@@ -96,6 +96,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.workspaceOutlineSnapshot))
         XCTAssertTrue(info.supports(.multiDocumentTabDocumentURI))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransaction))
+        XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransactionEvents))
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {
@@ -397,6 +398,13 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(transactionApply.applied)
         XCTAssertEqual(transactionApply.appliedURIs, ["file:///project/Beta.swift"])
         XCTAssertEqual(transactionApply.appliedEditCount, 1)
+
+        XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
+        let transactionEvents = try multi.workspaceEditTransactionEvents()
+        XCTAssertEqual(transactionEvents.latestSequence, 1)
+        XCTAssertEqual(transactionEvents.events.map(\.operation), ["apply"])
+        XCTAssertEqual(transactionEvents.events.first?.result.appliedURIs, ["file:///project/Beta.swift"])
+
         XCTAssertEqual(try multi.tabText(tabId: beta), "BETA saved mirror")
         try multi.markTabSaved(beta)
 

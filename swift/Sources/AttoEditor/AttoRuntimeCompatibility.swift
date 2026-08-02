@@ -157,6 +157,11 @@ struct AttoRuntimeCompatibility {
             name: "multi-document WorkspaceEdit transaction",
             reason: "WorkspaceEdit preview/apply can be owned by the core multi-document model for open tabs; Swift keeps App-level WorkspaceEdit application as a fallback while resource operations continue migrating."
         ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceEditTransactionEvents,
+            name: "multi-document WorkspaceEdit transaction events",
+            reason: "Project-level UI can observe core-owned WorkspaceEdit transaction results through a cursor; Swift keeps direct apply summaries as a fallback."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {
