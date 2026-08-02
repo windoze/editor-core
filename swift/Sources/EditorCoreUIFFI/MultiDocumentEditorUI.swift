@@ -215,6 +215,52 @@ public struct EcuMultiDocumentLSPResultEventsSnapshot: Decodable, Equatable, Sen
     }
 }
 
+public struct EcuMultiDocumentLSPRequestEvent: Decodable, Equatable, Sendable {
+    public let sequence: UInt64
+    public let tabId: UInt64
+    public let viewIndex: Int
+    public let viewId: UInt64
+    public let sourceSequence: UInt64
+    public let sourceResultSequence: UInt64?
+    public let family: String
+    public let title: String
+    public let slot: String
+    public let method: String
+    public let requestId: UInt64
+    public let phase: String
+    public let status: String
+    public let errorCode: Int64?
+    public let errorMessage: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case sequence
+        case tabId = "tab_id"
+        case viewIndex = "view_index"
+        case viewId = "view_id"
+        case sourceSequence = "source_sequence"
+        case sourceResultSequence = "source_result_sequence"
+        case family
+        case title
+        case slot
+        case method
+        case requestId = "request_id"
+        case phase
+        case status
+        case errorCode = "error_code"
+        case errorMessage = "error_message"
+    }
+}
+
+public struct EcuMultiDocumentLSPRequestEventsSnapshot: Decodable, Equatable, Sendable {
+    public let latestSequence: UInt64
+    public let events: [EcuMultiDocumentLSPRequestEvent]
+
+    private enum CodingKeys: String, CodingKey {
+        case latestSequence = "latest_sequence"
+        case events
+    }
+}
+
 public final class MultiDocumentEditorUI {
     public let library: EditorCoreUIFFILibrary
     private let handle: OpaquePointer
@@ -537,6 +583,27 @@ public final class MultiDocumentEditorUI {
             EcuMultiDocumentLSPResultEventsSnapshot.self,
             from: lspResultEventsJSON(after: sequence),
             context: "multi_document_lsp_result_events_decode"
+        )
+    }
+
+    public func lspRequestEventsLatestSequence() throws -> UInt64 {
+        var sequence: UInt64 = 0
+        let status = editor_core_ui_ffi_multi_document_lsp_request_events_latest_sequence(handle, &sequence)
+        try library.ensureStatus(status, context: "multi_document_lsp_request_events_latest_sequence")
+        return sequence
+    }
+
+    public func lspRequestEventsJSON(after sequence: UInt64 = 0) throws -> String {
+        try ffiStringResult(context: "multi_document_lsp_request_events_json") {
+            editor_core_ui_ffi_multi_document_lsp_request_events_json(handle, sequence)
+        }
+    }
+
+    public func lspRequestEvents(after sequence: UInt64 = 0) throws -> EcuMultiDocumentLSPRequestEventsSnapshot {
+        try decode(
+            EcuMultiDocumentLSPRequestEventsSnapshot.self,
+            from: lspRequestEventsJSON(after: sequence),
+            context: "multi_document_lsp_request_events_decode"
         )
     }
 

@@ -117,6 +117,11 @@ struct AttoRuntimeCompatibility {
             name: "LSP request events",
             reason: "LSP request consumers can cursor over core-owned request start/completion lifecycle events; Swift falls back to App-level lifecycle events when unavailable."
         ),
+        RuntimeFeature(
+            feature: .multiDocumentLSPRequestEvents,
+            name: "multi-document LSP request events",
+            reason: "Project-level request consumers can cursor over core-owned LSP request lifecycle events aggregated across tabs and split views; Swift falls back to App-level lifecycle events when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

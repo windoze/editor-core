@@ -475,6 +475,130 @@ fn multi_document_lsp_result_events_aggregate_tab_and_view_context() {
 }
 
 #[test]
+fn multi_document_lsp_request_events_aggregate_tab_and_view_context() {
+    let mut multi = MultiDocumentEditorUi::new();
+    let first_tab = multi.open_tab("abc", 80);
+    let second_tab = multi.open_tab("def", 80);
+
+    multi.set_active_tab(first_tab).unwrap();
+    {
+        let editor = multi.active_editor_mut().unwrap();
+        let view_id = editor.view_id;
+        let mut doc = editor.lock_doc();
+        doc.lsp_client_requests.insert(
+            31,
+            LspClientRequest::Result {
+                view: view_id,
+                slot: LspResultSlot::Hover,
+            },
+        );
+        doc.lsp_latest_result_request_id
+            .insert((view_id, LspResultSlot::Hover), 31);
+        doc.record_lsp_request_started(view_id, LspResultSlot::Hover, 31);
+    }
+    let applied = multi
+        .active_editor_mut()
+        .unwrap()
+        .handle_lsp_events(vec![LspEvent::Response(editor_core_lsp::LspResponse {
+            id: 31,
+            method: "textDocument/hover".to_string(),
+            uri: None,
+            result: Some(serde_json::json!({ "contents": "hello" })),
+            error: None,
+        })])
+        .unwrap();
+    assert!(!applied);
+
+    multi.set_active_tab(second_tab).unwrap();
+    {
+        let editor = multi.active_editor_mut().unwrap();
+        let view_id = editor.view_id;
+        let mut doc = editor.lock_doc();
+        doc.lsp_client_requests.insert(
+            32,
+            LspClientRequest::Result {
+                view: view_id,
+                slot: LspResultSlot::CodeAction,
+            },
+        );
+        doc.lsp_latest_result_request_id
+            .insert((view_id, LspResultSlot::CodeAction), 32);
+        doc.record_lsp_request_started(view_id, LspResultSlot::CodeAction, 32);
+    }
+    let applied = multi
+        .active_editor_mut()
+        .unwrap()
+        .handle_lsp_events(vec![LspEvent::Response(editor_core_lsp::LspResponse {
+            id: 32,
+            method: "textDocument/codeAction".to_string(),
+            uri: None,
+            result: None,
+            error: Some(LspResponseError {
+                code: -32603,
+                message: "actions failed".to_string(),
+                data: None,
+            }),
+        })])
+        .unwrap();
+    assert!(!applied);
+
+    let snapshot = multi.lsp_request_events_after(0);
+    assert_eq!(snapshot.latest_sequence, 4);
+    assert_eq!(snapshot.events.len(), 4);
+
+    let first_started = &snapshot.events[0];
+    assert_eq!(first_started.sequence, 1);
+    assert_eq!(first_started.tab_id, first_tab.get());
+    assert_eq!(first_started.view_index, 0);
+    assert_eq!(first_started.source_sequence, 1);
+    assert_eq!(first_started.family, "hover");
+    assert_eq!(first_started.slot, "hover");
+    assert_eq!(first_started.phase, "started");
+    assert_eq!(first_started.status, "pending");
+    assert_eq!(first_started.source_result_sequence, None);
+
+    let first_completed = &snapshot.events[1];
+    assert_eq!(first_completed.sequence, 2);
+    assert_eq!(first_completed.tab_id, first_tab.get());
+    assert_eq!(first_completed.source_sequence, 2);
+    assert_eq!(first_completed.phase, "completed");
+    assert_eq!(first_completed.status, "success");
+    assert_eq!(first_completed.source_result_sequence, Some(1));
+
+    let second_started = &snapshot.events[2];
+    assert_eq!(second_started.sequence, 3);
+    assert_eq!(second_started.tab_id, second_tab.get());
+    assert_eq!(second_started.source_sequence, 1);
+    assert_eq!(second_started.family, "actions");
+    assert_eq!(second_started.slot, "code_action");
+    assert_eq!(second_started.phase, "started");
+    assert_eq!(second_started.status, "pending");
+
+    let second_completed = &snapshot.events[3];
+    assert_eq!(second_completed.sequence, 4);
+    assert_eq!(second_completed.tab_id, second_tab.get());
+    assert_eq!(second_completed.source_sequence, 2);
+    assert_eq!(second_completed.phase, "completed");
+    assert_eq!(second_completed.status, "error");
+    assert_eq!(second_completed.source_result_sequence, Some(1));
+    assert_eq!(second_completed.error_code, Some(-32603));
+    assert_eq!(
+        second_completed.error_message.as_deref(),
+        Some("actions failed")
+    );
+
+    let repeat = multi.lsp_request_events_after(0);
+    assert_eq!(repeat.latest_sequence, 4);
+    assert_eq!(repeat.events.len(), 4);
+
+    let after_first_pair: serde_json::Value =
+        serde_json::from_str(&multi.lsp_request_events_json(2).unwrap()).unwrap();
+    assert_eq!(after_first_pair["latest_sequence"], 4);
+    assert_eq!(after_first_pair["events"].as_array().unwrap().len(), 2);
+    assert_eq!(after_first_pair["events"][0]["sequence"], 3);
+}
+
+#[test]
 fn lsp_processing_edit_apply_failure_records_status_and_returns_error() {
     let ui = EditorUi::new("abc", 80);
 

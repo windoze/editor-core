@@ -89,6 +89,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.lspResultEvents))
         XCTAssertTrue(info.supports(.multiDocumentLSPResultEvents))
         XCTAssertTrue(info.supports(.lspRequestEvents))
+        XCTAssertTrue(info.supports(.multiDocumentLSPRequestEvents))
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {
@@ -214,6 +215,11 @@ final class EditorCoreUIFFITests: XCTestCase {
         let lspEvents = try multi.lspResultEvents()
         XCTAssertEqual(lspEvents.latestSequence, 0)
         XCTAssertTrue(lspEvents.events.isEmpty)
+
+        XCTAssertEqual(try multi.lspRequestEventsLatestSequence(), 0)
+        let lspRequestEvents = try multi.lspRequestEvents()
+        XCTAssertEqual(lspRequestEvents.latestSequence, 0)
+        XCTAssertTrue(lspRequestEvents.events.isEmpty)
 
         let snapshot = try multi.snapshot()
         XCTAssertEqual(snapshot.activeTabId, beta)
