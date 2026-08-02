@@ -5316,6 +5316,32 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(callbackSelectedID, secondTab.id)
     }
 
+    func testCoreTabTitleUpdateUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("title-local-tab.txt")
+        let projectedURL = tempDir.appendingPathComponent("title-projected-tab.txt")
+        try "title".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        try coreDocuments.setTabDocumentURI(projectedURL.standardizedFileURL.absoluteString, tabId: coreTabID)
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        vc.updateCoreTabTitle(tab)
+
+        let snapshotTab = try XCTUnwrap(try coreDocuments.snapshot().tabs.first { $0.id == coreTabID })
+        XCTAssertEqual(snapshotTab.title, "title-projected-tab.txt")
+    }
+
     func testSelectAndOpenFileUseCoreDocumentURIProjection() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

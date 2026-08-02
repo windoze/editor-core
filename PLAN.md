@@ -619,6 +619,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLanguageIndentationConfigUsesCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileAppliesLanguageIndentationConfig`
     - `git diff --check`
+- 中间提交：`feat(app): project core tab titles from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor core tab title sync 使用 core tab snapshot 的 `document_uri` 投影。
+  - 提交边界：只迁移 `updateCoreTabTitle(_:)` 中 display title 的文件名来源；不改变真实保存路径、`updateCoreTabDocumentURI(_:)` 的真实 URI 同步、tab bar/opened-files projection、session schema、真实 `tab.fileURL` 同步策略或 Rust/FFI ABI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCoreTabTitleUpdateUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileProjectionUsesCoreTabSnapshotWhenAvailable`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

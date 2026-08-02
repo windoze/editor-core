@@ -259,7 +259,7 @@ extension AttoEditorAreaViewController {
     func updateCoreTabTitle(_ tab: AttoEditorTab) {
         guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
         do {
-            try coreDocuments.setTabTitle(tab.fileURL.lastPathComponent, tabId: coreTabID)
+            try coreDocuments.setTabTitle(projectedFileURL(for: tab).lastPathComponent, tabId: coreTabID)
         } catch {
             NSLog("AttoEditor: core multi-document setTabTitle failed: %@", String(describing: error))
         }
