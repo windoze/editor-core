@@ -141,6 +141,10 @@ final class AttoEditorAreaViewController: NSViewController {
         lspLocationResultStore.history
     }
 
+    func _lspLocationResultLifecycleHistoryForTesting() -> [AttoLspResultLifecycleEntry<LspLocationResultSnapshot>] {
+        lspLocationResultStore.historyEntries
+    }
+
     func _lspLocationPanelSnapshotForTesting() -> LspLocationResultSnapshot? {
         lspLocationPanelController?.currentSnapshot
     }
@@ -171,6 +175,10 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func _lspSymbolResultHistoryForTesting() -> [LspSymbolResultSnapshot] {
         lspSymbolResultStore.history
+    }
+
+    func _lspSymbolResultLifecycleHistoryForTesting() -> [AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>] {
+        lspSymbolResultStore.historyEntries
     }
 
     func _problemsPanelDiagnosticsForTesting() -> [EcuDiagnostic] {
@@ -4406,10 +4414,11 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func showLastLspLocationResults() -> Bool {
-        guard let snapshot = lspLocationResultStore.current, snapshot.items.isEmpty == false else {
+        guard let entry = lspLocationResultStore.currentEntry, entry.snapshot.items.isEmpty == false else {
             NSSound.beep()
             return false
         }
+        let snapshot = entry.snapshot
 
         if snapshot.items.count > 1 {
             showLspLocationResults(snapshot)
@@ -4421,23 +4430,23 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func showLspLocationHistory() -> Bool {
-        guard lspLocationResultStore.history.isEmpty == false else {
+        guard lspLocationResultStore.historyEntries.isEmpty == false else {
             NSSound.beep()
             return false
         }
 
         guard let window = view.window else {
-            guard let snapshot = lspLocationResultStore.history.last else { return false }
-            return openLspLocationSnapshot(snapshot)
+            guard let entry = lspLocationResultStore.historyEntries.last else { return false }
+            return openLspLocationEntry(entry)
         }
 
-        let snapshots = Array(lspLocationResultStore.history.reversed())
-        let commands = snapshots.enumerated().map { idx, snapshot in
+        let entries = Array(lspLocationResultStore.historyEntries.reversed())
+        let commands = entries.enumerated().map { idx, entry in
             AttoCommandPaletteCommand(
                 id: "lsp.location_history.\(idx)",
-                title: locationHistoryTitle(for: snapshot)
+                title: entry.title
             ) { [weak self] in
-                _ = self?.openLspLocationSnapshot(snapshot)
+                _ = self?.openLspLocationEntry(entry)
             }
         }
 
@@ -4452,12 +4461,13 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func showLspLocationPanel() -> Bool {
-        guard let snapshot = lspLocationResultStore.current, snapshot.items.isEmpty == false else {
+        guard let entry = lspLocationResultStore.currentEntry, entry.snapshot.items.isEmpty == false else {
             NSSound.beep()
             return false
         }
+        let snapshot = entry.snapshot
         guard let window = view.window else {
-            return openLspLocationSnapshot(snapshot)
+            return openLspLocationEntry(entry)
         }
         let controller = lspLocationPanelController ?? AttoLspLocationPanelController { [weak self] target in
             self?.navigateToLspTarget(target)
@@ -4467,14 +4477,32 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func recordLspLocationResultSnapshot(_ snapshot: LspLocationResultSnapshot) {
-        lspLocationResultStore.record(snapshot)
+        lspLocationResultStore.record(
+            snapshot,
+            family: "locations",
+            title: locationHistoryTitle(for: snapshot)
+        )
         lspLocationPanelController?.update(snapshot: snapshot)
     }
 
     @discardableResult
     private func openLspLocationSnapshot(_ snapshot: LspLocationResultSnapshot) -> Bool {
-        lspLocationResultStore.makeCurrent(snapshot)
+        lspLocationResultStore.makeCurrent(
+            snapshot,
+            family: "locations",
+            title: locationHistoryTitle(for: snapshot)
+        )
+        return presentLspLocationSnapshot(snapshot)
+    }
 
+    @discardableResult
+    private func openLspLocationEntry(_ entry: AttoLspResultLifecycleEntry<LspLocationResultSnapshot>) -> Bool {
+        lspLocationResultStore.makeCurrent(entry)
+        return presentLspLocationSnapshot(entry.snapshot)
+    }
+
+    @discardableResult
+    private func presentLspLocationSnapshot(_ snapshot: LspLocationResultSnapshot) -> Bool {
         if snapshot.items.count > 1 {
             showLspLocationResults(snapshot)
         } else if let first = snapshot.items.first {
@@ -4871,32 +4899,32 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func showLastLspSymbolResults() -> Bool {
-        guard let snapshot = lspSymbolResultStore.current, snapshot.symbols.isEmpty == false else {
+        guard let entry = lspSymbolResultStore.currentEntry, entry.snapshot.symbols.isEmpty == false else {
             NSSound.beep()
             return false
         }
-        return openLspSymbolSnapshot(snapshot)
+        return openLspSymbolEntry(entry)
     }
 
     @discardableResult
     func showLspSymbolHistory() -> Bool {
-        guard lspSymbolResultStore.history.isEmpty == false else {
+        guard lspSymbolResultStore.historyEntries.isEmpty == false else {
             NSSound.beep()
             return false
         }
 
         guard let window = view.window else {
-            guard let snapshot = lspSymbolResultStore.history.last else { return false }
-            return openLspSymbolSnapshot(snapshot)
+            guard let entry = lspSymbolResultStore.historyEntries.last else { return false }
+            return openLspSymbolEntry(entry)
         }
 
-        let snapshots = Array(lspSymbolResultStore.history.reversed())
-        let commands = snapshots.enumerated().map { idx, snapshot in
+        let entries = Array(lspSymbolResultStore.historyEntries.reversed())
+        let commands = entries.enumerated().map { idx, entry in
             AttoCommandPaletteCommand(
                 id: "lsp.symbol_history.\(idx)",
-                title: symbolHistoryTitle(for: snapshot)
+                title: entry.title
             ) { [weak self] in
-                _ = self?.openLspSymbolSnapshot(snapshot)
+                _ = self?.openLspSymbolEntry(entry)
             }
         }
 
@@ -4911,12 +4939,13 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func showLspSymbolPanel() -> Bool {
-        guard let snapshot = lspSymbolResultStore.current, snapshot.symbols.isEmpty == false else {
+        guard let entry = lspSymbolResultStore.currentEntry, entry.snapshot.symbols.isEmpty == false else {
             NSSound.beep()
             return false
         }
+        let snapshot = entry.snapshot
         guard let window = view.window else {
-            return openLspSymbolSnapshot(snapshot)
+            return openLspSymbolEntry(entry)
         }
         let controller = lspSymbolPanelController ?? AttoLspSymbolPanelController(
             titleForSymbol: { [weak self] symbol in
@@ -4978,7 +5007,11 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func recordLspSymbolResultSnapshot(_ snapshot: LspSymbolResultSnapshot) {
-        lspSymbolResultStore.record(snapshot)
+        lspSymbolResultStore.record(
+            snapshot,
+            family: "symbols",
+            title: symbolHistoryTitle(for: snapshot)
+        )
         lspSymbolPanelController?.update(snapshot: snapshot)
     }
 
@@ -4988,7 +5021,23 @@ final class AttoEditorAreaViewController: NSViewController {
             NSSound.beep()
             return false
         }
-        lspSymbolResultStore.makeCurrent(snapshot)
+        lspSymbolResultStore.makeCurrent(
+            snapshot,
+            family: "symbols",
+            title: symbolHistoryTitle(for: snapshot)
+        )
+        showLspSymbolResults(snapshot.symbols, placeholder: snapshot.placeholder)
+        return true
+    }
+
+    @discardableResult
+    private func openLspSymbolEntry(_ entry: AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>) -> Bool {
+        let snapshot = entry.snapshot
+        guard snapshot.symbols.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+        lspSymbolResultStore.makeCurrent(entry)
         showLspSymbolResults(snapshot.symbols, placeholder: snapshot.placeholder)
         return true
     }

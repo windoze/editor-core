@@ -1,30 +1,85 @@
 import Foundation
 
+struct AttoLspResultLifecycleEntry<Snapshot> {
+    let sequence: UInt64
+    let family: String
+    let title: String
+    let recordedAt: Date
+    let snapshot: Snapshot
+}
+
+extension AttoLspResultLifecycleEntry: Equatable where Snapshot: Equatable {}
+
 final class AttoLspResultLifecycleStore<Snapshot> {
     private let maxHistoryEntries: Int
-    private(set) var current: Snapshot?
-    private(set) var history: [Snapshot] = []
+    private var nextSequence: UInt64 = 1
+    private(set) var currentEntry: AttoLspResultLifecycleEntry<Snapshot>?
+    private(set) var historyEntries: [AttoLspResultLifecycleEntry<Snapshot>] = []
+
+    var current: Snapshot? {
+        currentEntry?.snapshot
+    }
+
+    var history: [Snapshot] {
+        historyEntries.map(\.snapshot)
+    }
 
     init(maxHistoryEntries: Int) {
         self.maxHistoryEntries = max(1, maxHistoryEntries)
     }
 
     @discardableResult
-    func record(_ snapshot: Snapshot) -> Snapshot {
-        current = snapshot
-        history.append(snapshot)
-        if history.count > maxHistoryEntries {
-            history.removeFirst(history.count - maxHistoryEntries)
+    func record(
+        _ snapshot: Snapshot,
+        family: String = "unknown",
+        title: String = "",
+        recordedAt: Date = Date()
+    ) -> AttoLspResultLifecycleEntry<Snapshot> {
+        let entry = makeEntry(snapshot, family: family, title: title, recordedAt: recordedAt)
+        currentEntry = entry
+        historyEntries.append(entry)
+        if historyEntries.count > maxHistoryEntries {
+            historyEntries.removeFirst(historyEntries.count - maxHistoryEntries)
         }
-        return snapshot
+        return entry
     }
 
-    func makeCurrent(_ snapshot: Snapshot) {
-        current = snapshot
+    @discardableResult
+    func makeCurrent(
+        _ snapshot: Snapshot,
+        family: String = "unknown",
+        title: String = "",
+        recordedAt: Date = Date()
+    ) -> AttoLspResultLifecycleEntry<Snapshot> {
+        let entry = makeEntry(snapshot, family: family, title: title, recordedAt: recordedAt)
+        currentEntry = entry
+        return entry
+    }
+
+    func makeCurrent(_ entry: AttoLspResultLifecycleEntry<Snapshot>) {
+        currentEntry = entry
     }
 
     func clear() {
-        current = nil
-        history.removeAll()
+        currentEntry = nil
+        historyEntries.removeAll()
+        nextSequence = 1
+    }
+
+    private func makeEntry(
+        _ snapshot: Snapshot,
+        family: String,
+        title: String,
+        recordedAt: Date
+    ) -> AttoLspResultLifecycleEntry<Snapshot> {
+        let entry = AttoLspResultLifecycleEntry(
+            sequence: nextSequence,
+            family: family,
+            title: title,
+            recordedAt: recordedAt,
+            snapshot: snapshot
+        )
+        nextSequence += 1
+        return entry
     }
 }
