@@ -854,6 +854,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastLinkedEditingRangeResult() throws -> EcuLspLinkedEditingRangeResult? {
+        guard let json = try lspTakeLastLinkedEditingRangeResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspLinkedEditingRangeResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_linked_editing_range_decode"
+        )
+    }
+
     public func lspRequestDocumentDiagnostic(previousResultId: String? = nil) throws -> UInt64 {
         var out: UInt64 = 0
         let status: Int32

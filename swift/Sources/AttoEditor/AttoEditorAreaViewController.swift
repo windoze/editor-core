@@ -2560,20 +2560,86 @@ final class AttoEditorAreaViewController: NSViewController {
             let text = try tab.editCore.editor.text()
             let offsets = try tab.editCore.editor.selectionOffsets()
             let effectiveCaretOffset = caretOffset ?? offsets.end
-            guard let result = AttoLspLinkedEditingParser.result(
+            let result = AttoLspLinkedEditingParser.result(
                 fromLinkedEditingRangeResultJSON: json,
                 documentText: text
-            ), result.ranges.count > 1 else {
-                if showFeedback {
-                    showWorkspaceEditPopover(
-                        text: "No linked editing ranges are available here.",
-                        in: tab.editCore.editorView
-                    )
-                }
-                NSSound.beep()
-                return false
+            )
+            return applyLinkedEditingParserResultToActiveTab(
+                result,
+                effectiveCaretOffset: effectiveCaretOffset,
+                showFeedback: showFeedback
+            )
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Linked editing ranges could not be applied.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
             }
+            NSSound.beep()
+            return false
+        }
+    }
 
+    @discardableResult
+    func applyLinkedEditingRangeResultToActiveTab(
+        _ result: EcuLspLinkedEditingRangeResult,
+        caretOffset: UInt32? = nil,
+        showFeedback: Bool = false
+    ) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let text = try tab.editCore.editor.text()
+            let offsets = try tab.editCore.editor.selectionOffsets()
+            let effectiveCaretOffset = caretOffset ?? offsets.end
+            let result = AttoLspLinkedEditingParser.result(
+                from: result,
+                documentText: text
+            )
+            return applyLinkedEditingParserResultToActiveTab(
+                result,
+                effectiveCaretOffset: effectiveCaretOffset,
+                showFeedback: showFeedback
+            )
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Linked editing ranges could not be applied.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
+    private func applyLinkedEditingParserResultToActiveTab(
+        _ result: AttoLspLinkedEditingParser.Result?,
+        effectiveCaretOffset: UInt32,
+        showFeedback: Bool = false
+    ) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        guard let result, result.ranges.count > 1 else {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "No linked editing ranges are available here.",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        do {
             try tab.editCore.editor.setSelections(
                 result.ranges,
                 primaryIndex: result.primaryIndex(containing: effectiveCaretOffset)
@@ -2627,9 +2693,9 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspLinkedEditingRangeResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastLinkedEditingRangeResultJSON()
+                result = try tab.editCore.editor.lspTakeLastLinkedEditingRangeResult()
             } catch {
                 let showFeedback = ctx.showFeedback
                 self.cancelLinkedEditingUI()
@@ -2642,13 +2708,13 @@ final class AttoEditorAreaViewController: NSViewController {
                 NSSound.beep()
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             let caretOffset = ctx.caretOffset
             let showFeedback = ctx.showFeedback
             self.cancelLinkedEditingUI()
-            _ = self.applyLinkedEditingRangeResultJSONToActiveTab(
-                json,
+            _ = self.applyLinkedEditingRangeResultToActiveTab(
+                result,
                 caretOffset: caretOffset,
                 showFeedback: showFeedback
             )

@@ -42,6 +42,21 @@ enum AttoLspLinkedEditingParser {
         return Result(ranges: ranges, wordPattern: wordPattern)
     }
 
+    static func result(from result: EcuLspLinkedEditingRangeResult, documentText: String) -> Result? {
+        guard result.shape == .linkedEditingRange else {
+            return nil
+        }
+
+        let ranges = selectionRanges(from: result.ranges, documentText: documentText)
+        guard ranges.isEmpty == false else {
+            return nil
+        }
+        guard rangesAreConsistent(ranges, documentText: documentText, wordPattern: result.wordPattern) else {
+            return nil
+        }
+        return Result(ranges: ranges, wordPattern: result.wordPattern)
+    }
+
     private static func selectionRanges(from any: Any?, documentText: String) -> [EcuSelectionRange] {
         guard let array = any as? [Any] else { return [] }
 
@@ -56,6 +71,19 @@ enum AttoLspLinkedEditingParser {
             let key = "\(range.start):\(range.end)"
             if seen.insert(key).inserted {
                 out.append(range)
+            }
+        }
+        return out
+    }
+
+    private static func selectionRanges(from ranges: [EcuLspRange], documentText: String) -> [EcuSelectionRange] {
+        var out: [EcuSelectionRange] = []
+        var seen = Set<String>()
+        for range in ranges {
+            let selection = selectionRange(from: range, documentText: documentText)
+            let key = "\(selection.start):\(selection.end)"
+            if seen.insert(key).inserted {
+                out.append(selection)
             }
         }
         return out
@@ -81,6 +109,20 @@ enum AttoLspLinkedEditingParser {
             inText: documentText,
             line: endLine,
             utf16Character: endCharacter
+        )
+        return EcuSelectionRange(start: min(startOffset, endOffset), end: max(startOffset, endOffset))
+    }
+
+    private static func selectionRange(from range: EcuLspRange, documentText: String) -> EcuSelectionRange {
+        let startOffset = AttoLspDefinitionParser.charOffsetForLspPosition(
+            inText: documentText,
+            line: Int(range.start.line),
+            utf16Character: Int(range.start.utf16Character)
+        )
+        let endOffset = AttoLspDefinitionParser.charOffsetForLspPosition(
+            inText: documentText,
+            line: Int(range.end.line),
+            utf16Character: Int(range.end.utf16Character)
         )
         return EcuSelectionRange(start: min(startOffset, endOffset), end: max(startOffset, endOffset))
     }
