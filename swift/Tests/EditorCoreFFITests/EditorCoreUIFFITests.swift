@@ -95,6 +95,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentStateEvents))
         XCTAssertTrue(info.supports(.workspaceOutlineSnapshot))
         XCTAssertTrue(info.supports(.multiDocumentTabDocumentURI))
+        XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransaction))
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {
@@ -356,6 +357,48 @@ final class EditorCoreUIFFITests: XCTestCase {
         let results = try multi.searchAllTabs(query: "mirror")
         XCTAssertEqual(results.map(\.tabId), [beta])
         XCTAssertEqual(results.flatMap(\.matches).count, 1)
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "file:///project/Beta.swift": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 4 }
+                },
+                "newText": "BETA"
+              }
+            ],
+            "file:///project/Missing.swift": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "missing"
+              }
+            ]
+          }
+        }
+        """
+        let transactionPreview = try multi.previewWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertEqual(transactionPreview.mode, "preview")
+        XCTAssertFalse(transactionPreview.applied)
+        XCTAssertEqual(transactionPreview.skippedURIs, ["file:///project/Missing.swift"])
+        let betaTransactionDocument = try XCTUnwrap(
+            transactionPreview.documents.first { $0.uri == "file:///project/Beta.swift" }
+        )
+        XCTAssertTrue(betaTransactionDocument.isOpen)
+        XCTAssertEqual(betaTransactionDocument.tabId, beta)
+
+        let transactionApply = try multi.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertEqual(transactionApply.mode, "apply")
+        XCTAssertTrue(transactionApply.applied)
+        XCTAssertEqual(transactionApply.appliedURIs, ["file:///project/Beta.swift"])
+        XCTAssertEqual(transactionApply.appliedEditCount, 1)
+        XCTAssertEqual(try multi.tabText(tabId: beta), "BETA saved mirror")
+        try multi.markTabSaved(beta)
 
         try multi.applyTabDocumentSymbolsJSON(tabId: beta, resultJSON: """
         [

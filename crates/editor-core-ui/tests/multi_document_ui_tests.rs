@@ -263,6 +263,80 @@ fn multi_document_ui_exports_workspace_outline_snapshot() {
 }
 
 #[test]
+fn multi_document_ui_previews_and_applies_workspace_edit_transactions() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let app = ui.open_tab("alpha\n", 80);
+    let model = ui.open_tab("model\n", 80);
+    ui.set_tab_document_uri(app, Some("file:///tmp/project/App.swift".to_string()))
+        .unwrap();
+    ui.set_tab_document_uri(model, Some("file:///tmp/project/Model.swift".to_string()))
+        .unwrap();
+
+    let edit = r#"{
+      "changes": {
+        "file:///tmp/project/App.swift": [
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 5 }
+            },
+            "newText": "App"
+          }
+        ],
+        "file:///tmp/project/Other.swift": [
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 0 }
+            },
+            "newText": "Other"
+          }
+        ]
+      },
+      "documentChanges": [
+        {
+          "kind": "rename",
+          "oldUri": "file:///tmp/project/Old.swift",
+          "newUri": "file:///tmp/project/New.swift"
+        }
+      ]
+    }"#;
+
+    let preview = ui.preview_workspace_edit_transaction(edit).unwrap();
+    assert_eq!(preview.mode, "preview");
+    assert!(!preview.applied);
+    assert_eq!(ui.tab_text(app).unwrap(), "alpha\n");
+    assert_eq!(
+        preview.skipped_uris,
+        vec![
+            "file:///tmp/project/New.swift",
+            "file:///tmp/project/Old.swift",
+            "file:///tmp/project/Other.swift",
+        ]
+    );
+
+    let applied = ui.apply_workspace_edit_transaction(edit).unwrap();
+    assert_eq!(applied.mode, "apply");
+    assert!(applied.applied);
+    assert_eq!(applied.applied_uris, vec!["file:///tmp/project/App.swift"]);
+    assert_eq!(applied.applied_edit_count, 1);
+    assert_eq!(ui.tab_text(app).unwrap(), "App\n");
+    assert_eq!(ui.tab_text(model).unwrap(), "model\n");
+    assert_eq!(
+        applied.unsupported_operation_uris,
+        vec![
+            "file:///tmp/project/New.swift",
+            "file:///tmp/project/Old.swift"
+        ]
+    );
+
+    let json: serde_json::Value =
+        serde_json::from_str(&ui.preview_workspace_edit_transaction_json(edit).unwrap()).unwrap();
+    assert_eq!(json["mode"], "preview");
+    assert_eq!(json["documents"][0]["uri"], "file:///tmp/project/App.swift");
+}
+
+#[test]
 fn multi_document_ui_can_replace_tab_text_and_track_dirty_state() {
     let mut ui = MultiDocumentEditorUi::new();
     let tab = ui.open_tab("hello world\n", 80);

@@ -152,6 +152,11 @@ struct AttoRuntimeCompatibility {
             name: "multi-document tab document URI",
             reason: "Project-level features can resolve open core tabs by document URI for WorkspaceEdit and outline ownership; Swift keeps App-level file URL mappings as a fallback."
         ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceEditTransaction,
+            name: "multi-document WorkspaceEdit transaction",
+            reason: "WorkspaceEdit preview/apply can be owned by the core multi-document model for open tabs; Swift keeps App-level WorkspaceEdit application as a fallback while resource operations continue migrating."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

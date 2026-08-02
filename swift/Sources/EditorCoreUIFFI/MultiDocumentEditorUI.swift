@@ -52,6 +52,44 @@ private struct EcuTabSearchResponse: Decodable {
     let results: [EcuTabSearchResult]
 }
 
+public struct EcuWorkspaceEditTransactionDocument: Decodable, Equatable, Sendable {
+    public let uri: String
+    public let editCount: Int
+    public let hasOverlappingEdits: Bool
+    public let isOpen: Bool
+    public let tabId: UInt64?
+
+    private enum CodingKeys: String, CodingKey {
+        case uri
+        case editCount = "edit_count"
+        case hasOverlappingEdits = "has_overlapping_edits"
+        case isOpen = "is_open"
+        case tabId = "tab_id"
+    }
+}
+
+public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable {
+    public let mode: String
+    public let applied: Bool
+    public let appliedURI: String?
+    public let appliedURIs: [String]
+    public let appliedEditCount: Int
+    public let skippedURIs: [String]
+    public let unsupportedOperationURIs: [String]
+    public let documents: [EcuWorkspaceEditTransactionDocument]
+
+    private enum CodingKeys: String, CodingKey {
+        case mode
+        case applied
+        case appliedURI = "applied_uri"
+        case appliedURIs = "applied_uris"
+        case appliedEditCount = "applied_edit_count"
+        case skippedURIs = "skipped_uris"
+        case unsupportedOperationURIs = "unsupported_operation_uris"
+        case documents
+    }
+}
+
 public struct EcuWorkspaceDiagnosticTarget: Decodable, Equatable, Sendable {
     public let uri: String
     public let line: UInt32
@@ -569,6 +607,38 @@ public final class MultiDocumentEditorUI {
             editor_core_ui_ffi_multi_document_apply_tab_document_symbols_json(handle, tabId, resultPtr)
         }
         try library.ensureStatus(status, context: "multi_document_apply_tab_document_symbols_json")
+    }
+
+    public func previewWorkspaceEditTransactionJSON(_ workspaceEditJSON: String) throws -> String {
+        try ffiStringResult(context: "multi_document_preview_workspace_edit_transaction_json") {
+            workspaceEditJSON.withCString { editPtr in
+                editor_core_ui_ffi_multi_document_preview_workspace_edit_transaction_json(handle, editPtr)
+            }
+        }
+    }
+
+    public func previewWorkspaceEditTransaction(_ workspaceEditJSON: String) throws -> EcuWorkspaceEditTransactionResult {
+        try decode(
+            EcuWorkspaceEditTransactionResult.self,
+            from: previewWorkspaceEditTransactionJSON(workspaceEditJSON),
+            context: "multi_document_preview_workspace_edit_transaction_decode"
+        )
+    }
+
+    public func applyWorkspaceEditTransactionJSON(_ workspaceEditJSON: String) throws -> String {
+        try ffiStringResult(context: "multi_document_apply_workspace_edit_transaction_json") {
+            workspaceEditJSON.withCString { editPtr in
+                editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(handle, editPtr)
+            }
+        }
+    }
+
+    public func applyWorkspaceEditTransaction(_ workspaceEditJSON: String) throws -> EcuWorkspaceEditTransactionResult {
+        try decode(
+            EcuWorkspaceEditTransactionResult.self,
+            from: applyWorkspaceEditTransactionJSON(workspaceEditJSON),
+            context: "multi_document_apply_workspace_edit_transaction_decode"
+        )
     }
 
     public func applyWorkspaceDiagnosticsJSON(_ resultJSON: String) throws -> EcuWorkspaceDiagnosticsSnapshot {

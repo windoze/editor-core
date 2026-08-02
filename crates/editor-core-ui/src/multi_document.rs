@@ -6,6 +6,7 @@ mod lsp_request_events;
 mod lsp_result_events;
 mod state_events;
 mod workspace_diagnostics;
+mod workspace_edit;
 mod workspace_outline;
 
 pub use lsp_request_events::{MultiDocumentLspRequestEvent, MultiDocumentLspRequestEventsSnapshot};
@@ -16,6 +17,7 @@ pub use workspace_diagnostics::{
     WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
     WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
 };
+pub use workspace_edit::{WorkspaceEditTransactionDocument, WorkspaceEditTransactionResult};
 pub use workspace_outline::{WorkspaceOutlineDocument, WorkspaceOutlineSnapshot};
 
 /// Opaque id for an open tab/document managed by [`MultiDocumentEditorUi`].
@@ -588,6 +590,38 @@ impl MultiDocumentEditorUi {
             UiError::Processor(format!("tab {} has no active view", tab_id.get()))
         })?;
         view.lsp_apply_document_symbols_json(json)
+    }
+
+    /// Preview applying an LSP `WorkspaceEdit` across open tabs owned by this model.
+    pub fn preview_workspace_edit_transaction(
+        &self,
+        workspace_edit_json: &str,
+    ) -> Result<WorkspaceEditTransactionResult, UiError> {
+        workspace_edit::preview(&self.tabs, &self.tab_order, workspace_edit_json)
+    }
+
+    /// Preview applying an LSP `WorkspaceEdit` across open tabs as JSON.
+    pub fn preview_workspace_edit_transaction_json(
+        &self,
+        workspace_edit_json: &str,
+    ) -> Result<String, UiError> {
+        workspace_edit::preview_json(&self.tabs, &self.tab_order, workspace_edit_json)
+    }
+
+    /// Apply an LSP `WorkspaceEdit` to matching open tabs owned by this model.
+    pub fn apply_workspace_edit_transaction(
+        &mut self,
+        workspace_edit_json: &str,
+    ) -> Result<WorkspaceEditTransactionResult, UiError> {
+        workspace_edit::apply(&mut self.tabs, &self.tab_order, workspace_edit_json)
+    }
+
+    /// Apply an LSP `WorkspaceEdit` to matching open tabs owned by this model as JSON.
+    pub fn apply_workspace_edit_transaction_json(
+        &mut self,
+        workspace_edit_json: &str,
+    ) -> Result<String, UiError> {
+        workspace_edit::apply_json(&mut self.tabs, &self.tab_order, workspace_edit_json)
     }
 
     /// Clear the project/workspace diagnostic state owned by this multi-document UI model.

@@ -72,6 +72,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_TAB_DOCUMENT_URI,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION,
+        0
+    );
 }
 
 #[test]
@@ -269,6 +273,73 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     let search_results = search_value["results"].as_array().unwrap();
     assert_eq!(search_results.len(), 1);
     assert_eq!(search_results[0]["tab_id"], beta_id);
+
+    let workspace_edit = CString::new(
+        r#"{
+          "changes": {
+            "file:///project/Beta.swift": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 4 }
+                },
+                "newText": "BETA"
+              }
+            ],
+            "file:///project/Missing.swift": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "missing"
+              }
+            ]
+          }
+        }"#,
+    )
+    .unwrap();
+    let preview_ptr = editor_core_ui_ffi_multi_document_preview_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!preview_ptr.is_null());
+    let preview_json = unsafe { std::ffi::CStr::from_ptr(preview_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(preview_ptr) };
+    let preview_value: serde_json::Value = serde_json::from_str(&preview_json).unwrap();
+    assert_eq!(preview_value["mode"], "preview");
+    assert_eq!(preview_value["applied"], false);
+    assert_eq!(
+        preview_value["skipped_uris"][0],
+        "file:///project/Missing.swift"
+    );
+
+    let apply_ptr = editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!apply_ptr.is_null());
+    let apply_json = unsafe { std::ffi::CStr::from_ptr(apply_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(apply_ptr) };
+    let apply_value: serde_json::Value = serde_json::from_str(&apply_json).unwrap();
+    assert_eq!(apply_value["mode"], "apply");
+    assert_eq!(apply_value["applied"], true);
+    assert_eq!(apply_value["applied_uris"][0], "file:///project/Beta.swift");
+    let edited_beta_text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, beta_id);
+    assert!(!edited_beta_text_ptr.is_null());
+    let edited_beta_text = unsafe { std::ffi::CStr::from_ptr(edited_beta_text_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(edited_beta_text_ptr) };
+    assert_eq!(edited_beta_text, "BETA saved mirror");
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_mark_tab_saved(multi, beta_id),
+        ECU_OK
+    );
 
     let document_symbols = CString::new(
         r#"[
