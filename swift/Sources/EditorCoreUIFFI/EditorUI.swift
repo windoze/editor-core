@@ -818,6 +818,55 @@ public final class EditorUI {
         )
     }
 
+    public func lspRequestInlayHints(startOffset: UInt32, endOffset: UInt32) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_request_inlay_hints(
+            handle,
+            startOffset,
+            endOffset,
+            &out
+        )
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_inlay_hints")
+        return out
+    }
+
+    public func lspTakeLastInlayHintsResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_inlay_hints_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_inlay_hints_json(handle, has, ptr)
+        }
+    }
+
+    public func lspTakeLastInlayHintsResult() throws -> EcuLspInlayHintResult? {
+        guard let json = try lspTakeLastInlayHintsResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspInlayHintResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_inlay_hints_decode"
+        )
+    }
+
+    public func lspRequestDocumentLinks() throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_request_document_links(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_document_links")
+        return out
+    }
+
+    public func lspTakeLastDocumentLinksResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_document_links_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_document_links_json(handle, has, ptr)
+        }
+    }
+
+    public func lspTakeLastDocumentLinksResult() throws -> EcuLspDocumentLinkResult? {
+        guard let json = try lspTakeLastDocumentLinksResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspDocumentLinkResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_document_links_decode"
+        )
+    }
+
     public func lspRequestDocumentSymbols() throws -> UInt64 {
         var out: UInt64 = 0
         let status = editor_core_ui_ffi_editor_ui_lsp_request_document_symbols(handle, &out)

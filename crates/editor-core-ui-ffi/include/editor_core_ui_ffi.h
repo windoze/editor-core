@@ -149,6 +149,8 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_LSP_REQUEST_EVENTS         (1ull << 10)
 #define ECU_FEATURE_MULTI_DOCUMENT_LSP_REQUEST_EVENTS (1ull << 11)
 #define ECU_FEATURE_LSP_REQUEST_CANCEL_TIMEOUT_EVENTS (1ull << 12)
+#define ECU_FEATURE_LSP_SEMANTIC_TOKENS_REQUESTS (1ull << 13)
+#define ECU_FEATURE_LSP_AUXILIARY_REQUESTS    (1ull << 14)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 
 MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);
@@ -443,6 +445,18 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_code_lens_resolve(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_code_lens_resolve_json(EditorUi* ui,
                                                                           uint8_t* out_has_result,
                                                                           char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_inlay_hints(EditorUi* ui,
+                                                             uint32_t start_offset,
+                                                             uint32_t end_offset,
+                                                             uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_inlay_hints_json(EditorUi* ui,
+                                                                    uint8_t* out_has_result,
+                                                                    char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_links(EditorUi* ui,
+                                                                uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_document_links_json(EditorUi* ui,
+                                                                       uint8_t* out_has_result,
+                                                                       char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_symbols(EditorUi* ui,
                                                                   uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_document_symbols_json(EditorUi* ui,

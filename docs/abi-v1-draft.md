@@ -310,6 +310,10 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_completion_item_resolve(EditorU
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_completion_item_resolve_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_execute_command(EditorUi* ui, const char* command_json_utf8, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_execute_command_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_inlay_hints(EditorUi* ui, uint32_t start_offset, uint32_t end_offset, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_inlay_hints_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_links(EditorUi* ui, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_document_links_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges(EditorUi* ui, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json(EditorUi* ui, const char* folding_ranges_result_json_utf8);

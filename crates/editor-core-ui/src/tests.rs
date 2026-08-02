@@ -3229,6 +3229,18 @@ fn ui_lsp_request_definition_errors_when_lsp_disabled() {
         UiError::Processor(msg) => assert_eq!(msg, "LSP is not enabled"),
         other => panic!("expected UiError::Processor, got: {other:?}"),
     }
+
+    let err = ui.lsp_request_inlay_hints(0, 1).unwrap_err();
+    match err {
+        UiError::Processor(msg) => assert_eq!(msg, "LSP is not enabled"),
+        other => panic!("expected UiError::Processor, got: {other:?}"),
+    }
+
+    let err = ui.lsp_request_document_links().unwrap_err();
+    match err {
+        UiError::Processor(msg) => assert_eq!(msg, "LSP is not enabled"),
+        other => panic!("expected UiError::Processor, got: {other:?}"),
+    }
 }
 
 #[test]

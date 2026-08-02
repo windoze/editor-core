@@ -56,6 +56,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_SEMANTIC_TOKENS_REQUESTS,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_AUXILIARY_REQUESTS,
+        0
+    );
 }
 
 #[test]
@@ -3737,6 +3741,11 @@ fn ffi_lsp_request_definition_errors_when_lsp_disabled() {
         unsafe { editor_core_ui_ffi_editor_ui_lsp_request_definition(ui, 0, 0, &mut out_id) };
     assert_eq!(code, ECU_ERR_INTERNAL);
     let code = unsafe { editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges(ui, &mut out_id) };
+    assert_eq!(code, ECU_ERR_INTERNAL);
+    let code =
+        unsafe { editor_core_ui_ffi_editor_ui_lsp_request_inlay_hints(ui, 0, 1, &mut out_id) };
+    assert_eq!(code, ECU_ERR_INTERNAL);
+    let code = unsafe { editor_core_ui_ffi_editor_ui_lsp_request_document_links(ui, &mut out_id) };
     assert_eq!(code, ECU_ERR_INTERNAL);
 
     let msg_ptr = editor_core_ui_ffi_last_error_message();

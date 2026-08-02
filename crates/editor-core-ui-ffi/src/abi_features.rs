@@ -31,6 +31,8 @@ pub const ECU_FEATURE_MULTI_DOCUMENT_LSP_REQUEST_EVENTS: u64 = 1 << 11;
 pub const ECU_FEATURE_LSP_REQUEST_CANCEL_TIMEOUT_EVENTS: u64 = 1 << 12;
 /// Feature bit: LSP semantic tokens full/delta/range request and typed Swift consumption are available.
 pub const ECU_FEATURE_LSP_SEMANTIC_TOKENS_REQUESTS: u64 = 1 << 13;
+/// Feature bit: LSP auxiliary inlay hint / document link request and typed Swift consumption are available.
+pub const ECU_FEATURE_LSP_AUXILIARY_REQUESTS: u64 = 1 << 14;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -45,7 +47,8 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_LSP_REQUEST_EVENTS
     | ECU_FEATURE_MULTI_DOCUMENT_LSP_REQUEST_EVENTS
     | ECU_FEATURE_LSP_REQUEST_CANCEL_TIMEOUT_EVENTS
-    | ECU_FEATURE_LSP_SEMANTIC_TOKENS_REQUESTS;
+    | ECU_FEATURE_LSP_SEMANTIC_TOKENS_REQUESTS
+    | ECU_FEATURE_LSP_AUXILIARY_REQUESTS;
 
 /// Return the UI FFI crate version as string.
 ///
