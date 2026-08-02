@@ -1987,6 +1987,60 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._lspSymbolPanelSnapshotForTesting()?.symbols.map(\.name), ["App", "run", "Model"])
     }
 
+    func testDocumentSymbolsUseCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("SymbolsSource.swift")
+        let projectedURL = tempDir.appendingPathComponent("SymbolsProjected.swift")
+        try "struct Source {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "struct Projected {}\n".write(to: projectedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        XCTAssertTrue(vc.showDocumentSymbolResultJSONInActiveTab("""
+        [
+          {
+            "name": "Source",
+            "kind": 23,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 16 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 7 },
+              "end": { "line": 0, "character": 13 }
+            }
+          }
+        ]
+        """))
+
+        let symbolSnapshot = try XCTUnwrap(vc._lastLspSymbolResultForTesting())
+        XCTAssertEqual(symbolSnapshot.symbols.map(\.target.uri), [
+            projectedURL.standardizedFileURL.absoluteString,
+        ])
+
+        let outline = vc._workspaceOutlineSnapshotForTesting()
+        XCTAssertEqual(outline.documents.map(\.uri), [
+            projectedURL.standardizedFileURL.absoluteString,
+        ])
+        XCTAssertEqual(outline.symbols.map(\.target.uri), [
+            projectedURL.standardizedFileURL.absoluteString,
+        ])
+    }
+
     func testWorkspaceSymbolResultCanBeReopened() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

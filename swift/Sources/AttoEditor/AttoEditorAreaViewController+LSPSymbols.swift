@@ -425,13 +425,14 @@ extension AttoEditorAreaViewController {
         }
         derivedStateStore.refreshActive(editor: tab.editCore.editor)
         let text = (try? tab.editCore.editor.text()) ?? ""
+        let documentURI = projectedFileURL(for: tab).absoluteString
         let typedSnapshotSymbols = AttoLspSymbolParser.documentSymbols(
             snapshot: derivedStateStore.active.documentSymbols,
-            documentURI: tab.fileURL.absoluteString,
+            documentURI: documentURI,
             documentText: text
         )
         let symbols = typedSnapshotSymbols.isEmpty
-            ? AttoLspSymbolParser.documentSymbols(fromResult: result, documentURI: tab.fileURL.absoluteString)
+            ? AttoLspSymbolParser.documentSymbols(fromResult: result, documentURI: documentURI)
             : typedSnapshotSymbols
         updateWorkspaceOutline(tab: tab, documentText: text, symbols: symbols)
         return finishLspSymbolResult(
@@ -468,15 +469,16 @@ extension AttoEditorAreaViewController {
             applyCoreDocumentSymbols(tab: tab, json: json)
             derivedStateStore.refreshActive(editor: tab.editCore.editor)
             let text = (try? tab.editCore.editor.text()) ?? ""
+            let documentURI = projectedFileURL(for: tab).absoluteString
             let typedSymbols = AttoLspSymbolParser.documentSymbols(
                 snapshot: derivedStateStore.active.documentSymbols,
-                documentURI: tab.fileURL.absoluteString,
+                documentURI: documentURI,
                 documentText: text
             )
             if typedSymbols.isEmpty {
                 symbols = AttoLspSymbolParser.documentSymbols(
                     fromResultJSON: json,
-                    documentURI: tab.fileURL.absoluteString
+                    documentURI: documentURI
                 )
             } else {
                 symbols = typedSymbols
@@ -505,7 +507,7 @@ extension AttoEditorAreaViewController {
         workspaceOutlineStore.upsertDocument(
             tabID: tab.id,
             coreTabID: tab.coreTabID,
-            fileURL: tab.fileURL,
+            fileURL: projectedFileURL(for: tab),
             documentText: documentText,
             symbols: symbols
         )

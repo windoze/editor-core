@@ -554,6 +554,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditApplyPreservesCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditApplicationMutatesAlreadyOpenCrossFileTab`
     - `git diff --check`
+- 中间提交：`feat(app): project document symbols from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor Document Symbols 和 Workspace Outline 在构造 symbol target / outline document key 时，使用 core tab snapshot 的 `document_uri` 投影。
+  - 提交边界：只迁移 document-symbol result handling 和 workspace-outline upsert 的 document URI/file URL 来源；不改变 LSP request/poll lifecycle、workspace symbol result parsing、symbol panel UI、core document-symbol ABI 或真实 `tab.fileURL` 同步策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDocumentSymbolsUseCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceOutlinePanelAggregatesDocumentSymbolSnapshots`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 
