@@ -8,7 +8,7 @@
 
 ## 执行计划
 
-整个 Swift gaps 收敛任务按照 `PLAN.md` 中的执行计划推进。后续实现以 `PLAN.md` 的阶段划分、提交边界、验证命令和最终完成标准为准；本文继续作为缺口审计与状态记录，随着各阶段完成同步更新对应 gap 的完成证据、剩余风险或 out-of-scope 说明。
+整个 Swift gaps 收敛任务统一按照 `PLAN.md` 中的执行计划推进；`PLAN.md` 是后续工程实施、阶段排序、提交边界、验证命令和最终完成标准的主依据。本文继续作为缺口审计与状态记录，随着各阶段完成同步更新对应 gap 的完成证据、剩余风险或 out-of-scope 说明；后续新增或调整目标时，也应先映射到 `PLAN.md` 的阶段计划，再回写到本文的 gap 状态。
 
 ## 范围
 
@@ -260,7 +260,7 @@ Swift 侧已经具备以下基础能力：
 | code action / code action resolve / execute command | 已有 request/take/resolve/executeCommand | code action typed 已有；executeCommand result 仍偏 raw/result envelope | quick panel、kind filter、resolve、command 执行和 HUD 已有 | result/request events 已覆盖 | typed workspace command/result model；WorkspaceEdit 事务化；统一 feedback |
 | document symbols / workspace symbols | 已有 request/take | 已有 symbols typed payload | quick panel、incremental workspace symbol panel、outline/persistent panel 已消费 typed payload；阶段 167 已让显式 symbols 命令的 unavailable/request failed/failed/timeout/empty 接入统一 feedback | result/request events 和 history entry 已有 | 状态订阅驱动 outline/symbols refresh 与 stale 展示 |
 | formatting / range formatting / on-type formatting | document/range/on-type blocking apply 已有；on-type async lifecycle 已有 | 已有 `EditorCoreLSPFormattingResult` outcome，但不是通用 LSP payload envelope | document/selection format command 和 on-type trigger path 已有 | on-type request lifecycle 已覆盖，status/detail 可记录异步失败 | 统一 feedback；格式化 edit apply 后续纳入 core-owned WorkspaceEdit/current-document transaction 语义 |
-| document color / color presentation | 已有 request/take | 已有 color typed payload | color quick panel、direct color picker、presentation apply 已消费 typed payload | result/request events 已覆盖 | 持久颜色面板、多文档/workspace 聚合和统一 feedback |
+| document color / color presentation | 已有 request/take | 已有 color typed payload | color quick panel、direct color picker、presentation apply 已消费 typed payload；阶段 169 已让显式 document color / color presentation 的 unavailable/request failed/failed/timeout/empty/apply failed 接入统一 feedback | result/request events 已覆盖 | 持久颜色面板、多文档/workspace 聚合；状态订阅驱动 stale/metadata |
 | call hierarchy / type hierarchy | 已有 prepare/children request/take | 已有 hierarchy typed payload | 基础 quick panel 导航和 children request 已消费 typed payload | result/request events 已覆盖 | 持久树状面板、展开/刷新、跨文件聚合和统一 feedback |
 | diagnostics pull / publish diagnostics projection | pull request/take 已有；publish notification projection 已有 | pull diagnostics typed payload 已有；publish 走 derived-state/workspace store projection | Problems quick/persistent/workspace panel、markers、status summary 已消费 unified model；阶段 163 已让 workspace diagnostics 显式请求/空结果/超时进入统一 feedback 起点 | diagnostics lifecycle、workspace diagnostics events、request/result events 已覆盖 | 状态订阅模型驱动 stale/refresh；统一 feedback 中继续保留 pull error/partial result 元数据 |
 | selection range | 已有 request/take | 已有 selection range typed payload | expand-selection 主路径已消费 typed payload；阶段 163 已接入统一 feedback 起点 | result/request events 已覆盖 | 多光标 session state 后续由状态订阅驱动，继续补 event-driven feedback |
@@ -279,7 +279,7 @@ Swift 侧已经具备以下基础能力：
 
 本阶段已迁移这些用户可见路径：folding ranges refresh/apply、semantic tokens typed apply、selection range、linked editing、code lens refresh、workspace diagnostics 的空结果/失败/超时/不可用反馈。测试新增 `AttoLspResultFeedbackTests`，并用 `AttoEditorCommandTests/testUnifiedLspFeedbackUpdatesTransientStatusForEmptyFoldingRanges` 验证 App 主路径会写入 transient status。
 
-阶段 163 仍只是统一 feedback 的第一步：hover、signature help、completion、location、symbols、rename/code action、document color、hierarchy 等路径当时仍有各自的 popup/panel/formatter 逻辑；阶段 164-168 已继续迁移 hover typed payload、signature help、location、symbols 和 completion 显式命令反馈。下一步应继续把 rename/code action、document color、hierarchy 等路径接入同一个 feedback sink，并让 core-owned request/result/state event stream 驱动 feedback 的生命周期、stale/refresh 展示和 result panel metadata。
+阶段 163 仍只是统一 feedback 的第一步：hover、signature help、completion、location、symbols、rename/code action、document color、hierarchy 等路径当时仍有各自的 popup/panel/formatter 逻辑；阶段 164-169 已继续迁移 hover typed payload、signature help、location、symbols、completion 和 document color / color presentation 显式命令反馈。下一步应继续把 rename/code action、hierarchy 等路径接入同一个 feedback sink，并让 core-owned request/result/state event stream 驱动 feedback 的生命周期、stale/refresh 展示和 result panel metadata。
 
 ## 阶段 164: Hover typed payload wrapper
 
@@ -310,6 +310,12 @@ AttoEditor `AttoLspSignatureHelpFormatter` 已改为直接消费 UIFFI typed res
 2026-08-02 阶段 168 已把显式 `lsp.completion` 命令接入统一 feedback：`AttoLspResultFeedback` 新增 completion feature，显式 completion 的 LSP disabled、request failed、take failed、timeout 和 empty result 会写入 transient status 并复用 detail popover；空 typed/JSON result 测试入口也会得到 `Completion: no results`。
 
 本阶段为 completion request context 增加 `showFeedback` 标志，菜单/command palette 显式触发开启统一反馈，server trigger characters 自动触发仍传 `showFeedback: false` 并保持静默失败策略，避免输入过程中弹出噪声。completion family 的剩余工作集中在 completion additional edits / resolve 产生的跨文件 WorkspaceEdit 由 core-owned transaction 统一处理，以及后续状态订阅模型中的 stale/metadata。
+
+## 阶段 169: Document color feedback unification
+
+2026-08-02 阶段 169 已把 document color / color presentation 的显式用户路径接入统一 feedback：`AttoLspResultFeedback` 新增 document colors 和 color presentations feature，document color 请求的 unavailable、request failed、take failed、timeout、empty result，以及 color presentation 请求的 encode failure、request failed、take failed、timeout、empty result 和 apply failed 都会写入 transient status 并复用 detail popover。
+
+本阶段保留现有 color quick panel、direct color picker、presentation apply 和跨 family result event 行为不变，只把分散的 `showWorkspaceEditPopover(text: ...)` 用户反馈收敛到同一个 feedback sink。`NSColorPanel` 连续颜色变化仍传 `showFeedback: false`，避免拖动颜色时产生噪声。后续 color family 的剩余工作转为持久颜色面板、多文档/workspace 颜色聚合，以及状态订阅驱动 stale/metadata。
 
 ## 分层结论
 

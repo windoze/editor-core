@@ -2820,10 +2820,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Document colors are unavailable.\nLSP is not enabled for this document.",
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.documentColors), in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -2846,8 +2843,8 @@ final class AttoEditorAreaViewController: NSViewController {
             _ = try tab.editCore.editor.lspRequestDocumentColor()
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Document color request failed.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(.documentColors, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2921,7 +2918,7 @@ final class AttoEditorAreaViewController: NSViewController {
     ) -> Bool {
         guard items.isEmpty == false else {
             if showFeedback {
-                showWorkspaceEditPopover(text: "No document colors are available.", in: tab.editCore.editorView)
+                presentLspResultFeedback(AttoLspResultFeedback.empty(.documentColors), in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -3072,7 +3069,13 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let color = lspColor(for: pickedColor) else {
             guard let tab = activeTab, tab.id == tabID else { return false }
             if showFeedback {
-                showWorkspaceEditPopover(text: "Selected color could not be converted to RGB.", in: tab.editCore.editorView)
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(
+                        .documentColors,
+                        errorDescription: "Selected color could not be converted to RGB."
+                    ),
+                    in: tab.editCore.editorView
+                )
             }
             NSSound.beep()
             return false
@@ -3099,7 +3102,13 @@ final class AttoEditorAreaViewController: NSViewController {
         }
         guard let colorJSON = AttoLspDocumentColorParser.colorJSON(for: item) else {
             if showFeedback {
-                showWorkspaceEditPopover(text: "Color presentation request could not encode the color.", in: tab.editCore.editorView)
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(
+                        .colorPresentations,
+                        errorDescription: "Color presentation request could not encode the color."
+                    ),
+                    in: tab.editCore.editorView
+                )
             }
             NSSound.beep()
             return false
@@ -3114,8 +3123,11 @@ final class AttoEditorAreaViewController: NSViewController {
             )
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Color presentation request failed.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(
+                        .colorPresentations,
+                        errorDescription: error.localizedDescription
+                    ),
                     in: tab.editCore.editorView
                 )
             }
@@ -3149,7 +3161,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelDocumentColorUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(text: "Document color request timed out.", in: editorView)
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.documentColors), in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -3168,8 +3180,11 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelDocumentColorUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(
-                        text: "Document colors failed.\n\(error.localizedDescription)",
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(
+                            .documentColors,
+                            errorDescription: error.localizedDescription
+                        ),
                         in: editorView
                     )
                 }
@@ -3205,7 +3220,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelColorPresentationUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(text: "Color presentation request timed out.", in: editorView)
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.colorPresentations), in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -3224,8 +3239,11 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelColorPresentationUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(
-                        text: "Color presentations failed.\n\(error.localizedDescription)",
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(
+                            .colorPresentations,
+                            errorDescription: error.localizedDescription
+                        ),
                         in: editorView
                     )
                 }
@@ -3308,7 +3326,7 @@ final class AttoEditorAreaViewController: NSViewController {
     ) -> Bool {
         guard presentations.isEmpty == false else {
             if showFeedback {
-                showWorkspaceEditPopover(text: "No color presentations are available.", in: tab.editCore.editorView)
+                presentLspResultFeedback(AttoLspResultFeedback.empty(.colorPresentations), in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -3366,7 +3384,13 @@ final class AttoEditorAreaViewController: NSViewController {
         }
         guard presentation.isApplicable else {
             if showFeedback {
-                showWorkspaceEditPopover(text: "This color presentation has no text edit to apply.", in: tab.editCore.editorView)
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(
+                        .colorPresentations,
+                        errorDescription: "This color presentation has no text edit to apply."
+                    ),
+                    in: tab.editCore.editorView
+                )
             }
             NSSound.beep()
             return false
@@ -3385,8 +3409,11 @@ final class AttoEditorAreaViewController: NSViewController {
             return true
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Color presentation could not be applied.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(
+                        .colorPresentations,
+                        errorDescription: error.localizedDescription
+                    ),
                     in: tab.editCore.editorView
                 )
             }

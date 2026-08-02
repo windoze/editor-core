@@ -2063,6 +2063,37 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(window.title.contains("●"))
     }
 
+    func testEmptyColorResultsUseUnifiedFeedbackStatus() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("empty-color.txt")
+        try "let color = \"#ff0000\"\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tabID = try XCTUnwrap(vc.openFileItems().first?.id)
+
+        XCTAssertFalse(vc.showDocumentColorResultJSONInActiveTab("[]", showFeedback: true))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Document colors: no results")
+
+        let item = AttoLspDocumentColorParser.Item(
+            range: EcuSelectionRange(start: 13, end: 20),
+            startLine: 0,
+            startUTF16Character: 13,
+            color: AttoLspDocumentColorParser.Color(red: 1, green: 0, blue: 0, alpha: 1)
+        )
+        XCTAssertFalse(vc.showColorPresentationResultJSONInActiveTab(
+            "[]",
+            item: item,
+            tabID: tabID,
+            showFeedback: true
+        ))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Color presentations: no results")
+    }
+
     func testDocumentColorResultsRecordLspResultEvents() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

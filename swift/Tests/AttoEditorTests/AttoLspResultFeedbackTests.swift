@@ -118,6 +118,34 @@ final class AttoLspResultFeedbackTests: XCTestCase {
                 detailText: "No completions are available here."
             )
         )
+        XCTAssertEqual(
+            AttoLspResultFeedback.requestFailed(.documentColors, errorDescription: "server busy"),
+            AttoLspResultFeedback.Message(
+                statusText: "Document colors: request failed",
+                detailText: "Document colors request failed.\nserver busy"
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.failed(.colorPresentations, errorDescription: "decode failed"),
+            AttoLspResultFeedback.Message(
+                statusText: "Color presentations: failed",
+                detailText: "Color presentations failed.\ndecode failed"
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.documentColors),
+            AttoLspResultFeedback.Message(
+                statusText: "Document colors: no results",
+                detailText: "No document colors are available."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.colorPresentations),
+            AttoLspResultFeedback.Message(
+                statusText: "Color presentations: no results",
+                detailText: "No color presentations are available."
+            )
+        )
     }
 
     func testRefreshSummaryFormatsSingularAndPluralCounts() {
