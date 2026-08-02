@@ -185,6 +185,22 @@ final class AttoEditorAreaViewController: NSViewController {
         problemsPanelController?.isVisible == true
     }
 
+    func _workspaceProblemsSnapshotForTesting() -> AttoWorkspaceProblemsSnapshot {
+        workspaceProblemsStore.snapshot
+    }
+
+    func _workspaceProblemsPanelDiagnosticsForTesting() -> [AttoLspWorkspaceDiagnosticsParser.Diagnostic] {
+        workspaceProblemsPanelController?.currentWorkspaceDiagnostics ?? []
+    }
+
+    func _workspaceProblemsPanelRowCountForTesting() -> Int {
+        workspaceProblemsPanelController?.rowCount ?? 0
+    }
+
+    func _workspaceProblemsPanelIsVisibleForTesting() -> Bool {
+        workspaceProblemsPanelController?.isVisible == true
+    }
+
     func _coreMultiDocumentSnapshotForTesting() throws -> EcuMultiDocumentSnapshot? {
         try coreDocuments?.snapshot()
     }
@@ -538,6 +554,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var hierarchyResultsController: AttoCommandPaletteController?
     private var problemsResultsController: AttoCommandPaletteController?
     private var problemsPanelController: AttoProblemsPanelController?
+    private let workspaceProblemsStore = AttoWorkspaceProblemsStore()
+    private var workspaceProblemsPanelController: AttoProblemsPanelController?
     private var workspaceDiagnosticsContext: WorkspaceDiagnosticsRequestContext?
     private var workspaceDiagnosticsPollTimer: DispatchSourceTimer?
     private var workspaceDiagnosticsResultsController: AttoCommandPaletteController?
@@ -5354,7 +5372,9 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelWorkspaceDiagnosticsUI()
 
         do {
-            _ = try tab.editCore.editor.lspRequestWorkspaceDiagnostic(previousResultIdsJSON: "[]")
+            _ = try tab.editCore.editor.lspRequestWorkspaceDiagnostic(
+                previousResultIdsJSON: workspaceProblemsStore.previousResultIdsJSON()
+            )
         } catch {
             if showFeedback {
                 showWorkspaceEditPopover(
@@ -5379,7 +5399,9 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         let result = AttoLspWorkspaceDiagnosticsParser.parse(json)
-        guard result.diagnostics.isEmpty == false else {
+        let snapshot = workspaceProblemsStore.apply(result)
+        updateWorkspaceProblemsPanelIfVisible()
+        guard snapshot.diagnostics.isEmpty == false else {
             if showFeedback {
                 showWorkspaceEditPopover(text: "No workspace diagnostics are available.", in: tab.editCore.editorView)
             }
@@ -5387,7 +5409,7 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
 
-        showWorkspaceDiagnosticResults(result.diagnostics)
+        showWorkspaceDiagnosticResults(snapshot.diagnostics)
         return true
     }
 
@@ -5466,6 +5488,53 @@ final class AttoEditorAreaViewController: NSViewController {
         )
         workspaceDiagnosticsResultsController = controller
         controller.show(relativeTo: window, placeholder: "Filter workspace diagnostics...")
+    }
+
+    @discardableResult
+    func showWorkspaceProblemsPanelInActiveTab() -> Bool {
+        guard activeTab != nil else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        workspaceDiagnosticsResultsController?.hide()
+        workspaceDiagnosticsResultsController = nil
+
+        let diagnostics = workspaceProblemsStore.diagnostics
+        guard let window = view.window else {
+            if let first = diagnostics.first {
+                navigateToLspTarget(first.target)
+                return true
+            }
+            NSSound.beep()
+            return false
+        }
+
+        let controller = workspaceProblemsPanelController ?? AttoProblemsPanelController(
+            titleForWorkspaceDiagnostic: { [weak self] diagnostic in
+                guard let self else { return diagnostic.message }
+                return self.displayTitle(for: diagnostic)
+            },
+            onOpen: { [weak self] diagnostic in
+                self?.navigateToLspTarget(diagnostic.target)
+            },
+            accessibilityIDs: .workspaceProblems
+        )
+        workspaceProblemsPanelController = controller
+        return controller.show(relativeTo: window, workspaceDiagnostics: diagnostics)
+    }
+
+    private func updateWorkspaceProblemsPanelIfVisible() {
+        guard workspaceProblemsPanelController?.isVisible == true else { return }
+        workspaceProblemsPanelController?.update(workspaceDiagnostics: workspaceProblemsStore.diagnostics)
     }
 
     private func displayTitle(for diagnostic: AttoLspWorkspaceDiagnosticsParser.Diagnostic) -> String {

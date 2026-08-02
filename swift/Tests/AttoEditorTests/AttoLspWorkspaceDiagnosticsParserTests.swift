@@ -111,4 +111,63 @@ final class AttoLspWorkspaceDiagnosticsParserTests: XCTestCase {
         XCTAssertNil(parsed.diagnostics[0].severityLabel)
         XCTAssertEqual(parsed.previousResultIdsJSON(), "[]")
     }
+
+    func testWorkspaceProblemsStoreMergesUnchangedReportsAndClearsFullReports() throws {
+        let store = AttoWorkspaceProblemsStore()
+        let full = AttoLspWorkspaceDiagnosticsParser.parse("""
+        {
+          "items": [
+            {
+              "uri": "file:///project/a.swift",
+              "kind": "full",
+              "resultId": "a-1",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 1 },
+                    "end": { "line": 0, "character": 3 }
+                  },
+                  "severity": 1,
+                  "message": "first problem"
+                }
+              ]
+            }
+          ]
+        }
+        """)
+        var snapshot = store.apply(full)
+        XCTAssertEqual(snapshot.diagnostics.map(\.message), ["first problem"])
+        XCTAssertEqual(snapshot.previousResultIdsJSON(), #"[{"uri":"file:\/\/\/project\/a.swift","value":"a-1"}]"#)
+
+        let unchanged = AttoLspWorkspaceDiagnosticsParser.parse("""
+        {
+          "items": [
+            {
+              "uri": "file:///project/a.swift",
+              "kind": "unchanged",
+              "resultId": "a-2"
+            }
+          ]
+        }
+        """)
+        snapshot = store.apply(unchanged)
+        XCTAssertEqual(snapshot.diagnostics.map(\.message), ["first problem"])
+        XCTAssertEqual(snapshot.documents.map(\.resultId), ["a-2"])
+
+        let cleared = AttoLspWorkspaceDiagnosticsParser.parse("""
+        {
+          "items": [
+            {
+              "uri": "file:///project/a.swift",
+              "kind": "full",
+              "resultId": "a-3",
+              "items": []
+            }
+          ]
+        }
+        """)
+        snapshot = store.apply(cleared)
+        XCTAssertTrue(snapshot.diagnostics.isEmpty)
+        XCTAssertEqual(snapshot.previousResultIdsJSON(), #"[{"uri":"file:\/\/\/project\/a.swift","value":"a-3"}]"#)
+    }
 }

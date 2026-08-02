@@ -78,6 +78,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.fix_all"))
         XCTAssertTrue(ids.contains("lsp.problems"))
         XCTAssertTrue(ids.contains("lsp.workspace_diagnostics"))
+        XCTAssertTrue(ids.contains("lsp.show_workspace_problems_panel"))
         XCTAssertTrue(ids.contains("lsp.document_colors"))
         XCTAssertTrue(ids.contains("lsp.pick_document_color"))
         XCTAssertTrue(ids.contains("lsp.refresh_folding_ranges"))
@@ -1008,6 +1009,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.fix_all", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.problems", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_diagnostics", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workspace_problems_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.pick_document_color", in: menu))
     }
@@ -1051,6 +1053,99 @@ final class AttoEditorCommandTests: XCTestCase {
         let selections = try editorView.editor.selections()
         XCTAssertEqual(selections.ranges, [EcuSelectionRange(start: 8, end: 8)])
         XCTAssertEqual(selections.primaryIndex, 0)
+    }
+
+    func testWorkspaceProblemsPanelUsesStoredDiagnosticsAndRefreshesWithResults() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("workspace-problems.swift")
+        try "first\nsecond\nthird\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(vc.showWorkspaceDiagnosticsResultJSONInActiveTab("""
+        {
+          "items": [
+            {
+              "uri": "\(fileURL.absoluteString)",
+              "kind": "full",
+              "resultId": "diag-1",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 5 }
+                  },
+                  "severity": 1,
+                  "source": "unit-test",
+                  "message": "first workspace problem"
+                },
+                {
+                  "range": {
+                    "start": { "line": 1, "character": 0 },
+                    "end": { "line": 1, "character": 6 }
+                  },
+                  "severity": 2,
+                  "source": "unit-test",
+                  "message": "second workspace warning"
+                }
+              ]
+            }
+          ]
+        }
+        """))
+
+        XCTAssertEqual(vc._workspaceProblemsSnapshotForTesting().diagnostics.map(\.message), [
+            "first workspace problem",
+            "second workspace warning",
+        ])
+
+        XCTAssertTrue(vc.showWorkspaceProblemsPanelInActiveTab())
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.workspaceProblemsPanel
+        })
+        XCTAssertEqual(panel.title, "Workspace Problems (2)")
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.workspaceProblemsPanelSearchField, in: root) as? NSSearchField
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter workspace problems...")
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.workspaceProblemsPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertEqual(table.numberOfRows, 2)
+        XCTAssertTrue(vc._workspaceProblemsPanelIsVisibleForTesting())
+
+        XCTAssertTrue(vc.showWorkspaceDiagnosticsResultJSONInActiveTab("""
+        {
+          "items": [
+            {
+              "uri": "\(fileURL.absoluteString)",
+              "kind": "full",
+              "resultId": "diag-2",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 2, "character": 0 },
+                    "end": { "line": 2, "character": 5 }
+                  },
+                  "severity": 1,
+                  "source": "unit-test",
+                  "message": "third workspace problem"
+                }
+              ]
+            }
+          ]
+        }
+        """))
+        XCTAssertEqual(panel.title, "Workspace Problems (1)")
+        XCTAssertEqual(vc._workspaceProblemsPanelDiagnosticsForTesting().map(\.message), ["third workspace problem"])
+        XCTAssertEqual(vc._workspaceProblemsPanelRowCountForTesting(), 1)
     }
 
     func testImplementationMultiLocationResultUsesPanel() throws {

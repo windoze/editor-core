@@ -368,6 +368,78 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertTrue(controller.isVisible)
     }
 
+    func testWorkspaceProblemsPanelExposesStableIdentifiersAndFiltersRows() throws {
+        let diagnostics = [
+            AttoLspWorkspaceDiagnosticsParser.Diagnostic(
+                target: AttoLspDefinitionParser.Target(uri: "file:///project/a.swift", line: 2, utf16Character: 4),
+                endLine: 2,
+                endUTF16Character: 9,
+                severity: 1,
+                severityLabel: "error",
+                code: "E001",
+                source: "swift",
+                message: "Cannot find value",
+                resultId: "a-1"
+            ),
+            AttoLspWorkspaceDiagnosticsParser.Diagnostic(
+                target: AttoLspDefinitionParser.Target(uri: "file:///project/b.swift", line: 0, utf16Character: 1),
+                endLine: 0,
+                endUTF16Character: 3,
+                severity: 2,
+                severityLabel: "warning",
+                code: "W002",
+                source: "swift",
+                message: "Unused import",
+                resultId: "b-1"
+            ),
+        ]
+
+        var openedDiagnostics: [AttoLspWorkspaceDiagnosticsParser.Diagnostic] = []
+        let controller = AttoProblemsPanelController(
+            titleForWorkspaceDiagnostic: { diagnostic in "[\(diagnostic.severityLabel ?? "problem")] \(diagnostic.message)" },
+            onOpen: { diagnostic in openedDiagnostics.append(diagnostic) },
+            accessibilityIDs: .workspaceProblems
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 580),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 580))
+        window.makeKeyAndOrderFront(nil)
+
+        XCTAssertTrue(controller.show(relativeTo: window, workspaceDiagnostics: diagnostics))
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        XCTAssertEqual(panel.identifier?.rawValue, AttoAccessibilityID.workspaceProblemsPanel)
+        XCTAssertEqual(panel.title, "Workspace Problems (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.workspaceProblemsPanelRoot, in: root))
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.workspaceProblemsPanelSearchField, in: root) as? NSSearchField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.workspaceProblemsPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.workspaceProblemsPanelScrollView, in: root))
+        XCTAssertEqual(searchField.placeholderString, "Filter workspace problems...")
+        XCTAssertEqual(table.numberOfRows, 2)
+
+        searchField.stringValue = "warning"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 1)
+
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(openedDiagnostics, [diagnostics[1]])
+        XCTAssertTrue(controller.isVisible)
+    }
+
     func testCompletionPopupExposesStableIdentifiers() throws {
         let items = AttoLspCompletionParser.items(
             fromCompletionResultJSON: #"{"items":[{"label":"print","kind":3,"detail":"fn"}]}"#
