@@ -422,6 +422,15 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    public func lspTakeLastDefinitionResult() throws -> EcuLspLocationResult? {
+        guard let json = try lspTakeLastDefinitionResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspLocationResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_definition_decode"
+        )
+    }
+
     private func lspRequestPosition(
         logicalLine: UInt32,
         logicalColumn: UInt32,
@@ -476,6 +485,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastDeclarationResult() throws -> EcuLspLocationResult? {
+        guard let json = try lspTakeLastDeclarationResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspLocationResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_declaration_decode"
+        )
+    }
+
     public func lspRequestTypeDefinition(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
         try lspRequestPosition(
             logicalLine: logicalLine,
@@ -492,6 +510,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastTypeDefinitionResult() throws -> EcuLspLocationResult? {
+        guard let json = try lspTakeLastTypeDefinitionResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspLocationResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_type_definition_decode"
+        )
+    }
+
     public func lspRequestImplementation(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
         try lspRequestPosition(
             logicalLine: logicalLine,
@@ -506,6 +533,15 @@ public final class EditorUI {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_implementation_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_implementation_json(handle, has, ptr)
         }
+    }
+
+    public func lspTakeLastImplementationResult() throws -> EcuLspLocationResult? {
+        guard let json = try lspTakeLastImplementationResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspLocationResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_implementation_decode"
+        )
     }
 
     public func lspRequestReferences(
@@ -529,6 +565,15 @@ public final class EditorUI {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_references_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_references_json(handle, has, ptr)
         }
+    }
+
+    public func lspTakeLastReferencesResult() throws -> EcuLspLocationResult? {
+        guard let json = try lspTakeLastReferencesResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspLocationResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_references_decode"
+        )
     }
 
     public func lspRequestCompletion(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {

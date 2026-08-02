@@ -4588,16 +4588,16 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspLocationResult?
             do {
-                json = try self.takeLspLocationResult(kind: ctx.kind, editor: tab.editCore.editor)
+                result = try self.takeLspLocationResult(kind: ctx.kind, editor: tab.editCore.editor)
             } catch {
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             self.cancelDefinitionUI()
-            _ = self.showLspLocationResultJSONInActiveTab(json, kind: ctx.kind)
+            _ = self.showLspLocationResultInActiveTab(result, kind: ctx.kind)
             timer.cancel()
         }
 
@@ -4605,24 +4605,35 @@ final class AttoEditorAreaViewController: NSViewController {
         timer.resume()
     }
 
-    private func takeLspLocationResult(kind: LspLocationRequestKind, editor: EditorUI) throws -> String? {
+    private func takeLspLocationResult(kind: LspLocationRequestKind, editor: EditorUI) throws -> EcuLspLocationResult? {
         switch kind {
         case .definition:
-            try editor.lspTakeLastDefinitionResultJSON()
+            try editor.lspTakeLastDefinitionResult()
         case .declaration:
-            try editor.lspTakeLastDeclarationResultJSON()
+            try editor.lspTakeLastDeclarationResult()
         case .typeDefinition:
-            try editor.lspTakeLastTypeDefinitionResultJSON()
+            try editor.lspTakeLastTypeDefinitionResult()
         case .implementation:
-            try editor.lspTakeLastImplementationResultJSON()
+            try editor.lspTakeLastImplementationResult()
         case .references:
-            try editor.lspTakeLastReferencesResultJSON()
+            try editor.lspTakeLastReferencesResult()
         }
     }
 
     @discardableResult
     func showLspLocationResultJSONInActiveTab(_ json: String, kind: LspLocationRequestKind) -> Bool {
         let targets = AttoLspDefinitionParser.targets(fromLocationResultJSON: json)
+        return showLspLocationTargetsInActiveTab(targets, kind: kind)
+    }
+
+    @discardableResult
+    func showLspLocationResultInActiveTab(_ result: EcuLspLocationResult, kind: LspLocationRequestKind) -> Bool {
+        let targets = AttoLspDefinitionParser.targets(fromLocationResult: result)
+        return showLspLocationTargetsInActiveTab(targets, kind: kind)
+    }
+
+    @discardableResult
+    private func showLspLocationTargetsInActiveTab(_ targets: [AttoLspDefinitionParser.Target], kind: LspLocationRequestKind) -> Bool {
         guard targets.isEmpty == false else {
             NSSound.beep()
             return false

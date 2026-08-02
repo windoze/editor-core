@@ -1,3 +1,4 @@
+import EditorCoreUIFFI
 import Foundation
 
 enum AttoLspDefinitionParser {
@@ -20,7 +21,17 @@ enum AttoLspDefinitionParser {
         targets(fromLocationResultJSON: json).first
     }
 
+    static func firstTarget(fromDefinitionResult result: EcuLspLocationResult) -> Target? {
+        targets(fromLocationResult: result).first
+    }
+
     static func targets(fromLocationResultJSON json: String) -> [Target] {
+        if let data = json.data(using: .utf8),
+           let result = try? JSONDecoder().decode(EcuLspLocationResult.self, from: data)
+        {
+            return targets(fromLocationResult: result)
+        }
+
         guard let data = json.data(using: .utf8) else { return [] }
         guard let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
         var out: [Target] = []
@@ -28,8 +39,22 @@ enum AttoLspDefinitionParser {
         return out
     }
 
+    static func targets(fromLocationResult result: EcuLspLocationResult) -> [Target] {
+        result.targets.map { target in
+            Target(
+                uri: target.uri,
+                line: Int(target.selectionRange.start.line),
+                utf16Character: Int(target.selectionRange.start.utf16Character)
+            )
+        }
+    }
+
     static func locationItems(fromLocationResultJSON json: String, workspaceRootURL: URL) -> [LocationItem] {
         locationItems(for: targets(fromLocationResultJSON: json), workspaceRootURL: workspaceRootURL)
+    }
+
+    static func locationItems(fromLocationResult result: EcuLspLocationResult, workspaceRootURL: URL) -> [LocationItem] {
+        locationItems(for: targets(fromLocationResult: result), workspaceRootURL: workspaceRootURL)
     }
 
     static func locationItems(for targets: [Target], workspaceRootURL: URL) -> [LocationItem] {

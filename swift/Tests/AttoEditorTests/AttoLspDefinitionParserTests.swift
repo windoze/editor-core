@@ -1,4 +1,5 @@
 import AppKit
+import EditorCoreUIFFI
 @testable import AttoEditor
 import XCTest
 
@@ -71,6 +72,43 @@ final class AttoLspDefinitionParserTests: XCTestCase {
                 .init(uri: "file:///tmp/a.rs", line: 1, utf16Character: 2),
                 .init(uri: "file:///tmp/b.rs", line: 4, utf16Character: 5),
             ]
+        )
+    }
+
+    func testTypedLocationResultParsesTargets() throws {
+        let result = try JSONDecoder().decode(EcuLspLocationResult.self, from: Data("""
+        [
+          {
+            "uri": "file:///tmp/a.rs",
+            "range": {
+              "start": { "line": 1, "character": 2 },
+              "end": { "line": 1, "character": 3 }
+            }
+          },
+          {
+            "targetUri": "file:///tmp/b.rs",
+            "targetRange": {
+              "start": { "line": 8, "character": 0 },
+              "end": { "line": 9, "character": 0 }
+            },
+            "targetSelectionRange": {
+              "start": { "line": 4, "character": 5 },
+              "end": { "line": 4, "character": 6 }
+            }
+          }
+        ]
+        """.utf8))
+
+        XCTAssertEqual(
+            AttoLspDefinitionParser.targets(fromLocationResult: result),
+            [
+                .init(uri: "file:///tmp/a.rs", line: 1, utf16Character: 2),
+                .init(uri: "file:///tmp/b.rs", line: 4, utf16Character: 5),
+            ]
+        )
+        XCTAssertEqual(
+            AttoLspDefinitionParser.firstTarget(fromDefinitionResult: result),
+            .init(uri: "file:///tmp/a.rs", line: 1, utf16Character: 2)
         )
     }
 
