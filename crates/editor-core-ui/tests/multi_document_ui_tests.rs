@@ -153,6 +153,87 @@ fn multi_document_ui_can_search_across_tabs() {
 }
 
 #[test]
+fn multi_document_ui_exports_workspace_outline_snapshot() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let app = ui.open_tab("struct App {\n  func run() {}\n}\n", 80);
+    let model = ui.open_tab("final class Model {}\n", 80);
+    ui.set_tab_title(app, Some("App.swift".to_string()))
+        .unwrap();
+    ui.set_tab_title(model, Some("Model.swift".to_string()))
+        .unwrap();
+
+    ui.apply_tab_document_symbols_json(
+        app,
+        r#"[
+          {
+            "name": "App",
+            "kind": 23,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 2, "character": 1 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 7 },
+              "end": { "line": 0, "character": 10 }
+            },
+            "children": [
+              {
+                "name": "run",
+                "kind": 12,
+                "range": {
+                  "start": { "line": 1, "character": 2 },
+                  "end": { "line": 1, "character": 15 }
+                },
+                "selectionRange": {
+                  "start": { "line": 1, "character": 7 },
+                  "end": { "line": 1, "character": 10 }
+                }
+              }
+            ]
+          }
+        ]"#,
+    )
+    .unwrap();
+    ui.apply_tab_document_symbols_json(
+        model,
+        r#"[
+          {
+            "name": "Model",
+            "kind": 5,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 20 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 12 },
+              "end": { "line": 0, "character": 17 }
+            }
+          }
+        ]"#,
+    )
+    .unwrap();
+
+    let snapshot = ui.workspace_outline_snapshot().unwrap();
+    assert_eq!(snapshot.documents.len(), 2);
+    assert_eq!(snapshot.documents[0].tab_id, app.get());
+    assert_eq!(snapshot.documents[0].title.as_deref(), Some("App.swift"));
+    assert_eq!(snapshot.documents[0].symbol_count, 2);
+    assert_eq!(snapshot.documents[0].symbols[0]["name"], "App");
+    assert_eq!(
+        snapshot.documents[0].symbols[0]["children"][0]["name"],
+        "run"
+    );
+    assert_eq!(snapshot.documents[1].tab_id, model.get());
+    assert_eq!(snapshot.documents[1].title.as_deref(), Some("Model.swift"));
+    assert_eq!(snapshot.documents[1].symbols[0]["name"], "Model");
+
+    let json: serde_json::Value =
+        serde_json::from_str(&ui.workspace_outline_snapshot_json().unwrap()).unwrap();
+    assert_eq!(json["documents"][0]["tab_id"], app.get());
+    assert_eq!(json["documents"][0]["symbol_count"], 2);
+}
+
+#[test]
 fn multi_document_ui_can_replace_tab_text_and_track_dirty_state() {
     let mut ui = MultiDocumentEditorUi::new();
     let tab = ui.open_tab("hello world\n", 80);

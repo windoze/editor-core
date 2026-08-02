@@ -228,6 +228,12 @@ char* editor_core_ui_ffi_multi_document_search_all_tabs_json(MultiDocumentEditor
                                                              uint8_t case_sensitive,
                                                              uint8_t whole_word,
                                                              uint8_t regex);
+char* editor_core_ui_ffi_multi_document_workspace_outline_snapshot_json(
+    MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_apply_tab_document_symbols_json(
+    MultiDocumentEditorUi* multi,
+    uint64_t tab_id,
+    const char* result_json_utf8);
 char* editor_core_ui_ffi_multi_document_apply_workspace_diagnostics_json(
     MultiDocumentEditorUi* multi,
     const char* result_json_utf8);

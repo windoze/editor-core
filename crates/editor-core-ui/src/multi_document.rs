@@ -6,6 +6,7 @@ mod lsp_request_events;
 mod lsp_result_events;
 mod state_events;
 mod workspace_diagnostics;
+mod workspace_outline;
 
 pub use lsp_request_events::{MultiDocumentLspRequestEvent, MultiDocumentLspRequestEventsSnapshot};
 pub use lsp_result_events::{MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot};
@@ -15,6 +16,7 @@ pub use workspace_diagnostics::{
     WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
     WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
 };
+pub use workspace_outline::{WorkspaceOutlineDocument, WorkspaceOutlineSnapshot};
 
 /// Opaque id for an open tab/document managed by [`MultiDocumentEditorUi`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -538,6 +540,32 @@ impl MultiDocumentEditorUi {
             out.push(TabSearchResult { tab_id, matches });
         }
         Ok(out)
+    }
+
+    /// Return the current workspace outline aggregated from each tab's active view.
+    pub fn workspace_outline_snapshot(&self) -> Result<WorkspaceOutlineSnapshot, UiError> {
+        workspace_outline::snapshot(&self.tabs, &self.tab_order)
+    }
+
+    /// Return the current workspace outline as JSON.
+    pub fn workspace_outline_snapshot_json(&self) -> Result<String, UiError> {
+        workspace_outline::snapshot_json(&self.tabs, &self.tab_order)
+    }
+
+    /// Apply an LSP `textDocument/documentSymbol` result JSON payload to a tab's document.
+    pub fn apply_tab_document_symbols_json(
+        &mut self,
+        tab_id: TabId,
+        json: &str,
+    ) -> Result<(), UiError> {
+        let tab = self
+            .tabs
+            .get_mut(&tab_id)
+            .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
+        let view = tab.active_view_mut().ok_or_else(|| {
+            UiError::Processor(format!("tab {} has no active view", tab_id.get()))
+        })?;
+        view.lsp_apply_document_symbols_json(json)
     }
 
     /// Clear the project/workspace diagnostic state owned by this multi-document UI model.

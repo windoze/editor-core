@@ -59,6 +59,7 @@ pub use multi_document::{
     WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
     WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
     WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
+    WorkspaceOutlineDocument, WorkspaceOutlineSnapshot,
 };
 pub use state::EditorUi;
 pub use state_events::{

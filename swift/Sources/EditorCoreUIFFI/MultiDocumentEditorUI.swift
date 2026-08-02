@@ -527,6 +527,27 @@ public final class MultiDocumentEditorUI {
         return try decode(EcuTabSearchResponse.self, from: json, context: "multi_document_search_decode").results
     }
 
+    public func workspaceOutlineSnapshotJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_workspace_outline_snapshot_json") {
+            editor_core_ui_ffi_multi_document_workspace_outline_snapshot_json(handle)
+        }
+    }
+
+    public func workspaceOutlineSnapshot() throws -> EcuWorkspaceOutlineSnapshot {
+        try decode(
+            EcuWorkspaceOutlineSnapshot.self,
+            from: workspaceOutlineSnapshotJSON(),
+            context: "multi_document_workspace_outline_snapshot_decode"
+        )
+    }
+
+    public func applyTabDocumentSymbolsJSON(tabId: UInt64, resultJSON: String) throws {
+        let status = resultJSON.withCString { resultPtr in
+            editor_core_ui_ffi_multi_document_apply_tab_document_symbols_json(handle, tabId, resultPtr)
+        }
+        try library.ensureStatus(status, context: "multi_document_apply_tab_document_symbols_json")
+    }
+
     public func applyWorkspaceDiagnosticsJSON(_ resultJSON: String) throws -> EcuWorkspaceDiagnosticsSnapshot {
         let json = try applyWorkspaceDiagnosticsSnapshotJSON(resultJSON)
         return try decode(

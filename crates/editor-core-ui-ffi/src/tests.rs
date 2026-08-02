@@ -246,6 +246,48 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     assert_eq!(search_results.len(), 1);
     assert_eq!(search_results[0]["tab_id"], beta_id);
 
+    let document_symbols = CString::new(
+        r#"[
+          {
+            "name": "Beta",
+            "kind": 23,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 11 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 5 },
+              "end": { "line": 0, "character": 9 }
+            }
+          }
+        ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_apply_tab_document_symbols_json(
+            multi,
+            beta_id,
+            document_symbols.as_ptr(),
+        ),
+        ECU_OK
+    );
+    let outline_ptr = editor_core_ui_ffi_multi_document_workspace_outline_snapshot_json(multi);
+    assert!(!outline_ptr.is_null());
+    let outline_json = unsafe { std::ffi::CStr::from_ptr(outline_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(outline_ptr) };
+    let outline_value: serde_json::Value = serde_json::from_str(&outline_json).unwrap();
+    let beta_outline = outline_value["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|document| document["tab_id"] == beta_id)
+        .unwrap();
+    assert_eq!(beta_outline["title"], "Beta");
+    assert_eq!(beta_outline["symbol_count"], 1);
+    assert_eq!(beta_outline["symbols"][0]["name"], "Beta");
+
     let workspace_diagnostics = CString::new(
         r#"{
           "items": [

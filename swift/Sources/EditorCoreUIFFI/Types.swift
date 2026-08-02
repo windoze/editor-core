@@ -887,6 +887,46 @@ public struct EcuDocumentSymbolsSnapshot: Equatable, Sendable, Decodable {
 }
 
 @frozen
+public struct EcuWorkspaceOutlineDocument: Equatable, Sendable, Decodable {
+    public var tabId: UInt64
+    public var viewIndex: UInt32
+    public var title: String?
+    public var symbolCount: UInt32
+    public var symbols: [EcuDocumentSymbol]
+
+    public init(
+        tabId: UInt64,
+        viewIndex: UInt32,
+        title: String?,
+        symbolCount: UInt32,
+        symbols: [EcuDocumentSymbol]
+    ) {
+        self.tabId = tabId
+        self.viewIndex = viewIndex
+        self.title = title
+        self.symbolCount = symbolCount
+        self.symbols = symbols
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case tabId = "tab_id"
+        case viewIndex = "view_index"
+        case title
+        case symbolCount = "symbol_count"
+        case symbols
+    }
+}
+
+@frozen
+public struct EcuWorkspaceOutlineSnapshot: Equatable, Sendable, Decodable {
+    public var documents: [EcuWorkspaceOutlineDocument]
+
+    public init(documents: [EcuWorkspaceOutlineDocument]) {
+        self.documents = documents
+    }
+}
+
+@frozen
 public struct EcuFoldingRegion: Equatable, Sendable, Decodable {
     public var startLine: UInt32
     public var endLine: UInt32

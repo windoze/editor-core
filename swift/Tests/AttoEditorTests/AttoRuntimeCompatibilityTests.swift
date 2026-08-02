@@ -83,6 +83,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
                 EditorCoreUIFFIFeatures.lspSemanticTokensRequests.rawValue,
                 EditorCoreUIFFIFeatures.editorUIStateEvents.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentStateEvents.rawValue,
+                EditorCoreUIFFIFeatures.workspaceOutlineSnapshot.rawValue,
             ])
         )
         XCTAssertTrue(report.diagnosticMessage.contains("Unavailable optional UI FFI features"))

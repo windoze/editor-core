@@ -1,4 +1,5 @@
 @testable import AttoEditor
+import EditorCoreUIFFI
 import Foundation
 import XCTest
 
@@ -36,12 +37,14 @@ final class AttoWorkspaceOutlineStoreTests: XCTestCase {
             tabID: UUID(uuidString: "00000000-0000-0000-0000-000000000001"),
             coreTabID: 11,
             fileURL: firstURL,
+            documentText: "",
             symbols: [app, run]
         )
         let snapshot = store.upsertDocument(
             tabID: UUID(uuidString: "00000000-0000-0000-0000-000000000002"),
             coreTabID: 12,
             fileURL: secondURL,
+            documentText: "",
             symbols: [model]
         )
 
@@ -61,12 +64,14 @@ final class AttoWorkspaceOutlineStoreTests: XCTestCase {
             tabID: nil,
             coreTabID: nil,
             fileURL: fileURL,
+            documentText: "",
             symbols: [symbol(name: "Old", uri: fileURL.absoluteString)]
         )
         var snapshot = store.upsertDocument(
             tabID: nil,
             coreTabID: nil,
             fileURL: fileURL,
+            documentText: "",
             symbols: [symbol(name: "New", uri: fileURL.absoluteString)]
         )
         XCTAssertEqual(snapshot.documents.count, 1)
@@ -79,12 +84,31 @@ final class AttoWorkspaceOutlineStoreTests: XCTestCase {
             tabID: nil,
             coreTabID: nil,
             fileURL: fileURL,
+            documentText: "",
             symbols: [symbol(name: "Again", uri: fileURL.absoluteString)]
         )
         XCTAssertFalse(store.isEmpty)
         store.clear()
         XCTAssertEqual(store.snapshot, .empty)
         XCTAssertTrue(store.isEmpty)
+    }
+
+    func testWorkspaceOutlineStoreFallsBackWhenCoreSnapshotHasNoMappedDocuments() throws {
+        let coreDocuments = try MultiDocumentEditorUI(library: EditorCoreUIFFILibrary())
+        let store = AttoWorkspaceOutlineStore(coreDocuments: coreDocuments)
+        let fileURL = URL(fileURLWithPath: "/tmp/project/App.swift")
+
+        let snapshot = store.upsertDocument(
+            tabID: nil,
+            coreTabID: 99,
+            fileURL: fileURL,
+            documentText: "struct App {}\n",
+            symbols: [symbol(name: "App", uri: fileURL.absoluteString)]
+        )
+
+        XCTAssertEqual(snapshot.documents.map(\.title), ["App.swift"])
+        XCTAssertEqual(snapshot.symbols.map(\.name), ["App"])
+        XCTAssertEqual(store.snapshot, snapshot)
     }
 
     private func symbol(

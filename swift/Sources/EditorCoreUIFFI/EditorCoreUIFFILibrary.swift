@@ -78,6 +78,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let lspAuxiliaryResolveRequests = Self(rawValue: 1 << 15)
     public static let editorUIStateEvents = Self(rawValue: 1 << 16)
     public static let multiDocumentStateEvents = Self(rawValue: 1 << 17)
+    public static let workspaceOutlineSnapshot = Self(rawValue: 1 << 18)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

@@ -93,6 +93,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.lspRequestCancelTimeoutEvents))
         XCTAssertTrue(info.supports(.editorUIStateEvents))
         XCTAssertTrue(info.supports(.multiDocumentStateEvents))
+        XCTAssertTrue(info.supports(.workspaceOutlineSnapshot))
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {
@@ -350,6 +351,30 @@ final class EditorCoreUIFFITests: XCTestCase {
         let results = try multi.searchAllTabs(query: "mirror")
         XCTAssertEqual(results.map(\.tabId), [beta])
         XCTAssertEqual(results.flatMap(\.matches).count, 1)
+
+        try multi.applyTabDocumentSymbolsJSON(tabId: beta, resultJSON: """
+        [
+          {
+            "name": "Beta",
+            "kind": 23,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 16 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 5 },
+              "end": { "line": 0, "character": 9 }
+            }
+          }
+        ]
+        """)
+        let outline = try multi.workspaceOutlineSnapshot()
+        XCTAssertEqual(outline.documents.count, 3)
+        let betaOutline = try XCTUnwrap(outline.documents.first { $0.tabId == beta })
+        XCTAssertEqual(betaOutline.title, "Beta")
+        XCTAssertEqual(betaOutline.viewIndex, 0)
+        XCTAssertEqual(betaOutline.symbolCount, 1)
+        XCTAssertEqual(betaOutline.symbols.map(\.name), ["Beta"])
 
         let diagnostics = try multi.applyWorkspaceDiagnosticsJSON("""
         {

@@ -868,7 +868,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private let lspSymbolResultStore = AttoLspResultLifecycleStore<LspSymbolResultSnapshot>(
         maxHistoryEntries: maxLspResultHistoryEntries
     )
-    private let workspaceOutlineStore = AttoWorkspaceOutlineStore()
+    private let workspaceOutlineStore: AttoWorkspaceOutlineStore
     private var workspaceSymbolSearchContext: WorkspaceSymbolSearchContext?
     private var workspaceSymbolSearchDebounceTimer: DispatchSourceTimer?
     private var workspaceSymbolSearchPollTimer: DispatchSourceTimer?
@@ -970,9 +970,11 @@ final class AttoEditorAreaViewController: NSViewController {
             let coreDocuments = try MultiDocumentEditorUI(library: library)
             self.coreDocuments = coreDocuments
             self.workspaceProblemsStore = AttoWorkspaceProblemsStore(coreDocuments: coreDocuments)
+            self.workspaceOutlineStore = AttoWorkspaceOutlineStore(coreDocuments: coreDocuments)
         } catch {
             self.coreDocuments = nil
             self.workspaceProblemsStore = AttoWorkspaceProblemsStore()
+            self.workspaceOutlineStore = AttoWorkspaceOutlineStore()
             NSLog("AttoEditor: failed to initialize core multi-document model: %@", String(describing: error))
         }
         super.init(nibName: nil, bundle: nil)
@@ -5952,6 +5954,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let rawJSON = result.rawJSONString
         if let rawJSON {
             try? tab.editCore.editor.lspApplyDocumentSymbolsJSON(rawJSON)
+            applyCoreDocumentSymbols(tab: tab, json: rawJSON)
         }
         derivedStateStore.refreshActive(editor: tab.editCore.editor)
         let text = (try? tab.editCore.editor.text()) ?? ""
@@ -5963,7 +5966,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let symbols = typedSnapshotSymbols.isEmpty
             ? AttoLspSymbolParser.documentSymbols(fromResult: result, documentURI: tab.fileURL.absoluteString)
             : typedSnapshotSymbols
-        updateWorkspaceOutline(tab: tab, symbols: symbols)
+        updateWorkspaceOutline(tab: tab, documentText: text, symbols: symbols)
         return finishLspSymbolResult(
             symbols,
             kind: .document,
@@ -5995,6 +5998,7 @@ final class AttoEditorAreaViewController: NSViewController {
         switch kind {
         case .document:
             try? tab.editCore.editor.lspApplyDocumentSymbolsJSON(json)
+            applyCoreDocumentSymbols(tab: tab, json: json)
             derivedStateStore.refreshActive(editor: tab.editCore.editor)
             let text = (try? tab.editCore.editor.text()) ?? ""
             let typedSymbols = AttoLspSymbolParser.documentSymbols(
@@ -6020,16 +6024,22 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         if case .document = kind {
-            updateWorkspaceOutline(tab: tab, symbols: symbols)
+            let text = (try? tab.editCore.editor.text()) ?? ""
+            updateWorkspaceOutline(tab: tab, documentText: text, symbols: symbols)
         }
         return finishLspSymbolResult(symbols, kind: kind, title: title, placeholder: placeholder, tab: tab)
     }
 
-    private func updateWorkspaceOutline(tab: AttoEditorTab, symbols: [AttoLspSymbolParser.Symbol]) {
+    private func updateWorkspaceOutline(
+        tab: AttoEditorTab,
+        documentText: String,
+        symbols: [AttoLspSymbolParser.Symbol]
+    ) {
         workspaceOutlineStore.upsertDocument(
             tabID: tab.id,
             coreTabID: tab.coreTabID,
             fileURL: tab.fileURL,
+            documentText: documentText,
             symbols: symbols
         )
         guard lspSymbolPanelController?.isVisible == true,
@@ -6044,6 +6054,15 @@ final class AttoEditorAreaViewController: NSViewController {
             title: workspaceOutlineHistoryTitle(for: workspaceOutlineStore.snapshot)
         )
         lspSymbolPanelController?.update(entry: entry)
+    }
+
+    private func applyCoreDocumentSymbols(tab: AttoEditorTab, json: String) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+        do {
+            try coreDocuments.applyTabDocumentSymbolsJSON(tabId: coreTabID, resultJSON: json)
+        } catch {
+            NSLog("AttoEditor: core multi-document apply document symbols failed: %@", String(describing: error))
+        }
     }
 
     private func finishLspSymbolResult(

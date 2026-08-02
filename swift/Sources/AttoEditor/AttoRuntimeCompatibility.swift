@@ -142,6 +142,11 @@ struct AttoRuntimeCompatibility {
             name: "multi-document state events",
             reason: "Project-level UI can drain state changes aggregated across tabs and split views; Swift falls back to family-specific multi-document event streams when unavailable."
         ),
+        RuntimeFeature(
+            feature: .workspaceOutlineSnapshot,
+            name: "workspace outline snapshot",
+            reason: "Workspace Outline can consume the core-owned MultiDocumentEditorUI symbol snapshot; Swift falls back to opened-document App projection when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {
