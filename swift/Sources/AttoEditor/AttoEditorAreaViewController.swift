@@ -126,6 +126,22 @@ final class AttoEditorAreaViewController: NSViewController {
         derivedStateStore.active
     }
 
+    func _activeDerivedStateIsStaleForTesting() -> Bool {
+        derivedStateStore.activeIsStale
+    }
+
+    func _derivedStateEventKindsForTesting() -> [EcuEditorUIStateEventKind] {
+        derivedStateStore.lastStateEventKinds
+    }
+
+    func _derivedStateEventSequenceForTesting() -> UInt64 {
+        derivedStateStore.lastStateEventSequence
+    }
+
+    func _derivedStateSnapshotRefreshCountForTesting() -> Int {
+        derivedStateStore.snapshotRefreshCount
+    }
+
     func _transientStatusTextForTesting() -> String? {
         transientStatusText
     }

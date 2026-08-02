@@ -88,12 +88,18 @@ final class AttoStatusBarSelectionTests: XCTestCase {
         """
         try editorView.editor.lspApplyDiagnosticsJSON(diagnostics)
 
+        let refreshCountBeforeDrain = vc._derivedStateSnapshotRefreshCountForTesting()
+        let sequenceBeforeDrain = vc._derivedStateEventSequenceForTesting()
         vc._updateStatusBarForTesting()
 
         let snapshot = vc._activeDerivedStateForTesting()
         XCTAssertEqual(snapshot.diagnostics.diagnostics.count, 1)
         XCTAssertEqual(snapshot.diagnostics.diagnostics[0].message, "first warning")
         XCTAssertEqual(snapshot.diagnostics.diagnostics[0].severity, .warning)
+        XCTAssertTrue(vc._derivedStateEventSequenceForTesting() > sequenceBeforeDrain)
+        XCTAssertTrue(vc._derivedStateEventKindsForTesting().contains(.derivedStateChanged))
+        XCTAssertEqual(vc._derivedStateSnapshotRefreshCountForTesting(), refreshCountBeforeDrain + 1)
+        XCTAssertFalse(vc._activeDerivedStateIsStaleForTesting())
         XCTAssertEqual(
             vc._activeMinimapDiagnosticMarkersForTesting(),
             [EditorCoreSkiaMinimapMarker(logicalLine: 0, kind: .warning)]
@@ -106,6 +112,16 @@ final class AttoStatusBarSelectionTests: XCTestCase {
         let statusBar = try XCTUnwrap(findSubview(of: AttoStatusBarView.self, in: vc.view))
         let labels = allSubviews(in: statusBar).compactMap { $0 as? NSTextField }
         XCTAssertTrue(labels.contains { $0.stringValue == "Problems: 1" })
+
+        let refreshCountAfterDrain = vc._derivedStateSnapshotRefreshCountForTesting()
+        vc._updateStatusBarForTesting()
+        XCTAssertTrue(vc._derivedStateEventKindsForTesting().isEmpty)
+        XCTAssertEqual(vc._derivedStateSnapshotRefreshCountForTesting(), refreshCountAfterDrain)
+
+        try editorView.editor.insertText("z")
+        vc._updateStatusBarForTesting()
+        XCTAssertTrue(vc._derivedStateEventKindsForTesting().contains(.derivedStateStale))
+        XCTAssertTrue(vc._activeDerivedStateIsStaleForTesting())
     }
 
     func testStatusBarConsumesFoldedDerivedState() throws {

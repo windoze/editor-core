@@ -43,12 +43,67 @@ struct AttoDerivedStateSnapshot: Equatable {
 
 final class AttoDerivedStateStore {
     private(set) var active: AttoDerivedStateSnapshot = .empty
+    private(set) var activeIsStale = false
+    private(set) var lastStateEventKinds: [EcuEditorUIStateEventKind] = []
+    private(set) var lastStateEventSequence: UInt64 = 0
+    private(set) var snapshotRefreshCount = 0
+    private var activeEditorID: ObjectIdentifier?
+    private var hasActiveSnapshot = false
 
     func clearActive() {
         active = .empty
+        activeIsStale = false
+        lastStateEventKinds = []
+        lastStateEventSequence = 0
+        snapshotRefreshCount = 0
+        activeEditorID = nil
+        hasActiveSnapshot = false
     }
 
     func refreshActive(editor: EditorUI) {
+        let editorID = ObjectIdentifier(editor)
+        if activeEditorID != editorID {
+            activeEditorID = editorID
+            active = .empty
+            activeIsStale = false
+            lastStateEventKinds = []
+            lastStateEventSequence = 0
+            hasActiveSnapshot = false
+        }
+
+        do {
+            let events = try editor.stateEvents(after: lastStateEventSequence)
+            lastStateEventSequence = events.latestSequence
+            lastStateEventKinds = events.events.map(\.kindValue)
+
+            var shouldRefreshSnapshot = hasActiveSnapshot == false
+            var stale = activeIsStale
+            for event in events.events {
+                switch event.kindValue {
+                case .derivedStateChanged:
+                    shouldRefreshSnapshot = true
+                    stale = false
+                case .viewportChanged:
+                    shouldRefreshSnapshot = true
+                case .derivedStateStale:
+                    stale = true
+                default:
+                    continue
+                }
+            }
+
+            if shouldRefreshSnapshot {
+                refreshActiveFromSnapshots(editor: editor)
+            }
+            activeIsStale = stale
+        } catch {
+            lastStateEventKinds = []
+            refreshActiveFromSnapshots(editor: editor)
+            activeIsStale = false
+        }
+    }
+
+    private func refreshActiveFromSnapshots(editor: EditorUI) {
         let textLength = UInt32(clamping: ((try? editor.text()) ?? "").unicodeScalars.count)
         active = AttoDerivedStateSnapshot(
             diagnostics: (try? editor.diagnosticsSnapshot()) ?? EcuDiagnosticsSnapshot(diagnostics: []),
@@ -57,5 +112,7 @@ final class AttoDerivedStateStore {
             foldingRegions: (try? editor.foldingRegionsSnapshot()) ?? EcuFoldingRegionsSnapshot(regions: []),
             styleIntervals: (try? editor.styleIntervalsSnapshot(start: 0, end: textLength)) ?? EcuStyleIntervalsSnapshot(layers: [])
         )
+        hasActiveSnapshot = true
+        snapshotRefreshCount += 1
     }
 }
