@@ -1703,6 +1703,34 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(persistentMetadataLabel.stringValue, "Fresh | Result #2 | locations | \(updatedPanelEntry.title)")
         XCTAssertEqual(vc._lspLocationPanelRowCountForTesting(), 1)
 
+        let projectErrorCursor = vc._latestProjectLspPanelErrorEventSequenceForTesting()
+        XCTAssertFalse(vc._recordProjectLspPanelErrorForTesting(
+            family: "completion",
+            title: "LSP Completion",
+            slot: "completion",
+            status: "error",
+            message: "completion failed"
+        ))
+        XCTAssertTrue(vc._recordProjectLspPanelErrorForTesting(
+            family: "locations",
+            title: "LSP References",
+            slot: "references",
+            status: "error",
+            message: "server busy"
+        ))
+        let projectErrors = vc._projectLspPanelErrorEventsForTesting(after: projectErrorCursor)
+        XCTAssertEqual(projectErrors.count, 1)
+        XCTAssertEqual(projectErrors[0].family, "locations")
+        XCTAssertEqual(projectErrors[0].slot, "references")
+        XCTAssertEqual(projectErrors[0].message, "LSP References: server busy")
+        let projectErrorPanelEntry = try XCTUnwrap(vc._lspLocationPanelEntryForTesting())
+        XCTAssertEqual(projectErrorPanelEntry.sequence, updatedPanelEntry.sequence)
+        XCTAssertEqual(projectErrorPanelEntry.state, .error(message: "LSP References: server busy"))
+        XCTAssertEqual(
+            persistentMetadataLabel.stringValue,
+            "Error: LSP References: server busy | Result #2 | locations | \(updatedPanelEntry.title)"
+        )
+
         let activeEditorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
         activeEditorView.editor.lspDisable()
         XCTAssertFalse(vc.goToImplementationInActiveTab())
@@ -1936,6 +1964,34 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(updatedPanelEntry.snapshot, updatedPanelSnapshot)
         XCTAssertEqual(persistentMetadataLabel.stringValue, "Fresh | Result #2 | symbols | Workspace Symbols: Open: 1 results")
         XCTAssertEqual(vc._lspSymbolPanelRowCountForTesting(), 1)
+
+        let projectErrorCursor = vc._latestProjectLspPanelErrorEventSequenceForTesting()
+        XCTAssertFalse(vc._recordProjectLspPanelErrorForTesting(
+            family: "locations",
+            title: "LSP References",
+            slot: "references",
+            status: "success",
+            message: "ignored"
+        ))
+        XCTAssertTrue(vc._recordProjectLspPanelErrorForTesting(
+            family: "symbols",
+            title: "LSP Workspace Symbols",
+            slot: "workspace_symbols",
+            status: "timeout",
+            message: ""
+        ))
+        let projectErrors = vc._projectLspPanelErrorEventsForTesting(after: projectErrorCursor)
+        XCTAssertEqual(projectErrors.count, 1)
+        XCTAssertEqual(projectErrors[0].family, "symbols")
+        XCTAssertEqual(projectErrors[0].slot, "workspace_symbols")
+        XCTAssertEqual(projectErrors[0].message, "LSP Workspace Symbols: timeout")
+        let projectErrorPanelEntry = try XCTUnwrap(vc._lspSymbolPanelEntryForTesting())
+        XCTAssertEqual(projectErrorPanelEntry.sequence, updatedPanelEntry.sequence)
+        XCTAssertEqual(projectErrorPanelEntry.state, .error(message: "LSP Workspace Symbols: timeout"))
+        XCTAssertEqual(
+            persistentMetadataLabel.stringValue,
+            "Error: LSP Workspace Symbols: timeout | Result #2 | symbols | Workspace Symbols: Open: 1 results"
+        )
 
         let activeEditorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
         activeEditorView.editor.lspDisable()

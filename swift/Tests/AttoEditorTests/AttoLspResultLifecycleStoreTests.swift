@@ -200,4 +200,80 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
             1
         )
     }
+
+    func testProjectLspPanelErrorEventStoreBoundsAndFiltersBySequence() {
+        let store = AttoProjectLspPanelErrorEventStore(maxHistoryEntries: 2)
+
+        let first = store.record(
+            source: .request,
+            sourceSequence: 10,
+            tabId: 1,
+            viewIndex: 0,
+            viewId: 100,
+            family: "locations",
+            title: "LSP References",
+            slot: "references",
+            method: "textDocument/references",
+            requestId: 31,
+            status: "error",
+            message: "LSP References: server busy"
+        )
+        let second = store.record(
+            source: .result,
+            sourceSequence: 11,
+            tabId: 2,
+            viewIndex: 1,
+            viewId: 200,
+            family: "symbols",
+            title: "LSP Workspace Symbols",
+            slot: "workspace_symbols",
+            method: "workspace/symbol",
+            requestId: 32,
+            status: "timeout",
+            message: "LSP Workspace Symbols: timeout"
+        )
+        let third = store.record(
+            source: .request,
+            sourceSequence: 12,
+            tabId: nil,
+            viewIndex: nil,
+            viewId: nil,
+            family: "locations",
+            title: "LSP Definition",
+            slot: "definition",
+            method: "textDocument/definition",
+            requestId: 33,
+            status: "error",
+            message: "LSP Definition: failed"
+        )
+
+        XCTAssertEqual(first.sequence, 1)
+        XCTAssertEqual(second.sequence, 2)
+        XCTAssertEqual(third.sequence, 3)
+        XCTAssertEqual(store.latestSequence, 3)
+        XCTAssertEqual(store.events.map(\.sequence), [2, 3])
+        XCTAssertEqual(store.entries(after: 2), [third])
+        XCTAssertEqual(store.entries(after: 3), [])
+
+        store.clear()
+        XCTAssertEqual(store.events, [])
+        XCTAssertEqual(store.latestSequence, 0)
+        XCTAssertEqual(
+            store.record(
+                source: .result,
+                sourceSequence: 1,
+                tabId: nil,
+                viewIndex: nil,
+                viewId: nil,
+                family: "symbols",
+                title: "LSP Document Symbols",
+                slot: "document_symbols",
+                method: "textDocument/documentSymbol",
+                requestId: 1,
+                status: "error",
+                message: "LSP Document Symbols: failed"
+            ).sequence,
+            1
+        )
+    }
 }

@@ -224,3 +224,85 @@ final class AttoLspResultEventStream {
         nextSequence = 1
     }
 }
+
+struct AttoProjectLspPanelErrorEvent: Equatable {
+    enum Source: String, Equatable {
+        case request
+        case result
+    }
+
+    let sequence: UInt64
+    let source: Source
+    let sourceSequence: UInt64
+    let tabId: UInt64?
+    let viewIndex: Int?
+    let viewId: UInt64?
+    let family: String
+    let title: String
+    let slot: String
+    let method: String
+    let requestId: UInt64
+    let status: String
+    let message: String
+}
+
+final class AttoProjectLspPanelErrorEventStore {
+    private let maxHistoryEntries: Int
+    private var nextSequence: UInt64 = 1
+    private(set) var events: [AttoProjectLspPanelErrorEvent] = []
+
+    var latestSequence: UInt64 {
+        events.last?.sequence ?? 0
+    }
+
+    init(maxHistoryEntries: Int) {
+        self.maxHistoryEntries = max(1, maxHistoryEntries)
+    }
+
+    @discardableResult
+    func record(
+        source: AttoProjectLspPanelErrorEvent.Source,
+        sourceSequence: UInt64,
+        tabId: UInt64?,
+        viewIndex: Int?,
+        viewId: UInt64?,
+        family: String,
+        title: String,
+        slot: String,
+        method: String,
+        requestId: UInt64,
+        status: String,
+        message: String
+    ) -> AttoProjectLspPanelErrorEvent {
+        let event = AttoProjectLspPanelErrorEvent(
+            sequence: nextSequence,
+            source: source,
+            sourceSequence: sourceSequence,
+            tabId: tabId,
+            viewIndex: viewIndex,
+            viewId: viewId,
+            family: family,
+            title: title,
+            slot: slot,
+            method: method,
+            requestId: requestId,
+            status: status,
+            message: message
+        )
+        nextSequence += 1
+        events.append(event)
+        if events.count > maxHistoryEntries {
+            events.removeFirst(events.count - maxHistoryEntries)
+        }
+        return event
+    }
+
+    func entries(after sequence: UInt64) -> [AttoProjectLspPanelErrorEvent] {
+        events.filter { $0.sequence > sequence }
+    }
+
+    func clear() {
+        events.removeAll()
+        nextSequence = 1
+    }
+}

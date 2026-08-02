@@ -232,6 +232,38 @@ final class AttoEditorAreaViewController: NSViewController {
         lspResultEventStream.latestSequence
     }
 
+    func _projectLspPanelErrorEventsForTesting(after sequence: UInt64) -> [AttoProjectLspPanelErrorEvent] {
+        projectLspPanelErrorEventStore.entries(after: sequence)
+    }
+
+    func _latestProjectLspPanelErrorEventSequenceForTesting() -> UInt64 {
+        projectLspPanelErrorEventStore.latestSequence
+    }
+
+    @discardableResult
+    func _recordProjectLspPanelErrorForTesting(
+        family: String,
+        title: String,
+        slot: String,
+        status: String,
+        message: String
+    ) -> Bool {
+        recordProjectLspPanelError(
+            source: .request,
+            sourceSequence: 0,
+            tabId: activeTab?.coreTabID,
+            viewIndex: activeTab?.activePaneIndex,
+            viewId: nil,
+            family: family,
+            title: title,
+            slot: slot,
+            method: "",
+            requestId: 0,
+            status: status,
+            errorMessage: message
+        ) != nil
+    }
+
     func _showCodeActionResultJSONForTesting(
         _ json: String,
         onlyKinds: [String] = [],
@@ -555,6 +587,11 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    private enum ProjectLspPanelFamily {
+        case locations
+        case symbols
+    }
+
     struct LspSymbolResultSnapshot: Equatable {
         let title: String
         let symbols: [AttoLspSymbolParser.Symbol]
@@ -846,6 +883,11 @@ final class AttoEditorAreaViewController: NSViewController {
     private let lspResultEventStream = AttoLspResultEventStream(
         maxHistoryEntries: maxLspResultEventHistoryEntries
     )
+    private let projectLspPanelErrorEventStore = AttoProjectLspPanelErrorEventStore(
+        maxHistoryEntries: maxLspResultEventHistoryEntries
+    )
+    private var coreLspRequestEventCursor: UInt64 = 0
+    private var coreLspResultEventCursor: UInt64 = 0
     private var activeDiagnosticsTextFingerprintsByTabID: [UUID: DiagnosticsTextFingerprint] = [:]
     private var activeDiagnosticsBaselinesByTabID: [UUID: [EcuDiagnostic]] = [:]
     private var activeDiagnosticsStaleReasonsByTabID: [UUID: AttoDiagnosticsStaleReason] = [:]
@@ -4028,6 +4070,8 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func updateStatusBar() {
+        drainProjectLspPanelLifecycleEvents()
+
         guard let tab = activeTab else {
             derivedStateStore.clearActive()
             problemsPanelController?.update(problems: [])
@@ -4257,6 +4301,151 @@ final class AttoEditorAreaViewController: NSViewController {
         if let entry = lspSymbolResultStore.updateCurrentState(.error(message: message.statusText)) {
             lspSymbolPanelController?.update(entry: entry)
         }
+    }
+
+    private func drainProjectLspPanelLifecycleEvents() {
+        guard let coreDocuments else { return }
+
+        do {
+            let requestSnapshot = try coreDocuments.lspRequestEvents(after: coreLspRequestEventCursor)
+            coreLspRequestEventCursor = requestSnapshot.latestSequence
+            for event in requestSnapshot.events {
+                recordProjectLspPanelError(
+                    source: .request,
+                    sourceSequence: event.sequence,
+                    tabId: event.tabId,
+                    viewIndex: event.viewIndex,
+                    viewId: event.viewId,
+                    family: event.family,
+                    title: event.title,
+                    slot: event.slot,
+                    method: event.method,
+                    requestId: event.requestId,
+                    status: event.status,
+                    errorMessage: event.errorMessage
+                )
+            }
+
+            let resultSnapshot = try coreDocuments.lspResultEvents(after: coreLspResultEventCursor)
+            coreLspResultEventCursor = resultSnapshot.latestSequence
+            for event in resultSnapshot.events {
+                recordProjectLspPanelError(
+                    source: .result,
+                    sourceSequence: event.sequence,
+                    tabId: event.tabId,
+                    viewIndex: event.viewIndex,
+                    viewId: event.viewId,
+                    family: event.family,
+                    title: event.title,
+                    slot: event.slot,
+                    method: event.method,
+                    requestId: event.requestId,
+                    status: event.status,
+                    errorMessage: event.errorMessage
+                )
+            }
+        } catch {
+            NSLog("AttoEditor: project LSP panel lifecycle event drain failed: %@", String(describing: error))
+        }
+    }
+
+    @discardableResult
+    private func recordProjectLspPanelError(
+        source: AttoProjectLspPanelErrorEvent.Source,
+        sourceSequence: UInt64,
+        tabId: UInt64?,
+        viewIndex: Int?,
+        viewId: UInt64?,
+        family: String,
+        title: String,
+        slot: String,
+        method: String,
+        requestId: UInt64,
+        status: String,
+        errorMessage: String?
+    ) -> AttoProjectLspPanelErrorEvent? {
+        guard Self.isProjectLspPanelErrorStatus(status),
+              let panelFamily = Self.projectLspPanelFamily(family: family, slot: slot)
+        else {
+            return nil
+        }
+
+        let message = Self.projectLspPanelErrorMessage(title: title, status: status, errorMessage: errorMessage)
+        let event = projectLspPanelErrorEventStore.record(
+            source: source,
+            sourceSequence: sourceSequence,
+            tabId: tabId,
+            viewIndex: viewIndex,
+            viewId: viewId,
+            family: family,
+            title: title,
+            slot: slot,
+            method: method,
+            requestId: requestId,
+            status: status,
+            message: message
+        )
+
+        switch panelFamily {
+        case .locations:
+            if let entry = lspLocationResultStore.updateCurrentState(.error(message: message)) {
+                lspLocationPanelController?.update(entry: entry)
+            }
+        case .symbols:
+            if let entry = lspSymbolResultStore.updateCurrentState(.error(message: message)) {
+                lspSymbolPanelController?.update(entry: entry)
+            }
+        }
+
+        return event
+    }
+
+    private static func isProjectLspPanelErrorStatus(_ status: String) -> Bool {
+        switch EcuLspRequestStatus(rawValue: status) {
+        case .error, .timeout:
+            return true
+        case .pending, .success, .empty, .stale, .mismatched, .canceled, .unknown(_):
+            return EcuLspResultStatus(rawValue: status) == .error
+        }
+    }
+
+    private static func projectLspPanelFamily(family: String, slot: String) -> ProjectLspPanelFamily? {
+        if family == "locations" {
+            return .locations
+        }
+        if family == "symbols" {
+            return .symbols
+        }
+
+        switch slot {
+        case "definition",
+             "declaration",
+             "type_definition",
+             "implementation",
+             "references":
+            return .locations
+        case "document_symbols",
+             "workspace_symbols":
+            return .symbols
+        default:
+            return nil
+        }
+    }
+
+    private static func projectLspPanelErrorMessage(
+        title: String,
+        status: String,
+        errorMessage: String?
+    ) -> String {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackTitle = trimmedTitle.isEmpty ? "LSP request" : trimmedTitle
+        if let errorMessage {
+            let trimmedMessage = errorMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedMessage.isEmpty == false {
+                return "\(fallbackTitle): \(trimmedMessage)"
+            }
+        }
+        return "\(fallbackTitle): \(status)"
     }
 
     private func clearActiveDiagnosticsStaleIfDiagnosticsChanged(
