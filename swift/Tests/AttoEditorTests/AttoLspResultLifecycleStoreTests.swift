@@ -460,6 +460,55 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         XCTAssertFalse(rawLog.contains("fake-lsp-1"))
     }
 
+    func testProjectLspProcessHealthLogStoreRetainsLatestEntriesPerWorkspace() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoProjectLspProcessHealthLogPerWorkspaceRetentionTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let rootA = tempDir.appendingPathComponent("workspace-a", isDirectory: true)
+        let rootB = tempDir.appendingPathComponent("workspace-b", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: rootB, withIntermediateDirectories: true)
+
+        let logURL = tempDir.appendingPathComponent("lsp-process-health.jsonl")
+        let logStore = AttoProjectLspProcessHealthLogStore(logFileURL: logURL, maxPersistedEntries: 2)
+        for (sequence, root) in [
+            (UInt64(1), rootA),
+            (UInt64(2), rootA),
+            (UInt64(3), rootB),
+            (UInt64(4), rootA),
+            (UInt64(5), rootB),
+            (UInt64(6), rootB)
+        ] {
+            try logStore.append(
+                event: AttoProjectLspProcessHealthEvent(
+                    sequence: sequence,
+                    sourceSequence: sequence + 100,
+                    tabId: sequence,
+                    viewIndex: 0,
+                    viewId: sequence + 1_000,
+                    serverName: "fake-lsp-\(sequence)",
+                    serverCommand: "fake-lsp",
+                    availability: "enabled",
+                    state: "ready",
+                    detail: nil,
+                    process: EcuLspProcessStatus(pid: UInt32(sequence), state: .running)
+                ),
+                workspaceRootURL: root,
+                recordedAt: Date(timeIntervalSince1970: TimeInterval(1_785_715_200 + sequence))
+            )
+        }
+
+        XCTAssertEqual(logStore.loadRecent(workspaceRootURL: rootA, limit: 10).map(\.sequence), [2, 4])
+        XCTAssertEqual(logStore.loadRecent(workspaceRootURL: rootB, limit: 10).map(\.sequence), [5, 6])
+
+        let rawLog = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(rawLog.split(whereSeparator: \.isNewline).count, 4)
+        XCTAssertFalse(rawLog.contains("fake-lsp-1"))
+        XCTAssertFalse(rawLog.contains("fake-lsp-3"))
+    }
+
     func testProjectLspProcessHealthLogStoreExportsWorkspaceEntries() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoProjectLspProcessHealthLogExportTests-\(UUID().uuidString)", isDirectory: true)

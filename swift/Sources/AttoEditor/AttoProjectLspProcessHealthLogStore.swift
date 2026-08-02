@@ -104,9 +104,7 @@ struct AttoProjectLspProcessHealthLogStore: Sendable {
             let existingText = String(data: existingData, encoding: .utf8) ?? ""
             var lines = existingText.split(whereSeparator: \.isNewline).map(String.init)
             lines.append(line)
-            if lines.count > maxPersistedEntries {
-                lines = Array(lines.suffix(maxPersistedEntries))
-            }
+            lines = retainLatestEntriesPerWorkspace(lines)
             let output = lines.joined(separator: "\n") + "\n"
             try output.write(to: logFileURL, atomically: true, encoding: .utf8)
         } else {
@@ -239,5 +237,29 @@ struct AttoProjectLspProcessHealthLogStore: Sendable {
             }
             return rawLine
         }
+    }
+
+    private func retainLatestEntriesPerWorkspace(_ lines: [String]) -> [String] {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        var countsByWorkspace: [String: Int] = [:]
+        var keptReversed: [String] = []
+        for line in lines.reversed() {
+            guard let lineData = line.data(using: .utf8),
+                  let entry = try? decoder.decode(AttoProjectLspProcessHealthLogEntry.self, from: lineData)
+            else {
+                keptReversed.append(line)
+                continue
+            }
+
+            let count = countsByWorkspace[entry.workspaceRootURI, default: 0]
+            guard count < maxPersistedEntries else {
+                continue
+            }
+            countsByWorkspace[entry.workspaceRootURI] = count + 1
+            keptReversed.append(line)
+        }
+        return keptReversed.reversed()
     }
 }
