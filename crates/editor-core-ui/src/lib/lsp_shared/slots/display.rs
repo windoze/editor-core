@@ -16,8 +16,8 @@ pub(super) fn family(slot: LspResultSlot) -> &'static str {
         | LspResultSlot::CodeActionResolve
         | LspResultSlot::ExecuteCommand => "actions",
         LspResultSlot::CodeLens | LspResultSlot::CodeLensResolve => "code_lens",
-        LspResultSlot::InlayHints => "inlay_hints",
-        LspResultSlot::DocumentLinks => "document_links",
+        LspResultSlot::InlayHints | LspResultSlot::InlayHintResolve => "inlay_hints",
+        LspResultSlot::DocumentLinks | LspResultSlot::DocumentLinkResolve => "document_links",
         LspResultSlot::SemanticTokensFull
         | LspResultSlot::SemanticTokensDelta
         | LspResultSlot::SemanticTokensRange => "semantic_tokens",
@@ -58,7 +58,9 @@ pub(super) fn title(slot: LspResultSlot) -> &'static str {
         LspResultSlot::CodeLens => "LSP Code Lens",
         LspResultSlot::CodeLensResolve => "LSP Code Lens Resolve",
         LspResultSlot::InlayHints => "LSP Inlay Hints",
+        LspResultSlot::InlayHintResolve => "LSP Inlay Hint Resolve",
         LspResultSlot::DocumentLinks => "LSP Document Links",
+        LspResultSlot::DocumentLinkResolve => "LSP Document Link Resolve",
         LspResultSlot::SemanticTokensFull => "LSP Semantic Tokens Full",
         LspResultSlot::SemanticTokensDelta => "LSP Semantic Tokens Delta",
         LspResultSlot::SemanticTokensRange => "LSP Semantic Tokens Range",

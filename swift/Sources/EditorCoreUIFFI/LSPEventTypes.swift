@@ -121,7 +121,9 @@ public enum EcuLspResultSlot: Hashable, Sendable {
     case codeLens
     case codeLensResolve
     case inlayHints
+    case inlayHintResolve
     case documentLinks
+    case documentLinkResolve
     case semanticTokensFull
     case semanticTokensDelta
     case semanticTokensRange
@@ -180,8 +182,12 @@ public enum EcuLspResultSlot: Hashable, Sendable {
             self = .codeLensResolve
         case "inlay_hints":
             self = .inlayHints
+        case "inlay_hint_resolve":
+            self = .inlayHintResolve
         case "document_links":
             self = .documentLinks
+        case "document_link_resolve":
+            self = .documentLinkResolve
         case "semantic_tokens_full":
             self = .semanticTokensFull
         case "semantic_tokens_delta":
@@ -263,8 +269,12 @@ public enum EcuLspResultSlot: Hashable, Sendable {
             return "code_lens_resolve"
         case .inlayHints:
             return "inlay_hints"
+        case .inlayHintResolve:
+            return "inlay_hint_resolve"
         case .documentLinks:
             return "document_links"
+        case .documentLinkResolve:
+            return "document_link_resolve"
         case .semanticTokensFull:
             return "semantic_tokens_full"
         case .semanticTokensDelta:

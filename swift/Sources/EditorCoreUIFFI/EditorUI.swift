@@ -845,6 +845,27 @@ public final class EditorUI {
         )
     }
 
+    public func lspRequestInlayHintResolve(hintJSON: String) throws -> UInt64 {
+        try lspRequestJSON(hintJSON, context: "editor_ui_lsp_request_inlay_hint_resolve") { cstr, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_inlay_hint_resolve(handle, cstr, out)
+        }
+    }
+
+    public func lspTakeLastInlayHintResolveResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_inlay_hint_resolve_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_inlay_hint_resolve_json(handle, has, ptr)
+        }
+    }
+
+    public func lspTakeLastInlayHintResolveResult() throws -> EcuLspInlayHint? {
+        guard let json = try lspTakeLastInlayHintResolveResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspInlayHint.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_inlay_hint_resolve_decode"
+        )
+    }
+
     public func lspRequestDocumentLinks() throws -> UInt64 {
         var out: UInt64 = 0
         let status = editor_core_ui_ffi_editor_ui_lsp_request_document_links(handle, &out)
@@ -864,6 +885,27 @@ public final class EditorUI {
             EcuLspDocumentLinkResult.self,
             from: json,
             context: "editor_ui_lsp_take_last_document_links_decode"
+        )
+    }
+
+    public func lspRequestDocumentLinkResolve(linkJSON: String) throws -> UInt64 {
+        try lspRequestJSON(linkJSON, context: "editor_ui_lsp_request_document_link_resolve") { cstr, out in
+            editor_core_ui_ffi_editor_ui_lsp_request_document_link_resolve(handle, cstr, out)
+        }
+    }
+
+    public func lspTakeLastDocumentLinkResolveResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_document_link_resolve_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_document_link_resolve_json(handle, has, ptr)
+        }
+    }
+
+    public func lspTakeLastDocumentLinkResolveResult() throws -> EcuLspDocumentLink? {
+        guard let json = try lspTakeLastDocumentLinkResolveResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspDocumentLink.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_document_link_resolve_decode"
         )
     }
 

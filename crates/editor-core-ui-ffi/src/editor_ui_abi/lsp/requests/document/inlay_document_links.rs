@@ -43,6 +43,32 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_inlay_hints_
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_inlay_hint_resolve(
+    ui: *mut EditorUi,
+    hint_json_utf8: *const c_char,
+    out_request_id: *mut u64,
+) -> c_int {
+    lsp_request_json_ffi(
+        ui,
+        hint_json_utf8,
+        "hint_json_utf8",
+        out_request_id,
+        |ui, json| ui.lsp_request_inlay_hint_resolve(json),
+    )
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_inlay_hint_resolve_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
+        ui.lsp_take_last_inlay_hint_resolve_result_json()
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_document_links(
     ui: *mut EditorUi,
     out_request_id: *mut u64,
@@ -58,5 +84,31 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_document_lin
 ) -> c_int {
     lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
         ui.lsp_take_last_document_links_result_json()
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_request_document_link_resolve(
+    ui: *mut EditorUi,
+    link_json_utf8: *const c_char,
+    out_request_id: *mut u64,
+) -> c_int {
+    lsp_request_json_ffi(
+        ui,
+        link_json_utf8,
+        "link_json_utf8",
+        out_request_id,
+        |ui, json| ui.lsp_request_document_link_resolve(json),
+    )
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_take_last_document_link_resolve_json(
+    ui: *mut EditorUi,
+    out_has_result: *mut u8,
+    out_result_json_utf8: *mut *mut c_char,
+) -> c_int {
+    lsp_take_result_json_ffi(ui, out_has_result, out_result_json_utf8, |ui| {
+        ui.lsp_take_last_document_link_resolve_result_json()
     })
 }

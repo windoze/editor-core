@@ -6,6 +6,13 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         try JSONDecoder().decode(T.self, from: Data(json.utf8))
     }
 
+    func testAuxiliaryResolveSlotsExposeTypedKinds() {
+        XCTAssertEqual(EcuLspResultSlot(rawValue: "inlay_hint_resolve"), .inlayHintResolve)
+        XCTAssertEqual(EcuLspResultSlot.inlayHintResolve.rawValue, "inlay_hint_resolve")
+        XCTAssertEqual(EcuLspResultSlot(rawValue: "document_link_resolve"), .documentLinkResolve)
+        XCTAssertEqual(EcuLspResultSlot.documentLinkResolve.rawValue, "document_link_resolve")
+    }
+
     func testEditorLSPResultEventsExposeTypedKinds() throws {
         let snapshot = try decode(EcuLspResultEventsSnapshot.self, """
         {

@@ -145,12 +145,50 @@ final class EditorCoreUIFFILSPAuxiliaryTypesTests: XCTestCase {
         XCTAssertEqual(error.error?.message, "links failed")
     }
 
+    func testAuxiliaryResolvePayloadsDecodeSingleObjects() throws {
+        let hint = try decode(EcuLspInlayHint.self, """
+        {
+          "position": { "line": 3, "character": 9 },
+          "label": "resolved",
+          "kind": 1,
+          "tooltip": "Resolved hint",
+          "data": { "resolved": true }
+        }
+        """)
+        XCTAssertEqual(hint.position.line, 3)
+        XCTAssertEqual(hint.position.utf16Character, 9)
+        XCTAssertEqual(hint.label.plainText, "resolved")
+        XCTAssertEqual(hint.kind, .type)
+        XCTAssertEqual(hint.tooltip, .string("Resolved hint"))
+        XCTAssertNotNil(hint.data)
+        XCTAssertNotNil(hint.rawJSONString)
+
+        let link = try decode(EcuLspDocumentLink.self, """
+        {
+          "range": {
+            "start": { "line": 4, "character": 1 },
+            "end": { "line": 4, "character": 8 }
+          },
+          "target": "file:///tmp/resolved.swift",
+          "tooltip": "Resolved link"
+        }
+        """)
+        XCTAssertEqual(link.range.start.line, 4)
+        XCTAssertEqual(link.range.start.utf16Character, 1)
+        XCTAssertEqual(link.target, "file:///tmp/resolved.swift")
+        XCTAssertEqual(link.tooltip, "Resolved link")
+        XCTAssertNotNil(link.rawJSONString)
+    }
+
     func testAuxiliaryTypedTakeWrappersStartEmpty() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "abc", viewportWidthCells: 80)
 
         XCTAssertTrue(lib.featureFlags.contains(.lspAuxiliaryRequests))
+        XCTAssertTrue(lib.featureFlags.contains(.lspAuxiliaryResolveRequests))
         XCTAssertNil(try ui.lspTakeLastInlayHintsResult())
+        XCTAssertNil(try ui.lspTakeLastInlayHintResolveResult())
         XCTAssertNil(try ui.lspTakeLastDocumentLinksResult())
+        XCTAssertNil(try ui.lspTakeLastDocumentLinkResolveResult())
     }
 }

@@ -60,6 +60,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_AUXILIARY_REQUESTS,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_AUXILIARY_RESOLVE_REQUESTS,
+        0
+    );
 }
 
 #[test]
@@ -3745,7 +3749,24 @@ fn ffi_lsp_request_definition_errors_when_lsp_disabled() {
     let code =
         unsafe { editor_core_ui_ffi_editor_ui_lsp_request_inlay_hints(ui, 0, 1, &mut out_id) };
     assert_eq!(code, ECU_ERR_INTERNAL);
+    let hint = CString::new(r#"{"position":{"line":0,"character":1},"label":"x"}"#).unwrap();
+    let code = unsafe {
+        editor_core_ui_ffi_editor_ui_lsp_request_inlay_hint_resolve(ui, hint.as_ptr(), &mut out_id)
+    };
+    assert_eq!(code, ECU_ERR_INTERNAL);
     let code = unsafe { editor_core_ui_ffi_editor_ui_lsp_request_document_links(ui, &mut out_id) };
+    assert_eq!(code, ECU_ERR_INTERNAL);
+    let link = CString::new(
+        r#"{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}}}"#,
+    )
+    .unwrap();
+    let code = unsafe {
+        editor_core_ui_ffi_editor_ui_lsp_request_document_link_resolve(
+            ui,
+            link.as_ptr(),
+            &mut out_id,
+        )
+    };
     assert_eq!(code, ECU_ERR_INTERNAL);
 
     let msg_ptr = editor_core_ui_ffi_last_error_message();

@@ -168,6 +168,36 @@ fn lsp_result_slots_store_special_success_null_and_error_envelopes() {
         ),
         None
     );
+
+    assert_eq!(
+        LspResultSlot::from_response_method("inlayHint/resolve"),
+        Some(LspResultSlot::InlayHintResolve)
+    );
+    assert_eq!(
+        LspResultSlot::InlayHintResolve.method(),
+        "inlayHint/resolve"
+    );
+    assert_eq!(
+        LspResultSlot::InlayHintResolve.slot_name(),
+        "inlay_hint_resolve"
+    );
+    assert_eq!(LspResultSlot::InlayHintResolve.family(), "inlay_hints");
+    assert_eq!(
+        LspResultSlot::from_response_method("documentLink/resolve"),
+        Some(LspResultSlot::DocumentLinkResolve)
+    );
+    assert_eq!(
+        LspResultSlot::DocumentLinkResolve.method(),
+        "documentLink/resolve"
+    );
+    assert_eq!(
+        LspResultSlot::DocumentLinkResolve.slot_name(),
+        "document_link_resolve"
+    );
+    assert_eq!(
+        LspResultSlot::DocumentLinkResolve.family(),
+        "document_links"
+    );
 }
 
 #[test]
@@ -3236,7 +3266,25 @@ fn ui_lsp_request_definition_errors_when_lsp_disabled() {
         other => panic!("expected UiError::Processor, got: {other:?}"),
     }
 
+    let err = ui
+        .lsp_request_inlay_hint_resolve(r#"{"position":{"line":0,"character":1},"label":"x"}"#)
+        .unwrap_err();
+    match err {
+        UiError::Processor(msg) => assert_eq!(msg, "LSP is not enabled"),
+        other => panic!("expected UiError::Processor, got: {other:?}"),
+    }
+
     let err = ui.lsp_request_document_links().unwrap_err();
+    match err {
+        UiError::Processor(msg) => assert_eq!(msg, "LSP is not enabled"),
+        other => panic!("expected UiError::Processor, got: {other:?}"),
+    }
+
+    let err = ui
+        .lsp_request_document_link_resolve(
+            r#"{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}}}"#,
+        )
+        .unwrap_err();
     match err {
         UiError::Processor(msg) => assert_eq!(msg, "LSP is not enabled"),
         other => panic!("expected UiError::Processor, got: {other:?}"),
