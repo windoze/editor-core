@@ -591,6 +591,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testActiveProblemsUseCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProblemsPanelUsesDerivedDiagnosticsAndRefreshesWithStatusUpdate`
     - `git diff --check`
+- 中间提交：`feat(app): project code lens titles from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor Code Lens actions quick panel/current-line action title 使用 core tab snapshot 的 `document_uri` 投影。
+  - 提交边界：只迁移 Code Lens action display title 中的 file name/line/column location 来源；不改变 code lens request/refresh/resolve lifecycle、decorations snapshot、command execution、inline click behavior、quick panel filtering、真实保存路径、session schema 或真实 `tab.fileURL` 同步策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCodeLensActionTitlesUseCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCodeLensAtCursorFiltersActionsToCurrentLine`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

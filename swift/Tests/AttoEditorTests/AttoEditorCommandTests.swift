@@ -566,6 +566,70 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(cell.textField?.stringValue.contains("Run One") == true)
     }
 
+    func testCodeLensActionTitlesUseCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("lens-local.swift")
+        let projectedURL = tempDir.appendingPathComponent("lens-projected.swift")
+        let text = """
+        func one() {}
+        func two() {}
+        """
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.lspApplyCodeLensJSON("""
+        [
+          {
+            "range": {
+              "start": { "line": 1, "character": 0 },
+              "end": { "line": 1, "character": 0 }
+            },
+            "command": { "title": "Run Two", "command": "test.runTwo" }
+          }
+        ]
+        """)
+        let secondLineStart = UInt32("func one() {}\n".unicodeScalars.count)
+        try editorView.editor.setSelections(
+            [EcuSelectionRange(start: secondLineStart, end: secondLineStart)],
+            primaryIndex: 0
+        )
+
+        XCTAssertTrue(vc.showCodeLensActionsAtCursorInActiveTab())
+
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.CodeLens")
+        })
+        let root = try XCTUnwrap(panel.contentView)
+        let table = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.CodeLens"),
+                in: root
+            ) as? NSTableView
+        )
+        XCTAssertEqual(table.numberOfRows, 1)
+        let cell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        let title = try XCTUnwrap(cell.textField?.stringValue)
+        XCTAssertTrue(title.contains("Run Two"))
+        XCTAssertTrue(title.contains("lens-projected.swift:2:1"))
+        XCTAssertFalse(title.contains("lens-local.swift"))
+    }
+
     func testTypedCodeLensResultSummaryUsesTypedPayload() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
