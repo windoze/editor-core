@@ -297,6 +297,16 @@
     - `cargo build -p editor-core-ui-ffi --release`
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIRollsBackUnopenedTextEditsAfterRuntimeFailure`
     - `git diff --check`
+- 中间提交：`feat(ui): roll back open workspace tabs`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；让 `MultiDocumentEditorUi` 在 WorkspaceEdit resource operation 运行时 fatal failure 时恢复已经被同一事务修改过的打开 tab 状态，避免打开 tab text edit、rename URI 或 delete close 留下半应用状态。
+  - 提交边界：只新增打开 tab rollback log，覆盖打开 tab text edit 前文本/dirty snapshot、create overwrite 文本替换、rename URI 变更、delete close/tab order/active/preview 状态恢复，并把 Rust/C ABI/Swift wrapper 的 fatal failure 回归路径补齐。本提交不新增 ABI，不改变 preview/skipped 语义，不实现用户可见 undo grouping、显式 atomic apply mode 或更深层 conflict UI。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui --package editor-core-ui-ffi`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_rolls_back_open_tabs_after_runtime_failure`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_rolls_back_open_tabs_after_runtime_failure`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIRollsBackOpenTabsAfterRuntimeFailure`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

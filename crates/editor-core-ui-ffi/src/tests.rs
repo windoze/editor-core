@@ -1149,6 +1149,241 @@ fn ffi_multi_document_rolls_back_unopened_text_edits_after_runtime_failure() {
 }
 
 #[test]
+fn ffi_multi_document_rolls_back_open_tabs_after_runtime_failure() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let root = std::env::temp_dir().join(format!(
+        "editor-core-ui-ffi-open-tab-rollback-root-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    let old_path = root.join("src").join("Old.swift");
+    let delete_path = root.join("src").join("Delete.swift");
+    let overwrite_path = root.join("src").join("Overwrite.swift");
+    let renamed_path = root.join("src").join("Renamed.swift");
+    let blocker = root.join("blocker");
+    let blocked_child = blocker.join("Child.swift");
+    std::fs::write(&old_path, "old\n").unwrap();
+    std::fs::write(&delete_path, "delete\n").unwrap();
+    std::fs::write(&overwrite_path, "existing\n").unwrap();
+    std::fs::write(&blocker, "blocker\n").unwrap();
+
+    let root_uri = format!("file://{}", root.to_string_lossy());
+    let old_uri = format!("file://{}", old_path.to_string_lossy());
+    let delete_uri = format!("file://{}", delete_path.to_string_lossy());
+    let overwrite_uri = format!("file://{}", overwrite_path.to_string_lossy());
+    let renamed_uri = format!("file://{}", renamed_path.to_string_lossy());
+    let blocked_child_uri = format!("file://{}", blocked_child.to_string_lossy());
+
+    let roots = CString::new(serde_json::json!([root_uri]).to_string()).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let old_text = CString::new("old\n").unwrap();
+    let delete_text = CString::new("delete\n").unwrap();
+    let overwrite_text = CString::new("existing\n").unwrap();
+    let mut old_id: u64 = 0;
+    let mut delete_id: u64 = 0;
+    let mut overwrite_id: u64 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, old_text.as_ptr(), 80, &mut old_id),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, delete_text.as_ptr(), 80, &mut delete_id,),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(
+            multi,
+            overwrite_text.as_ptr(),
+            80,
+            &mut overwrite_id,
+        ),
+        ECU_OK
+    );
+    let old_uri_c = CString::new(old_uri.clone()).unwrap();
+    let delete_uri_c = CString::new(delete_uri.clone()).unwrap();
+    let overwrite_uri_c = CString::new(overwrite_uri.clone()).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_document_uri(multi, old_id, old_uri_c.as_ptr(),),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_document_uri(
+            multi,
+            delete_id,
+            delete_uri_c.as_ptr(),
+        ),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_document_uri(
+            multi,
+            overwrite_id,
+            overwrite_uri_c.as_ptr(),
+        ),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_active_tab(multi, delete_id),
+        ECU_OK
+    );
+
+    let workspace_edit = CString::new(
+        serde_json::json!({
+            "documentChanges": [
+                {
+                    "textDocument": {
+                        "uri": old_uri.as_str(),
+                        "version": null
+                    },
+                    "edits": [
+                        {
+                            "range": {
+                                "start": { "line": 0, "character": 0 },
+                                "end": { "line": 0, "character": 0 }
+                            },
+                            "newText": "edited "
+                        }
+                    ]
+                },
+                {
+                    "kind": "rename",
+                    "oldUri": old_uri.as_str(),
+                    "newUri": renamed_uri.as_str()
+                },
+                { "kind": "delete", "uri": delete_uri.as_str() },
+                {
+                    "kind": "create",
+                    "uri": overwrite_uri.as_str(),
+                    "options": { "overwrite": true }
+                },
+                { "kind": "create", "uri": blocked_child_uri.as_str() }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let preview_ptr = editor_core_ui_ffi_multi_document_preview_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!preview_ptr.is_null());
+    let preview_json = unsafe { std::ffi::CStr::from_ptr(preview_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(preview_ptr) };
+    let preview: serde_json::Value = serde_json::from_str(&preview_json).unwrap();
+    assert_eq!(preview["skipped_uris"].as_array().unwrap().len(), 0);
+
+    let apply_ptr = editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(apply_ptr.is_null());
+    let msg_ptr = editor_core_ui_ffi_last_error_message();
+    assert!(!msg_ptr.is_null());
+    let msg = unsafe { std::ffi::CStr::from_ptr(msg_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(msg_ptr) };
+    assert!(msg.contains("filesystem side effects were rolled back"));
+    assert!(msg.contains("open tab state was rolled back"));
+
+    let old_text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, old_id);
+    assert!(!old_text_ptr.is_null());
+    let old_text_after = unsafe { std::ffi::CStr::from_ptr(old_text_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(old_text_ptr) };
+    assert_eq!(old_text_after, "old\n");
+    let delete_text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, delete_id);
+    assert!(!delete_text_ptr.is_null());
+    let delete_text_after = unsafe { std::ffi::CStr::from_ptr(delete_text_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(delete_text_ptr) };
+    assert_eq!(delete_text_after, "delete\n");
+    let overwrite_text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, overwrite_id);
+    assert!(!overwrite_text_ptr.is_null());
+    let overwrite_text_after = unsafe { std::ffi::CStr::from_ptr(overwrite_text_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(overwrite_text_ptr) };
+    assert_eq!(overwrite_text_after, "existing\n");
+
+    let mut old_uri_ptr: *mut c_char = std::ptr::null_mut();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_tab_document_uri(multi, old_id, &mut old_uri_ptr),
+        ECU_OK
+    );
+    assert!(!old_uri_ptr.is_null());
+    let old_uri_after = unsafe { std::ffi::CStr::from_ptr(old_uri_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(old_uri_ptr) };
+    assert_eq!(old_uri_after, old_uri);
+
+    let mut old_modified = 1;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_is_tab_modified(multi, old_id, &mut old_modified),
+        ECU_OK
+    );
+    assert_eq!(old_modified, 0);
+    let mut overwrite_modified = 1;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_is_tab_modified(
+            multi,
+            overwrite_id,
+            &mut overwrite_modified,
+        ),
+        ECU_OK
+    );
+    assert_eq!(overwrite_modified, 0);
+    let mut has_active = 0;
+    let mut active_id = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_active_tab_id(multi, &mut has_active, &mut active_id),
+        ECU_OK
+    );
+    assert_eq!(has_active, 1);
+    assert_eq!(active_id, delete_id);
+
+    assert!(old_path.exists());
+    assert!(!renamed_path.exists());
+    assert!(delete_path.exists());
+    assert_eq!(
+        std::fs::read_to_string(&overwrite_path).unwrap(),
+        "existing\n"
+    );
+    assert_eq!(std::fs::read_to_string(&blocker).unwrap(), "blocker\n");
+    assert!(!blocked_child.exists());
+    let mut sequence = 99;
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_latest_sequence(
+                multi,
+                &mut sequence,
+            )
+        },
+        ECU_OK
+    );
+    assert_eq!(sequence, 0);
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn ffi_multi_document_applies_workspace_edit_document_changes_in_order() {
     let multi = editor_core_ui_ffi_multi_document_new();
     assert!(!multi.is_null());

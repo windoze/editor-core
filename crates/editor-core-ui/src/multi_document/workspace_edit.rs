@@ -146,6 +146,7 @@ pub(super) fn apply(
     let mut runtime_blocked_text_edit_uris = BTreeSet::<String>::new();
     let mut runtime_removed_text_edit_uris = BTreeSet::<String>::new();
     let mut filesystem_rollback = FilesystemRollback::default();
+    let mut open_tab_rollback = OpenTabRollback::default();
 
     for step in steps {
         match step {
@@ -168,12 +169,24 @@ pub(super) fn apply(
                     preview_tab,
                     workspace_roots,
                     &mut filesystem_rollback,
+                    &mut open_tab_rollback,
                     &operation,
                 ) {
                     Ok(outcome) => outcome,
                     Err(err) => {
                         let rollback_result = filesystem_rollback.rollback();
-                        return Err(resource_operation_error_with_rollback(err, rollback_result));
+                        let had_open_tab_rollback = open_tab_rollback.has_entries();
+                        let open_tab_rollback_result = if had_open_tab_rollback {
+                            open_tab_rollback.rollback(tabs, tab_order, active_tab, preview_tab)
+                        } else {
+                            Ok(())
+                        };
+                        return Err(resource_operation_error_with_rollbacks(
+                            err,
+                            rollback_result,
+                            open_tab_rollback_result,
+                            had_open_tab_rollback,
+                        ));
                     }
                 };
 
@@ -278,7 +291,15 @@ pub(super) fn apply(
                 }
 
                 if let Some(tab_id) = tab_id_for_uri(tabs, tab_order, uri.as_str()) {
-                    match apply_open_tab_text_edits(tabs, tab_id, &edits) {
+                    match apply_open_tab_text_edits(
+                        tabs,
+                        tab_order,
+                        *active_tab,
+                        *preview_tab,
+                        &mut open_tab_rollback,
+                        tab_id,
+                        &edits,
+                    ) {
                         Ok(true) => {
                             applied_uris.insert(uri.clone());
                             applied_edit_count = applied_edit_count.saturating_add(edits.len());
@@ -496,6 +517,165 @@ enum ResourceOperationApplyOutcome {
 }
 
 #[derive(Default)]
+struct OpenTabRollback {
+    initial_tab_order: Option<Vec<TabId>>,
+    initial_active_tab: Option<TabId>,
+    initial_preview_tab: Option<TabId>,
+    text_snapshots: BTreeMap<TabId, OpenTabTextSnapshot>,
+    uri_snapshots: BTreeMap<TabId, Option<String>>,
+    closed_tabs: BTreeMap<TabId, TabEntry>,
+}
+
+struct OpenTabTextSnapshot {
+    text: String,
+    is_modified: bool,
+}
+
+impl OpenTabRollback {
+    fn capture_scope(
+        &mut self,
+        tab_order: &[TabId],
+        active_tab: Option<TabId>,
+        preview_tab: Option<TabId>,
+    ) {
+        if self.initial_tab_order.is_some() {
+            return;
+        }
+        self.initial_tab_order = Some(tab_order.to_vec());
+        self.initial_active_tab = active_tab;
+        self.initial_preview_tab = preview_tab;
+    }
+
+    fn has_entries(&self) -> bool {
+        self.initial_tab_order.is_some()
+            || !self.text_snapshots.is_empty()
+            || !self.uri_snapshots.is_empty()
+            || !self.closed_tabs.is_empty()
+    }
+
+    fn backup_text(
+        &mut self,
+        tabs: &BTreeMap<TabId, TabEntry>,
+        tab_order: &[TabId],
+        active_tab: Option<TabId>,
+        preview_tab: Option<TabId>,
+        tab_id: TabId,
+    ) -> Result<(), UiError> {
+        self.capture_scope(tab_order, active_tab, preview_tab);
+        if self.text_snapshots.contains_key(&tab_id) {
+            return Ok(());
+        }
+        let tab = tabs
+            .get(&tab_id)
+            .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
+        let view = tab.active_view().ok_or_else(|| {
+            UiError::Processor(format!("tab {} has no active view", tab_id.get()))
+        })?;
+        self.text_snapshots.insert(
+            tab_id,
+            OpenTabTextSnapshot {
+                text: view.text(),
+                is_modified: view.is_modified(),
+            },
+        );
+        Ok(())
+    }
+
+    fn backup_uri(
+        &mut self,
+        tabs: &BTreeMap<TabId, TabEntry>,
+        tab_order: &[TabId],
+        active_tab: Option<TabId>,
+        preview_tab: Option<TabId>,
+        tab_id: TabId,
+    ) -> Result<(), UiError> {
+        self.capture_scope(tab_order, active_tab, preview_tab);
+        if self.uri_snapshots.contains_key(&tab_id) {
+            return Ok(());
+        }
+        let tab = tabs
+            .get(&tab_id)
+            .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
+        self.uri_snapshots.insert(tab_id, tab.document_uri.clone());
+        Ok(())
+    }
+
+    fn capture_before_close(
+        &mut self,
+        tab_order: &[TabId],
+        active_tab: Option<TabId>,
+        preview_tab: Option<TabId>,
+    ) {
+        self.capture_scope(tab_order, active_tab, preview_tab);
+    }
+
+    fn record_closed_tab(&mut self, tab_id: TabId, tab: TabEntry) {
+        self.closed_tabs.entry(tab_id).or_insert(tab);
+    }
+
+    fn rollback(
+        &mut self,
+        tabs: &mut BTreeMap<TabId, TabEntry>,
+        tab_order: &mut Vec<TabId>,
+        active_tab: &mut Option<TabId>,
+        preview_tab: &mut Option<TabId>,
+    ) -> Result<(), String> {
+        let mut errors = Vec::new();
+
+        for (tab_id, tab) in std::mem::take(&mut self.closed_tabs) {
+            tabs.entry(tab_id).or_insert(tab);
+        }
+
+        for (tab_id, uri) in std::mem::take(&mut self.uri_snapshots) {
+            match tabs.get_mut(&tab_id) {
+                Some(tab) => tab.document_uri = uri,
+                None => errors.push(format!(
+                    "failed to restore WorkspaceEdit tab URI: unknown tab id {}",
+                    tab_id.get()
+                )),
+            }
+        }
+
+        for (tab_id, snapshot) in std::mem::take(&mut self.text_snapshots) {
+            if let Err(err) =
+                replace_open_tab_text(tabs, tab_id, snapshot.text.as_str(), !snapshot.is_modified)
+            {
+                errors.push(format!(
+                    "failed to restore WorkspaceEdit tab text for tab {}: {err}",
+                    tab_id.get()
+                ));
+            }
+        }
+
+        if let Some(initial_order) = self.initial_tab_order.take() {
+            if let Some(missing) = initial_order
+                .iter()
+                .find(|tab_id| !tabs.contains_key(tab_id))
+            {
+                errors.push(format!(
+                    "failed to restore WorkspaceEdit tab order: missing tab id {}",
+                    missing.get()
+                ));
+            } else {
+                *tab_order = initial_order;
+            }
+            *active_tab = self
+                .initial_active_tab
+                .filter(|tab_id| tabs.contains_key(tab_id));
+            *preview_tab = self
+                .initial_preview_tab
+                .filter(|tab_id| tabs.contains_key(tab_id));
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+}
+
+#[derive(Default)]
 struct FilesystemRollback {
     entries: Vec<FilesystemRollbackEntry>,
     backup_counter: u64,
@@ -675,16 +855,35 @@ fn remove_empty_dir_if_exists(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn resource_operation_error_with_rollback(
+fn resource_operation_error_with_rollbacks(
     err: UiError,
-    rollback_result: Result<(), String>,
+    filesystem_rollback_result: Result<(), String>,
+    open_tab_rollback_result: Result<(), String>,
+    had_open_tab_rollback: bool,
 ) -> UiError {
-    match rollback_result {
-        Ok(()) => UiError::Processor(format!(
-            "workspace edit resource operation failed; filesystem side effects were rolled back: {err}"
+    if !had_open_tab_rollback {
+        return match filesystem_rollback_result {
+            Ok(()) => UiError::Processor(format!(
+                "workspace edit resource operation failed; filesystem side effects were rolled back: {err}"
+            )),
+            Err(filesystem_rollback_err) => UiError::Processor(format!(
+                "workspace edit resource operation failed: {err}; filesystem rollback also failed: {filesystem_rollback_err}"
+            )),
+        };
+    }
+
+    match (filesystem_rollback_result, open_tab_rollback_result) {
+        (Ok(()), Ok(())) => UiError::Processor(format!(
+            "workspace edit resource operation failed; filesystem side effects were rolled back; open tab state was rolled back: {err}"
         )),
-        Err(rollback_err) => UiError::Processor(format!(
-            "workspace edit resource operation failed: {err}; filesystem rollback also failed: {rollback_err}"
+        (Err(filesystem_rollback_err), Ok(())) => UiError::Processor(format!(
+            "workspace edit resource operation failed: {err}; filesystem rollback also failed: {filesystem_rollback_err}; open tab state was rolled back"
+        )),
+        (Ok(()), Err(open_tab_rollback_err)) => UiError::Processor(format!(
+            "workspace edit resource operation failed: {err}; filesystem side effects were rolled back; open tab rollback also failed: {open_tab_rollback_err}"
+        )),
+        (Err(filesystem_rollback_err), Err(open_tab_rollback_err)) => UiError::Processor(format!(
+            "workspace edit resource operation failed: {err}; filesystem rollback also failed: {filesystem_rollback_err}; open tab rollback also failed: {open_tab_rollback_err}"
         )),
     }
 }
@@ -1207,9 +1406,14 @@ fn canonical_existing_path_or_ancestor(path: &Path) -> std::io::Result<PathBuf> 
 
 fn apply_open_tab_text_edits(
     tabs: &mut BTreeMap<TabId, TabEntry>,
+    tab_order: &[TabId],
+    active_tab: Option<TabId>,
+    preview_tab: Option<TabId>,
+    open_tab_rollback: &mut OpenTabRollback,
     tab_id: TabId,
     edits: &[LspTextEdit],
 ) -> Result<bool, UiError> {
+    open_tab_rollback.backup_text(tabs, tab_order, active_tab, preview_tab, tab_id)?;
     let tab = tabs
         .get_mut(&tab_id)
         .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
@@ -1771,6 +1975,7 @@ fn apply_resource_operation(
     preview_tab: &mut Option<TabId>,
     workspace_roots: &[String],
     filesystem_rollback: &mut FilesystemRollback,
+    open_tab_rollback: &mut OpenTabRollback,
     operation: &ResourceOperation,
 ) -> Result<ResourceOperationApplyOutcome, UiError> {
     match operation {
@@ -1810,6 +2015,7 @@ fn apply_resource_operation(
                 }
                 OpenResourcePathResolution::NoSideEffect => {}
             }
+            open_tab_rollback.backup_text(tabs, tab_order, *active_tab, *preview_tab, tab_id)?;
             replace_open_tab_text(tabs, tab_id, "", true)?;
             Ok(ResourceOperationApplyOutcome::Applied)
         }
@@ -1859,6 +2065,7 @@ fn apply_resource_operation(
                 }
                 OpenResourceRenamePathResolution::NoSideEffect => {}
             }
+            open_tab_rollback.backup_uri(tabs, tab_order, *active_tab, *preview_tab, tab_id)?;
             let tab = tabs
                 .get_mut(&tab_id)
                 .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
@@ -1901,7 +2108,10 @@ fn apply_resource_operation(
                 }
                 OpenResourcePathResolution::NoSideEffect => {}
             }
-            close_tab(tabs, tab_order, active_tab, preview_tab, tab_id);
+            open_tab_rollback.capture_before_close(tab_order, *active_tab, *preview_tab);
+            if let Some(tab) = close_tab(tabs, tab_order, active_tab, preview_tab, tab_id) {
+                open_tab_rollback.record_closed_tab(tab_id, tab);
+            }
             Ok(ResourceOperationApplyOutcome::Applied)
         }
     }
@@ -2144,9 +2354,10 @@ fn close_tab(
     active_tab: &mut Option<TabId>,
     preview_tab: &mut Option<TabId>,
     tab_id: TabId,
-) -> bool {
+) -> Option<TabEntry> {
     let closed_pos = tab_order.iter().position(|id| *id == tab_id);
-    let existed = tabs.remove(&tab_id).is_some();
+    let closed = tabs.remove(&tab_id);
+    let existed = closed.is_some();
 
     if existed {
         tab_order.retain(|id| *id != tab_id);
@@ -2167,5 +2378,5 @@ fn close_tab(
         *preview_tab = None;
     }
 
-    existed
+    closed
 }

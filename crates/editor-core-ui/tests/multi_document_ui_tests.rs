@@ -789,6 +789,124 @@ fn multi_document_ui_rolls_back_unopened_text_edits_after_runtime_failure() {
 }
 
 #[test]
+fn multi_document_ui_rolls_back_open_tabs_after_runtime_failure() {
+    let root = unique_test_dir("editor-core-ui-open-tab-rollback-root");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+
+    let old_path = root.join("src").join("Old.swift");
+    let delete_path = root.join("src").join("Delete.swift");
+    let overwrite_path = root.join("src").join("Overwrite.swift");
+    let blocker = root.join("blocker");
+    let blocked_child = blocker.join("Child.swift");
+    std::fs::write(&old_path, "old\n").unwrap();
+    std::fs::write(&delete_path, "delete\n").unwrap();
+    std::fs::write(&overwrite_path, "existing\n").unwrap();
+    std::fs::write(&blocker, "blocker\n").unwrap();
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let old_uri = path_to_file_uri(old_path.as_path());
+    let renamed_uri = path_to_file_uri(root.join("src").join("Renamed.swift").as_path());
+    let delete_uri = path_to_file_uri(delete_path.as_path());
+    let overwrite_uri = path_to_file_uri(overwrite_path.as_path());
+    let blocked_child_uri = path_to_file_uri(blocked_child.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+    let old_tab = ui.open_tab("old\n", 80);
+    let delete_tab = ui.open_tab("delete\n", 80);
+    let overwrite_tab = ui.open_tab("existing\n", 80);
+    ui.set_tab_document_uri(old_tab, Some(old_uri.clone()))
+        .unwrap();
+    ui.set_tab_document_uri(delete_tab, Some(delete_uri.clone()))
+        .unwrap();
+    ui.set_tab_document_uri(overwrite_tab, Some(overwrite_uri.clone()))
+        .unwrap();
+    ui.set_active_tab(delete_tab).unwrap();
+
+    let edit = json!({
+        "documentChanges": [
+            {
+                "textDocument": {
+                    "uri": old_uri.as_str(),
+                    "version": null
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 0 }
+                        },
+                        "newText": "edited "
+                    }
+                ]
+            },
+            {
+                "kind": "rename",
+                "oldUri": old_uri.as_str(),
+                "newUri": renamed_uri.as_str()
+            },
+            {
+                "kind": "delete",
+                "uri": delete_uri.as_str()
+            },
+            {
+                "kind": "create",
+                "uri": overwrite_uri.as_str(),
+                "options": { "overwrite": true }
+            },
+            {
+                "kind": "create",
+                "uri": blocked_child_uri.as_str()
+            }
+        ]
+    })
+    .to_string();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(edit.as_str())
+        .unwrap();
+    assert!(preview.skipped_uris.is_empty());
+    assert_eq!(ui.tab_text(old_tab).unwrap(), "old\n");
+    assert_eq!(ui.tab_document_uri(old_tab), Some(old_uri.as_str()));
+    assert!(ui.tab_ids().contains(&delete_tab));
+
+    let err = ui
+        .apply_workspace_edit_transaction(edit.as_str())
+        .unwrap_err();
+    assert!(err.to_string().contains("open tab state was rolled back"));
+    assert_eq!(ui.tab_text(old_tab).unwrap(), "old\n");
+    assert!(!ui.is_tab_modified(old_tab).unwrap());
+    assert_eq!(ui.tab_document_uri(old_tab), Some(old_uri.as_str()));
+    assert!(ui.tab_ids().contains(&delete_tab));
+    assert_eq!(ui.tab_text(delete_tab).unwrap(), "delete\n");
+    assert_eq!(ui.tab_document_uri(delete_tab), Some(delete_uri.as_str()));
+    assert!(ui.tab_ids().contains(&overwrite_tab));
+    assert_eq!(ui.tab_text(overwrite_tab).unwrap(), "existing\n");
+    assert!(!ui.is_tab_modified(overwrite_tab).unwrap());
+    assert_eq!(
+        ui.tab_document_uri(overwrite_tab),
+        Some(overwrite_uri.as_str())
+    );
+    assert_eq!(ui.active_tab_id(), Some(delete_tab));
+    assert!(old_path.exists());
+    assert!(!root.join("src").join("Renamed.swift").exists());
+    assert!(delete_path.exists());
+    assert_eq!(
+        std::fs::read_to_string(&overwrite_path).unwrap(),
+        "existing\n"
+    );
+    assert_eq!(std::fs::read_to_string(&blocker).unwrap(), "blocker\n");
+    assert!(!blocked_child.exists());
+    assert_eq!(
+        ui.workspace_edit_transaction_events_after(0)
+            .latest_sequence,
+        0
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn multi_document_ui_applies_unopened_document_changes_in_order() {
     let root = unique_test_dir("editor-core-ui-workspace-resource-order-root");
     std::fs::create_dir_all(root.join("src")).unwrap();

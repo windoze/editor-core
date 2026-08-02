@@ -1016,6 +1016,108 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 0)
     }
 
+    func testMultiDocumentEditorUIRollsBackOpenTabsAfterRuntimeFailure() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-open-tab-rollback-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("src", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let old = root.appendingPathComponent("src/Old.swift")
+        let renamed = root.appendingPathComponent("src/Renamed.swift")
+        let deleted = root.appendingPathComponent("src/Delete.swift")
+        let overwritten = root.appendingPathComponent("src/Overwrite.swift")
+        let blocker = root.appendingPathComponent("blocker")
+        let blockedChild = root.appendingPathComponent("blocker/Child.swift")
+        try "old\n".write(to: old, atomically: true, encoding: .utf8)
+        try "delete\n".write(to: deleted, atomically: true, encoding: .utf8)
+        try "existing\n".write(to: overwritten, atomically: true, encoding: .utf8)
+        try "blocker\n".write(to: blocker, atomically: true, encoding: .utf8)
+        try multi.setWorkspaceRoots([root.absoluteString])
+
+        let oldTab = try multi.openTab(text: "old\n", viewportWidthCells: 80)
+        let deleteTab = try multi.openTab(text: "delete\n", viewportWidthCells: 80)
+        let overwriteTab = try multi.openTab(text: "existing\n", viewportWidthCells: 80)
+        try multi.setTabDocumentURI(old.absoluteString, tabId: oldTab)
+        try multi.setTabDocumentURI(deleted.absoluteString, tabId: deleteTab)
+        try multi.setTabDocumentURI(overwritten.absoluteString, tabId: overwriteTab)
+        try multi.setActiveTab(deleteTab)
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "textDocument": {
+                "uri": "\(old.absoluteString)",
+                "version": null
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "edited "
+                }
+              ]
+            },
+            {
+              "kind": "rename",
+              "oldUri": "\(old.absoluteString)",
+              "newUri": "\(renamed.absoluteString)"
+            },
+            {
+              "kind": "delete",
+              "uri": "\(deleted.absoluteString)"
+            },
+            {
+              "kind": "create",
+              "uri": "\(overwritten.absoluteString)",
+              "options": { "overwrite": true }
+            },
+            {
+              "kind": "create",
+              "uri": "\(blockedChild.absoluteString)"
+            }
+          ]
+        }
+        """
+
+        let preview = try multi.previewWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertTrue(preview.skippedURIs.isEmpty)
+        XCTAssertEqual(try multi.tabText(tabId: oldTab), "old\n")
+        XCTAssertEqual(try multi.tabDocumentURI(tabId: oldTab), old.absoluteString)
+        XCTAssertTrue(try multi.snapshot().tabs.contains { $0.id == deleteTab })
+
+        XCTAssertThrowsError(try multi.applyWorkspaceEditTransaction(workspaceEdit)) { error in
+            XCTAssertTrue(String(describing: error).contains("open tab state was rolled back"))
+        }
+        XCTAssertEqual(try multi.tabText(tabId: oldTab), "old\n")
+        XCTAssertFalse(try multi.isTabModified(oldTab))
+        XCTAssertEqual(try multi.tabDocumentURI(tabId: oldTab), old.absoluteString)
+        XCTAssertTrue(try multi.snapshot().tabs.contains { $0.id == deleteTab })
+        XCTAssertEqual(try multi.tabText(tabId: deleteTab), "delete\n")
+        XCTAssertEqual(try multi.tabDocumentURI(tabId: deleteTab), deleted.absoluteString)
+        XCTAssertTrue(try multi.snapshot().tabs.contains { $0.id == overwriteTab })
+        XCTAssertEqual(try multi.tabText(tabId: overwriteTab), "existing\n")
+        XCTAssertFalse(try multi.isTabModified(overwriteTab))
+        XCTAssertEqual(try multi.tabDocumentURI(tabId: overwriteTab), overwritten.absoluteString)
+        XCTAssertEqual(try multi.activeTabId(), deleteTab)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: old.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: renamed.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: deleted.path))
+        XCTAssertEqual(try String(contentsOf: overwritten, encoding: .utf8), "existing\n")
+        XCTAssertEqual(try String(contentsOf: blocker, encoding: .utf8), "blocker\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: blockedChild.path))
+        XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 0)
+    }
+
     func testMultiDocumentEditorUIReportsWorkspaceEditVersionMismatch() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)
