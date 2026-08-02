@@ -6950,16 +6950,16 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspCodeActionResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastCodeActionResultJSON()
+                result = try tab.editCore.editor.lspTakeLastCodeActionResult()
             } catch {
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             let items = AttoLspCodeActionParser.filteredItems(
-                AttoLspCodeActionParser.items(fromCodeActionResultJSON: json),
+                AttoLspCodeActionParser.items(fromCodeActionResult: result),
                 onlyKinds: ctx.onlyKinds
             )
             self.codeActionPollTimer?.cancel()
@@ -7037,7 +7037,11 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         var didApply = false
-        if let editJSON = AttoLspCodeActionParser.editJSON(for: item) {
+        if let workspaceEdit = AttoLspCodeActionParser.workspaceEdit(for: item),
+           workspaceEdit.rawJSONString != nil
+        {
+            didApply = applyWorkspaceEditToActiveTab(workspaceEdit) || didApply
+        } else if let editJSON = AttoLspCodeActionParser.editJSON(for: item) {
             didApply = applyWorkspaceEditJSONToActiveTab(editJSON) || didApply
         }
 
@@ -7103,18 +7107,18 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspCodeAction?
             do {
-                json = try tab.editCore.editor.lspTakeLastCodeActionResolveResultJSON()
+                result = try tab.editCore.editor.lspTakeLastCodeActionResolveResult()
             } catch {
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             self.codeActionResolvePollTimer?.cancel()
             self.codeActionResolvePollTimer = nil
             self.codeActionResolveContext = nil
-            let resolved = AttoLspCodeActionParser.item(fromCodeActionJSON: json) ?? ctx.item
+            let resolved = AttoLspCodeActionParser.item(fromCodeAction: result) ?? ctx.item
             _ = self.applyCodeAction(resolved, allowResolve: false)
             timer.cancel()
         }

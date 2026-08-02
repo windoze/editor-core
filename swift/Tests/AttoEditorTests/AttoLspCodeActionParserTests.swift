@@ -1,4 +1,5 @@
 @testable import AttoEditor
+import EditorCoreUIFFI
 import XCTest
 
 final class AttoLspCodeActionParserTests: XCTestCase {
@@ -52,6 +53,81 @@ final class AttoLspCodeActionParserTests: XCTestCase {
         XCTAssertEqual(item.title, "Resolve me")
         XCTAssertNotNil(AttoLspCodeActionParser.rawJSON(for: item))
         XCTAssertNotNil(AttoLspCodeActionParser.editJSON(for: item))
+    }
+
+    func testParsesTypedCodeActionResultAndSerializesPayloads() throws {
+        let result = try JSONDecoder().decode(EcuLspCodeActionResult.self, from: Data("""
+        [
+          {
+            "title": "Fix typed",
+            "kind": "quickfix",
+            "isPreferred": true,
+            "edit": {
+              "changes": {
+                "file:///a.swift": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "let a = 1\\n"
+                  }
+                ]
+              }
+            },
+            "command": {
+              "title": "After fix",
+              "command": "server.afterFix",
+              "arguments": [{ "id": 1 }]
+            },
+            "data": { "resolve": true }
+          },
+          {
+            "title": "Run typed command",
+            "command": "server.run",
+            "arguments": ["x"]
+          }
+        ]
+        """.utf8))
+
+        let items = AttoLspCodeActionParser.items(fromCodeActionResult: result)
+        XCTAssertEqual(items.count, 2)
+
+        XCTAssertEqual(items[0].title, "Fix typed")
+        XCTAssertEqual(items[0].kind, "quickfix")
+        XCTAssertTrue(items[0].isPreferred)
+        XCTAssertFalse(items[0].isLegacyCommand)
+        XCTAssertEqual(AttoLspCodeActionParser.workspaceEdit(for: items[0])?.documentEditCount, 1)
+        XCTAssertNotNil(AttoLspCodeActionParser.editJSON(for: items[0]))
+        XCTAssertNotNil(AttoLspCodeActionParser.rawJSON(for: items[0]))
+        XCTAssertEqual(items[0].command?.command, "server.afterFix")
+        XCTAssertNotNil(items[0].command.flatMap(AttoLspCodeActionParser.commandJSON(for:)))
+
+        XCTAssertEqual(items[1].title, "Run typed command")
+        XCTAssertTrue(items[1].isLegacyCommand)
+        XCTAssertEqual(items[1].command?.command, "server.run")
+        XCTAssertNotNil(items[1].command.flatMap(AttoLspCodeActionParser.commandJSON(for:)))
+    }
+
+    func testParsesTypedResolvedSingleCodeAction() throws {
+        let action = try JSONDecoder().decode(EcuLspCodeAction.self, from: Data("""
+        {
+          "title": "Resolved typed",
+          "kind": "quickfix",
+          "disabled": { "reason": "later" },
+          "edit": { "changes": { "file:///a.swift": [] } }
+        }
+        """.utf8))
+
+        let item = try XCTUnwrap(AttoLspCodeActionParser.item(fromCodeAction: action))
+        XCTAssertEqual(item.title, "Resolved typed")
+        XCTAssertEqual(item.disabledReason, "later")
+        XCTAssertEqual(
+            AttoLspCodeActionParser.displayTitle(for: item),
+            "Resolved typed  [quickfix, disabled: later]"
+        )
+        XCTAssertNotNil(AttoLspCodeActionParser.workspaceEdit(for: item))
+        XCTAssertNotNil(AttoLspCodeActionParser.rawJSON(for: item))
     }
 
     func testDisabledCodeActionCarriesReason() throws {

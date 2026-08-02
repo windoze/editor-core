@@ -709,6 +709,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastCodeActionResult() throws -> EcuLspCodeActionResult? {
+        guard let json = try lspTakeLastCodeActionResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspCodeActionResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_code_action_decode"
+        )
+    }
+
     public func lspRequestCodeActionResolve(actionJSON: String) throws -> UInt64 {
         var out: UInt64 = 0
         let status = actionJSON.withCString { cstr in
@@ -722,6 +731,15 @@ public final class EditorUI {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_code_action_resolve_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_code_action_resolve_json(handle, has, ptr)
         }
+    }
+
+    public func lspTakeLastCodeActionResolveResult() throws -> EcuLspCodeAction? {
+        guard let json = try lspTakeLastCodeActionResolveResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspCodeAction.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_code_action_resolve_decode"
+        )
     }
 
     public func lspRequestExecuteCommand(commandJSON: String) throws -> UInt64 {
