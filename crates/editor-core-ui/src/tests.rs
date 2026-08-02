@@ -334,6 +334,79 @@ fn lsp_request_events_record_start_completion_and_result_sequence() {
 }
 
 #[test]
+fn lsp_derived_request_events_record_semantic_and_folding_lifecycle() {
+    let mut ui = EditorUi::new("abc", 80);
+
+    let applied = ui
+        .handle_lsp_events(vec![
+            LspEvent::DerivedRequest(editor_core_lsp::LspDerivedRequestEvent {
+                id: 71,
+                method: "textDocument/semanticTokens/full".to_string(),
+                uri: "file:///tmp/main.rs".to_string(),
+                phase: editor_core_lsp::LspDerivedRequestPhase::Started,
+                status: editor_core_lsp::LspDerivedRequestStatus::Pending,
+                error: None,
+            }),
+            LspEvent::DerivedRequest(editor_core_lsp::LspDerivedRequestEvent {
+                id: 71,
+                method: "textDocument/semanticTokens/full".to_string(),
+                uri: "file:///tmp/main.rs".to_string(),
+                phase: editor_core_lsp::LspDerivedRequestPhase::Completed,
+                status: editor_core_lsp::LspDerivedRequestStatus::Success,
+                error: None,
+            }),
+            LspEvent::DerivedRequest(editor_core_lsp::LspDerivedRequestEvent {
+                id: 72,
+                method: "textDocument/foldingRange".to_string(),
+                uri: "file:///tmp/main.rs".to_string(),
+                phase: editor_core_lsp::LspDerivedRequestPhase::Started,
+                status: editor_core_lsp::LspDerivedRequestStatus::Pending,
+                error: None,
+            }),
+            LspEvent::DerivedRequest(editor_core_lsp::LspDerivedRequestEvent {
+                id: 72,
+                method: "textDocument/foldingRange".to_string(),
+                uri: "file:///tmp/main.rs".to_string(),
+                phase: editor_core_lsp::LspDerivedRequestPhase::Completed,
+                status: editor_core_lsp::LspDerivedRequestStatus::Error,
+                error: Some(LspResponseError {
+                    code: -32603,
+                    message: "folding failed".to_string(),
+                    data: None,
+                }),
+            }),
+        ])
+        .unwrap();
+
+    assert!(!applied);
+    let events = ui.lsp_request_events_after(0);
+    assert_eq!(events.latest_sequence, 4);
+    assert_eq!(events.events.len(), 4);
+
+    assert_eq!(events.events[0].family, "semantic_tokens");
+    assert_eq!(events.events[0].slot, "semantic_tokens_full");
+    assert_eq!(events.events[0].method, "textDocument/semanticTokens/full");
+    assert_eq!(events.events[0].phase, "started");
+    assert_eq!(events.events[0].status, "pending");
+    assert_eq!(events.events[1].request_id, 71);
+    assert_eq!(events.events[1].phase, "completed");
+    assert_eq!(events.events[1].status, "success");
+
+    assert_eq!(events.events[2].family, "ranges");
+    assert_eq!(events.events[2].slot, "folding_ranges");
+    assert_eq!(events.events[2].phase, "started");
+    assert_eq!(events.events[2].status, "pending");
+    assert_eq!(events.events[3].request_id, 72);
+    assert_eq!(events.events[3].phase, "completed");
+    assert_eq!(events.events[3].status, "error");
+    assert_eq!(events.events[3].error_code, Some(-32603));
+    assert_eq!(
+        events.events[3].error_message.as_deref(),
+        Some("folding failed")
+    );
+}
+
+#[test]
 fn lsp_request_events_record_stale_completion() {
     let mut ui = EditorUi::new("abc", 80);
     let view_id = ui.view_id;

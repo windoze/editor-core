@@ -249,8 +249,51 @@ pub enum LspEvent {
     Notification(LspNotification),
     /// A server->client request that was deferred for the host to answer.
     DeferredRequest(LspServerRequest),
+    /// Lifecycle event for a session-owned derived-state request.
+    DerivedRequest(LspDerivedRequestEvent),
     /// A JSON-RPC response for a client-initiated request.
     Response(LspResponse),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Phase for a session-owned derived-state request.
+pub enum LspDerivedRequestPhase {
+    /// The request was sent and is pending.
+    Started,
+    /// The request received a response or was completed locally as stale.
+    Completed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Status for a session-owned derived-state request lifecycle event.
+pub enum LspDerivedRequestStatus {
+    /// The request is pending.
+    Pending,
+    /// The request completed with a non-empty result.
+    Success,
+    /// The request completed with an empty or null result.
+    Empty,
+    /// The request completed with an LSP error response.
+    Error,
+    /// The request response was stale for the active document/version and was ignored.
+    Stale,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+/// Lifecycle event for a session-owned derived-state request.
+pub struct LspDerivedRequestEvent {
+    /// Request id.
+    pub id: u64,
+    /// LSP request method.
+    pub method: String,
+    /// Source document URI.
+    pub uri: String,
+    /// Request phase.
+    pub phase: LspDerivedRequestPhase,
+    /// Request status.
+    pub status: LspDerivedRequestStatus,
+    /// Optional LSP error payload for failed responses.
+    pub error: Option<LspResponseError>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

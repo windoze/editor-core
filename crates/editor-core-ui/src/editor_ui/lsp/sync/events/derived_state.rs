@@ -1,6 +1,56 @@
 use super::super::super::super::*;
 use super::EventOutcome;
 
+fn derived_request_slot(method: &str) -> Option<LspResultSlot> {
+    match method {
+        "textDocument/semanticTokens/full" => Some(LspResultSlot::SemanticTokensFull),
+        "textDocument/semanticTokens/full/delta" => Some(LspResultSlot::SemanticTokensDelta),
+        "textDocument/semanticTokens/range" => Some(LspResultSlot::SemanticTokensRange),
+        "textDocument/foldingRange" => Some(LspResultSlot::FoldingRanges),
+        _ => None,
+    }
+}
+
+fn derived_request_status(
+    status: editor_core_lsp::LspDerivedRequestStatus,
+) -> EditorLspRequestEventStatus {
+    match status {
+        editor_core_lsp::LspDerivedRequestStatus::Pending => EditorLspRequestEventStatus::Pending,
+        editor_core_lsp::LspDerivedRequestStatus::Success => EditorLspRequestEventStatus::Success,
+        editor_core_lsp::LspDerivedRequestStatus::Empty => EditorLspRequestEventStatus::Empty,
+        editor_core_lsp::LspDerivedRequestStatus::Error => EditorLspRequestEventStatus::Error,
+        editor_core_lsp::LspDerivedRequestStatus::Stale => EditorLspRequestEventStatus::Stale,
+    }
+}
+
+pub(super) fn record_lsp_derived_request_event(
+    doc: &mut EditorUiDoc,
+    view_id: ViewId,
+    event: &editor_core_lsp::LspDerivedRequestEvent,
+) -> EventOutcome {
+    let Some(slot) = derived_request_slot(event.method.as_str()) else {
+        return EventOutcome::Unhandled;
+    };
+
+    match event.phase {
+        editor_core_lsp::LspDerivedRequestPhase::Started => {
+            doc.record_lsp_request_started(view_id, slot, event.id);
+        }
+        editor_core_lsp::LspDerivedRequestPhase::Completed => {
+            doc.record_lsp_request_completed(
+                view_id,
+                slot,
+                event.id,
+                derived_request_status(event.status),
+                None,
+                event.error.as_ref(),
+            );
+        }
+    }
+
+    EventOutcome::Handled
+}
+
 pub(super) fn handle_lsp_derived_state_response(
     doc: &mut EditorUiDoc,
     resp: &editor_core_lsp::LspResponse,

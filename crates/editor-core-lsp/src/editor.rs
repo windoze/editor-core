@@ -11,8 +11,8 @@
 
 use crate::lsp_client::{DEFAULT_EXIT_TIMEOUT, DEFAULT_SHUTDOWN_TIMEOUT, LspClient, LspInbound};
 use crate::lsp_events::{
-    LspEvent, LspNotification, LspResponse, LspResponseError, LspServerRequest,
-    LspServerRequestPolicy,
+    LspDerivedRequestEvent, LspDerivedRequestPhase, LspDerivedRequestStatus, LspEvent,
+    LspNotification, LspResponse, LspResponseError, LspServerRequest, LspServerRequestPolicy,
 };
 use crate::lsp_sync::{
     DeltaCalculator, LspCoordinateConverter, LspPosition, LspRange, TextChange,
@@ -216,8 +216,15 @@ pub struct LspSessionStartOptions {
 
 #[derive(Debug, Clone)]
 enum PendingLspRequest {
-    SemanticTokens { uri: String, version: i32 },
-    FoldingRanges { uri: String, version: i32 },
+    SemanticTokens {
+        uri: String,
+        version: i32,
+        method: String,
+    },
+    FoldingRanges {
+        uri: String,
+        version: i32,
+    },
 }
 
 impl PendingLspRequest {
@@ -225,6 +232,20 @@ impl PendingLspRequest {
         match self {
             PendingLspRequest::SemanticTokens { uri, .. }
             | PendingLspRequest::FoldingRanges { uri, .. } => uri,
+        }
+    }
+
+    fn method(&self) -> &str {
+        match self {
+            PendingLspRequest::SemanticTokens { method, .. } => method,
+            PendingLspRequest::FoldingRanges { .. } => "textDocument/foldingRange",
+        }
+    }
+
+    fn version(&self) -> i32 {
+        match self {
+            PendingLspRequest::SemanticTokens { version, .. }
+            | PendingLspRequest::FoldingRanges { version, .. } => *version,
         }
     }
 }
@@ -237,6 +258,37 @@ impl PendingLspRequest {
 struct PendingClientRequest {
     method: String,
     uri: Option<String>,
+}
+
+fn lsp_response_error_from_message(msg: &Value) -> Option<LspResponseError> {
+    msg.get("error").and_then(|e| {
+        Some(LspResponseError {
+            code: e.get("code")?.as_i64()?,
+            message: e
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            data: e.get("data").cloned(),
+        })
+    })
+}
+
+fn lsp_derived_result_status(result: &Value) -> LspDerivedRequestStatus {
+    if result.is_null() {
+        return LspDerivedRequestStatus::Empty;
+    }
+    if result.as_array().is_some_and(Vec::is_empty) {
+        return LspDerivedRequestStatus::Empty;
+    }
+    if result
+        .get("data")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty)
+    {
+        return LspDerivedRequestStatus::Empty;
+    }
+    LspDerivedRequestStatus::Success
 }
 
 #[derive(Debug, Clone)]
@@ -2216,17 +2268,7 @@ impl LspSession {
                             self.pending_client_requests.remove(&id)
                         {
                             let result = msg.get("result").cloned();
-                            let error = msg.get("error").and_then(|e| {
-                                Some(LspResponseError {
-                                    code: e.get("code")?.as_i64()?,
-                                    message: e
-                                        .get("message")
-                                        .and_then(Value::as_str)
-                                        .unwrap_or("")
-                                        .to_string(),
-                                    data: e.get("data").cloned(),
-                                })
-                            });
+                            let error = lsp_response_error_from_message(&msg);
 
                             self.push_event(LspEvent::Response(LspResponse {
                                 id,
@@ -2375,6 +2417,25 @@ impl LspSession {
         self.events.push_back(event);
     }
 
+    fn push_derived_request_event(
+        &mut self,
+        id: u64,
+        method: impl Into<String>,
+        uri: impl Into<String>,
+        phase: LspDerivedRequestPhase,
+        status: LspDerivedRequestStatus,
+        error: Option<LspResponseError>,
+    ) {
+        self.push_event(LspEvent::DerivedRequest(LspDerivedRequestEvent {
+            id,
+            method: method.into(),
+            uri: uri.into(),
+            phase,
+            status,
+            error,
+        }));
+    }
+
     fn clear_semantic_tokens_cache(&mut self) {
         self.semantic_tokens_result_id = None;
         self.semantic_tokens_data.clear();
@@ -2416,30 +2477,52 @@ impl LspSession {
         msg: &Value,
         edits: &mut Vec<ProcessingEdit>,
     ) -> Result<(), String> {
-        match pending {
-            PendingLspRequest::SemanticTokens { uri, version } => {
-                // Reject responses for a different document (versions are per-document and can
-                // collide across documents) or a stale version of the active document.
-                if uri != self.document.uri || version != self.document.version {
-                    return Ok(());
-                }
+        let method = pending.method().to_string();
+        let uri = pending.uri().to_string();
+        if uri != self.document.uri || pending.version() != self.document.version {
+            self.push_derived_request_event(
+                msg.get("id").and_then(Value::as_u64).unwrap_or_default(),
+                method,
+                uri,
+                LspDerivedRequestPhase::Completed,
+                LspDerivedRequestStatus::Stale,
+                None,
+            );
+            return Ok(());
+        }
 
-                let result = msg.get("result").cloned().unwrap_or(Value::Null);
+        let id = msg.get("id").and_then(Value::as_u64).unwrap_or_default();
+        if let Some(error) = lsp_response_error_from_message(msg) {
+            self.push_derived_request_event(
+                id,
+                method,
+                uri,
+                LspDerivedRequestPhase::Completed,
+                LspDerivedRequestStatus::Error,
+                Some(error),
+            );
+            return Ok(());
+        }
+
+        let result = msg.get("result").cloned().unwrap_or(Value::Null);
+        let status = lsp_derived_result_status(&result);
+        match pending {
+            PendingLspRequest::SemanticTokens { .. } => {
                 self.handle_semantic_tokens_result(&result, line_index, edits);
             }
-            PendingLspRequest::FoldingRanges { uri, version } => {
-                // Folding regions are line-indexed, so stale/cross-document responses must not
-                // enter core state.
-                if uri != self.document.uri || version != self.document.version {
-                    return Ok(());
-                }
-
-                edits.push(folding_ranges_result_to_processing_edit(
-                    msg.get("result").unwrap_or(&Value::Null),
-                ));
+            PendingLspRequest::FoldingRanges { .. } => {
+                edits.push(folding_ranges_result_to_processing_edit(&result));
             }
         }
 
+        self.push_derived_request_event(
+            id,
+            method,
+            uri,
+            LspDerivedRequestPhase::Completed,
+            status,
+            None,
+        );
         Ok(())
     }
 
@@ -2459,7 +2542,7 @@ impl LspSession {
             let has_pending_tokens = self.pending.values().any(|p| {
                     matches!(
                         p,
-                    PendingLspRequest::SemanticTokens { uri, version } if *uri == doc_uri && *version == self.document.version
+                    PendingLspRequest::SemanticTokens { uri, version, .. } if *uri == doc_uri && *version == self.document.version
                     )
                 });
             if self.supports_semantic_tokens && !has_pending_tokens {
@@ -2487,7 +2570,16 @@ impl LspSession {
                             PendingLspRequest::SemanticTokens {
                                 uri: doc_uri.clone(),
                                 version: self.document.version,
+                                method: method.to_string(),
                             },
+                        );
+                        self.push_derived_request_event(
+                            id,
+                            method,
+                            doc_uri.clone(),
+                            LspDerivedRequestPhase::Started,
+                            LspDerivedRequestStatus::Pending,
+                            None,
                         );
                     }
                     Err(err) => return Err(format!("LSP semanticTokens 请求失败: {}", err)),
@@ -2514,6 +2606,14 @@ impl LspSession {
                                 uri: doc_uri.clone(),
                                 version: self.document.version,
                             },
+                        );
+                        self.push_derived_request_event(
+                            id,
+                            "textDocument/foldingRange",
+                            doc_uri.clone(),
+                            LspDerivedRequestPhase::Started,
+                            LspDerivedRequestStatus::Pending,
+                            None,
                         );
                     }
                     Err(err) => return Err(format!("LSP foldingRange 请求失败: {}", err)),
@@ -2989,6 +3089,7 @@ mod pending_request_tests {
             PendingLspRequest::SemanticTokens {
                 uri: URI_A.to_string(),
                 version: 1,
+                method: "textDocument/semanticTokens/full".to_string(),
             },
         );
 

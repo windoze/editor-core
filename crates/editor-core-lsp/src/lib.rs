@@ -51,8 +51,9 @@ pub use lsp_decorations::{
     lsp_inlay_hints_to_decorations, lsp_inlay_hints_to_processing_edit,
 };
 pub use lsp_events::{
-    LspDiagnostic, LspDiagnosticSeverity, LspEvent, LspLogMessageParams, LspMessageType,
-    LspNotification, LspProgressParams, LspPublishDiagnosticsParams, LspResponse, LspResponseError,
+    LspDerivedRequestEvent, LspDerivedRequestPhase, LspDerivedRequestStatus, LspDiagnostic,
+    LspDiagnosticSeverity, LspEvent, LspLogMessageParams, LspMessageType, LspNotification,
+    LspProgressParams, LspPublishDiagnosticsParams, LspResponse, LspResponseError,
     LspServerRequest, LspServerRequestMode, LspServerRequestPolicy, LspShowMessageParams,
 };
 pub use lsp_highlights::{

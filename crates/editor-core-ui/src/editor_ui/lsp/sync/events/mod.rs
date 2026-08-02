@@ -3,7 +3,7 @@ mod on_type;
 mod slot_results;
 
 use super::super::super::*;
-use derived_state::handle_lsp_derived_state_response;
+use derived_state::{handle_lsp_derived_state_response, record_lsp_derived_request_event};
 use on_type::{apply_on_type_formatting_results, collect_on_type_formatting_result};
 use slot_results::handle_lsp_result_slot_response;
 
@@ -27,8 +27,17 @@ impl EditorUi {
 
         let mut doc = self.lock_doc();
         for ev in events {
-            let LspEvent::Response(resp) = ev else {
-                continue;
+            let resp = match ev {
+                LspEvent::DerivedRequest(event) => {
+                    if record_lsp_derived_request_event(&mut doc, self.view_id, &event)
+                        == EventOutcome::Handled
+                    {
+                        continue;
+                    }
+                    continue;
+                }
+                LspEvent::Response(resp) => resp,
+                _ => continue,
             };
 
             if let Some(slot) = LspResultSlot::from_response_method(resp.method.as_str()) {

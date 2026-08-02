@@ -1,6 +1,9 @@
 use editor_core::processing::ProcessingEdit;
 use editor_core::{Command, EditCommand, EditorStateManager, FoldRegion, LineIndex};
-use editor_core_lsp::{LspDocument, LspEvent, LspNotification, LspSession, LspSessionStartOptions};
+use editor_core_lsp::{
+    LspDerivedRequestEvent, LspDerivedRequestPhase, LspDerivedRequestStatus, LspDocument, LspEvent,
+    LspNotification, LspSession, LspSessionStartOptions,
+};
 use serde_json::json;
 use std::process::{Command as ProcessCommand, Stdio};
 use std::thread;
@@ -99,6 +102,15 @@ fn has_replace_folding_regions(edits: &[ProcessingEdit]) -> bool {
         .any(|edit| matches!(edit, ProcessingEdit::ReplaceFoldingRegions { .. }))
 }
 
+fn folding_derived_request_event(event: LspEvent) -> Option<LspDerivedRequestEvent> {
+    match event {
+        LspEvent::DerivedRequest(event) if event.method == "textDocument/foldingRange" => {
+            Some(event)
+        }
+        _ => None,
+    }
+}
+
 #[test]
 fn current_version_folding_response_produces_processing_edit() {
     let mut session = start_folding_session(folding_response_script(50, "current-folding"));
@@ -124,6 +136,47 @@ fn current_version_folding_response_produces_processing_edit() {
 
     assert_eq!(replace.0.len(), 2);
     assert!(*replace.1);
+}
+
+#[test]
+fn folding_refresh_emits_request_lifecycle_events() {
+    let mut session = start_folding_session(folding_response_script(50, "folding-lifecycle"));
+    let line_index = LineIndex::from_text(INITIAL_TEXT);
+
+    let initial_edits = session
+        .poll_edits_with_line_index(&line_index)
+        .expect("initial poll sends folding request");
+    assert!(!has_replace_folding_regions(&initial_edits));
+
+    let started = session
+        .drain_events()
+        .into_iter()
+        .find_map(folding_derived_request_event)
+        .expect("folding request start event is emitted");
+    assert_eq!(started.phase, LspDerivedRequestPhase::Started);
+    assert_eq!(started.status, LspDerivedRequestStatus::Pending);
+    assert_eq!(started.uri, TEST_URI);
+
+    let mut completed = None;
+    for _ in 0..50 {
+        let _ = session
+            .poll_edits_with_line_index(&line_index)
+            .expect("poll succeeds");
+        completed = session
+            .drain_events()
+            .into_iter()
+            .filter_map(folding_derived_request_event)
+            .find(|event| event.phase == LspDerivedRequestPhase::Completed);
+        if completed.is_some() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    let completed = completed.expect("folding request completion event is emitted");
+    assert_eq!(completed.id, started.id);
+    assert_eq!(completed.status, LspDerivedRequestStatus::Success);
+    assert!(completed.error.is_none());
 }
 
 #[test]
