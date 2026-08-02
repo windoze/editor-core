@@ -130,6 +130,38 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertFalse(prefs.effectiveAutoPairsEnabled)
     }
 
+    func testLspAutoRestartDefaultsEnvStoredAndClamping() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        var prefs = AttoPreferences(defaults: defaults, env: [:])
+        XCTAssertNil(prefs.storedLspAutoRestartEnabled)
+        XCTAssertNil(prefs.storedLspAutoRestartMaxAttempts)
+        XCTAssertNil(prefs.storedLspAutoRestartBaseDelaySeconds)
+        XCTAssertTrue(prefs.effectiveLspAutoRestartEnabled)
+        XCTAssertEqual(prefs.effectiveLspAutoRestartMaxAttempts, 3)
+        XCTAssertEqual(prefs.effectiveLspAutoRestartBaseDelaySeconds, 5.0)
+
+        prefs = AttoPreferences(defaults: defaults, env: [
+            "ATTO_EDITOR_LSP_AUTO_RESTART": "0",
+            "ATTO_EDITOR_LSP_AUTO_RESTART_MAX_ATTEMPTS": "7",
+            "ATTO_EDITOR_LSP_AUTO_RESTART_BASE_DELAY_SECONDS": "2.5",
+        ])
+        XCTAssertFalse(prefs.effectiveLspAutoRestartEnabled)
+        XCTAssertEqual(prefs.effectiveLspAutoRestartMaxAttempts, 7)
+        XCTAssertEqual(prefs.effectiveLspAutoRestartBaseDelaySeconds, 2.5)
+
+        prefs.setLspAutoRestartEnabled(true)
+        prefs.setLspAutoRestartMaxAttempts(25)
+        prefs.setLspAutoRestartBaseDelaySeconds(-1)
+
+        XCTAssertEqual(prefs.storedLspAutoRestartEnabled, true)
+        XCTAssertEqual(prefs.storedLspAutoRestartMaxAttempts, 10)
+        XCTAssertEqual(prefs.storedLspAutoRestartBaseDelaySeconds, 0.0)
+        XCTAssertTrue(prefs.effectiveLspAutoRestartEnabled)
+        XCTAssertEqual(prefs.effectiveLspAutoRestartMaxAttempts, 10)
+        XCTAssertEqual(prefs.effectiveLspAutoRestartBaseDelaySeconds, 0.0)
+    }
+
     func testWrapModeDefaultEnvAndStoredPreference() {
         let (defaults, _) = makeIsolatedDefaults()
 

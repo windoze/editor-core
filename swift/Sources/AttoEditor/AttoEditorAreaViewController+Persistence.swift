@@ -572,9 +572,12 @@ extension AttoEditorAreaViewController {
 
         let now = projectLspAutoRestartNowProvider()
         let currentState = projectLspAutoRestartStatesByTabID[tabId]
+        let maxAttempts = preferences.effectiveLspAutoRestartMaxAttempts
         guard process.state == .exited,
               status.availability == .failed || status.state == .failed,
-              (currentState?.attempts ?? 0) < Self.maxProjectLspAutoRestartAttempts,
+              preferences.effectiveLspAutoRestartEnabled,
+              maxAttempts > 0,
+              (currentState?.attempts ?? 0) < maxAttempts,
               currentState.map({ now >= $0.nextAllowedAt }) ?? true
         else {
             return false
@@ -589,7 +592,10 @@ extension AttoEditorAreaViewController {
         let attempts = (currentState?.attempts ?? 0) + 1
         projectLspAutoRestartStatesByTabID[tabId] = ProjectLspAutoRestartState(
             attempts: attempts,
-            nextAllowedAt: now.addingTimeInterval(Self.projectLspAutoRestartDelay(forAttempt: attempts))
+            nextAllowedAt: now.addingTimeInterval(Self.projectLspAutoRestartDelay(
+                forAttempt: attempts,
+                baseDelaySeconds: preferences.effectiveLspAutoRestartBaseDelaySeconds
+            ))
         )
         do {
             try restartLspServer(for: target.tab, documentURL: target.fileURL, config: config)
@@ -610,12 +616,9 @@ extension AttoEditorAreaViewController {
         }
     }
 
-    private static let maxProjectLspAutoRestartAttempts = 3
-    private static let projectLspAutoRestartBaseDelay: TimeInterval = 5
-
-    private static func projectLspAutoRestartDelay(forAttempt attempt: Int) -> TimeInterval {
+    private static func projectLspAutoRestartDelay(forAttempt attempt: Int, baseDelaySeconds: TimeInterval) -> TimeInterval {
         let exponent = max(0, attempt - 1)
-        return projectLspAutoRestartBaseDelay * pow(2, Double(exponent))
+        return baseDelaySeconds * pow(2, Double(exponent))
     }
 
     private func restartLspServer(

@@ -1047,6 +1047,14 @@
   - 验证记录：
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
     - `git diff --check`
+- 中间提交：`feat(app): configure lsp auto restart`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把阶段 285 的自动恢复退避策略从硬编码推进到用户可配置的 Preferences 策略。
+  - 提交边界：`AttoPreferences` 新增 LSP auto-restart enabled、max attempts、base delay seconds 三个 stored/env/default 偏好；Preferences 窗口 Editor 页新增 LSP recovery 控件；AttoEditor 自动恢复路径改为按这些偏好决定是否重启、最大尝试次数和退避基准。该提交不新增 Rust/C ABI，不改变 core LSP ownership schema、不实现跨 project/per-server recovery policy、dashboard 内联配置或完整 dashboard 产品化。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoPreferencesTests.testLspAutoRestartDefaultsEnvStoredAndClamping`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoRestartCanBeDisabledByPreferences`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoRestartUsesBackoffAndResetsAfterHealthyStatus`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

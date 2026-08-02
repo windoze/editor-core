@@ -62,6 +62,9 @@ final class AttoPreferences: NSObject {
         static let wrapIndent = "AttoEditor.preferences.wrapIndent"
         static let themeName = "AttoEditor.preferences.themeName"
         static let commentConfigurations = "AttoEditor.preferences.commentConfigurations"
+        static let lspAutoRestartEnabled = "AttoEditor.preferences.lspAutoRestartEnabled"
+        static let lspAutoRestartMaxAttempts = "AttoEditor.preferences.lspAutoRestartMaxAttempts"
+        static let lspAutoRestartBaseDelaySeconds = "AttoEditor.preferences.lspAutoRestartBaseDelaySeconds"
     }
 
     private let defaults: UserDefaults
@@ -137,6 +140,36 @@ final class AttoPreferences: NSObject {
         return AttoThemeManager.defaultThemeName
     }
 
+    var effectiveLspAutoRestartEnabled: Bool {
+        if let stored = storedLspAutoRestartEnabled { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_LSP_AUTO_RESTART"])
+            ?? Self.parseBoolEnv(env["EDITOR_CORE_APPKIT_LSP_AUTO_RESTART"])
+        {
+            return parsed
+        }
+        return true
+    }
+
+    var effectiveLspAutoRestartMaxAttempts: Int {
+        if let stored = storedLspAutoRestartMaxAttempts { return stored }
+        if let parsed = Self.parseIntEnv(env["ATTO_EDITOR_LSP_AUTO_RESTART_MAX_ATTEMPTS"])
+            ?? Self.parseIntEnv(env["EDITOR_CORE_APPKIT_LSP_AUTO_RESTART_MAX_ATTEMPTS"])
+        {
+            return Self.normalizeLspAutoRestartMaxAttempts(parsed)
+        }
+        return 3
+    }
+
+    var effectiveLspAutoRestartBaseDelaySeconds: Double {
+        if let stored = storedLspAutoRestartBaseDelaySeconds { return stored }
+        if let parsed = Self.parseDoubleEnv(env["ATTO_EDITOR_LSP_AUTO_RESTART_BASE_DELAY_SECONDS"])
+            ?? Self.parseDoubleEnv(env["EDITOR_CORE_APPKIT_LSP_AUTO_RESTART_BASE_DELAY_SECONDS"])
+        {
+            return Self.normalizeLspAutoRestartBaseDelaySeconds(parsed)
+        }
+        return 5.0
+    }
+
     // MARK: - Stored (explicit user preference)
 
     var storedFontFaces: [String]? {
@@ -173,6 +206,32 @@ final class AttoPreferences: NSObject {
 
     var storedCommentConfigurations: [String: AttoCommentConfiguration] {
         commentConfigurationStorage().compactMapValues(Self.parseCommentConfiguration)
+    }
+
+    var storedLspAutoRestartEnabled: Bool? {
+        defaults.object(forKey: Keys.lspAutoRestartEnabled) as? Bool
+    }
+
+    var storedLspAutoRestartMaxAttempts: Int? {
+        guard let raw = defaults.object(forKey: Keys.lspAutoRestartMaxAttempts) else { return nil }
+        if let value = raw as? NSNumber {
+            return Self.normalizeLspAutoRestartMaxAttempts(value.intValue)
+        }
+        if let value = raw as? Int {
+            return Self.normalizeLspAutoRestartMaxAttempts(value)
+        }
+        return nil
+    }
+
+    var storedLspAutoRestartBaseDelaySeconds: Double? {
+        guard let raw = defaults.object(forKey: Keys.lspAutoRestartBaseDelaySeconds) else { return nil }
+        if let value = raw as? NSNumber {
+            return Self.normalizeLspAutoRestartBaseDelaySeconds(value.doubleValue)
+        }
+        if let value = raw as? Double {
+            return Self.normalizeLspAutoRestartBaseDelaySeconds(value)
+        }
+        return nil
     }
 
     func setFontFaces(_ faces: [String]) {
@@ -226,6 +285,21 @@ final class AttoPreferences: NSObject {
         } else {
             defaults.removeObject(forKey: Keys.themeName)
         }
+        postDidChange()
+    }
+
+    func setLspAutoRestartEnabled(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Keys.lspAutoRestartEnabled)
+        postDidChange()
+    }
+
+    func setLspAutoRestartMaxAttempts(_ attempts: Int) {
+        defaults.set(Self.normalizeLspAutoRestartMaxAttempts(attempts), forKey: Keys.lspAutoRestartMaxAttempts)
+        postDidChange()
+    }
+
+    func setLspAutoRestartBaseDelaySeconds(_ seconds: Double) {
+        defaults.set(Self.normalizeLspAutoRestartBaseDelaySeconds(seconds), forKey: Keys.lspAutoRestartBaseDelaySeconds)
         postDidChange()
     }
 
@@ -332,6 +406,15 @@ final class AttoPreferences: NSObject {
         return min(max(v, 6.0), 72.0)
     }
 
+    private static func normalizeLspAutoRestartMaxAttempts(_ v: Int) -> Int {
+        min(max(v, 0), 10)
+    }
+
+    private static func normalizeLspAutoRestartBaseDelaySeconds(_ v: Double) -> Double {
+        guard v.isFinite else { return 5.0 }
+        return min(max(v, 0.0), 3_600.0)
+    }
+
     static func normalizeCommentConfigurationKey(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -375,6 +458,16 @@ final class AttoPreferences: NSObject {
         default:
             return nil
         }
+    }
+
+    private static func parseIntEnv(_ raw: String?) -> Int? {
+        guard let raw else { return nil }
+        return Int(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func parseDoubleEnv(_ raw: String?) -> Double? {
+        guard let raw else { return nil }
+        return Double(raw.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     private static func parseWrapModeEnv(_ raw: String?) -> EcuWrapMode? {

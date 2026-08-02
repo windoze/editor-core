@@ -266,6 +266,11 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
     private let ligaturesCheckbox = NSButton(checkboxWithTitle: "Enable ligatures", target: nil, action: nil)
     private let autoPairsCheckbox = NSButton(checkboxWithTitle: "Enable auto pairs", target: nil, action: nil)
+    private let lspAutoRestartCheckbox = NSButton(checkboxWithTitle: "Auto-restart failed LSP servers", target: nil, action: nil)
+    private let lspAutoRestartMaxAttemptsField = NSTextField(string: "")
+    private let lspAutoRestartMaxAttemptsStepper = NSStepper(frame: .zero)
+    private let lspAutoRestartBaseDelayField = NSTextField(string: "")
+    private let lspAutoRestartBaseDelayStepper = NSStepper(frame: .zero)
 
     private var isUpdatingFromModel: Bool = false
     private var forceReloadFontFacesTextView: Bool = false
@@ -455,13 +460,91 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         autoPairsCheckbox.action = #selector(autoPairsToggled(_:))
         stack.addArrangedSubview(autoPairsCheckbox)
 
+        // LSP recovery
+        let lspRecoveryLabel = NSTextField(labelWithString: "LSP recovery")
+        lspRecoveryLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        stack.addArrangedSubview(lspRecoveryLabel)
+
+        lspAutoRestartCheckbox.target = self
+        lspAutoRestartCheckbox.action = #selector(lspAutoRestartToggled(_:))
+        stack.addArrangedSubview(lspAutoRestartCheckbox)
+
+        lspAutoRestartMaxAttemptsField.delegate = self
+        lspAutoRestartMaxAttemptsField.alignment = .right
+        lspAutoRestartMaxAttemptsField.font = NSFont.systemFont(ofSize: 13)
+        lspAutoRestartMaxAttemptsField.translatesAutoresizingMaskIntoConstraints = false
+        lspAutoRestartMaxAttemptsField.widthAnchor.constraint(equalToConstant: 64).isActive = true
+
+        lspAutoRestartMaxAttemptsStepper.minValue = 0
+        lspAutoRestartMaxAttemptsStepper.maxValue = 10
+        lspAutoRestartMaxAttemptsStepper.increment = 1
+        lspAutoRestartMaxAttemptsStepper.translatesAutoresizingMaskIntoConstraints = false
+        lspAutoRestartMaxAttemptsStepper.target = self
+        lspAutoRestartMaxAttemptsStepper.action = #selector(lspAutoRestartMaxAttemptsStepperChanged(_:))
+
+        let lspMaxAttemptsLabel = NSTextField(labelWithString: "Max attempts")
+        lspMaxAttemptsLabel.font = NSFont.systemFont(ofSize: 13)
+        let lspMaxAttemptsRow = NSStackView(views: [
+            lspMaxAttemptsLabel,
+            lspAutoRestartMaxAttemptsField,
+            lspAutoRestartMaxAttemptsStepper,
+        ])
+        lspMaxAttemptsRow.orientation = .horizontal
+        lspMaxAttemptsRow.spacing = 8
+        lspMaxAttemptsRow.alignment = .centerY
+        stack.addArrangedSubview(lspMaxAttemptsRow)
+
+        lspAutoRestartBaseDelayField.delegate = self
+        lspAutoRestartBaseDelayField.alignment = .right
+        lspAutoRestartBaseDelayField.font = NSFont.systemFont(ofSize: 13)
+        lspAutoRestartBaseDelayField.translatesAutoresizingMaskIntoConstraints = false
+        lspAutoRestartBaseDelayField.widthAnchor.constraint(equalToConstant: 64).isActive = true
+
+        lspAutoRestartBaseDelayStepper.minValue = 0
+        lspAutoRestartBaseDelayStepper.maxValue = 3_600
+        lspAutoRestartBaseDelayStepper.increment = 1
+        lspAutoRestartBaseDelayStepper.translatesAutoresizingMaskIntoConstraints = false
+        lspAutoRestartBaseDelayStepper.target = self
+        lspAutoRestartBaseDelayStepper.action = #selector(lspAutoRestartBaseDelayStepperChanged(_:))
+
+        let lspBaseDelayLabel = NSTextField(labelWithString: "Base delay")
+        lspBaseDelayLabel.font = NSFont.systemFont(ofSize: 13)
+        let lspBaseDelaySuffix = NSTextField(labelWithString: "seconds")
+        lspBaseDelaySuffix.font = NSFont.systemFont(ofSize: 13)
+        let lspBaseDelayRow = NSStackView(views: [
+            lspBaseDelayLabel,
+            lspAutoRestartBaseDelayField,
+            lspAutoRestartBaseDelayStepper,
+            lspBaseDelaySuffix,
+        ])
+        lspBaseDelayRow.orientation = .horizontal
+        lspBaseDelayRow.spacing = 8
+        lspBaseDelayRow.alignment = .centerY
+        stack.addArrangedSubview(lspBaseDelayRow)
+
         // Layout
-        view.addSubview(stack)
+        let contentView = NSView(frame: .zero)
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+
+        scrollView.documentView = contentView
+        scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        contentView.addSubview(stack)
+        view.addSubview(scrollView)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -20),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            contentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -20),
         ])
 
         reloadThemeMenu()
@@ -498,6 +581,15 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
         ligaturesCheckbox.state = prefs.effectiveLigaturesEnabled ? .on : .off
         autoPairsCheckbox.state = prefs.effectiveAutoPairsEnabled ? .on : .off
+        let lspAutoRestartEnabled = prefs.effectiveLspAutoRestartEnabled
+        lspAutoRestartCheckbox.state = lspAutoRestartEnabled ? .on : .off
+        let lspMaxAttempts = prefs.effectiveLspAutoRestartMaxAttempts
+        lspAutoRestartMaxAttemptsField.stringValue = String(lspMaxAttempts)
+        lspAutoRestartMaxAttemptsStepper.integerValue = lspMaxAttempts
+        let lspBaseDelay = prefs.effectiveLspAutoRestartBaseDelaySeconds
+        lspAutoRestartBaseDelayField.stringValue = Self.formatLspBaseDelaySeconds(lspBaseDelay)
+        lspAutoRestartBaseDelayStepper.doubleValue = lspBaseDelay
+        setLspAutoRestartControlsEnabled(lspAutoRestartEnabled)
         selectWrapMode(prefs.effectiveWrapMode)
         selectWrapIndent(prefs.effectiveWrapIndent)
     }
@@ -589,6 +681,22 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         prefs.setAutoPairsEnabled(autoPairsCheckbox.state == .on)
     }
 
+    @objc private func lspAutoRestartToggled(_ sender: Any?) {
+        let enabled = lspAutoRestartCheckbox.state == .on
+        prefs.setLspAutoRestartEnabled(enabled)
+        setLspAutoRestartControlsEnabled(enabled)
+    }
+
+    @objc private func lspAutoRestartMaxAttemptsStepperChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        prefs.setLspAutoRestartMaxAttempts(lspAutoRestartMaxAttemptsStepper.integerValue)
+    }
+
+    @objc private func lspAutoRestartBaseDelayStepperChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        prefs.setLspAutoRestartBaseDelaySeconds(lspAutoRestartBaseDelayStepper.doubleValue)
+    }
+
     // MARK: - NSTextViewDelegate
 
     func textDidChange(_ notification: Notification) {
@@ -610,6 +718,16 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
         if field === wrapIndentFixedField {
             prefs.setWrapIndent(.fixedCells(currentWrapIndentFixedCells()))
+            return
+        }
+
+        if field === lspAutoRestartMaxAttemptsField {
+            prefs.setLspAutoRestartMaxAttempts(currentLspAutoRestartMaxAttempts())
+            return
+        }
+
+        if field === lspAutoRestartBaseDelayField {
+            prefs.setLspAutoRestartBaseDelaySeconds(currentLspAutoRestartBaseDelaySeconds())
         }
     }
 
@@ -705,5 +823,32 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
     private func setWrapIndentFixedControlsEnabled(_ enabled: Bool) {
         wrapIndentFixedField.isEnabled = enabled
         wrapIndentFixedStepper.isEnabled = enabled
+    }
+
+    private func currentLspAutoRestartMaxAttempts() -> Int {
+        let raw = lspAutoRestartMaxAttemptsField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsed = Int(raw) ?? lspAutoRestartMaxAttemptsStepper.integerValue
+        return max(0, min(10, parsed))
+    }
+
+    private func currentLspAutoRestartBaseDelaySeconds() -> Double {
+        let raw = lspAutoRestartBaseDelayField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsed = Double(raw) ?? lspAutoRestartBaseDelayStepper.doubleValue
+        guard parsed.isFinite else { return 5.0 }
+        return min(max(parsed, 0.0), 3_600.0)
+    }
+
+    private func setLspAutoRestartControlsEnabled(_ enabled: Bool) {
+        lspAutoRestartMaxAttemptsField.isEnabled = enabled
+        lspAutoRestartMaxAttemptsStepper.isEnabled = enabled
+        lspAutoRestartBaseDelayField.isEnabled = enabled
+        lspAutoRestartBaseDelayStepper.isEnabled = enabled
+    }
+
+    private static func formatLspBaseDelaySeconds(_ seconds: Double) -> String {
+        if seconds.rounded() == seconds {
+            return String(Int(seconds))
+        }
+        return String(seconds)
     }
 }
