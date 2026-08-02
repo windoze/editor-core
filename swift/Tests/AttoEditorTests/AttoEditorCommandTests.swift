@@ -665,6 +665,51 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(errorSummary.count, 0)
     }
 
+    func testResolvedInlayHintUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("inlay-source-uri.txt")
+        let projectedURL = tempDir.appendingPathComponent("inlay-projected-uri.txt")
+        try "alpha\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "projected\n".write(to: projectedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        let hint = try JSONDecoder().decode(EcuLspInlayHint.self, from: Data("""
+        {
+          "position": { "line": 0, "character": 0 },
+          "label": ": String",
+          "textEdits": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 0 }
+              },
+              "newText": "hint "
+            }
+          ]
+        }
+        """.utf8))
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+
+        XCTAssertTrue(vc.consumeResolvedInlayHint(hint, in: editorView, showFeedback: false))
+        XCTAssertEqual(try editorView.editor.text(), "hint alpha\n")
+        XCTAssertEqual(try String(contentsOf: projectedURL, encoding: .utf8), "projected\n")
+    }
+
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

@@ -358,17 +358,18 @@ extension AttoEditorAreaViewController {
         var didHandle = false
         var attemptedEdit = false
 
-        if let tab = activeTab,
-           let workspaceEditJSON = AttoLspInlayHintResolver.workspaceEditJSON(
-               for: hint,
-               documentURI: tab.fileURL.absoluteString
-           )
-        {
-            attemptedEdit = true
-            didHandle = applyWorkspaceEditJSONToActiveTab(
-                workspaceEditJSON,
-                documentURI: tab.fileURL.absoluteString
-            ) || didHandle
+        if let tab = activeTab {
+            let documentURI = projectedFileURL(for: tab).absoluteString
+            if let workspaceEditJSON = AttoLspInlayHintResolver.workspaceEditJSON(
+                for: hint,
+                documentURI: documentURI
+            ) {
+                attemptedEdit = true
+                didHandle = applyWorkspaceEditJSONToActiveTab(
+                    workspaceEditJSON,
+                    documentURI: documentURI
+                ) || didHandle
+            }
         }
 
         if let command = AttoLspInlayHintResolver.command(for: hint) {
