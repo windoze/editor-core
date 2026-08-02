@@ -978,6 +978,7 @@ final class AttoEditorAreaViewController: NSViewController {
             NSLog("AttoEditor: failed to initialize core multi-document model: %@", String(describing: error))
         }
         super.init(nibName: nil, bundle: nil)
+        syncCoreWorkspaceRoots()
     }
 
     required init?(coder: NSCoder) {
@@ -1129,6 +1130,16 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func setWorkspaceRootURL(_ url: URL) {
         workspaceRootURL = url
+        syncCoreWorkspaceRoots()
+    }
+
+    private func syncCoreWorkspaceRoots() {
+        guard let coreDocuments else { return }
+        do {
+            try coreDocuments.setWorkspaceRoots([workspaceRootURL.standardizedFileURL.absoluteString])
+        } catch {
+            NSLog("AttoEditor: failed to sync core workspace roots: %@", String(describing: error))
+        }
     }
 
     // MARK: - Preferences (editor rendering)

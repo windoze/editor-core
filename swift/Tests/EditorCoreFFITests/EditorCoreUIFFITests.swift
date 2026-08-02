@@ -97,6 +97,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentTabDocumentURI))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransaction))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransactionEvents))
+        XCTAssertTrue(info.supports(.multiDocumentWorkspaceRoots))
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {
@@ -320,6 +321,12 @@ final class EditorCoreUIFFITests: XCTestCase {
         try multi.setTabTitle("Beta", tabId: beta)
         try multi.setTabDocumentURI("file:///project/Beta.swift", tabId: beta)
         XCTAssertEqual(try multi.tabDocumentURI(tabId: beta), "file:///project/Beta.swift")
+        try multi.setWorkspaceRoots([
+            "file:///project",
+            "file:///project",
+            "file:///other",
+        ])
+        XCTAssertEqual(try multi.snapshot().workspaceRoots, ["file:///project", "file:///other"])
         try multi.setActiveTab(beta)
         XCTAssertEqual(try multi.activeTabId(), beta)
 

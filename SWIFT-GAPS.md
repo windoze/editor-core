@@ -523,6 +523,12 @@ transaction result 新增 `applied_resource_operation_count`，Rust JSON、C ABI
 
 本阶段不把 rename/code action/completion 的完整 WorkspaceEdit apply 切到 core transaction，也不接管未打开文件和 resource operations；这些仍保留现有 Swift fallback，用于维持当前产品能力。测试覆盖打开 tab 收到 stale versioned WorkspaceEdit 时不修改编辑器文本、不写磁盘、不标 dirty。
 
+## 阶段 202: Core-owned workspace root metadata
+
+2026-08-02 阶段 202 已把 workspace root URI 元数据下沉到 `MultiDocumentEditorUi`：Rust model 新增 `set_workspace_roots(...)` / `workspace_roots()`，FFI multi-document snapshot 输出 `workspace_roots`，并新增 `editor_core_ui_ffi_multi_document_set_workspace_roots_json(...)` 与 `multiDocumentWorkspaceRoots` feature bit；Swift `EcuMultiDocumentSnapshot.workspaceRoots` 和 `MultiDocumentEditorUI.setWorkspaceRoots(_:)` 提供 typed wrapper。
+
+AttoEditor 在初始化 core multi-document model 后会同步当前 `workspaceRootURL`，并在 `setWorkspaceRootURL(...)` 时继续刷新 core-owned root metadata。这个阶段不直接启用 core 磁盘写入；它先建立后续未打开文件 WorkspaceEdit text edits / resource operations 的 workspace-root gate，避免 core transaction 在没有项目边界的情况下写任意 `file://` URI。测试覆盖 Rust root 去重、C ABI feature/snapshot、Swift typed wrapper/runtime feature，以及 App core mirror 的 root 初始化与切换同步。
+
 ## 分层结论
 
 ### 1. Headless core 到 headless Swift FFI

@@ -31,6 +31,7 @@ fn multi_document_snapshot_value(
 
     Ok(json!({
         "active_tab_id": multi.active_tab_id().map(|id| id.get()),
+        "workspace_roots": multi.workspace_roots(),
         "tabs": tabs,
     }))
 }

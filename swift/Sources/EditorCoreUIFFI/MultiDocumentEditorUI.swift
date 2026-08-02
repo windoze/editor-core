@@ -25,11 +25,20 @@ public struct EcuMultiDocumentTabSnapshot: Decodable, Equatable, Sendable {
 
 public struct EcuMultiDocumentSnapshot: Decodable, Equatable, Sendable {
     public let activeTabId: UInt64?
+    public let workspaceRoots: [String]
     public let tabs: [EcuMultiDocumentTabSnapshot]
 
     private enum CodingKeys: String, CodingKey {
         case activeTabId = "active_tab_id"
+        case workspaceRoots = "workspace_roots"
         case tabs
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        activeTabId = try container.decodeIfPresent(UInt64.self, forKey: .activeTabId)
+        workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
+        tabs = try container.decodeIfPresent([EcuMultiDocumentTabSnapshot].self, forKey: .tabs) ?? []
     }
 }
 
@@ -470,6 +479,21 @@ public final class MultiDocumentEditorUI {
 
     public func snapshot() throws -> EcuMultiDocumentSnapshot {
         try decode(EcuMultiDocumentSnapshot.self, from: snapshotJSON(), context: "multi_document_snapshot_decode")
+    }
+
+    public func setWorkspaceRoots(_ roots: [String]) throws {
+        let data = try JSONEncoder().encode(roots)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "multi_document_set_workspace_roots_encode",
+                message: "failed to encode workspace roots JSON"
+            )
+        }
+        let status = json.withCString { rootsPtr in
+            editor_core_ui_ffi_multi_document_set_workspace_roots_json(handle, rootsPtr)
+        }
+        try library.ensureStatus(status, context: "multi_document_set_workspace_roots_json")
     }
 
     public func setActiveTab(_ tabId: UInt64) throws {

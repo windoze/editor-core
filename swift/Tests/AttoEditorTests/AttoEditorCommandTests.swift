@@ -3954,8 +3954,20 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         _ = attachToWindow(vc)
 
-        vc.openFile(url: firstURL, mode: .preview)
         var snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.workspaceRoots, [tempDir.standardizedFileURL.absoluteString])
+
+        let alternateRoot = tempDir.appendingPathComponent("alternate", isDirectory: true)
+        try FileManager.default.createDirectory(at: alternateRoot, withIntermediateDirectories: true)
+        vc.setWorkspaceRootURL(alternateRoot)
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.workspaceRoots, [alternateRoot.standardizedFileURL.absoluteString])
+        vc.setWorkspaceRootURL(tempDir)
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.workspaceRoots, [tempDir.standardizedFileURL.absoluteString])
+
+        vc.openFile(url: firstURL, mode: .preview)
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
         XCTAssertEqual(snapshot.tabs.count, 1)
         XCTAssertEqual(snapshot.tabs[0].title, "first.txt")
         XCTAssertEqual(snapshot.tabs[0].documentURI, firstURL.standardizedFileURL.absoluteString)

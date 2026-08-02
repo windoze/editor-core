@@ -75,6 +75,7 @@ impl TabEntry {
 #[derive(Default)]
 pub struct MultiDocumentEditorUi {
     next_tab_id: u64,
+    workspace_roots: Vec<String>,
     tabs: BTreeMap<TabId, TabEntry>,
     tab_order: Vec<TabId>,
     active_tab: Option<TabId>,
@@ -90,6 +91,28 @@ impl MultiDocumentEditorUi {
     /// Create an empty multi-document UI orchestrator.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Replace the workspace root URI list owned by this multi-document model.
+    pub fn set_workspace_roots<I, S>(&mut self, roots: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let mut out = Vec::<String>::new();
+        for root in roots {
+            let root = root.into();
+            if root.is_empty() || out.iter().any(|existing| existing == &root) {
+                continue;
+            }
+            out.push(root);
+        }
+        self.workspace_roots = out;
+    }
+
+    /// Return the workspace root URIs currently owned by this model.
+    pub fn workspace_roots(&self) -> &[String] {
+        &self.workspace_roots
     }
 
     /// Return the active tab id (if any).

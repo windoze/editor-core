@@ -81,6 +81,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
             & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_EVENTS,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS,
+        0
+    );
 }
 
 #[test]
@@ -126,6 +130,30 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     assert_eq!(
         editor_core_ui_ffi_multi_document_set_active_tab(multi, beta_id),
         ECU_OK
+    );
+
+    let roots = CString::new(
+        r#"[
+          "file:///project",
+          "file:///project",
+          "file:///other"
+        ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+    let snapshot_ptr = editor_core_ui_ffi_multi_document_snapshot_json(multi);
+    assert!(!snapshot_ptr.is_null());
+    let snapshot_json = unsafe { std::ffi::CStr::from_ptr(snapshot_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(snapshot_ptr) };
+    let snapshot_value: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
+    assert_eq!(
+        snapshot_value["workspace_roots"],
+        serde_json::json!(["file:///project", "file:///other"])
     );
 
     let mut has_active: u8 = 0;

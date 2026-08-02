@@ -162,6 +162,11 @@ struct AttoRuntimeCompatibility {
             name: "multi-document WorkspaceEdit transaction events",
             reason: "Project-level UI can observe core-owned WorkspaceEdit transaction results through a cursor; Swift keeps direct apply summaries as a fallback."
         ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceRoots,
+            name: "multi-document workspace roots",
+            reason: "Core-owned workspace/project features can use the same workspace root metadata as the App; Swift keeps App-level root filtering as a fallback."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

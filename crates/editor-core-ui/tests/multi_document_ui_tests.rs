@@ -350,6 +350,24 @@ fn multi_document_ui_previews_and_applies_workspace_edit_transactions() {
 }
 
 #[test]
+fn multi_document_ui_tracks_workspace_roots() {
+    let mut ui = MultiDocumentEditorUi::new();
+
+    ui.set_workspace_roots([
+        "file:///tmp/project".to_string(),
+        "file:///tmp/project".to_string(),
+        String::new(),
+        "file:///tmp/other".to_string(),
+    ]);
+
+    let expected = vec![
+        "file:///tmp/project".to_string(),
+        "file:///tmp/other".to_string(),
+    ];
+    assert_eq!(ui.workspace_roots(), expected.as_slice());
+}
+
+#[test]
 fn multi_document_ui_applies_open_tab_resource_operations() {
     let mut ui = MultiDocumentEditorUi::new();
     let old = ui.open_tab("old\n", 80);
