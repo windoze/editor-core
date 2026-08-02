@@ -47,10 +47,11 @@ pub use keybindings::{
 };
 pub use lsp_result_events::{EditorLspResultEvent, EditorLspResultEventsSnapshot};
 pub use multi_document::{
-    MultiDocumentEditorUi, TabId, TabSearchResult, WorkspaceDiagnostic,
-    WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
-    WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
-    WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
+    MultiDocumentEditorUi, MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot,
+    TabId, TabSearchResult, WorkspaceDiagnostic, WorkspaceDiagnosticDocumentReport,
+    WorkspaceDiagnosticMarker, WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget,
+    WorkspaceDiagnosticsEvent, WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot,
+    WorkspaceDiagnosticsStore,
 };
 pub use state::EditorUi;
 pub use theme::{ChromeTheme, DamageRect};

@@ -107,6 +107,11 @@ struct AttoRuntimeCompatibility {
             name: "LSP result events",
             reason: "LSP result consumers can cursor over core-owned per-editor result slot events; Swift falls back to App-level lifecycle events when unavailable."
         ),
+        RuntimeFeature(
+            feature: .multiDocumentLSPResultEvents,
+            name: "multi-document LSP result events",
+            reason: "Project-level result consumers can cursor over core-owned LSP result events aggregated across tabs and split views; Swift falls back to App-level lifecycle events when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

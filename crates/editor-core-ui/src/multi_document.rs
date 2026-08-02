@@ -2,8 +2,10 @@ use crate::{EditorUi, UiError};
 use editor_core::{SearchMatch, SearchOptions};
 use std::collections::BTreeMap;
 
+mod lsp_result_events;
 mod workspace_diagnostics;
 
+pub use lsp_result_events::{MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot};
 pub use workspace_diagnostics::{
     WorkspaceDiagnostic, WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
     WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
@@ -65,6 +67,7 @@ pub struct MultiDocumentEditorUi {
     active_tab: Option<TabId>,
     preview_tab: Option<TabId>,
     workspace_diagnostics: WorkspaceDiagnosticsStore,
+    lsp_result_events: lsp_result_events::MultiDocumentLspResultEventStore,
 }
 
 impl MultiDocumentEditorUi {
@@ -588,5 +591,31 @@ impl MultiDocumentEditorUi {
         after_sequence: u64,
     ) -> Result<String, UiError> {
         self.workspace_diagnostics.events_after_json(after_sequence)
+    }
+
+    /// Refresh and return latest aggregated LSP result event sequence across tabs/views.
+    pub fn lsp_result_events_latest_sequence(&mut self) -> u64 {
+        self.lsp_result_events
+            .refresh_from_tabs(&self.tabs, &self.tab_order);
+        self.lsp_result_events.latest_sequence()
+    }
+
+    /// Refresh and return aggregated LSP result events newer than `after_sequence`.
+    pub fn lsp_result_events_after(
+        &mut self,
+        after_sequence: u64,
+    ) -> MultiDocumentLspResultEventsSnapshot {
+        self.lsp_result_events
+            .refresh_from_tabs(&self.tabs, &self.tab_order);
+        self.lsp_result_events.events_after(after_sequence)
+    }
+
+    /// Refresh and return aggregated LSP result events newer than `after_sequence` as JSON.
+    pub fn lsp_result_events_json(&mut self, after_sequence: u64) -> Result<String, UiError> {
+        self.lsp_result_events
+            .refresh_from_tabs(&self.tabs, &self.tab_order);
+        self.lsp_result_events
+            .events_after_json(after_sequence)
+            .map_err(|err| UiError::Processor(err.to_string()))
     }
 }
