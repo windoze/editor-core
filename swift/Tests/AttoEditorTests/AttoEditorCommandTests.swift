@@ -296,6 +296,56 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(regions[0].placeholder, "use ...")
     }
 
+    func testApplyTypedSemanticTokensResultUpdatesDerivedStateAndBaseline() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("semantic.txt")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let full = try JSONDecoder().decode(EcuLspSemanticTokensResult.self, from: Data("""
+        {
+          "resultId": "full-1",
+          "data": [0, 4, 5, 7, 0]
+        }
+        """.utf8))
+
+        XCTAssertTrue(vc.applySemanticTokensResultToActiveTab(full))
+        var baseline = try XCTUnwrap(vc._activeSemanticTokensBaselineForTesting())
+        XCTAssertEqual(baseline.resultId, "full-1")
+        XCTAssertEqual(baseline.data, [0, 4, 5, 7, 0])
+        var semanticLayer = try XCTUnwrap(vc._activeDerivedStateForTesting().styleIntervals.layers.first { $0.layer == 1 })
+        var interval = try XCTUnwrap(semanticLayer.intervals.first)
+        XCTAssertEqual(interval.start, 4)
+        XCTAssertEqual(interval.end, 9)
+        XCTAssertEqual(interval.styleId, 0x0007_0000)
+
+        let delta = try JSONDecoder().decode(EcuLspSemanticTokensResult.self, from: Data("""
+        {
+          "resultId": "delta-1",
+          "edits": [
+            { "start": 2, "deleteCount": 1, "data": [3] }
+          ]
+        }
+        """.utf8))
+
+        XCTAssertTrue(vc.applySemanticTokensResultToActiveTab(delta))
+        baseline = try XCTUnwrap(vc._activeSemanticTokensBaselineForTesting())
+        XCTAssertEqual(baseline.resultId, "delta-1")
+        XCTAssertEqual(baseline.data, [0, 4, 3, 7, 0])
+        semanticLayer = try XCTUnwrap(vc._activeDerivedStateForTesting().styleIntervals.layers.first { $0.layer == 1 })
+        interval = try XCTUnwrap(semanticLayer.intervals.first)
+        XCTAssertEqual(interval.start, 4)
+        XCTAssertEqual(interval.end, 7)
+        XCTAssertEqual(interval.styleId, 0x0007_0000)
+    }
+
     func testRefreshCodeLensRequiresEnabledLsp() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

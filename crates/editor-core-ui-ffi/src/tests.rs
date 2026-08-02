@@ -51,6 +51,14 @@ fn set_test_treesitter_registry(ui: *mut EditorUi) {
 }
 
 #[test]
+fn ffi_feature_flags_include_semantic_tokens_requests() {
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_SEMANTIC_TOKENS_REQUESTS,
+        0
+    );
+}
+
+#[test]
 fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     let multi = editor_core_ui_ffi_multi_document_new();
     assert!(!multi.is_null());

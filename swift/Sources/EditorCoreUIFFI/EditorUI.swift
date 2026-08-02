@@ -844,6 +844,91 @@ public final class EditorUI {
         )
     }
 
+    public func lspRequestSemanticTokensFull() throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_request_semantic_tokens_full(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_semantic_tokens_full")
+        return out
+    }
+
+    public func lspTakeLastSemanticTokensFullResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_semantic_tokens_full_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_semantic_tokens_full_json(handle, has, ptr)
+        }
+    }
+
+    public func lspTakeLastSemanticTokensFullResult() throws -> EcuLspSemanticTokensResult? {
+        guard let json = try lspTakeLastSemanticTokensFullResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspSemanticTokensResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_semantic_tokens_full_decode"
+        )
+    }
+
+    public func lspRequestSemanticTokensDelta(previousResultId: String? = nil) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status: Int32
+        if let previousResultId {
+            status = previousResultId.withCString { previousPtr in
+                editor_core_ui_ffi_editor_ui_lsp_request_semantic_tokens_delta(handle, previousPtr, &out)
+            }
+        } else {
+            status = editor_core_ui_ffi_editor_ui_lsp_request_semantic_tokens_delta(handle, nil, &out)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_semantic_tokens_delta")
+        return out
+    }
+
+    public func lspTakeLastSemanticTokensDeltaResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_semantic_tokens_delta_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_semantic_tokens_delta_json(handle, has, ptr)
+        }
+    }
+
+    public func lspTakeLastSemanticTokensDeltaResult() throws -> EcuLspSemanticTokensResult? {
+        guard let json = try lspTakeLastSemanticTokensDeltaResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspSemanticTokensResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_semantic_tokens_delta_decode"
+        )
+    }
+
+    public func lspRequestSemanticTokensRange(
+        startLine: UInt32,
+        startColumn: UInt32,
+        endLine: UInt32,
+        endColumn: UInt32
+    ) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_request_semantic_tokens_range(
+            handle,
+            startLine,
+            startColumn,
+            endLine,
+            endColumn,
+            &out
+        )
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_semantic_tokens_range")
+        return out
+    }
+
+    public func lspTakeLastSemanticTokensRangeResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_semantic_tokens_range_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_semantic_tokens_range_json(handle, has, ptr)
+        }
+    }
+
+    public func lspTakeLastSemanticTokensRangeResult() throws -> EcuLspSemanticTokensResult? {
+        guard let json = try lspTakeLastSemanticTokensRangeResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspSemanticTokensResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_semantic_tokens_range_decode"
+        )
+    }
+
     public func lspRequestSelectionRange(positionsJSON: String) throws -> UInt64 {
         try lspRequestJSON(positionsJSON, context: "editor_ui_lsp_request_selection_range") { cstr, out in
             editor_core_ui_ffi_editor_ui_lsp_request_selection_range(handle, cstr, out)
@@ -1363,6 +1448,16 @@ public final class EditorUI {
             editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(handle, ptr.baseAddress, UInt32(ptr.count))
         }
         try library.ensureStatus(status, context: "editor_ui_lsp_apply_semantic_tokens")
+    }
+
+    @discardableResult
+    public func lspApplySemanticTokens(
+        _ result: EcuLspSemanticTokensResult,
+        baseline: [UInt32] = []
+    ) throws -> [UInt32] {
+        let data = try result.dataForApplying(baseline: baseline)
+        try lspApplySemanticTokens(data)
+        return data
     }
 
     public func setRenderMetrics(fontSize: Float, lineHeightPx: Float, cellWidthPx: Float, paddingXPx: Float, paddingYPx: Float) throws {

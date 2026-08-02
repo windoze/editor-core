@@ -127,6 +127,11 @@ struct AttoRuntimeCompatibility {
             name: "LSP request cancel/timeout events",
             reason: "Request lifecycle consumers can explicitly close pending request events as canceled or timed out; Swift falls back to App-level timeout/cancel bookkeeping when unavailable."
         ),
+        RuntimeFeature(
+            feature: .lspSemanticTokensRequests,
+            name: "LSP semantic tokens requests",
+            reason: "Semantic highlighting refresh can consume typed semantic tokens full/delta/range payloads; Swift falls back to automatic processing when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

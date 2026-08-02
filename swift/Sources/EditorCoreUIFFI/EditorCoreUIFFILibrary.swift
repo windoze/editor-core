@@ -73,6 +73,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let lspRequestEvents = Self(rawValue: 1 << 10)
     public static let multiDocumentLSPRequestEvents = Self(rawValue: 1 << 11)
     public static let lspRequestCancelTimeoutEvents = Self(rawValue: 1 << 12)
+    public static let lspSemanticTokensRequests = Self(rawValue: 1 << 13)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

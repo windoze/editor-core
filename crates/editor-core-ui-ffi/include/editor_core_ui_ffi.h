@@ -453,6 +453,26 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json(EditorUi* ui,
                                                                        uint8_t* out_has_result,
                                                                        char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_semantic_tokens_full(EditorUi* ui,
+                                                                      uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_semantic_tokens_full_json(EditorUi* ui,
+                                                                             uint8_t* out_has_result,
+                                                                             char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_semantic_tokens_delta(EditorUi* ui,
+                                                                       const char* previous_result_id_utf8,
+                                                                       uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_semantic_tokens_delta_json(EditorUi* ui,
+                                                                              uint8_t* out_has_result,
+                                                                              char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_semantic_tokens_range(EditorUi* ui,
+                                                                       uint32_t start_line,
+                                                                       uint32_t start_column,
+                                                                       uint32_t end_line,
+                                                                       uint32_t end_column,
+                                                                       uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_semantic_tokens_range_json(EditorUi* ui,
+                                                                              uint8_t* out_has_result,
+                                                                              char** out_result_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_selection_range(EditorUi* ui,
                                                                  const char* positions_json_utf8,
                                                                  uint64_t* out_request_id);

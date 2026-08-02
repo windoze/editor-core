@@ -293,6 +293,11 @@ final class AttoEditorAreaViewController: NSViewController {
         (Self.codeLensResultErrorMessage(result), Self.codeLensResultCount(result))
     }
 
+    func _activeSemanticTokensBaselineForTesting() -> (resultId: String?, data: [UInt32])? {
+        guard let tab = activeTab else { return nil }
+        return (tab.semanticTokensResultId, tab.semanticTokensData)
+    }
+
     func _setDocumentColorPickerForTesting(_ picker: ((NSColor) -> NSColor?)?) {
         documentColorPickerForTesting = picker
     }
@@ -2185,6 +2190,50 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    @discardableResult
+    func applySemanticTokensResultToActiveTab(
+        _ result: EcuLspSemanticTokensResult,
+        showFeedback: Bool = false
+    ) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let data = try tab.editCore.editor.lspApplySemanticTokens(
+                result,
+                baseline: tab.semanticTokensData
+            )
+            tab.semanticTokensData = data
+            tab.semanticTokensResultId = result.resultId
+            tab.editCore.layoutSubtreeIfNeeded()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            derivedStateStore.refreshActive(editor: tab.editCore.editor)
+            updateStatusBar()
+
+            if showFeedback, result.isEmpty {
+                showWorkspaceEditPopover(
+                    text: "No semantic tokens are available for this document.",
+                    in: tab.editCore.editorView
+                )
+            }
+            return true
+        } catch {
+            tab.semanticTokensData = []
+            tab.semanticTokensResultId = nil
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Semantic tokens could not be applied.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+    }
+
     private func startFoldingRangesPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
         foldingRangesPollTimer?.cancel()
 
@@ -3730,6 +3779,8 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func handleTabDidMutateDocumentText(tabID: UUID) {
         guard let tab = tabs.first(where: { $0.id == tabID }) else { return }
+        tab.semanticTokensData = []
+        tab.semanticTokensResultId = nil
         let preserveCompletionUI = shouldPreserveCompletionUIForCurrentTextMutation
         if selectedTabID == tabID {
             cancelSignatureHelpUI()
@@ -9296,6 +9347,8 @@ private final class AttoEditorTab {
     var syntaxLanguageId: String?
     var panes: [EditCoreUI]
     var activePaneIndex: Int
+    var semanticTokensResultId: String?
+    var semanticTokensData: [UInt32]
 
     var editCore: EditCoreUI {
         panes[max(0, min(activePaneIndex, panes.count - 1))]
@@ -9328,6 +9381,8 @@ private final class AttoEditorTab {
         self.syntaxLanguageId = syntaxLanguageId
         self.panes = [editCore]
         self.activePaneIndex = 0
+        self.semanticTokensResultId = nil
+        self.semanticTokensData = []
     }
 }
 
