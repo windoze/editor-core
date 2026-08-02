@@ -1061,6 +1061,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
     - `git diff --check`
+- 中间提交：`feat(app): group lsp dashboard by server`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；继续产品化 project LSP health dashboard，把 status/health/log 明细前面的概览推进为 server-level 分组摘要。
+  - 提交边界：`AttoEditor.LSP.ProjectDashboard` 在 Recovery Policy 后新增按 LSP server 聚合的 Server 行，汇总该 server 的内存 health events、persisted logs、failed 计数和最新 process state；明细行、日志 schema、Rust/C ABI 和恢复执行策略保持不变。本提交不实现真正趋势图、跨 project dashboard、per-server recovery policy、dashboard 内联编辑或更深层 core-owned LSP ownership schema。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

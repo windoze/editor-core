@@ -2241,7 +2241,7 @@ final class AttoEditorCommandTests: XCTestCase {
                 in: root
             ) as? NSTableView
         )
-        XCTAssertEqual(table.numberOfRows, 4)
+        XCTAssertEqual(table.numberOfRows, 5)
 
         let summaryCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("Summary -") == true)
@@ -2256,11 +2256,18 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(policyTitle.contains("max attempts 7"), policyTitle)
         XCTAssertTrue(policyTitle.contains("base delay 2.5s"), policyTitle)
 
-        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 2, makeIfNecessary: true) as? NSTableCellView)
+        let serverCell = try XCTUnwrap(table.view(atColumn: 0, row: 2, makeIfNecessary: true) as? NSTableCellView)
+        let serverTitle = serverCell.textField?.stringValue ?? ""
+        XCTAssertTrue(serverTitle.contains("Server - fake-lsp"), serverTitle)
+        XCTAssertTrue(serverTitle.contains("health events 1 failed 1"), serverTitle)
+        XCTAssertTrue(serverTitle.contains("persisted logs 1 failed 1"), serverTitle)
+        XCTAssertTrue(serverTitle.contains("latest process exited"), serverTitle)
+
+        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 3, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("Status -") == true)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("server exited") == true)
 
-        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 3, makeIfNecessary: true) as? NSTableCellView)
+        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 4, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("Health -") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("fake-lsp") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("dashboard stderr") == true)

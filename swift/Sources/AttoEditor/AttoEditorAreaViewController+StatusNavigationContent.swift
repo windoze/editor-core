@@ -592,6 +592,16 @@ extension AttoEditorAreaViewController {
             title: projectLspDashboardRecoveryPolicyTitle()
         ) {})
 
+        commands.append(contentsOf: projectLspDashboardServerGroups(
+            healthEvents: healthEvents,
+            persistedEntries: persistedEntries
+        ).enumerated().map { idx, group in
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.server_group.\(idx)",
+                title: Self.projectLspDashboardServerGroupTitle(group)
+            ) {}
+        })
+
         commands.append(contentsOf: statusEvents.enumerated().map { idx, event in
             AttoCommandPaletteCommand(
                 id: "lsp.project_dashboard.status.\(idx)",
@@ -641,6 +651,102 @@ extension AttoEditorAreaViewController {
         let maxAttempts = preferences.effectiveLspAutoRestartMaxAttempts
         let baseDelay = preferences.effectiveLspAutoRestartBaseDelaySeconds
         return "Recovery Policy - \(enabledText), max attempts \(maxAttempts), base delay \(Self.formatProjectLspDashboardSeconds(baseDelay))"
+    }
+
+    private func projectLspDashboardServerGroups(
+        healthEvents: [AttoProjectLspProcessHealthEvent],
+        persistedEntries: [AttoProjectLspProcessHealthLogEntry]
+    ) -> [ProjectLspDashboardServerGroup] {
+        var groups: [String: ProjectLspDashboardServerGroup] = [:]
+
+        for event in healthEvents {
+            let identity = Self.projectLspDashboardServerIdentity(
+                serverName: event.serverName,
+                serverCommand: event.serverCommand
+            )
+            var group = groups[identity.key] ?? ProjectLspDashboardServerGroup(displayName: identity.displayName)
+            group.recordHealth(
+                availability: event.availability,
+                state: event.state,
+                processState: event.process.state.rawValue,
+                sequence: event.sequence
+            )
+            groups[identity.key] = group
+        }
+
+        for entry in persistedEntries {
+            let identity = Self.projectLspDashboardServerIdentity(
+                serverName: entry.serverName,
+                serverCommand: entry.serverCommand
+            )
+            var group = groups[identity.key] ?? ProjectLspDashboardServerGroup(displayName: identity.displayName)
+            group.recordPersistedLog(
+                availability: entry.availability,
+                state: entry.state,
+                processState: entry.process.state,
+                sequence: entry.sequence
+            )
+            groups[identity.key] = group
+        }
+
+        return groups.values.sorted { lhs, rhs in
+            if lhs.latestSequence != rhs.latestSequence {
+                return lhs.latestSequence > rhs.latestSequence
+            }
+            return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
+        }
+    }
+
+    private struct ProjectLspDashboardServerGroup {
+        let displayName: String
+        var healthEventCount: Int = 0
+        var healthFailedCount: Int = 0
+        var persistedLogCount: Int = 0
+        var persistedFailedCount: Int = 0
+        var latestProcessState: String?
+        var latestSequence: UInt64 = 0
+
+        mutating func recordHealth(availability: String, state: String, processState: String, sequence: UInt64) {
+            healthEventCount += 1
+            if Self.isFailed(availability: availability, state: state) {
+                healthFailedCount += 1
+            }
+            recordLatest(processState: processState, sequence: sequence)
+        }
+
+        mutating func recordPersistedLog(availability: String, state: String, processState: String, sequence: UInt64) {
+            persistedLogCount += 1
+            if Self.isFailed(availability: availability, state: state) {
+                persistedFailedCount += 1
+            }
+            recordLatest(processState: processState, sequence: sequence)
+        }
+
+        private mutating func recordLatest(processState: String, sequence: UInt64) {
+            if sequence >= latestSequence {
+                latestSequence = sequence
+                latestProcessState = processState
+            }
+        }
+
+        private static func isFailed(availability: String, state: String) -> Bool {
+            availability == "failed" || state == "failed"
+        }
+    }
+
+    private static func projectLspDashboardServerIdentity(
+        serverName: String?,
+        serverCommand: String?
+    ) -> (key: String, displayName: String) {
+        let displayName = compactProjectLspPanelText(serverName)
+            ?? compactProjectLspPanelText(serverCommand)
+            ?? "LSP"
+        return (displayName.lowercased(), displayName)
+    }
+
+    private static func projectLspDashboardServerGroupTitle(_ group: ProjectLspDashboardServerGroup) -> String {
+        let latestProcess = group.latestProcessState.map { ", latest process \($0)" } ?? ""
+        return "Server - \(group.displayName): health events \(group.healthEventCount) failed \(group.healthFailedCount), persisted logs \(group.persistedLogCount) failed \(group.persistedFailedCount)\(latestProcess)"
     }
 
     private static func formatProjectLspDashboardSeconds(_ seconds: Double) -> String {
