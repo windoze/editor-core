@@ -510,6 +510,14 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesParameterSchemasAndMacroPolicies`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `git diff --check`
+- 中间提交：`feat(app): select files from core tabs`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 的 opened-files/sidebar selection 和再次打开已投影文件时，按 core tab snapshot 的 `document_uri` 查找现有 AppKit tab。
+  - 提交边界：新增 App 层 projected file lookup helper，并迁移 `selectFile(url:)` 与 `openFile(url:mode:)` 的 existing-tab 查找；保留 Swift 本地 fallback，不主动重写 `tab.fileURL`，不新增 Rust/FFI ABI，不实现 session schema migration、project root ownership 或 pane layout tree。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testSelectAndOpenFileUseCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileProjectionUsesCoreTabSnapshotWhenAvailable`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRefreshTabBarProjectsAppKitContentToCoreActiveTab`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

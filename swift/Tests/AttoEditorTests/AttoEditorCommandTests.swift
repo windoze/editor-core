@@ -4800,6 +4800,49 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(callbackSelectedID, secondTab.id)
     }
 
+    func testSelectAndOpenFileUseCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-uri.txt")
+        let secondURL = tempDir.appendingPathComponent("second-uri.txt")
+        let renamedURL = tempDir.appendingPathComponent("renamed-uri.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "renamed".write(to: renamedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+
+        let firstTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == firstURL.standardizedFileURL })
+        let secondTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == secondURL.standardizedFileURL })
+        XCTAssertEqual(vc.selectedTabID, secondTab.id)
+
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            renamedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(firstTab.coreTabID)
+        )
+        XCTAssertEqual(firstTab.fileURL.standardizedFileURL, firstURL.standardizedFileURL)
+        XCTAssertTrue(vc.openFileItems().contains { $0.url.standardizedFileURL == renamedURL.standardizedFileURL })
+
+        vc.selectFile(url: renamedURL)
+        XCTAssertEqual(vc.selectedTabID, firstTab.id)
+        XCTAssertTrue(vc.contentHostView.subviews.contains { $0 === firstTab.editCore })
+
+        vc.selectFile(url: secondURL)
+        XCTAssertEqual(vc.selectedTabID, secondTab.id)
+
+        XCTAssertTrue(vc.openFile(url: renamedURL, mode: .pinned))
+        XCTAssertEqual(vc.tabs.count, 2)
+        XCTAssertEqual(vc.selectedTabID, firstTab.id)
+        XCTAssertEqual(try coreDocuments.snapshot().tabs.count, 2)
+    }
+
     func testActiveTabProjectionUsesCoreActiveTabWhenAvailable() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
