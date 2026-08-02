@@ -95,6 +95,10 @@ enum AttoWorkspaceEditParser {
         let documents: [DocumentEdit]
         let resourceOperations: [ResourceOperation]
         let unsupportedURIs: [String]
+
+        var isEmpty: Bool {
+            documents.isEmpty && resourceOperations.isEmpty && unsupportedURIs.isEmpty
+        }
     }
 
     struct ApplyResult: Equatable {

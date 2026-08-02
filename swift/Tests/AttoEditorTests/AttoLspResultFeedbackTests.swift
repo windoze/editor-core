@@ -146,6 +146,34 @@ final class AttoLspResultFeedbackTests: XCTestCase {
                 detailText: "No color presentations are available."
             )
         )
+        XCTAssertEqual(
+            AttoLspResultFeedback.requestFailed(.rename, errorDescription: "server busy"),
+            AttoLspResultFeedback.Message(
+                statusText: "Rename: request failed",
+                detailText: "Rename request failed.\nserver busy"
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.rename),
+            AttoLspResultFeedback.Message(
+                statusText: "Rename: no results",
+                detailText: "Rename produced no edits."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.codeActions),
+            AttoLspResultFeedback.Message(
+                statusText: "Code actions: no results",
+                detailText: "No code actions are available here."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.timeout(.codeActionResolve),
+            AttoLspResultFeedback.Message(
+                statusText: "Code action resolve: timed out",
+                detailText: "Code action resolve request timed out."
+            )
+        )
     }
 
     func testRefreshSummaryFormatsSingularAndPluralCounts() {

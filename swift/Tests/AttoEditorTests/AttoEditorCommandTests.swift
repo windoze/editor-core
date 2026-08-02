@@ -2094,6 +2094,38 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Color presentations: no results")
     }
 
+    func testEmptyCodeActionResultsUseUnifiedFeedbackStatus() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("empty-code-actions.txt")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc._showCodeActionResultJSONForTesting("[]", showFeedback: true))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Code actions: no results")
+    }
+
+    func testEmptyRenameResultUsesUnifiedFeedbackStatus() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("empty-rename.swift")
+        try "let oldName = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc._applyRenameResultJSONForTesting(#"{}"#, newName: "newName", showFeedback: true))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Rename: no results")
+    }
+
     func testDocumentColorResultsRecordLspResultEvents() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

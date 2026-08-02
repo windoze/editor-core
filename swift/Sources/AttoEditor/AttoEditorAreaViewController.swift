@@ -208,12 +208,16 @@ final class AttoEditorAreaViewController: NSViewController {
         lspResultEventStream.latestSequence
     }
 
-    func _showCodeActionResultJSONForTesting(_ json: String, onlyKinds: [String] = []) -> Bool {
+    func _showCodeActionResultJSONForTesting(
+        _ json: String,
+        onlyKinds: [String] = [],
+        showFeedback: Bool = true
+    ) -> Bool {
         let items = AttoLspCodeActionParser.filteredItems(
             AttoLspCodeActionParser.items(fromCodeActionResultJSON: json),
             onlyKinds: onlyKinds
         )
-        return showCodeActionResults(items, onlyKinds: onlyKinds)
+        return showCodeActionResults(items, onlyKinds: onlyKinds, showFeedback: showFeedback)
     }
 
     func _showCompletionResultJSONForTesting(_ json: String) -> Bool {
@@ -229,12 +233,13 @@ final class AttoEditorAreaViewController: NSViewController {
         return showCompletionList(items: items, context: context, editorView: tab.editCore.editorView)
     }
 
-    func _applyRenameResultJSONForTesting(_ json: String, newName: String) -> Bool {
+    func _applyRenameResultJSONForTesting(_ json: String, newName: String, showFeedback: Bool = true) -> Bool {
         guard let tab = activeTab else { return false }
         let context = RenameRequestContext(
             tabID: tab.id,
             documentURI: tab.fileURL.absoluteString,
-            newName: newName
+            newName: newName,
+            showFeedback: showFeedback
         )
         return applyRenameResultJSON(json, context: context)
     }
@@ -570,21 +575,25 @@ final class AttoEditorAreaViewController: NSViewController {
         let tabID: UUID
         let documentURI: String
         let newName: String
+        let showFeedback: Bool
     }
 
     private struct RenamePrepareContext {
         let tabID: UUID
         let fallbackSeed: AttoLspRenameSupport.DialogSeed
+        let showFeedback: Bool
     }
 
     private struct CodeActionRequestContext {
         let tabID: UUID
         let onlyKinds: [String]
+        let showFeedback: Bool
     }
 
     private struct CodeActionResolveContext {
         let tabID: UUID
         let item: AttoLspCodeActionParser.Item
+        let showFeedback: Bool
     }
 
     private struct CodeLensResolveContext {
@@ -7326,6 +7335,7 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            presentLspResultFeedback(AttoLspResultFeedback.unavailable(.codeActions), in: tab.editCore.editorView)
             NSSound.beep()
             return false
         }
@@ -7353,11 +7363,15 @@ final class AttoEditorAreaViewController: NSViewController {
                 endOffset: end,
                 contextJSON: contextJSON
             )
-            codeActionContext = CodeActionRequestContext(tabID: tab.id, onlyKinds: onlyKinds)
-            startCodeActionPollTimer(tabID: tab.id)
+            codeActionContext = CodeActionRequestContext(tabID: tab.id, onlyKinds: onlyKinds, showFeedback: true)
+            startCodeActionPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
             return true
         } catch {
             cancelCodeActionUI()
+            presentLspResultFeedback(
+                AttoLspResultFeedback.requestFailed(.codeActions, errorDescription: error.localizedDescription),
+                in: tab.editCore.editorView
+            )
             NSSound.beep()
             return false
         }
@@ -7380,21 +7394,26 @@ final class AttoEditorAreaViewController: NSViewController {
         )
     }
 
-    private func startCodeActionPollTimer(tabID: UUID) {
+    private func startCodeActionPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
         codeActionPollTimer?.cancel()
 
         var remainingTicks = 40 // ~2s at 50ms
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
             guard let ctx = self.codeActionContext, ctx.tabID == tabID else {
                 self.cancelCodeActionUI()
                 return
             }
 
             if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
                 self.cancelCodeActionUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.codeActions), in: editorView)
+                }
+                NSSound.beep()
                 return
             }
             remainingTicks -= 1
@@ -7408,6 +7427,15 @@ final class AttoEditorAreaViewController: NSViewController {
             do {
                 result = try tab.editCore.editor.lspTakeLastCodeActionResult()
             } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelCodeActionUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(.codeActions, errorDescription: error.localizedDescription),
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
                 return
             }
             guard let result else { return }
@@ -7419,7 +7447,7 @@ final class AttoEditorAreaViewController: NSViewController {
             self.codeActionPollTimer?.cancel()
             self.codeActionPollTimer = nil
             self.codeActionContext = nil
-            _ = self.showCodeActionResults(items, onlyKinds: ctx.onlyKinds)
+            _ = self.showCodeActionResults(items, onlyKinds: ctx.onlyKinds, showFeedback: ctx.showFeedback)
             timer.cancel()
         }
 
@@ -7430,17 +7458,21 @@ final class AttoEditorAreaViewController: NSViewController {
     @discardableResult
     private func showCodeActionResults(
         _ items: [AttoLspCodeActionParser.Item],
-        onlyKinds: [String]
+        onlyKinds: [String],
+        showFeedback: Bool = true
     ) -> Bool {
         guard items.isEmpty == false else {
             cancelCodeActionUI()
+            if showFeedback, let editorView = activeTab?.editCore.editorView {
+                presentLspResultFeedback(AttoLspResultFeedback.empty(.codeActions), in: editorView)
+            }
             NSSound.beep()
             return false
         }
 
         recordCodeActionResultLifecycle(items: items, onlyKinds: onlyKinds)
         guard let window = view.window else {
-            _ = applyCodeAction(items[0])
+            _ = applyCodeAction(items[0], showFeedback: showFeedback)
             return true
         }
 
@@ -7484,18 +7516,32 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     @discardableResult
-    private func applyCodeAction(_ item: AttoLspCodeActionParser.Item, allowResolve: Bool = true) -> Bool {
+    private func applyCodeAction(
+        _ item: AttoLspCodeActionParser.Item,
+        allowResolve: Bool = true,
+        showFeedback: Bool = true
+    ) -> Bool {
         guard item.disabledReason == nil else {
+            if showFeedback, let editorView = activeTab?.editCore.editorView {
+                let reason = item.disabledReason ?? "Selected code action is disabled."
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.codeActions, errorDescription: reason),
+                    in: editorView
+                )
+            }
             NSSound.beep()
             return false
         }
 
         var didApply = false
+        var attemptedWorkspaceEdit = false
         if let workspaceEdit = AttoLspCodeActionParser.workspaceEdit(for: item),
            workspaceEdit.rawJSONString != nil
         {
+            attemptedWorkspaceEdit = true
             didApply = applyWorkspaceEditToActiveTab(workspaceEdit) || didApply
         } else if let editJSON = AttoLspCodeActionParser.editJSON(for: item) {
+            attemptedWorkspaceEdit = true
             didApply = applyWorkspaceEditJSONToActiveTab(editJSON) || didApply
         }
 
@@ -7508,50 +7554,83 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         guard allowResolve, item.isLegacyCommand == false else {
+            if showFeedback, attemptedWorkspaceEdit == false, let editorView = activeTab?.editCore.editorView {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.empty(.codeActionResolve),
+                    in: editorView
+                )
+            }
             NSSound.beep()
             return false
         }
-        return requestCodeActionResolve(item)
+        return requestCodeActionResolve(item, showFeedback: showFeedback)
     }
 
-    private func requestCodeActionResolve(_ item: AttoLspCodeActionParser.Item) -> Bool {
+    private func requestCodeActionResolve(_ item: AttoLspCodeActionParser.Item, showFeedback: Bool) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
             return false
         }
         guard let actionJSON = AttoLspCodeActionParser.rawJSON(for: item) else {
+            if showFeedback {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(
+                        .codeActionResolve,
+                        errorDescription: "Selected code action cannot be resolved."
+                    ),
+                    in: tab.editCore.editorView
+                )
+            }
             NSSound.beep()
             return false
         }
 
         do {
             _ = try tab.editCore.editor.lspRequestCodeActionResolve(actionJSON: actionJSON)
-            codeActionResolveContext = CodeActionResolveContext(tabID: tab.id, item: item)
+            codeActionResolveContext = CodeActionResolveContext(
+                tabID: tab.id,
+                item: item,
+                showFeedback: showFeedback
+            )
             codeActionResultsController?.hide()
             codeActionResultsController = nil
-            startCodeActionResolvePollTimer(tabID: tab.id)
+            startCodeActionResolvePollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
             return true
         } catch {
+            if showFeedback {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(
+                        .codeActionResolve,
+                        errorDescription: error.localizedDescription
+                    ),
+                    in: tab.editCore.editorView
+                )
+            }
             NSSound.beep()
             return false
         }
     }
 
-    private func startCodeActionResolvePollTimer(tabID: UUID) {
+    private func startCodeActionResolvePollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
         codeActionResolvePollTimer?.cancel()
 
         var remainingTicks = 40 // ~2s at 50ms
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
             guard let ctx = self.codeActionResolveContext, ctx.tabID == tabID else {
                 self.cancelCodeActionUI()
                 return
             }
 
             if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
                 self.cancelCodeActionUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.codeActionResolve), in: editorView)
+                }
+                NSSound.beep()
                 return
             }
             remainingTicks -= 1
@@ -7565,6 +7644,18 @@ final class AttoEditorAreaViewController: NSViewController {
             do {
                 result = try tab.editCore.editor.lspTakeLastCodeActionResolveResult()
             } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelCodeActionUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(
+                            .codeActionResolve,
+                            errorDescription: error.localizedDescription
+                        ),
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
                 return
             }
             guard let result else { return }
@@ -7573,7 +7664,7 @@ final class AttoEditorAreaViewController: NSViewController {
             self.codeActionResolvePollTimer = nil
             self.codeActionResolveContext = nil
             let resolved = AttoLspCodeActionParser.item(fromCodeAction: result) ?? ctx.item
-            _ = self.applyCodeAction(resolved, allowResolve: false)
+            _ = self.applyCodeAction(resolved, allowResolve: false, showFeedback: ctx.showFeedback)
             timer.cancel()
         }
 
@@ -7673,12 +7764,15 @@ final class AttoEditorAreaViewController: NSViewController {
     // MARK: - LSP rename
 
     @discardableResult
-    func promptRenameSymbolInActiveTab() -> Bool {
+    func promptRenameSymbolInActiveTab(showFeedback: Bool = true) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.rename), in: tab.editCore.editorView)
+            }
             NSSound.beep()
             return false
         }
@@ -7699,16 +7793,20 @@ final class AttoEditorAreaViewController: NSViewController {
                 logicalLine: pos.line,
                 logicalColumn: pos.column
             )
-            renamePrepareContext = RenamePrepareContext(tabID: tab.id, fallbackSeed: fallbackSeed)
+            renamePrepareContext = RenamePrepareContext(
+                tabID: tab.id,
+                fallbackSeed: fallbackSeed,
+                showFeedback: showFeedback
+            )
             startRenamePreparePollTimer(tabID: tab.id)
             return true
         } catch {
-            return showRenameDialog(seed: fallbackSeed)
+            return showRenameDialog(seed: fallbackSeed, showFeedback: showFeedback)
         }
     }
 
     @discardableResult
-    private func showRenameDialog(seed: AttoLspRenameSupport.DialogSeed) -> Bool {
+    private func showRenameDialog(seed: AttoLspRenameSupport.DialogSeed, showFeedback: Bool = true) -> Bool {
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
         field.stringValue = seed.initialName
         field.placeholderString = seed.placeholder ?? "New symbol name"
@@ -7726,11 +7824,11 @@ final class AttoEditorAreaViewController: NSViewController {
         guard response == .alertFirstButtonReturn else { return false }
 
         let newName = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        return renameSymbolInActiveTab(to: newName)
+        return renameSymbolInActiveTab(to: newName, showFeedback: showFeedback)
     }
 
     @discardableResult
-    func renameSymbolInActiveTab(to newName: String) -> Bool {
+    func renameSymbolInActiveTab(to newName: String, showFeedback: Bool = true) -> Bool {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else {
             NSSound.beep()
@@ -7741,6 +7839,9 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.rename), in: tab.editCore.editorView)
+            }
             NSSound.beep()
             return false
         }
@@ -7764,12 +7865,19 @@ final class AttoEditorAreaViewController: NSViewController {
             renameContext = RenameRequestContext(
                 tabID: tab.id,
                 documentURI: tab.fileURL.absoluteString,
-                newName: trimmed
+                newName: trimmed,
+                showFeedback: showFeedback
             )
-            startRenamePollTimer(tabID: tab.id)
+            startRenamePollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
             return true
         } catch {
             cancelRenameUI()
+            if showFeedback {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(.rename, errorDescription: error.localizedDescription),
+                    in: tab.editCore.editorView
+                )
+            }
             NSSound.beep()
             return false
         }
@@ -8233,14 +8341,14 @@ final class AttoEditorAreaViewController: NSViewController {
                     prepareRenameResult: result,
                     fallback: ctx.fallbackSeed
                 )
-                _ = self.showRenameDialog(seed: seed)
+                _ = self.showRenameDialog(seed: seed, showFeedback: ctx.showFeedback)
                 timer.cancel()
                 return
             }
 
             if remainingTicks <= 0 {
                 self.cancelRenamePrepareUI()
-                _ = self.showRenameDialog(seed: ctx.fallbackSeed)
+                _ = self.showRenameDialog(seed: ctx.fallbackSeed, showFeedback: ctx.showFeedback)
                 timer.cancel()
                 return
             }
@@ -8251,21 +8359,26 @@ final class AttoEditorAreaViewController: NSViewController {
         timer.resume()
     }
 
-    private func startRenamePollTimer(tabID: UUID) {
+    private func startRenamePollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
         renamePollTimer?.cancel()
 
         var remainingTicks = 40 // ~2s at 50ms
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
             guard let ctx = self.renameContext, ctx.tabID == tabID else {
                 self.cancelRenameUI()
                 return
             }
 
             if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
                 self.cancelRenameUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.rename), in: editorView)
+                }
+                NSSound.beep()
                 return
             }
             remainingTicks -= 1
@@ -8279,6 +8392,15 @@ final class AttoEditorAreaViewController: NSViewController {
             do {
                 result = try tab.editCore.editor.lspTakeLastRenameResult()
             } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelRenameUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(.rename, errorDescription: error.localizedDescription),
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
                 return
             }
             guard let result else { return }
@@ -8296,14 +8418,71 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     private func applyRenameResultJSON(_ json: String, context: RenameRequestContext) -> Bool {
-        let applied = applyWorkspaceEditJSONToActiveTab(json, documentURI: context.documentURI)
+        guard let workspaceEdit = AttoWorkspaceEditParser.parse(json) else {
+            if context.showFeedback, let editorView = activeTab?.editCore.editorView {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(
+                        .rename,
+                        errorDescription: "Rename result could not be decoded."
+                    ),
+                    in: editorView
+                )
+            }
+            NSSound.beep()
+            recordRenameResultLifecycle(json, newName: context.newName, applied: false)
+            return false
+        }
+
+        guard workspaceEdit.isEmpty == false else {
+            if context.showFeedback, let editorView = activeTab?.editCore.editorView {
+                presentLspResultFeedback(AttoLspResultFeedback.empty(.rename), in: editorView)
+            }
+            NSSound.beep()
+            recordRenameResultLifecycle(json, newName: context.newName, applied: false)
+            return false
+        }
+
+        let applied = applyWorkspaceEditToActiveTab(
+            workspaceEdit,
+            workspaceEditJSON: json,
+            documentURI: context.documentURI
+        )
         recordRenameResultLifecycle(json, newName: context.newName, applied: applied)
         return applied
     }
 
     @discardableResult
     private func applyRenameResult(_ workspaceEdit: EcuLspWorkspaceEdit, context: RenameRequestContext) -> Bool {
-        let applied = applyWorkspaceEditToActiveTab(workspaceEdit, documentURI: context.documentURI)
+        let parsed = AttoWorkspaceEditParser.parse(workspaceEdit)
+        guard parsed.isEmpty == false else {
+            if context.showFeedback, let editorView = activeTab?.editCore.editorView {
+                presentLspResultFeedback(AttoLspResultFeedback.empty(.rename), in: editorView)
+            }
+            NSSound.beep()
+            recordRenameResultLifecycle(workspaceEdit, newName: context.newName, applied: false)
+            return false
+        }
+
+        guard let workspaceEditJSON = workspaceEdit.rawJSONString else {
+            if context.showFeedback, let editorView = activeTab?.editCore.editorView {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(
+                        .rename,
+                        errorDescription: "Rename result could not be encoded for application."
+                    ),
+                    in: editorView
+                )
+            }
+            NSSound.beep()
+            recordRenameResultLifecycle(workspaceEdit, newName: context.newName, applied: false)
+            return false
+        }
+
+        let applied = applyWorkspaceEditToActiveTab(
+            parsed,
+            workspaceEditJSON: workspaceEditJSON,
+            documentURI: context.documentURI
+        )
         recordRenameResultLifecycle(workspaceEdit, newName: context.newName, applied: applied)
         return applied
     }

@@ -19,6 +19,9 @@ enum AttoLspResultFeedback {
         case completion
         case documentColors
         case colorPresentations
+        case rename
+        case codeActions
+        case codeActionResolve
         case selectionRange
         case signatureHelp
         case linkedEditing
@@ -51,6 +54,12 @@ enum AttoLspResultFeedback {
                 return "Document colors"
             case .colorPresentations:
                 return "Color presentations"
+            case .rename:
+                return "Rename"
+            case .codeActions:
+                return "Code actions"
+            case .codeActionResolve:
+                return "Code action resolve"
             case .selectionRange:
                 return "Selection range"
             case .signatureHelp:
@@ -108,6 +117,12 @@ enum AttoLspResultFeedback {
                 return "Document colors are unavailable."
             case .colorPresentations:
                 return "Color presentations are unavailable."
+            case .rename:
+                return "Rename is unavailable."
+            case .codeActions:
+                return "Code actions are unavailable."
+            case .codeActionResolve:
+                return "Code action resolve is unavailable."
             case .selectionRange:
                 return "Selection range is unavailable."
             case .signatureHelp:
@@ -147,6 +162,12 @@ enum AttoLspResultFeedback {
                 return "No document colors are available."
             case .colorPresentations:
                 return "No color presentations are available."
+            case .rename:
+                return "Rename produced no edits."
+            case .codeActions:
+                return "No code actions are available here."
+            case .codeActionResolve:
+                return "Resolved code action has no edits or command."
             case .selectionRange:
                 return "No larger selection range is available."
             case .signatureHelp:

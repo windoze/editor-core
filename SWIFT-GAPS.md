@@ -256,8 +256,8 @@ Swift 侧已经具备以下基础能力：
 | completion / completion resolve | 已有 request/take | 已有 `EcuLspCompletionResult` / typed resolve item | completion popup、resolve、commit characters、trigger characters、增量过滤已消费 typed payload；阶段 168 已让显式 completion 命令的 unavailable/request failed/failed/timeout/empty 接入统一 feedback，自动 trigger 保持低噪声 | result/request events 已覆盖 | 跨文件 additional edits 后续交给 core-owned WorkspaceEdit transaction；状态订阅驱动 completion stale/metadata |
 | signature help | 已有 raw request/take | 阶段 165 已补 public `EcuLspSignatureHelpResult` wrapper，覆盖 SignatureInformation、ParameterInformation、documentation、active index 和 raw payload | 手动/自动 signature popup 已有，阶段 165 已改为消费 typed result；手动空/错反馈接入统一 feedback，自动触发保持静默失败策略 | result/request events 已覆盖 | 后续由状态订阅驱动 stale/refresh metadata；自动触发继续保持低噪声 |
 | definition / declaration / type definition / implementation / references | 已有 request/take | 已有 `EcuLspLocationResult` | location quick panel、history、persistent panel、cmd-click 已消费 typed payload；阶段 166 已让显式 location 命令的 unavailable/request failed/failed/timeout/empty 接入统一 feedback，Cmd-click 保持低噪声 | result/request events 已覆盖，MultiDocument 聚合已有 | 补项目级 freshness/ownership；后续由状态订阅驱动 stale/refresh metadata |
-| prepare rename / rename | 已有 request/take | 已有 `EcuLspPrepareRenameResult` / `EcuLspWorkspaceEdit` | rename 输入、typed seed、WorkspaceEdit apply/summary 已消费 typed payload | result/request events 已覆盖 | WorkspaceEdit 应迁到 core-owned 跨文件事务；统一 feedback 和冲突展示 |
-| code action / code action resolve / execute command | 已有 request/take/resolve/executeCommand | code action typed 已有；executeCommand result 仍偏 raw/result envelope | quick panel、kind filter、resolve、command 执行和 HUD 已有 | result/request events 已覆盖 | typed workspace command/result model；WorkspaceEdit 事务化；统一 feedback |
+| prepare rename / rename | 已有 request/take | 已有 `EcuLspPrepareRenameResult` / `EcuLspWorkspaceEdit` | rename 输入、typed seed、WorkspaceEdit apply/summary 已消费 typed payload；阶段 170 已让显式 rename 的 unavailable/request failed/failed/timeout/empty 接入统一 feedback | result/request events 已覆盖 | WorkspaceEdit 应迁到 core-owned 跨文件事务；冲突展示后续与 core transaction/state subscription 对齐 |
+| code action / code action resolve / execute command | 已有 request/take/resolve/executeCommand | code action typed 已有；executeCommand result 仍偏 raw/result envelope | quick panel、kind filter、resolve、command 执行和 HUD 已有；阶段 170 已让显式 code action / resolve 的 unavailable/request failed/failed/timeout/empty 接入统一 feedback | result/request events 已覆盖 | typed workspace command/result model；WorkspaceEdit 事务化；executeCommand result 继续收敛到统一 lifecycle/feedback |
 | document symbols / workspace symbols | 已有 request/take | 已有 symbols typed payload | quick panel、incremental workspace symbol panel、outline/persistent panel 已消费 typed payload；阶段 167 已让显式 symbols 命令的 unavailable/request failed/failed/timeout/empty 接入统一 feedback | result/request events 和 history entry 已有 | 状态订阅驱动 outline/symbols refresh 与 stale 展示 |
 | formatting / range formatting / on-type formatting | document/range/on-type blocking apply 已有；on-type async lifecycle 已有 | 已有 `EditorCoreLSPFormattingResult` outcome，但不是通用 LSP payload envelope | document/selection format command 和 on-type trigger path 已有 | on-type request lifecycle 已覆盖，status/detail 可记录异步失败 | 统一 feedback；格式化 edit apply 后续纳入 core-owned WorkspaceEdit/current-document transaction 语义 |
 | document color / color presentation | 已有 request/take | 已有 color typed payload | color quick panel、direct color picker、presentation apply 已消费 typed payload；阶段 169 已让显式 document color / color presentation 的 unavailable/request failed/failed/timeout/empty/apply failed 接入统一 feedback | result/request events 已覆盖 | 持久颜色面板、多文档/workspace 聚合；状态订阅驱动 stale/metadata |
@@ -279,7 +279,7 @@ Swift 侧已经具备以下基础能力：
 
 本阶段已迁移这些用户可见路径：folding ranges refresh/apply、semantic tokens typed apply、selection range、linked editing、code lens refresh、workspace diagnostics 的空结果/失败/超时/不可用反馈。测试新增 `AttoLspResultFeedbackTests`，并用 `AttoEditorCommandTests/testUnifiedLspFeedbackUpdatesTransientStatusForEmptyFoldingRanges` 验证 App 主路径会写入 transient status。
 
-阶段 163 仍只是统一 feedback 的第一步：hover、signature help、completion、location、symbols、rename/code action、document color、hierarchy 等路径当时仍有各自的 popup/panel/formatter 逻辑；阶段 164-169 已继续迁移 hover typed payload、signature help、location、symbols、completion 和 document color / color presentation 显式命令反馈。下一步应继续把 rename/code action、hierarchy 等路径接入同一个 feedback sink，并让 core-owned request/result/state event stream 驱动 feedback 的生命周期、stale/refresh 展示和 result panel metadata。
+阶段 163 仍只是统一 feedback 的第一步：hover、signature help、completion、location、symbols、rename/code action、document color、hierarchy 等路径当时仍有各自的 popup/panel/formatter 逻辑；阶段 164-170 已继续迁移 hover typed payload、signature help、location、symbols、completion、document color / color presentation 以及 rename/code action 显式命令反馈。下一步应继续把 hierarchy 等路径接入同一个 feedback sink，并让 core-owned request/result/state event stream 驱动 feedback 的生命周期、stale/refresh 展示和 result panel metadata。
 
 ## 阶段 164: Hover typed payload wrapper
 
@@ -316,6 +316,12 @@ AttoEditor `AttoLspSignatureHelpFormatter` 已改为直接消费 UIFFI typed res
 2026-08-02 阶段 169 已把 document color / color presentation 的显式用户路径接入统一 feedback：`AttoLspResultFeedback` 新增 document colors 和 color presentations feature，document color 请求的 unavailable、request failed、take failed、timeout、empty result，以及 color presentation 请求的 encode failure、request failed、take failed、timeout、empty result 和 apply failed 都会写入 transient status 并复用 detail popover。
 
 本阶段保留现有 color quick panel、direct color picker、presentation apply 和跨 family result event 行为不变，只把分散的 `showWorkspaceEditPopover(text: ...)` 用户反馈收敛到同一个 feedback sink。`NSColorPanel` 连续颜色变化仍传 `showFeedback: false`，避免拖动颜色时产生噪声。后续 color family 的剩余工作转为持久颜色面板、多文档/workspace 颜色聚合，以及状态订阅驱动 stale/metadata。
+
+## 阶段 170: Rename and code action feedback unification
+
+2026-08-02 阶段 170 已把显式 rename 与 code action 用户路径接入统一 feedback：`AttoLspResultFeedback` 新增 rename、code actions 和 code action resolve feature。显式 rename 的 LSP disabled、request failed、take failed、timeout、空 WorkspaceEdit / 无法解码结果会写入 transient status 并复用 detail popover；prepareRename 仍保留失败时回退本地候选名的低摩擦行为。
+
+本阶段还让 code action / resolve 的 LSP disabled、request failed、take failed、timeout、empty result、disabled action 和 resolve 后无可应用 edit/command 走同一个 feedback sink。既有 quick panel、kind filter、WorkspaceEdit apply summary、executeCommand result HUD 和 result lifecycle event 行为不变；剩余工作转为 core-owned WorkspaceEdit 跨文件事务、executeCommand typed result model，以及由状态订阅驱动的 stale/metadata 展示。
 
 ## 分层结论
 
