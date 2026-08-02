@@ -16,9 +16,14 @@ impl EditorUi {
             return Err(UiError::Processor("LSP is not enabled".to_string()));
         };
 
+        let added_for_session = added.clone();
+        let removed_for_session = removed.clone();
         shared
-            .with_session_mut(|lsp| lsp.did_change_workspace_folders(added, removed))
+            .with_session_mut(|lsp| {
+                lsp.did_change_workspace_folders(added_for_session, removed_for_session)
+            })
             .map_err(UiError::Processor)?;
+        shared.update_root_aliases(&added, &removed);
         self.record_lsp_status_state_event();
         Ok(())
     }

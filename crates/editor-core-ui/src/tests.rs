@@ -97,6 +97,15 @@ fn lsp_capture_server_script_with_messages(
     script
 }
 
+fn lsp_append_capture_server_script(capture_path: &std::path::Path) -> String {
+    let body = lsp_initialize_response(serde_json::json!({})).to_string();
+    format!(
+        "body={}; printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${{#body}}\" \"$body\"; cat >> {}",
+        shell_quote(&body),
+        shell_quote(capture_path.to_string_lossy().as_ref())
+    )
+}
+
 fn lsp_graceful_shutdown_capture_server_script(capture_path: &std::path::Path) -> String {
     let init_body = lsp_initialize_response(serde_json::json!({})).to_string();
     format!(
@@ -691,6 +700,67 @@ fn lsp_did_change_workspace_folders_notifies_and_updates_workspace_response() {
     );
 
     ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
+fn lsp_workspace_folder_change_updates_shared_session_root_alias() {
+    let capture_path = unique_temp_path("workspace-folder-shared-root-alias");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let old_root_uri = format!("file:///tmp/editor-core-ui-root-alias-old-{stamp}");
+    let new_root_name = format!("editor-core-ui-root-alias-new-{stamp}");
+    let new_root_uri = format!("file:///tmp/{new_root_name}");
+    let old_doc_uri = format!("{old_root_uri}/main.rs");
+    let new_doc_uri = format!("{new_root_uri}/other.rs");
+    let script = lsp_append_capture_server_script(&capture_path);
+    let args = vec!["-c".to_string(), script];
+
+    let mut first = EditorUi::new("fn main() {}\n", 80);
+    first
+        .lsp_enable_stdio("/bin/sh", &args, &old_root_uri, &old_doc_uri, "rust")
+        .unwrap();
+    first
+        .lsp_did_change_workspace_folders_json(
+            &serde_json::json!([{ "uri": new_root_uri, "name": new_root_name }]).to_string(),
+            &serde_json::json!([{ "uri": old_root_uri, "name": "old" }]).to_string(),
+        )
+        .unwrap();
+
+    let mut second = EditorUi::new("fn other() {}\n", 80);
+    second
+        .lsp_enable_stdio("/bin/sh", &args, &new_root_uri, &new_doc_uri, "rust")
+        .unwrap();
+
+    let captured = wait_for_captured_lsp_stdin(&capture_path, "other.rs");
+    let messages = captured_lsp_json_messages(&capture_path);
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|message| message["method"] == "initialize")
+            .count(),
+        1,
+        "new root should reuse the existing shared LSP session after didChange: {captured}"
+    );
+    assert!(
+        messages.iter().any(|message| {
+            message["method"] == "workspace/didChangeWorkspaceFolders"
+                && message["params"]["event"]["added"][0]["uri"] == new_root_uri
+        }),
+        "missing workspace folder didChange for new root: {captured}"
+    );
+    assert!(
+        messages.iter().any(|message| {
+            message["method"] == "textDocument/didOpen"
+                && message["params"]["textDocument"]["uri"] == new_doc_uri
+        }),
+        "missing didOpen for document under new root on reused session: {captured}"
+    );
+
+    first.lsp_disable();
+    second.lsp_disable();
     let _ = std::fs::remove_file(capture_path);
 }
 
@@ -2296,6 +2366,9 @@ fn poll_processing_reports_lsp_failure_without_applied_success() {
         doc.lsp_last_cmd = Some("fake-lsp".to_string());
         doc.lsp_document_uri = Some("file:///test.rs".to_string());
         doc.lsp = Some(Arc::new(SharedLspSession {
+            cmd: "fake-lsp".to_string(),
+            args: Vec::new(),
+            root_uris: Mutex::new(std::collections::BTreeSet::new()),
             session: Mutex::new(None),
         }));
     }
@@ -2338,6 +2411,9 @@ fn flush_did_change_failure_records_lsp_status_event() {
         doc.lsp_document_uri = Some("file:///test.rs".to_string());
         doc.lsp_delta_calc = Some(editor_core_lsp::DeltaCalculator::from_text("abc"));
         doc.lsp = Some(Arc::new(SharedLspSession {
+            cmd: "fake-lsp".to_string(),
+            args: Vec::new(),
+            root_uris: Mutex::new(std::collections::BTreeSet::new()),
             session: Mutex::new(None),
         }));
     }

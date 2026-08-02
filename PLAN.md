@@ -895,6 +895,15 @@
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testEditorUILSPResultEventsWrapperStartsEmpty`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ui): update shared lsp root aliases`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；推进 shared-session root-set ownership，使 `workspace/didChangeWorkspaceFolders` 成功后，Rust `SharedLspSession` 会同步维护 root alias 并更新 shared-session pool。
+  - 提交边界：`SharedLspSession` 现在保存 `cmd` / `args` / root alias set；workspace folder added 会登记同一 shared server 的新 root key，removed 会移除指向该 shared server 的旧 root key；同 root key 已存在其它 alive session 时不会覆盖。后续新 tab 用新 root `lspEnable` 会复用已经接收 didChange 的 shared session，避免同 project root-set 变化后启动第二个 server。本提交不改变 Swift/API 形状，不新增 App command/menu，不实现完整 project open 自动批量 LSP 启动、跨独立 project 的 session 合并策略、stderr capture、server process history 或 dashboard 级 server health UI。
+  - 验证记录：
+    - `cargo test -p editor-core-ui lsp_workspace_folder_change_updates_shared_session_root_alias --release`
+    - `cargo test -p editor-core-ui lsp_did_change_workspace_folders_notifies_and_updates_workspace_response --release`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
