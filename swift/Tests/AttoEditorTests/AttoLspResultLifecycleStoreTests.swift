@@ -114,7 +114,7 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
 
         XCTAssertEqual(first.sequence, 1)
         XCTAssertEqual(first.recordedAt, firstDate)
-        XCTAssertEqual(first.sourceSequence, 10)
+        XCTAssertEqual(first.sourceSequence, Optional<UInt64>(10))
         XCTAssertEqual(stream.latestSequence, 3)
         XCTAssertEqual(stream.events.map(\.sequence), [2, 3])
         XCTAssertEqual(stream.entries(after: 2), [third])

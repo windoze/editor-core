@@ -1185,7 +1185,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(newDiagnosticsEvents.last?.snapshot.problems.map(\.message), ["third workspace problem"])
         let newResultEvents = vc._lspResultLifecycleEventsForTesting(after: diagnosticsResultEventCursor)
         XCTAssertEqual(newResultEvents.map(\.family), ["diagnostics.workspace", "diagnostics.active"])
-        XCTAssertEqual(newResultEvents.map(\.sourceSequence), newDiagnosticsEvents.map(\.sequence))
+        XCTAssertEqual(newResultEvents.map(\.sourceSequence), newDiagnosticsEvents.map { Optional($0.sequence) })
         let activeDiagnosticsScope = try XCTUnwrap(newDiagnosticsEvents.last?.snapshot.scope)
         XCTAssertEqual(
             newResultEvents.map(\.payload),
@@ -1331,7 +1331,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let resultEvents = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
         XCTAssertEqual(resultEvents.map(\.sequence), [resultEventCursor + 1, resultEventCursor + 2])
         XCTAssertEqual(resultEvents.map(\.family), ["locations", "locations"])
-        XCTAssertEqual(resultEvents.map(\.sourceSequence), locationEntries.map(\.sequence))
+        XCTAssertEqual(resultEvents.map(\.sourceSequence), locationEntries.map { Optional($0.sequence) })
         XCTAssertEqual(
             resultEvents.map(\.payload),
             [
@@ -1482,7 +1482,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let resultEvents = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
         XCTAssertEqual(resultEvents.map(\.sequence), [resultEventCursor + 1, resultEventCursor + 2])
         XCTAssertEqual(resultEvents.map(\.family), ["symbols", "symbols"])
-        XCTAssertEqual(resultEvents.map(\.sourceSequence), symbolEntries.map(\.sequence))
+        XCTAssertEqual(resultEvents.map(\.sourceSequence), symbolEntries.map { Optional($0.sequence) })
         XCTAssertEqual(
             resultEvents.map(\.payload),
             [
@@ -1515,6 +1515,53 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(historyTable.numberOfRows, 2)
         let firstCell = try XCTUnwrap(historyTable.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(firstCell.textField?.stringValue.contains("Workspace Symbols: Open") == true)
+    }
+
+    func testCodeActionResultRecordsLspResultEvent() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("code-actions.swift")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
+
+        XCTAssertTrue(vc._showCodeActionResultJSONForTesting("""
+        [
+          {
+            "title": "Fix import",
+            "kind": "quickfix",
+            "isPreferred": true
+          },
+          {
+            "title": "Extract method",
+            "kind": "refactor.extract"
+          }
+        ]
+        """, onlyKinds: ["quickfix"]))
+
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.CodeActions")
+        })
+        let root = try XCTUnwrap(panel.contentView)
+        let table = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.CodeActions"),
+                in: root
+            ) as? NSTableView
+        )
+        XCTAssertEqual(table.numberOfRows, 1)
+
+        let events = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
+        XCTAssertEqual(events.map(\.family), ["code_actions"])
+        XCTAssertEqual(events.last?.title, "Code Actions: quickfix: 1 result")
+        XCTAssertNil(events.last?.sourceSequence)
+        XCTAssertEqual(events.last?.payload, .codeActions(onlyKinds: ["quickfix"], itemCount: 1))
     }
 
     func testApplyLinkedEditingRangeResultCreatesMulticursorSelections() throws {

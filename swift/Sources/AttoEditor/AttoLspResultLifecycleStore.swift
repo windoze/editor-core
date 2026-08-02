@@ -109,6 +109,7 @@ struct AttoLspResultLifecycleEvent: Equatable {
     enum Payload: Equatable {
         case locations(kind: String, itemCount: Int)
         case symbols(title: String, itemCount: Int)
+        case codeActions(onlyKinds: [String], itemCount: Int)
         case diagnostics(
             scope: AttoDiagnosticsLifecycleSnapshot.Scope,
             problemCount: Int,
@@ -122,7 +123,7 @@ struct AttoLspResultLifecycleEvent: Equatable {
     let family: String
     let title: String
     let recordedAt: Date
-    let sourceSequence: UInt64
+    let sourceSequence: UInt64?
     let payload: Payload
 }
 
@@ -144,7 +145,7 @@ final class AttoLspResultEventStream {
         family: String,
         title: String,
         recordedAt: Date = Date(),
-        sourceSequence: UInt64,
+        sourceSequence: UInt64? = nil,
         payload: AttoLspResultLifecycleEvent.Payload
     ) -> AttoLspResultLifecycleEvent {
         let event = AttoLspResultLifecycleEvent(

@@ -208,6 +208,14 @@ final class AttoEditorAreaViewController: NSViewController {
         lspResultEventStream.latestSequence
     }
 
+    func _showCodeActionResultJSONForTesting(_ json: String, onlyKinds: [String] = []) -> Bool {
+        let items = AttoLspCodeActionParser.filteredItems(
+            AttoLspCodeActionParser.items(fromCodeActionResultJSON: json),
+            onlyKinds: onlyKinds
+        )
+        return showCodeActionResults(items, onlyKinds: onlyKinds)
+    }
+
     func _problemsPanelDiagnosticsForTesting() -> [EcuDiagnostic] {
         problemsPanelController?.currentDiagnostics ?? []
     }
@@ -6870,7 +6878,7 @@ final class AttoEditorAreaViewController: NSViewController {
             self.codeActionPollTimer?.cancel()
             self.codeActionPollTimer = nil
             self.codeActionContext = nil
-            self.showCodeActionResults(items)
+            _ = self.showCodeActionResults(items, onlyKinds: ctx.onlyKinds)
             timer.cancel()
         }
 
@@ -6878,16 +6886,21 @@ final class AttoEditorAreaViewController: NSViewController {
         timer.resume()
     }
 
-    private func showCodeActionResults(_ items: [AttoLspCodeActionParser.Item]) {
+    @discardableResult
+    private func showCodeActionResults(
+        _ items: [AttoLspCodeActionParser.Item],
+        onlyKinds: [String]
+    ) -> Bool {
         guard items.isEmpty == false else {
             cancelCodeActionUI()
             NSSound.beep()
-            return
+            return false
         }
 
+        recordCodeActionResultLifecycle(items: items, onlyKinds: onlyKinds)
         guard let window = view.window else {
             _ = applyCodeAction(items[0])
-            return
+            return true
         }
 
         let commands = items.enumerated().map { idx, item in
@@ -6905,6 +6918,28 @@ final class AttoEditorAreaViewController: NSViewController {
         )
         codeActionResultsController = controller
         controller.show(relativeTo: window, placeholder: "Filter code actions...")
+        return true
+    }
+
+    private func recordCodeActionResultLifecycle(
+        items: [AttoLspCodeActionParser.Item],
+        onlyKinds: [String]
+    ) {
+        lspResultEventStream.record(
+            family: "code_actions",
+            title: codeActionResultTitle(itemCount: items.count, onlyKinds: onlyKinds),
+            payload: .codeActions(onlyKinds: onlyKinds, itemCount: items.count)
+        )
+    }
+
+    private func codeActionResultTitle(itemCount: Int, onlyKinds: [String]) -> String {
+        let scope: String
+        if onlyKinds.isEmpty {
+            scope = "Code Actions"
+        } else {
+            scope = "Code Actions: \(onlyKinds.joined(separator: ", "))"
+        }
+        return itemCount == 1 ? "\(scope): 1 result" : "\(scope): \(itemCount) results"
     }
 
     @discardableResult
