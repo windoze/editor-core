@@ -795,6 +795,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastDocumentSymbolsResult() throws -> EcuLspDocumentSymbolResult? {
+        guard let json = try lspTakeLastDocumentSymbolsResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspDocumentSymbolResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_document_symbols_decode"
+        )
+    }
+
     public func lspRequestFoldingRanges() throws -> UInt64 {
         var out: UInt64 = 0
         let status = editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges(handle, &out)
@@ -999,6 +1008,15 @@ public final class EditorUI {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_workspace_symbols_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_workspace_symbols_json(handle, has, ptr)
         }
+    }
+
+    public func lspTakeLastWorkspaceSymbolsResult() throws -> EcuLspWorkspaceSymbolResult? {
+        guard let json = try lspTakeLastWorkspaceSymbolsResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspWorkspaceSymbolResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_workspace_symbols_decode"
+        )
     }
 
     /// Format the current document via LSP (`textDocument/formatting`) and apply edits locally.

@@ -4981,19 +4981,19 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspWorkspaceSymbolResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastWorkspaceSymbolsResultJSON()
+                result = try tab.editCore.editor.lspTakeLastWorkspaceSymbolsResult()
             } catch {
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             self.workspaceSymbolSearchPollTimer?.cancel()
             self.workspaceSymbolSearchPollTimer = nil
             self.workspaceSymbolSearchContext = nil
             if ctx.query == self.workspaceSymbolSearchQuery {
-                self.workspaceSymbolSearchResults = AttoLspSymbolParser.workspaceSymbols(fromResultJSON: json)
+                self.workspaceSymbolSearchResults = AttoLspSymbolParser.workspaceSymbols(fromResult: result)
                 self.lspSymbolResultsController?.reloadCommands()
             }
             timer.cancel()
@@ -5094,13 +5094,22 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
             do {
                 switch ctx.kind {
                 case .document:
-                    json = try tab.editCore.editor.lspTakeLastDocumentSymbolsResultJSON()
-                case .workspace:
-                    json = try tab.editCore.editor.lspTakeLastWorkspaceSymbolsResultJSON()
+                    guard let result = try tab.editCore.editor.lspTakeLastDocumentSymbolsResult() else {
+                        return
+                    }
+                    self.cancelSymbolUI()
+                    _ = self.handleLspDocumentSymbolResult(result, tab: tab)
+                    timer.cancel()
+                case .workspace(let query):
+                    guard let result = try tab.editCore.editor.lspTakeLastWorkspaceSymbolsResult() else {
+                        return
+                    }
+                    self.cancelSymbolUI()
+                    _ = self.handleLspWorkspaceSymbolResult(result, query: query, tab: tab)
+                    timer.cancel()
                 }
             } catch {
                 let message = AttoLspSymbolRequestFeedback.failedMessage(
@@ -5112,11 +5121,6 @@ final class AttoEditorAreaViewController: NSViewController {
                 NSSound.beep()
                 return
             }
-            guard let json else { return }
-
-            self.cancelSymbolUI()
-            _ = self.handleLspSymbolResultJSON(json, kind: ctx.kind, tab: tab)
-            timer.cancel()
         }
 
         symbolPollTimer = timer
@@ -5203,6 +5207,47 @@ final class AttoEditorAreaViewController: NSViewController {
         return controller.show(relativeTo: window, snapshot: snapshot)
     }
 
+    private func handleLspDocumentSymbolResult(
+        _ result: EcuLspDocumentSymbolResult,
+        tab: AttoEditorTab
+    ) -> Bool {
+        let rawJSON = result.rawJSONString
+        if let rawJSON {
+            try? tab.editCore.editor.lspApplyDocumentSymbolsJSON(rawJSON)
+        }
+        derivedStateStore.refreshActive(editor: tab.editCore.editor)
+        let text = (try? tab.editCore.editor.text()) ?? ""
+        let typedSnapshotSymbols = AttoLspSymbolParser.documentSymbols(
+            snapshot: derivedStateStore.active.documentSymbols,
+            documentURI: tab.fileURL.absoluteString,
+            documentText: text
+        )
+        let symbols = typedSnapshotSymbols.isEmpty
+            ? AttoLspSymbolParser.documentSymbols(fromResult: result, documentURI: tab.fileURL.absoluteString)
+            : typedSnapshotSymbols
+        return finishLspSymbolResult(
+            symbols,
+            kind: .document,
+            title: "Document Symbols",
+            placeholder: "Filter document symbols...",
+            tab: tab
+        )
+    }
+
+    private func handleLspWorkspaceSymbolResult(
+        _ result: EcuLspWorkspaceSymbolResult,
+        query: String,
+        tab: AttoEditorTab
+    ) -> Bool {
+        finishLspSymbolResult(
+            AttoLspSymbolParser.workspaceSymbols(fromResult: result),
+            kind: .workspace(query: query),
+            title: workspaceSymbolTitle(query: query),
+            placeholder: "Filter workspace symbols...",
+            tab: tab
+        )
+    }
+
     private func handleLspSymbolResultJSON(_ json: String, kind: LspSymbolRequestKind, tab: AttoEditorTab) -> Bool {
         let symbols: [AttoLspSymbolParser.Symbol]
         let placeholder: String
@@ -5235,6 +5280,16 @@ final class AttoEditorAreaViewController: NSViewController {
             title = workspaceSymbolTitle(query: query)
         }
 
+        return finishLspSymbolResult(symbols, kind: kind, title: title, placeholder: placeholder, tab: tab)
+    }
+
+    private func finishLspSymbolResult(
+        _ symbols: [AttoLspSymbolParser.Symbol],
+        kind: LspSymbolRequestKind,
+        title: String,
+        placeholder: String,
+        tab: AttoEditorTab
+    ) -> Bool {
         if symbols.isEmpty {
             showWorkspaceEditPopover(
                 text: AttoLspSymbolRequestFeedback.emptyMessage(kind: kind.feedbackKind, query: kind.query),

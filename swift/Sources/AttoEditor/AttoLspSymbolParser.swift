@@ -12,12 +12,33 @@ enum AttoLspSymbolParser {
     }
 
     static func documentSymbols(fromResultJSON json: String, documentURI: String) -> [Symbol] {
+        if let data = json.data(using: .utf8),
+           let result = try? JSONDecoder().decode(EcuLspDocumentSymbolResult.self, from: data)
+        {
+            return documentSymbols(fromResult: result, documentURI: documentURI)
+        }
+
         guard let root = jsonRoot(json) else { return [] }
         guard let arr = root as? [Any] else { return [] }
 
         var out: [Symbol] = []
         for item in arr {
             appendDocumentSymbol(item, documentURI: documentURI, depth: 0, into: &out)
+        }
+        return out
+    }
+
+    static func documentSymbols(fromResult result: EcuLspDocumentSymbolResult, documentURI: String) -> [Symbol] {
+        var out: [Symbol] = []
+        for item in result.items {
+            switch item {
+            case .documentSymbol(let symbol):
+                appendDocumentSymbol(symbol, documentURI: documentURI, depth: 0, into: &out)
+            case .symbolInformation(let symbol):
+                appendSymbolInformation(symbol, depth: 0, into: &out)
+            case .unknown:
+                continue
+            }
         }
         return out
     }
@@ -77,6 +98,12 @@ enum AttoLspSymbolParser {
     }
 
     static func workspaceSymbols(fromResultJSON json: String) -> [Symbol] {
+        if let data = json.data(using: .utf8),
+           let result = try? JSONDecoder().decode(EcuLspWorkspaceSymbolResult.self, from: data)
+        {
+            return workspaceSymbols(fromResult: result)
+        }
+
         guard let root = jsonRoot(json) else { return [] }
         guard let arr = root as? [Any] else { return [] }
 
@@ -97,6 +124,11 @@ enum AttoLspSymbolParser {
             ))
         }
         return sortedWorkspaceSymbols(out)
+    }
+
+    static func workspaceSymbols(fromResult result: EcuLspWorkspaceSymbolResult) -> [Symbol] {
+        let symbols = result.symbols.compactMap(symbol(fromWorkspaceSymbol:))
+        return sortedWorkspaceSymbols(symbols)
     }
 
     private static func appendDocumentSymbol(
@@ -136,6 +168,26 @@ enum AttoLspSymbolParser {
     }
 
     private static func appendDocumentSymbol(
+        _ symbol: EcuLspDocumentSymbol,
+        documentURI: String,
+        depth: Int,
+        into out: inout [Symbol]
+    ) {
+        out.append(Symbol(
+            name: symbol.name,
+            detail: nonEmptyString(symbol.detail),
+            kindLabel: kindLabel(symbol.kind),
+            containerName: nil,
+            target: parseTarget(fromRange: symbol.selectionRange, uri: documentURI),
+            depth: depth
+        ))
+
+        for child in symbol.children {
+            appendDocumentSymbol(child, documentURI: documentURI, depth: depth + 1, into: &out)
+        }
+    }
+
+    private static func appendDocumentSymbol(
         _ symbol: EcuDocumentSymbol,
         documentURI: String,
         documentText: String,
@@ -161,6 +213,33 @@ enum AttoLspSymbolParser {
         }
     }
 
+    private static func appendSymbolInformation(
+        _ symbol: EcuLspSymbolInformation,
+        depth: Int,
+        into out: inout [Symbol]
+    ) {
+        out.append(Symbol(
+            name: symbol.name,
+            detail: nil,
+            kindLabel: kindLabel(symbol.kind),
+            containerName: nonEmptyString(symbol.containerName),
+            target: parseTarget(fromLocation: symbol.location),
+            depth: depth
+        ))
+    }
+
+    private static func symbol(fromWorkspaceSymbol symbol: EcuLspWorkspaceSymbol) -> Symbol? {
+        guard let location = symbol.location, let lspTarget = location.target else { return nil }
+        return Symbol(
+            name: symbol.name,
+            detail: nonEmptyString(symbol.detail),
+            kindLabel: kindLabel(symbol.kind),
+            containerName: nonEmptyString(symbol.containerName),
+            target: target(from: lspTarget),
+            depth: 0
+        )
+    }
+
     private static func parseTarget(fromLocation location: [String: Any]) -> AttoLspDefinitionParser.Target? {
         guard let uri = nonEmptyString(location["uri"]) else { return nil }
         if let range = location["range"] as? [String: Any] {
@@ -171,6 +250,10 @@ enum AttoLspSymbolParser {
         return AttoLspDefinitionParser.Target(uri: uri, line: 0, utf16Character: 0)
     }
 
+    private static func parseTarget(fromLocation location: EcuLspLocation) -> AttoLspDefinitionParser.Target {
+        parseTarget(fromRange: location.range, uri: location.uri)
+    }
+
     private static func parseTarget(fromRange range: [String: Any]?, uri: String) -> AttoLspDefinitionParser.Target? {
         guard let range else { return nil }
         guard let start = range["start"] as? [String: Any] else { return nil }
@@ -178,6 +261,22 @@ enum AttoLspSymbolParser {
             return nil
         }
         return AttoLspDefinitionParser.Target(uri: uri, line: line, utf16Character: character)
+    }
+
+    private static func parseTarget(fromRange range: EcuLspRange, uri: String) -> AttoLspDefinitionParser.Target {
+        AttoLspDefinitionParser.Target(
+            uri: uri,
+            line: Int(range.start.line),
+            utf16Character: Int(range.start.utf16Character)
+        )
+    }
+
+    private static func target(from target: EcuLspLocationTarget) -> AttoLspDefinitionParser.Target {
+        AttoLspDefinitionParser.Target(
+            uri: target.uri,
+            line: Int(target.selectionRange.start.line),
+            utf16Character: Int(target.selectionRange.start.utf16Character)
+        )
     }
 
     private static func jsonRoot(_ json: String) -> Any? {
@@ -201,6 +300,10 @@ enum AttoLspSymbolParser {
         if let label = stringKindLabel(any) { return label }
         guard let n = intValue(any) else { return nil }
         return lspKindLabels[n]
+    }
+
+    private static func kindLabel(_ value: Int) -> String? {
+        lspKindLabels[value]
     }
 
     private static func kindLabel(_ value: EcuJSONValue) -> String? {

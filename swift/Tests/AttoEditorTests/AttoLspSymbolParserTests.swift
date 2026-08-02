@@ -84,6 +84,69 @@ final class AttoLspSymbolParserTests: XCTestCase {
         XCTAssertEqual(symbols[0].target, .init(uri: "file:///tmp/main.rs", line: 4, utf16Character: 3))
     }
 
+    func testDocumentSymbolsParseTypedResult() throws {
+        let result = try JSONDecoder().decode(EcuLspDocumentSymbolResult.self, from: Data("""
+        [
+          {
+            "name": "App",
+            "kind": 23,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 5, "character": 1 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 7 },
+              "end": { "line": 0, "character": 10 }
+            },
+            "children": [
+              {
+                "name": "run",
+                "detail": "fn()",
+                "kind": 12,
+                "range": {
+                  "start": { "line": 2, "character": 2 },
+                  "end": { "line": 4, "character": 3 }
+                },
+                "selectionRange": {
+                  "start": { "line": 2, "character": 7 },
+                  "end": { "line": 2, "character": 10 }
+                }
+              }
+            ]
+          },
+          {
+            "name": "main",
+            "kind": 12,
+            "containerName": "crate",
+            "location": {
+              "uri": "file:///tmp/main.rs",
+              "range": {
+                "start": { "line": 8, "character": 3 },
+                "end": { "line": 8, "character": 7 }
+              }
+            }
+          }
+        ]
+        """.utf8))
+
+        let symbols = AttoLspSymbolParser.documentSymbols(
+            fromResult: result,
+            documentURI: "file:///tmp/app.rs"
+        )
+
+        XCTAssertEqual(symbols.count, 3)
+        XCTAssertEqual(symbols[0].name, "App")
+        XCTAssertEqual(symbols[0].kindLabel, "struct")
+        XCTAssertEqual(symbols[0].target, .init(uri: "file:///tmp/app.rs", line: 0, utf16Character: 7))
+        XCTAssertEqual(symbols[1].name, "run")
+        XCTAssertEqual(symbols[1].detail, "fn()")
+        XCTAssertEqual(symbols[1].target, .init(uri: "file:///tmp/app.rs", line: 2, utf16Character: 7))
+        XCTAssertEqual(symbols[1].depth, 1)
+        XCTAssertEqual(symbols[2].name, "main")
+        XCTAssertEqual(symbols[2].containerName, "crate")
+        XCTAssertEqual(symbols[2].target, .init(uri: "file:///tmp/main.rs", line: 8, utf16Character: 3))
+    }
+
     func testDocumentSymbolsBuildFromTypedSnapshot() throws {
         let text = "let 😀app\nrun()\n"
         let snapshot = EcuDocumentSymbolsSnapshot(symbols: [
@@ -159,6 +222,39 @@ final class AttoLspSymbolParserTests: XCTestCase {
         XCTAssertEqual(symbols[1].name, "open_project")
         XCTAssertEqual(symbols[1].detail, "fn")
         XCTAssertEqual(symbols[1].kindLabel, "function")
+        XCTAssertEqual(symbols[1].target, .init(uri: "file:///tmp/project.rs", line: 7, utf16Character: 2))
+    }
+
+    func testWorkspaceSymbolsParseTypedResult() throws {
+        let result = try JSONDecoder().decode(EcuLspWorkspaceSymbolResult.self, from: Data("""
+        [
+          {
+            "name": "open_project",
+            "kind": 12,
+            "detail": "fn",
+            "location": {
+              "uri": "file:///tmp/project.rs",
+              "range": {
+                "start": { "line": 7, "character": 2 },
+                "end": { "line": 7, "character": 14 }
+              }
+            }
+          },
+          {
+            "name": "Project",
+            "kind": 23,
+            "location": { "uri": "file:///tmp/project.rs" }
+          }
+        ]
+        """.utf8))
+
+        let symbols = AttoLspSymbolParser.workspaceSymbols(fromResult: result)
+
+        XCTAssertEqual(symbols.count, 2)
+        XCTAssertEqual(symbols[0].name, "Project")
+        XCTAssertEqual(symbols[0].target, .init(uri: "file:///tmp/project.rs", line: 0, utf16Character: 0))
+        XCTAssertEqual(symbols[1].name, "open_project")
+        XCTAssertEqual(symbols[1].detail, "fn")
         XCTAssertEqual(symbols[1].target, .init(uri: "file:///tmp/project.rs", line: 7, utf16Character: 2))
     }
 
