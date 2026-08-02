@@ -568,6 +568,11 @@ extension AttoEditorAreaViewController {
     }
 
     @discardableResult
+    func closeAllTabsForWindow() -> UInt32 {
+        closeTabGroup(projectedTabOrderForCommands())
+    }
+
+    @discardableResult
     func closeOtherTabsForActiveTab() -> UInt32 {
         guard let activeTab else { return 0 }
         let targets = projectedTabOrderForCommands().filter { $0.id != activeTab.id }

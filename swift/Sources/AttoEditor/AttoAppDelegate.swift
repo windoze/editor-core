@@ -633,6 +633,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "file.close_tab", title: "File: Close Tab") { [weak self] in
                 self?.closeTabMenuClicked(nil)
             },
+            .init(id: "file.close_all_tabs", title: "File: Close All Tabs") { [weak self] in
+                self?.activeWindow()?.editorAreaController.closeAllTabsForWindow()
+            },
             .init(id: "file.close_other_tabs", title: "File: Close Other Tabs") { [weak self] in
                 self?.activeWindow()?.editorAreaController.closeOtherTabsForActiveTab()
             },
@@ -1094,7 +1097,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                  "file.move_tab_left", "file.move_tab_right":
                 return .multipleTabs
             default:
-                if commandID == "file.save" || commandID == "file.close_tab" {
+                if commandID == "file.save" || commandID == "file.close_tab" || commandID == "file.close_all_tabs" {
                     return .activeEditor
                 }
                 if commandID.hasPrefix("editor.")
@@ -1154,7 +1157,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         case "file.open_folder", "file.open_file", "workbench.preferences", "go.file",
              "editor.find", "editor.replace", "workbench.command_palette":
             return AttoCommandSchema(macroPolicy: .promptRequired)
-        case "file.new", "file.save", "file.close_tab",
+        case "file.new", "file.save", "file.close_tab", "file.close_all_tabs",
              "file.close_other_tabs", "file.close_tabs_to_right",
              "file.move_tab_left", "file.move_tab_right",
              "view.toggle_sidebar", "view.toggle_minimap", "view.split_right",

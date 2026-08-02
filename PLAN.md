@@ -499,6 +499,17 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesParameterSchemasAndMacroPolicies`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `git diff --check`
+- 中间提交：`feat(app): close all tabs from core tabs`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 的 Close All Tabs 用户命令按 core tab snapshot 的 tab order 关闭所有 AppKit tab 投影。
+  - 提交边界：新增 App 命令、File 菜单项和 `closeAllTabsForWindow()` helper；关闭每个目标 tab 仍复用既有 `closeTab` dirty/save/cancel 保护路径。此提交不新增 Rust/FFI ABI，不实现完整 close-all session schema migration、拖拽 tab-to-split 或 pane layout tree。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCloseAllTabsUsesCoreTabProjectionOrder`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCloseTabGroupCommandsUseCoreTabProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesMetadataAndAvailability`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesParameterSchemasAndMacroPolicies`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 
