@@ -360,6 +360,20 @@
     - `cargo test -p editor-core-ui-ffi`
     - `swift test --package-path swift --filter EditorCoreUIFFITests`
     - `git diff --check`
+- 中间提交：`feat(ui): expose workspace edit resource summaries`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 `MultiDocumentEditorUi` WorkspaceEdit transaction result 从 resource operation 计数推进到 typed operation summary，供 Swift/App preview 与后续 conflict UI 直接消费。
+  - 提交边界：只新增兼容 JSON 字段 `resource_operations`，包含 kind、uri/old_uri/new_uri、affected_uris、supported 和 applied；Swift typed wrapper 新增对应 decoder，Atto preview model 在缺少 Swift parser 时可用该 summary 计算 resource operation 数量和 affected URI。本提交不新增 ABI 函数，不改变 apply 语义，不实现跨文件用户级 undo command 或完整 transaction-wide undo。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_applies_open_tab_resource_operations`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAppliesOpenTabResourceOperations`
+    - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests.testWorkspaceEditPreviewUsesCoreResourceOperationSummary`
+    - `cargo test -p editor-core-ui-ffi`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests`
+    - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

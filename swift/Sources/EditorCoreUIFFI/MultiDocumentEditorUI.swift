@@ -106,6 +106,37 @@ public struct EcuWorkspaceEditTransactionSkippedDetail: Decodable, Equatable, Se
     public let message: String
 }
 
+public struct EcuWorkspaceEditTransactionResourceOperation: Decodable, Equatable, Sendable {
+    public let kind: String
+    public let uri: String?
+    public let oldURI: String?
+    public let newURI: String?
+    public let affectedURIs: [String]
+    public let supported: Bool
+    public let applied: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case uri
+        case oldURI = "old_uri"
+        case newURI = "new_uri"
+        case affectedURIs = "affected_uris"
+        case supported
+        case applied
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? ""
+        uri = try container.decodeIfPresent(String.self, forKey: .uri)
+        oldURI = try container.decodeIfPresent(String.self, forKey: .oldURI)
+        newURI = try container.decodeIfPresent(String.self, forKey: .newURI)
+        affectedURIs = try container.decodeIfPresent([String].self, forKey: .affectedURIs) ?? []
+        supported = try container.decodeIfPresent(Bool.self, forKey: .supported) ?? false
+        applied = try container.decodeIfPresent(Bool.self, forKey: .applied) ?? false
+    }
+}
+
 public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable {
     public let mode: String
     public let applyMode: String
@@ -114,6 +145,7 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
     public let appliedURIs: [String]
     public let appliedEditCount: Int
     public let appliedResourceOperationCount: Int
+    public let resourceOperations: [EcuWorkspaceEditTransactionResourceOperation]
     public let skippedURIs: [String]
     public let skippedDetails: [EcuWorkspaceEditTransactionSkippedDetail]
     public let unsupportedOperationURIs: [String]
@@ -127,6 +159,7 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
         case appliedURIs = "applied_uris"
         case appliedEditCount = "applied_edit_count"
         case appliedResourceOperationCount = "applied_resource_operation_count"
+        case resourceOperations = "resource_operations"
         case skippedURIs = "skipped_uris"
         case skippedDetails = "skipped_details"
         case unsupportedOperationURIs = "unsupported_operation_uris"
@@ -145,6 +178,10 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
             Int.self,
             forKey: .appliedResourceOperationCount
         ) ?? 0
+        resourceOperations = try container.decodeIfPresent(
+            [EcuWorkspaceEditTransactionResourceOperation].self,
+            forKey: .resourceOperations
+        ) ?? []
         skippedURIs = try container.decodeIfPresent([String].self, forKey: .skippedURIs) ?? []
         skippedDetails = try container.decodeIfPresent(
             [EcuWorkspaceEditTransactionSkippedDetail].self,

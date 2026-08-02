@@ -33,6 +33,17 @@ pub struct WorkspaceEditTransactionSkippedDetail {
     pub message: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkspaceEditTransactionResourceOperation {
+    pub kind: String,
+    pub uri: Option<String>,
+    pub old_uri: Option<String>,
+    pub new_uri: Option<String>,
+    pub affected_uris: Vec<String>,
+    pub supported: bool,
+    pub applied: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct WorkspaceEditTransactionResult {
     pub mode: String,
@@ -42,6 +53,7 @@ pub struct WorkspaceEditTransactionResult {
     pub applied_uris: Vec<String>,
     pub applied_edit_count: usize,
     pub applied_resource_operation_count: usize,
+    pub resource_operations: Vec<WorkspaceEditTransactionResourceOperation>,
     pub skipped_uris: Vec<String>,
     pub skipped_details: Vec<WorkspaceEditTransactionSkippedDetail>,
     pub unsupported_operation_uris: Vec<String>,
@@ -163,6 +175,7 @@ pub(super) fn apply(
     let mut applied_resource_operation_count = 0usize;
     let unopened_file_text_edit_uris = plan.unopened_file_text_edit_uris.clone();
     let mut planned_resource_operations = VecDeque::from(plan.resource_operations.clone());
+    let mut resource_operation_index = 0usize;
     let mut runtime_blocked_text_edit_uris = BTreeSet::<String>::new();
     let mut runtime_removed_text_edit_uris = BTreeSet::<String>::new();
     let mut filesystem_rollback = FilesystemRollback::default();
@@ -171,6 +184,8 @@ pub(super) fn apply(
     for step in steps {
         match step {
             WorkspaceEditStep::Resource(operation) => {
+                let plan_index = resource_operation_index;
+                resource_operation_index = resource_operation_index.saturating_add(1);
                 let planned_operation = planned_resource_operations.pop_front();
                 if !planned_operation
                     .as_ref()
@@ -212,6 +227,11 @@ pub(super) fn apply(
 
                 match resource_outcome {
                     ResourceOperationApplyOutcome::Applied => {
+                        if let Some(planned_operation) =
+                            plan.resource_operations.get_mut(plan_index)
+                        {
+                            planned_operation.applied = true;
+                        }
                         applied_resource_operation_count =
                             applied_resource_operation_count.saturating_add(1);
                         for uri in operation.affected_uris() {
@@ -489,6 +509,7 @@ impl WorkspaceEditApplyMode {
 struct PlannedResourceOperation {
     op: ResourceOperation,
     supported: bool,
+    applied: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -999,6 +1020,7 @@ fn atomic_apply_runtime_failure_result(
     apply_mode: WorkspaceEditApplyMode,
     plan: WorkspaceEditTransactionPlan,
 ) -> Result<WorkspaceEditTransactionResult, UiError> {
+    let mut plan = plan;
     rollback_atomic_apply_side_effects(
         tabs,
         tab_order,
@@ -1007,6 +1029,7 @@ fn atomic_apply_runtime_failure_result(
         filesystem_rollback,
         open_tab_rollback,
     )?;
+    clear_applied_resource_operations(&mut plan);
     Ok(result_from_plan(
         "apply",
         apply_mode,
@@ -1015,6 +1038,12 @@ fn atomic_apply_runtime_failure_result(
         0,
         0,
     ))
+}
+
+fn clear_applied_resource_operations(plan: &mut WorkspaceEditTransactionPlan) {
+    for operation in &mut plan.resource_operations {
+        operation.applied = false;
+    }
 }
 
 fn rollback_atomic_apply_side_effects(
@@ -1138,7 +1167,11 @@ fn transaction_plan(
                 mark_skipped(&mut skipped_uris, &mut skipped_details, detail);
             }
         }
-        planned_resource_operations.push(PlannedResourceOperation { op, supported });
+        planned_resource_operations.push(PlannedResourceOperation {
+            op,
+            supported,
+            applied: false,
+        });
     }
     mark_ordered_text_edit_resource_dependencies(
         workspace_edit,
@@ -1421,10 +1454,37 @@ fn result_from_plan(
         applied_uris,
         applied_edit_count,
         applied_resource_operation_count,
+        resource_operations: plan
+            .resource_operations
+            .iter()
+            .map(workspace_edit_transaction_resource_operation)
+            .collect(),
         skipped_uris: plan.skipped_uris.into_iter().collect(),
         skipped_details: plan.skipped_details.into_iter().collect(),
         unsupported_operation_uris: plan.unsupported_operation_uris,
         documents: plan.documents,
+    }
+}
+
+fn workspace_edit_transaction_resource_operation(
+    planned: &PlannedResourceOperation,
+) -> WorkspaceEditTransactionResourceOperation {
+    let (uri, old_uri, new_uri) = match &planned.op {
+        ResourceOperation::Create { uri, .. } | ResourceOperation::Delete { uri, .. } => {
+            (Some(uri.clone()), None, None)
+        }
+        ResourceOperation::Rename {
+            old_uri, new_uri, ..
+        } => (None, Some(old_uri.clone()), Some(new_uri.clone())),
+    };
+    WorkspaceEditTransactionResourceOperation {
+        kind: planned.op.kind().to_string(),
+        uri,
+        old_uri,
+        new_uri,
+        affected_uris: planned.op.affected_uris(),
+        supported: planned.supported,
+        applied: planned.applied,
     }
 }
 

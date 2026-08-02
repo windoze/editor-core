@@ -1509,6 +1509,33 @@ fn multi_document_ui_applies_open_tab_resource_operations() {
     let preview = ui.preview_workspace_edit_transaction(edit).unwrap();
     assert!(preview.skipped_uris.is_empty());
     assert!(preview.unsupported_operation_uris.is_empty());
+    assert_eq!(preview.resource_operations.len(), 3);
+    assert!(
+        preview
+            .resource_operations
+            .iter()
+            .all(|operation| operation.supported && !operation.applied)
+    );
+    let rename_operation = preview
+        .resource_operations
+        .iter()
+        .find(|operation| operation.kind == "rename")
+        .unwrap();
+    assert_eq!(
+        rename_operation.old_uri.as_deref(),
+        Some("file:///tmp/project/Old.swift")
+    );
+    assert_eq!(
+        rename_operation.new_uri.as_deref(),
+        Some("file:///tmp/project/Renamed.swift")
+    );
+    assert_eq!(
+        rename_operation.affected_uris,
+        vec![
+            "file:///tmp/project/Old.swift".to_string(),
+            "file:///tmp/project/Renamed.swift".to_string(),
+        ]
+    );
     let renamed_preview = preview
         .documents
         .iter()
@@ -1523,6 +1550,13 @@ fn multi_document_ui_applies_open_tab_resource_operations() {
     assert_eq!(applied.applied_resource_operation_count, 3);
     assert!(applied.skipped_uris.is_empty());
     assert!(applied.unsupported_operation_uris.is_empty());
+    assert_eq!(applied.resource_operations.len(), 3);
+    assert!(
+        applied
+            .resource_operations
+            .iter()
+            .all(|operation| operation.supported && operation.applied)
+    );
     assert_eq!(
         ui.tab_document_uri(old),
         Some("file:///tmp/project/Renamed.swift")

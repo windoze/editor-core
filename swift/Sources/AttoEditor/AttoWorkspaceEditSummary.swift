@@ -46,7 +46,10 @@ struct AttoWorkspaceEditPreview: Equatable {
         let parsedEditCount = parsedWorkspaceEdit?.documents.reduce(0) { $0 + $1.edits.count } ?? 0
         appliedEditCount = max(result.appliedEditCount, parsedEditCount)
         if result.appliedResourceOperationCount > 0 || parsedWorkspaceEdit == nil {
-            appliedResourceOperationCount = result.appliedResourceOperationCount
+            appliedResourceOperationCount = max(
+                result.appliedResourceOperationCount,
+                result.resourceOperations.count
+            )
         } else {
             appliedResourceOperationCount = parsedWorkspaceEdit?.resourceOperations.count ?? 0
         }
@@ -75,6 +78,10 @@ struct AttoWorkspaceEditPreview: Equatable {
                 )
             }
             for operation in parsedWorkspaceEdit.resourceOperations {
+                previewAppliedURIs.append(contentsOf: operation.affectedURIs)
+            }
+        } else {
+            for operation in result.resourceOperations {
                 previewAppliedURIs.append(contentsOf: operation.affectedURIs)
             }
         }

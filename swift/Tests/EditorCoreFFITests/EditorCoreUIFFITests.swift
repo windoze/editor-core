@@ -830,6 +830,18 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(resourceApply.applied)
         XCTAssertEqual(resourceApply.appliedEditCount, 1)
         XCTAssertEqual(resourceApply.appliedResourceOperationCount, 1)
+        XCTAssertEqual(resourceApply.resourceOperations.count, 1)
+        let operation = try XCTUnwrap(resourceApply.resourceOperations.first)
+        XCTAssertEqual(operation.kind, "rename")
+        XCTAssertNil(operation.uri)
+        XCTAssertEqual(operation.oldURI, "file:///project/Beta.swift")
+        XCTAssertEqual(operation.newURI, "file:///project/Renamed.swift")
+        XCTAssertEqual(operation.affectedURIs, [
+            "file:///project/Beta.swift",
+            "file:///project/Renamed.swift",
+        ])
+        XCTAssertTrue(operation.supported)
+        XCTAssertTrue(operation.applied)
         XCTAssertEqual(try multi.tabDocumentURI(tabId: tab), "file:///project/Renamed.swift")
         XCTAssertEqual(try multi.tabText(tabId: tab), "RENAMED saved mirror")
         XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)

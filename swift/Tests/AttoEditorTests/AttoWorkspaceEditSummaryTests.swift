@@ -129,6 +129,46 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         )
     }
 
+    func testWorkspaceEditPreviewUsesCoreResourceOperationSummary() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "preview",
+          "applied": false,
+          "applied_edit_count": 0,
+          "applied_resource_operation_count": 0,
+          "resource_operations": [
+            {
+              "kind": "create",
+              "uri": "file:///project/created.swift",
+              "old_uri": null,
+              "new_uri": null,
+              "affected_uris": ["file:///project/created.swift"],
+              "supported": true,
+              "applied": false
+            }
+          ],
+          "skipped_uris": [],
+          "documents": []
+        }
+        """)
+
+        let preview = AttoWorkspaceEditPreview(result: result)
+
+        XCTAssertTrue(preview.requiresConfirmation)
+        XCTAssertEqual(preview.appliedResourceOperationCount, 1)
+        XCTAssertEqual(preview.appliedURIs, ["file:///project/created.swift"])
+        XCTAssertEqual(
+            preview.displayText,
+            """
+            Workspace edit preview.
+            Will apply 0 edits and 1 resource operation across 1 document.
+
+            Will affect:
+            - created.swift (resource operation)
+            """
+        )
+    }
+
     func testWorkspaceEditPreviewDoesNotConfirmSingleOpenDocumentEdit() throws {
         let result = try decodeTransactionResult("""
         {
