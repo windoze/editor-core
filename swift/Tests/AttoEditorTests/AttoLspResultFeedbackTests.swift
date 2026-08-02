@@ -62,6 +62,41 @@ final class AttoLspResultFeedbackTests: XCTestCase {
                 detailText: "References request failed.\nserver busy"
             )
         )
+        XCTAssertEqual(
+            AttoLspResultFeedback.requestFailed(.documentSymbols, errorDescription: "server busy"),
+            AttoLspResultFeedback.Message(
+                statusText: "Document symbols: request failed",
+                detailText: "Document symbols request failed.\nserver busy"
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.failed(.workspaceSymbols, errorDescription: "decode failed"),
+            AttoLspResultFeedback.Message(
+                statusText: "Workspace symbols: failed",
+                detailText: "Workspace symbols failed.\ndecode failed"
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.timeout(.workspaceSymbols),
+            AttoLspResultFeedback.Message(
+                statusText: "Workspace symbols: timed out",
+                detailText: "Workspace symbols request timed out."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.documentSymbols),
+            AttoLspResultFeedback.Message(
+                statusText: "Document symbols: no results",
+                detailText: "No document symbols are available for this document."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.workspaceSymbols, detailText: "No workspace symbols match \"App\"."),
+            AttoLspResultFeedback.Message(
+                statusText: "Workspace symbols: no results",
+                detailText: "No workspace symbols match \"App\"."
+            )
+        )
     }
 
     func testRefreshSummaryFormatsSingularAndPluralCounts() {

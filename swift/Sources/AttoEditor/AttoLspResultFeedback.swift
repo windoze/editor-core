@@ -14,6 +14,8 @@ enum AttoLspResultFeedback {
         case typeDefinition
         case implementation
         case references
+        case documentSymbols
+        case workspaceSymbols
         case selectionRange
         case signatureHelp
         case linkedEditing
@@ -36,6 +38,10 @@ enum AttoLspResultFeedback {
                 return "Implementation"
             case .references:
                 return "References"
+            case .documentSymbols:
+                return "Document symbols"
+            case .workspaceSymbols:
+                return "Workspace symbols"
             case .selectionRange:
                 return "Selection range"
             case .signatureHelp:
@@ -83,6 +89,10 @@ enum AttoLspResultFeedback {
                 return "Implementation is unavailable."
             case .references:
                 return "References are unavailable."
+            case .documentSymbols:
+                return "Document symbols are unavailable."
+            case .workspaceSymbols:
+                return "Workspace symbols are unavailable."
             case .selectionRange:
                 return "Selection range is unavailable."
             case .signatureHelp:
@@ -112,6 +122,10 @@ enum AttoLspResultFeedback {
                 return "No implementations are available here."
             case .references:
                 return "No references are available here."
+            case .documentSymbols:
+                return "No document symbols are available for this document."
+            case .workspaceSymbols:
+                return "No workspace symbols are available."
             case .selectionRange:
                 return "No larger selection range is available."
             case .signatureHelp:
@@ -154,10 +168,10 @@ enum AttoLspResultFeedback {
         )
     }
 
-    static func empty(_ feature: Feature) -> Message {
+    static func empty(_ feature: Feature, detailText: String? = nil) -> Message {
         Message(
             statusText: "\(feature.statusTitle): no results",
-            detailText: feature.emptyText
+            detailText: detailText ?? feature.emptyText
         )
     }
 

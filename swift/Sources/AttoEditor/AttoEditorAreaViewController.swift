@@ -456,17 +456,23 @@ final class AttoEditorAreaViewController: NSViewController {
         case document
         case workspace(query: String)
 
-        var feedbackKind: AttoLspSymbolRequestFeedback.Kind {
+        var feedbackFeature: AttoLspResultFeedback.Feature {
             switch self {
-            case .document: return .document
-            case .workspace: return .workspace
+            case .document: return .documentSymbols
+            case .workspace: return .workspaceSymbols
             }
         }
 
-        var query: String? {
+        var emptyFeedbackDetailText: String {
             switch self {
-            case .document: return nil
-            case .workspace(let query): return query
+            case .document:
+                return AttoLspResultFeedback.Feature.documentSymbols.emptyText
+            case .workspace(let query):
+                let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    return AttoLspResultFeedback.Feature.workspaceSymbols.emptyText
+                }
+                return "No workspace symbols match \"\(trimmed)\"."
             }
         }
     }
@@ -5145,10 +5151,7 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
-            showWorkspaceEditPopover(
-                text: AttoLspSymbolRequestFeedback.unavailableMessage(kind: .workspace),
-                in: tab.editCore.editorView
-            )
+            presentLspResultFeedback(AttoLspResultFeedback.unavailable(.workspaceSymbols), in: tab.editCore.editorView)
             NSSound.beep()
             return false
         }
@@ -5324,10 +5327,7 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
-            showWorkspaceEditPopover(
-                text: AttoLspSymbolRequestFeedback.unavailableMessage(kind: kind.feedbackKind),
-                in: tab.editCore.editorView
-            )
+            presentLspResultFeedback(AttoLspResultFeedback.unavailable(kind.feedbackFeature), in: tab.editCore.editorView)
             NSSound.beep()
             return false
         }
@@ -5350,11 +5350,8 @@ final class AttoEditorAreaViewController: NSViewController {
             }
         } catch {
             cancelSymbolUI()
-            showWorkspaceEditPopover(
-                text: AttoLspSymbolRequestFeedback.requestFailedMessage(
-                    kind: kind.feedbackKind,
-                    errorDescription: error.localizedDescription
-                ),
+            presentLspResultFeedback(
+                AttoLspResultFeedback.requestFailed(kind.feedbackFeature, errorDescription: error.localizedDescription),
                 in: tab.editCore.editorView
             )
             NSSound.beep()
@@ -5380,10 +5377,10 @@ final class AttoEditorAreaViewController: NSViewController {
 
             if remainingTicks <= 0 {
                 let tab = self.activeTab
-                let message = AttoLspSymbolRequestFeedback.timeoutMessage(kind: ctx.kind.feedbackKind)
+                let message = AttoLspResultFeedback.timeout(ctx.kind.feedbackFeature)
                 self.cancelSymbolUI()
                 if let tab, tab.id == tabID {
-                    self.showWorkspaceEditPopover(text: message, in: tab.editCore.editorView)
+                    self.presentLspResultFeedback(message, in: tab.editCore.editorView)
                 }
                 NSSound.beep()
                 return
@@ -5413,12 +5410,12 @@ final class AttoEditorAreaViewController: NSViewController {
                     timer.cancel()
                 }
             } catch {
-                let message = AttoLspSymbolRequestFeedback.failedMessage(
-                    kind: ctx.kind.feedbackKind,
+                let message = AttoLspResultFeedback.failed(
+                    ctx.kind.feedbackFeature,
                     errorDescription: error.localizedDescription
                 )
                 self.cancelSymbolUI()
-                self.showWorkspaceEditPopover(text: message, in: tab.editCore.editorView)
+                self.presentLspResultFeedback(message, in: tab.editCore.editorView)
                 NSSound.beep()
                 return
             }
@@ -5592,8 +5589,8 @@ final class AttoEditorAreaViewController: NSViewController {
         tab: AttoEditorTab
     ) -> Bool {
         if symbols.isEmpty {
-            showWorkspaceEditPopover(
-                text: AttoLspSymbolRequestFeedback.emptyMessage(kind: kind.feedbackKind, query: kind.query),
+            presentLspResultFeedback(
+                AttoLspResultFeedback.empty(kind.feedbackFeature, detailText: kind.emptyFeedbackDetailText),
                 in: tab.editCore.editorView
             )
             NSSound.beep()

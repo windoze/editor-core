@@ -258,7 +258,7 @@ Swift 侧已经具备以下基础能力：
 | definition / declaration / type definition / implementation / references | 已有 request/take | 已有 `EcuLspLocationResult` | location quick panel、history、persistent panel、cmd-click 已消费 typed payload；阶段 166 已让显式 location 命令的 unavailable/request failed/failed/timeout/empty 接入统一 feedback，Cmd-click 保持低噪声 | result/request events 已覆盖，MultiDocument 聚合已有 | 补项目级 freshness/ownership；后续由状态订阅驱动 stale/refresh metadata |
 | prepare rename / rename | 已有 request/take | 已有 `EcuLspPrepareRenameResult` / `EcuLspWorkspaceEdit` | rename 输入、typed seed、WorkspaceEdit apply/summary 已消费 typed payload | result/request events 已覆盖 | WorkspaceEdit 应迁到 core-owned 跨文件事务；统一 feedback 和冲突展示 |
 | code action / code action resolve / execute command | 已有 request/take/resolve/executeCommand | code action typed 已有；executeCommand result 仍偏 raw/result envelope | quick panel、kind filter、resolve、command 执行和 HUD 已有 | result/request events 已覆盖 | typed workspace command/result model；WorkspaceEdit 事务化；统一 feedback |
-| document symbols / workspace symbols | 已有 request/take | 已有 symbols typed payload | quick panel、incremental workspace symbol panel、outline/persistent panel 已消费 typed payload | result/request events 和 history entry 已有 | 统一 feedback；状态订阅驱动 outline/symbols refresh 与 stale 展示 |
+| document symbols / workspace symbols | 已有 request/take | 已有 symbols typed payload | quick panel、incremental workspace symbol panel、outline/persistent panel 已消费 typed payload；阶段 167 已让显式 symbols 命令的 unavailable/request failed/failed/timeout/empty 接入统一 feedback | result/request events 和 history entry 已有 | 状态订阅驱动 outline/symbols refresh 与 stale 展示 |
 | formatting / range formatting / on-type formatting | document/range/on-type blocking apply 已有；on-type async lifecycle 已有 | 已有 `EditorCoreLSPFormattingResult` outcome，但不是通用 LSP payload envelope | document/selection format command 和 on-type trigger path 已有 | on-type request lifecycle 已覆盖，status/detail 可记录异步失败 | 统一 feedback；格式化 edit apply 后续纳入 core-owned WorkspaceEdit/current-document transaction 语义 |
 | document color / color presentation | 已有 request/take | 已有 color typed payload | color quick panel、direct color picker、presentation apply 已消费 typed payload | result/request events 已覆盖 | 持久颜色面板、多文档/workspace 聚合和统一 feedback |
 | call hierarchy / type hierarchy | 已有 prepare/children request/take | 已有 hierarchy typed payload | 基础 quick panel 导航和 children request 已消费 typed payload | result/request events 已覆盖 | 持久树状面板、展开/刷新、跨文件聚合和统一 feedback |
@@ -279,7 +279,7 @@ Swift 侧已经具备以下基础能力：
 
 本阶段已迁移这些用户可见路径：folding ranges refresh/apply、semantic tokens typed apply、selection range、linked editing、code lens refresh、workspace diagnostics 的空结果/失败/超时/不可用反馈。测试新增 `AttoLspResultFeedbackTests`，并用 `AttoEditorCommandTests/testUnifiedLspFeedbackUpdatesTransientStatusForEmptyFoldingRanges` 验证 App 主路径会写入 transient status。
 
-阶段 163 仍只是统一 feedback 的第一步：hover、signature help、completion、location、symbols、rename/code action、document color、hierarchy 等路径仍有各自的 popup/panel/formatter 逻辑；下一步应继续把这些路径接入同一个 feedback sink，并让 core-owned request/result/state event stream 驱动 feedback 的生命周期、stale/refresh 展示和 result panel metadata。
+阶段 163 仍只是统一 feedback 的第一步：hover、signature help、completion、location、symbols、rename/code action、document color、hierarchy 等路径当时仍有各自的 popup/panel/formatter 逻辑；阶段 164-167 已继续迁移 hover typed payload、signature help、location 和 symbols 显式命令反馈。下一步应继续把 completion、rename/code action、document color、hierarchy 等路径接入同一个 feedback sink，并让 core-owned request/result/state event stream 驱动 feedback 的生命周期、stale/refresh 展示和 result panel metadata。
 
 ## 阶段 164: Hover typed payload wrapper
 
@@ -298,6 +298,12 @@ AttoEditor `AttoLspSignatureHelpFormatter` 已改为直接消费 UIFFI typed res
 2026-08-02 阶段 166 已把 locations family 的显式用户命令接入统一 feedback：definition、declaration、type definition、implementation 和 references 共享 `AttoLspResultFeedback` 的 unavailable、request failed、failed、timeout 和 empty 文案，`requestLspLocation(...)` 的上下文新增 `showFeedback` 标志，菜单/command palette 主路径会写入 transient status 并展示 detail popover，Cmd-click definition 仍保持低噪声，不把自动式导航探测变成打扰式错误弹窗。
 
 本阶段还让空 typed/JSON location result 统一走同一 feedback sink，因此 `showLspLocationResultJSONInActiveTab("[]", kind: .definition)` 这类 App 测试入口也会得到 `Definition: no results` 的 status 反馈。后续 locations family 的剩余工作转为项目级 freshness/ownership、状态订阅驱动 stale/refresh metadata，以及跨 workspace/multi-document 聚合的一致性。
+
+## 阶段 167: Symbols result feedback unification
+
+2026-08-02 阶段 167 已把 document symbols / workspace symbols 的显式用户命令接入统一 feedback：`AttoLspResultFeedback` 新增 document/workspace symbols feature，`requestLspSymbols(...)`、`promptWorkspaceSymbolsInActiveTab(...)` 和空 typed/JSON result 入口的 unavailable、request failed、failed、timeout、empty 路径统一写入 transient status 并复用 detail popover。
+
+本阶段删除了旧的 `AttoLspSymbolRequestFeedback` 专用 helper，让 symbols 与 locations、signature help、folding ranges、semantic tokens、selection range、linked editing、code lens refresh、workspace diagnostics 共享同一个反馈模型。workspace symbols 仍保留 query-aware 空结果详情，例如 `No workspace symbols match "App".`；status bar 统一为 `Workspace symbols: no results`。后续 symbols family 的剩余工作转为状态订阅驱动 outline/symbols refresh 与 stale metadata，以及 project/workspace 级 outline store。
 
 ## 分层结论
 

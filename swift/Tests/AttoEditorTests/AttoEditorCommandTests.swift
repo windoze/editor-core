@@ -1575,6 +1575,25 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Definition: no results")
     }
 
+    func testEmptySymbolResultsUseUnifiedFeedbackStatus() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("symbols.swift")
+        try "func call() {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc.showDocumentSymbolResultJSONInActiveTab("[]"))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Document symbols: no results")
+
+        XCTAssertFalse(vc.showWorkspaceSymbolResultJSONInActiveTab("[]", query: "  App  "))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Workspace symbols: no results")
+    }
+
     func testWorkspaceSymbolResultCanBeReopened() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
