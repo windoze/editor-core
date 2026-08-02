@@ -205,6 +205,10 @@ final class AttoEditorAreaViewController: NSViewController {
         activeTab?.editCore.minimapDiagnosticMarkers ?? []
     }
 
+    func _activeGutterDiagnosticMarkersForTesting() -> [EditorCoreSkiaGutterDiagnosticMarker] {
+        activeTab?.editCore.gutterDiagnosticMarkers ?? []
+    }
+
     func _coreMultiDocumentSnapshotForTesting() throws -> EcuMultiDocumentSnapshot? {
         try coreDocuments?.snapshot()
     }
@@ -3447,7 +3451,7 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let tab = activeTab else {
             derivedStateStore.clearActive()
             problemsPanelController?.update(diagnostics: [])
-            clearMinimapDiagnosticMarkers()
+            clearDiagnosticMarkers()
             statusBarView.update(
                 leftText: transientStatusText,
                 languageId: nil,
@@ -3464,6 +3468,7 @@ final class AttoEditorAreaViewController: NSViewController {
         derivedStateStore.refreshActive(editor: editor)
         problemsPanelController?.update(diagnostics: derivedStateStore.active.diagnostics.diagnostics)
         updateMinimapDiagnosticMarkers(for: tab)
+        updateGutterDiagnosticMarkers(for: tab)
 
         let (line1, col1): (UInt32, UInt32) = {
             do {
@@ -3552,10 +3557,11 @@ final class AttoEditorAreaViewController: NSViewController {
         )
     }
 
-    private func clearMinimapDiagnosticMarkers() {
+    private func clearDiagnosticMarkers() {
         for tab in tabs {
             for pane in tab.panes {
                 pane.minimapDiagnosticMarkers = []
+                pane.gutterDiagnosticMarkers = []
             }
         }
     }
@@ -3577,7 +3583,38 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    private func updateGutterDiagnosticMarkers(for tab: AttoEditorTab) {
+        let markers = derivedStateStore.active.diagnostics.diagnostics.compactMap { diagnostic -> EditorCoreSkiaGutterDiagnosticMarker? in
+            let offset = min(diagnostic.range.start, diagnostic.range.end)
+            guard let position = try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offset) else {
+                return nil
+            }
+            return EditorCoreSkiaGutterDiagnosticMarker(
+                logicalLine: position.line,
+                charOffset: offset,
+                kind: gutterMarkerKind(for: diagnostic.severity)
+            )
+        }
+
+        for pane in tab.panes {
+            pane.gutterDiagnosticMarkers = markers
+        }
+    }
+
     private func minimapMarkerKind(for severity: EcuDiagnosticSeverity?) -> EditorCoreSkiaMinimapMarker.Kind {
+        switch severity {
+        case .error:
+            return .error
+        case .warning:
+            return .warning
+        case .information:
+            return .information
+        case .hint, .none:
+            return .hint
+        }
+    }
+
+    private func gutterMarkerKind(for severity: EcuDiagnosticSeverity?) -> EditorCoreSkiaGutterDiagnosticMarker.Kind {
         switch severity {
         case .error:
             return .error

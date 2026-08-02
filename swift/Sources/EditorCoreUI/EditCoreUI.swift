@@ -40,6 +40,11 @@ public final class EditCoreUI: NSView {
         set { container.minimapView.diagnosticMarkers = newValue }
     }
 
+    public var gutterDiagnosticMarkers: [EditorCoreSkiaGutterDiagnosticMarker] {
+        get { editorView.gutterDiagnosticMarkers }
+        set { editorView.gutterDiagnosticMarkers = newValue }
+    }
+
     // MARK: - EditorCoreSkiaView forwarding (common host hooks)
 
     public var pasteboard: NSPasteboard {

@@ -31,6 +31,36 @@ final class EditorCoreSkiaViewGutterWidthTests: XCTestCase {
         XCTAssertEqual(gutter, 6, "expected gutter to be 2(fold) + 4(digits) cells for 1000 lines")
     }
 
+    func testGutterDiagnosticMarkersMapCharOffsetsToRects() throws {
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
+        let view = try EditorCoreSkiaView(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 300),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = view
+        window.makeKeyAndOrderFront(nil)
+        view.layoutSubtreeIfNeeded()
+
+        let markers = [
+            EditorCoreSkiaGutterDiagnosticMarker(logicalLine: 0, charOffset: 0, kind: .error),
+            EditorCoreSkiaGutterDiagnosticMarker(logicalLine: 2, charOffset: 4, kind: .warning),
+        ]
+        view.gutterDiagnosticMarkers = markers
+
+        XCTAssertEqual(view._gutterDiagnosticMarkersForTesting, markers)
+        let rects = view._gutterDiagnosticMarkerRectsForTesting()
+        XCTAssertEqual(rects.count, 2)
+        XCTAssertLessThan(rects[0].minY, rects[1].minY)
+        XCTAssertGreaterThan(rects[0].width, 0)
+        XCTAssertGreaterThan(rects[0].height, 0)
+        XCTAssertGreaterThanOrEqual(rects[0].minX, 0)
+        XCTAssertLessThan(rects[0].maxX, view.bounds.width)
+    }
+
     func testGutterWidthExpandsForFiveDigitLineNumbers() throws {
         let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         // 10_000 logical lines (avoid heavy strings; content is irrelevant for gutter sizing).

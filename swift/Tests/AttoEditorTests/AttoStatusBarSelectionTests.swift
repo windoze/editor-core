@@ -98,6 +98,10 @@ final class AttoStatusBarSelectionTests: XCTestCase {
             vc._activeMinimapDiagnosticMarkersForTesting(),
             [EditorCoreSkiaMinimapMarker(logicalLine: 0, kind: .warning)]
         )
+        XCTAssertEqual(
+            vc._activeGutterDiagnosticMarkersForTesting(),
+            [EditorCoreSkiaGutterDiagnosticMarker(logicalLine: 0, charOffset: 0, kind: .warning)]
+        )
 
         let statusBar = try XCTUnwrap(findSubview(of: AttoStatusBarView.self, in: vc.view))
         let labels = allSubviews(in: statusBar).compactMap { $0 as? NSTextField }

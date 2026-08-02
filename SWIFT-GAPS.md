@@ -57,7 +57,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-01 阶段 5 已完成：Swift UI binding 新增派生状态 JSON snapshot API，覆盖 diagnostics、decorations、document symbols、folding regions、style intervals。
 - 阶段 5 已新增 `EditorUI.diagnosticsJSON()`、`decorationsJSON()`、`documentSymbolsJSON()`、`foldingRegionsJSON()`、`styleIntervalsJSON(start:end:)`，并新增 `lspApplyDocumentSymbolsJSON(_:)` 让 Swift UI 可把 LSP `textDocument/documentSymbol` result 写入 core outline。
 - 阶段 5 已用 Rust `cargo test -p editor-core-ui -p editor-core-ui-ffi` 和 Swift `swift test --filter EditorCoreUIFFITests` 覆盖，其中 Swift 新增测试验证 “LSP/processing 派生状态 -> Rust UI -> C ABI -> Swift” 的完整路径。
-- 阶段 5 后续缺口中，Swift typed model、active-tab derived-state store、status bar 消费和 Problems quick panel 已在阶段 39-41 补齐，基础持久 Outline/Symbols panel 已在阶段 115 补齐，active-tab 持久 Problems panel 已在阶段 116 补齐，workspace Problems store/panel 已在阶段 117 补齐，active-tab minimap diagnostic markers 已在阶段 118 补齐；仍缺 core-owned project 级 derived-state store、project Problems 归属、project/workspace minimap markers、gutter diagnostic icons 和更深层 typed model。
+- 阶段 5 后续缺口中，Swift typed model、active-tab derived-state store、status bar 消费和 Problems quick panel 已在阶段 39-41 补齐，基础持久 Outline/Symbols panel 已在阶段 115 补齐，active-tab 持久 Problems panel 已在阶段 116 补齐，workspace Problems store/panel 已在阶段 117 补齐，active-tab minimap diagnostic markers 已在阶段 118 补齐，active-tab gutter diagnostic icons 已在阶段 119 补齐；仍缺 core-owned project 级 derived-state store、project Problems 归属、project/workspace marker 聚合和更深层 typed model。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
@@ -198,6 +198,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 116 已完成：AttoEditor 新增 active-tab 持久 Problems panel，复用 active derived-state store 的 typed diagnostics 和现有 diagnostic navigation 路径。`AttoProblemsPanelController` 提供可过滤、可重复显示的 panel，带稳定 accessibility identifiers；打开后会随 `updateStatusBar()` 的 derived-state refresh 自动刷新，并通过 `lsp.show_problems_panel` command / Go 菜单入口打开。测试覆盖 command/menu 注册、panel identifiers/filtering、diagnostic 打开和 diagnostics 刷新。
 - 2026-08-02 阶段 117 已完成：AttoEditor 新增 workspace Problems store/panel。`AttoWorkspaceProblemsStore` 会缓存 `workspace/diagnostic` typed reports，合并 `full` / `unchanged` result 并为下一次请求提供 `previousResultIds`；workspace diagnostics result 会刷新持久在线 workspace Problems panel，并通过 `lsp.show_workspace_problems_panel` command / Go 菜单入口重新打开。当前仍是 App 层 workspace store，project 级归属和 core workspace-owned Problems 模型仍未完成。
 - 2026-08-02 阶段 118 已完成：EditorCoreUI minimap 新增 diagnostic marker API 和绘制路径，AttoEditor 的 active derived diagnostics 会在 `updateStatusBar()` 刷新时同步成当前 tab 所有 panes 的 minimap markers。测试覆盖 marker logical-line 到 minimap rect 的映射，以及 active diagnostics 到 minimap markers 的 App 层投影。当前仍是 active-tab 投影，project/workspace 级 minimap marker 聚合仍未完成。
+- 2026-08-02 阶段 119 已完成：EditorCoreUI 新增 gutter diagnostic marker API，并在 `EditorCoreSkiaView` 上用透明 overlay 绘制 active-tab diagnostics 的 gutter 图标；AttoEditor 会在 `updateStatusBar()` 刷新时把 active derived diagnostics 同步到当前 tab 所有 panes 的 gutter markers。测试覆盖 marker char-offset 到 gutter rect 的映射，以及 active diagnostics 到 gutter markers 的 App 层投影。当前仍是 active-tab 投影，project/workspace 级 marker 聚合仍未完成。
 
 ## 分层结论
 
@@ -362,7 +363,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 剩余缺口已经从“Swift binding 拿不到”转为 App 层消费、模型化和统一控制：
 
 - Swift UI binding 已有 diagnostics、decorations、symbols、fold regions、style intervals 的基础 typed snapshot model；LSP 交互结果、WorkspaceEdit、hierarchy/color/linked-editing 等更深层结果仍需继续 typed model 化。
-- App 层已有 active-tab derived-state store，status bar、Problems quick panel、active-tab 持久 Problems panel、workspace Problems store/panel、active-tab minimap diagnostic markers、基础持久 Outline/Symbols panel 和测试断言可以消费 diagnostics/decorations/symbols/folds/styles 的 typed snapshots；仍缺 core-owned project 级 store、project/workspace minimap marker 聚合和 gutter diagnostic icons 的完整消费。
+- App 层已有 active-tab derived-state store，status bar、Problems quick panel、active-tab 持久 Problems panel、workspace Problems store/panel、active-tab minimap diagnostic markers、active-tab gutter diagnostic icons、基础持久 Outline/Symbols panel 和测试断言可以消费 diagnostics/decorations/symbols/folds/styles 的 typed snapshots；仍缺 core-owned project 级 store 和 project/workspace 级 marker 聚合。
 - App 层还没有统一的派生状态刷新策略、过期响应处理、增量更新通知和错误展示。
 
 这会影响 Sublime 复刻中的这些功能：
@@ -370,8 +371,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - active-tab 持久 Problems panel 与 App 层 workspace Problems store/panel 已补齐；仍缺 core-owned project problems 归属。
 - Outline / symbol list 基础持久 panel 已补齐；仍缺 project/workspace 级 outline store 和 result lifecycle。
 - Goto symbol。
-- active-tab minimap diagnostic markers 已补齐；仍缺 project/workspace marker 聚合。
-- Gutter diagnostic icons。
+- active-tab minimap diagnostic markers 和 gutter diagnostic icons 已补齐；仍缺 project/workspace marker 聚合。
 - Fold commands。
 - 视觉回归测试中的“结构化断言”。
 

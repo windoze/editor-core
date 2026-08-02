@@ -97,6 +97,25 @@ public enum EditorCoreLSPFormattingResult: Equatable {
     }
 }
 
+public struct EditorCoreSkiaGutterDiagnosticMarker: Equatable {
+    public enum Kind: Equatable {
+        case error
+        case warning
+        case information
+        case hint
+    }
+
+    public var logicalLine: UInt32
+    public var charOffset: UInt32
+    public var kind: Kind
+
+    public init(logicalLine: UInt32, charOffset: UInt32, kind: Kind) {
+        self.logicalLine = logicalLine
+        self.charOffset = charOffset
+        self.kind = kind
+    }
+}
+
 /// 自绘版 AppKit 组件（Option 2）：
 /// - Rust: editor-core + editor-core-ui + Skia（Metal/GPU 直接绘制到 `MTLTexture`）
 /// - Swift/AppKit: `MTKView` 负责承接事件并把 `CAMetalDrawable` 呈现到屏幕
@@ -314,6 +333,7 @@ public final class EditorCoreSkiaView: MTKView {
     }
 
     func notifyViewportStateDidChange() {
+        gutterDiagnosticOverlayView.needsDisplay = true
         onViewportStateDidChange?()
         for f in viewportObservers.values {
             f()
@@ -467,6 +487,8 @@ public final class EditorCoreSkiaView: MTKView {
     private var cachedMarkedRange: (epoch: UInt64, start: UInt32, len: UInt32, value: NSRange)?
 
     private var lineHeightPx: Float = 18
+    private var cellWidthPx: Float = 8
+    private var paddingPx: Float = 8
     private struct RenderMetricsSnapshot: Equatable {
         let fontSizePx: Float
         let lineHeightPx: Float
@@ -477,6 +499,11 @@ public final class EditorCoreSkiaView: MTKView {
     private var lastAppliedRenderMetrics: RenderMetricsSnapshot?
     /// 当前 gutter 宽度（以 cell 为单位）；用于避免频繁跨 FFI 发送重复的 set 操作。
     private var gutterWidthCells: UInt32 = 4
+    private let gutterDiagnosticOverlayView = EditorCoreSkiaGutterDiagnosticOverlayView()
+
+    public var gutterDiagnosticMarkers: [EditorCoreSkiaGutterDiagnosticMarker] = [] {
+        didSet { gutterDiagnosticOverlayView.needsDisplay = true }
+    }
 
     /// gutter 的最小宽度（以 cell 为单位）。
     ///
@@ -718,6 +745,7 @@ public final class EditorCoreSkiaView: MTKView {
         framebufferOnly = false
         colorPixelFormat = .bgra8Unorm
         delegate = self
+        configureGutterDiagnosticOverlay()
 
         // 让 Rust/Skia 走 Metal 后端渲染到 `CAMetalDrawable.texture`。
         try editor.enableMetal(device: device, commandQueue: queue)
@@ -767,6 +795,7 @@ public final class EditorCoreSkiaView: MTKView {
         framebufferOnly = false
         colorPixelFormat = .bgra8Unorm
         delegate = self
+        configureGutterDiagnosticOverlay()
 
         // 让 Rust/Skia 走 Metal 后端渲染到 `CAMetalDrawable.texture`。
         try editor.enableMetal(device: device, commandQueue: queue)
@@ -780,6 +809,13 @@ public final class EditorCoreSkiaView: MTKView {
         if let fontFamiliesCSV, fontFamiliesCSV.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             try editor.setFontFamiliesCSV(fontFamiliesCSV)
         }
+    }
+
+    private func configureGutterDiagnosticOverlay() {
+        gutterDiagnosticOverlayView.editorView = self
+        gutterDiagnosticOverlayView.frame = bounds
+        gutterDiagnosticOverlayView.autoresizingMask = [.width, .height]
+        addSubview(gutterDiagnosticOverlayView)
     }
 
     @available(*, unavailable, message: "请使用 init(library:initialText:viewportWidthCells:) 构造。")
@@ -847,6 +883,7 @@ public final class EditorCoreSkiaView: MTKView {
 
     public override func layout() {
         super.layout()
+        gutterDiagnosticOverlayView.frame = bounds
         updateViewportIfNeeded()
     }
 
@@ -906,6 +943,8 @@ public final class EditorCoreSkiaView: MTKView {
                 paddingYPx: paddingPx
             )
             self.lineHeightPx = lineHeightPx
+            self.cellWidthPx = cellWidthPx
+            self.paddingPx = paddingPx
             lastAppliedRenderMetrics = snapshot
             applyTextVerticalAlignIfNeeded(force: false)
             return true
@@ -2653,6 +2692,55 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
+    fileprivate func gutterDiagnosticMarkerLayouts() -> [EditorCoreSkiaGutterDiagnosticMarkerLayout] {
+        guard gutterDiagnosticMarkers.isEmpty == false else { return [] }
+        guard bounds.width > 0, bounds.height > 0, gutterWidthCells > 0 else { return [] }
+
+        let boundsSize = bounds.size
+        let backingSize = convertToBacking(boundsSize)
+        guard backingSize.width.isFinite, backingSize.height.isFinite,
+              backingSize.width > 0, backingSize.height > 0
+        else {
+            return []
+        }
+
+        let sx = max(1e-6, backingSize.width / max(1e-6, boundsSize.width))
+        let sy = max(1e-6, backingSize.height / max(1e-6, boundsSize.height))
+        let gutterWidthPx = CGFloat(gutterWidthCells) * CGFloat(cellWidthPx)
+        let glyphMarginWidthPx = min(max(CGFloat(cellWidthPx) * 1.5, 5), gutterWidthPx)
+        let markerSizePx = max(5, min(CGFloat(lineHeightPx) * 0.52, CGFloat(cellWidthPx) * 0.85))
+        let markerWidthPt = markerSizePx / sx
+        let markerHeightPt = markerSizePx / sy
+        let xPx = CGFloat(paddingPx) + max(0, (glyphMarginWidthPx - markerSizePx) * 0.5)
+        let xPt = xPx / sx
+        let viewport = try? editor.viewportState()
+
+        return gutterDiagnosticMarkers.compactMap { marker in
+            if let viewport, viewport.visibleLines.contains(marker.logicalLine) == false {
+                return nil
+            }
+            guard let point = try? editor.charOffsetToViewPoint(offset: marker.charOffset) else {
+                return nil
+            }
+
+            let yPx = CGFloat(point.yPx) + max(0, (CGFloat(point.lineHeightPx) - markerSizePx) * 0.5)
+            let yPt = yPx / sy
+            guard yPt.isFinite, yPt > -markerHeightPt, yPt < bounds.height + markerHeightPt else {
+                return nil
+            }
+
+            return EditorCoreSkiaGutterDiagnosticMarkerLayout(
+                marker: marker,
+                rect: CGRect(
+                    x: xPt,
+                    y: yPt,
+                    width: markerWidthPt,
+                    height: markerHeightPt
+                )
+            )
+        }
+    }
+
     private func renderToCurrentDrawable(debugSource: String) {
         guard let drawable = currentDrawable else {
             if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
@@ -2722,12 +2810,83 @@ public final class EditorCoreSkiaView: MTKView {
     }
 }
 
+fileprivate struct EditorCoreSkiaGutterDiagnosticMarkerLayout {
+    let marker: EditorCoreSkiaGutterDiagnosticMarker
+    let rect: CGRect
+}
+
+@MainActor
+private final class EditorCoreSkiaGutterDiagnosticOverlayView: NSView {
+    weak var editorView: EditorCoreSkiaView?
+
+    override var isFlipped: Bool { true }
+    override var isOpaque: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let editorView, let ctx = NSGraphicsContext.current?.cgContext else { return }
+
+        for layout in editorView.gutterDiagnosticMarkerLayouts() where layout.rect.intersects(dirtyRect) {
+            draw(layout.marker.kind, in: layout.rect, ctx: ctx)
+        }
+    }
+
+    private func draw(_ kind: EditorCoreSkiaGutterDiagnosticMarker.Kind, in rect: CGRect, ctx: CGContext) {
+        let color = kind.gutterColor
+        let r = rect.insetBy(dx: max(0.5, rect.width * 0.08), dy: max(0.5, rect.height * 0.08))
+
+        switch kind {
+        case .error:
+            ctx.setFillColor(color.cgColor)
+            ctx.fillEllipse(in: r)
+        case .warning:
+            ctx.setFillColor(color.cgColor)
+            ctx.beginPath()
+            ctx.move(to: CGPoint(x: r.midX, y: r.minY))
+            ctx.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+            ctx.addLine(to: CGPoint(x: r.minX, y: r.maxY))
+            ctx.closePath()
+            ctx.fillPath()
+        case .information:
+            ctx.setFillColor(color.cgColor)
+            ctx.fillEllipse(in: r)
+        case .hint:
+            ctx.setStrokeColor(color.cgColor)
+            ctx.setLineWidth(max(1, min(r.width, r.height) * 0.16))
+            ctx.strokeEllipse(in: r)
+        }
+    }
+}
+
+private extension EditorCoreSkiaGutterDiagnosticMarker.Kind {
+    var gutterColor: NSColor {
+        switch self {
+        case .error:
+            return NSColor.systemRed.withAlphaComponent(0.95)
+        case .warning:
+            return NSColor.systemOrange.withAlphaComponent(0.95)
+        case .information:
+            return NSColor.systemBlue.withAlphaComponent(0.9)
+        case .hint:
+            return NSColor.systemGray.withAlphaComponent(0.9)
+        }
+    }
+}
+
 // MARK: - Testing hooks
 
 @MainActor
 extension EditorCoreSkiaView {
     var _lastAppliedCaretWidthPxForTesting: Float? { lastAppliedCaretWidthPx }
     var _lastAppliedCaretVisibleForTesting: Bool? { lastAppliedCaretVisible }
+    public var _gutterDiagnosticMarkersForTesting: [EditorCoreSkiaGutterDiagnosticMarker] { gutterDiagnosticMarkers }
+
+    public func _gutterDiagnosticMarkerRectsForTesting() -> [CGRect] {
+        gutterDiagnosticMarkerLayouts().map(\.rect)
+    }
 
     func _caretBlinkTickForTesting() {
         caretBlinkPhaseVisible.toggle()
