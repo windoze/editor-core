@@ -212,11 +212,15 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         let searchField = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.lspLocationPanelSearchField, in: root) as? NSSearchField
         )
+        let metadataLabel = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspLocationPanelMetadataLabel, in: root) as? NSTextField
+        )
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.lspLocationPanelTable, in: root) as? NSTableView
         )
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspLocationPanelScrollView, in: root))
         XCTAssertEqual(searchField.placeholderString, "Filter references...")
+        XCTAssertEqual(metadataLabel.stringValue, "Snapshot | References")
         XCTAssertEqual(table.numberOfRows, 2)
 
         searchField.stringValue = ":9:"
@@ -285,11 +289,15 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         let searchField = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.lspSymbolPanelSearchField, in: root) as? NSSearchField
         )
+        let metadataLabel = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspSymbolPanelMetadataLabel, in: root) as? NSTextField
+        )
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.lspSymbolPanelTable, in: root) as? NSTableView
         )
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspSymbolPanelScrollView, in: root))
         XCTAssertEqual(searchField.placeholderString, "Filter document symbols...")
+        XCTAssertEqual(metadataLabel.stringValue, "Snapshot | Document Symbols")
         XCTAssertEqual(table.numberOfRows, 2)
 
         searchField.stringValue = "Struct"

@@ -19,6 +19,7 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
     private var filteredRows: [Row] = []
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
+    private let metadataLabel = NSTextField(labelWithString: "")
     private let tableView = NSTableView(frame: .zero)
     private let scrollView = NSScrollView(frame: .zero)
 
@@ -121,6 +122,14 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
         searchField.delegate = self
         searchField.translatesAutoresizingMaskIntoConstraints = false
 
+        metadataLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.lspSymbolPanelMetadataLabel)
+        metadataLabel.font = NSFont.systemFont(ofSize: 11)
+        metadataLabel.textColor = NSColor(attoHex: 0xA6A6A6)
+        metadataLabel.lineBreakMode = .byTruncatingTail
+        metadataLabel.maximumNumberOfLines = 1
+        metadataLabel.translatesAutoresizingMaskIntoConstraints = false
+        metadataLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("symbol"))
         column.title = "Symbol"
         column.width = 720
@@ -143,6 +152,7 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(searchField)
+        root.addSubview(metadataLabel)
         root.addSubview(scrollView)
 
         NSLayoutConstraint.activate([
@@ -150,9 +160,13 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
             searchField.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
             searchField.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
 
+            metadataLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
+            metadataLabel.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
+            metadataLabel.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 6),
+
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),
+            scrollView.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 8),
             scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
         ])
 
@@ -164,10 +178,14 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
         guard let panel else { return }
         guard let snapshot = entry?.snapshot else {
             panel.title = "Symbols"
+            metadataLabel.stringValue = ""
             return
         }
         panel.title = "\(snapshot.title) (\(snapshot.symbols.count))"
         searchField.placeholderString = snapshot.placeholder
+        if let entry {
+            metadataLabel.stringValue = Self.metadataText(for: entry)
+        }
     }
 
     private func position(panel: NSPanel, relativeTo window: NSWindow) {
@@ -288,6 +306,13 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
             recordedAt: Date(timeIntervalSince1970: 0),
             snapshot: snapshot
         )
+    }
+
+    private static func metadataText(for entry: Entry) -> String {
+        if entry.sequence == 0 {
+            return "Snapshot | \(entry.title)"
+        }
+        return "Result #\(entry.sequence) | \(entry.family) | \(entry.title)"
     }
 }
 

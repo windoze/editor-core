@@ -1612,6 +1612,12 @@ final class AttoEditorCommandTests: XCTestCase {
             ) as? NSSearchField
         )
         XCTAssertEqual(persistentSearchField.placeholderString, "Filter implementations...")
+        let persistentMetadataLabel = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.lspLocationPanelMetadataLabel,
+                in: persistentRoot
+            ) as? NSTextField
+        )
         let persistentTable = try XCTUnwrap(
             findView(
                 identifier: AttoAccessibilityID.lspLocationPanelTable,
@@ -1625,6 +1631,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(panelEntry.family, "locations")
         XCTAssertTrue(panelEntry.title.hasPrefix("Implementations:"))
         XCTAssertEqual(panelEntry.snapshot, snapshot)
+        XCTAssertEqual(persistentMetadataLabel.stringValue, "Result #1 | locations | \(panelEntry.title)")
         XCTAssertTrue(vc._lspLocationPanelIsVisibleForTesting())
 
         panel.close()
@@ -1677,6 +1684,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(updatedPanelEntry.family, "locations")
         XCTAssertTrue(updatedPanelEntry.title.hasPrefix("Definitions:"))
         XCTAssertEqual(updatedPanelEntry.snapshot, updatedPanelSnapshot)
+        XCTAssertEqual(persistentMetadataLabel.stringValue, "Result #2 | locations | \(updatedPanelEntry.title)")
         XCTAssertEqual(vc._lspLocationPanelRowCountForTesting(), 1)
 
         XCTAssertTrue(vc.showLspLocationHistory())
@@ -1801,6 +1809,16 @@ final class AttoEditorCommandTests: XCTestCase {
             ) as? NSSearchField
         )
         XCTAssertEqual(persistentSearchField.placeholderString, "Filter workspace symbols...")
+        let persistentMetadataLabel = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.lspSymbolPanelMetadataLabel,
+                in: persistentRoot
+            ) as? NSTextField
+        )
+        XCTAssertEqual(
+            persistentMetadataLabel.stringValue,
+            "Result #1 | symbols | Workspace Symbols: Project: 2 results"
+        )
         let persistentTable = try XCTUnwrap(
             findView(
                 identifier: AttoAccessibilityID.lspSymbolPanelTable,
@@ -1873,6 +1891,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(updatedPanelEntry.family, "symbols")
         XCTAssertEqual(updatedPanelEntry.title, "Workspace Symbols: Open: 1 results")
         XCTAssertEqual(updatedPanelEntry.snapshot, updatedPanelSnapshot)
+        XCTAssertEqual(persistentMetadataLabel.stringValue, "Result #2 | symbols | Workspace Symbols: Open: 1 results")
         XCTAssertEqual(vc._lspSymbolPanelRowCountForTesting(), 1)
 
         XCTAssertTrue(vc.showLspSymbolHistory())

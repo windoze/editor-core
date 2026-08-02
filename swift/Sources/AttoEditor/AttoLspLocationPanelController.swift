@@ -10,6 +10,7 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
     private var entry: Entry?
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
+    private let metadataLabel = NSTextField(labelWithString: "")
     private let tableView = NSTableView(frame: .zero)
     private let scrollView = NSScrollView(frame: .zero)
     private var filteredItems: [AttoLspDefinitionParser.LocationItem] = []
@@ -107,6 +108,14 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
         searchField.delegate = self
         searchField.translatesAutoresizingMaskIntoConstraints = false
 
+        metadataLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.lspLocationPanelMetadataLabel)
+        metadataLabel.font = NSFont.systemFont(ofSize: 11)
+        metadataLabel.textColor = NSColor(attoHex: 0xA6A6A6)
+        metadataLabel.lineBreakMode = .byTruncatingTail
+        metadataLabel.maximumNumberOfLines = 1
+        metadataLabel.translatesAutoresizingMaskIntoConstraints = false
+        metadataLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("location"))
         column.title = "Location"
         column.width = 660
@@ -129,6 +138,7 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(searchField)
+        root.addSubview(metadataLabel)
         root.addSubview(scrollView)
 
         NSLayoutConstraint.activate([
@@ -136,9 +146,13 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
             searchField.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
             searchField.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
 
+            metadataLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
+            metadataLabel.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
+            metadataLabel.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 6),
+
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),
+            scrollView.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 8),
             scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
         ])
 
@@ -150,10 +164,14 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
         guard let panel else { return }
         guard let snapshot = entry?.snapshot else {
             panel.title = "Locations"
+            metadataLabel.stringValue = ""
             return
         }
         panel.title = "\(snapshot.kind.historyTitle) (\(snapshot.items.count))"
         searchField.placeholderString = snapshot.kind.resultPlaceholder
+        if let entry {
+            metadataLabel.stringValue = Self.metadataText(for: entry)
+        }
     }
 
     private func position(panel: NSPanel, relativeTo window: NSWindow) {
@@ -272,6 +290,13 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
             recordedAt: Date(timeIntervalSince1970: 0),
             snapshot: snapshot
         )
+    }
+
+    private static func metadataText(for entry: Entry) -> String {
+        if entry.sequence == 0 {
+            return "Snapshot | \(entry.title)"
+        }
+        return "Result #\(entry.sequence) | \(entry.family) | \(entry.title)"
     }
 }
 
