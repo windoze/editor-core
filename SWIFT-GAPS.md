@@ -73,6 +73,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 234 进一步补齐阶段 5 的 core document URI projection：Document Symbols 的 symbol target URI 与 Workspace Outline document key 已跟随 core tab snapshot，而不是只读取 Swift 本地 `tab.fileURL`。
 - 阶段 235 进一步补齐阶段 5 的 core document URI projection：resolved inlay hint 的 text edits 已在包装和应用 WorkspaceEdit 时跟随 core tab snapshot，而不是只读取 Swift 本地 `tab.fileURL`。
 - 阶段 236 进一步补齐阶段 5 的 core document URI projection：rename request/result context 的 WorkspaceEdit document URI 已跟随 core tab snapshot，而不是只读取 Swift 本地 `tab.fileURL`。
+- 阶段 237 进一步补齐阶段 5 的 core document URI projection：keymap dynamic context 和 toggle comment 语言配置已跟随 core tab snapshot，而不是只读取 Swift 本地 `tab.fileURL`。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
@@ -84,6 +85,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 7 第二部分已完成基础 pane 操作命令：`view.focus_next_pane`、`view.focus_previous_pane`、`view.close_pane`，并用 AppKit 组件测试覆盖 active pane 对 close target 的影响。
 - 阶段 7 后续缺口中，`MultiDocumentEditorUi` 基础 Swift FFI 投影已在阶段 80 补齐，AttoEditor tab/pane lifecycle 到 core multi-document mirror 的迁移起点已在阶段 81 补齐，编辑文本/dirty/search-all-tabs 基础同步已在阶段 83 补齐，Find in Files 的 opened scope 已在阶段 84 开始消费 core open-tab search，split pane 数量/active pane session restore 已在阶段 85 补齐，pane move 已在阶段 86 补齐，dirty/close/resource-operation 保护条件已在阶段 87 改为消费 core dirty snapshot，tab movement 已在阶段 88 接入 core tab order，session snapshot 已在阶段 222 优先消费 core tab snapshot，opened-files/sidebar/tab-bar 投影已在阶段 223 优先消费 core tab snapshot，active-tab 查询已在阶段 224 优先消费 core active tab，AppKit content host 已在阶段 225 跟随 core active tab projection，close-other/close-right tab group 命令已在阶段 226 使用 core tab projection，close-all tab 命令已在阶段 227 使用 core tab projection，opened-files selection/open-existing 查找已在阶段 228 使用 core document URI projection，open-with-location 导航校验已在阶段 229 使用 core document URI projection，opened-scope Find in Files 结果 URL 已在阶段 230 使用 core document URI projection，LSP target navigation 已在阶段 231 使用 core document URI projection，WorkspaceEdit preview text lookup 已在阶段 232 使用 core document URI projection，WorkspaceEdit apply 前同步已在阶段 233 保留 core document URI projection，Document Symbols / Workspace Outline 已在阶段 234 使用 core document URI projection，resolved inlay hint text edit apply 已在阶段 235 使用 core document URI projection；仍缺完整 project/LSP lifecycle 迁移、pane layout tree/session schema migration 和拖拽 tab 到 split 等更高层 workspace 产品语义。
 - 阶段 236 已让 rename WorkspaceEdit context 使用 core document URI projection，继续收敛 Swift-only tab/document identity；仍缺完整 project/LSP lifecycle 迁移、pane layout tree/session schema migration 和拖拽 tab 到 split 等更高层 workspace 产品语义。
+- 阶段 237 已让 keymap dynamic context 与 toggle comment 语言配置使用 core document URI projection，继续减少 command/keymap 路径对 Swift-only `tab.fileURL` 的依赖。
 - 2026-08-01 阶段 8 已完成：AttoEditor 新增 LSP document/workspace symbols quick panel 主路径，命令 `lsp.document_symbols` / `lsp.workspace_symbols` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspSymbolParser`，覆盖 DocumentSymbol、SymbolInformation、WorkspaceSymbol 常见结果形态。
 - 阶段 8 后续缺口中，基础错误/超时/空结果反馈已在阶段 68 补齐，最近结果 snapshot 和 reopen command 已在阶段 72 补齐，workspace symbol 增量查询面板已在阶段 93 补齐，workspace symbol kind 分组/稳定排序已在阶段 98 补齐，基础持久在线 Outline/Symbols panel 已在阶段 115 补齐，locations/symbols result lifecycle store 起点已在阶段 121 补齐，symbols history entry/envelope 元数据起点已在阶段 122 补齐；仍缺覆盖所有 LSP result 的更深层 lifecycle/event model。
 - 2026-08-01 阶段 9 已完成：AttoEditor 新增 LSP signature help popup 主路径，命令 `lsp.signature_help` 已接入 command palette、Go 菜单和默认 keymap；新增 `AttoLspSignatureHelpFormatter`，覆盖 SignatureHelp、activeSignature、activeParameter、ParameterInformation string/range label 和 documentation 常见结果形态。
@@ -208,7 +210,7 @@ Swift 侧已经具备以下基础能力：
 - 2026-08-02 阶段 110 已完成：AttoEditor keymap chord prefix 现在会在状态栏左侧显示 `Keys: ...` 短提示，并在完整命中、失败、超时或 Escape 取消时清空，恢复原 derived-state 摘要。测试覆盖 prefix 提示出现、命中清空、手动过期清空和 Escape 清空。
 - 2026-08-02 阶段 111 已完成：AttoEditor keymap 解析扩展 Sublime 风格键名和 context operator。键名新增字面 `+`、命名标点、forward delete / insert / begin / clear / help 等 token；context 新增 `regex_contains` / `not_regex_contains`，并让 `regex_match` / `not_regex_match` 按整串匹配语义与 contains 区分。测试覆盖扩展键名、function-key display text、缺失 context 不匹配、整串 regex match 和 contains/not-contains 差异。
 - 2026-08-02 阶段 112 已完成：AttoEditor keymap context resolver 支持 Sublime 风格 `match_all` 多值上下文语义。`AttoKeymapContextValue` 新增 list 值，condition 在 list 上默认 any-match，`match_all: true` 时要求所有值都匹配；测试覆盖多 selection 风格的 `selection_empty` 和 selector regex 条件。
-- 2026-08-02 阶段 113 已完成：AttoEditor App key-down dispatcher 现在会按 active editor 状态动态解析 keymap context，而不是只使用启动时空 context 的缓存结果。运行时 context 注入 `has_active_editor`、`selection_empty`、`num_selections`、`has_multiple_selections`、`selector`、`syntax`、`file_name`、`file_extension`、dirty/tab/pane 摘要；local key monitor 现在可按当前 context 触发单键 binding 和 chord，并使用同一动态 keymap 的 `args`。测试覆盖无 active editor 不命中、active `.swift` 非空选区命中、selector/file extension context 和动态 args 执行。
+- 2026-08-02 阶段 113 已完成：AttoEditor App key-down dispatcher 现在会按 active editor 状态动态解析 keymap context，而不是只使用启动时空 context 的缓存结果。运行时 context 注入 `has_active_editor`、`selection_empty`、`num_selections`、`has_multiple_selections`、`selector`、`syntax`、`file_name`、`file_extension`、dirty/tab/pane 摘要；阶段 237 已让 `selector` / `syntax` / file name / extension 跟随 core document URI projection。local key monitor 现在可按当前 context 触发单键 binding 和 chord，并使用同一动态 keymap 的 `args`。测试覆盖无 active editor 不命中、active `.swift` 非空选区命中、selector/file extension context、core-projected `.py` context 和动态 args 执行。
 - 2026-08-02 阶段 114 已完成：AttoEditor 新增持久在线的 LSP Locations/References panel，和一次性 quick panel 分离。location/reference 结果现在会记录到可重复显示的 `AttoLspLocationPanelController`，panel 带过滤框、稳定 accessibility identifiers、可在打开状态下随新结果更新，并通过 `lsp.show_locations_panel` command / Go 菜单入口重新打开最后结果；测试覆盖 command 注册、panel identifiers/filtering、快照保持和新结果自动刷新。
 - 2026-08-02 阶段 115 已完成：AttoEditor 新增持久在线的 LSP Outline/Symbols panel，复用现有 document/workspace symbols typed snapshot 和导航路径。symbol 结果现在可通过 `AttoLspSymbolPanelController` 以持久 panel 展示、过滤和打开；panel 带稳定 accessibility identifiers，可随新 document/workspace symbol 结果自动刷新，并通过 `lsp.show_symbols_panel` command / Go 菜单入口重新打开最后结果；测试覆盖 command/menu 注册、panel identifiers/filtering、快照保持和新结果自动刷新。
 - 2026-08-02 阶段 116 已完成：AttoEditor 新增 active-tab 持久 Problems panel，复用 active derived-state store 的 typed diagnostics 和现有 diagnostic navigation 路径。`AttoProblemsPanelController` 提供可过滤、可重复显示的 panel，带稳定 accessibility identifiers；打开后会随 `updateStatusBar()` 的 derived-state refresh 自动刷新，并通过 `lsp.show_problems_panel` command / Go 菜单入口打开。测试覆盖 command/menu 注册、panel identifiers/filtering、diagnostic 打开和 diagnostics 刷新。
@@ -811,6 +813,14 @@ App 层新增 `Workspace: Undo Last Workspace Edit` command、Edit 菜单项 `Un
 
 测试覆盖 Swift 本地 `tab.fileURL` 仍为旧路径、core `document_uri` 已改为新路径时，rename result WorkspaceEdit 指向 projected URI 会命中打开 tab 的 in-memory editor text，而不是修改 projected 文件磁盘内容。本阶段仍不实现 project root ownership、pane layout tree、drag/drop split、完整 project/LSP lifecycle 迁移、更深层 conflict 检测/展示或多级/global transaction-wide undo 语义。
 
+## 阶段 237: Command/keymap context core URI projection 起点
+
+2026-08-03 阶段 237 已让 AttoEditor 的 keymap dynamic context 和 `toggle_comment` 语言配置使用 core tab snapshot 的 `document_uri` 投影。此前 `keymapContextForActiveState()` 的 `syntax` / `selector` / `file_name` / `file_extension` 和 `toggleLineCommentInActiveTab()` 的 comment config 仍从 Swift 本地 `tab.fileURL` 派生，core URI 已投影后，用户 keymap context 和注释语言判断仍可能落在旧路径语义。
+
+实现上只迁移 command/keymap 文档身份派生字段和 `toggle_comment` comment config 的 file URL 来源，统一复用 `projectedFileURL(for:)` 的 core snapshot 优先、Swift 本地 fallback 策略。该阶段不改变 keymap resolver/context operator 语义、菜单/command registry、真实保存路径、syntax detection、open-file language configuration、session schema、真实 `tab.fileURL` 同步策略或 Rust/FFI ABI。
+
+测试覆盖 Swift 本地 `tab.fileURL` 仍为 `.txt`、core `document_uri` 已投影为 `.py` 时，keymap context 的 file name、extension、syntax 和 selector 都跟随 projected URI，且 toggle comment 使用 Python `#` line comment config。本阶段仍不实现完整 Sublime keymap 语义矩阵、插件/宏运行时、project root ownership、pane layout tree 或完整 project/LSP lifecycle 迁移。
+
 ## 分层结论
 
 ### 1. Headless core 到 headless Swift FFI
@@ -1050,7 +1060,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 主要缺口：
 
-- command registry 已有基础命令启用/禁用状态、分组元数据、参数 schema、runtime feature requirement、宏录制策略和静态 editor-core JSON payload 元数据；keymap 已有基础 context 条件过滤、快捷键冲突解析、`args` 执行路由和多键序列 dispatcher。仍缺更完整的插件/宏运行时、命令上下文模型和完整 Sublime keymap 语义矩阵。
+- command registry 已有基础命令启用/禁用状态、分组元数据、参数 schema、runtime feature requirement、宏录制策略和静态 editor-core JSON payload 元数据；keymap 已有基础 context 条件过滤、快捷键冲突解析、`args` 执行路由、多键序列 dispatcher，以及阶段 237 补齐的 core-projected document URI context 起点。仍缺更完整的插件/宏运行时、命令上下文模型和完整 Sublime keymap 语义矩阵。
 - command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令；LSP location、symbols quick panels、completion popup、signature help、rename 和 code action 主路径已接入，但更深层 LSP/项目级命令仍不完整。
 - P0 菜单、command palette、keymap 和测试已开始统一使用 command id；基础参数化命令可通过 typed arguments 执行，但更深层的命令上下文、插件/宏回放策略和 keymap 冲突解析仍缺。
 - 一些 core/LSP 命令仍没有 App 命令入口。
@@ -1097,7 +1107,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - `.sublime-color-scheme` 兼容覆盖率。
 - `.tmTheme` 兼容覆盖率。
 - Sublime settings scope 继承规则。
-- keymap 文件已有基础 JSON 解析、`context` 条件过滤、快捷键冲突解析、`args` 执行路由、基础多键序列 dispatcher、prefix 状态栏提示、prefix 超时和 Escape 取消；键名兼容已覆盖常见 modifier、arrow/function key、命名标点、字面 `+`、forward delete / insert / begin / clear / help，context operator 已覆盖 `equal` / `not_equal` / `regex_match` / `not_regex_match` / `regex_contains` / `not_regex_contains` 和 `match_all` 多值上下文语义。App key-down dispatcher 已能注入 active editor、selection、selector、syntax、file name/extension、dirty、tab/pane 等基础动态 context 并按当前 context 触发单键 binding/chord/args。仍缺更完整 Sublime 命令上下文模型和更完整跨平台键名兼容矩阵。
+- keymap 文件已有基础 JSON 解析、`context` 条件过滤、快捷键冲突解析、`args` 执行路由、基础多键序列 dispatcher、prefix 状态栏提示、prefix 超时和 Escape 取消；键名兼容已覆盖常见 modifier、arrow/function key、命名标点、字面 `+`、forward delete / insert / begin / clear / help，context operator 已覆盖 `equal` / `not_equal` / `regex_match` / `not_regex_match` / `regex_contains` / `not_regex_contains` 和 `match_all` 多值上下文语义。App key-down dispatcher 已能注入 active editor、selection、selector、syntax、file name/extension、dirty、tab/pane 等基础动态 context 并按当前 context 触发单键 binding/chord/args；selector、syntax、file name/extension 已在阶段 237 跟随 core document URI projection。仍缺更完整 Sublime 命令上下文模型和更完整跨平台键名兼容矩阵。
 - snippets。
 - macros。
 - build systems。
@@ -1184,7 +1194,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor preferences 已接入 wrap mode 开关，并应用到新建和已打开 editor。
 - 已完成：AttoEditor preferences 已接入 wrap indent 设置，并应用到新建和已打开 editor。
 - 已完成：AttoEditor 会按语言/扩展名应用基础 indentation config。
-- 已完成：AttoEditor 会按语言/扩展名向 toggle comment 传完整 line/block comment config。
+- 已完成：AttoEditor 会按语言/扩展名向 toggle comment 传完整 line/block comment config；阶段 237 已让该语言/扩展名来源跟随 core document URI projection。
 - 已完成：AttoEditor command registry 已接入基础 group/requiresEditor/isEnabled 元数据，菜单、palette 和 `executeCommand(id:)` 共用同一启用状态。
 - 已完成：AttoEditor command registry 已接入基础参数 schema、宏录制策略、静态 editor-core JSON payload 元数据和 `executeCommand(id:arguments:)` typed arguments 路径；默认命令集已有重复 command id 检测测试。
 - 已完成：AttoEditor command registry 已接入 runtime feature requirement，LSP/WorkspaceEdit 可选 feature 缺失时会按命令禁用相关菜单、palette 项和 `executeCommand` 路径，而基础编辑命令保持可用。
@@ -1196,7 +1206,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor keymap chord prefix 已有状态栏可见提示，并会在命中、失败、超时或 Escape 后恢复状态栏左侧原摘要。
 - 已完成：AttoEditor keymap 已补一批 Sublime 风格键名 token、字面 `+` 和 regex contains/full-match context operator 语义。
 - 已完成：AttoEditor keymap context resolver 已支持 `match_all` 多值上下文语义。
-- 已完成：AttoEditor App key-down dispatcher 已按 active editor 状态动态注入 keymap context，并能用当前 context 触发单键 binding、chord 和 keymap args。
+- 已完成：AttoEditor App key-down dispatcher 已按 active editor 状态动态注入 keymap context，并能用当前 context 触发单键 binding、chord 和 keymap args；阶段 237 已让文档身份相关 context 跟随 core document URI projection。
 - 已完成：AttoEditor command palette 已用 `cursor.*` 覆盖 grapheme/word、visual row/page、visual line/document start/end 及对应 modify-selection 视觉移动命令矩阵。
 - 已完成：AttoEditor 主菜单已有独立 Selection 菜单分组，常用 selection/multicursor 命令复用统一 command id。
 - 已完成：Swift UI binding 已为 derived-state snapshots 提供基础 typed model。

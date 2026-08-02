@@ -4446,6 +4446,35 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "# print(1)\n")
     }
 
+    func testToggleLineCommentUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("script-local.txt")
+        let projectedURL = tempDir.appendingPathComponent("script-projected.py")
+        try "print(1)\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 0, end: 0)], primaryIndex: 0)
+
+        XCTAssertTrue(vc.toggleLineCommentInActiveTab())
+        XCTAssertEqual(try editorView.editor.text(), "# print(1)\n")
+    }
+
     func testToggleLineCommentUsesUserLanguageOverride() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -5209,6 +5238,35 @@ final class AttoEditorCommandTests: XCTestCase {
 
         vc.updateWindowTitle()
         XCTAssertEqual(window.title, "AttoEditor — second-active.txt")
+    }
+
+    func testKeymapContextUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("keymap-local.txt")
+        let projectedURL = tempDir.appendingPathComponent("keymap-projected.py")
+        try "print(1)\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        let keymapContext = vc.keymapContextForActiveState()
+        XCTAssertEqual(keymapContext.values["file_name"], .string("keymap-projected.py"))
+        XCTAssertEqual(keymapContext.values["file_extension"], .string("py"))
+        XCTAssertEqual(keymapContext.values["syntax"], .string("python"))
+        XCTAssertEqual(keymapContext.values["selector"], .string("source.python"))
     }
 
     func testRefreshTabBarProjectsAppKitContentToCoreActiveTab() throws {

@@ -258,7 +258,7 @@ extension AttoEditorAreaViewController {
             "kind": "edit",
             "op": "toggle_comment",
             "config": AttoLanguageConfiguration.commentConfig(
-                fileURL: tab.fileURL,
+                fileURL: projectedFileURL(for: tab),
                 syntaxLanguageId: tab.syntaxLanguageId,
                 preferences: preferences
             ).jsonObject,

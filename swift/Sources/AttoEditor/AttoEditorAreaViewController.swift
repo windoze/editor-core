@@ -78,16 +78,17 @@ final class AttoEditorAreaViewController: NSViewController {
             return AttoKeymapContext(values: values)
         }
 
+        let documentURL = projectedFileURL(for: tab)
         let language = AttoLanguageConfiguration.languageKey(
-            fileURL: tab.fileURL,
+            fileURL: documentURL,
             syntaxLanguageId: tab.syntaxLanguageId
         )
         if language.isEmpty == false {
             values["syntax"] = .string(language)
             values["selector"] = .string(Self.keymapSelector(forLanguage: language))
         }
-        values["file_name"] = .string(tab.fileURL.lastPathComponent)
-        values["file_extension"] = .string(tab.fileURL.pathExtension.lowercased())
+        values["file_name"] = .string(documentURL.lastPathComponent)
+        values["file_extension"] = .string(documentURL.pathExtension.lowercased())
         values["is_dirty"] = .bool(refreshTabDirtyState(tab))
 
         do {

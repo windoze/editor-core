@@ -575,6 +575,15 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testRenameResultUsesCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testRenameResultRecordsLspResultEvent`
     - `git diff --check`
+- 中间提交：`feat(app): project command contexts from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor keymap dynamic context 和 toggle comment 语言配置使用 core tab snapshot 的 `document_uri` 投影。
+  - 提交边界：只迁移 command/keymap 文档身份派生字段（syntax/selector/file name/file extension）和 `toggle_comment` comment config 的 file URL 来源；不改变 keymap resolver 语义、菜单/command registry、真实保存路径、syntax detection、open-file language configuration、session schema 或真实 `tab.fileURL` 同步策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testKeymapContextUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testToggleLineCommentUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testKeymapDynamicContextDispatchesActiveEditorBindings`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testToggleLineCommentUsesFileLanguageDefault`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 
