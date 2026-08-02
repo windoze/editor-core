@@ -492,6 +492,209 @@ fn multi_document_ui_applies_unopened_workspace_file_text_edits() {
 }
 
 #[test]
+fn multi_document_ui_applies_unopened_workspace_file_resource_operations() {
+    let root = unique_test_dir("editor-core-ui-workspace-resource-root");
+    let outside_root = unique_test_dir("editor-core-ui-workspace-resource-outside");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::create_dir_all(&outside_root).unwrap();
+
+    let old = root.join("src").join("Old.swift");
+    let renamed = root.join("src").join("Renamed.swift");
+    let created = root.join("generated").join("Created.swift");
+    let deleted = root.join("src").join("Deleted.swift");
+    let non_recursive_dir = root.join("src").join("Folder");
+    let outside = outside_root.join("Outside.swift");
+    std::fs::write(&old, "old\n").unwrap();
+    std::fs::write(&deleted, "delete me\n").unwrap();
+    std::fs::create_dir_all(&non_recursive_dir).unwrap();
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let old_uri = path_to_file_uri(old.as_path());
+    let renamed_uri = path_to_file_uri(renamed.as_path());
+    let created_uri = path_to_file_uri(created.as_path());
+    let deleted_uri = path_to_file_uri(deleted.as_path());
+    let non_recursive_dir_uri = path_to_file_uri(non_recursive_dir.as_path());
+    let outside_uri = path_to_file_uri(outside.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+
+    let edit = json!({
+        "documentChanges": [
+            {
+                "kind": "create",
+                "uri": created_uri.as_str()
+            },
+            {
+                "textDocument": {
+                    "uri": created_uri.as_str(),
+                    "version": null
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 0 }
+                        },
+                        "newText": "created\n"
+                    }
+                ]
+            },
+            {
+                "kind": "rename",
+                "oldUri": old_uri.as_str(),
+                "newUri": renamed_uri.as_str()
+            },
+            {
+                "textDocument": {
+                    "uri": renamed_uri.as_str(),
+                    "version": null
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 0 }
+                        },
+                        "newText": "renamed "
+                    }
+                ]
+            },
+            {
+                "kind": "delete",
+                "uri": deleted_uri.as_str()
+            },
+            {
+                "kind": "delete",
+                "uri": non_recursive_dir_uri.as_str()
+            },
+            {
+                "kind": "create",
+                "uri": outside_uri.as_str()
+            }
+        ]
+    })
+    .to_string();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(edit.as_str())
+        .unwrap();
+    assert_eq!(preview.mode, "preview");
+    assert!(!preview.applied);
+    assert!(!created.exists());
+    assert!(old.exists());
+    assert!(!renamed.exists());
+    assert!(deleted.exists());
+    assert!(preview.skipped_uris.contains(&outside_uri));
+    assert!(preview.skipped_uris.contains(&non_recursive_dir_uri));
+    assert!(preview.skipped_details.iter().any(|detail| {
+        detail.uri == outside_uri
+            && detail.operation.as_deref() == Some("create")
+            && detail.reason == "document_outside_workspace"
+    }));
+    assert!(preview.skipped_details.iter().any(|detail| {
+        detail.uri == non_recursive_dir_uri
+            && detail.operation.as_deref() == Some("delete")
+            && detail.reason == "resource_operation_delete_directory_requires_recursive"
+    }));
+
+    let applied = ui.apply_workspace_edit_transaction(edit.as_str()).unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_edit_count, 2);
+    assert_eq!(applied.applied_resource_operation_count, 3);
+    assert!(applied.applied_uris.contains(&created_uri));
+    assert!(applied.applied_uris.contains(&old_uri));
+    assert!(applied.applied_uris.contains(&renamed_uri));
+    assert!(applied.applied_uris.contains(&deleted_uri));
+    assert!(applied.skipped_uris.contains(&outside_uri));
+    assert!(applied.skipped_uris.contains(&non_recursive_dir_uri));
+    assert_eq!(std::fs::read_to_string(&created).unwrap(), "created\n");
+    assert!(!old.exists());
+    assert_eq!(std::fs::read_to_string(&renamed).unwrap(), "renamed old\n");
+    assert!(!deleted.exists());
+    assert!(non_recursive_dir.exists());
+    assert!(!outside.exists());
+
+    let events = ui.workspace_edit_transaction_events_after(0);
+    assert_eq!(events.latest_sequence, 1);
+    assert_eq!(events.events[0].result.applied_resource_operation_count, 3);
+
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(outside_root);
+}
+
+#[test]
+fn multi_document_ui_skips_unopened_rename_to_open_tab_target() {
+    let root = unique_test_dir("editor-core-ui-workspace-resource-open-target");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+
+    let old = root.join("src").join("Old.swift");
+    let target = root.join("src").join("Target.swift");
+    std::fs::write(&old, "old\n").unwrap();
+    std::fs::write(&target, "target on disk\n").unwrap();
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let old_uri = path_to_file_uri(old.as_path());
+    let target_uri = path_to_file_uri(target.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+    let target_tab = ui.open_tab("target in editor\n", 80);
+    ui.set_tab_document_uri(target_tab, Some(target_uri.clone()))
+        .unwrap();
+
+    let edit = json!({
+        "documentChanges": [
+            {
+                "kind": "rename",
+                "oldUri": old_uri.as_str(),
+                "newUri": target_uri.as_str(),
+                "options": { "overwrite": true }
+            },
+            {
+                "textDocument": {
+                    "uri": target_uri.as_str(),
+                    "version": null
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 0 }
+                        },
+                        "newText": "edited "
+                    }
+                ]
+            }
+        ]
+    })
+    .to_string();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(edit.as_str())
+        .unwrap();
+    assert!(preview.skipped_uris.contains(&old_uri));
+    assert!(preview.skipped_uris.contains(&target_uri));
+    assert!(preview.skipped_details.iter().any(|detail| {
+        detail.uri == target_uri
+            && detail.operation.as_deref() == Some("rename")
+            && detail.reason == "resource_operation_target_open"
+    }));
+
+    let applied = ui.apply_workspace_edit_transaction(edit.as_str()).unwrap();
+    assert_eq!(applied.applied_resource_operation_count, 0);
+    assert_eq!(applied.applied_edit_count, 0);
+    assert!(old.exists());
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        "target on disk\n"
+    );
+    assert_eq!(ui.tab_text(target_tab).unwrap(), "target in editor\n");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn multi_document_ui_applies_open_tab_resource_operations() {
     let mut ui = MultiDocumentEditorUi::new();
     let old = ui.open_tab("old\n", 80);

@@ -675,6 +675,130 @@ fn ffi_multi_document_applies_unopened_workspace_file_text_edits() {
 }
 
 #[test]
+fn ffi_multi_document_applies_unopened_workspace_file_resource_operations() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let root = std::env::temp_dir().join(format!(
+        "editor-core-ui-ffi-workspace-resource-root-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let outside_root = std::env::temp_dir().join(format!(
+        "editor-core-ui-ffi-workspace-resource-outside-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::create_dir_all(&outside_root).unwrap();
+    let old = root.join("src").join("Old.swift");
+    let renamed = root.join("src").join("Renamed.swift");
+    let created = root.join("generated").join("Created.swift");
+    let deleted = root.join("src").join("Deleted.swift");
+    let outside = outside_root.join("Outside.swift");
+    std::fs::write(&old, "old\n").unwrap();
+    std::fs::write(&deleted, "delete me\n").unwrap();
+
+    let root_uri = format!("file://{}", root.to_string_lossy());
+    let old_uri = format!("file://{}", old.to_string_lossy());
+    let renamed_uri = format!("file://{}", renamed.to_string_lossy());
+    let created_uri = format!("file://{}", created.to_string_lossy());
+    let deleted_uri = format!("file://{}", deleted.to_string_lossy());
+    let outside_uri = format!("file://{}", outside.to_string_lossy());
+
+    let roots = CString::new(serde_json::json!([root_uri]).to_string()).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let workspace_edit = CString::new(
+        serde_json::json!({
+            "documentChanges": [
+                { "kind": "create", "uri": created_uri.as_str() },
+                {
+                    "textDocument": { "uri": created_uri.as_str(), "version": null },
+                    "edits": [
+                        {
+                            "range": {
+                                "start": { "line": 0, "character": 0 },
+                                "end": { "line": 0, "character": 0 }
+                            },
+                            "newText": "created\n"
+                        }
+                    ]
+                },
+                {
+                    "kind": "rename",
+                    "oldUri": old_uri.as_str(),
+                    "newUri": renamed_uri.as_str()
+                },
+                { "kind": "delete", "uri": deleted_uri.as_str() },
+                { "kind": "create", "uri": outside_uri.as_str() }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let preview_ptr = editor_core_ui_ffi_multi_document_preview_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!preview_ptr.is_null());
+    let preview_json = unsafe { std::ffi::CStr::from_ptr(preview_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(preview_ptr) };
+    let preview: serde_json::Value = serde_json::from_str(&preview_json).unwrap();
+    assert_eq!(preview["mode"], "preview");
+    assert_eq!(preview["applied"], false);
+    assert_eq!(created.exists(), false);
+    assert_eq!(
+        preview["skipped_details"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|detail| {
+                detail["uri"] == outside_uri
+                    && detail["operation"] == "create"
+                    && detail["reason"] == "document_outside_workspace"
+            }),
+        true
+    );
+
+    let apply_ptr = editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!apply_ptr.is_null());
+    let apply_json = unsafe { std::ffi::CStr::from_ptr(apply_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(apply_ptr) };
+    let applied: serde_json::Value = serde_json::from_str(&apply_json).unwrap();
+    assert_eq!(applied["mode"], "apply");
+    assert_eq!(applied["applied"], true);
+    assert_eq!(applied["applied_edit_count"], 1);
+    assert_eq!(applied["applied_resource_operation_count"], 3);
+    assert_eq!(std::fs::read_to_string(&created).unwrap(), "created\n");
+    assert!(!old.exists());
+    assert!(renamed.exists());
+    assert!(!deleted.exists());
+    assert!(!outside.exists());
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(outside_root);
+}
+
+#[test]
 fn ffi_editor_ui_lsp_result_events_snapshot_empty() {
     assert_ne!(
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_RESULT_EVENTS,

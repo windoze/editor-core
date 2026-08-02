@@ -9,7 +9,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 const MAX_WORKSPACE_EDIT_TRANSACTION_EVENTS: usize = 256;
 
@@ -148,24 +148,30 @@ pub(super) fn apply(
             continue;
         }
 
-        match apply_resource_operation(tabs, tab_order, active_tab, preview_tab, &operation.op)? {
+        match apply_resource_operation(
+            tabs,
+            tab_order,
+            active_tab,
+            preview_tab,
+            workspace_roots,
+            &operation.op,
+        )? {
             ResourceOperationApplyOutcome::Applied => {
                 applied_resource_operation_count =
                     applied_resource_operation_count.saturating_add(1);
                 for uri in operation.op.affected_uris() {
-                    clear_skipped_uri(&mut plan, uri.as_str());
                     applied_uris.insert(uri);
                 }
             }
-            ResourceOperationApplyOutcome::Noop => {
-                for uri in operation.op.affected_uris() {
-                    clear_skipped_uri(&mut plan, uri.as_str());
-                }
-            }
+            ResourceOperationApplyOutcome::Noop => {}
             ResourceOperationApplyOutcome::Skipped => {
                 let open_tabs_by_uri = open_tabs_by_uri(tabs, tab_order);
-                let details =
-                    resource_operation_skip_details(tabs, &open_tabs_by_uri, &operation.op);
+                let details = resource_operation_skip_details(
+                    tabs,
+                    &open_tabs_by_uri,
+                    workspace_roots,
+                    &operation.op,
+                );
                 if details.is_empty() {
                     for uri in operation.op.affected_uris() {
                         mark_skipped(
@@ -188,6 +194,12 @@ pub(super) fn apply(
         }
     }
 
+    let blocked_text_edit_uris = plan
+        .skipped_details
+        .iter()
+        .filter(|detail| detail.operation.as_deref() == Some("text_edit"))
+        .map(|detail| detail.uri.clone())
+        .collect::<BTreeSet<_>>();
     let mut cleared_text_edit_uris = Vec::<String>::new();
     let mut failed_text_edit_details = Vec::<WorkspaceEditTransactionSkippedDetail>::new();
     for doc in &mut plan.documents {
@@ -196,6 +208,9 @@ pub(super) fn apply(
         doc.tab_id = open_tab_id.map(TabId::get);
 
         if doc.edit_count == 0 || doc.has_overlapping_edits || doc.version_mismatch {
+            continue;
+        }
+        if blocked_text_edit_uris.contains(doc.uri.as_str()) {
             continue;
         }
         let Some(edits) = text_edits_by_uri.get(doc.uri.as_str()) else {
@@ -346,6 +361,26 @@ impl ResourceOperation {
             }
         }
     }
+
+    fn produced_uris(&self) -> Vec<String> {
+        match self {
+            Self::Create { uri, .. } => vec![uri.clone()],
+            Self::Rename {
+                old_uri, new_uri, ..
+            } if old_uri != new_uri => vec![new_uri.clone()],
+            _ => Vec::new(),
+        }
+    }
+
+    fn removed_uris(&self) -> Vec<String> {
+        match self {
+            Self::Delete { uri, .. } => vec![uri.clone()],
+            Self::Rename {
+                old_uri, new_uri, ..
+            } if old_uri != new_uri => vec![old_uri.clone()],
+            _ => Vec::new(),
+        }
+    }
 }
 
 enum ResourceOperationApplyOutcome {
@@ -375,20 +410,33 @@ fn transaction_plan(
     let resource_operations = resource_operations(workspace_edit)
         .into_iter()
         .map(|op| {
-            let supported = resource_operation_supported(tabs, &open_tabs_by_uri, &op);
+            let supported =
+                resource_operation_supported(tabs, &open_tabs_by_uri, workspace_roots, &op);
             if supported {
                 simulate_resource_operation(&mut open_tabs_by_uri, &op);
             } else {
                 for uri in op.affected_uris() {
                     unsupported_operation_uris.insert(uri.clone());
                 }
-                for detail in resource_operation_skip_details(tabs, &open_tabs_by_uri, &op) {
+                for detail in
+                    resource_operation_skip_details(tabs, &open_tabs_by_uri, workspace_roots, &op)
+                {
                     mark_skipped(&mut skipped_uris, &mut skipped_details, detail);
                 }
             }
             PlannedResourceOperation { op, supported }
         })
         .collect::<Vec<_>>();
+    let produced_resource_operation_uris = resource_operations
+        .iter()
+        .filter(|operation| operation.supported)
+        .flat_map(|operation| operation.op.produced_uris())
+        .collect::<BTreeSet<_>>();
+    let removed_resource_operation_uris = resource_operations
+        .iter()
+        .filter(|operation| operation.supported)
+        .flat_map(|operation| operation.op.removed_uris())
+        .collect::<BTreeSet<_>>();
 
     let mut documents = edit_summary
         .documents
@@ -402,7 +450,18 @@ fn transaction_plan(
                 .and_then(|expected| u64::try_from(expected).ok())
                 .zip(actual_version)
                 .is_some_and(|(expected, actual)| expected != actual);
-            if open_tab_id.is_none() {
+            if unsupported_operation_uris.contains(&doc.uri) {
+                mark_skipped(
+                    &mut skipped_uris,
+                    &mut skipped_details,
+                    skipped_detail(
+                        doc.uri.clone(),
+                        "resource_operation_dependency_unsupported",
+                        Some("text_edit"),
+                        "text edits for this URI are blocked because a related resource operation is unsupported",
+                    ),
+                );
+            } else if open_tab_id.is_none() {
                 if workspace_roots.is_empty() {
                     mark_skipped(
                         &mut skipped_uris,
@@ -425,17 +484,31 @@ fn transaction_plan(
                             "versioned text edits for unopened files cannot be checked against a core document version",
                         ),
                     );
-                } else if unsupported_operation_uris.contains(&doc.uri) {
+                } else if removed_resource_operation_uris.contains(&doc.uri)
+                    && !produced_resource_operation_uris.contains(&doc.uri)
+                {
                     mark_skipped(
                         &mut skipped_uris,
                         &mut skipped_details,
                         skipped_detail(
                             doc.uri.clone(),
-                            "resource_operation_dependency_unsupported",
+                            "resource_operation_dependency_removed",
                             Some("text_edit"),
-                            "text edits for this URI are blocked because a related resource operation is unsupported",
+                            "text edits for this URI are blocked because a preceding resource operation removes the target",
                         ),
                     );
+                } else if produced_resource_operation_uris.contains(&doc.uri) {
+                    match workspace_file_path_for_pending_text_edit(
+                        workspace_roots,
+                        doc.uri.as_str(),
+                    ) {
+                        Ok(_) => {
+                            unopened_file_text_edit_uris.insert(doc.uri.clone());
+                        }
+                        Err(detail) => {
+                            mark_skipped(&mut skipped_uris, &mut skipped_details, detail);
+                        }
+                    }
                 } else {
                     match workspace_file_path_for_text_edit(workspace_roots, doc.uri.as_str()) {
                         Ok(_) => {
@@ -709,6 +782,103 @@ fn workspace_file_path_for_text_edit(
     }
 }
 
+fn workspace_file_path_for_pending_text_edit(
+    workspace_roots: &[String],
+    uri: &str,
+) -> Result<PathBuf, WorkspaceEditTransactionSkippedDetail> {
+    workspace_path_for_resource_operation(workspace_roots, uri, "text_edit")
+}
+
+fn workspace_path_for_resource_operation(
+    workspace_roots: &[String],
+    uri: &str,
+    operation: &str,
+) -> Result<PathBuf, WorkspaceEditTransactionSkippedDetail> {
+    let path = file_uri_to_path(uri).ok_or_else(|| {
+        skipped_detail(
+            uri.to_string(),
+            "unsupported_uri",
+            Some(operation),
+            "workspace resource operations require a local file:// URI",
+        )
+    })?;
+
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(skipped_detail(
+            uri.to_string(),
+            "resource_operation_path_traversal",
+            Some(operation),
+            "workspace resource operation paths may not contain parent-directory traversal",
+        ));
+    }
+
+    let canonical_roots = canonical_workspace_roots(workspace_roots);
+    if canonical_roots.is_empty() {
+        return Err(skipped_detail(
+            uri.to_string(),
+            "workspace_roots_unavailable",
+            Some(operation),
+            "no configured workspace root can be resolved to a local directory",
+        ));
+    }
+
+    let check_path = canonical_existing_path_or_ancestor(&path).map_err(|err| {
+        skipped_detail(
+            uri.to_string(),
+            "resource_operation_path_unavailable",
+            Some(operation),
+            format!("workspace resource operation path cannot be resolved: {err}"),
+        )
+    })?;
+
+    if canonical_roots
+        .iter()
+        .any(|root| check_path == *root || check_path.starts_with(root))
+    {
+        Ok(path)
+    } else {
+        Err(skipped_detail(
+            uri.to_string(),
+            "document_outside_workspace",
+            Some(operation),
+            "workspace resource operation target is outside the configured workspace roots",
+        ))
+    }
+}
+
+fn canonical_workspace_roots(workspace_roots: &[String]) -> Vec<PathBuf> {
+    workspace_roots
+        .iter()
+        .filter_map(|root| file_uri_to_path(root))
+        .filter_map(|root_path| {
+            fs::metadata(&root_path)
+                .ok()
+                .map(|metadata| (root_path, metadata))
+        })
+        .filter(|(_, metadata)| metadata.is_dir())
+        .filter_map(|(root_path, _)| fs::canonicalize(root_path).ok())
+        .collect()
+}
+
+fn canonical_existing_path_or_ancestor(path: &Path) -> std::io::Result<PathBuf> {
+    if path.exists() {
+        return fs::canonicalize(path);
+    }
+
+    let mut current = path.parent();
+    while let Some(candidate) = current {
+        if candidate.exists() {
+            return fs::canonicalize(candidate);
+        }
+        current = candidate.parent();
+    }
+
+    fs::canonicalize(path)
+}
+
 fn apply_unopened_file_text_edits(
     workspace_roots: &[String],
     uri: &str,
@@ -834,46 +1004,16 @@ fn option_bool(options: Option<&Value>, key: &str) -> bool {
 fn resource_operation_supported(
     tabs: &BTreeMap<TabId, TabEntry>,
     open_tabs_by_uri: &BTreeMap<String, TabId>,
+    workspace_roots: &[String],
     operation: &ResourceOperation,
 ) -> bool {
-    match operation {
-        ResourceOperation::Create {
-            uri,
-            overwrite,
-            ignore_if_exists,
-        } => {
-            let Some(tab_id) = open_tabs_by_uri.get(uri.as_str()).copied() else {
-                return false;
-            };
-            *ignore_if_exists || (*overwrite && !tab_is_modified(tabs, tab_id))
-        }
-        ResourceOperation::Rename {
-            old_uri,
-            new_uri,
-            overwrite: _,
-            ignore_if_exists,
-        } => {
-            let Some(old_tab_id) = open_tabs_by_uri.get(old_uri.as_str()).copied() else {
-                return false;
-            };
-            if old_uri == new_uri {
-                return true;
-            }
-            let target_tab_id = open_tabs_by_uri.get(new_uri.as_str()).copied();
-            target_tab_id.is_none() || target_tab_id == Some(old_tab_id) || *ignore_if_exists
-        }
-        ResourceOperation::Delete { uri, .. } => {
-            let Some(tab_id) = open_tabs_by_uri.get(uri.as_str()).copied() else {
-                return false;
-            };
-            !tab_is_modified(tabs, tab_id)
-        }
-    }
+    resource_operation_skip_details(tabs, open_tabs_by_uri, workspace_roots, operation).is_empty()
 }
 
 fn resource_operation_skip_details(
     tabs: &BTreeMap<TabId, TabEntry>,
     open_tabs_by_uri: &BTreeMap<String, TabId>,
+    workspace_roots: &[String],
     operation: &ResourceOperation,
 ) -> Vec<WorkspaceEditTransactionSkippedDetail> {
     match operation {
@@ -883,12 +1023,15 @@ fn resource_operation_skip_details(
             ignore_if_exists,
         } => {
             let Some(tab_id) = open_tabs_by_uri.get(uri.as_str()).copied() else {
-                return vec![skipped_detail(
-                    uri.clone(),
-                    "resource_operation_target_not_open",
-                    Some(operation.kind()),
-                    "create is currently supported only for already-open core tabs",
-                )];
+                if workspace_roots.is_empty() {
+                    return vec![skipped_detail(
+                        uri.clone(),
+                        "resource_operation_target_not_open",
+                        Some(operation.kind()),
+                        "create is currently supported only for already-open core tabs or local files under configured workspace roots",
+                    )];
+                }
+                return resource_operation_file_skip_details(workspace_roots, operation);
             };
             if *ignore_if_exists {
                 return Vec::new();
@@ -918,18 +1061,35 @@ fn resource_operation_skip_details(
             ignore_if_exists,
         } => {
             let Some(old_tab_id) = open_tabs_by_uri.get(old_uri.as_str()).copied() else {
-                return operation
-                    .affected_uris()
-                    .into_iter()
-                    .map(|uri| {
-                        skipped_detail(
-                            uri,
-                            "resource_operation_source_not_open",
-                            Some(operation.kind()),
-                            "rename source is not open in the core workspace",
-                        )
-                    })
-                    .collect();
+                if workspace_roots.is_empty() {
+                    return operation
+                        .affected_uris()
+                        .into_iter()
+                        .map(|uri| {
+                            skipped_detail(
+                                uri,
+                                "resource_operation_source_not_open",
+                                Some(operation.kind()),
+                                "rename source is not open in the core workspace and no local workspace root is configured",
+                            )
+                        })
+                        .collect();
+                }
+                if open_tabs_by_uri.contains_key(new_uri.as_str()) {
+                    return operation
+                        .affected_uris()
+                        .into_iter()
+                        .map(|uri| {
+                            skipped_detail(
+                                uri,
+                                "resource_operation_target_open",
+                                Some(operation.kind()),
+                                "rename target is open in the core workspace while the source is an unopened file",
+                            )
+                        })
+                        .collect();
+                }
+                return resource_operation_file_skip_details(workspace_roots, operation);
             };
             if old_uri == new_uri {
                 return Vec::new();
@@ -959,12 +1119,15 @@ fn resource_operation_skip_details(
         }
         ResourceOperation::Delete { uri, .. } => {
             let Some(tab_id) = open_tabs_by_uri.get(uri.as_str()).copied() else {
-                return vec![skipped_detail(
-                    uri.clone(),
-                    "resource_operation_target_not_open",
-                    Some(operation.kind()),
-                    "delete is currently supported only for already-open core tabs",
-                )];
+                if workspace_roots.is_empty() {
+                    return vec![skipped_detail(
+                        uri.clone(),
+                        "resource_operation_target_not_open",
+                        Some(operation.kind()),
+                        "delete is currently supported only for already-open core tabs or local files under configured workspace roots",
+                    )];
+                }
+                return resource_operation_file_skip_details(workspace_roots, operation);
             };
             if tab_is_modified(tabs, tab_id) {
                 return vec![skipped_detail(
@@ -972,6 +1135,134 @@ fn resource_operation_skip_details(
                     "resource_operation_dirty_target",
                     Some(operation.kind()),
                     "delete targets a modified open tab",
+                )];
+            }
+            Vec::new()
+        }
+    }
+}
+
+fn resource_operation_file_skip_details(
+    workspace_roots: &[String],
+    operation: &ResourceOperation,
+) -> Vec<WorkspaceEditTransactionSkippedDetail> {
+    match operation {
+        ResourceOperation::Create {
+            uri,
+            overwrite,
+            ignore_if_exists,
+        } => {
+            let path =
+                match workspace_path_for_resource_operation(workspace_roots, uri, operation.kind())
+                {
+                    Ok(path) => path,
+                    Err(detail) => return vec![detail],
+                };
+            if path.exists() {
+                if *ignore_if_exists {
+                    return Vec::new();
+                }
+                if !*overwrite {
+                    return vec![skipped_detail(
+                        uri.clone(),
+                        "resource_operation_create_exists",
+                        Some(operation.kind()),
+                        "create target already exists and overwrite/ignoreIfExists is false",
+                    )];
+                }
+                if !path.is_file() {
+                    return vec![skipped_detail(
+                        uri.clone(),
+                        "resource_operation_target_not_file",
+                        Some(operation.kind()),
+                        "create overwrite target exists but is not a regular file",
+                    )];
+                }
+            }
+            Vec::new()
+        }
+        ResourceOperation::Rename {
+            old_uri,
+            new_uri,
+            overwrite,
+            ignore_if_exists,
+        } => {
+            if old_uri == new_uri {
+                return Vec::new();
+            }
+            let old_path = match workspace_path_for_resource_operation(
+                workspace_roots,
+                old_uri,
+                operation.kind(),
+            ) {
+                Ok(path) => path,
+                Err(detail) => return vec![detail],
+            };
+            if !old_path.exists() {
+                return vec![skipped_detail(
+                    old_uri.clone(),
+                    "resource_operation_source_not_found",
+                    Some(operation.kind()),
+                    "rename source does not exist under the configured workspace roots",
+                )];
+            }
+            let new_path = match workspace_path_for_resource_operation(
+                workspace_roots,
+                new_uri,
+                operation.kind(),
+            ) {
+                Ok(path) => path,
+                Err(detail) => return vec![detail],
+            };
+            if new_path.exists() {
+                if *ignore_if_exists {
+                    return Vec::new();
+                }
+                if !*overwrite {
+                    return operation
+                        .affected_uris()
+                        .into_iter()
+                        .map(|uri| {
+                            skipped_detail(
+                                uri,
+                                "resource_operation_target_exists",
+                                Some(operation.kind()),
+                                "rename target exists and overwrite/ignoreIfExists is false",
+                            )
+                        })
+                        .collect();
+                }
+            }
+            Vec::new()
+        }
+        ResourceOperation::Delete {
+            uri,
+            recursive,
+            ignore_if_not_exists,
+        } => {
+            let path =
+                match workspace_path_for_resource_operation(workspace_roots, uri, operation.kind())
+                {
+                    Ok(path) => path,
+                    Err(detail) => return vec![detail],
+                };
+            if !path.exists() {
+                if *ignore_if_not_exists {
+                    return Vec::new();
+                }
+                return vec![skipped_detail(
+                    uri.clone(),
+                    "resource_operation_target_not_found",
+                    Some(operation.kind()),
+                    "delete target does not exist under the configured workspace roots",
+                )];
+            }
+            if path.is_dir() && !*recursive {
+                return vec![skipped_detail(
+                    uri.clone(),
+                    "resource_operation_delete_directory_requires_recursive",
+                    Some(operation.kind()),
+                    "delete target is a directory but recursive is false",
                 )];
             }
             Vec::new()
@@ -1012,6 +1303,7 @@ fn apply_resource_operation(
     tab_order: &mut Vec<TabId>,
     active_tab: &mut Option<TabId>,
     preview_tab: &mut Option<TabId>,
+    workspace_roots: &[String],
     operation: &ResourceOperation,
 ) -> Result<ResourceOperationApplyOutcome, UiError> {
     match operation {
@@ -1021,7 +1313,7 @@ fn apply_resource_operation(
             ignore_if_exists,
         } => {
             let Some(tab_id) = tab_id_for_uri(tabs, tab_order, uri.as_str()) else {
-                return Ok(ResourceOperationApplyOutcome::Skipped);
+                return apply_unopened_resource_operation(workspace_roots, operation);
             };
             if *ignore_if_exists {
                 return Ok(ResourceOperationApplyOutcome::Noop);
@@ -1039,7 +1331,7 @@ fn apply_resource_operation(
             ..
         } => {
             let Some(tab_id) = tab_id_for_uri(tabs, tab_order, old_uri.as_str()) else {
-                return Ok(ResourceOperationApplyOutcome::Skipped);
+                return apply_unopened_resource_operation(workspace_roots, operation);
             };
             if old_uri == new_uri {
                 return Ok(ResourceOperationApplyOutcome::Noop);
@@ -1059,20 +1351,135 @@ fn apply_resource_operation(
         }
         ResourceOperation::Delete {
             uri,
-            ignore_if_not_exists,
+            ignore_if_not_exists: _,
             recursive: _,
         } => {
             let Some(tab_id) = tab_id_for_uri(tabs, tab_order, uri.as_str()) else {
-                return if *ignore_if_not_exists {
-                    Ok(ResourceOperationApplyOutcome::Noop)
-                } else {
-                    Ok(ResourceOperationApplyOutcome::Skipped)
-                };
+                return apply_unopened_resource_operation(workspace_roots, operation);
             };
             if tab_is_modified(tabs, tab_id) {
                 return Ok(ResourceOperationApplyOutcome::Skipped);
             }
             close_tab(tabs, tab_order, active_tab, preview_tab, tab_id);
+            Ok(ResourceOperationApplyOutcome::Applied)
+        }
+    }
+}
+
+fn apply_unopened_resource_operation(
+    workspace_roots: &[String],
+    operation: &ResourceOperation,
+) -> Result<ResourceOperationApplyOutcome, UiError> {
+    if !resource_operation_file_skip_details(workspace_roots, operation).is_empty() {
+        return Ok(ResourceOperationApplyOutcome::Skipped);
+    }
+
+    match operation {
+        ResourceOperation::Create {
+            uri,
+            overwrite,
+            ignore_if_exists,
+        } => {
+            let path =
+                workspace_path_for_resource_operation(workspace_roots, uri, operation.kind())
+                    .map_err(|detail| UiError::Processor(detail.message))?;
+            if path.exists() {
+                if *ignore_if_exists {
+                    return Ok(ResourceOperationApplyOutcome::Noop);
+                }
+                if !*overwrite {
+                    return Ok(ResourceOperationApplyOutcome::Skipped);
+                }
+            }
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|err| {
+                    UiError::Processor(format!(
+                        "failed to create WorkspaceEdit target parent directory: {err}"
+                    ))
+                })?;
+            }
+            fs::write(&path, "").map_err(|err| {
+                UiError::Processor(format!("failed to create WorkspaceEdit file: {err}"))
+            })?;
+            Ok(ResourceOperationApplyOutcome::Applied)
+        }
+        ResourceOperation::Rename {
+            old_uri,
+            new_uri,
+            overwrite,
+            ignore_if_exists,
+        } => {
+            if old_uri == new_uri {
+                return Ok(ResourceOperationApplyOutcome::Noop);
+            }
+            let old_path =
+                workspace_path_for_resource_operation(workspace_roots, old_uri, operation.kind())
+                    .map_err(|detail| UiError::Processor(detail.message))?;
+            let new_path =
+                workspace_path_for_resource_operation(workspace_roots, new_uri, operation.kind())
+                    .map_err(|detail| UiError::Processor(detail.message))?;
+            if new_path.exists() {
+                if *ignore_if_exists {
+                    return Ok(ResourceOperationApplyOutcome::Noop);
+                }
+                if !*overwrite {
+                    return Ok(ResourceOperationApplyOutcome::Skipped);
+                }
+                if new_path.is_dir() {
+                    fs::remove_dir_all(&new_path).map_err(|err| {
+                        UiError::Processor(format!(
+                            "failed to remove existing WorkspaceEdit rename target directory: {err}"
+                        ))
+                    })?;
+                } else {
+                    fs::remove_file(&new_path).map_err(|err| {
+                        UiError::Processor(format!(
+                            "failed to remove existing WorkspaceEdit rename target file: {err}"
+                        ))
+                    })?;
+                }
+            }
+            if let Some(parent) = new_path.parent() {
+                fs::create_dir_all(parent).map_err(|err| {
+                    UiError::Processor(format!(
+                        "failed to create WorkspaceEdit rename target parent directory: {err}"
+                    ))
+                })?;
+            }
+            fs::rename(&old_path, &new_path).map_err(|err| {
+                UiError::Processor(format!("failed to rename WorkspaceEdit file: {err}"))
+            })?;
+            Ok(ResourceOperationApplyOutcome::Applied)
+        }
+        ResourceOperation::Delete {
+            uri,
+            recursive,
+            ignore_if_not_exists,
+        } => {
+            let path =
+                workspace_path_for_resource_operation(workspace_roots, uri, operation.kind())
+                    .map_err(|detail| UiError::Processor(detail.message))?;
+            if !path.exists() {
+                return if *ignore_if_not_exists {
+                    Ok(ResourceOperationApplyOutcome::Noop)
+                } else {
+                    Ok(ResourceOperationApplyOutcome::Skipped)
+                };
+            }
+            if path.is_dir() {
+                if !*recursive {
+                    return Ok(ResourceOperationApplyOutcome::Skipped);
+                }
+                fs::remove_dir_all(&path).map_err(|err| {
+                    UiError::Processor(format!(
+                        "failed to delete WorkspaceEdit target directory: {err}"
+                    ))
+                })?;
+            } else {
+                fs::remove_file(&path).map_err(|err| {
+                    UiError::Processor(format!("failed to delete WorkspaceEdit target file: {err}"))
+                })?;
+            }
             Ok(ResourceOperationApplyOutcome::Applied)
         }
     }

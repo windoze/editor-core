@@ -647,6 +647,102 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
     }
 
+    func testMultiDocumentEditorUIAppliesUnopenedWorkspaceFileResourceOperations() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-workspace-resource-\(UUID().uuidString)", isDirectory: true)
+        let outsideRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-workspace-resource-outside-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("src", isDirectory: true), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideRoot, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outsideRoot)
+        }
+
+        let old = root.appendingPathComponent("src/Old.swift")
+        let renamed = root.appendingPathComponent("src/Renamed.swift")
+        let created = root.appendingPathComponent("generated/Created.swift")
+        let deleted = root.appendingPathComponent("src/Deleted.swift")
+        let outside = outsideRoot.appendingPathComponent("Outside.swift")
+        try "old\n".write(to: old, atomically: true, encoding: .utf8)
+        try "delete me\n".write(to: deleted, atomically: true, encoding: .utf8)
+
+        let oldURI = old.absoluteString
+        let renamedURI = renamed.absoluteString
+        let createdURI = created.absoluteString
+        let deletedURI = deleted.absoluteString
+        let outsideURI = outside.absoluteString
+        try multi.setWorkspaceRoots([root.absoluteString])
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "create",
+              "uri": "\(createdURI)"
+            },
+            {
+              "textDocument": {
+                "uri": "\(createdURI)",
+                "version": null
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "created\\n"
+                }
+              ]
+            },
+            {
+              "kind": "rename",
+              "oldUri": "\(oldURI)",
+              "newUri": "\(renamedURI)"
+            },
+            {
+              "kind": "delete",
+              "uri": "\(deletedURI)"
+            },
+            {
+              "kind": "create",
+              "uri": "\(outsideURI)"
+            }
+          ]
+        }
+        """
+
+        let preview = try multi.previewWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertFalse(preview.applied)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: created.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: old.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: deleted.path))
+        XCTAssertTrue(preview.skippedDetails.contains {
+            $0.uri == outsideURI
+                && $0.operation == "create"
+                && $0.reason == "document_outside_workspace"
+        })
+
+        let applied = try multi.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertTrue(applied.applied)
+        XCTAssertEqual(applied.appliedEditCount, 1)
+        XCTAssertEqual(applied.appliedResourceOperationCount, 3)
+        XCTAssertTrue(applied.appliedURIs.contains(createdURI))
+        XCTAssertTrue(applied.appliedURIs.contains(oldURI))
+        XCTAssertTrue(applied.appliedURIs.contains(renamedURI))
+        XCTAssertTrue(applied.appliedURIs.contains(deletedURI))
+        XCTAssertTrue(applied.skippedURIs.contains(outsideURI))
+        XCTAssertEqual(try String(contentsOf: created, encoding: .utf8), "created\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
+        XCTAssertEqual(try String(contentsOf: renamed, encoding: .utf8), "old\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: deleted.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path))
+        XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
+    }
+
     func testMultiDocumentEditorUIReportsWorkspaceEditVersionMismatch() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)

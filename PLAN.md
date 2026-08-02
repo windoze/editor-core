@@ -219,6 +219,18 @@
 ### 提交
 
 - `feat(core): own workspace edit transactions`
+- 中间提交：`feat(ui): apply unopened workspace resource operations`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把未打开本地文件的 `create` / `rename` / `delete` resource operations 纳入 `MultiDocumentEditorUi` transaction，并允许 create/rename 产生的新 URI 继续应用后续 text edits。
+  - 提交边界：只扩展 Rust `MultiDocumentEditorUi` transaction 的 root-gated 本地文件 side effect、未打开源文件 rename 到已打开 target URI 的 conflict skip、C ABI JSON 路径测试和 Swift typed wrapper 端到端测试；不新增 ABI 函数；不把 AttoEditor rename/code action/completion 主路径切换到 core apply；不改变已打开 tab resource operation 的既有语义。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui --package editor-core-ui-ffi`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests`
+    - `cargo test -p editor-core-ui-ffi`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAppliesUnopenedWorkspaceFileResourceOperations`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAppliesUnopenedWorkspaceFileTextEdits`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 
