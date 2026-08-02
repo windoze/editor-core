@@ -1,3 +1,4 @@
+import EditorCoreUIFFI
 import Foundation
 
 enum AttoLspWorkspaceDiagnosticsParser {
@@ -49,6 +50,71 @@ enum AttoLspWorkspaceDiagnosticsParser {
         return ParseResult(
             documents: documents,
             diagnostics: documents.flatMap(\.diagnostics)
+        )
+    }
+
+    static func parse(_ result: EcuLspWorkspaceDiagnosticResult) -> ParseResult {
+        let documents = result.items.flatMap { documentReports(from: $0) }
+        return ParseResult(
+            documents: documents,
+            diagnostics: documents.flatMap(\.diagnostics)
+        )
+    }
+
+    private static func documentReports(
+        from item: EcuLspWorkspaceDiagnosticReportItem
+    ) -> [DocumentReport] {
+        var reports = [
+            documentReport(
+                uri: item.uri,
+                kind: item.kind,
+                resultId: item.resultId,
+                diagnostics: item.diagnostics
+            ),
+        ]
+
+        for (relatedURI, relatedReport) in item.relatedDocuments.sorted(by: { $0.key < $1.key }) {
+            reports.append(contentsOf: documentReports(
+                from: relatedReport,
+                fallbackURI: relatedURI
+            ))
+        }
+        return reports
+    }
+
+    private static func documentReports(
+        from report: EcuLspDiagnosticReport,
+        fallbackURI: String
+    ) -> [DocumentReport] {
+        var reports = [
+            documentReport(
+                uri: fallbackURI,
+                kind: report.kind,
+                resultId: report.resultId,
+                diagnostics: report.diagnostics
+            ),
+        ]
+
+        for (relatedURI, relatedReport) in report.relatedDocuments.sorted(by: { $0.key < $1.key }) {
+            reports.append(contentsOf: documentReports(
+                from: relatedReport,
+                fallbackURI: relatedURI
+            ))
+        }
+        return reports
+    }
+
+    private static func documentReport(
+        uri: String,
+        kind: String,
+        resultId: String?,
+        diagnostics: [EcuLspDiagnostic]
+    ) -> DocumentReport {
+        DocumentReport(
+            uri: uri,
+            kind: kind,
+            resultId: resultId,
+            diagnostics: diagnostics.map { diagnostic(from: $0, uri: uri, resultId: resultId) }
         )
     }
 
@@ -118,6 +184,28 @@ enum AttoLspWorkspaceDiagnosticsParser {
             code: codeString(dict["code"]),
             source: nonEmptyString(dict["source"]),
             message: message,
+            resultId: resultId
+        )
+    }
+
+    private static func diagnostic(
+        from diagnostic: EcuLspDiagnostic,
+        uri: String,
+        resultId: String?
+    ) -> Diagnostic {
+        Diagnostic(
+            target: AttoLspDefinitionParser.Target(
+                uri: uri,
+                line: Int(diagnostic.range.start.line),
+                utf16Character: Int(diagnostic.range.start.utf16Character)
+            ),
+            endLine: Int(diagnostic.range.end.line),
+            endUTF16Character: Int(diagnostic.range.end.utf16Character),
+            severity: diagnostic.severity,
+            severityLabel: diagnostic.severityLabel,
+            code: diagnostic.codeString,
+            source: nonEmptyString(diagnostic.source),
+            message: diagnostic.message,
             resultId: resultId
         )
     }

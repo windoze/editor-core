@@ -865,6 +865,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastDocumentDiagnosticResult() throws -> EcuLspDocumentDiagnosticResult? {
+        guard let json = try lspTakeLastDocumentDiagnosticResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspDocumentDiagnosticResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_document_diagnostic_decode"
+        )
+    }
+
     public func lspRequestWorkspaceDiagnostic(previousResultIdsJSON: String = "[]") throws -> UInt64 {
         try lspRequestJSON(previousResultIdsJSON, context: "editor_ui_lsp_request_workspace_diagnostic") { cstr, out in
             editor_core_ui_ffi_editor_ui_lsp_request_workspace_diagnostic(handle, cstr, out)
@@ -875,6 +884,15 @@ public final class EditorUI {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_workspace_diagnostic_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_workspace_diagnostic_json(handle, has, ptr)
         }
+    }
+
+    public func lspTakeLastWorkspaceDiagnosticResult() throws -> EcuLspWorkspaceDiagnosticResult? {
+        guard let json = try lspTakeLastWorkspaceDiagnosticResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspWorkspaceDiagnosticResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_workspace_diagnostic_decode"
+        )
     }
 
     public func lspRequestDocumentColor() throws -> UInt64 {

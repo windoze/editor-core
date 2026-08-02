@@ -1055,6 +1055,49 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(selections.primaryIndex, 0)
     }
 
+    func testTypedWorkspaceDiagnosticsResultNavigatesWithoutPanelWindow() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("typed-diagnostics.swift")
+        try "first\nab😀cd\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let result = try JSONDecoder().decode(EcuLspWorkspaceDiagnosticResult.self, from: Data("""
+        {
+          "items": [
+            {
+              "uri": "\(fileURL.absoluteString)",
+              "kind": "full",
+              "resultId": "diag-1",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 1, "character": 2 },
+                    "end": { "line": 1, "character": 4 }
+                  },
+                  "severity": 1,
+                  "message": "typed diagnostic"
+                }
+              ]
+            }
+          ]
+        }
+        """.utf8))
+
+        XCTAssertTrue(vc.showWorkspaceDiagnosticsResultInActiveTab(result))
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        let selections = try editorView.editor.selections()
+        XCTAssertEqual(selections.ranges, [EcuSelectionRange(start: 8, end: 8)])
+        XCTAssertEqual(selections.primaryIndex, 0)
+    }
+
     func testWorkspaceProblemsPanelUsesStoredDiagnosticsAndRefreshesWithResults() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

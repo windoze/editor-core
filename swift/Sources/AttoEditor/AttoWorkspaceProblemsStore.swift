@@ -140,6 +140,17 @@ final class AttoWorkspaceProblemsStore {
     }
 
     @discardableResult
+    func apply(result: EcuLspWorkspaceDiagnosticResult) -> AttoWorkspaceProblemsSnapshot {
+        let parsed = AttoLspWorkspaceDiagnosticsParser.parse(result)
+        if let json = result.rawJSONString,
+           let coreSnapshot = try? coreDocuments?.applyWorkspaceDiagnosticsJSON(json) {
+            applyToFallback(parsed)
+            return AttoWorkspaceProblemsSnapshot(coreSnapshot: coreSnapshot)
+        }
+        return apply(parsed)
+    }
+
+    @discardableResult
     func apply(_ result: AttoLspWorkspaceDiagnosticsParser.ParseResult) -> AttoWorkspaceProblemsSnapshot {
         applyToFallback(result)
         return snapshot

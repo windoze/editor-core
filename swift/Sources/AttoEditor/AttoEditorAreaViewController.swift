@@ -5993,6 +5993,37 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         let snapshot = workspaceProblemsStore.apply(resultJSON: json)
+        return showWorkspaceDiagnosticsSnapshotInActiveTab(
+            snapshot,
+            tab: tab,
+            showFeedback: showFeedback
+        )
+    }
+
+    @discardableResult
+    func showWorkspaceDiagnosticsResultInActiveTab(
+        _ result: EcuLspWorkspaceDiagnosticResult,
+        showFeedback: Bool = false
+    ) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        let snapshot = workspaceProblemsStore.apply(result: result)
+        return showWorkspaceDiagnosticsSnapshotInActiveTab(
+            snapshot,
+            tab: tab,
+            showFeedback: showFeedback
+        )
+    }
+
+    @discardableResult
+    private func showWorkspaceDiagnosticsSnapshotInActiveTab(
+        _ snapshot: AttoWorkspaceProblemsSnapshot,
+        tab: AttoEditorTab,
+        showFeedback: Bool
+    ) -> Bool {
         workspaceDiagnosticsStaleReason = nil
         recordWorkspaceDiagnosticsLifecycle(
             problems: AttoDiagnosticsModel.workspaceProblems(snapshot.diagnostics)
@@ -6041,19 +6072,19 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspWorkspaceDiagnosticResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastWorkspaceDiagnosticResultJSON()
+                result = try tab.editCore.editor.lspTakeLastWorkspaceDiagnosticResult()
             } catch {
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             let showFeedback = ctx.showFeedback
             self.workspaceDiagnosticsPollTimer?.cancel()
             self.workspaceDiagnosticsPollTimer = nil
             self.workspaceDiagnosticsContext = nil
-            _ = self.showWorkspaceDiagnosticsResultJSONInActiveTab(json, showFeedback: showFeedback)
+            _ = self.showWorkspaceDiagnosticsResultInActiveTab(result, showFeedback: showFeedback)
             timer.cancel()
         }
 
