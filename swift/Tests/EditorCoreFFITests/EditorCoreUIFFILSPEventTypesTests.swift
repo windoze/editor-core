@@ -176,6 +176,55 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         XCTAssertEqual(EcuEditorUIStateEventKind.unknown("future").rawValue, "future")
     }
 
+    func testEditorUIStateEventsDecodeTextAndDirtyPayloads() throws {
+        let snapshot = try decode(EcuEditorUIStateEventsSnapshot.self, """
+        {
+          "latest_sequence": 2,
+          "events": [
+            {
+              "sequence": 1,
+              "kind": "dirty_changed",
+              "family": "document",
+              "title": "Dirty state changed",
+              "view_id": 3,
+              "source_sequence": 1,
+              "dirty": {
+                "is_modified": true
+              }
+            },
+            {
+              "sequence": 2,
+              "kind": "text_changed",
+              "family": "document",
+              "title": "Text changed",
+              "view_id": 3,
+              "source_sequence": 1,
+              "text": {
+                "text_version": 1,
+                "char_len": 5,
+                "is_modified": true
+              }
+            }
+          ]
+        }
+        """)
+
+        XCTAssertEqual(snapshot.latestSequence, 2)
+        XCTAssertEqual(snapshot.events[0].kindValue, .dirtyChanged)
+        XCTAssertEqual(snapshot.events[0].familyKind, .document)
+        XCTAssertEqual(snapshot.events[0].dirty?.isModified, true)
+        XCTAssertNil(snapshot.events[0].text)
+        XCTAssertEqual(snapshot.events[1].kindValue, .textChanged)
+        XCTAssertEqual(snapshot.events[1].familyKind, .document)
+        XCTAssertEqual(snapshot.events[1].text?.textVersion, 1)
+        XCTAssertEqual(snapshot.events[1].text?.charLen, 5)
+        XCTAssertEqual(snapshot.events[1].text?.isModified, true)
+        XCTAssertNil(snapshot.events[1].dirty)
+        XCTAssertEqual(EcuEditorUIStateEventKind.textChanged.rawValue, "text_changed")
+        XCTAssertEqual(EcuEditorUIStateEventKind.dirtyChanged.rawValue, "dirty_changed")
+        XCTAssertEqual(EcuLspEventFamily.document.rawValue, "document")
+    }
+
     func testMultiDocumentStateEventsExposeTypedKindsAndNestedPayloads() throws {
         let snapshot = try decode(EcuMultiDocumentStateEventsSnapshot.self, """
         {

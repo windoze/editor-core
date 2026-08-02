@@ -37,6 +37,7 @@ impl EditorUi {
 
         // Monotonic version for "text has changed" events (used to drop stale async results).
         doc.text_version = doc.text_version.saturating_add(1);
+        doc.record_state_event_from_text_changed(self.view_id);
 
         if doc.treesitter.is_some() {
             doc.treesitter_doc_version = doc.treesitter_doc_version.saturating_add(1);

@@ -34,7 +34,17 @@ impl EditorUi {
 
     fn exec_core(&mut self, command: Command) -> Result<CommandResult, UiError> {
         let mut doc = self.lock_doc();
+        let is_edit = matches!(command, Command::Edit(_));
+        let before_modified = is_edit
+            .then(|| doc.ws.is_modified_for_view(self.view_id).unwrap_or(false))
+            .unwrap_or(false);
         let result = doc.exec_core(self.view_id, command.clone())?;
+        if is_edit {
+            let after_modified = doc.ws.is_modified_for_view(self.view_id).unwrap_or(false);
+            if before_modified != after_modified {
+                doc.record_state_event_from_dirty_changed(self.view_id, after_modified);
+            }
+        }
 
         if self.bracket_match_highlights_enabled {
             match command {

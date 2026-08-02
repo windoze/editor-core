@@ -18,6 +18,7 @@ public enum EcuLspEventFamily: Hashable, Sendable {
     case callHierarchy
     case typeHierarchy
     case formatting
+    case document
     case unknown(String)
 
     public init(rawValue: String) {
@@ -56,6 +57,8 @@ public enum EcuLspEventFamily: Hashable, Sendable {
             self = .typeHierarchy
         case "formatting":
             self = .formatting
+        case "document":
+            self = .document
         default:
             self = .unknown(rawValue)
         }
@@ -97,6 +100,8 @@ public enum EcuLspEventFamily: Hashable, Sendable {
             return "type_hierarchy"
         case .formatting:
             return "formatting"
+        case .document:
+            return "document"
         case let .unknown(rawValue):
             return rawValue
         }
@@ -106,6 +111,8 @@ public enum EcuLspEventFamily: Hashable, Sendable {
 public enum EcuEditorUIStateEventKind: Hashable, Sendable {
     case lspRequest
     case lspResult
+    case textChanged
+    case dirtyChanged
     case unknown(String)
 
     public init(rawValue: String) {
@@ -114,6 +121,10 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
             self = .lspRequest
         case "lsp_result":
             self = .lspResult
+        case "text_changed":
+            self = .textChanged
+        case "dirty_changed":
+            self = .dirtyChanged
         default:
             self = .unknown(rawValue)
         }
@@ -125,6 +136,10 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
             return "lsp_request"
         case .lspResult:
             return "lsp_result"
+        case .textChanged:
+            return "text_changed"
+        case .dirtyChanged:
+            return "dirty_changed"
         case let .unknown(rawValue):
             return rawValue
         }

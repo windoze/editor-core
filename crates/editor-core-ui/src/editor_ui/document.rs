@@ -109,7 +109,12 @@ impl EditorUi {
 
     pub fn mark_saved(&mut self) {
         let mut doc = self.lock_doc();
+        let before_modified = doc.ws.is_modified_for_view(self.view_id).unwrap_or(false);
         let _ = doc.ws.mark_saved_for_view(self.view_id);
+        let after_modified = doc.ws.is_modified_for_view(self.view_id).unwrap_or(false);
+        if before_modified != after_modified {
+            doc.record_state_event_from_dirty_changed(self.view_id, after_modified);
+        }
     }
 
     pub fn reveal_primary_caret(&mut self) {

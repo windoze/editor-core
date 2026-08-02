@@ -118,6 +118,31 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(stateEvents.events.isEmpty)
     }
 
+    func testEditorUIStateEventsRecordTextAndDirtyChanges() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "", viewportWidthCells: 80)
+
+        try ui.insertText("x")
+        var snapshot = try ui.stateEvents()
+        XCTAssertEqual(snapshot.latestSequence, 2)
+        XCTAssertEqual(snapshot.events.map(\.kind), ["dirty_changed", "text_changed"])
+        XCTAssertEqual(snapshot.events[0].kindValue, .dirtyChanged)
+        XCTAssertEqual(snapshot.events[0].familyKind, .document)
+        XCTAssertEqual(snapshot.events[0].dirty?.isModified, true)
+        XCTAssertEqual(snapshot.events[1].kindValue, .textChanged)
+        XCTAssertEqual(snapshot.events[1].text?.textVersion, 1)
+        XCTAssertEqual(snapshot.events[1].text?.charLen, 1)
+        XCTAssertEqual(snapshot.events[1].text?.isModified, true)
+        XCTAssertNil(snapshot.events[1].dirty)
+
+        try ui.markSaved()
+        snapshot = try ui.stateEvents(after: snapshot.latestSequence)
+        XCTAssertEqual(snapshot.latestSequence, 3)
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertEqual(snapshot.events[0].kindValue, .dirtyChanged)
+        XCTAssertEqual(snapshot.events[0].dirty?.isModified, false)
+    }
+
     func testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)

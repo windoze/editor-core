@@ -1,4 +1,4 @@
-use crate::{EditorLspRequestEvent, EditorLspResultEvent, EditorUi, EditorUiDoc, UiError};
+use crate::{EditorLspRequestEvent, EditorLspResultEvent, EditorUi, EditorUiDoc, UiError, ViewId};
 
 const MAX_EDITOR_UI_STATE_EVENTS: usize = 512;
 
@@ -14,12 +14,28 @@ pub struct EditorUiStateEvent {
     pub lsp_request: Option<EditorLspRequestEvent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lsp_result: Option<EditorLspResultEvent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<EditorUiTextStateEvent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dirty: Option<EditorUiDirtyStateEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct EditorUiStateEventsSnapshot {
     pub latest_sequence: u64,
     pub events: Vec<EditorUiStateEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EditorUiTextStateEvent {
+    pub text_version: u64,
+    pub char_len: usize,
+    pub is_modified: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EditorUiDirtyStateEvent {
+    pub is_modified: bool,
 }
 
 impl EditorUiDoc {
@@ -36,6 +52,8 @@ impl EditorUiDoc {
             source_sequence: source.sequence,
             lsp_request: Some(source),
             lsp_result: None,
+            text: None,
+            dirty: None,
         })
     }
 
@@ -52,6 +70,53 @@ impl EditorUiDoc {
             source_sequence: source.sequence,
             lsp_request: None,
             lsp_result: Some(source),
+            text: None,
+            dirty: None,
+        })
+    }
+
+    pub(crate) fn record_state_event_from_text_changed(&mut self, view_id: ViewId) -> u64 {
+        let char_len = self
+            .ws
+            .buffer_text(self.buffer_id)
+            .map(|text| text.chars().count())
+            .unwrap_or(0);
+        let is_modified = self.ws.is_modified_for_view(view_id).unwrap_or(false);
+
+        self.record_state_event(EditorUiStateEvent {
+            sequence: 0,
+            kind: "text_changed".to_string(),
+            family: "document".to_string(),
+            title: "Text changed".to_string(),
+            view_id: view_id.get(),
+            source_sequence: self.text_version,
+            lsp_request: None,
+            lsp_result: None,
+            text: Some(EditorUiTextStateEvent {
+                text_version: self.text_version,
+                char_len,
+                is_modified,
+            }),
+            dirty: None,
+        })
+    }
+
+    pub(crate) fn record_state_event_from_dirty_changed(
+        &mut self,
+        view_id: ViewId,
+        is_modified: bool,
+    ) -> u64 {
+        self.record_state_event(EditorUiStateEvent {
+            sequence: 0,
+            kind: "dirty_changed".to_string(),
+            family: "document".to_string(),
+            title: "Dirty state changed".to_string(),
+            view_id: view_id.get(),
+            source_sequence: 0,
+            lsp_request: None,
+            lsp_result: None,
+            text: None,
+            dirty: Some(EditorUiDirtyStateEvent { is_modified }),
         })
     }
 
@@ -59,6 +124,9 @@ impl EditorUiDoc {
         let sequence = self.next_state_event_sequence;
         self.next_state_event_sequence = self.next_state_event_sequence.saturating_add(1);
         event.sequence = sequence;
+        if event.source_sequence == 0 {
+            event.source_sequence = sequence;
+        }
         self.state_events.push_back(event);
 
         while self.state_events.len() > MAX_EDITOR_UI_STATE_EVENTS {

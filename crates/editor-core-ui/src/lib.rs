@@ -61,7 +61,10 @@ pub use multi_document::{
     WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
 };
 pub use state::EditorUi;
-pub use state_events::{EditorUiStateEvent, EditorUiStateEventsSnapshot};
+pub use state_events::{
+    EditorUiDirtyStateEvent, EditorUiStateEvent, EditorUiStateEventsSnapshot,
+    EditorUiTextStateEvent,
+};
 pub use theme::{ChromeTheme, DamageRect};
 pub use windowing::{WindowingError, rgba8_to_argb_u32};
 

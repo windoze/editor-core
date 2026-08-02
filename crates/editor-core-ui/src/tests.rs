@@ -444,6 +444,46 @@ fn editor_ui_state_events_project_lsp_request_and_result_events() {
 }
 
 #[test]
+fn editor_ui_state_events_record_text_and_dirty_changes() {
+    let mut ui = EditorUi::new("", 80);
+
+    ui.insert_text("x").unwrap();
+    let snapshot = ui.state_events_after(0);
+    assert_eq!(snapshot.latest_sequence, 2);
+    assert_eq!(snapshot.events.len(), 2);
+
+    assert_eq!(snapshot.events[0].kind, "dirty_changed");
+    assert_eq!(snapshot.events[0].family, "document");
+    assert_eq!(snapshot.events[0].source_sequence, 1);
+    assert_eq!(snapshot.events[0].dirty.as_ref().unwrap().is_modified, true);
+    assert!(snapshot.events[0].text.is_none());
+    assert!(snapshot.events[0].lsp_request.is_none());
+    assert!(snapshot.events[0].lsp_result.is_none());
+
+    assert_eq!(snapshot.events[1].kind, "text_changed");
+    assert_eq!(snapshot.events[1].family, "document");
+    assert_eq!(snapshot.events[1].source_sequence, 1);
+    let text = snapshot.events[1].text.as_ref().unwrap();
+    assert_eq!(text.text_version, 1);
+    assert_eq!(text.char_len, 1);
+    assert!(text.is_modified);
+    assert!(snapshot.events[1].dirty.is_none());
+
+    ui.mark_saved();
+    let saved = ui.state_events_after(snapshot.latest_sequence);
+    assert_eq!(saved.latest_sequence, 3);
+    assert_eq!(saved.events.len(), 1);
+    assert_eq!(saved.events[0].kind, "dirty_changed");
+    assert_eq!(saved.events[0].dirty.as_ref().unwrap().is_modified, false);
+
+    let json: serde_json::Value = serde_json::from_str(&ui.state_events_json(1).unwrap()).unwrap();
+    assert_eq!(json["latest_sequence"], 3);
+    assert_eq!(json["events"][0]["kind"], "text_changed");
+    assert_eq!(json["events"][0]["text"]["text_version"], 1);
+    assert_eq!(json["events"][1]["dirty"]["is_modified"], false);
+}
+
+#[test]
 fn lsp_derived_request_events_record_semantic_and_folding_lifecycle() {
     let mut ui = EditorUi::new("abc", 80);
 
@@ -1129,6 +1169,53 @@ fn multi_document_state_events_aggregate_editor_state_event_context() {
     assert_eq!(
         after_first["events"][0]["state_event"]["lsp_request"]["phase"],
         "completed"
+    );
+}
+
+#[test]
+fn multi_document_state_events_aggregate_text_and_dirty_events() {
+    let mut multi = MultiDocumentEditorUi::new();
+    let tab = multi.open_tab("", 80);
+
+    multi.active_editor_mut().unwrap().insert_text("z").unwrap();
+
+    let snapshot = multi.state_events_after(0);
+    assert_eq!(snapshot.latest_sequence, 2);
+    assert_eq!(snapshot.events.len(), 2);
+    assert_eq!(
+        snapshot
+            .events
+            .iter()
+            .map(|event| (event.tab_id, event.kind.as_str(), event.family.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            (tab.get(), "dirty_changed", "document"),
+            (tab.get(), "text_changed", "document"),
+        ]
+    );
+    assert_eq!(snapshot.events[0].view_index, 0);
+    assert_eq!(
+        snapshot.events[0]
+            .state_event
+            .dirty
+            .as_ref()
+            .unwrap()
+            .is_modified,
+        true
+    );
+    let text = snapshot.events[1].state_event.text.as_ref().unwrap();
+    assert_eq!(text.text_version, 1);
+    assert_eq!(text.char_len, 1);
+    assert!(text.is_modified);
+
+    let after_first: serde_json::Value =
+        serde_json::from_str(&multi.state_events_json(1).unwrap()).unwrap();
+    assert_eq!(after_first["latest_sequence"], 2);
+    assert_eq!(after_first["events"].as_array().unwrap().len(), 1);
+    assert_eq!(after_first["events"][0]["kind"], "text_changed");
+    assert_eq!(
+        after_first["events"][0]["state_event"]["text"]["char_len"],
+        1
     );
 }
 

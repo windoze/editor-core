@@ -82,6 +82,26 @@ public struct EcuLspRequestEventsSnapshot: Decodable, Equatable, Sendable {
     }
 }
 
+public struct EcuEditorUITextStateEvent: Decodable, Equatable, Sendable {
+    public let textVersion: UInt64
+    public let charLen: Int
+    public let isModified: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case textVersion = "text_version"
+        case charLen = "char_len"
+        case isModified = "is_modified"
+    }
+}
+
+public struct EcuEditorUIDirtyStateEvent: Decodable, Equatable, Sendable {
+    public let isModified: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case isModified = "is_modified"
+    }
+}
+
 public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
     public let sequence: UInt64
     public let kind: String
@@ -91,6 +111,8 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
     public let sourceSequence: UInt64
     public let lspRequest: EcuLspRequestEvent?
     public let lspResult: EcuLspResultEvent?
+    public let text: EcuEditorUITextStateEvent?
+    public let dirty: EcuEditorUIDirtyStateEvent?
 
     enum CodingKeys: String, CodingKey {
         case sequence
@@ -101,6 +123,8 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
         case sourceSequence = "source_sequence"
         case lspRequest = "lsp_request"
         case lspResult = "lsp_result"
+        case text
+        case dirty
     }
 }
 
