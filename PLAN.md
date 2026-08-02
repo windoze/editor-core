@@ -1067,6 +1067,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
     - `git diff --check`
+- 中间提交：`feat(app): summarize lsp dashboard trends`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；继续产品化 project LSP health dashboard，把阶段 289 的分组摘要推进到基础时间窗口趋势摘要。
+  - 提交边界：`AttoEditor.LSP.ProjectDashboard` 在 Recovery Policy 后新增 Trend 行，基于当前 workspace persisted process-health logs 的最新记录时间，展示最近 1 小时和 24 小时的 log/failed 计数；测试覆盖 dashboard trend 行内容。该提交不新增 Rust/C ABI，不改变日志 schema、不实现真正图表、跨 project dashboard、per-server recovery policy、dashboard 内联编辑或更深层 core-owned LSP ownership schema。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

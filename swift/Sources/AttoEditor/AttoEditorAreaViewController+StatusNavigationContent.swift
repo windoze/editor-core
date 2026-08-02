@@ -592,6 +592,13 @@ extension AttoEditorAreaViewController {
             title: projectLspDashboardRecoveryPolicyTitle()
         ) {})
 
+        if let trendTitle = Self.projectLspDashboardTrendTitle(persistedEntries: persistedEntries) {
+            commands.append(AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.trend",
+                title: trendTitle
+            ) {})
+        }
+
         commands.append(contentsOf: projectLspDashboardServerGroups(
             healthEvents: healthEvents,
             persistedEntries: persistedEntries
@@ -651,6 +658,35 @@ extension AttoEditorAreaViewController {
         let maxAttempts = preferences.effectiveLspAutoRestartMaxAttempts
         let baseDelay = preferences.effectiveLspAutoRestartBaseDelaySeconds
         return "Recovery Policy - \(enabledText), max attempts \(maxAttempts), base delay \(Self.formatProjectLspDashboardSeconds(baseDelay))"
+    }
+
+    private static func projectLspDashboardTrendTitle(
+        persistedEntries: [AttoProjectLspProcessHealthLogEntry]
+    ) -> String? {
+        guard let newest = persistedEntries.map(\.recordedAt).max() else {
+            return nil
+        }
+
+        let oneHour = projectLspDashboardTrendWindow(
+            persistedEntries,
+            since: newest.addingTimeInterval(-60 * 60)
+        )
+        let oneDay = projectLspDashboardTrendWindow(
+            persistedEntries,
+            since: newest.addingTimeInterval(-24 * 60 * 60)
+        )
+        return "Trend - persisted logs last 1h \(oneHour.total) failed \(oneHour.failed), last 24h \(oneDay.total) failed \(oneDay.failed)"
+    }
+
+    private static func projectLspDashboardTrendWindow(
+        _ entries: [AttoProjectLspProcessHealthLogEntry],
+        since cutoff: Date
+    ) -> (total: Int, failed: Int) {
+        let windowEntries = entries.filter { $0.recordedAt >= cutoff }
+        let failed = windowEntries.filter { entry in
+            entry.availability == "failed" || entry.state == "failed"
+        }.count
+        return (windowEntries.count, failed)
     }
 
     private func projectLspDashboardServerGroups(
