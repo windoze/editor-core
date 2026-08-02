@@ -1048,6 +1048,101 @@ fn multi_document_ui_applies_open_tab_resource_operations() {
 }
 
 #[test]
+fn multi_document_ui_applies_open_tab_resource_operation_filesystem_side_effects() {
+    let root = unique_test_dir("editor-core-ui-open-tab-resource-fs-root");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+
+    let old_path = root.join("src").join("Old.swift");
+    let renamed_path = root.join("src").join("Renamed.swift");
+    let delete_path = root.join("src").join("Delete.swift");
+    let overwrite_path = root.join("src").join("Overwrite.swift");
+    std::fs::write(&old_path, "old\n").unwrap();
+    std::fs::write(&delete_path, "delete\n").unwrap();
+    std::fs::write(&overwrite_path, "existing\n").unwrap();
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let old_uri = path_to_file_uri(old_path.as_path());
+    let renamed_uri = path_to_file_uri(renamed_path.as_path());
+    let delete_uri = path_to_file_uri(delete_path.as_path());
+    let overwrite_uri = path_to_file_uri(overwrite_path.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+    let old = ui.open_tab("old\n", 80);
+    let delete = ui.open_tab("delete\n", 80);
+    let overwrite = ui.open_tab("existing\n", 80);
+    ui.set_tab_document_uri(old, Some(old_uri.clone())).unwrap();
+    ui.set_tab_document_uri(delete, Some(delete_uri.clone()))
+        .unwrap();
+    ui.set_tab_document_uri(overwrite, Some(overwrite_uri.clone()))
+        .unwrap();
+
+    let edit = json!({
+        "documentChanges": [
+            {
+                "kind": "rename",
+                "oldUri": old_uri.as_str(),
+                "newUri": renamed_uri.as_str()
+            },
+            {
+                "textDocument": {
+                    "uri": renamed_uri.as_str(),
+                    "version": null
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 0 }
+                        },
+                        "newText": "renamed "
+                    }
+                ]
+            },
+            {
+                "kind": "delete",
+                "uri": delete_uri.as_str()
+            },
+            {
+                "kind": "create",
+                "uri": overwrite_uri.as_str(),
+                "options": { "overwrite": true }
+            }
+        ]
+    })
+    .to_string();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(edit.as_str())
+        .unwrap();
+    assert!(preview.skipped_uris.is_empty());
+    assert!(old_path.exists());
+    assert!(!renamed_path.exists());
+    assert!(delete_path.exists());
+    assert_eq!(
+        std::fs::read_to_string(&overwrite_path).unwrap(),
+        "existing\n"
+    );
+
+    let applied = ui.apply_workspace_edit_transaction(edit.as_str()).unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_edit_count, 1);
+    assert_eq!(applied.applied_resource_operation_count, 3);
+    assert!(applied.skipped_uris.is_empty());
+    assert!(!old_path.exists());
+    assert_eq!(std::fs::read_to_string(&renamed_path).unwrap(), "old\n");
+    assert!(!delete_path.exists());
+    assert_eq!(std::fs::read_to_string(&overwrite_path).unwrap(), "");
+    assert_eq!(ui.tab_document_uri(old), Some(renamed_uri.as_str()));
+    assert_eq!(ui.tab_text(old).unwrap(), "renamed old\n");
+    assert!(!ui.tab_ids().contains(&delete));
+    assert_eq!(ui.tab_text(overwrite).unwrap(), "");
+    assert!(!ui.is_tab_modified(overwrite).unwrap());
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn multi_document_ui_reports_workspace_edit_transaction_skipped_details() {
     let mut ui = MultiDocumentEditorUi::new();
     let dirty = ui.open_tab("dirty\n", 80);

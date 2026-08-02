@@ -675,6 +675,153 @@ fn ffi_multi_document_applies_unopened_workspace_file_text_edits() {
 }
 
 #[test]
+fn ffi_multi_document_applies_open_tab_resource_operation_filesystem_side_effects() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let root = std::env::temp_dir().join(format!(
+        "editor-core-ui-ffi-open-tab-resource-fs-root-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    let old = root.join("src").join("Old.swift");
+    let renamed = root.join("src").join("Renamed.swift");
+    let deleted = root.join("src").join("Deleted.swift");
+    let overwritten = root.join("src").join("Overwrite.swift");
+    std::fs::write(&old, "old\n").unwrap();
+    std::fs::write(&deleted, "delete\n").unwrap();
+    std::fs::write(&overwritten, "existing\n").unwrap();
+
+    let root_uri = format!("file://{}", root.to_string_lossy());
+    let old_uri = format!("file://{}", old.to_string_lossy());
+    let renamed_uri = format!("file://{}", renamed.to_string_lossy());
+    let deleted_uri = format!("file://{}", deleted.to_string_lossy());
+    let overwritten_uri = format!("file://{}", overwritten.to_string_lossy());
+
+    let roots = CString::new(serde_json::json!([root_uri]).to_string()).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let old_text = CString::new("old\n").unwrap();
+    let delete_text = CString::new("delete\n").unwrap();
+    let overwrite_text = CString::new("existing\n").unwrap();
+    let mut old_id: u64 = 0;
+    let mut delete_id: u64 = 0;
+    let mut overwrite_id: u64 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, old_text.as_ptr(), 80, &mut old_id),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, delete_text.as_ptr(), 80, &mut delete_id,),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(
+            multi,
+            overwrite_text.as_ptr(),
+            80,
+            &mut overwrite_id,
+        ),
+        ECU_OK
+    );
+
+    for (tab_id, uri) in [
+        (old_id, old_uri.as_str()),
+        (delete_id, deleted_uri.as_str()),
+        (overwrite_id, overwritten_uri.as_str()),
+    ] {
+        let uri = CString::new(uri).unwrap();
+        assert_eq!(
+            editor_core_ui_ffi_multi_document_set_tab_document_uri(multi, tab_id, uri.as_ptr(),),
+            ECU_OK
+        );
+    }
+
+    let workspace_edit = CString::new(
+        serde_json::json!({
+            "documentChanges": [
+                {
+                    "kind": "rename",
+                    "oldUri": old_uri.as_str(),
+                    "newUri": renamed_uri.as_str()
+                },
+                {
+                    "textDocument": { "uri": renamed_uri.as_str(), "version": null },
+                    "edits": [
+                        {
+                            "range": {
+                                "start": { "line": 0, "character": 0 },
+                                "end": { "line": 0, "character": 0 }
+                            },
+                            "newText": "renamed "
+                        }
+                    ]
+                },
+                { "kind": "delete", "uri": deleted_uri.as_str() },
+                {
+                    "kind": "create",
+                    "uri": overwritten_uri.as_str(),
+                    "options": { "overwrite": true }
+                }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let apply_ptr = editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!apply_ptr.is_null());
+    let apply_json = unsafe { std::ffi::CStr::from_ptr(apply_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(apply_ptr) };
+    let applied: serde_json::Value = serde_json::from_str(&apply_json).unwrap();
+    assert_eq!(applied["applied_edit_count"], 1);
+    assert_eq!(applied["applied_resource_operation_count"], 3);
+    assert!(!old.exists());
+    assert_eq!(std::fs::read_to_string(&renamed).unwrap(), "old\n");
+    assert!(!deleted.exists());
+    assert_eq!(std::fs::read_to_string(&overwritten).unwrap(), "");
+
+    let text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, old_id);
+    assert!(!text_ptr.is_null());
+    let text = unsafe { std::ffi::CStr::from_ptr(text_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(text_ptr) };
+    assert_eq!(text, "renamed old\n");
+
+    let snapshot_ptr = editor_core_ui_ffi_multi_document_snapshot_json(multi);
+    assert!(!snapshot_ptr.is_null());
+    let snapshot_json = unsafe { std::ffi::CStr::from_ptr(snapshot_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(snapshot_ptr) };
+    let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
+    assert_eq!(
+        snapshot["tabs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tab| tab["id"] == delete_id),
+        false
+    );
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn ffi_multi_document_applies_unopened_workspace_file_resource_operations() {
     let multi = editor_core_ui_ffi_multi_document_new();
     assert!(!multi.is_null());

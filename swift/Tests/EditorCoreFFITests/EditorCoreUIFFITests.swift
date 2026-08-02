@@ -576,6 +576,83 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
     }
 
+    func testMultiDocumentEditorUIAppliesOpenTabResourceOperationFilesystemSideEffects() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-open-tab-resource-fs-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("src", isDirectory: true), withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let old = root.appendingPathComponent("src/Old.swift")
+        let renamed = root.appendingPathComponent("src/Renamed.swift")
+        let deleted = root.appendingPathComponent("src/Deleted.swift")
+        let overwritten = root.appendingPathComponent("src/Overwrite.swift")
+        try "old\n".write(to: old, atomically: true, encoding: .utf8)
+        try "delete\n".write(to: deleted, atomically: true, encoding: .utf8)
+        try "existing\n".write(to: overwritten, atomically: true, encoding: .utf8)
+        try multi.setWorkspaceRoots([root.absoluteString])
+
+        let oldTab = try multi.openTab(text: "old\n", viewportWidthCells: 80)
+        let deleteTab = try multi.openTab(text: "delete\n", viewportWidthCells: 80)
+        let overwriteTab = try multi.openTab(text: "existing\n", viewportWidthCells: 80)
+        try multi.setTabDocumentURI(old.absoluteString, tabId: oldTab)
+        try multi.setTabDocumentURI(deleted.absoluteString, tabId: deleteTab)
+        try multi.setTabDocumentURI(overwritten.absoluteString, tabId: overwriteTab)
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "rename",
+              "oldUri": "\(old.absoluteString)",
+              "newUri": "\(renamed.absoluteString)"
+            },
+            {
+              "textDocument": {
+                "uri": "\(renamed.absoluteString)",
+                "version": null
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "renamed "
+                }
+              ]
+            },
+            {
+              "kind": "delete",
+              "uri": "\(deleted.absoluteString)"
+            },
+            {
+              "kind": "create",
+              "uri": "\(overwritten.absoluteString)",
+              "options": { "overwrite": true }
+            }
+          ]
+        }
+        """
+
+        let applied = try multi.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertTrue(applied.applied)
+        XCTAssertEqual(applied.appliedEditCount, 1)
+        XCTAssertEqual(applied.appliedResourceOperationCount, 3)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
+        XCTAssertEqual(try String(contentsOf: renamed, encoding: .utf8), "old\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: deleted.path))
+        XCTAssertEqual(try String(contentsOf: overwritten, encoding: .utf8), "")
+        XCTAssertEqual(try multi.tabDocumentURI(tabId: oldTab), renamed.absoluteString)
+        XCTAssertEqual(try multi.tabText(tabId: oldTab), "renamed old\n")
+        XCTAssertFalse(try multi.snapshot().tabs.contains { $0.id == deleteTab })
+        XCTAssertEqual(try multi.tabText(tabId: overwriteTab), "")
+        XCTAssertFalse(try multi.isTabModified(overwriteTab))
+    }
+
     func testMultiDocumentEditorUIAppliesUnopenedWorkspaceFileTextEdits() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)

@@ -254,6 +254,19 @@
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIRollsBackUnopenedResourceOperationsAfterRuntimeFailure`
     - `swift test --package-path swift --filter EditorCoreUIFFITests`
     - `git diff --check`
+- 中间提交：`feat(ui): apply open-tab workspace resource files`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；让 `MultiDocumentEditorUi` 对已打开 tab 的本地 `file://` resource operations 在配置了 workspace root 时也执行 root-gated 文件系统副作用，从而为 AttoEditor App 主路径切到 core transaction 关闭最后一段 Swift-only resource operation side effect。
+  - 提交边界：只扩展打开 tab 的 `create` / `rename` / `delete` resource operation apply：无 workspace roots 或非本地 URI 时保持既有 in-memory tab 语义；root 内本地路径会复用同一套 filesystem helper 和 rollback log，rename/delete/create overwrite 会更新磁盘，同时继续更新 core tab text/document URI/close state。本提交不切换 AttoEditor App 主路径，不新增 ABI 函数，不实现打开 tab undo 回滚或完整 batch atomic rollback。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui --package editor-core-ui-ffi`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_applies_open_tab_resource_operation_filesystem_side_effects`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_applies_open_tab_resource_operation_filesystem_side_effects`
+    - `cargo test -p editor-core-ui-ffi`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAppliesOpenTabResourceOperationFilesystemSideEffects`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

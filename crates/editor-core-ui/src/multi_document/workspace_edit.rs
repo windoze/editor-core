@@ -1761,14 +1761,32 @@ fn apply_resource_operation(
             if !*overwrite || tab_is_modified(tabs, tab_id) {
                 return Ok(ResourceOperationApplyOutcome::Skipped);
             }
+            match workspace_path_for_open_resource_operation(workspace_roots, uri, operation.kind())
+            {
+                OpenResourcePathResolution::Path(path) => {
+                    match apply_create_filesystem_side_effect(
+                        &path,
+                        *overwrite,
+                        *ignore_if_exists,
+                        filesystem_rollback,
+                    )? {
+                        ResourceOperationApplyOutcome::Applied => {}
+                        outcome => return Ok(outcome),
+                    }
+                }
+                OpenResourcePathResolution::Skipped => {
+                    return Ok(ResourceOperationApplyOutcome::Skipped);
+                }
+                OpenResourcePathResolution::NoSideEffect => {}
+            }
             replace_open_tab_text(tabs, tab_id, "", true)?;
             Ok(ResourceOperationApplyOutcome::Applied)
         }
         ResourceOperation::Rename {
             old_uri,
             new_uri,
+            overwrite,
             ignore_if_exists,
-            ..
         } => {
             let Some(tab_id) = tab_id_for_uri(tabs, tab_order, old_uri.as_str()) else {
                 return apply_unopened_resource_operation(
@@ -1787,6 +1805,29 @@ fn apply_resource_operation(
                     Ok(ResourceOperationApplyOutcome::Skipped)
                 };
             }
+            match workspace_paths_for_open_resource_rename(
+                workspace_roots,
+                old_uri,
+                new_uri,
+                operation.kind(),
+            ) {
+                OpenResourceRenamePathResolution::Paths(old_path, new_path) => {
+                    match apply_rename_filesystem_side_effect(
+                        &old_path,
+                        &new_path,
+                        *overwrite,
+                        *ignore_if_exists,
+                        filesystem_rollback,
+                    )? {
+                        ResourceOperationApplyOutcome::Applied => {}
+                        outcome => return Ok(outcome),
+                    }
+                }
+                OpenResourceRenamePathResolution::Skipped => {
+                    return Ok(ResourceOperationApplyOutcome::Skipped);
+                }
+                OpenResourceRenamePathResolution::NoSideEffect => {}
+            }
             let tab = tabs
                 .get_mut(&tab_id)
                 .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
@@ -1795,8 +1836,8 @@ fn apply_resource_operation(
         }
         ResourceOperation::Delete {
             uri,
-            ignore_if_not_exists: _,
-            recursive: _,
+            ignore_if_not_exists,
+            recursive,
         } => {
             let Some(tab_id) = tab_id_for_uri(tabs, tab_order, uri.as_str()) else {
                 return apply_unopened_resource_operation(
@@ -1807,6 +1848,27 @@ fn apply_resource_operation(
             };
             if tab_is_modified(tabs, tab_id) {
                 return Ok(ResourceOperationApplyOutcome::Skipped);
+            }
+            match workspace_path_for_open_resource_operation(workspace_roots, uri, operation.kind())
+            {
+                OpenResourcePathResolution::Path(path) => {
+                    match apply_delete_filesystem_side_effect(
+                        &path,
+                        *recursive,
+                        *ignore_if_not_exists,
+                        filesystem_rollback,
+                    )? {
+                        ResourceOperationApplyOutcome::Applied
+                        | ResourceOperationApplyOutcome::Noop => {}
+                        ResourceOperationApplyOutcome::Skipped => {
+                            return Ok(ResourceOperationApplyOutcome::Skipped);
+                        }
+                    }
+                }
+                OpenResourcePathResolution::Skipped => {
+                    return Ok(ResourceOperationApplyOutcome::Skipped);
+                }
+                OpenResourcePathResolution::NoSideEffect => {}
             }
             close_tab(tabs, tab_order, active_tab, preview_tab, tab_id);
             Ok(ResourceOperationApplyOutcome::Applied)
@@ -1832,28 +1894,12 @@ fn apply_unopened_resource_operation(
             let path =
                 workspace_path_for_resource_operation(workspace_roots, uri, operation.kind())
                     .map_err(|detail| UiError::Processor(detail.message))?;
-            if path.exists() {
-                if *ignore_if_exists {
-                    return Ok(ResourceOperationApplyOutcome::Noop);
-                }
-                if !*overwrite {
-                    return Ok(ResourceOperationApplyOutcome::Skipped);
-                }
-                filesystem_rollback.backup_existing_path(&path)?;
-            }
-            if let Some(parent) = path.parent() {
-                filesystem_rollback.record_created_parent_dirs(parent);
-                fs::create_dir_all(parent).map_err(|err| {
-                    UiError::Processor(format!(
-                        "failed to create WorkspaceEdit target parent directory: {err}"
-                    ))
-                })?;
-            }
-            filesystem_rollback.record_created_path(path.clone());
-            fs::write(&path, "").map_err(|err| {
-                UiError::Processor(format!("failed to create WorkspaceEdit file: {err}"))
-            })?;
-            Ok(ResourceOperationApplyOutcome::Applied)
+            apply_create_filesystem_side_effect(
+                &path,
+                *overwrite,
+                *ignore_if_exists,
+                filesystem_rollback,
+            )
         }
         ResourceOperation::Rename {
             old_uri,
@@ -1870,28 +1916,13 @@ fn apply_unopened_resource_operation(
             let new_path =
                 workspace_path_for_resource_operation(workspace_roots, new_uri, operation.kind())
                     .map_err(|detail| UiError::Processor(detail.message))?;
-            if new_path.exists() {
-                if *ignore_if_exists {
-                    return Ok(ResourceOperationApplyOutcome::Noop);
-                }
-                if !*overwrite {
-                    return Ok(ResourceOperationApplyOutcome::Skipped);
-                }
-                filesystem_rollback.backup_existing_path(&new_path)?;
-            }
-            if let Some(parent) = new_path.parent() {
-                filesystem_rollback.record_created_parent_dirs(parent);
-                fs::create_dir_all(parent).map_err(|err| {
-                    UiError::Processor(format!(
-                        "failed to create WorkspaceEdit rename target parent directory: {err}"
-                    ))
-                })?;
-            }
-            fs::rename(&old_path, &new_path).map_err(|err| {
-                UiError::Processor(format!("failed to rename WorkspaceEdit file: {err}"))
-            })?;
-            filesystem_rollback.record_move_for_rollback(new_path.clone(), old_path.clone());
-            Ok(ResourceOperationApplyOutcome::Applied)
+            apply_rename_filesystem_side_effect(
+                &old_path,
+                &new_path,
+                *overwrite,
+                *ignore_if_exists,
+                filesystem_rollback,
+            )
         }
         ResourceOperation::Delete {
             uri,
@@ -1908,15 +1939,146 @@ fn apply_unopened_resource_operation(
                     Ok(ResourceOperationApplyOutcome::Skipped)
                 };
             }
-            if path.is_dir() {
-                if !*recursive {
-                    return Ok(ResourceOperationApplyOutcome::Skipped);
-                }
-            }
-            filesystem_rollback.backup_existing_path(&path)?;
-            Ok(ResourceOperationApplyOutcome::Applied)
+            apply_delete_filesystem_side_effect(
+                &path,
+                *recursive,
+                *ignore_if_not_exists,
+                filesystem_rollback,
+            )
         }
     }
+}
+
+enum OpenResourcePathResolution {
+    NoSideEffect,
+    Path(PathBuf),
+    Skipped,
+}
+
+enum OpenResourceRenamePathResolution {
+    NoSideEffect,
+    Paths(PathBuf, PathBuf),
+    Skipped,
+}
+
+fn workspace_path_for_open_resource_operation(
+    workspace_roots: &[String],
+    uri: &str,
+    operation: &str,
+) -> OpenResourcePathResolution {
+    if workspace_roots.is_empty() || file_uri_to_path(uri).is_none() {
+        return OpenResourcePathResolution::NoSideEffect;
+    }
+    match workspace_path_for_resource_operation(workspace_roots, uri, operation) {
+        Ok(path) => OpenResourcePathResolution::Path(path),
+        Err(_) => OpenResourcePathResolution::Skipped,
+    }
+}
+
+fn workspace_paths_for_open_resource_rename(
+    workspace_roots: &[String],
+    old_uri: &str,
+    new_uri: &str,
+    operation: &str,
+) -> OpenResourceRenamePathResolution {
+    match (
+        workspace_path_for_open_resource_operation(workspace_roots, old_uri, operation),
+        workspace_path_for_open_resource_operation(workspace_roots, new_uri, operation),
+    ) {
+        (
+            OpenResourcePathResolution::Path(old_path),
+            OpenResourcePathResolution::Path(new_path),
+        ) => OpenResourceRenamePathResolution::Paths(old_path, new_path),
+        (OpenResourcePathResolution::NoSideEffect, OpenResourcePathResolution::NoSideEffect) => {
+            OpenResourceRenamePathResolution::NoSideEffect
+        }
+        _ => OpenResourceRenamePathResolution::Skipped,
+    }
+}
+
+fn apply_create_filesystem_side_effect(
+    path: &Path,
+    overwrite: bool,
+    ignore_if_exists: bool,
+    filesystem_rollback: &mut FilesystemRollback,
+) -> Result<ResourceOperationApplyOutcome, UiError> {
+    if path.exists() {
+        if ignore_if_exists {
+            return Ok(ResourceOperationApplyOutcome::Noop);
+        }
+        if !overwrite {
+            return Ok(ResourceOperationApplyOutcome::Skipped);
+        }
+        filesystem_rollback.backup_existing_path(path)?;
+    }
+    if let Some(parent) = path.parent() {
+        filesystem_rollback.record_created_parent_dirs(parent);
+        fs::create_dir_all(parent).map_err(|err| {
+            UiError::Processor(format!(
+                "failed to create WorkspaceEdit target parent directory: {err}"
+            ))
+        })?;
+    }
+    filesystem_rollback.record_created_path(path.to_path_buf());
+    fs::write(path, "")
+        .map_err(|err| UiError::Processor(format!("failed to create WorkspaceEdit file: {err}")))?;
+    Ok(ResourceOperationApplyOutcome::Applied)
+}
+
+fn apply_rename_filesystem_side_effect(
+    old_path: &Path,
+    new_path: &Path,
+    overwrite: bool,
+    ignore_if_exists: bool,
+    filesystem_rollback: &mut FilesystemRollback,
+) -> Result<ResourceOperationApplyOutcome, UiError> {
+    if old_path == new_path {
+        return Ok(ResourceOperationApplyOutcome::Noop);
+    }
+    if !old_path.exists() {
+        return Ok(ResourceOperationApplyOutcome::Skipped);
+    }
+    if new_path.exists() {
+        if ignore_if_exists {
+            return Ok(ResourceOperationApplyOutcome::Noop);
+        }
+        if !overwrite {
+            return Ok(ResourceOperationApplyOutcome::Skipped);
+        }
+        filesystem_rollback.backup_existing_path(new_path)?;
+    }
+    if let Some(parent) = new_path.parent() {
+        filesystem_rollback.record_created_parent_dirs(parent);
+        fs::create_dir_all(parent).map_err(|err| {
+            UiError::Processor(format!(
+                "failed to create WorkspaceEdit rename target parent directory: {err}"
+            ))
+        })?;
+    }
+    fs::rename(old_path, new_path)
+        .map_err(|err| UiError::Processor(format!("failed to rename WorkspaceEdit file: {err}")))?;
+    filesystem_rollback.record_move_for_rollback(new_path.to_path_buf(), old_path.to_path_buf());
+    Ok(ResourceOperationApplyOutcome::Applied)
+}
+
+fn apply_delete_filesystem_side_effect(
+    path: &Path,
+    recursive: bool,
+    ignore_if_not_exists: bool,
+    filesystem_rollback: &mut FilesystemRollback,
+) -> Result<ResourceOperationApplyOutcome, UiError> {
+    if !path.exists() {
+        return if ignore_if_not_exists {
+            Ok(ResourceOperationApplyOutcome::Noop)
+        } else {
+            Ok(ResourceOperationApplyOutcome::Skipped)
+        };
+    }
+    if path.is_dir() && !recursive {
+        return Ok(ResourceOperationApplyOutcome::Skipped);
+    }
+    filesystem_rollback.backup_existing_path(path)?;
+    Ok(ResourceOperationApplyOutcome::Applied)
 }
 
 fn replace_open_tab_text(
