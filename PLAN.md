@@ -1041,6 +1041,12 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoRestartUsesBackoffAndResetsAfterHealthyStatus`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthAutoRestartsExitedConfiguredTab`
     - `git diff --check`
+- 中间提交：`feat(app): summarize lsp project health dashboard`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；继续产品化阶段 284 的 project health dashboard 起点，让用户打开面板后先看到 project-level 摘要。
+  - 提交边界：`AttoEditor.LSP.ProjectDashboard` 面板新增 summary 行，汇总 status failure 数、内存 process health 数、当前 workspace persisted log 数和 active recovery retry 状态；空 dashboard 仍保持不打开并 beep。本提交不新增 Rust/C ABI，不改变日志 schema、不新增跨 project dashboard、分组表格、趋势图、恢复策略配置或更深层 core-owned LSP ownership schema。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

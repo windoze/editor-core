@@ -2215,13 +2215,19 @@ final class AttoEditorCommandTests: XCTestCase {
                 in: root
             ) as? NSTableView
         )
-        XCTAssertEqual(table.numberOfRows, 2)
+        XCTAssertEqual(table.numberOfRows, 3)
 
-        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        let summaryCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(summaryCell.textField?.stringValue.contains("Summary -") == true)
+        XCTAssertTrue(summaryCell.textField?.stringValue.contains("status failures 1") == true)
+        XCTAssertTrue(summaryCell.textField?.stringValue.contains("health events 1") == true)
+        XCTAssertTrue(summaryCell.textField?.stringValue.contains("persisted logs 1") == true)
+
+        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 1, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("Status -") == true)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("server exited") == true)
 
-        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 1, makeIfNecessary: true) as? NSTableCellView)
+        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 2, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("Health -") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("fake-lsp") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("dashboard stderr") == true)

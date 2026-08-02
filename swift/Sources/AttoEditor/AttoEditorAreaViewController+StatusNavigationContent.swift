@@ -562,6 +562,31 @@ extension AttoEditorAreaViewController {
         var commands: [AttoCommandPaletteCommand] = []
 
         let statusEvents = Array(projectLspPanelErrorEventStore.events.reversed())
+        let healthEvents = Array(projectLspProcessHealthEventStore.events.reversed())
+        let persistedEntries = Array(projectLspProcessHealthLogStore.queryRecent(
+            workspaceRootURL: workspaceRootURL,
+            query: "",
+            limit: Self.maxLspResultEventHistoryEntries
+        ).reversed())
+        let activeRecoveryCount = projectLspAutoRestartStatesByTabID.values.filter { $0.attempts > 0 }.count
+
+        guard statusEvents.isEmpty == false
+            || healthEvents.isEmpty == false
+            || persistedEntries.isEmpty == false
+            || activeRecoveryCount > 0
+        else {
+            return []
+        }
+
+        commands.append(AttoCommandPaletteCommand(
+            id: "lsp.project_dashboard.summary",
+            title: projectLspDashboardSummaryTitle(
+                statusFailureCount: statusEvents.count,
+                healthEventCount: healthEvents.count,
+                persistedLogCount: persistedEntries.count
+            )
+        ) {})
+
         commands.append(contentsOf: statusEvents.enumerated().map { idx, event in
             AttoCommandPaletteCommand(
                 id: "lsp.project_dashboard.status.\(idx)",
@@ -569,7 +594,6 @@ extension AttoEditorAreaViewController {
             ) {}
         })
 
-        let healthEvents = Array(projectLspProcessHealthEventStore.events.reversed())
         if healthEvents.isEmpty == false {
             commands.append(contentsOf: healthEvents.enumerated().map { idx, event in
                 AttoCommandPaletteCommand(
@@ -578,11 +602,6 @@ extension AttoEditorAreaViewController {
                 ) {}
             })
         } else {
-            let persistedEntries = Array(projectLspProcessHealthLogStore.queryRecent(
-                workspaceRootURL: workspaceRootURL,
-                query: "",
-                limit: Self.maxLspResultEventHistoryEntries
-            ).reversed())
             commands.append(contentsOf: persistedEntries.enumerated().map { idx, entry in
                 AttoCommandPaletteCommand(
                     id: "lsp.project_dashboard.health_log.\(idx)",
@@ -592,6 +611,23 @@ extension AttoEditorAreaViewController {
         }
 
         return commands
+    }
+
+    private func projectLspDashboardSummaryTitle(
+        statusFailureCount: Int,
+        healthEventCount: Int,
+        persistedLogCount: Int
+    ) -> String {
+        let recovery = projectLspAutoRestartStatesByTabID.values
+            .filter { $0.attempts > 0 }
+            .map(\.attempts)
+        let retrySummary: String
+        if recovery.isEmpty {
+            retrySummary = "recovery idle"
+        } else {
+            retrySummary = "recovery retries \(recovery.reduce(0, +)) across \(recovery.count) tab(s)"
+        }
+        return "Summary - status failures \(statusFailureCount), health events \(healthEventCount), persisted logs \(persistedLogCount), \(retrySummary)"
     }
 
     @discardableResult
