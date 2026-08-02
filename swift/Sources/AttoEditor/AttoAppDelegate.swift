@@ -821,6 +821,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.show_project_lsp_health_log", title: "LSP: Show Project Process Health Log") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showProjectLspProcessHealthLogPanel()
             },
+            .init(id: "lsp.show_project_lsp_dashboard", title: "LSP: Show Project Health Dashboard") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showProjectLspDashboardPanel()
+            },
             .init(id: "lsp.clear_project_lsp_health_log", title: "LSP: Clear Project Process Health Log") { [weak self] in
                 self?.activeWindow()?.editorAreaController.clearProjectLspProcessHealthLog()
             },

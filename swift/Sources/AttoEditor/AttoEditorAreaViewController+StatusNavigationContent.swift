@@ -537,6 +537,64 @@ extension AttoEditorAreaViewController {
     }
 
     @discardableResult
+    func showProjectLspDashboardPanel() -> Bool {
+        drainProjectLspPanelLifecycleEvents()
+
+        let commands = projectLspDashboardCommands()
+        guard commands.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+        guard let window = view.window else {
+            return false
+        }
+
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.ProjectDashboard",
+            commandsProvider: { commands }
+        )
+        projectLspDashboardController = controller
+        controller.show(relativeTo: window, placeholder: "Filter LSP project health...")
+        return true
+    }
+
+    private func projectLspDashboardCommands() -> [AttoCommandPaletteCommand] {
+        var commands: [AttoCommandPaletteCommand] = []
+
+        let statusEvents = Array(projectLspPanelErrorEventStore.events.reversed())
+        commands.append(contentsOf: statusEvents.enumerated().map { idx, event in
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.status.\(idx)",
+                title: "Status - \(Self.projectLspStatusEventTitle(event))"
+            ) {}
+        })
+
+        let healthEvents = Array(projectLspProcessHealthEventStore.events.reversed())
+        if healthEvents.isEmpty == false {
+            commands.append(contentsOf: healthEvents.enumerated().map { idx, event in
+                AttoCommandPaletteCommand(
+                    id: "lsp.project_dashboard.health.\(idx)",
+                    title: "Health - \(Self.projectLspProcessHealthEventTitle(event))"
+                ) {}
+            })
+        } else {
+            let persistedEntries = Array(projectLspProcessHealthLogStore.queryRecent(
+                workspaceRootURL: workspaceRootURL,
+                query: "",
+                limit: Self.maxLspResultEventHistoryEntries
+            ).reversed())
+            commands.append(contentsOf: persistedEntries.enumerated().map { idx, entry in
+                AttoCommandPaletteCommand(
+                    id: "lsp.project_dashboard.health_log.\(idx)",
+                    title: "Log - \(Self.projectLspProcessHealthLogEntryTitle(entry))"
+                ) {}
+            })
+        }
+
+        return commands
+    }
+
+    @discardableResult
     func clearProjectLspProcessHealthLog(
         confirmBeforeClearing: Bool = true,
         confirmationProvider: (() -> Bool)? = nil

@@ -1026,6 +1026,14 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthAutoRestartsExitedConfiguredTab`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerRestartsActiveTabSession`
     - `git diff --check`
+- 中间提交：`feat(app): show lsp project health dashboard`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 project LSP status failures、process health history 和 persisted process health log fallback 汇总到一个用户可打开的 dashboard 起点。
+  - 提交边界：新增 Swift/App 级 `lsp.show_project_lsp_dashboard` 命令、Go 菜单项、`AttoEditor.LSP.ProjectDashboard` command-palette panel 和测试；dashboard 复用已有 status/process health/log store，不新增 Rust/C ABI，不改变日志 schema、不新增 Swift workspace ownership，不实现分组表格、趋势图、恢复策略配置、跨 project dashboard 或更深层 core-owned LSP ownership schema。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
