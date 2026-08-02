@@ -1984,6 +1984,65 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(events[0].message.contains("last line"))
     }
 
+    func testProjectLspProcessHealthRecordsStatusSnapshots() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let cursor = vc._latestProjectLspProcessHealthEventSequenceForTesting()
+
+        XCTAssertFalse(vc._recordProjectLspProcessHealthForTesting(status: EcuLspStatusSnapshot(
+            availability: .disabled,
+            state: .disabled,
+            server: nil,
+            activity: nil,
+            detail: nil,
+            capabilities: nil,
+            workspaceFolders: []
+        )))
+
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: EcuLspStatusSnapshot(
+            availability: .enabled,
+            state: .ready,
+            server: EcuLspServerStatus(name: "fake-lsp", version: nil, command: "fake-lsp"),
+            activity: nil,
+            detail: nil,
+            capabilities: nil,
+            process: EcuLspProcessStatus(pid: 456, state: .running),
+            workspaceFolders: []
+        )))
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: EcuLspStatusSnapshot(
+            availability: .failed,
+            state: .failed,
+            server: EcuLspServerStatus(name: nil, version: nil, command: "fake-lsp"),
+            activity: nil,
+            detail: "server exited",
+            capabilities: nil,
+            process: EcuLspProcessStatus(
+                pid: 456,
+                state: .exited,
+                exitCode: 7,
+                stderrTail: "health stderr"
+            ),
+            workspaceFolders: []
+        )))
+
+        let events = vc._projectLspProcessHealthEventsForTesting(after: cursor)
+        XCTAssertEqual(events.count, 2)
+        XCTAssertEqual(events[0].availability, "enabled")
+        XCTAssertEqual(events[0].state, "ready")
+        XCTAssertEqual(events[0].process.pid, 456)
+        XCTAssertEqual(events[0].process.state, .running)
+        XCTAssertEqual(events[1].availability, "failed")
+        XCTAssertEqual(events[1].state, "failed")
+        XCTAssertEqual(events[1].detail, "server exited\nstderr:\nhealth stderr")
+        XCTAssertEqual(events[1].process.state, .exited)
+        XCTAssertEqual(events[1].process.exitCode, 7)
+        XCTAssertEqual(events[1].process.stderrTail, "health stderr")
+    }
+
     func testProjectLspStatusEventsPanelShowsRecordedFailures() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

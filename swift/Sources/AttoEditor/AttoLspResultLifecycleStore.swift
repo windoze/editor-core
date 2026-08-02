@@ -1,4 +1,5 @@
 import Foundation
+import EditorCoreUIFFI
 
 enum AttoLspResultLifecycleState: Equatable {
     case fresh
@@ -299,6 +300,77 @@ final class AttoProjectLspPanelErrorEventStore {
     }
 
     func entries(after sequence: UInt64) -> [AttoProjectLspPanelErrorEvent] {
+        events.filter { $0.sequence > sequence }
+    }
+
+    func clear() {
+        events.removeAll()
+        nextSequence = 1
+    }
+}
+
+struct AttoProjectLspProcessHealthEvent: Equatable {
+    let sequence: UInt64
+    let sourceSequence: UInt64
+    let tabId: UInt64?
+    let viewIndex: Int?
+    let viewId: UInt64?
+    let serverName: String?
+    let serverCommand: String?
+    let availability: String
+    let state: String
+    let detail: String?
+    let process: EcuLspProcessStatus
+}
+
+final class AttoProjectLspProcessHealthEventStore {
+    private let maxHistoryEntries: Int
+    private var nextSequence: UInt64 = 1
+    private(set) var events: [AttoProjectLspProcessHealthEvent] = []
+
+    var latestSequence: UInt64 {
+        events.last?.sequence ?? 0
+    }
+
+    init(maxHistoryEntries: Int) {
+        self.maxHistoryEntries = max(1, maxHistoryEntries)
+    }
+
+    @discardableResult
+    func record(
+        sourceSequence: UInt64,
+        tabId: UInt64?,
+        viewIndex: Int?,
+        viewId: UInt64?,
+        serverName: String?,
+        serverCommand: String?,
+        availability: String,
+        state: String,
+        detail: String?,
+        process: EcuLspProcessStatus
+    ) -> AttoProjectLspProcessHealthEvent {
+        let event = AttoProjectLspProcessHealthEvent(
+            sequence: nextSequence,
+            sourceSequence: sourceSequence,
+            tabId: tabId,
+            viewIndex: viewIndex,
+            viewId: viewId,
+            serverName: serverName,
+            serverCommand: serverCommand,
+            availability: availability,
+            state: state,
+            detail: detail,
+            process: process
+        )
+        nextSequence += 1
+        events.append(event)
+        if events.count > maxHistoryEntries {
+            events.removeFirst(events.count - maxHistoryEntries)
+        }
+        return event
+    }
+
+    func entries(after sequence: UInt64) -> [AttoProjectLspProcessHealthEvent] {
         events.filter { $0.sequence > sequence }
     }
 

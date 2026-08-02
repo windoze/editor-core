@@ -930,6 +930,13 @@
   - 验证记录：
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspPanelRecordsStatusFailures`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspStatusEventsPanelShowsRecordedFailures`
+- 中间提交：`feat(app): track lsp process health history`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 AttoEditor project LSP lifecycle drain 把带 `process` payload 的 `lsp_status_changed` 状态快照记录到 bounded project LSP process health history 中。
+  - 提交边界：只新增 Swift/App 层内存 `AttoProjectLspProcessHealthEventStore`、状态事件消费接线和测试访问器；历史条目保存 server、status、detail、tab/view 来源和 typed `EcuLspProcessStatus`。不新增 Rust/C ABI，不改变 `MultiDocumentEditorUi` state event schema，不改变 project status events panel，不实现持久化 stderr/process log、独立 dashboard UI、自动崩溃恢复或更深层 core-owned LSP ownership schema。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthEventStoreBoundsAndFiltersBySequence`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthRecordsStatusSnapshots`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

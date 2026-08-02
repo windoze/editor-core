@@ -393,6 +393,13 @@ extension AttoEditorAreaViewController {
             let stateSnapshot = try coreDocuments.stateEvents(after: coreLspStateEventCursor)
             coreLspStateEventCursor = stateSnapshot.latestSequence
             for event in stateSnapshot.events where event.kindValue == .lspStatusChanged {
+                recordProjectLspProcessHealth(
+                    sourceSequence: event.sequence,
+                    tabId: event.tabId,
+                    viewIndex: event.viewIndex,
+                    viewId: event.viewId,
+                    status: event.stateEvent.lspStatus
+                )
                 recordProjectLspStatusFailure(
                     sourceSequence: event.sequence,
                     tabId: event.tabId,
@@ -482,6 +489,37 @@ extension AttoEditorAreaViewController {
             requestId: 0,
             status: status.state.rawValue,
             message: message
+        )
+    }
+
+    @discardableResult
+    func recordProjectLspProcessHealth(
+        sourceSequence: UInt64,
+        tabId: UInt64?,
+        viewIndex: Int?,
+        viewId: UInt64?,
+        status: EcuLspStatusSnapshot?
+    ) -> AttoProjectLspProcessHealthEvent? {
+        guard let status, let process = status.process else {
+            return nil
+        }
+
+        let display = AttoLspStatusFormatter.display(status: status, fallbackEnabled: false)
+        let detail = Self.projectLspStatusFailureDetail(status: status, display: display)
+            ?? display.failureDetail
+            ?? status.detail
+
+        return projectLspProcessHealthEventStore.record(
+            sourceSequence: sourceSequence,
+            tabId: tabId,
+            viewIndex: viewIndex,
+            viewId: viewId,
+            serverName: status.server?.name,
+            serverCommand: status.server?.command,
+            availability: status.availability.rawValue,
+            state: status.state.rawValue,
+            detail: detail,
+            process: process
         )
     }
 

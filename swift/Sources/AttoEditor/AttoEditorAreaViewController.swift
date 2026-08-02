@@ -249,6 +249,14 @@ final class AttoEditorAreaViewController: NSViewController {
         projectLspPanelErrorEventStore.latestSequence
     }
 
+    func _projectLspProcessHealthEventsForTesting(after sequence: UInt64) -> [AttoProjectLspProcessHealthEvent] {
+        projectLspProcessHealthEventStore.entries(after: sequence)
+    }
+
+    func _latestProjectLspProcessHealthEventSequenceForTesting() -> UInt64 {
+        projectLspProcessHealthEventStore.latestSequence
+    }
+
     @discardableResult
     func _recordProjectLspPanelErrorForTesting(
         family: String,
@@ -276,6 +284,17 @@ final class AttoEditorAreaViewController: NSViewController {
     @discardableResult
     func _recordProjectLspStatusFailureForTesting(status: EcuLspStatusSnapshot) -> Bool {
         recordProjectLspStatusFailure(
+            sourceSequence: 0,
+            tabId: activeTab?.coreTabID,
+            viewIndex: activeTab?.activePaneIndex,
+            viewId: nil,
+            status: status
+        ) != nil
+    }
+
+    @discardableResult
+    func _recordProjectLspProcessHealthForTesting(status: EcuLspStatusSnapshot) -> Bool {
+        recordProjectLspProcessHealth(
             sourceSequence: 0,
             tabId: activeTab?.coreTabID,
             viewIndex: activeTab?.activePaneIndex,
@@ -925,6 +944,9 @@ final class AttoEditorAreaViewController: NSViewController {
         maxHistoryEntries: maxLspResultEventHistoryEntries
     )
     let projectLspPanelErrorEventStore = AttoProjectLspPanelErrorEventStore(
+        maxHistoryEntries: maxLspResultEventHistoryEntries
+    )
+    let projectLspProcessHealthEventStore = AttoProjectLspProcessHealthEventStore(
         maxHistoryEntries: maxLspResultEventHistoryEntries
     )
     var projectLspStatusEventsController: AttoCommandPaletteController?

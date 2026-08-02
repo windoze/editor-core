@@ -1,4 +1,5 @@
 @testable import AttoEditor
+import EditorCoreUIFFI
 import XCTest
 
 final class AttoLspResultLifecycleStoreTests: XCTestCase {
@@ -272,6 +273,76 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
                 requestId: 1,
                 status: "error",
                 message: "LSP Document Symbols: failed"
+            ).sequence,
+            1
+        )
+    }
+
+    func testProjectLspProcessHealthEventStoreBoundsAndFiltersBySequence() {
+        let store = AttoProjectLspProcessHealthEventStore(maxHistoryEntries: 2)
+
+        let first = store.record(
+            sourceSequence: 10,
+            tabId: 1,
+            viewIndex: 0,
+            viewId: 100,
+            serverName: "rust-analyzer",
+            serverCommand: "rust-analyzer",
+            availability: "enabled",
+            state: "ready",
+            detail: nil,
+            process: EcuLspProcessStatus(pid: 101, state: .running)
+        )
+        let second = store.record(
+            sourceSequence: 11,
+            tabId: 2,
+            viewIndex: 1,
+            viewId: 200,
+            serverName: nil,
+            serverCommand: "fake-lsp",
+            availability: "failed",
+            state: "failed",
+            detail: "server exited",
+            process: EcuLspProcessStatus(pid: 102, state: .exited, exitCode: 7)
+        )
+        let third = store.record(
+            sourceSequence: 12,
+            tabId: nil,
+            viewIndex: nil,
+            viewId: nil,
+            serverName: "pylsp",
+            serverCommand: "pylsp",
+            availability: "enabled",
+            state: "busy",
+            detail: "stderr:\nindexing",
+            process: EcuLspProcessStatus(pid: 103, state: .running, stderrTail: "indexing")
+        )
+
+        XCTAssertEqual(first.sequence, 1)
+        XCTAssertEqual(second.sequence, 2)
+        XCTAssertEqual(third.sequence, 3)
+        XCTAssertEqual(store.latestSequence, 3)
+        XCTAssertEqual(store.events.map(\.sequence), [2, 3])
+        XCTAssertEqual(store.entries(after: 2), [third])
+        XCTAssertEqual(store.entries(after: 3), [])
+        XCTAssertEqual(store.events[0].process.exitCode, 7)
+        XCTAssertEqual(store.events[1].process.stderrTail, "indexing")
+
+        store.clear()
+        XCTAssertEqual(store.events, [])
+        XCTAssertEqual(store.latestSequence, 0)
+        XCTAssertEqual(
+            store.record(
+                sourceSequence: 1,
+                tabId: nil,
+                viewIndex: nil,
+                viewId: nil,
+                serverName: nil,
+                serverCommand: "fake-lsp",
+                availability: "enabled",
+                state: "ready",
+                detail: nil,
+                process: EcuLspProcessStatus(pid: 200, state: .running)
             ).sequence,
             1
         )
