@@ -446,6 +446,10 @@ final class AttoEditorAreaViewController: NSViewController {
         documentColorPickerForTesting = picker
     }
 
+    func _setLspEnvironmentProviderForTesting(_ provider: @escaping () -> [String: String]) {
+        lspEnvironmentProvider = provider
+    }
+
     func _setActiveTabDirtyCacheForTesting(_ isDirty: Bool) {
         activeTab?.isDirty = isDirty
     }
@@ -989,6 +993,9 @@ final class AttoEditorAreaViewController: NSViewController {
     var colorPresentationPollTimer: DispatchSourceTimer?
     var documentColorPanelContext: DocumentColorPanelContext?
     var documentColorPickerForTesting: ((NSColor) -> NSColor?)?
+    var lspEnvironmentProvider: () -> [String: String] = {
+        ProcessInfo.processInfo.environment
+    }
 
     init(
         library: EditorCoreUIFFILibrary,
@@ -1165,6 +1172,7 @@ final class AttoEditorAreaViewController: NSViewController {
     func setWorkspaceRootURL(_ url: URL) {
         workspaceRootURL = url
         syncCoreWorkspaceRoots()
+        startProjectLspServersForOpenTabs()
     }
 
     func syncCoreWorkspaceRoots() {
@@ -1630,6 +1638,7 @@ final class AttoEditorTab {
     var panes: [EditCoreUI]
     var activePaneIndex: Int
     var lspServerConfig: AttoLspServerLaunchConfig?
+    var suppressesAutomaticLspStart: Bool
     var semanticTokensResultId: String?
     var semanticTokensData: [UInt32]
 
@@ -1665,6 +1674,7 @@ final class AttoEditorTab {
         self.panes = [editCore]
         self.activePaneIndex = 0
         self.lspServerConfig = nil
+        self.suppressesAutomaticLspStart = false
         self.semanticTokensResultId = nil
         self.semanticTokensData = []
     }

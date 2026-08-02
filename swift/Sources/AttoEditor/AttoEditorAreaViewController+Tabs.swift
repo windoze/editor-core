@@ -222,6 +222,7 @@ extension AttoEditorAreaViewController {
         }
 
         tabs = newTabs
+        startProjectLspServersForOpenTabs()
 
         if newTabs.isEmpty {
             showEmptyState()

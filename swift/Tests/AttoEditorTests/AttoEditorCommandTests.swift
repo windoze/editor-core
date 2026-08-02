@@ -5041,6 +5041,52 @@ final class AttoEditorCommandTests: XCTestCase {
         }
     }
 
+    func testWorkspaceRootChangeAutoStartsConfiguredOpenTabLsp() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("auto_start.rs")
+        try "fn main() {}".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("auto-start-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("auto-start-fake-lsp.sh")
+        try writeFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc._setLspEnvironmentProviderForTesting {
+            [
+                "ATTO_EDITOR_DISABLE_LSP": "1",
+                "ATTO_EDITOR_LSP_CMD": scriptURL.path,
+            ]
+        }
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        XCTAssertFalse(try tab.editCore.editor.lspIsEnabled())
+        XCTAssertNil(tab.lspServerConfig)
+
+        vc._setLspEnvironmentProviderForTesting {
+            [
+                "ATTO_EDITOR_LSP_CMD": scriptURL.path,
+            ]
+        }
+        let alternateRoot = tempDir.appendingPathComponent("alternate", isDirectory: true)
+        try FileManager.default.createDirectory(at: alternateRoot, withIntermediateDirectories: true)
+        vc.setWorkspaceRootURL(alternateRoot)
+        defer { tab.editCore.editor.lspDisable() }
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+        XCTAssertTrue(try tab.editCore.editor.lspIsEnabled())
+        XCTAssertEqual(tab.lspServerConfig?.command, scriptURL.path)
+        XCTAssertEqual(tab.lspServerConfig?.languageId, "rust")
+        XCTAssertTrue(captured.contains(fileURL.standardizedFileURL.absoluteString), captured)
+        XCTAssertTrue(captured.contains(alternateRoot.standardizedFileURL.absoluteString), captured)
+    }
+
     func testRestartLspServerRequiresSavedLaunchConfig() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

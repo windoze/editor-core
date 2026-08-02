@@ -904,6 +904,15 @@
     - `cargo build -p editor-core-ui-ffi --release`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(app): auto-start project lsp servers on root change`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；补齐 project/workspace root 变更和 session restore 后的 App 侧批量 LSP 启动起点，让 AttoEditor 使用 core-projected open tabs 遍历已打开文档，并对尚未启用但可从现有 launch config / registry / env 解析启动参数的 tab 自动启用 LSP。
+  - 提交边界：只新增 Swift/App 层 `startProjectLspServersForOpenTabs()` helper、workspace root 更新/session restore 后的自动调用、测试用 LSP environment provider 和手动语言选择后的自动启动抑制标记；启动仍通过既有 `EditorUI.lspEnable(...)`，tab/URI 遍历来源优先使用 `MultiDocumentEditorUI` snapshot 投影。本提交不新增 Rust/C ABI，不把 Swift 启动参数持久化为 core-owned schema，不实现跨独立 project session 合并、stderr capture、server process history、自动崩溃恢复或 dashboard 级 server health UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeAutoStartsConfiguredOpenTabLsp`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeNotifiesOpenTabLspWorkspaceFolders`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartProjectLspServersRestartsConfiguredOpenTabs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerRequiresSavedLaunchConfig`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testSessionRestoreRestoresSplitPanesIntoCoreMirror`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

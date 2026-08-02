@@ -250,9 +250,8 @@ extension AttoEditorAreaViewController {
         editCore.editor.sublimeDisable()
 
         // 1) LSP (configurable by extension).
-        let env = ProcessInfo.processInfo.environment
-        let disableLSP = env["ATTO_EDITOR_DISABLE_LSP"] == "1"
-            || env["EDITOR_CORE_APPKIT_DISABLE_LSP"] == "1"
+        let env = lspEnvironmentProvider()
+        let disableLSP = isLspDisabled(environment: env)
 
         if disableLSP == false {
             if let config = lspLaunchConfig(for: url, environment: env) {
@@ -354,6 +353,11 @@ extension AttoEditorAreaViewController {
         )
     }
 
+    func isLspDisabled(environment env: [String: String]) -> Bool {
+        env["ATTO_EDITOR_DISABLE_LSP"] == "1"
+            || env["EDITOR_CORE_APPKIT_DISABLE_LSP"] == "1"
+    }
+
     @discardableResult
     func enableLspSupport(
         for url: URL,
@@ -391,6 +395,53 @@ extension AttoEditorAreaViewController {
         }
 
         return config.languageId
+    }
+
+    @discardableResult
+    func startProjectLspServersForOpenTabs() -> Int {
+        let env = lspEnvironmentProvider()
+        guard isLspDisabled(environment: env) == false else { return 0 }
+
+        var startedCount = 0
+
+        for projected in coreProjectedTabsForWorkspaceLifecycle() {
+            let tab = projected.tab
+            guard tab.suppressesAutomaticLspStart == false else { continue }
+            guard (try? tab.editCore.editor.lspIsEnabled()) != true else { continue }
+
+            let documentURL = projected.fileURL
+            guard let config = tab.lspServerConfig ?? lspLaunchConfig(for: documentURL, environment: env) else {
+                continue
+            }
+
+            do {
+                let languageId = try enableLspSupport(
+                    for: documentURL,
+                    editCore: tab.editCore,
+                    config: config
+                )
+                tab.syntaxLanguageId = languageId
+                tab.lspServerConfig = config
+                tab.suppressesAutomaticLspStart = false
+                applyLanguageConfiguration(for: tab)
+                tab.editCore.editorView.kickProcessingPoll()
+                tab.editCore.editorView.needsDisplay = true
+                startedCount += 1
+            } catch {
+                NSLog(
+                    "AttoEditor: project LSP auto-start failed for %@: %@",
+                    documentURL.path,
+                    String(describing: error)
+                )
+            }
+        }
+
+        if startedCount > 0 {
+            updateAlwaysPollProcessingForSelectedTab()
+            updateStatusBar()
+        }
+
+        return startedCount
     }
 
     @discardableResult
@@ -518,6 +569,7 @@ extension AttoEditorAreaViewController {
         )
         tab.syntaxLanguageId = languageId
         tab.lspServerConfig = config
+        tab.suppressesAutomaticLspStart = false
         applyLanguageConfiguration(for: tab)
         tab.editCore.editorView.kickProcessingPoll()
         tab.editCore.editorView.needsDisplay = true

@@ -731,6 +731,8 @@ extension AttoEditorAreaViewController {
             tab.editCore.editor.lspDisable()
             tab.editCore.editor.treeSitterDisable()
             tab.editCore.editor.sublimeDisable()
+            tab.lspServerConfig = nil
+            tab.suppressesAutomaticLspStart = true
             tab.syntaxLanguageId = nil
             applyLanguageConfiguration(for: tab)
             updateAlwaysPollProcessingForSelectedTab()
@@ -754,6 +756,8 @@ extension AttoEditorAreaViewController {
 
         tab.editCore.editor.lspDisable()
         tab.editCore.editor.sublimeDisable()
+        tab.lspServerConfig = nil
+        tab.suppressesAutomaticLspStart = true
 
         do {
             try tab.editCore.editor.treeSitterEnableLanguage(lang)
