@@ -60,7 +60,7 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
     func testEditorLSPRequestEventsExposeTypedKinds() throws {
         let snapshot = try decode(EcuLspRequestEventsSnapshot.self, """
         {
-          "latest_sequence": 3,
+          "latest_sequence": 4,
           "events": [
             {
               "sequence": 1,
@@ -179,7 +179,7 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
     func testEditorUIStateEventsDecodeDocumentPayloads() throws {
         let snapshot = try decode(EcuEditorUIStateEventsSnapshot.self, """
         {
-          "latest_sequence": 3,
+          "latest_sequence": 4,
           "events": [
             {
               "sequence": 1,
@@ -237,12 +237,37 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
                 "char_len": 5,
                 "is_modified": true
               }
+            },
+            {
+              "sequence": 4,
+              "kind": "viewport_changed",
+              "family": "document",
+              "title": "Viewport changed",
+              "view_id": 3,
+              "source_sequence": 3,
+              "viewport": {
+                "view_version": 3,
+                "width": 80,
+                "height": 12,
+                "scroll_top": 4,
+                "sub_row_offset": 32768,
+                "overscan_rows": 2,
+                "visible_lines": {
+                  "start": 4,
+                  "end": 16
+                },
+                "prefetch_lines": {
+                  "start": 2,
+                  "end": 18
+                },
+                "total_visual_lines": 40
+              }
             }
           ]
         }
         """)
 
-        XCTAssertEqual(snapshot.latestSequence, 3)
+        XCTAssertEqual(snapshot.latestSequence, 4)
         XCTAssertEqual(snapshot.events[0].kindValue, .dirtyChanged)
         XCTAssertEqual(snapshot.events[0].familyKind, .document)
         XCTAssertEqual(snapshot.events[0].dirty?.isModified, true)
@@ -269,9 +294,25 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         XCTAssertEqual(snapshot.events[2].text?.isModified, true)
         XCTAssertNil(snapshot.events[2].dirty)
         XCTAssertNil(snapshot.events[2].selection)
+        XCTAssertEqual(snapshot.events[3].kindValue, .viewportChanged)
+        XCTAssertEqual(snapshot.events[3].familyKind, .document)
+        XCTAssertEqual(snapshot.events[3].viewport?.viewVersion, 3)
+        XCTAssertEqual(snapshot.events[3].viewport?.width, 80)
+        XCTAssertEqual(snapshot.events[3].viewport?.height, 12)
+        XCTAssertEqual(snapshot.events[3].viewport?.scrollTop, 4)
+        XCTAssertEqual(snapshot.events[3].viewport?.subRowOffset, 32768)
+        XCTAssertEqual(snapshot.events[3].viewport?.overscanRows, 2)
+        XCTAssertEqual(snapshot.events[3].viewport?.visibleLines.start, 4)
+        XCTAssertEqual(snapshot.events[3].viewport?.visibleLines.end, 16)
+        XCTAssertEqual(snapshot.events[3].viewport?.prefetchLines.start, 2)
+        XCTAssertEqual(snapshot.events[3].viewport?.prefetchLines.end, 18)
+        XCTAssertEqual(snapshot.events[3].viewport?.totalVisualLines, 40)
+        XCTAssertNil(snapshot.events[3].text)
+        XCTAssertNil(snapshot.events[3].selection)
         XCTAssertEqual(EcuEditorUIStateEventKind.textChanged.rawValue, "text_changed")
         XCTAssertEqual(EcuEditorUIStateEventKind.dirtyChanged.rawValue, "dirty_changed")
         XCTAssertEqual(EcuEditorUIStateEventKind.selectionChanged.rawValue, "selection_changed")
+        XCTAssertEqual(EcuEditorUIStateEventKind.viewportChanged.rawValue, "viewport_changed")
         XCTAssertEqual(EcuLspEventFamily.document.rawValue, "document")
     }
 

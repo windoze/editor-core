@@ -179,6 +179,41 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertNil(event.dirty)
     }
 
+    func testEditorUIStateEventsRecordViewportChanges() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(
+            library: lib,
+            initialText: "one\ntwo\nthree\nfour\nfive",
+            viewportWidthCells: 80
+        )
+
+        try ui.setRenderMetrics(fontSize: 10, lineHeightPx: 10, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 80, heightPx: 20, scale: 1)
+
+        let resize = try ui.stateEvents()
+        XCTAssertEqual(resize.latestSequence, 1)
+        XCTAssertEqual(resize.events.count, 1)
+        XCTAssertEqual(resize.events[0].kindValue, .viewportChanged)
+        XCTAssertEqual(resize.events[0].familyKind, .document)
+        XCTAssertEqual(resize.events[0].viewport?.width, 8)
+        XCTAssertEqual(resize.events[0].viewport?.height, 2)
+        XCTAssertEqual(resize.events[0].viewport?.scrollTop, 0)
+        XCTAssertEqual(resize.events[0].viewport?.visibleLines.start, 0)
+        XCTAssertEqual(resize.events[0].viewport?.visibleLines.end, 2)
+        XCTAssertNil(resize.events[0].text)
+        XCTAssertNil(resize.events[0].dirty)
+        XCTAssertNil(resize.events[0].selection)
+
+        ui.setSmoothScrollState(topVisualRow: 1, subRowOffset: 32768)
+        let scrolled = try ui.stateEvents(after: resize.latestSequence)
+        XCTAssertEqual(scrolled.latestSequence, 2)
+        XCTAssertEqual(scrolled.events.count, 1)
+        XCTAssertEqual(scrolled.events[0].kindValue, .viewportChanged)
+        XCTAssertEqual(scrolled.events[0].viewport?.scrollTop, 1)
+        XCTAssertEqual(scrolled.events[0].viewport?.subRowOffset, 32768)
+        XCTAssertEqual(scrolled.events[0].viewport?.visibleLines.start, 1)
+    }
+
     func testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)

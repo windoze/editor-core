@@ -20,6 +20,8 @@ pub struct EditorUiStateEvent {
     pub dirty: Option<EditorUiDirtyStateEvent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<EditorUiSelectionStateEvent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viewport: Option<EditorUiViewportStateEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -75,6 +77,38 @@ impl EditorUiSelectionStateEvent {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EditorUiViewportRangeStateEvent {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EditorUiViewportStateEvent {
+    pub view_version: u64,
+    pub width: usize,
+    pub height: Option<usize>,
+    pub scroll_top: usize,
+    pub sub_row_offset: u16,
+    pub overscan_rows: usize,
+    pub visible_lines: EditorUiViewportRangeStateEvent,
+    pub prefetch_lines: EditorUiViewportRangeStateEvent,
+    pub total_visual_lines: usize,
+}
+
+impl EditorUiViewportStateEvent {
+    pub(crate) fn same_viewport_as(&self, other: &Self) -> bool {
+        self.width == other.width
+            && self.height == other.height
+            && self.scroll_top == other.scroll_top
+            && self.sub_row_offset == other.sub_row_offset
+            && self.overscan_rows == other.overscan_rows
+            && self.visible_lines == other.visible_lines
+            && self.prefetch_lines == other.prefetch_lines
+            && self.total_visual_lines == other.total_visual_lines
+    }
+}
+
 impl EditorUiDoc {
     pub(crate) fn record_state_event_from_lsp_request(
         &mut self,
@@ -92,6 +126,7 @@ impl EditorUiDoc {
             text: None,
             dirty: None,
             selection: None,
+            viewport: None,
         })
     }
 
@@ -111,6 +146,7 @@ impl EditorUiDoc {
             text: None,
             dirty: None,
             selection: None,
+            viewport: None,
         })
     }
 
@@ -138,6 +174,7 @@ impl EditorUiDoc {
             }),
             dirty: None,
             selection: None,
+            viewport: None,
         })
     }
 
@@ -158,6 +195,7 @@ impl EditorUiDoc {
             text: None,
             dirty: Some(EditorUiDirtyStateEvent { is_modified }),
             selection: None,
+            viewport: None,
         })
     }
 
@@ -221,6 +259,53 @@ impl EditorUiDoc {
             text: None,
             dirty: None,
             selection: Some(selection),
+            viewport: None,
+        })
+    }
+
+    pub(crate) fn viewport_state_for_view(
+        &mut self,
+        view_id: ViewId,
+    ) -> Option<EditorUiViewportStateEvent> {
+        let viewport = self.ws.viewport_state_for_view(view_id).ok()?;
+        let view_version = self.ws.view_version(view_id).unwrap_or(0);
+        Some(EditorUiViewportStateEvent {
+            view_version,
+            width: viewport.width,
+            height: viewport.height,
+            scroll_top: viewport.scroll_top,
+            sub_row_offset: viewport.smooth_scroll.sub_row_offset,
+            overscan_rows: viewport.smooth_scroll.overscan_rows,
+            visible_lines: EditorUiViewportRangeStateEvent {
+                start: viewport.visible_lines.start,
+                end: viewport.visible_lines.end,
+            },
+            prefetch_lines: EditorUiViewportRangeStateEvent {
+                start: viewport.prefetch_lines.start,
+                end: viewport.prefetch_lines.end,
+            },
+            total_visual_lines: viewport.total_visual_lines,
+        })
+    }
+
+    pub(crate) fn record_state_event_from_viewport_changed(
+        &mut self,
+        view_id: ViewId,
+        viewport: EditorUiViewportStateEvent,
+    ) -> u64 {
+        self.record_state_event(EditorUiStateEvent {
+            sequence: 0,
+            kind: "viewport_changed".to_string(),
+            family: "document".to_string(),
+            title: "Viewport changed".to_string(),
+            view_id: view_id.get(),
+            source_sequence: viewport.view_version,
+            lsp_request: None,
+            lsp_result: None,
+            text: None,
+            dirty: None,
+            selection: None,
+            viewport: Some(viewport),
         })
     }
 

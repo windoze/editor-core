@@ -144,9 +144,6 @@ impl EditorUi {
             (width_px as f32 - self.render_config.padding_x_px * 2.0 - gutter_px).max(1.0);
         let cell_w = self.render_config.cell_width_px.max(1.0);
         let width_cells = (usable_w / cell_w).floor().max(1.0) as usize;
-        self.exec_core(Command::View(ViewCommand::SetViewportWidth {
-            width: width_cells,
-        }))?;
 
         // `padding_y_px` is a top inset (like a "content inset"), not a symmetric top+bottom padding.
         //
@@ -158,9 +155,23 @@ impl EditorUi {
         let height_rows = (usable_h / line_h).floor().max(1.0) as usize;
         {
             let mut doc = self.lock_doc();
+            let before_viewport = doc.viewport_state_for_view(self.view_id);
+            doc.exec_core(
+                self.view_id,
+                Command::View(ViewCommand::SetViewportWidth { width: width_cells }),
+            )?;
             doc.ws
                 .set_viewport_height(self.view_id, height_rows)
                 .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+            let after_viewport = doc.viewport_state_for_view(self.view_id);
+            let viewport_changed = match (&before_viewport, &after_viewport) {
+                (Some(before), Some(after)) => !before.same_viewport_as(after),
+                (None, None) => false,
+                _ => true,
+            };
+            if viewport_changed && let Some(viewport) = after_viewport {
+                doc.record_state_event_from_viewport_changed(self.view_id, viewport);
+            }
         }
         Ok(())
     }
@@ -238,8 +249,24 @@ impl EditorUi {
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            let mut doc = self.lock_doc();
-            let _ = doc.ws.set_smooth_scroll_state(self.view_id, next);
+            self.apply_smooth_scroll_state(next);
+        }
+    }
+
+    fn apply_smooth_scroll_state(&mut self, state: editor_core::workspace::ViewSmoothScrollState) {
+        let mut doc = self.lock_doc();
+        let before_viewport = doc.viewport_state_for_view(self.view_id);
+        if doc.ws.set_smooth_scroll_state(self.view_id, state).is_err() {
+            return;
+        }
+        let after_viewport = doc.viewport_state_for_view(self.view_id);
+        let viewport_changed = match (&before_viewport, &after_viewport) {
+            (Some(before), Some(after)) => !before.same_viewport_as(after),
+            (None, None) => false,
+            _ => true,
+        };
+        if viewport_changed && let Some(viewport) = after_viewport {
+            doc.record_state_event_from_viewport_changed(self.view_id, viewport);
         }
     }
 
@@ -305,8 +332,7 @@ impl EditorUi {
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            let mut doc = self.lock_doc();
-            let _ = doc.ws.set_smooth_scroll_state(self.view_id, next);
+            self.apply_smooth_scroll_state(next);
         }
     }
 
@@ -372,8 +398,7 @@ impl EditorUi {
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            let mut doc = self.lock_doc();
-            let _ = doc.ws.set_smooth_scroll_state(self.view_id, next);
+            self.apply_smooth_scroll_state(next);
         }
     }
 
@@ -407,8 +432,7 @@ impl EditorUi {
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            let mut doc = self.lock_doc();
-            let _ = doc.ws.set_smooth_scroll_state(self.view_id, next);
+            self.apply_smooth_scroll_state(next);
         }
     }
 
@@ -459,8 +483,7 @@ impl EditorUi {
             overscan_rows: smooth.overscan_rows,
         };
         if next != smooth {
-            let mut doc = self.lock_doc();
-            let _ = doc.ws.set_smooth_scroll_state(self.view_id, next);
+            self.apply_smooth_scroll_state(next);
         }
     }
 }

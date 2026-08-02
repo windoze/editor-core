@@ -133,6 +133,35 @@ public struct EcuEditorUISelectionStateEvent: Decodable, Equatable, Sendable {
     }
 }
 
+public struct EcuEditorUIViewportRangeStateEvent: Decodable, Equatable, Sendable {
+    public let start: Int
+    public let end: Int
+}
+
+public struct EcuEditorUIViewportStateEvent: Decodable, Equatable, Sendable {
+    public let viewVersion: UInt64
+    public let width: Int
+    public let height: Int?
+    public let scrollTop: Int
+    public let subRowOffset: UInt16
+    public let overscanRows: Int
+    public let visibleLines: EcuEditorUIViewportRangeStateEvent
+    public let prefetchLines: EcuEditorUIViewportRangeStateEvent
+    public let totalVisualLines: Int
+
+    enum CodingKeys: String, CodingKey {
+        case viewVersion = "view_version"
+        case width
+        case height
+        case scrollTop = "scroll_top"
+        case subRowOffset = "sub_row_offset"
+        case overscanRows = "overscan_rows"
+        case visibleLines = "visible_lines"
+        case prefetchLines = "prefetch_lines"
+        case totalVisualLines = "total_visual_lines"
+    }
+}
+
 public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
     public let sequence: UInt64
     public let kind: String
@@ -145,6 +174,7 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
     public let text: EcuEditorUITextStateEvent?
     public let dirty: EcuEditorUIDirtyStateEvent?
     public let selection: EcuEditorUISelectionStateEvent?
+    public let viewport: EcuEditorUIViewportStateEvent?
 
     enum CodingKeys: String, CodingKey {
         case sequence
@@ -158,6 +188,7 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
         case text
         case dirty
         case selection
+        case viewport
     }
 }
 

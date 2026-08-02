@@ -36,11 +36,30 @@ impl EditorUi {
         let mut doc = self.lock_doc();
         let is_edit = matches!(command, Command::Edit(_));
         let tracks_selection = matches!(command, Command::Edit(_) | Command::Cursor(_));
+        let tracks_viewport = matches!(
+            command,
+            Command::Edit(_)
+                | Command::View(
+                    ViewCommand::SetViewportWidth { .. }
+                        | ViewCommand::SetWrapMode { .. }
+                        | ViewCommand::SetWrapIndent { .. }
+                        | ViewCommand::SetTabWidth { .. }
+                        | ViewCommand::ScrollTo { .. },
+                )
+                | Command::Style(
+                    StyleCommand::Fold { .. }
+                        | StyleCommand::Unfold { .. }
+                        | StyleCommand::UnfoldAll,
+                )
+        );
         let before_modified = is_edit
             .then(|| doc.ws.is_modified_for_view(self.view_id).unwrap_or(false))
             .unwrap_or(false);
         let before_selection = tracks_selection
             .then(|| doc.selection_state_for_view(self.view_id))
+            .flatten();
+        let before_viewport = tracks_viewport
+            .then(|| doc.viewport_state_for_view(self.view_id))
             .flatten();
         let result = doc.exec_core(self.view_id, command.clone())?;
         if is_edit {
@@ -58,6 +77,17 @@ impl EditorUi {
             };
             if selection_changed && let Some(selection) = after_selection {
                 doc.record_state_event_from_selection_changed(self.view_id, selection);
+            }
+        }
+        if tracks_viewport {
+            let after_viewport = doc.viewport_state_for_view(self.view_id);
+            let viewport_changed = match (&before_viewport, &after_viewport) {
+                (Some(before), Some(after)) => !before.same_viewport_as(after),
+                (None, None) => false,
+                _ => true,
+            };
+            if viewport_changed && let Some(viewport) = after_viewport {
+                doc.record_state_event_from_viewport_changed(self.view_id, viewport);
             }
         }
 
