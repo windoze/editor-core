@@ -35,6 +35,11 @@ public final class EditCoreUI: NSView {
         set { container.minimapOpacity = newValue }
     }
 
+    public var minimapDiagnosticMarkers: [EditorCoreSkiaMinimapMarker] {
+        get { container.minimapView.diagnosticMarkers }
+        set { container.minimapView.diagnosticMarkers = newValue }
+    }
+
     // MARK: - EditorCoreSkiaView forwarding (common host hooks)
 
     public var pasteboard: NSPasteboard {

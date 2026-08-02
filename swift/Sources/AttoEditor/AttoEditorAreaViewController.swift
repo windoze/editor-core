@@ -201,6 +201,10 @@ final class AttoEditorAreaViewController: NSViewController {
         workspaceProblemsPanelController?.isVisible == true
     }
 
+    func _activeMinimapDiagnosticMarkersForTesting() -> [EditorCoreSkiaMinimapMarker] {
+        activeTab?.editCore.minimapDiagnosticMarkers ?? []
+    }
+
     func _coreMultiDocumentSnapshotForTesting() throws -> EcuMultiDocumentSnapshot? {
         try coreDocuments?.snapshot()
     }
@@ -3443,6 +3447,7 @@ final class AttoEditorAreaViewController: NSViewController {
         guard let tab = activeTab else {
             derivedStateStore.clearActive()
             problemsPanelController?.update(diagnostics: [])
+            clearMinimapDiagnosticMarkers()
             statusBarView.update(
                 leftText: transientStatusText,
                 languageId: nil,
@@ -3458,6 +3463,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let editor = tab.editCore.editor
         derivedStateStore.refreshActive(editor: editor)
         problemsPanelController?.update(diagnostics: derivedStateStore.active.diagnostics.diagnostics)
+        updateMinimapDiagnosticMarkers(for: tab)
 
         let (line1, col1): (UInt32, UInt32) = {
             do {
@@ -3544,6 +3550,44 @@ final class AttoEditorAreaViewController: NSViewController {
             selectionText: selectionText,
             fileSizeText: fileSizeText
         )
+    }
+
+    private func clearMinimapDiagnosticMarkers() {
+        for tab in tabs {
+            for pane in tab.panes {
+                pane.minimapDiagnosticMarkers = []
+            }
+        }
+    }
+
+    private func updateMinimapDiagnosticMarkers(for tab: AttoEditorTab) {
+        let markers = derivedStateStore.active.diagnostics.diagnostics.compactMap { diagnostic -> EditorCoreSkiaMinimapMarker? in
+            let offset = min(diagnostic.range.start, diagnostic.range.end)
+            guard let position = try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offset) else {
+                return nil
+            }
+            return EditorCoreSkiaMinimapMarker(
+                logicalLine: position.line,
+                kind: minimapMarkerKind(for: diagnostic.severity)
+            )
+        }
+
+        for pane in tab.panes {
+            pane.minimapDiagnosticMarkers = markers
+        }
+    }
+
+    private func minimapMarkerKind(for severity: EcuDiagnosticSeverity?) -> EditorCoreSkiaMinimapMarker.Kind {
+        switch severity {
+        case .error:
+            return .error
+        case .warning:
+            return .warning
+        case .information:
+            return .information
+        case .hint, .none:
+            return .hint
+        }
     }
 
     func setTransientStatusText(_ text: String?) {
