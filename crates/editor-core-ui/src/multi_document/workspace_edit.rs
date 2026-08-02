@@ -261,6 +261,18 @@ pub(super) fn apply(
                                 );
                             }
                         }
+                        if input.apply_mode == WorkspaceEditApplyMode::Atomic {
+                            return atomic_apply_runtime_failure_result(
+                                tabs,
+                                tab_order,
+                                active_tab,
+                                preview_tab,
+                                &mut filesystem_rollback,
+                                &mut open_tab_rollback,
+                                input.apply_mode,
+                                plan,
+                            );
+                        }
                         for uri in operation.affected_uris() {
                             runtime_blocked_text_edit_uris.insert(uri);
                         }
@@ -282,6 +294,18 @@ pub(super) fn apply(
                             "text edits for this URI are blocked because a preceding resource operation removes the target",
                         ),
                     );
+                    if input.apply_mode == WorkspaceEditApplyMode::Atomic {
+                        return atomic_apply_runtime_failure_result(
+                            tabs,
+                            tab_order,
+                            active_tab,
+                            preview_tab,
+                            &mut filesystem_rollback,
+                            &mut open_tab_rollback,
+                            input.apply_mode,
+                            plan,
+                        );
+                    }
                     continue;
                 }
                 if runtime_blocked_text_edit_uris.contains(uri.as_str()) {
@@ -295,6 +319,18 @@ pub(super) fn apply(
                             "text edits for this URI are blocked because a preceding resource operation did not apply",
                         ),
                     );
+                    if input.apply_mode == WorkspaceEditApplyMode::Atomic {
+                        return atomic_apply_runtime_failure_result(
+                            tabs,
+                            tab_order,
+                            active_tab,
+                            preview_tab,
+                            &mut filesystem_rollback,
+                            &mut open_tab_rollback,
+                            input.apply_mode,
+                            plan,
+                        );
+                    }
                     continue;
                 }
                 if text_edit_has_preflight_block(&plan, uri.as_str()) {
@@ -337,6 +373,18 @@ pub(super) fn apply(
                                     format!("open tab text edit apply failed: {err}"),
                                 ),
                             );
+                            if input.apply_mode == WorkspaceEditApplyMode::Atomic {
+                                return atomic_apply_runtime_failure_result(
+                                    tabs,
+                                    tab_order,
+                                    active_tab,
+                                    preview_tab,
+                                    &mut filesystem_rollback,
+                                    &mut open_tab_rollback,
+                                    input.apply_mode,
+                                    plan,
+                                );
+                            }
                         }
                     }
                     continue;
@@ -358,6 +406,18 @@ pub(super) fn apply(
                     }
                     Err(detail) => {
                         mark_skipped(&mut plan.skipped_uris, &mut plan.skipped_details, detail);
+                        if input.apply_mode == WorkspaceEditApplyMode::Atomic {
+                            return atomic_apply_runtime_failure_result(
+                                tabs,
+                                tab_order,
+                                active_tab,
+                                preview_tab,
+                                &mut filesystem_rollback,
+                                &mut open_tab_rollback,
+                                input.apply_mode,
+                                plan,
+                            );
+                        }
                     }
                 }
             }
@@ -926,6 +986,74 @@ fn resource_operation_error_with_rollbacks(
         (Err(filesystem_rollback_err), Err(open_tab_rollback_err)) => UiError::Processor(format!(
             "workspace edit resource operation failed: {err}; filesystem rollback also failed: {filesystem_rollback_err}; open tab rollback also failed: {open_tab_rollback_err}"
         )),
+    }
+}
+
+fn atomic_apply_runtime_failure_result(
+    tabs: &mut BTreeMap<TabId, TabEntry>,
+    tab_order: &mut Vec<TabId>,
+    active_tab: &mut Option<TabId>,
+    preview_tab: &mut Option<TabId>,
+    filesystem_rollback: &mut FilesystemRollback,
+    open_tab_rollback: &mut OpenTabRollback,
+    apply_mode: WorkspaceEditApplyMode,
+    plan: WorkspaceEditTransactionPlan,
+) -> Result<WorkspaceEditTransactionResult, UiError> {
+    rollback_atomic_apply_side_effects(
+        tabs,
+        tab_order,
+        active_tab,
+        preview_tab,
+        filesystem_rollback,
+        open_tab_rollback,
+    )?;
+    Ok(result_from_plan(
+        "apply",
+        apply_mode,
+        plan,
+        Vec::new(),
+        0,
+        0,
+    ))
+}
+
+fn rollback_atomic_apply_side_effects(
+    tabs: &mut BTreeMap<TabId, TabEntry>,
+    tab_order: &mut Vec<TabId>,
+    active_tab: &mut Option<TabId>,
+    preview_tab: &mut Option<TabId>,
+    filesystem_rollback: &mut FilesystemRollback,
+    open_tab_rollback: &mut OpenTabRollback,
+) -> Result<(), UiError> {
+    let filesystem_rollback_result = filesystem_rollback.rollback();
+    let had_open_tab_rollback = open_tab_rollback.has_entries();
+    let open_tab_rollback_result = if had_open_tab_rollback {
+        open_tab_rollback.rollback(tabs, tab_order, active_tab, preview_tab)
+    } else {
+        Ok(())
+    };
+
+    if !had_open_tab_rollback {
+        return filesystem_rollback_result.map_err(|err| {
+            UiError::Processor(format!(
+                "atomic workspace edit apply failed; filesystem rollback also failed: {err}"
+            ))
+        });
+    }
+
+    match (filesystem_rollback_result, open_tab_rollback_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(filesystem_rollback_err), Ok(())) => Err(UiError::Processor(format!(
+            "atomic workspace edit apply failed; filesystem rollback also failed: {filesystem_rollback_err}; open tab state was rolled back"
+        ))),
+        (Ok(()), Err(open_tab_rollback_err)) => Err(UiError::Processor(format!(
+            "atomic workspace edit apply failed; filesystem side effects were rolled back; open tab rollback also failed: {open_tab_rollback_err}"
+        ))),
+        (Err(filesystem_rollback_err), Err(open_tab_rollback_err)) => {
+            Err(UiError::Processor(format!(
+                "atomic workspace edit apply failed; filesystem rollback also failed: {filesystem_rollback_err}; open tab rollback also failed: {open_tab_rollback_err}"
+            )))
+        }
     }
 }
 

@@ -593,6 +593,88 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(events.events.first?.result.applied, false)
     }
 
+    func testMultiDocumentEditorUIAtomicWorkspaceEditRollsBackRuntimeTextFailure() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EditorCoreUIFFITests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("First.swift")
+        let badURL = tempDir.appendingPathComponent("Bad.swift")
+        try Data([0xff]).write(to: badURL)
+
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+
+        let first = try multi.openTab(text: "alpha\n", viewportWidthCells: 80)
+        try multi.setWorkspaceRoots([tempDir.absoluteString])
+        try multi.setTabDocumentURI(firstURL.absoluteString, tabId: first)
+
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "\(firstURL.absoluteString)",
+                  "version": null
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 5 }
+                    },
+                    "newText": "ALPHA"
+                  }
+                ]
+              },
+              {
+                "textDocument": {
+                  "uri": "\(badURL.absoluteString)",
+                  "version": null
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "invalid"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        """
+
+        let preview = try multi.previewWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertEqual(preview.applyMode, "atomic")
+        XCTAssertTrue(preview.skippedDetails.isEmpty)
+
+        let applied = try multi.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertEqual(applied.mode, "apply")
+        XCTAssertEqual(applied.applyMode, "atomic")
+        XCTAssertFalse(applied.applied)
+        XCTAssertTrue(applied.appliedURIs.isEmpty)
+        XCTAssertEqual(applied.appliedEditCount, 0)
+        XCTAssertEqual(applied.appliedResourceOperationCount, 0)
+        XCTAssertTrue(applied.skippedDetails.contains {
+            $0.uri == badURL.absoluteString
+                && $0.operation == "text_edit"
+                && $0.reason == "file_text_edit_read_failed"
+        })
+        XCTAssertEqual(try multi.tabText(tabId: first), "alpha\n")
+        XCTAssertEqual(try Data(contentsOf: badURL), Data([0xff]))
+        XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
+        let events = try multi.workspaceEditTransactionEvents()
+        XCTAssertEqual(events.events.first?.result.applyMode, "atomic")
+        XCTAssertEqual(events.events.first?.result.applied, false)
+        XCTAssertEqual(events.events.first?.result.appliedURIs, [])
+    }
+
     func testMultiDocumentEditorUIAppliesOpenTabResourceOperations() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)

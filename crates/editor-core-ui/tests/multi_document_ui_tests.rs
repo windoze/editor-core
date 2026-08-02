@@ -439,6 +439,92 @@ fn multi_document_ui_atomic_workspace_edit_preflight_skips_without_mutating() {
 }
 
 #[test]
+fn multi_document_ui_atomic_workspace_edit_rolls_back_runtime_text_failure() {
+    let root = unique_test_dir("atomic-runtime-text-failure");
+    std::fs::create_dir_all(&root).unwrap();
+    let first_path = root.join("First.swift");
+    let bad_path = root.join("Bad.swift");
+    std::fs::write(&bad_path, [0xff]).unwrap();
+    let first_uri = path_to_file_uri(first_path.as_path());
+    let bad_uri = path_to_file_uri(bad_path.as_path());
+    let root_uri = path_to_file_uri(root.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    let first = ui.open_tab("alpha\n", 80);
+    ui.set_workspace_roots([root_uri]);
+    ui.set_tab_document_uri(first, Some(first_uri.clone()))
+        .unwrap();
+
+    let edit = json!({
+        "applyMode": "atomic",
+        "workspaceEdit": {
+            "documentChanges": [
+                {
+                    "textDocument": {
+                        "uri": first_uri.as_str(),
+                        "version": null
+                    },
+                    "edits": [
+                        {
+                            "range": {
+                                "start": { "line": 0, "character": 0 },
+                                "end": { "line": 0, "character": 5 }
+                            },
+                            "newText": "ALPHA"
+                        }
+                    ]
+                },
+                {
+                    "textDocument": {
+                        "uri": bad_uri.as_str(),
+                        "version": null
+                    },
+                    "edits": [
+                        {
+                            "range": {
+                                "start": { "line": 0, "character": 0 },
+                                "end": { "line": 0, "character": 0 }
+                            },
+                            "newText": "invalid"
+                        }
+                    ]
+                }
+            ]
+        }
+    })
+    .to_string();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(edit.as_str())
+        .unwrap();
+    assert_eq!(preview.apply_mode, "atomic");
+    assert!(preview.skipped_details.is_empty());
+
+    let applied = ui.apply_workspace_edit_transaction(edit.as_str()).unwrap();
+    assert_eq!(applied.mode, "apply");
+    assert_eq!(applied.apply_mode, "atomic");
+    assert!(!applied.applied);
+    assert!(applied.applied_uris.is_empty());
+    assert_eq!(applied.applied_edit_count, 0);
+    assert_eq!(applied.applied_resource_operation_count, 0);
+    assert!(applied.skipped_details.iter().any(|detail| {
+        detail.uri == bad_uri
+            && detail.operation.as_deref() == Some("text_edit")
+            && detail.reason == "file_text_edit_read_failed"
+    }));
+    assert_eq!(ui.tab_text(first).unwrap(), "alpha\n");
+    assert_eq!(std::fs::read(&bad_path).unwrap(), vec![0xff]);
+
+    let events = ui.workspace_edit_transaction_events_after(0);
+    assert_eq!(events.latest_sequence, 1);
+    assert_eq!(events.events[0].result.apply_mode, "atomic");
+    assert!(!events.events[0].result.applied);
+    assert!(events.events[0].result.applied_uris.is_empty());
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn multi_document_ui_tracks_workspace_roots() {
     let mut ui = MultiDocumentEditorUi::new();
 

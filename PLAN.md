@@ -324,6 +324,18 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditOpenTabProjectionCreatesUndoGroups`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEdit`
     - `git diff --check`
+- 中间提交：`feat(ui): roll back atomic workspace edit failures`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把显式 `atomic` apply mode 从 preflight-only 扩展到 text edit apply 阶段的运行时失败回滚。
+  - 提交边界：只在 `MultiDocumentEditorUi` transaction apply 内处理 atomic 模式下运行时新增的 skipped text edit/resource dependency detail；发生这类失败时复用已有 filesystem/open-tab rollback log 回滚已经应用的副作用，并返回 `applied=false`、edit/resource counts 为 0 的结构化 result。本提交不改变默认 partial 语义，不新增 ABI 函数，不实现跨文件用户级 undo command 或更深层 conflict UI。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_atomic_workspace_edit_rolls_back_runtime_text_failure`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAtomicWorkspaceEditRollsBackRuntimeTextFailure`
+    - `cargo test -p editor-core-ui-ffi`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 
