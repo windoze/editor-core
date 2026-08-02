@@ -206,6 +206,14 @@ Keep JSON for complex payloads that are not hot-path:
 - Complex config and ad-hoc tooling.
 - Debug and inspection endpoints.
 
+Current `editor-core-ui-ffi` LSP lifecycle control-plane APIs follow this model. For example,
+`editor_core_ui_ffi_editor_ui_lsp_did_change_workspace_folders_json(EditorUi* ui,
+const char* added_json_utf8, const char* removed_json_utf8)` accepts two UTF-8 JSON arrays of
+LSP `WorkspaceFolder` objects (`{ "uri": string, "name": string }`) and sends
+`workspace/didChangeWorkspaceFolders` for the active UI-owned LSP session. Implementations must
+also keep the client-side `workspace/workspaceFolders` response list coherent with the accepted
+change.
+
 This avoids blocking integrations while typed/binary surfaces mature.
 
 ## 4) Generic ioctl-Style Dispatcher (Optional v1)

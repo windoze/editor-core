@@ -692,6 +692,16 @@
     - `cargo test -p editor-core-ui lsp_request_events_record_start_completion_and_result_sequence`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ui): notify lsp workspace folder changes`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 headless `LspSession::did_change_workspace_folders(...)` 链接到 `EditorUi`、C ABI 和 Swift typed wrapper，并让 `LspClient` 的 `workspace/workspaceFolders` 响应列表随 didChange 更新。
+  - 提交边界：只新增 JSON control-plane ABI `editor_core_ui_ffi_editor_ui_lsp_did_change_workspace_folders_json(...)` 和 Swift `lspDidChangeWorkspaceFolders(added:removed:)` wrapper；不改变 LSP server start/restart、shared-session key、多 root project ownership、AttoEditor project-open flow、`MultiDocumentEditorUi` root ABI 或自动 workspace folder diff 策略。
+  - 验证记录：
+    - `cargo test -p editor-core-ui lsp_did_change_workspace_folders_notifies_and_updates_workspace_response`
+    - `cargo test -p editor-core-ui-ffi ffi_lsp_request_definition_errors_when_lsp_disabled`
+    - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testEditorUILSPResultEventsWrapperStartsEmpty`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

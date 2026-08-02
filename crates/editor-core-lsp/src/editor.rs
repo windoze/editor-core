@@ -1183,9 +1183,11 @@ impl LspSession {
         self.notify(
             "workspace/didChangeWorkspaceFolders",
             json!({
-                "event": { "added": added, "removed": removed }
+                "event": { "added": added.clone(), "removed": removed.clone() }
             }),
-        )
+        )?;
+        self.client.apply_workspace_folder_change(&added, &removed);
+        Ok(())
     }
 
     /// Notify `workspace/didChangeConfiguration`.

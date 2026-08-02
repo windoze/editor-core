@@ -5161,6 +5161,16 @@ fn ffi_lsp_request_definition_errors_when_lsp_disabled() {
     assert_eq!(code, ECU_ERR_INTERNAL);
     let code = unsafe { editor_core_ui_ffi_editor_ui_lsp_request_document_links(ui, &mut out_id) };
     assert_eq!(code, ECU_ERR_INTERNAL);
+    let added = CString::new(r#"[{"uri":"file:///tmp/added","name":"added"}]"#).unwrap();
+    let removed = CString::new(r#"[]"#).unwrap();
+    let code = unsafe {
+        editor_core_ui_ffi_editor_ui_lsp_did_change_workspace_folders_json(
+            ui,
+            added.as_ptr(),
+            removed.as_ptr(),
+        )
+    };
+    assert_eq!(code, ECU_ERR_INTERNAL);
     let link = CString::new(
         r#"{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}}}"#,
     )

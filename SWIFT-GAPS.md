@@ -84,11 +84,12 @@ Swift 侧已经具备以下基础能力：
 - 阶段 245 进一步补齐阶段 5 的 core document URI projection：WorkspaceEdit core transaction / undo removed-tab close callback URL 已跟随 apply/undo 前的 core tab snapshot，而不是只读取 Swift 本地 `tab.fileURL`。
 - 阶段 246 进一步补齐阶段 5 的 pane layout/session schema migration 起点：session tab snapshot 已新增可选 `paneLayout` descriptor，并优先按 core-projected view count / active view index 写出和恢复，旧 `paneCount` / `activePaneIndex` 保留为兼容 fallback。
 - 阶段 247 补齐阶段 6 的 LSP workspace lifecycle 起点：`EditorUi::lsp_enable_stdio(...)` 已把 root URI 投影为 LSP `workspaceFolders`，并用于 initialize params 与 `workspace/workspaceFolders` client response。
+- 阶段 248 继续补齐阶段 6 的 LSP workspace lifecycle：`workspace/didChangeWorkspaceFolders` 已从 headless LSP session 暴露到 Rust UI、C ABI 和 Swift typed wrapper，并会同步更新后续 `workspace/workspaceFolders` response 列表。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
 - 阶段 6 第二部分已让 references 多结果进入一个轻量可过滤结果 palette，单结果直接跳转；`AttoLspDefinitionParser` 新增多目标解析并补测试。阶段 57 已把 definition/declaration/type definition/implementation/references 的多结果处理统一到同一套 location results quick panel。
-- 阶段 6 后续缺口中，基础持久在线 references/locations panel 已在阶段 114 补齐，locations/symbols result lifecycle store 起点已在阶段 121 补齐，locations/symbols history entry/envelope 元数据起点已在阶段 122 补齐；多数 result family typed payload 已在阶段 148-161 和阶段 173-174 补齐；阶段 247 已补单 root LSP `workspaceFolders` initialize / client response 起点；仍缺少数 raw-only family typed envelope、完整 workspace folder didChange、统一 feedback/状态订阅和项目级命令模型。
+- 阶段 6 后续缺口中，基础持久在线 references/locations panel 已在阶段 114 补齐，locations/symbols result lifecycle store 起点已在阶段 121 补齐，locations/symbols history entry/envelope 元数据起点已在阶段 122 补齐；多数 result family typed payload 已在阶段 148-161 和阶段 173-174 补齐；阶段 247 已补单 root LSP `workspaceFolders` initialize / client response 起点，阶段 248 已补手动 `workspace/didChangeWorkspaceFolders` 通知与 response 列表更新链路；仍缺少数 raw-only family typed envelope、自动 project/root diff 到 workspace folder didChange、统一 feedback/状态订阅和项目级命令模型。
 - 2026-08-01 阶段 7 第一部分已完成：AttoEditor 新增基础 `view.split_right` 命令，通过 `EditorUI.cloneView` 为当前 tab 创建共享 buffer 的第二个 AppKit pane；这部分是当前可用的过渡实现，不应继续扩展成 Swift 自有 workspace/tab 模型。
 - 2026-08-01 阶段 7 架构决策已更新：多文档、tab、workspace、project/session 级状态应使用 `editor-core` / `editor-core-ui` 一侧的 `Workspace` / `MultiDocumentEditorUi` 模型作为单一所有权来源，Swift 侧只做 AppKit 表现、命令转发、用户交互和持久化桥接；后续不在 Swift/AppKit 层新开一套长期独立的 workspace/tab/session 模型，也不继续给 Swift-only tab state 增加 preview/pin/dirty/close/search-all-tabs 等长期语义。
 - 阶段 7 第一部分已让 split pane 复用主编辑器 chrome/theme/preferences/LSP/hover/cmd-click hook，并新增 first-responder hook 跟踪 active pane；AttoEditor command palette、View 菜单和默认 keymap 已接入。
@@ -919,6 +920,14 @@ App 层新增 `Workspace: Undo Last Workspace Edit` command、Edit 菜单项 `Un
 实现上新增 `default_workspace_folders(root_uri)`，单 root 情况下生成 `{ "uri": root_uri, "name": last_path_segment }`；空 root URI 保持空数组。测试通过 fake LSP server 捕获 initialize request，并主动发起 `workspace/workspaceFolders` server request，断言 initialize params 和 client response 都包含同一个 root。
 
 本阶段不改变 Swift `EditorUI.lspEnable(...)` API、不新增多 root ABI、不改变共享 LSP session key、不实现 `workspace/didChangeWorkspaceFolders`、project open/close lifecycle、server restart 策略或 App 层 project selector。后续仍需把 `MultiDocumentEditorUi` / project roots 与 LSP session lifecycle 完整绑定，并补动态 workspace folder 变更事件。
+
+## 阶段 248: LSP workspaceFolders didChange 手动链路
+
+2026-08-03 阶段 248 已把 headless `LspSession::did_change_workspace_folders(...)` 链接到 Rust UI、C ABI 和 Swift typed wrapper。此前 headless 层虽然能发送 `workspace/didChangeWorkspaceFolders`，但 Swift/UI binding 不能调用；同时通知发出后，`LspClient` 内部用于响应 server `workspace/workspaceFolders` 的列表不会更新，server 后续查询仍可能看到旧 workspace root。
+
+实现上 `LspClient` 新增 workspace folder change apply 逻辑，按 URI 移除 removed folders 并替换/追加 added folders；`LspSession::did_change_workspace_folders(...)` 在成功发送通知后更新该列表。Rust UI 新增 `lsp_did_change_workspace_folders_json(...)`，C ABI 新增 `editor_core_ui_ffi_editor_ui_lsp_did_change_workspace_folders_json(...)`，Swift 新增 `EcuLspWorkspaceFolder` 和 `EditorUI.lspDidChangeWorkspaceFolders(added:removed:)`。
+
+测试覆盖 fake LSP server 在 didChange 后再请求 `workspace/workspaceFolders` 时收到更新后的 root 列表；FFI/Swift wrapper 覆盖 LSP 未启用时的统一错误路径。本阶段仍不实现自动 project/root diff、server restart 策略、`MultiDocumentEditorUi` roots 到 active LSP session 的批量传播，或 AttoEditor project-open / project-close lifecycle 的产品级接线。
 
 ## 分层结论
 

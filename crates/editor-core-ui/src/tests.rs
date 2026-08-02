@@ -488,6 +488,94 @@ fn lsp_enable_stdio_projects_root_uri_to_workspace_folders() {
 }
 
 #[test]
+fn lsp_did_change_workspace_folders_notifies_and_updates_workspace_response() {
+    let capture_path = unique_temp_path("workspace-folders-change");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let old_root_name = format!("editor-core-ui-old-workspace-{stamp}");
+    let new_root_name = format!("editor-core-ui-new-workspace-{stamp}");
+    let old_root_uri = format!("file:///tmp/{old_root_name}");
+    let new_root_uri = format!("file:///tmp/{new_root_name}");
+    let doc_uri = format!("{old_root_uri}/main.rs");
+    let init_body = lsp_initialize_response(serde_json::json!({})).to_string();
+    let workspace_folders_request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 100,
+        "method": "workspace/workspaceFolders",
+        "params": null,
+    })
+    .to_string();
+    let script = format!(
+        "body={}; printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${{#body}}\" \"$body\"; \
+         sleep 0.2; body={}; printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${{#body}}\" \"$body\"; \
+         cat > {}",
+        shell_quote(&init_body),
+        shell_quote(&workspace_folders_request),
+        shell_quote(capture_path.to_string_lossy().as_ref())
+    );
+    let args = vec!["-c".to_string(), script];
+
+    let mut ui = EditorUi::new("fn main() {}\n", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &old_root_uri, &doc_uri, "rust")
+        .unwrap();
+    ui.lsp_did_change_workspace_folders_json(
+        &serde_json::json!([{ "uri": new_root_uri, "name": new_root_name }]).to_string(),
+        &serde_json::json!([{ "uri": old_root_uri, "name": old_root_name }]).to_string(),
+    )
+    .unwrap();
+    'poll: loop {
+        for _ in 0..100 {
+            let _ = ui.poll_processing().unwrap();
+            let captured = captured_lsp_stdin(&capture_path);
+            if captured.contains("\"id\":100") {
+                break 'poll;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!(
+            "timed out waiting for workspace/workspaceFolders response; captured: {}",
+            captured_lsp_stdin(&capture_path)
+        );
+    }
+
+    let messages = captured_lsp_json_messages(&capture_path);
+    let did_change = messages
+        .iter()
+        .find(|message| message["method"] == "workspace/didChangeWorkspaceFolders")
+        .expect("missing workspace/didChangeWorkspaceFolders notification");
+    assert_eq!(
+        did_change["params"]["event"]["added"][0]["uri"],
+        new_root_uri
+    );
+    assert_eq!(
+        did_change["params"]["event"]["removed"][0]["uri"],
+        old_root_uri
+    );
+
+    let workspace_folders_response = messages
+        .iter()
+        .find(|message| message["id"] == 100)
+        .expect("missing workspace/workspaceFolders response");
+    assert_eq!(
+        workspace_folders_response["result"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(workspace_folders_response["result"][0]["uri"], new_root_uri);
+    assert_eq!(
+        workspace_folders_response["result"][0]["name"],
+        new_root_name
+    );
+
+    ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
 fn editor_ui_state_events_project_lsp_request_and_result_events() {
     let capture_path = unique_temp_path("state-events");
     let script = lsp_capture_server_script(&capture_path, serde_json::json!({}));

@@ -118,6 +118,24 @@ impl LspClient {
         self.send_message(json_rpc_response(id, result))
     }
 
+    /// Apply a workspace folder change to the client-side folder list used when a server asks
+    /// `workspace/workspaceFolders`.
+    pub fn apply_workspace_folder_change(&mut self, added: &[Value], removed: &[Value]) {
+        for removed_uri in removed.iter().filter_map(workspace_folder_uri) {
+            self.workspace_folders
+                .retain(|folder| workspace_folder_uri(folder) != Some(removed_uri));
+        }
+
+        for folder in added {
+            let Some(uri) = workspace_folder_uri(folder) else {
+                continue;
+            };
+            self.workspace_folders
+                .retain(|existing| workspace_folder_uri(existing) != Some(uri));
+            self.workspace_folders.push(folder.clone());
+        }
+    }
+
     /// Send an error JSON-RPC response for a server-initiated request.
     pub fn respond_error(
         &self,
@@ -377,6 +395,10 @@ impl LspClient {
 
         self.respond(id, result)
     }
+}
+
+fn workspace_folder_uri(folder: &Value) -> Option<&str> {
+    folder.get("uri").and_then(Value::as_str)
 }
 
 impl Drop for LspClient {

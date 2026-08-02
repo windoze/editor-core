@@ -65,3 +65,38 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_disable(ui: *mut Edito
         Ok(())
     });
 }
+
+/// Notify `workspace/didChangeWorkspaceFolders` for the active LSP session.
+///
+/// `added_json_utf8` and `removed_json_utf8` must be JSON arrays of LSP `WorkspaceFolder`
+/// objects: `{ "uri": string, "name": string }`.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// JSON string parameters must be valid null-terminated UTF-8 pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_did_change_workspace_folders_json(
+    ui: *mut EditorUi,
+    added_json_utf8: *const c_char,
+    removed_json_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let added = require_cstr(added_json_utf8, "added_json_utf8")?
+            .to_str()
+            .map_err(|_| "added_json_utf8 is not valid UTF-8".to_string())?;
+        let removed = require_cstr(removed_json_utf8, "removed_json_utf8")?
+            .to_str()
+            .map_err(|_| "removed_json_utf8 is not valid UTF-8".to_string())?;
+        ui.lsp_did_change_workspace_folders_json(added, removed)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}

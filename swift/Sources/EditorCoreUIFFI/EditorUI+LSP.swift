@@ -25,6 +25,35 @@ extension EditorUI {
         editor_core_ui_ffi_editor_ui_lsp_disable(handle)
     }
 
+    public func lspDidChangeWorkspaceFolders(
+        added: [EcuLspWorkspaceFolder],
+        removed: [EcuLspWorkspaceFolder]
+    ) throws {
+        let encoder = JSONEncoder()
+        let addedData = try encoder.encode(added)
+        let removedData = try encoder.encode(removed)
+        guard let addedJSON = String(data: addedData, encoding: .utf8),
+              let removedJSON = String(data: removedData, encoding: .utf8)
+        else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_lsp_did_change_workspace_folders_encode",
+                message: "failed to encode workspace folders JSON"
+            )
+        }
+
+        let status = addedJSON.withCString { addedPtr in
+            removedJSON.withCString { removedPtr in
+                editor_core_ui_ffi_editor_ui_lsp_did_change_workspace_folders_json(
+                    handle,
+                    addedPtr,
+                    removedPtr
+                )
+            }
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_did_change_workspace_folders_json")
+    }
+
     public func lspIsEnabled() throws -> Bool {
         var out: UInt8 = 0
         let status = editor_core_ui_ffi_editor_ui_lsp_is_enabled(handle, &out)

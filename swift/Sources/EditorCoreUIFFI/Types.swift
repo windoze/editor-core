@@ -518,6 +518,17 @@ public enum EcuLspWorkState: Equatable, Sendable, Decodable {
 }
 
 @frozen
+public struct EcuLspWorkspaceFolder: Equatable, Sendable, Codable {
+    public var uri: String
+    public var name: String
+
+    public init(uri: String, name: String) {
+        self.uri = uri
+        self.name = name
+    }
+}
+
+@frozen
 public struct EcuLspServerStatus: Equatable, Sendable, Decodable {
     public var name: String?
     public var version: String?

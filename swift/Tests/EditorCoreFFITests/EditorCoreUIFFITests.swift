@@ -116,6 +116,12 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(requestEvents.events.isEmpty)
         XCTAssertFalse(try ui.lspCancelRequest(999))
         XCTAssertFalse(try ui.lspMarkRequestTimedOut(999))
+        XCTAssertThrowsError(
+            try ui.lspDidChangeWorkspaceFolders(
+                added: [.init(uri: "file:///tmp/added", name: "added")],
+                removed: []
+            )
+        )
         XCTAssertEqual(try ui.lspRequestEventsLatestSequence(), 0)
 
         XCTAssertEqual(try ui.stateEventsLatestSequence(), 0)

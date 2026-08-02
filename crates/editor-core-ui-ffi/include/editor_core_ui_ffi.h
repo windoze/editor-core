@@ -357,6 +357,11 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_enable(EditorUi* ui,
                                                const char* doc_uri_utf8,
                                                const char* language_id_utf8);
 void editor_core_ui_ffi_editor_ui_lsp_disable(EditorUi* ui);
+int32_t editor_core_ui_ffi_editor_ui_lsp_did_change_workspace_folders_json(
+    EditorUi* ui,
+    const char* added_json_utf8,
+    const char* removed_json_utf8
+);
 int32_t editor_core_ui_ffi_editor_ui_lsp_is_enabled(EditorUi* ui, uint8_t* out_enabled);
 int32_t editor_core_ui_ffi_editor_ui_lsp_status_json(EditorUi* ui, char** out_status_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_result_events_latest_sequence(EditorUi* ui,
