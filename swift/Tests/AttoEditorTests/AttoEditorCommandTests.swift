@@ -3333,6 +3333,55 @@ final class AttoEditorCommandTests: XCTestCase {
         )
     }
 
+    func testWorkspaceEditApplyPreservesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("apply-source-uri.txt")
+        let projectedURL = tempDir.appendingPathComponent("apply-projected-uri.txt")
+        try "alpha\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "projected\n".write(to: projectedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "\(projectedURL.standardizedFileURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "updated "
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "updated alpha\n")
+        XCTAssertEqual(vc.tabs.count, 1)
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, projectedURL.standardizedFileURL)
+        XCTAssertEqual(try String(contentsOf: projectedURL, encoding: .utf8), "projected\n")
+    }
+
     func testWorkspaceEditApplicationUsesCoreVersionPreflight() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

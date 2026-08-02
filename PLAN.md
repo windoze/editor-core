@@ -547,6 +547,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditPreviewTextUsesCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditPreviewConfirmationCanCancelCoreTransaction`
     - `git diff --check`
+- 中间提交：`feat(app): apply workspace edits from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 在 WorkspaceEdit core transaction apply 前同步打开 tab 文本/dirty/active-view 时，保留 core tab snapshot 里已有的 `document_uri` 投影。
+  - 提交边界：只调整 `syncOpenTabsToCoreBeforeWorkspaceEditApply(...)` 的 document URI/title 同步来源；core snapshot 已有有效 file URI 时保留 core URI，缺失时继续回退 Swift 本地 `tab.fileURL`。不改变 WorkspaceEdit transaction planner/apply/undo 语义、resource operation 执行、preview panel UI、session schema 或真实 `tab.fileURL` 同步策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditApplyPreservesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditApplicationMutatesAlreadyOpenCrossFileTab`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

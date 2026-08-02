@@ -459,11 +459,12 @@ extension AttoEditorAreaViewController {
             let text = try tab.editCore.editor.text()
             let coreText = try coreDocuments.tabText(tabId: coreTabID)
             let coreIsDirty = coreTabsByID[coreTabID]?.isModified ?? false
-            try coreDocuments.setTabTitle(tab.fileURL.lastPathComponent, tabId: coreTabID)
-            try coreDocuments.setTabDocumentURI(
-                tab.fileURL.standardizedFileURL.absoluteString,
-                tabId: coreTabID
+            let documentURL = projectedWorkspaceEditSyncURL(
+                coreTab: coreTabsByID[coreTabID],
+                fallback: tab.fileURL
             )
+            try coreDocuments.setTabTitle(documentURL.lastPathComponent, tabId: coreTabID)
+            try coreDocuments.setTabDocumentURI(documentURL.absoluteString, tabId: coreTabID)
             if coreText != text || coreIsDirty != isDirty {
                 try coreDocuments.replaceTabText(tabId: coreTabID, text: text, markSaved: isDirty == false)
             }
@@ -475,6 +476,16 @@ extension AttoEditorAreaViewController {
         if let activeTab, let coreTabID = activeTab.coreTabID {
             try coreDocuments.setActiveTab(coreTabID)
         }
+    }
+
+    func projectedWorkspaceEditSyncURL(coreTab: EcuMultiDocumentTabSnapshot?, fallback: URL) -> URL {
+        if let documentURI = coreTab?.documentURI,
+           let url = Self.fileURL(fromDocumentURI: documentURI)
+        {
+            return url.standardizedFileURL
+        }
+
+        return fallback.standardizedFileURL
     }
 
     func syncAppTabsFromCoreWorkspaceEditTransaction(
