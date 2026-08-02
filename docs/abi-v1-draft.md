@@ -214,6 +214,13 @@ LSP `WorkspaceFolder` objects (`{ "uri": string, "name": string }`) and sends
 also keep the client-side `workspace/workspaceFolders` response list coherent with the accepted
 change.
 
+Document lifecycle control-plane APIs use typed string parameters for common notification shapes.
+`editor_core_ui_ffi_editor_ui_lsp_did_save_document(EditorUi* ui, const char* document_uri_utf8,
+const char* text_utf8)` sends `textDocument/didSave` for the active UI-owned LSP session; `text_utf8`
+may be null when the host does not want to include the optional saved document text. The companion
+`editor_core_ui_ffi_editor_ui_lsp_did_close_document(EditorUi* ui, const char* document_uri_utf8)`
+sends `textDocument/didClose` for the same session.
+
 Multi-document workspace root control-plane APIs use the same JSON shape. For example,
 `editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(MultiDocumentEditorUi*
 multi, const char* roots_json_utf8)` accepts a UTF-8 JSON string array of workspace root URIs,

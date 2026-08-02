@@ -122,6 +122,8 @@ final class EditorCoreUIFFITests: XCTestCase {
                 removed: []
             )
         )
+        XCTAssertThrowsError(try ui.lspDidSaveDocument(uri: "file:///tmp/saved.rs", text: "saved"))
+        XCTAssertThrowsError(try ui.lspDidCloseDocument(uri: "file:///tmp/saved.rs"))
         XCTAssertEqual(try ui.lspRequestEventsLatestSequence(), 0)
 
         XCTAssertEqual(try ui.stateEventsLatestSequence(), 0)

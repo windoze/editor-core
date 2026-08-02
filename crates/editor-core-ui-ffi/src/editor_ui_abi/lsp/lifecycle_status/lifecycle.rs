@@ -100,3 +100,71 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_did_change_workspace_f
         Err(err) => status_from_error(err),
     }
 }
+
+/// Notify `textDocument/didSave` for the active LSP session.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `document_uri_utf8` must be a valid null-terminated UTF-8 pointer.
+/// `text_utf8` may be null; when present it must be a valid null-terminated UTF-8 pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_did_save_document(
+    ui: *mut EditorUi,
+    document_uri_utf8: *const c_char,
+    text_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let document_uri = require_cstr(document_uri_utf8, "document_uri_utf8")?
+            .to_str()
+            .map_err(|_| "document_uri_utf8 is not valid UTF-8".to_string())?;
+        let text = if text_utf8.is_null() {
+            None
+        } else {
+            Some(
+                require_cstr(text_utf8, "text_utf8")?
+                    .to_str()
+                    .map_err(|_| "text_utf8 is not valid UTF-8".to_string())?
+                    .to_string(),
+            )
+        };
+        ui.lsp_did_save_document(document_uri, text)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Notify `textDocument/didClose` for the active LSP session.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `document_uri_utf8` must be a valid null-terminated UTF-8 pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_did_close_document(
+    ui: *mut EditorUi,
+    document_uri_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let document_uri = require_cstr(document_uri_utf8, "document_uri_utf8")?
+            .to_str()
+            .map_err(|_| "document_uri_utf8 is not valid UTF-8".to_string())?;
+        ui.lsp_did_close_document(document_uri)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}

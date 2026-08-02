@@ -1,3 +1,4 @@
+mod document;
 mod start;
 mod status;
 mod workspace;

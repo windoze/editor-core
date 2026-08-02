@@ -576,6 +576,44 @@ fn lsp_did_change_workspace_folders_notifies_and_updates_workspace_response() {
 }
 
 #[test]
+fn lsp_document_save_and_close_notifications_are_exposed() {
+    let capture_path = unique_temp_path("document-save-close");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root_uri = format!("file:///tmp/editor-core-ui-doc-lifecycle-{stamp}");
+    let doc_uri = format!("{root_uri}/main.rs");
+    let script = lsp_capture_server_script(&capture_path, serde_json::json!({}));
+    let args = vec!["-c".to_string(), script];
+
+    let mut ui = EditorUi::new("fn main() {}\n", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+    ui.lsp_did_save_document(&doc_uri, Some("fn main() { saved(); }\n".to_string()))
+        .unwrap();
+    ui.lsp_did_close_document(&doc_uri).unwrap();
+
+    wait_for_captured_lsp_stdin(&capture_path, "textDocument/didClose");
+    let messages = captured_lsp_json_messages(&capture_path);
+    let did_save = messages
+        .iter()
+        .find(|message| message["method"] == "textDocument/didSave")
+        .expect("missing textDocument/didSave notification");
+    assert_eq!(did_save["params"]["textDocument"]["uri"], doc_uri);
+    assert_eq!(did_save["params"]["text"], "fn main() { saved(); }\n");
+
+    let did_close = messages
+        .iter()
+        .find(|message| message["method"] == "textDocument/didClose")
+        .expect("missing textDocument/didClose notification");
+    assert_eq!(did_close["params"]["textDocument"]["uri"], doc_uri);
+
+    ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
 fn editor_ui_state_events_project_lsp_request_and_result_events() {
     let capture_path = unique_temp_path("state-events");
     let script = lsp_capture_server_script(&capture_path, serde_json::json!({}));

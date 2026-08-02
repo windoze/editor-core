@@ -722,6 +722,17 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeNotifiesOpenTabLspWorkspaceFolders`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(app): notify lsp document save close`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 headless `LspSession` 的 `textDocument/didSave` / `textDocument/didClose` 通知暴露到 `EditorUi`、C ABI、Swift typed wrapper，并让 AttoEditor 保存 tab / 关闭 tab 的主路径通知对应 LSP session。
+  - 提交边界：只新增 didSave/didClose document lifecycle control-plane 接线和保存/关闭 hook；didSave 的 text payload 可为空但 AttoEditor 保存路径会传入保存后的文本；不新增 didOpen 多文档打开生命周期、不改变 didChange fan-out、不实现 project open/close 批量 LSP session 管理、server restart/shared-session root-set ownership 或更高层 project selector。
+  - 验证记录：
+    - `cargo test -p editor-core-ui lsp_document_save_and_close_notifications_are_exposed`
+    - `cargo test -p editor-core-ui-ffi ffi_lsp_request_definition_errors_when_lsp_disabled`
+    - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testEditorUILSPResultEventsWrapperStartsEmpty`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testSaveAndCloseNotifyLspDocumentLifecycle`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

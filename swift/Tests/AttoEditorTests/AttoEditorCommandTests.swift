@@ -4946,6 +4946,44 @@ final class AttoEditorCommandTests: XCTestCase {
         }
     }
 
+    func testSaveAndCloseNotifyLspDocumentLifecycle() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("lifecycle.txt")
+        try "initial".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("lifecycle-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("lifecycle-fake-lsp.sh")
+        try writeFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        try tab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer { tab.editCore.editor.lspDisable() }
+
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":" saved"}"#))
+        vc.saveActiveTab()
+        vc.closeActiveTab()
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: "textDocument/didClose"
+        )
+        XCTAssertTrue(captured.contains(#""method":"textDocument/didSave""#), captured)
+        XCTAssertTrue(captured.contains(#""method":"textDocument/didClose""#), captured)
+        XCTAssertTrue(captured.contains(fileURL.standardizedFileURL.absoluteString), captured)
+        XCTAssertTrue(captured.contains(" savedinitial"), captured)
+    }
+
     func testCoreMultiDocumentMirrorTracksEditedTextDirtyAndSearch() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

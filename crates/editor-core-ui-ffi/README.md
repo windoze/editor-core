@@ -29,6 +29,27 @@ objects:
 The call sends `workspace/didChangeWorkspaceFolders` for the active UI-owned LSP session and keeps
 the client-side `workspace/workspaceFolders` response list synchronized with the accepted change.
 
+## LSP Document Lifecycle
+
+Document save and close notifications are exposed as string-based control-plane functions:
+
+```c
+int32_t editor_core_ui_ffi_editor_ui_lsp_did_save_document(
+    EditorUi* ui,
+    const char* document_uri_utf8,
+    const char* text_utf8
+);
+
+int32_t editor_core_ui_ffi_editor_ui_lsp_did_close_document(
+    EditorUi* ui,
+    const char* document_uri_utf8
+);
+```
+
+`document_uri_utf8` must be a UTF-8 LSP document URI. `text_utf8` may be null for didSave callers
+that do not include the optional saved document text. Both calls target the active UI-owned LSP
+session and return an error status when LSP is not enabled.
+
 ## Multi-document Workspace Roots
 
 The multi-document model owns workspace root URI metadata for project-level features. Existing
