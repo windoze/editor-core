@@ -28,3 +28,35 @@ objects:
 
 The call sends `workspace/didChangeWorkspaceFolders` for the active UI-owned LSP session and keeps
 the client-side `workspace/workspaceFolders` response list synchronized with the accepted change.
+
+## Multi-document Workspace Roots
+
+The multi-document model owns workspace root URI metadata for project-level features. Existing
+callers may continue replacing roots without a return value:
+
+```c
+int32_t editor_core_ui_ffi_multi_document_set_workspace_roots_json(
+    MultiDocumentEditorUi* multi,
+    const char* roots_json_utf8
+);
+```
+
+Hosts that need to notify LSP sessions can use the diff-returning variant:
+
+```c
+char* editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(
+    MultiDocumentEditorUi* multi,
+    const char* roots_json_utf8
+);
+```
+
+`roots_json_utf8` is a JSON array of root URI strings. The returned JSON is:
+
+```json
+{
+  "added": [{ "uri": "file:///new-root", "name": "new-root" }],
+  "removed": [{ "uri": "file:///old-root", "name": "old-root" }]
+}
+```
+
+The returned string is owned by the caller and must be freed with `editor_core_ui_ffi_string_free`.

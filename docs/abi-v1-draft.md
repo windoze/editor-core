@@ -214,6 +214,13 @@ LSP `WorkspaceFolder` objects (`{ "uri": string, "name": string }`) and sends
 also keep the client-side `workspace/workspaceFolders` response list coherent with the accepted
 change.
 
+Multi-document workspace root control-plane APIs use the same JSON shape. For example,
+`editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(MultiDocumentEditorUi*
+multi, const char* roots_json_utf8)` accepts a UTF-8 JSON string array of workspace root URIs,
+replaces the core-owned root list, and returns `{ "added": WorkspaceFolder[], "removed":
+WorkspaceFolder[] }` so host UIs can drive `workspace/didChangeWorkspaceFolders` from the
+core-owned project/workspace model instead of maintaining a parallel Swift-side root diff.
+
 This avoids blocking integrations while typed/binary surfaces mature.
 
 ## 4) Generic ioctl-Style Dispatcher (Optional v1)

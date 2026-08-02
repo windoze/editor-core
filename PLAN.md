@@ -702,6 +702,18 @@
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testEditorUILSPResultEventsWrapperStartsEmpty`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(app): project workspace root changes to lsp`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 core-owned `MultiDocumentEditorUi` workspace root 列表在更新时返回 LSP `WorkspaceFolder` added/removed diff，并让 AttoEditor 的 workspace root 变更用该 diff 通知当前 active LSP session。
+  - 提交边界：新增 `MultiDocumentEditorUi::set_workspace_roots_with_change(...)`、C ABI `editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(...)`、Swift `MultiDocumentEditorUI.setWorkspaceRootsReturningChange(_:)` 和 AttoEditor active-editor didChange 接线；保留既有 `setWorkspaceRoots(_:)` 兼容 API，不新增多 root project selector、不改变 server start/restart/shared-session 策略、不实现 project close/open 批量 LSP session 管理。
+  - 验证记录：
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_tracks_workspace_roots`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCoreMultiDocumentMirrorTracksTabsAndPanes`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeNotifiesActiveLspWorkspaceFolders`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

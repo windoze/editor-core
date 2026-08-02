@@ -1153,9 +1153,30 @@ final class AttoEditorAreaViewController: NSViewController {
     func syncCoreWorkspaceRoots() {
         guard let coreDocuments else { return }
         do {
-            try coreDocuments.setWorkspaceRoots([workspaceRootURL.standardizedFileURL.absoluteString])
+            let change = try coreDocuments.setWorkspaceRootsReturningChange([
+                workspaceRootURL.standardizedFileURL.absoluteString
+            ])
+            notifyActiveLspWorkspaceFoldersChanged(change)
         } catch {
             NSLog("AttoEditor: failed to sync core workspace roots: %@", String(describing: error))
+        }
+    }
+
+    func notifyActiveLspWorkspaceFoldersChanged(_ change: EcuWorkspaceRootsChange) {
+        guard change.isEmpty == false,
+              let tab = activeTab,
+              (try? tab.editCore.editor.lspIsEnabled()) == true
+        else {
+            return
+        }
+
+        do {
+            try tab.editCore.editor.lspDidChangeWorkspaceFolders(
+                added: change.added,
+                removed: change.removed
+            )
+        } catch {
+            NSLog("AttoEditor: failed to notify LSP workspace folder change: %@", String(describing: error))
         }
     }
 

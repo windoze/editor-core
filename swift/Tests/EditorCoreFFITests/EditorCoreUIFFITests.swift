@@ -334,6 +334,20 @@ final class EditorCoreUIFFITests: XCTestCase {
             "file:///other",
         ])
         XCTAssertEqual(try multi.snapshot().workspaceRoots, ["file:///project", "file:///other"])
+        let rootsChange = try multi.setWorkspaceRootsReturningChange([
+            "file:///other",
+            "file:///new",
+            "file:///new",
+        ])
+        XCTAssertEqual(
+            rootsChange.added,
+            [EcuLspWorkspaceFolder(uri: "file:///new", name: "new")]
+        )
+        XCTAssertEqual(
+            rootsChange.removed,
+            [EcuLspWorkspaceFolder(uri: "file:///project", name: "project")]
+        )
+        XCTAssertEqual(try multi.snapshot().workspaceRoots, ["file:///other", "file:///new"])
         try multi.setActiveTab(beta)
         XCTAssertEqual(try multi.activeTabId(), beta)
 

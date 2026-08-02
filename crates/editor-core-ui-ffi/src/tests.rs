@@ -155,6 +155,31 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         snapshot_value["workspace_roots"],
         serde_json::json!(["file:///project", "file:///other"])
     );
+    let changed_roots = CString::new(
+        r#"[
+          "file:///other",
+          "file:///new",
+          "file:///new"
+        ]"#,
+    )
+    .unwrap();
+    let change_ptr = editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(
+        multi,
+        changed_roots.as_ptr(),
+    );
+    assert!(!change_ptr.is_null());
+    let change_json = unsafe { std::ffi::CStr::from_ptr(change_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(change_ptr) };
+    let change_value: serde_json::Value = serde_json::from_str(&change_json).unwrap();
+    assert_eq!(
+        change_value,
+        serde_json::json!({
+            "added": [{"uri": "file:///new", "name": "new"}],
+            "removed": [{"uri": "file:///project", "name": "project"}],
+        })
+    );
 
     let mut has_active: u8 = 0;
     let mut active_id: u64 = 0;

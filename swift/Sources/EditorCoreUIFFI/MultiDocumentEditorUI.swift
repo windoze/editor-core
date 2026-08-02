@@ -42,6 +42,15 @@ public struct EcuMultiDocumentSnapshot: Decodable, Equatable, Sendable {
     }
 }
 
+public struct EcuWorkspaceRootsChange: Decodable, Equatable, Sendable {
+    public let added: [EcuLspWorkspaceFolder]
+    public let removed: [EcuLspWorkspaceFolder]
+
+    public var isEmpty: Bool {
+        added.isEmpty && removed.isEmpty
+    }
+}
+
 public struct EcuTabSearchMatch: Decodable, Equatable, Sendable {
     public let start: UInt32
     public let end: UInt32
@@ -605,6 +614,27 @@ public final class MultiDocumentEditorUI {
             editor_core_ui_ffi_multi_document_set_workspace_roots_json(handle, rootsPtr)
         }
         try library.ensureStatus(status, context: "multi_document_set_workspace_roots_json")
+    }
+
+    public func setWorkspaceRootsReturningChange(_ roots: [String]) throws -> EcuWorkspaceRootsChange {
+        let data = try JSONEncoder().encode(roots)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "multi_document_set_workspace_roots_with_change_encode",
+                message: "failed to encode workspace roots JSON"
+            )
+        }
+        let changeJSON = try ffiStringResult(context: "multi_document_set_workspace_roots_with_change_json") {
+            json.withCString { rootsPtr in
+                editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(handle, rootsPtr)
+            }
+        }
+        return try decode(
+            EcuWorkspaceRootsChange.self,
+            from: changeJSON,
+            context: "multi_document_set_workspace_roots_with_change_decode"
+        )
     }
 
     public func setActiveTab(_ tabId: UInt64) throws {

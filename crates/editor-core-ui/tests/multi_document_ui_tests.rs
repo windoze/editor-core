@@ -528,18 +528,43 @@ fn multi_document_ui_atomic_workspace_edit_rolls_back_runtime_text_failure() {
 fn multi_document_ui_tracks_workspace_roots() {
     let mut ui = MultiDocumentEditorUi::new();
 
-    ui.set_workspace_roots([
+    let initial_change = ui.set_workspace_roots_with_change([
         "file:///tmp/project".to_string(),
         "file:///tmp/project".to_string(),
         String::new(),
         "file:///tmp/other".to_string(),
     ]);
+    assert_eq!(initial_change.added.len(), 2);
+    assert_eq!(initial_change.added[0].uri, "file:///tmp/project");
+    assert_eq!(initial_change.added[0].name, "project");
+    assert_eq!(initial_change.added[1].uri, "file:///tmp/other");
+    assert_eq!(initial_change.added[1].name, "other");
+    assert!(initial_change.removed.is_empty());
 
     let expected = vec![
         "file:///tmp/project".to_string(),
         "file:///tmp/other".to_string(),
     ];
     assert_eq!(ui.workspace_roots(), expected.as_slice());
+
+    let next_change = ui.set_workspace_roots_with_change([
+        "file:///tmp/other".to_string(),
+        "file:///tmp/new".to_string(),
+        "file:///tmp/new".to_string(),
+    ]);
+    assert_eq!(next_change.added.len(), 1);
+    assert_eq!(next_change.added[0].uri, "file:///tmp/new");
+    assert_eq!(next_change.added[0].name, "new");
+    assert_eq!(next_change.removed.len(), 1);
+    assert_eq!(next_change.removed[0].uri, "file:///tmp/project");
+    assert_eq!(next_change.removed[0].name, "project");
+    assert_eq!(
+        ui.workspace_roots(),
+        &[
+            "file:///tmp/other".to_string(),
+            "file:///tmp/new".to_string()
+        ]
+    );
 }
 
 #[test]

@@ -8,6 +8,7 @@ mod state_events;
 mod workspace_diagnostics;
 mod workspace_edit;
 mod workspace_outline;
+mod workspace_roots;
 
 pub use lsp_request_events::{MultiDocumentLspRequestEvent, MultiDocumentLspRequestEventsSnapshot};
 pub use lsp_result_events::{MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot};
@@ -24,6 +25,7 @@ pub use workspace_edit::{
     WorkspaceEditTransactionSkippedDetail, WorkspaceEditTransactionUndoResult,
 };
 pub use workspace_outline::{WorkspaceOutlineDocument, WorkspaceOutlineSnapshot};
+pub use workspace_roots::{WorkspaceFolder, WorkspaceRootsChange};
 
 /// Opaque id for an open tab/document managed by [`MultiDocumentEditorUi`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -101,15 +103,19 @@ impl MultiDocumentEditorUi {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        let mut out = Vec::<String>::new();
-        for root in roots {
-            let root = root.into();
-            if root.is_empty() || out.iter().any(|existing| existing == &root) {
-                continue;
-            }
-            out.push(root);
-        }
-        self.workspace_roots = out;
+        let _ = self.set_workspace_roots_with_change(roots);
+    }
+
+    /// Replace the workspace root URI list and return the LSP workspace folder diff.
+    pub fn set_workspace_roots_with_change<I, S>(&mut self, roots: I) -> WorkspaceRootsChange
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let next = workspace_roots::normalize_workspace_roots(roots);
+        let change = workspace_roots::workspace_roots_change(&self.workspace_roots, &next);
+        self.workspace_roots = next;
+        change
     }
 
     /// Return the workspace root URIs currently owned by this model.

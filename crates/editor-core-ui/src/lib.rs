@@ -62,8 +62,8 @@ pub use multi_document::{
     WorkspaceEditTransactionConflict, WorkspaceEditTransactionDocument,
     WorkspaceEditTransactionEvent, WorkspaceEditTransactionEventsSnapshot,
     WorkspaceEditTransactionResourceOperation, WorkspaceEditTransactionResult,
-    WorkspaceEditTransactionSkippedDetail, WorkspaceEditTransactionUndoResult,
-    WorkspaceOutlineDocument, WorkspaceOutlineSnapshot,
+    WorkspaceEditTransactionSkippedDetail, WorkspaceEditTransactionUndoResult, WorkspaceFolder,
+    WorkspaceOutlineDocument, WorkspaceOutlineSnapshot, WorkspaceRootsChange,
 };
 pub use state::EditorUi;
 pub use state_events::{
