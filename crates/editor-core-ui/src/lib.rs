@@ -42,7 +42,11 @@ pub use keybindings::{
     Key, KeyStroke, Keybinding, KeybindingContext, KeybindingResolver, KeybindingResolverResult,
     KeybindingWhen, Keymap, Modifiers, Platform, ResolvedCommand, dispatch_command_to_editor_ui,
 };
-pub use multi_document::{MultiDocumentEditorUi, TabId, TabSearchResult};
+pub use multi_document::{
+    MultiDocumentEditorUi, TabId, TabSearchResult, WorkspaceDiagnostic,
+    WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsSnapshot,
+    WorkspaceDiagnosticsStore,
+};
 pub use state::EditorUi;
 pub use theme::{ChromeTheme, DamageRect};
 pub use windowing::{WindowingError, rgba8_to_argb_u32};

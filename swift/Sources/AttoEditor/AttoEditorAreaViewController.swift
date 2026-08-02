@@ -578,7 +578,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private var hierarchyResultsController: AttoCommandPaletteController?
     private var problemsResultsController: AttoCommandPaletteController?
     private var problemsPanelController: AttoProblemsPanelController?
-    private let workspaceProblemsStore = AttoWorkspaceProblemsStore()
+    private let workspaceProblemsStore: AttoWorkspaceProblemsStore
     private var workspaceProblemsPanelController: AttoProblemsPanelController?
     private var workspaceDiagnosticsContext: WorkspaceDiagnosticsRequestContext?
     private var workspaceDiagnosticsPollTimer: DispatchSourceTimer?
@@ -642,9 +642,12 @@ final class AttoEditorAreaViewController: NSViewController {
         self.workspaceRootURL = workspaceRootURL
         self.preferences = preferences
         do {
-            self.coreDocuments = try MultiDocumentEditorUI(library: library)
+            let coreDocuments = try MultiDocumentEditorUI(library: library)
+            self.coreDocuments = coreDocuments
+            self.workspaceProblemsStore = AttoWorkspaceProblemsStore(coreDocuments: coreDocuments)
         } catch {
             self.coreDocuments = nil
+            self.workspaceProblemsStore = AttoWorkspaceProblemsStore()
             NSLog("AttoEditor: failed to initialize core multi-document model: %@", String(describing: error))
         }
         super.init(nibName: nil, bundle: nil)
@@ -5589,8 +5592,7 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
 
-        let result = AttoLspWorkspaceDiagnosticsParser.parse(json)
-        let snapshot = workspaceProblemsStore.apply(result)
+        let snapshot = workspaceProblemsStore.apply(resultJSON: json)
         updateWorkspaceDiagnosticMarkersForOpenTabs()
         updateWorkspaceProblemsPanelIfVisible()
         guard snapshot.diagnostics.isEmpty == false else {

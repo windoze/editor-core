@@ -84,6 +84,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.lspStatusSnapshot))
         XCTAssertTrue(info.supports(.workspaceEditApplication))
         XCTAssertTrue(info.supports(.multiDocumentUI))
+        XCTAssertTrue(info.supports(.workspaceDiagnosticsStore))
     }
 
     func testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch() throws {
@@ -131,6 +132,39 @@ final class EditorCoreUIFFITests: XCTestCase {
         let results = try multi.searchAllTabs(query: "mirror")
         XCTAssertEqual(results.map(\.tabId), [beta])
         XCTAssertEqual(results.flatMap(\.matches).count, 1)
+
+        let diagnostics = try multi.applyWorkspaceDiagnosticsJSON("""
+        {
+          "items": [
+            {
+              "uri": "file:///project/a.swift",
+              "kind": "full",
+              "resultId": "a-1",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 1 },
+                    "end": { "line": 0, "character": 3 }
+                  },
+                  "severity": 1,
+                  "message": "first problem"
+                }
+              ]
+            }
+          ]
+        }
+        """)
+        XCTAssertEqual(diagnostics.diagnostics.map(\.message), ["first problem"])
+        XCTAssertEqual(diagnostics.diagnostics.first?.severityLabel, "error")
+
+        let previousResultIds = try JSONSerialization.jsonObject(
+            with: Data(try multi.workspaceDiagnosticsPreviousResultIdsJSON().utf8),
+            options: []
+        ) as? [[String: String]]
+        XCTAssertEqual(previousResultIds, [["uri": "file:///project/a.swift", "value": "a-1"]])
+
+        try multi.clearWorkspaceDiagnostics()
+        XCTAssertTrue(try multi.workspaceDiagnosticsSnapshot().diagnostics.isEmpty)
 
         let snapshot = try multi.snapshot()
         XCTAssertEqual(snapshot.activeTabId, beta)

@@ -66,6 +66,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let lspStatusSnapshot = Self(rawValue: 1 << 3)
     public static let workspaceEditApplication = Self(rawValue: 1 << 4)
     public static let multiDocumentUI = Self(rawValue: 1 << 5)
+    public static let workspaceDiagnosticsStore = Self(rawValue: 1 << 6)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

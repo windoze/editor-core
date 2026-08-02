@@ -44,6 +44,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspInteractiveRequests })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspStatusSnapshot })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .workspaceEditApplication })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .workspaceDiagnosticsStore })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing UI FFI features"))
     }
 
@@ -64,6 +65,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
                 EditorCoreUIFFIFeatures.lspInteractiveRequests.rawValue,
                 EditorCoreUIFFIFeatures.lspStatusSnapshot.rawValue,
                 EditorCoreUIFFIFeatures.workspaceEditApplication.rawValue,
+                EditorCoreUIFFIFeatures.workspaceDiagnosticsStore.rawValue,
             ])
         )
         XCTAssertTrue(report.diagnosticMessage.contains("Unavailable optional UI FFI features"))

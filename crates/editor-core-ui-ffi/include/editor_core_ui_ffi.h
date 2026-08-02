@@ -142,6 +142,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_LSP_STATUS_SNAPSHOT        (1ull << 3)
 #define ECU_FEATURE_WORKSPACE_EDIT_APPLICATION (1ull << 4)
 #define ECU_FEATURE_MULTI_DOCUMENT_UI          (1ull << 5)
+#define ECU_FEATURE_WORKSPACE_DIAGNOSTICS_STORE (1ull << 6)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 
 MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);
@@ -216,6 +217,15 @@ char* editor_core_ui_ffi_multi_document_search_all_tabs_json(MultiDocumentEditor
                                                              uint8_t case_sensitive,
                                                              uint8_t whole_word,
                                                              uint8_t regex);
+char* editor_core_ui_ffi_multi_document_apply_workspace_diagnostics_json(
+    MultiDocumentEditorUi* multi,
+    const char* result_json_utf8);
+char* editor_core_ui_ffi_multi_document_workspace_diagnostics_snapshot_json(
+    MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_workspace_diagnostics_previous_result_ids_json(
+    MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_clear_workspace_diagnostics(
+    MultiDocumentEditorUi* multi);
 
 EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8,
                                           uint32_t viewport_width_cells);

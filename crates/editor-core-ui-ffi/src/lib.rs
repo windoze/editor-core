@@ -43,13 +43,16 @@ pub const ECU_FEATURE_LSP_STATUS_SNAPSHOT: u64 = 1 << 3;
 pub const ECU_FEATURE_WORKSPACE_EDIT_APPLICATION: u64 = 1 << 4;
 /// Feature bit: multi-document UI orchestrator ABI is available.
 pub const ECU_FEATURE_MULTI_DOCUMENT_UI: u64 = 1 << 5;
+/// Feature bit: multi-document workspace diagnostics store is available.
+pub const ECU_FEATURE_WORKSPACE_DIAGNOSTICS_STORE: u64 = 1 << 6;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
     | ECU_FEATURE_LSP_INTERACTIVE_REQUESTS
     | ECU_FEATURE_LSP_STATUS_SNAPSHOT
     | ECU_FEATURE_WORKSPACE_EDIT_APPLICATION
-    | ECU_FEATURE_MULTI_DOCUMENT_UI;
+    | ECU_FEATURE_MULTI_DOCUMENT_UI
+    | ECU_FEATURE_WORKSPACE_DIAGNOSTICS_STORE;
 
 fn set_last_error(msg: impl Into<String>) {
     LAST_ERROR.with(|slot| {

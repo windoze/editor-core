@@ -1,3 +1,4 @@
+import EditorCoreUIFFI
 @testable import AttoEditor
 import XCTest
 
@@ -169,5 +170,60 @@ final class AttoLspWorkspaceDiagnosticsParserTests: XCTestCase {
         snapshot = store.apply(cleared)
         XCTAssertTrue(snapshot.diagnostics.isEmpty)
         XCTAssertEqual(snapshot.previousResultIdsJSON(), #"[{"uri":"file:\/\/\/project\/a.swift","value":"a-3"}]"#)
+    }
+
+    func testWorkspaceProblemsStoreCanUseCoreOwnedSnapshot() throws {
+        let coreDocuments = try MultiDocumentEditorUI(library: EditorCoreUIFFILibrary())
+        let store = AttoWorkspaceProblemsStore(coreDocuments: coreDocuments)
+
+        var snapshot = store.apply(resultJSON: """
+        {
+          "items": [
+            {
+              "uri": "file:///project/a.swift",
+              "kind": "full",
+              "resultId": "a-1",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 1 },
+                    "end": { "line": 0, "character": 3 }
+                  },
+                  "severity": 1,
+                  "message": "first problem"
+                }
+              ]
+            }
+          ]
+        }
+        """)
+        XCTAssertEqual(snapshot.diagnostics.map(\.message), ["first problem"])
+        XCTAssertEqual(snapshot.diagnostics.first?.severityLabel, "error")
+
+        let previous = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: Data(store.previousResultIdsJSON().utf8),
+                options: []
+            ) as? [[String: String]]
+        )
+        XCTAssertEqual(previous, [["uri": "file:///project/a.swift", "value": "a-1"]])
+
+        snapshot = store.apply(resultJSON: """
+        {
+          "items": [
+            {
+              "uri": "file:///project/a.swift",
+              "kind": "unchanged",
+              "resultId": "a-2"
+            }
+          ]
+        }
+        """)
+        XCTAssertEqual(snapshot.diagnostics.map(\.message), ["first problem"])
+        XCTAssertEqual(snapshot.documents.map(\.resultId), ["a-2"])
+
+        store.clear()
+        XCTAssertTrue(store.snapshot.diagnostics.isEmpty)
+        XCTAssertEqual(store.previousResultIdsJSON(), "[]")
     }
 }

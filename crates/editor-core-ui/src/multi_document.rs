@@ -2,6 +2,13 @@ use crate::{EditorUi, UiError};
 use editor_core::{SearchMatch, SearchOptions};
 use std::collections::BTreeMap;
 
+mod workspace_diagnostics;
+
+pub use workspace_diagnostics::{
+    WorkspaceDiagnostic, WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticTarget,
+    WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
+};
+
 /// Opaque id for an open tab/document managed by [`MultiDocumentEditorUi`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TabId(u64);
@@ -56,6 +63,7 @@ pub struct MultiDocumentEditorUi {
     tab_order: Vec<TabId>,
     active_tab: Option<TabId>,
     preview_tab: Option<TabId>,
+    workspace_diagnostics: WorkspaceDiagnosticsStore,
 }
 
 impl MultiDocumentEditorUi {
@@ -520,5 +528,33 @@ impl MultiDocumentEditorUi {
             out.push(TabSearchResult { tab_id, matches });
         }
         Ok(out)
+    }
+
+    /// Clear the project/workspace diagnostic state owned by this multi-document UI model.
+    pub fn clear_workspace_diagnostics(&mut self) {
+        self.workspace_diagnostics.clear();
+    }
+
+    /// Merge an LSP `workspace/diagnostic` result JSON payload into the project diagnostics.
+    pub fn apply_workspace_diagnostics_json(
+        &mut self,
+        json: &str,
+    ) -> Result<WorkspaceDiagnosticsSnapshot, UiError> {
+        self.workspace_diagnostics.apply_lsp_result_json(json)
+    }
+
+    /// Return the current workspace diagnostics snapshot.
+    pub fn workspace_diagnostics_snapshot(&self) -> WorkspaceDiagnosticsSnapshot {
+        self.workspace_diagnostics.snapshot()
+    }
+
+    /// Return the current workspace diagnostics snapshot as JSON.
+    pub fn workspace_diagnostics_snapshot_json(&self) -> Result<String, UiError> {
+        self.workspace_diagnostics.snapshot_json()
+    }
+
+    /// Return previous-result ids for the next LSP `workspace/diagnostic` request.
+    pub fn workspace_diagnostics_previous_result_ids_json(&self) -> Result<String, UiError> {
+        self.workspace_diagnostics.previous_result_ids_json()
     }
 }

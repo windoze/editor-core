@@ -92,6 +92,11 @@ struct AttoRuntimeCompatibility {
             name: "WorkspaceEdit application",
             reason: "Rename, code actions, completion resolve, and color presentations apply WorkspaceEdit payloads; edit-producing commands degrade when unavailable."
         ),
+        RuntimeFeature(
+            feature: .workspaceDiagnosticsStore,
+            name: "workspace diagnostics store",
+            reason: "Project Problems can use the core-owned multi-document workspace diagnostics snapshot; Swift falls back to local parsing when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

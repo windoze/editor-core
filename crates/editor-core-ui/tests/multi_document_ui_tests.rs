@@ -1,5 +1,6 @@
 use editor_core::SearchOptions;
 use editor_core_ui::MultiDocumentEditorUi;
+use serde_json::json;
 
 #[test]
 fn multi_document_ui_can_open_switch_and_close_tabs() {
@@ -217,4 +218,130 @@ fn multi_document_ui_can_close_other_tabs_and_tabs_to_right() {
     assert_eq!(closed, 1);
     assert_eq!(ui.tab_ids(), vec![b]);
     assert_eq!(ui.active_tab_id(), Some(b));
+}
+
+#[test]
+fn multi_document_ui_owns_incremental_workspace_diagnostics() {
+    let mut ui = MultiDocumentEditorUi::new();
+
+    let snapshot = ui
+        .apply_workspace_diagnostics_json(
+            r#"{
+              "items": [
+                {
+                  "uri": "file:///project/a.swift",
+                  "kind": "full",
+                  "resultId": "a-1",
+                  "items": [
+                    {
+                      "range": {
+                        "start": { "line": 0, "character": 1 },
+                        "end": { "line": 0, "character": 3 }
+                      },
+                      "severity": 1,
+                      "code": 7001,
+                      "source": "unit-test",
+                      "message": "first problem"
+                    }
+                  ],
+                  "relatedDocuments": {
+                    "file:///project/related.swift": {
+                      "kind": "full",
+                      "resultId": "r-1",
+                      "items": [
+                        {
+                          "range": {
+                            "start": { "line": 2, "character": 4 },
+                            "end": { "line": 2, "character": 8 }
+                          },
+                          "severity": 2,
+                          "message": "related warning"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+
+    assert_eq!(
+        snapshot
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect::<Vec<_>>(),
+        vec!["first problem", "related warning"]
+    );
+    assert_eq!(snapshot.diagnostics[0].severity_label, Some("error"));
+    assert_eq!(snapshot.diagnostics[0].code.as_deref(), Some("7001"));
+    assert_eq!(
+        snapshot.diagnostics[1].target.uri,
+        "file:///project/related.swift"
+    );
+
+    let previous: serde_json::Value =
+        serde_json::from_str(&ui.workspace_diagnostics_previous_result_ids_json().unwrap())
+            .unwrap();
+    assert_eq!(
+        previous,
+        json!([
+            {"uri": "file:///project/a.swift", "value": "a-1"},
+            {"uri": "file:///project/related.swift", "value": "r-1"},
+        ])
+    );
+
+    let snapshot = ui
+        .apply_workspace_diagnostics_json(
+            r#"{
+              "items": [
+                {
+                  "uri": "file:///project/a.swift",
+                  "kind": "unchanged",
+                  "resultId": "a-2"
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+    assert_eq!(
+        snapshot
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect::<Vec<_>>(),
+        vec!["first problem", "related warning"]
+    );
+    assert_eq!(snapshot.documents[0].result_id.as_deref(), Some("a-2"));
+
+    let snapshot = ui
+        .apply_workspace_diagnostics_json(
+            r#"{
+              "items": [
+                {
+                  "uri": "file:///project/a.swift",
+                  "kind": "full",
+                  "resultId": "a-3",
+                  "items": []
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+    assert_eq!(
+        snapshot
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect::<Vec<_>>(),
+        vec!["related warning"]
+    );
+
+    ui.clear_workspace_diagnostics();
+    assert!(ui.workspace_diagnostics_snapshot().diagnostics.is_empty());
+    assert_eq!(
+        ui.workspace_diagnostics_previous_result_ids_json().unwrap(),
+        "[]"
+    );
 }

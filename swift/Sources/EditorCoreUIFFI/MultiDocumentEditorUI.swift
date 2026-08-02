@@ -50,6 +50,61 @@ private struct EcuTabSearchResponse: Decodable {
     let results: [EcuTabSearchResult]
 }
 
+public struct EcuWorkspaceDiagnosticTarget: Decodable, Equatable, Sendable {
+    public let uri: String
+    public let line: UInt32
+    public let utf16Character: UInt32
+
+    private enum CodingKeys: String, CodingKey {
+        case uri
+        case line
+        case utf16Character = "utf16_character"
+    }
+}
+
+public struct EcuWorkspaceDiagnostic: Decodable, Equatable, Sendable {
+    public let target: EcuWorkspaceDiagnosticTarget
+    public let endLine: UInt32
+    public let endUTF16Character: UInt32
+    public let severity: UInt32?
+    public let severityLabel: String?
+    public let code: String?
+    public let source: String?
+    public let message: String
+    public let resultId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case target
+        case endLine = "end_line"
+        case endUTF16Character = "end_utf16_character"
+        case severity
+        case severityLabel = "severity_label"
+        case code
+        case source
+        case message
+        case resultId = "result_id"
+    }
+}
+
+public struct EcuWorkspaceDiagnosticDocumentReport: Decodable, Equatable, Sendable {
+    public let uri: String
+    public let kind: String
+    public let resultId: String?
+    public let diagnostics: [EcuWorkspaceDiagnostic]
+
+    private enum CodingKeys: String, CodingKey {
+        case uri
+        case kind
+        case resultId = "result_id"
+        case diagnostics
+    }
+}
+
+public struct EcuWorkspaceDiagnosticsSnapshot: Decodable, Equatable, Sendable {
+    public let documents: [EcuWorkspaceDiagnosticDocumentReport]
+    public let diagnostics: [EcuWorkspaceDiagnostic]
+}
+
 public final class MultiDocumentEditorUI {
     public let library: EditorCoreUIFFILibrary
     private let handle: OpaquePointer
@@ -282,6 +337,48 @@ public final class MultiDocumentEditorUI {
         return try decode(EcuTabSearchResponse.self, from: json, context: "multi_document_search_decode").results
     }
 
+    public func applyWorkspaceDiagnosticsJSON(_ resultJSON: String) throws -> EcuWorkspaceDiagnosticsSnapshot {
+        let json = try applyWorkspaceDiagnosticsSnapshotJSON(resultJSON)
+        return try decode(
+            EcuWorkspaceDiagnosticsSnapshot.self,
+            from: json,
+            context: "multi_document_workspace_diagnostics_apply_decode"
+        )
+    }
+
+    public func applyWorkspaceDiagnosticsSnapshotJSON(_ resultJSON: String) throws -> String {
+        try ffiStringResult(context: "multi_document_apply_workspace_diagnostics_json") {
+            resultJSON.withCString { resultPtr in
+                editor_core_ui_ffi_multi_document_apply_workspace_diagnostics_json(handle, resultPtr)
+            }
+        }
+    }
+
+    public func workspaceDiagnosticsSnapshotJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_workspace_diagnostics_snapshot_json") {
+            editor_core_ui_ffi_multi_document_workspace_diagnostics_snapshot_json(handle)
+        }
+    }
+
+    public func workspaceDiagnosticsSnapshot() throws -> EcuWorkspaceDiagnosticsSnapshot {
+        try decode(
+            EcuWorkspaceDiagnosticsSnapshot.self,
+            from: workspaceDiagnosticsSnapshotJSON(),
+            context: "multi_document_workspace_diagnostics_snapshot_decode"
+        )
+    }
+
+    public func workspaceDiagnosticsPreviousResultIdsJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_workspace_diagnostics_previous_result_ids_json") {
+            editor_core_ui_ffi_multi_document_workspace_diagnostics_previous_result_ids_json(handle)
+        }
+    }
+
+    public func clearWorkspaceDiagnostics() throws {
+        let status = editor_core_ui_ffi_multi_document_clear_workspace_diagnostics(handle)
+        try library.ensureStatus(status, context: "multi_document_clear_workspace_diagnostics")
+    }
+
     private func decode<T: Decodable>(_ type: T.Type, from json: String, context: String) throws -> T {
         guard let data = json.data(using: .utf8) else {
             throw EditorCoreUIFFIError.ffiStatus(
@@ -299,5 +396,20 @@ public final class MultiDocumentEditorUI {
                 message: String(describing: error)
             )
         }
+    }
+
+    private func ffiStringResult(
+        context: String,
+        _ body: () -> UnsafeMutablePointer<CChar>?
+    ) throws -> String {
+        guard let ptr = body() else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: context,
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
     }
 }

@@ -230,6 +230,73 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     assert_eq!(search_results.len(), 1);
     assert_eq!(search_results[0]["tab_id"], beta_id);
 
+    let workspace_diagnostics = CString::new(
+        r#"{
+          "items": [
+            {
+              "uri": "file:///project/a.swift",
+              "kind": "full",
+              "resultId": "a-1",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 1 },
+                    "end": { "line": 0, "character": 3 }
+                  },
+                  "severity": 1,
+                  "message": "first problem"
+                }
+              ]
+            }
+          ]
+        }"#,
+    )
+    .unwrap();
+    let diagnostics_ptr = editor_core_ui_ffi_multi_document_apply_workspace_diagnostics_json(
+        multi,
+        workspace_diagnostics.as_ptr(),
+    );
+    assert!(!diagnostics_ptr.is_null());
+    let diagnostics_json = unsafe { std::ffi::CStr::from_ptr(diagnostics_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(diagnostics_ptr) };
+    let diagnostics_value: serde_json::Value = serde_json::from_str(&diagnostics_json).unwrap();
+    assert_eq!(
+        diagnostics_value["diagnostics"][0]["message"],
+        "first problem"
+    );
+    assert_eq!(
+        diagnostics_value["diagnostics"][0]["severity_label"],
+        "error"
+    );
+
+    let previous_ptr =
+        editor_core_ui_ffi_multi_document_workspace_diagnostics_previous_result_ids_json(multi);
+    assert!(!previous_ptr.is_null());
+    let previous_json = unsafe { std::ffi::CStr::from_ptr(previous_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(previous_ptr) };
+    let previous_value: serde_json::Value = serde_json::from_str(&previous_json).unwrap();
+    assert_eq!(
+        previous_value,
+        serde_json::json!([{"uri": "file:///project/a.swift", "value": "a-1"}])
+    );
+
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_clear_workspace_diagnostics(multi),
+        ECU_OK
+    );
+    let cleared_ptr = editor_core_ui_ffi_multi_document_workspace_diagnostics_snapshot_json(multi);
+    assert!(!cleared_ptr.is_null());
+    let cleared_json = unsafe { std::ffi::CStr::from_ptr(cleared_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(cleared_ptr) };
+    let cleared_value: serde_json::Value = serde_json::from_str(&cleared_json).unwrap();
+    assert_eq!(cleared_value["diagnostics"].as_array().unwrap().len(), 0);
+
     let snapshot_ptr = editor_core_ui_ffi_multi_document_snapshot_json(multi);
     assert!(!snapshot_ptr.is_null());
     let snapshot_json = unsafe { std::ffi::CStr::from_ptr(snapshot_ptr) }
