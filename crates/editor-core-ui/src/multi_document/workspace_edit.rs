@@ -145,6 +145,7 @@ pub(super) fn apply(
     let mut planned_resource_operations = VecDeque::from(plan.resource_operations.clone());
     let mut runtime_blocked_text_edit_uris = BTreeSet::<String>::new();
     let mut runtime_removed_text_edit_uris = BTreeSet::<String>::new();
+    let mut filesystem_rollback = FilesystemRollback::default();
 
     for step in steps {
         match step {
@@ -160,14 +161,23 @@ pub(super) fn apply(
                     continue;
                 }
 
-                match apply_resource_operation(
+                let resource_outcome = match apply_resource_operation(
                     tabs,
                     tab_order,
                     active_tab,
                     preview_tab,
                     workspace_roots,
+                    &mut filesystem_rollback,
                     &operation,
-                )? {
+                ) {
+                    Ok(outcome) => outcome,
+                    Err(err) => {
+                        let rollback_result = filesystem_rollback.rollback();
+                        return Err(resource_operation_error_with_rollback(err, rollback_result));
+                    }
+                };
+
+                match resource_outcome {
                     ResourceOperationApplyOutcome::Applied => {
                         applied_resource_operation_count =
                             applied_resource_operation_count.saturating_add(1);
@@ -313,6 +323,8 @@ pub(super) fn apply(
         doc.is_open = open_tab_id.is_some();
         doc.tab_id = open_tab_id.map(TabId::get);
     }
+
+    filesystem_rollback.commit()?;
 
     Ok(result_from_plan(
         "apply",
@@ -476,6 +488,192 @@ enum ResourceOperationApplyOutcome {
     Applied,
     Noop,
     Skipped,
+}
+
+#[derive(Default)]
+struct FilesystemRollback {
+    entries: Vec<FilesystemRollbackEntry>,
+    backup_counter: u64,
+}
+
+enum FilesystemRollbackEntry {
+    RemovePath { path: PathBuf },
+    RemoveEmptyDir { path: PathBuf },
+    MovePath { from: PathBuf, to: PathBuf },
+    RestoreBackup { original: PathBuf, backup: PathBuf },
+}
+
+impl FilesystemRollback {
+    fn record_created_path(&mut self, path: PathBuf) {
+        self.entries
+            .push(FilesystemRollbackEntry::RemovePath { path });
+    }
+
+    fn record_created_parent_dirs(&mut self, parent: &Path) {
+        let mut missing_dirs = Vec::new();
+        let mut current = Some(parent);
+        while let Some(path) = current {
+            if path.exists() {
+                break;
+            }
+            missing_dirs.push(path.to_path_buf());
+            current = path.parent();
+        }
+
+        for path in missing_dirs.into_iter().rev() {
+            self.entries
+                .push(FilesystemRollbackEntry::RemoveEmptyDir { path });
+        }
+    }
+
+    fn record_move_for_rollback(&mut self, from: PathBuf, to: PathBuf) {
+        self.entries
+            .push(FilesystemRollbackEntry::MovePath { from, to });
+    }
+
+    fn backup_existing_path(&mut self, path: &Path) -> Result<bool, UiError> {
+        if !path.exists() {
+            return Ok(false);
+        }
+
+        let backup = self.next_backup_path(path)?;
+        fs::rename(path, &backup).map_err(|err| {
+            UiError::Processor(format!(
+                "failed to create WorkspaceEdit rollback backup: {err}"
+            ))
+        })?;
+        self.entries.push(FilesystemRollbackEntry::RestoreBackup {
+            original: path.to_path_buf(),
+            backup,
+        });
+        Ok(true)
+    }
+
+    fn rollback(&mut self) -> Result<(), String> {
+        let mut errors = Vec::new();
+        while let Some(entry) = self.entries.pop() {
+            if let Err(err) = rollback_entry(entry) {
+                errors.push(err);
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+
+    fn commit(self) -> Result<(), UiError> {
+        let mut errors = Vec::new();
+        for entry in self.entries {
+            if let FilesystemRollbackEntry::RestoreBackup { backup, .. } = entry
+                && let Err(err) = remove_path_if_exists(&backup)
+            {
+                errors.push(format!(
+                    "failed to remove WorkspaceEdit rollback backup: {err}"
+                ));
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(UiError::Processor(errors.join("; ")))
+        }
+    }
+
+    fn next_backup_path(&mut self, path: &Path) -> Result<PathBuf, UiError> {
+        let parent = path.parent().ok_or_else(|| {
+            UiError::Processor(
+                "failed to create WorkspaceEdit rollback backup: target has no parent directory"
+                    .to_string(),
+            )
+        })?;
+        loop {
+            self.backup_counter = self.backup_counter.saturating_add(1);
+            let candidate = parent.join(format!(
+                ".atto-workspace-edit-rollback-{}-{}",
+                std::process::id(),
+                self.backup_counter
+            ));
+            if !candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+}
+
+fn rollback_entry(entry: FilesystemRollbackEntry) -> Result<(), String> {
+    match entry {
+        FilesystemRollbackEntry::RemovePath { path } => remove_path_if_exists(&path)
+            .map_err(|err| format!("failed to remove rollback-created path {path:?}: {err}")),
+        FilesystemRollbackEntry::RemoveEmptyDir { path } => remove_empty_dir_if_exists(&path)
+            .map_err(|err| format!("failed to remove rollback-created directory {path:?}: {err}")),
+        FilesystemRollbackEntry::MovePath { from, to } => {
+            if !from.exists() {
+                return Ok(());
+            }
+            if to.exists() {
+                return Err(format!(
+                    "failed to roll back WorkspaceEdit move from {from:?} to {to:?}: destination already exists"
+                ));
+            }
+            fs::rename(&from, &to).map_err(|err| {
+                format!("failed to roll back WorkspaceEdit move from {from:?} to {to:?}: {err}")
+            })
+        }
+        FilesystemRollbackEntry::RestoreBackup { original, backup } => {
+            if !backup.exists() {
+                return Ok(());
+            }
+            remove_path_if_exists(&original).map_err(|err| {
+                format!("failed to remove rollback replacement path {original:?}: {err}")
+            })?;
+            fs::rename(&backup, &original).map_err(|err| {
+                format!(
+                    "failed to restore WorkspaceEdit rollback backup {backup:?} to {original:?}: {err}"
+                )
+            })
+        }
+    }
+}
+
+fn remove_path_if_exists(path: &Path) -> std::io::Result<()> {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return Ok(());
+    };
+    if metadata.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    }
+}
+
+fn remove_empty_dir_if_exists(path: &Path) -> std::io::Result<()> {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return Ok(());
+    };
+    if !metadata.is_dir() {
+        return Ok(());
+    }
+    let is_empty = fs::read_dir(path)?.next().is_none();
+    if is_empty {
+        fs::remove_dir(path)?;
+    }
+    Ok(())
+}
+
+fn resource_operation_error_with_rollback(
+    err: UiError,
+    rollback_result: Result<(), String>,
+) -> UiError {
+    match rollback_result {
+        Ok(()) => UiError::Processor(format!(
+            "workspace edit resource operation failed; filesystem side effects were rolled back: {err}"
+        )),
+        Err(rollback_err) => UiError::Processor(format!(
+            "workspace edit resource operation failed: {err}; filesystem rollback also failed: {rollback_err}"
+        )),
+    }
 }
 
 fn workspace_edit_value(workspace_edit_json: &str) -> Result<Value, UiError> {
@@ -1541,6 +1739,7 @@ fn apply_resource_operation(
     active_tab: &mut Option<TabId>,
     preview_tab: &mut Option<TabId>,
     workspace_roots: &[String],
+    filesystem_rollback: &mut FilesystemRollback,
     operation: &ResourceOperation,
 ) -> Result<ResourceOperationApplyOutcome, UiError> {
     match operation {
@@ -1550,7 +1749,11 @@ fn apply_resource_operation(
             ignore_if_exists,
         } => {
             let Some(tab_id) = tab_id_for_uri(tabs, tab_order, uri.as_str()) else {
-                return apply_unopened_resource_operation(workspace_roots, operation);
+                return apply_unopened_resource_operation(
+                    workspace_roots,
+                    filesystem_rollback,
+                    operation,
+                );
             };
             if *ignore_if_exists {
                 return Ok(ResourceOperationApplyOutcome::Noop);
@@ -1568,7 +1771,11 @@ fn apply_resource_operation(
             ..
         } => {
             let Some(tab_id) = tab_id_for_uri(tabs, tab_order, old_uri.as_str()) else {
-                return apply_unopened_resource_operation(workspace_roots, operation);
+                return apply_unopened_resource_operation(
+                    workspace_roots,
+                    filesystem_rollback,
+                    operation,
+                );
             };
             if old_uri == new_uri {
                 return Ok(ResourceOperationApplyOutcome::Noop);
@@ -1592,7 +1799,11 @@ fn apply_resource_operation(
             recursive: _,
         } => {
             let Some(tab_id) = tab_id_for_uri(tabs, tab_order, uri.as_str()) else {
-                return apply_unopened_resource_operation(workspace_roots, operation);
+                return apply_unopened_resource_operation(
+                    workspace_roots,
+                    filesystem_rollback,
+                    operation,
+                );
             };
             if tab_is_modified(tabs, tab_id) {
                 return Ok(ResourceOperationApplyOutcome::Skipped);
@@ -1605,6 +1816,7 @@ fn apply_resource_operation(
 
 fn apply_unopened_resource_operation(
     workspace_roots: &[String],
+    filesystem_rollback: &mut FilesystemRollback,
     operation: &ResourceOperation,
 ) -> Result<ResourceOperationApplyOutcome, UiError> {
     if !resource_operation_file_skip_details(workspace_roots, operation).is_empty() {
@@ -1627,14 +1839,17 @@ fn apply_unopened_resource_operation(
                 if !*overwrite {
                     return Ok(ResourceOperationApplyOutcome::Skipped);
                 }
+                filesystem_rollback.backup_existing_path(&path)?;
             }
             if let Some(parent) = path.parent() {
+                filesystem_rollback.record_created_parent_dirs(parent);
                 fs::create_dir_all(parent).map_err(|err| {
                     UiError::Processor(format!(
                         "failed to create WorkspaceEdit target parent directory: {err}"
                     ))
                 })?;
             }
+            filesystem_rollback.record_created_path(path.clone());
             fs::write(&path, "").map_err(|err| {
                 UiError::Processor(format!("failed to create WorkspaceEdit file: {err}"))
             })?;
@@ -1662,21 +1877,10 @@ fn apply_unopened_resource_operation(
                 if !*overwrite {
                     return Ok(ResourceOperationApplyOutcome::Skipped);
                 }
-                if new_path.is_dir() {
-                    fs::remove_dir_all(&new_path).map_err(|err| {
-                        UiError::Processor(format!(
-                            "failed to remove existing WorkspaceEdit rename target directory: {err}"
-                        ))
-                    })?;
-                } else {
-                    fs::remove_file(&new_path).map_err(|err| {
-                        UiError::Processor(format!(
-                            "failed to remove existing WorkspaceEdit rename target file: {err}"
-                        ))
-                    })?;
-                }
+                filesystem_rollback.backup_existing_path(&new_path)?;
             }
             if let Some(parent) = new_path.parent() {
+                filesystem_rollback.record_created_parent_dirs(parent);
                 fs::create_dir_all(parent).map_err(|err| {
                     UiError::Processor(format!(
                         "failed to create WorkspaceEdit rename target parent directory: {err}"
@@ -1686,6 +1890,7 @@ fn apply_unopened_resource_operation(
             fs::rename(&old_path, &new_path).map_err(|err| {
                 UiError::Processor(format!("failed to rename WorkspaceEdit file: {err}"))
             })?;
+            filesystem_rollback.record_move_for_rollback(new_path.clone(), old_path.clone());
             Ok(ResourceOperationApplyOutcome::Applied)
         }
         ResourceOperation::Delete {
@@ -1707,16 +1912,8 @@ fn apply_unopened_resource_operation(
                 if !*recursive {
                     return Ok(ResourceOperationApplyOutcome::Skipped);
                 }
-                fs::remove_dir_all(&path).map_err(|err| {
-                    UiError::Processor(format!(
-                        "failed to delete WorkspaceEdit target directory: {err}"
-                    ))
-                })?;
-            } else {
-                fs::remove_file(&path).map_err(|err| {
-                    UiError::Processor(format!("failed to delete WorkspaceEdit target file: {err}"))
-                })?;
             }
+            filesystem_rollback.backup_existing_path(&path)?;
             Ok(ResourceOperationApplyOutcome::Applied)
         }
     }

@@ -242,6 +242,18 @@
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAppliesWorkspaceEditDocumentChangesInOrder`
     - `swift test --package-path swift --filter EditorCoreUIFFITests`
     - `git diff --check`
+- 中间提交：`feat(ui): roll back workspace edit filesystem failures`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；为 root-gated 未打开本地文件 resource operations 增加运行时 filesystem error rollback 起点，避免前序 create / overwrite rename / delete 在后续本地 I/O 错误后留下已应用的磁盘副作用。
+  - 提交边界：只在 `MultiDocumentEditorUi` apply 路径内记录未打开本地文件 resource operation 的文件系统补偿动作；create 会记录新路径和新建父目录，overwrite/delete 会用同目录临时 backup，rename 会记录反向 move；发生后续 fatal resource operation 错误时回滚这些文件系统副作用。本提交不实现打开 tab 的 undo 回滚、不回滚已应用 text edits、不提供完整 batch atomic apply mode、不切换 AttoEditor App 主路径。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui --package editor-core-ui-ffi`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_rolls_back_unopened_resource_operations_after_runtime_failure`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests`
+    - `cargo test -p editor-core-ui-ffi`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIRollsBackUnopenedResourceOperationsAfterRuntimeFailure`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

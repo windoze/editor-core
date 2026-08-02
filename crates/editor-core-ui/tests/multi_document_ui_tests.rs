@@ -624,6 +624,92 @@ fn multi_document_ui_applies_unopened_workspace_file_resource_operations() {
 }
 
 #[test]
+fn multi_document_ui_rolls_back_unopened_resource_operations_after_runtime_failure() {
+    let root = unique_test_dir("editor-core-ui-workspace-resource-rollback-root");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+
+    let old = root.join("src").join("Old.swift");
+    let target = root.join("src").join("Target.swift");
+    let created = root.join("generated").join("Created.swift");
+    let blocker = root.join("blocker");
+    let blocked_child = blocker.join("Child.swift");
+    std::fs::write(&old, "old\n").unwrap();
+    std::fs::write(&target, "target\n").unwrap();
+    std::fs::write(&blocker, "blocker\n").unwrap();
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let old_uri = path_to_file_uri(old.as_path());
+    let target_uri = path_to_file_uri(target.as_path());
+    let created_uri = path_to_file_uri(created.as_path());
+    let blocked_child_uri = path_to_file_uri(blocked_child.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+
+    let edit = json!({
+        "documentChanges": [
+            {
+                "kind": "create",
+                "uri": created_uri.as_str()
+            },
+            {
+                "kind": "rename",
+                "oldUri": old_uri.as_str(),
+                "newUri": target_uri.as_str(),
+                "options": { "overwrite": true }
+            },
+            {
+                "kind": "create",
+                "uri": blocked_child_uri.as_str()
+            }
+        ]
+    })
+    .to_string();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(edit.as_str())
+        .unwrap();
+    assert!(preview.skipped_uris.is_empty());
+    assert!(!created.exists());
+    assert!(old.exists());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "target\n");
+
+    let err = ui
+        .apply_workspace_edit_transaction(edit.as_str())
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("filesystem side effects were rolled back")
+    );
+    assert!(!created.exists());
+    assert!(!root.join("generated").exists());
+    assert!(old.exists());
+    assert_eq!(std::fs::read_to_string(&old).unwrap(), "old\n");
+    assert!(target.exists());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "target\n");
+    assert_eq!(std::fs::read_to_string(&blocker).unwrap(), "blocker\n");
+    assert!(!blocked_child.exists());
+    assert_eq!(
+        ui.workspace_edit_transaction_events_after(0)
+            .latest_sequence,
+        0
+    );
+
+    let backup_left = std::fs::read_dir(root.join("src"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".atto-workspace-edit-rollback-")
+        });
+    assert!(!backup_left);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn multi_document_ui_applies_unopened_document_changes_in_order() {
     let root = unique_test_dir("editor-core-ui-workspace-resource-order-root");
     std::fs::create_dir_all(root.join("src")).unwrap();

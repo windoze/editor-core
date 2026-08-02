@@ -823,6 +823,65 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
     }
 
+    func testMultiDocumentEditorUIRollsBackUnopenedResourceOperationsAfterRuntimeFailure() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-workspace-rollback-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("src", isDirectory: true), withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let old = root.appendingPathComponent("src/Old.swift")
+        let target = root.appendingPathComponent("src/Target.swift")
+        let created = root.appendingPathComponent("generated/Created.swift")
+        let blocker = root.appendingPathComponent("blocker")
+        let blockedChild = root.appendingPathComponent("blocker/Child.swift")
+        try "old\n".write(to: old, atomically: true, encoding: .utf8)
+        try "target\n".write(to: target, atomically: true, encoding: .utf8)
+        try "blocker\n".write(to: blocker, atomically: true, encoding: .utf8)
+        try multi.setWorkspaceRoots([root.absoluteString])
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "create",
+              "uri": "\(created.absoluteString)"
+            },
+            {
+              "kind": "rename",
+              "oldUri": "\(old.absoluteString)",
+              "newUri": "\(target.absoluteString)",
+              "options": { "overwrite": true }
+            },
+            {
+              "kind": "create",
+              "uri": "\(blockedChild.absoluteString)"
+            }
+          ]
+        }
+        """
+
+        let preview = try multi.previewWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertTrue(preview.skippedURIs.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: created.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: old.path))
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "target\n")
+
+        XCTAssertThrowsError(try multi.applyWorkspaceEditTransaction(workspaceEdit))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: created.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("generated").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: old.path))
+        XCTAssertEqual(try String(contentsOf: old, encoding: .utf8), "old\n")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: target.path))
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "target\n")
+        XCTAssertEqual(try String(contentsOf: blocker, encoding: .utf8), "blocker\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: blockedChild.path))
+        XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 0)
+    }
+
     func testMultiDocumentEditorUIReportsWorkspaceEditVersionMismatch() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)
