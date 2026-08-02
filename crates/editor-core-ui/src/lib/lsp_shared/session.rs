@@ -37,6 +37,18 @@ impl SharedLspSession {
     }
 }
 
+impl Drop for SharedLspSession {
+    fn drop(&mut self) {
+        let Ok(mut guard) = self.session.lock() else {
+            return;
+        };
+        let Some(mut session) = guard.take() else {
+            return;
+        };
+        let _ = session.exit();
+    }
+}
+
 static SHARED_LSP_POOL: OnceLock<Mutex<HashMap<SharedLspKey, Weak<SharedLspSession>>>> =
     OnceLock::new();
 

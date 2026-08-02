@@ -97,6 +97,36 @@ fn lsp_capture_server_script_with_messages(
     script
 }
 
+fn lsp_graceful_shutdown_capture_server_script(capture_path: &std::path::Path) -> String {
+    let init_body = lsp_initialize_response(serde_json::json!({})).to_string();
+    format!(
+        "init={}; capture={}; \
+         printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${{#init}}\" \"$init\"; \
+         while IFS= read -r header; do \
+           printf '%s\\n' \"$header\" >> \"$capture\"; \
+           case \"$header\" in \
+             Content-Length:*) \
+               len=$(printf '%s' \"${{header#Content-Length: }}\" | tr -d '\\r'); \
+               IFS= read -r blank; printf '%s\\n' \"$blank\" >> \"$capture\"; \
+               body=$(dd bs=1 count=\"$len\" 2>/dev/null); \
+               printf '%s' \"$body\" >> \"$capture\"; \
+               case \"$body\" in \
+                 *'\"method\":\"shutdown\"'*|*'\"method\": \"shutdown\"'*) \
+                   shutdown_id=$(printf '%s' \"$body\" | sed -n 's/.*\"id\"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p'); \
+                   if [ -z \"$shutdown_id\" ]; then shutdown_id=2; fi; \
+                   response=$(printf '{{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":null}}' \"$shutdown_id\"); \
+                   printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${{#response}}\" \"$response\" ;; \
+               esac; \
+               case \"$body\" in \
+                 *'\"method\":\"exit\"'*|*'\"method\": \"exit\"'*) exit 0 ;; \
+               esac ;; \
+           esac; \
+         done",
+        shell_quote(&init_body),
+        shell_quote(capture_path.to_string_lossy().as_ref()),
+    )
+}
+
 fn lsp_initialize_response(capabilities: serde_json::Value) -> serde_json::Value {
     serde_json::json!({
         "jsonrpc": "2.0",
@@ -484,6 +514,35 @@ fn lsp_enable_stdio_projects_root_uri_to_workspace_folders() {
     assert_eq!(workspace_folders_response["result"][0]["name"], root_name);
 
     ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
+fn lsp_disable_gracefully_exits_last_shared_session() {
+    let capture_path = unique_temp_path("shared-session-graceful-exit");
+    let script = lsp_graceful_shutdown_capture_server_script(&capture_path);
+    let args = vec!["-c".to_string(), script];
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root_uri = format!("file:///tmp/editor-core-ui-shared-exit-{stamp}");
+    let doc_uri = format!("{root_uri}/main.rs");
+
+    let mut ui = EditorUi::new("fn main() {}\n", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+    ui.lsp_disable();
+
+    let captured = wait_for_captured_lsp_stdin(&capture_path, "\"method\":\"exit\"");
+    assert!(
+        captured.contains("\"method\":\"shutdown\""),
+        "missing shutdown request: {captured}"
+    );
+    assert!(
+        captured.contains("\"method\":\"exit\""),
+        "missing exit notification: {captured}"
+    );
     let _ = std::fs::remove_file(capture_path);
 }
 

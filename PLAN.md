@@ -875,6 +875,14 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testSaveAndCloseNotifyLspDocumentLifecycle`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenSaveAndCloseNotifyExistingLspSessions`
     - `git diff --check`
+- 中间提交：`fix(ui): gracefully exit shared lsp sessions`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；补齐阶段 265 后 shared LSP session 最后一个 handle 释放时的 Rust 停止侧起点，让最后一次 `Arc<SharedLspSession>` drop 通过既有 `LspSession::exit()` 路径发送 `shutdown` / `exit` 并回收子进程。
+  - 提交边界：只在 `editor-core-ui` 的 shared-session wrapper 上增加 drop-time graceful exit，并新增 fake LSP server 回归测试捕获 `shutdown` 与 `exit`；不新增 Rust/C ABI 或 Swift API，不改变 `EditorUI.lspDisable()` 调用形状，不实现 host-visible 显式 shutdown API、shared-session root-set 完整 ownership、project open 自动批量启动、stderr capture、server process history 或 dashboard 级 server health UI。
+  - 验证记录：
+    - `cargo test -p editor-core-lsp session_exit_accepts_responsive_shutdown`
+    - `cargo test -p editor-core-ui lsp_disable_gracefully_exits_last_shared_session`（受限未完成：sandbox 内 `skia-bindings` 需要访问 GitHub 下载，提升权限请求被审批层拒绝）
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
