@@ -32,13 +32,19 @@ struct AttoProjectLspProcessHealthLogEntry: Codable, Equatable {
 struct AttoProjectLspProcessHealthLogStore: Sendable {
     let logFileURL: URL
     let maxPersistedEntries: Int
+    let maxLogFileBytes: Int
+    let maxEntryAge: TimeInterval?
 
     init(
         logFileURL: URL = AttoProjectLspProcessHealthLogStore.defaultLogFileURL(),
-        maxPersistedEntries: Int = 2_000
+        maxPersistedEntries: Int = 2_000,
+        maxLogFileBytes: Int = 4 * 1024 * 1024,
+        maxEntryAge: TimeInterval? = 30 * 24 * 60 * 60
     ) {
         self.logFileURL = logFileURL
         self.maxPersistedEntries = max(1, maxPersistedEntries)
+        self.maxLogFileBytes = max(1, maxLogFileBytes)
+        self.maxEntryAge = maxEntryAge
     }
 
     static func defaultLogFileURL(fileManager: FileManager = .default) -> URL {
@@ -104,7 +110,7 @@ struct AttoProjectLspProcessHealthLogStore: Sendable {
             let existingText = String(data: existingData, encoding: .utf8) ?? ""
             var lines = existingText.split(whereSeparator: \.isNewline).map(String.init)
             lines.append(line)
-            lines = retainLatestEntriesPerWorkspace(lines)
+            lines = prunedLogLines(lines)
             let output = lines.joined(separator: "\n") + "\n"
             try output.write(to: logFileURL, atomically: true, encoding: .utf8)
         } else {
@@ -239,10 +245,44 @@ struct AttoProjectLspProcessHealthLogStore: Sendable {
         }
     }
 
-    private func retainLatestEntriesPerWorkspace(_ lines: [String]) -> [String] {
+    private func prunedLogLines(_ lines: [String]) -> [String] {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
+        let agePrunedLines = retainEntriesWithinAge(lines, decoder: decoder)
+        let countPrunedLines = retainLatestEntriesPerWorkspace(agePrunedLines, decoder: decoder)
+        return retainLinesWithinByteBudget(countPrunedLines)
+    }
 
+    private func retainEntriesWithinAge(_ lines: [String], decoder: JSONDecoder) -> [String] {
+        guard let maxEntryAge, maxEntryAge > 0,
+              let newestDate = latestRecordedAt(in: lines, decoder: decoder)
+        else {
+            return lines
+        }
+
+        let cutoff = newestDate.addingTimeInterval(-maxEntryAge)
+        return lines.filter { line in
+            guard let lineData = line.data(using: .utf8),
+                  let entry = try? decoder.decode(AttoProjectLspProcessHealthLogEntry.self, from: lineData)
+            else {
+                return true
+            }
+            return entry.recordedAt >= cutoff
+        }
+    }
+
+    private func latestRecordedAt(in lines: [String], decoder: JSONDecoder) -> Date? {
+        lines.compactMap { line in
+            guard let lineData = line.data(using: .utf8),
+                  let entry = try? decoder.decode(AttoProjectLspProcessHealthLogEntry.self, from: lineData)
+            else {
+                return nil
+            }
+            return entry.recordedAt
+        }.max()
+    }
+
+    private func retainLatestEntriesPerWorkspace(_ lines: [String], decoder: JSONDecoder) -> [String] {
         var countsByWorkspace: [String: Int] = [:]
         var keptReversed: [String] = []
         for line in lines.reversed() {
@@ -259,6 +299,20 @@ struct AttoProjectLspProcessHealthLogStore: Sendable {
             }
             countsByWorkspace[entry.workspaceRootURI] = count + 1
             keptReversed.append(line)
+        }
+        return keptReversed.reversed()
+    }
+
+    private func retainLinesWithinByteBudget(_ lines: [String]) -> [String] {
+        var keptReversed: [String] = []
+        var byteCount = 0
+        for line in lines.reversed() {
+            let lineBytes = line.lengthOfBytes(using: .utf8) + 1
+            guard keptReversed.isEmpty || byteCount + lineBytes <= maxLogFileBytes else {
+                continue
+            }
+            keptReversed.append(line)
+            byteCount += lineBytes
         }
         return keptReversed.reversed()
     }

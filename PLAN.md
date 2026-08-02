@@ -1002,6 +1002,15 @@
     - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStoreRetainsLatestEntries`
     - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStoreRetainsLatestEntriesPerWorkspace`
     - `git diff --check`
+- 中间提交：`feat(app): rotate lsp process health log`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；在阶段 274-280 的 JSONL process health log 基础上补大小与时间维度的轮转清理。
+  - 提交边界：`AttoProjectLspProcessHealthLogStore` 新增 `maxLogFileBytes` 和 `maxEntryAge` 配置，append 后先按最新记录时间裁掉过期可解析记录，再按 workspace root URI 做条数 retention，最后按文件大小预算保留最新 JSONL 行；默认配置不改变日志 schema，不新增 Rust/C ABI，不实现复杂查询/filter DSL、自动崩溃恢复、更深层 core-owned LSP ownership schema 或完整 dashboard 级健康视图。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStoreRetainsLatestEntries`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStoreRetainsLatestEntriesPerWorkspace`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStorePrunesEntriesOlderThanMaxAge`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStorePrunesOldestLinesBySizeBudget`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
