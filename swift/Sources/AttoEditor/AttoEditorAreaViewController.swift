@@ -2134,14 +2134,39 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         do {
-            try tab.editCore.editor.lspApplyFoldingRangesJSON(json)
+            let result = try JSONDecoder().decode(EcuLspFoldingRangeResult.self, from: Data(json.utf8))
+            return applyFoldingRangesResultToActiveTab(result, showFeedback: showFeedback)
+        } catch {
+            if showFeedback {
+                showWorkspaceEditPopover(
+                    text: "Folding ranges could not be applied.\n\(error.localizedDescription)",
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
+    func applyFoldingRangesResultToActiveTab(
+        _ result: EcuLspFoldingRangeResult,
+        showFeedback: Bool = false
+    ) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try tab.editCore.editor.lspApplyFoldingRanges(result)
             tab.editCore.layoutSubtreeIfNeeded()
             tab.editCore.editorView.needsDisplay = true
             tab.editCore.needsDisplay = true
             derivedStateStore.refreshActive(editor: tab.editCore.editor)
             updateStatusBar()
 
-            if showFeedback, Self.foldingRangesResultCount(json) == 0 {
+            if showFeedback, result.ranges.isEmpty {
                 showWorkspaceEditPopover(
                     text: "No folding ranges are available for this document.",
                     in: tab.editCore.editorView
@@ -2189,9 +2214,9 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspFoldingRangeResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastFoldingRangesResultJSON()
+                result = try tab.editCore.editor.lspTakeLastFoldingRangesResult()
             } catch {
                 let showFeedback = ctx.showFeedback
                 self.cancelFoldingRangesUI()
@@ -2204,27 +2229,15 @@ final class AttoEditorAreaViewController: NSViewController {
                 NSSound.beep()
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             let showFeedback = ctx.showFeedback
             self.cancelFoldingRangesUI()
-            _ = self.applyFoldingRangesResultJSONToActiveTab(json, showFeedback: showFeedback)
+            _ = self.applyFoldingRangesResultToActiveTab(result, showFeedback: showFeedback)
         }
 
         foldingRangesPollTimer = timer
         timer.resume()
-    }
-
-    private static func foldingRangesResultCount(_ json: String) -> Int? {
-        guard let data = json.data(using: .utf8),
-              let root = try? JSONSerialization.jsonObject(with: data, options: [])
-        else {
-            return nil
-        }
-        if root is NSNull {
-            return 0
-        }
-        return (root as? [Any])?.count
     }
 
     @discardableResult

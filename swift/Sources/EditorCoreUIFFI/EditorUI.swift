@@ -835,6 +835,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastFoldingRangesResult() throws -> EcuLspFoldingRangeResult? {
+        guard let json = try lspTakeLastFoldingRangesResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspFoldingRangeResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_folding_ranges_decode"
+        )
+    }
+
     public func lspRequestSelectionRange(positionsJSON: String) throws -> UInt64 {
         try lspRequestJSON(positionsJSON, context: "editor_ui_lsp_request_selection_range") { cstr, out in
             editor_core_ui_ffi_editor_ui_lsp_request_selection_range(handle, cstr, out)
@@ -1322,6 +1331,10 @@ public final class EditorUI {
             editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json(handle, cstr)
         }
         try library.ensureStatus(status, context: "editor_ui_lsp_apply_folding_ranges_json")
+    }
+
+    public func lspApplyFoldingRanges(_ result: EcuLspFoldingRangeResult) throws {
+        try lspApplyFoldingRangesJSON(result.rawJSONString ?? "null")
     }
 
     @discardableResult

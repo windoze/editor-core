@@ -259,6 +259,43 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(regions[0].placeholder, "use ...")
     }
 
+    func testApplyTypedFoldingRangesResultUpdatesDerivedState() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("typed-folds.txt")
+        try """
+        import A
+        import B
+        let value = 1
+        """.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let result = try JSONDecoder().decode(EcuLspFoldingRangeResult.self, from: Data("""
+        [
+          {
+            "startLine": 0,
+            "endLine": 1,
+            "kind": "imports"
+          }
+        ]
+        """.utf8))
+
+        XCTAssertTrue(vc.applyFoldingRangesResultToActiveTab(result))
+
+        let regions = vc._activeDerivedStateForTesting().foldingRegions.regions
+        XCTAssertEqual(regions.count, 1)
+        XCTAssertEqual(regions[0].startLine, 0)
+        XCTAssertEqual(regions[0].endLine, 1)
+        XCTAssertFalse(regions[0].isCollapsed)
+        XCTAssertEqual(regions[0].placeholder, "use ...")
+    }
+
     func testRefreshCodeLensRequiresEnabledLsp() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
