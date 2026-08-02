@@ -598,6 +598,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCodeLensActionTitlesUseCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCodeLensAtCursorFiltersActionsToCurrentLine`
     - `git diff --check`
+- 中间提交：`feat(app): project window titles from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor window title 的 active document display name 使用 core tab snapshot 的 `document_uri` 投影。
+  - 提交边界：只迁移 `updateWindowTitle()` 中的文件名展示来源；不改变 dirty marker 判断、真实保存路径、tab bar/opened-files title、session schema、真实 `tab.fileURL` 同步策略或 Rust/FFI ABI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWindowTitleUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testActiveTabProjectionUsesCoreActiveTabWhenAvailable`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

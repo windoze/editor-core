@@ -22,7 +22,7 @@ extension AttoEditorAreaViewController {
             return
         }
 
-        let name = tab.fileURL.lastPathComponent
+        let name = projectedFileURL(for: tab).lastPathComponent
         if refreshTabDirtyState(tab) {
             win.title = "AttoEditor — ● \(name)"
         } else {
