@@ -44,6 +44,56 @@ final class AttoStatusBarSelectionTests: XCTestCase {
         XCTAssertTrue(text.contains("(1:1-1:2)"), "expected selection range (Ln:Col) to be shown")
     }
 
+    func testStatusBarMetadataUsesCoreDocumentURIProjection() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoStatusBarProjectionTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let file = root.appendingPathComponent("status-local.txt")
+        let projected = root.appendingPathComponent("status-projected.rs")
+        let projectedText = "0123456789\n"
+        try "local".write(to: file, atomically: true, encoding: .utf8)
+        try projectedText.write(to: projected, atomically: true, encoding: .utf8)
+
+        let lib = EditorCoreUIFFILibrary()
+        let theme = EditorCoreSkiaTheme.defaultLight()
+        let vc = AttoEditorAreaViewController(library: lib, theme: theme, workspaceRootURL: root)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = vc
+        window.makeKeyAndOrderFront(nil)
+        vc.view.layoutSubtreeIfNeeded()
+
+        vc.openFile(url: file, mode: .pinned)
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projected.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, file.standardizedFileURL)
+
+        vc._updateStatusBarForTesting()
+
+        let statusBar = try XCTUnwrap(findSubview(of: AttoStatusBarView.self, in: vc.view))
+        let labels = allSubviews(in: statusBar).compactMap { $0 as? NSTextField }
+        let fileSizeLabel = try XCTUnwrap(labels.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.statusBarFileSizeLabel
+        })
+        XCTAssertEqual(fileSizeLabel.stringValue, AttoFormat.byteCount(Int64(projectedText.utf8.count)))
+
+        let lspLabel = try XCTUnwrap(labels.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.statusBarLspLabel
+        })
+        XCTAssertFalse(lspLabel.stringValue.isEmpty)
+    }
+
     func testStatusBarConsumesActiveDerivedDiagnostics() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoStatusBarDerivedStateTests-\(UUID().uuidString)", isDirectory: true)

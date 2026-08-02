@@ -605,6 +605,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWindowTitleUsesCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testActiveTabProjectionUsesCoreActiveTabWhenAvailable`
     - `git diff --check`
+- 中间提交：`feat(app): project status metadata from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor status bar 的 file size 和 Rust/LSP relevance 判断使用 core tab snapshot 的 `document_uri` 投影。
+  - 提交边界：只迁移 `updateStatusBar()` 中 file-size lookup 与 “Rust file should show LSP status” 的文档 URL 来源；不改变 active derived-state/diagnostics 统计、LSP status snapshot/formatting、语言选择、真实保存路径、session schema、真实 `tab.fileURL` 同步策略或 Rust/FFI ABI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoStatusBarSelectionTests.testStatusBarMetadataUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoStatusBarSelectionTests.testStatusBarShowsSelectionRangeAndSize`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

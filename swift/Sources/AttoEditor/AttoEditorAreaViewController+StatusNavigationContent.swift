@@ -184,9 +184,11 @@ extension AttoEditorAreaViewController {
             }
         }()
 
+        let documentURL = projectedFileURL(for: tab)
+
         let fileSizeText: String? = {
             do {
-                let values = try tab.fileURL.resourceValues(forKeys: [.fileSizeKey])
+                let values = try documentURL.resourceValues(forKeys: [.fileSizeKey])
                 guard let size = values.fileSize else { return nil }
                 return AttoFormat.byteCount(Int64(size))
             } catch {
@@ -199,7 +201,7 @@ extension AttoEditorAreaViewController {
             //
             // - Historically, AttoEditor only auto-enabled LSP for Rust.
             // - With configurable LSPs, show LSP status when it is enabled (any language), or for Rust files.
-            let isRustFile = (tab.fileURL.pathExtension.lowercased() == "rs")
+            let isRustFile = (documentURL.pathExtension.lowercased() == "rs")
             let isEnabled = (try? editor.lspIsEnabled()) == true
             guard isRustFile || isEnabled else { return nil }
 
