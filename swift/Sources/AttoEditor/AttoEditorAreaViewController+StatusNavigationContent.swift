@@ -558,6 +558,15 @@ extension AttoEditorAreaViewController {
         return true
     }
 
+    @discardableResult
+    func _runProjectLspDashboardCommandForTesting(id: String) -> Bool {
+        guard let command = projectLspDashboardCommands().first(where: { $0.id == id }) else {
+            return false
+        }
+        command.run()
+        return true
+    }
+
     private func projectLspDashboardCommands() -> [AttoCommandPaletteCommand] {
         var commands: [AttoCommandPaletteCommand] = []
 
@@ -592,7 +601,7 @@ extension AttoEditorAreaViewController {
             title: projectLspDashboardRecoveryPolicyTitle()
         ) {})
 
-        commands.append(projectLspDashboardRecoveryActionCommand())
+        commands.append(contentsOf: projectLspDashboardRecoveryActionCommands())
 
         if let trendTitle = Self.projectLspDashboardTrendTitle(persistedEntries: persistedEntries) {
             commands.append(AttoCommandPaletteCommand(
@@ -662,18 +671,63 @@ extension AttoEditorAreaViewController {
         return "Recovery Policy - \(enabledText), max attempts \(maxAttempts), base delay \(Self.formatProjectLspDashboardSeconds(baseDelay))"
     }
 
-    private func projectLspDashboardRecoveryActionCommand() -> AttoCommandPaletteCommand {
+    private func projectLspDashboardRecoveryActionCommands() -> [AttoCommandPaletteCommand] {
         let currentlyEnabled = preferences.effectiveLspAutoRestartEnabled
         let verb = currentlyEnabled ? "Disable" : "Enable"
-        return AttoCommandPaletteCommand(
-            id: "lsp.project_dashboard.toggle_auto_restart",
-            title: "Recovery Action - \(verb) auto-restart"
-        ) { [weak self] in
-            guard let self else { return }
-            let enabled = self.preferences.effectiveLspAutoRestartEnabled == false
-            self.preferences.setLspAutoRestartEnabled(enabled)
-            self.setTransientStatusText("LSP auto-restart \(enabled ? "enabled" : "disabled")")
-        }
+        let maxAttempts = preferences.effectiveLspAutoRestartMaxAttempts
+        let increasedMaxAttempts = min(maxAttempts + 1, 10)
+        let decreasedMaxAttempts = max(maxAttempts - 1, 0)
+        let baseDelay = preferences.effectiveLspAutoRestartBaseDelaySeconds
+        let increasedBaseDelay = min(baseDelay + 1.0, 3_600.0)
+        let decreasedBaseDelay = max(baseDelay - 1.0, 0.0)
+
+        return [
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.toggle_auto_restart",
+                title: "Recovery Action - \(verb) auto-restart"
+            ) { [weak self] in
+                guard let self else { return }
+                let enabled = self.preferences.effectiveLspAutoRestartEnabled == false
+                self.preferences.setLspAutoRestartEnabled(enabled)
+                self.setTransientStatusText("LSP auto-restart \(enabled ? "enabled" : "disabled")")
+            },
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.increase_auto_restart_max_attempts",
+                title: "Recovery Action - Increase max attempts to \(increasedMaxAttempts)",
+                isEnabled: maxAttempts < 10
+            ) { [weak self] in
+                guard let self else { return }
+                self.preferences.setLspAutoRestartMaxAttempts(increasedMaxAttempts)
+                self.setTransientStatusText("LSP auto-restart max attempts \(increasedMaxAttempts)")
+            },
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.decrease_auto_restart_max_attempts",
+                title: "Recovery Action - Decrease max attempts to \(decreasedMaxAttempts)",
+                isEnabled: maxAttempts > 0
+            ) { [weak self] in
+                guard let self else { return }
+                self.preferences.setLspAutoRestartMaxAttempts(decreasedMaxAttempts)
+                self.setTransientStatusText("LSP auto-restart max attempts \(decreasedMaxAttempts)")
+            },
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.increase_auto_restart_base_delay",
+                title: "Recovery Action - Increase base delay to \(Self.formatProjectLspDashboardSeconds(increasedBaseDelay))",
+                isEnabled: baseDelay < 3_600.0
+            ) { [weak self] in
+                guard let self else { return }
+                self.preferences.setLspAutoRestartBaseDelaySeconds(increasedBaseDelay)
+                self.setTransientStatusText("LSP auto-restart base delay \(Self.formatProjectLspDashboardSeconds(increasedBaseDelay))")
+            },
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.decrease_auto_restart_base_delay",
+                title: "Recovery Action - Decrease base delay to \(Self.formatProjectLspDashboardSeconds(decreasedBaseDelay))",
+                isEnabled: baseDelay > 0.0
+            ) { [weak self] in
+                guard let self else { return }
+                self.preferences.setLspAutoRestartBaseDelaySeconds(decreasedBaseDelay)
+                self.setTransientStatusText("LSP auto-restart base delay \(Self.formatProjectLspDashboardSeconds(decreasedBaseDelay))")
+            },
+        ]
     }
 
     private static func projectLspDashboardTrendTitle(

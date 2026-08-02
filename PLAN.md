@@ -1079,6 +1079,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
     - `git diff --check`
+- 中间提交：`feat(app): tune lsp recovery from dashboard`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；继续产品化 project LSP health dashboard，把阶段 291 的内联恢复配置从开关扩展到重试次数和退避基准。
+  - 提交边界：`AttoEditor.LSP.ProjectDashboard` 的 Recovery Action 现在提供 max attempts +1/-1 和 base delay +1s/-1s 操作，直接写回 `AttoPreferences` 并显示状态反馈；测试覆盖 dashboard command 对 max attempts 和 base delay 的实际修改。该提交不新增 Rust/C ABI，不改变日志 schema、不实现 per-server recovery policy、自由输入/完整设置表单、真正图表、跨 project dashboard 或更深层 core-owned LSP ownership schema。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
