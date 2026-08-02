@@ -156,6 +156,18 @@ final class EditorCoreUIFFITests: XCTestCase {
         """)
         XCTAssertEqual(diagnostics.diagnostics.map(\.message), ["first problem"])
         XCTAssertEqual(diagnostics.diagnostics.first?.severityLabel, "error")
+        XCTAssertEqual(
+            try multi.workspaceDiagnosticMarkersSnapshot().markers,
+            [
+                EcuWorkspaceDiagnosticMarker(
+                    uri: "file:///project/a.swift",
+                    line: 0,
+                    utf16Character: 1,
+                    severity: 1,
+                    severityLabel: "error"
+                ),
+            ]
+        )
 
         let previousResultIds = try JSONSerialization.jsonObject(
             with: Data(try multi.workspaceDiagnosticsPreviousResultIdsJSON().utf8),

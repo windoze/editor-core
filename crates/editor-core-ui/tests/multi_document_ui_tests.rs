@@ -280,6 +280,27 @@ fn multi_document_ui_owns_incremental_workspace_diagnostics() {
         snapshot.diagnostics[1].target.uri,
         "file:///project/related.swift"
     );
+    assert_eq!(
+        ui.workspace_diagnostic_markers_snapshot(),
+        editor_core_ui::WorkspaceDiagnosticMarkersSnapshot {
+            markers: vec![
+                editor_core_ui::WorkspaceDiagnosticMarker {
+                    uri: "file:///project/a.swift".to_string(),
+                    line: 0,
+                    utf16_character: 1,
+                    severity: Some(1),
+                    severity_label: Some("error"),
+                },
+                editor_core_ui::WorkspaceDiagnosticMarker {
+                    uri: "file:///project/related.swift".to_string(),
+                    line: 2,
+                    utf16_character: 4,
+                    severity: Some(2),
+                    severity_label: Some("warning"),
+                },
+            ],
+        }
+    );
 
     let previous: serde_json::Value =
         serde_json::from_str(&ui.workspace_diagnostics_previous_result_ids_json().unwrap())

@@ -271,6 +271,21 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         "error"
     );
 
+    let markers_ptr = editor_core_ui_ffi_multi_document_workspace_diagnostic_markers_json(multi);
+    assert!(!markers_ptr.is_null());
+    let markers_json = unsafe { std::ffi::CStr::from_ptr(markers_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(markers_ptr) };
+    let markers_value: serde_json::Value = serde_json::from_str(&markers_json).unwrap();
+    assert_eq!(
+        markers_value["markers"][0]["uri"],
+        "file:///project/a.swift"
+    );
+    assert_eq!(markers_value["markers"][0]["line"], 0);
+    assert_eq!(markers_value["markers"][0]["utf16_character"], 1);
+    assert_eq!(markers_value["markers"][0]["severity_label"], "error");
+
     let previous_ptr =
         editor_core_ui_ffi_multi_document_workspace_diagnostics_previous_result_ids_json(multi);
     assert!(!previous_ptr.is_null());

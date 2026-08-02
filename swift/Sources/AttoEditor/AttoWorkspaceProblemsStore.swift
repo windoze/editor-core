@@ -62,6 +62,13 @@ struct AttoWorkspaceProblemsSnapshot: Equatable {
     }
 }
 
+struct AttoWorkspaceDiagnosticMarkerProjection: Equatable {
+    let uri: String
+    let line: Int
+    let utf16Character: Int
+    let severity: EcuDiagnosticSeverity?
+}
+
 final class AttoWorkspaceProblemsStore {
     private let coreDocuments: MultiDocumentEditorUI?
     private var documentsByURI: [String: AttoLspWorkspaceDiagnosticsParser.DocumentReport] = [:]
@@ -92,6 +99,28 @@ final class AttoWorkspaceProblemsStore {
             return json
         }
         return snapshot.previousResultIdsJSON()
+    }
+
+    func diagnosticMarkerProjections() -> [AttoWorkspaceDiagnosticMarkerProjection] {
+        if let markers = try? coreDocuments?.workspaceDiagnosticMarkersSnapshot().markers {
+            return markers.map { marker in
+                AttoWorkspaceDiagnosticMarkerProjection(
+                    uri: marker.uri,
+                    line: Int(marker.line),
+                    utf16Character: Int(marker.utf16Character),
+                    severity: Self.severity(forWorkspaceDiagnostic: marker.severity)
+                )
+            }
+        }
+
+        return diagnostics.map { diagnostic in
+            AttoWorkspaceDiagnosticMarkerProjection(
+                uri: diagnostic.target.uri,
+                line: diagnostic.target.line,
+                utf16Character: diagnostic.target.utf16Character,
+                severity: Self.severity(forWorkspaceDiagnostic: diagnostic.severity)
+            )
+        }
     }
 
     func clear() {
@@ -135,5 +164,25 @@ final class AttoWorkspaceProblemsStore {
     private func remember(uri: String) {
         guard documentOrder.contains(uri) == false else { return }
         documentOrder.append(uri)
+    }
+
+    private static func severity(forWorkspaceDiagnostic severity: UInt32?) -> EcuDiagnosticSeverity? {
+        switch severity {
+        case 1:
+            return .error
+        case 2:
+            return .warning
+        case 3:
+            return .information
+        case 4:
+            return .hint
+        default:
+            return nil
+        }
+    }
+
+    private static func severity(forWorkspaceDiagnostic severity: Int?) -> EcuDiagnosticSeverity? {
+        guard let severity, severity >= 0 else { return nil }
+        return Self.severity(forWorkspaceDiagnostic: UInt32(severity))
     }
 }

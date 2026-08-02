@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 mod workspace_diagnostics;
 
 pub use workspace_diagnostics::{
-    WorkspaceDiagnostic, WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticTarget,
-    WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
+    WorkspaceDiagnostic, WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
+    WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsSnapshot,
+    WorkspaceDiagnosticsStore,
 };
 
 /// Opaque id for an open tab/document managed by [`MultiDocumentEditorUi`].
@@ -551,6 +552,16 @@ impl MultiDocumentEditorUi {
     /// Return the current workspace diagnostics snapshot as JSON.
     pub fn workspace_diagnostics_snapshot_json(&self) -> Result<String, UiError> {
         self.workspace_diagnostics.snapshot_json()
+    }
+
+    /// Return project-level diagnostic marker projections.
+    pub fn workspace_diagnostic_markers_snapshot(&self) -> WorkspaceDiagnosticMarkersSnapshot {
+        self.workspace_diagnostics.marker_snapshot()
+    }
+
+    /// Return project-level diagnostic marker projections as JSON.
+    pub fn workspace_diagnostic_markers_json(&self) -> Result<String, UiError> {
+        self.workspace_diagnostics.marker_snapshot_json()
     }
 
     /// Return previous-result ids for the next LSP `workspace/diagnostic` request.

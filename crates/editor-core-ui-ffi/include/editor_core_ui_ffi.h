@@ -222,6 +222,8 @@ char* editor_core_ui_ffi_multi_document_apply_workspace_diagnostics_json(
     const char* result_json_utf8);
 char* editor_core_ui_ffi_multi_document_workspace_diagnostics_snapshot_json(
     MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_workspace_diagnostic_markers_json(
+    MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_workspace_diagnostics_previous_result_ids_json(
     MultiDocumentEditorUi* multi);
 int32_t editor_core_ui_ffi_multi_document_clear_workspace_diagnostics(

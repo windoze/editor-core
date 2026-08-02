@@ -199,6 +199,17 @@ final class AttoLspWorkspaceDiagnosticsParserTests: XCTestCase {
         """)
         XCTAssertEqual(snapshot.diagnostics.map(\.message), ["first problem"])
         XCTAssertEqual(snapshot.diagnostics.first?.severityLabel, "error")
+        XCTAssertEqual(
+            store.diagnosticMarkerProjections(),
+            [
+                AttoWorkspaceDiagnosticMarkerProjection(
+                    uri: "file:///project/a.swift",
+                    line: 0,
+                    utf16Character: 1,
+                    severity: .error
+                ),
+            ]
+        )
 
         let previous = try XCTUnwrap(
             JSONSerialization.jsonObject(

@@ -41,6 +41,22 @@ pub struct WorkspaceDiagnosticsSnapshot {
     pub diagnostics: Vec<WorkspaceDiagnostic>,
 }
 
+/// Lightweight project-level diagnostic marker projection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkspaceDiagnosticMarker {
+    pub uri: String,
+    pub line: u32,
+    pub utf16_character: u32,
+    pub severity: Option<u32>,
+    pub severity_label: Option<&'static str>,
+}
+
+/// Snapshot of project-level diagnostic markers.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct WorkspaceDiagnosticMarkersSnapshot {
+    pub markers: Vec<WorkspaceDiagnosticMarker>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct PreviousResultId<'a> {
     uri: &'a str,
@@ -83,6 +99,32 @@ impl WorkspaceDiagnosticsStore {
         serde_json::to_string(&self.snapshot()).map_err(|err| {
             UiError::Processor(format!(
                 "failed to encode workspace diagnostics snapshot: {err}"
+            ))
+        })
+    }
+
+    /// Return marker projections for all remembered workspace diagnostics.
+    pub fn marker_snapshot(&self) -> WorkspaceDiagnosticMarkersSnapshot {
+        let markers = self
+            .snapshot()
+            .diagnostics
+            .into_iter()
+            .map(|diagnostic| WorkspaceDiagnosticMarker {
+                uri: diagnostic.target.uri,
+                line: diagnostic.target.line,
+                utf16_character: diagnostic.target.utf16_character,
+                severity: diagnostic.severity,
+                severity_label: diagnostic.severity_label,
+            })
+            .collect();
+        WorkspaceDiagnosticMarkersSnapshot { markers }
+    }
+
+    /// Return marker projections as JSON.
+    pub fn marker_snapshot_json(&self) -> Result<String, UiError> {
+        serde_json::to_string(&self.marker_snapshot()).map_err(|err| {
+            UiError::Processor(format!(
+                "failed to encode workspace diagnostic markers: {err}"
             ))
         })
     }

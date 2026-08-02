@@ -44,7 +44,8 @@ pub use keybindings::{
 };
 pub use multi_document::{
     MultiDocumentEditorUi, TabId, TabSearchResult, WorkspaceDiagnostic,
-    WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsSnapshot,
+    WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
+    WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsSnapshot,
     WorkspaceDiagnosticsStore,
 };
 pub use state::EditorUi;

@@ -3630,14 +3630,14 @@ final class AttoEditorAreaViewController: NSViewController {
         let tabURL = tab.fileURL.standardizedFileURL
         guard let text = try? tab.editCore.editor.text() else { return [] }
 
-        return workspaceProblemsStore.diagnostics.compactMap { diagnostic -> DiagnosticMarkerProjection? in
-            guard let url = URL(string: diagnostic.target.uri), url.isFileURL else { return nil }
+        return workspaceProblemsStore.diagnosticMarkerProjections().compactMap { marker -> DiagnosticMarkerProjection? in
+            guard let url = URL(string: marker.uri), url.isFileURL else { return nil }
             guard url.standardizedFileURL == tabURL else { return nil }
 
             let offset = AttoLspDefinitionParser.charOffsetForLspPosition(
                 inText: text,
-                line: diagnostic.target.line,
-                utf16Character: diagnostic.target.utf16Character
+                line: marker.line,
+                utf16Character: marker.utf16Character
             )
             guard let position = try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offset) else {
                 return nil
@@ -3645,7 +3645,7 @@ final class AttoEditorAreaViewController: NSViewController {
             return DiagnosticMarkerProjection(
                 logicalLine: position.line,
                 charOffset: offset,
-                severity: severity(forWorkspaceDiagnostic: diagnostic.severity)
+                severity: marker.severity
             )
         }
     }
@@ -3662,21 +3662,6 @@ final class AttoEditorAreaViewController: NSViewController {
             out.append(projection)
         }
         return out
-    }
-
-    private func severity(forWorkspaceDiagnostic severity: Int?) -> EcuDiagnosticSeverity? {
-        switch severity {
-        case 1:
-            return .error
-        case 2:
-            return .warning
-        case 3:
-            return .information
-        case 4:
-            return .hint
-        default:
-            return nil
-        }
     }
 
     private func minimapMarkerKind(for severity: EcuDiagnosticSeverity?) -> EditorCoreSkiaMinimapMarker.Kind {

@@ -696,6 +696,28 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_workspace_diagnostics_snapsh
     }
 }
 
+/// Return the current workspace diagnostic marker projection JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_workspace_diagnostic_markers_json(
+    multi: *mut MultiDocumentEditorUi,
+) -> *mut c_char {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        multi
+            .workspace_diagnostic_markers_json()
+            .map_err(map_ui_error)
+    }) {
+        Ok(json) => {
+            clear_last_error();
+            make_c_string_ptr(json)
+        }
+        Err(err) => {
+            set_last_error_from_error(err);
+            ptr::null_mut()
+        }
+    }
+}
+
 /// Return previous-result ids for the next LSP workspace/diagnostic request.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_multi_document_workspace_diagnostics_previous_result_ids_json(

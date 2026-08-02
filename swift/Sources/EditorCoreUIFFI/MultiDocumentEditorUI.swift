@@ -105,6 +105,40 @@ public struct EcuWorkspaceDiagnosticsSnapshot: Decodable, Equatable, Sendable {
     public let diagnostics: [EcuWorkspaceDiagnostic]
 }
 
+public struct EcuWorkspaceDiagnosticMarker: Decodable, Equatable, Sendable {
+    public let uri: String
+    public let line: UInt32
+    public let utf16Character: UInt32
+    public let severity: UInt32?
+    public let severityLabel: String?
+
+    public init(
+        uri: String,
+        line: UInt32,
+        utf16Character: UInt32,
+        severity: UInt32?,
+        severityLabel: String?
+    ) {
+        self.uri = uri
+        self.line = line
+        self.utf16Character = utf16Character
+        self.severity = severity
+        self.severityLabel = severityLabel
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case uri
+        case line
+        case utf16Character = "utf16_character"
+        case severity
+        case severityLabel = "severity_label"
+    }
+}
+
+public struct EcuWorkspaceDiagnosticMarkersSnapshot: Decodable, Equatable, Sendable {
+    public let markers: [EcuWorkspaceDiagnosticMarker]
+}
+
 public final class MultiDocumentEditorUI {
     public let library: EditorCoreUIFFILibrary
     private let handle: OpaquePointer
@@ -365,6 +399,20 @@ public final class MultiDocumentEditorUI {
             EcuWorkspaceDiagnosticsSnapshot.self,
             from: workspaceDiagnosticsSnapshotJSON(),
             context: "multi_document_workspace_diagnostics_snapshot_decode"
+        )
+    }
+
+    public func workspaceDiagnosticMarkersJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_workspace_diagnostic_markers_json") {
+            editor_core_ui_ffi_multi_document_workspace_diagnostic_markers_json(handle)
+        }
+    }
+
+    public func workspaceDiagnosticMarkersSnapshot() throws -> EcuWorkspaceDiagnosticMarkersSnapshot {
+        try decode(
+            EcuWorkspaceDiagnosticMarkersSnapshot.self,
+            from: workspaceDiagnosticMarkersJSON(),
+            context: "multi_document_workspace_diagnostic_markers_decode"
         )
     }
 
