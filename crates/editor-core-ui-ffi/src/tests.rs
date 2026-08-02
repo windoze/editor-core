@@ -597,6 +597,124 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
 }
 
 #[test]
+fn ffi_multi_document_atomic_workspace_edit_preflight_skips_without_mutating() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let app_text = CString::new("alpha\n").unwrap();
+    let dirty_text = CString::new("dirty\n").unwrap();
+    let mut app_id: u64 = 0;
+    let mut dirty_id: u64 = 0;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, app_text.as_ptr(), 80, &mut app_id),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, dirty_text.as_ptr(), 80, &mut dirty_id,),
+        ECU_OK
+    );
+    let app_uri = CString::new("file:///project/App.swift").unwrap();
+    let dirty_uri = CString::new("file:///project/Dirty.swift").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_document_uri(multi, app_id, app_uri.as_ptr(),),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_document_uri(multi, dirty_id, dirty_uri.as_ptr(),),
+        ECU_OK
+    );
+    let dirty_changed = CString::new("dirty changed\n").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_replace_tab_text(
+            multi,
+            dirty_id,
+            dirty_changed.as_ptr(),
+            0,
+        ),
+        ECU_OK
+    );
+
+    let workspace_edit = CString::new(
+        r#"{
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "file:///project/App.swift",
+                  "version": null
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 5 }
+                    },
+                    "newText": "App"
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "file:///project/Dirty.swift"
+              }
+            ]
+          }
+        }"#,
+    )
+    .unwrap();
+
+    let apply_ptr = editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!apply_ptr.is_null());
+    let apply_json = unsafe { std::ffi::CStr::from_ptr(apply_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(apply_ptr) };
+    let apply_value: serde_json::Value = serde_json::from_str(&apply_json).unwrap();
+    assert_eq!(apply_value["mode"], "apply");
+    assert_eq!(apply_value["apply_mode"], "atomic");
+    assert_eq!(apply_value["applied"], false);
+    assert_eq!(apply_value["applied_edit_count"], 0);
+    assert_eq!(apply_value["applied_resource_operation_count"], 0);
+    assert_eq!(
+        apply_value["skipped_details"][0]["reason"],
+        "resource_operation_dirty_target"
+    );
+
+    let app_text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, app_id);
+    assert!(!app_text_ptr.is_null());
+    let app_text_after = unsafe { std::ffi::CStr::from_ptr(app_text_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(app_text_ptr) };
+    assert_eq!(app_text_after, "alpha\n");
+    let dirty_text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, dirty_id);
+    assert!(!dirty_text_ptr.is_null());
+    let dirty_text_after = unsafe { std::ffi::CStr::from_ptr(dirty_text_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(dirty_text_ptr) };
+    assert_eq!(dirty_text_after, "dirty changed\n");
+
+    let mut sequence = 0;
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_latest_sequence(
+                multi,
+                &mut sequence,
+            )
+        },
+        ECU_OK
+    );
+    assert_eq!(sequence, 1);
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+}
+
+#[test]
 fn ffi_multi_document_applies_unopened_workspace_file_text_edits() {
     let multi = editor_core_ui_ffi_multi_document_new();
     assert!(!multi.is_null());

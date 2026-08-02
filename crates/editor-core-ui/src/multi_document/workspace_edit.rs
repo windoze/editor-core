@@ -36,6 +36,7 @@ pub struct WorkspaceEditTransactionSkippedDetail {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct WorkspaceEditTransactionResult {
     pub mode: String,
+    pub apply_mode: String,
     pub applied: bool,
     pub applied_uri: Option<String>,
     pub applied_uris: Vec<String>,
@@ -122,9 +123,16 @@ pub(super) fn preview(
     workspace_roots: &[String],
     workspace_edit_json: &str,
 ) -> Result<WorkspaceEditTransactionResult, UiError> {
-    let value = workspace_edit_value(workspace_edit_json)?;
-    let plan = transaction_plan(tabs, tab_order, workspace_roots, &value);
-    Ok(result_from_plan("preview", plan, Vec::new(), 0, 0))
+    let input = workspace_edit_input(workspace_edit_json)?;
+    let plan = transaction_plan(tabs, tab_order, workspace_roots, &input.workspace_edit);
+    Ok(result_from_plan(
+        "preview",
+        input.apply_mode,
+        plan,
+        Vec::new(),
+        0,
+        0,
+    ))
 }
 
 pub(super) fn apply(
@@ -135,9 +143,21 @@ pub(super) fn apply(
     workspace_roots: &[String],
     workspace_edit_json: &str,
 ) -> Result<WorkspaceEditTransactionResult, UiError> {
-    let value = workspace_edit_value(workspace_edit_json)?;
-    let steps = workspace_edit_steps(&value);
-    let mut plan = transaction_plan(tabs, tab_order, workspace_roots, &value);
+    let input = workspace_edit_input(workspace_edit_json)?;
+    let steps = workspace_edit_steps(&input.workspace_edit);
+    let mut plan = transaction_plan(tabs, tab_order, workspace_roots, &input.workspace_edit);
+    if input.apply_mode == WorkspaceEditApplyMode::Atomic
+        && (!plan.skipped_uris.is_empty() || !plan.unsupported_operation_uris.is_empty())
+    {
+        return Ok(result_from_plan(
+            "apply",
+            input.apply_mode,
+            plan,
+            Vec::new(),
+            0,
+            0,
+        ));
+    }
     let mut applied_uris = BTreeSet::<String>::new();
     let mut applied_edit_count = 0usize;
     let mut applied_resource_operation_count = 0usize;
@@ -354,6 +374,7 @@ pub(super) fn apply(
 
     Ok(result_from_plan(
         "apply",
+        input.apply_mode,
         plan,
         applied_uris.into_iter().collect(),
         applied_edit_count,
@@ -382,6 +403,26 @@ struct WorkspaceEditTransactionPlan {
     unopened_file_text_edit_uris: BTreeSet<String>,
     resource_operations: Vec<PlannedResourceOperation>,
     documents: Vec<WorkspaceEditTransactionDocument>,
+}
+
+struct WorkspaceEditTransactionInput {
+    workspace_edit: Value,
+    apply_mode: WorkspaceEditApplyMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkspaceEditApplyMode {
+    Partial,
+    Atomic,
+}
+
+impl WorkspaceEditApplyMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Partial => "partial",
+            Self::Atomic => "atomic",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -893,6 +934,41 @@ fn workspace_edit_value(workspace_edit_json: &str) -> Result<Value, UiError> {
         .map_err(|err| UiError::Processor(format!("failed to decode workspace edit: {err}")))
 }
 
+fn workspace_edit_input(
+    workspace_edit_json: &str,
+) -> Result<WorkspaceEditTransactionInput, UiError> {
+    let value = workspace_edit_value(workspace_edit_json)?;
+    let apply_mode = workspace_edit_apply_mode(&value)?;
+    let workspace_edit = match value.get("workspaceEdit") {
+        Some(workspace_edit) if workspace_edit.is_object() => workspace_edit.clone(),
+        Some(_) => {
+            return Err(UiError::Processor(
+                "workspaceEdit transaction envelope field must be an object".to_string(),
+            ));
+        }
+        None => value,
+    };
+    Ok(WorkspaceEditTransactionInput {
+        workspace_edit,
+        apply_mode,
+    })
+}
+
+fn workspace_edit_apply_mode(value: &Value) -> Result<WorkspaceEditApplyMode, UiError> {
+    let mode = value
+        .get("applyMode")
+        .or_else(|| value.get("apply_mode"))
+        .and_then(Value::as_str)
+        .unwrap_or("partial");
+    match mode {
+        "partial" => Ok(WorkspaceEditApplyMode::Partial),
+        "atomic" => Ok(WorkspaceEditApplyMode::Atomic),
+        other => Err(UiError::Processor(format!(
+            "unsupported workspace edit applyMode: {other}"
+        ))),
+    }
+}
+
 fn transaction_plan(
     tabs: &BTreeMap<TabId, TabEntry>,
     tab_order: &[TabId],
@@ -1126,6 +1202,7 @@ fn transaction_plan(
 
 fn result_from_plan(
     mode: &str,
+    apply_mode: WorkspaceEditApplyMode,
     plan: WorkspaceEditTransactionPlan,
     applied_uris: Vec<String>,
     applied_edit_count: usize,
@@ -1133,6 +1210,7 @@ fn result_from_plan(
 ) -> WorkspaceEditTransactionResult {
     WorkspaceEditTransactionResult {
         mode: mode.to_string(),
+        apply_mode: apply_mode.as_str().to_string(),
         applied: applied_edit_count > 0 || applied_resource_operation_count > 0,
         applied_uri: applied_uris.first().cloned(),
         applied_uris,

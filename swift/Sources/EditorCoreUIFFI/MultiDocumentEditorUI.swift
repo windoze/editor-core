@@ -108,6 +108,7 @@ public struct EcuWorkspaceEditTransactionSkippedDetail: Decodable, Equatable, Se
 
 public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable {
     public let mode: String
+    public let applyMode: String
     public let applied: Bool
     public let appliedURI: String?
     public let appliedURIs: [String]
@@ -120,6 +121,7 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
 
     private enum CodingKeys: String, CodingKey {
         case mode
+        case applyMode = "apply_mode"
         case applied
         case appliedURI = "applied_uri"
         case appliedURIs = "applied_uris"
@@ -134,6 +136,7 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         mode = try container.decode(String.self, forKey: .mode)
+        applyMode = try container.decodeIfPresent(String.self, forKey: .applyMode) ?? "partial"
         applied = try container.decode(Bool.self, forKey: .applied)
         appliedURI = try container.decodeIfPresent(String.self, forKey: .appliedURI)
         appliedURIs = try container.decodeIfPresent([String].self, forKey: .appliedURIs) ?? []

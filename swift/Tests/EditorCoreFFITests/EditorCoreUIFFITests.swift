@@ -533,6 +533,66 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertNil(try multi.activeTabId())
     }
 
+    func testMultiDocumentEditorUIAtomicWorkspaceEditPreflightSkipsWithoutMutating() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+
+        let app = try multi.openTab(text: "alpha\n", viewportWidthCells: 80)
+        let dirty = try multi.openTab(text: "dirty\n", viewportWidthCells: 80)
+        try multi.setTabDocumentURI("file:///project/App.swift", tabId: app)
+        try multi.setTabDocumentURI("file:///project/Dirty.swift", tabId: dirty)
+        try multi.replaceTabText(tabId: dirty, text: "dirty changed\n", markSaved: false)
+
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "file:///project/App.swift",
+                  "version": null
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 5 }
+                    },
+                    "newText": "App"
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "file:///project/Dirty.swift"
+              }
+            ]
+          }
+        }
+        """
+
+        let applied = try multi.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertEqual(applied.mode, "apply")
+        XCTAssertEqual(applied.applyMode, "atomic")
+        XCTAssertFalse(applied.applied)
+        XCTAssertEqual(applied.appliedEditCount, 0)
+        XCTAssertEqual(applied.appliedResourceOperationCount, 0)
+        XCTAssertTrue(applied.appliedURIs.isEmpty)
+        XCTAssertTrue(applied.skippedDetails.contains {
+            $0.uri == "file:///project/Dirty.swift"
+                && $0.operation == "delete"
+                && $0.reason == "resource_operation_dirty_target"
+        })
+        XCTAssertEqual(try multi.tabText(tabId: app), "alpha\n")
+        XCTAssertEqual(try multi.tabText(tabId: dirty), "dirty changed\n")
+        XCTAssertTrue(try multi.isTabModified(dirty))
+        XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
+        let events = try multi.workspaceEditTransactionEvents()
+        XCTAssertEqual(events.events.first?.result.applyMode, "atomic")
+        XCTAssertEqual(events.events.first?.result.applied, false)
+    }
+
     func testMultiDocumentEditorUIAppliesOpenTabResourceOperations() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)

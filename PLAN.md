@@ -307,6 +307,16 @@
     - `cargo build -p editor-core-ui-ffi --release`
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIRollsBackOpenTabsAfterRuntimeFailure`
     - `git diff --check`
+- 中间提交：`feat(ui): support atomic workspace edit apply`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；为现有 `MultiDocumentEditorUi` WorkspaceEdit JSON transaction API 增加兼容的显式 apply mode，使调用方可选择默认 `partial` 或 envelope 形式的 `atomic` preflight。
+  - 提交边界：保留原始 LSP `WorkspaceEdit` 输入作为默认 partial；新增 `{"applyMode":"atomic","workspaceEdit":{...}}` envelope 解析和 result `apply_mode` 字段。atomic apply 在 preflight 已有 skipped/unsupported detail 时不修改任何 tab/文件，返回 `applied=false` 的结构化 result 并记录 transaction event。本提交不新增 C ABI 函数，不改变默认 partial 语义，不实现用户可见 undo grouping 或更深层 conflict UI。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui --package editor-core-ui-ffi`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_atomic_workspace_edit_preflight_skips_without_mutating`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_atomic_workspace_edit_preflight_skips_without_mutating`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAtomicWorkspaceEditPreflightSkipsWithoutMutating`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

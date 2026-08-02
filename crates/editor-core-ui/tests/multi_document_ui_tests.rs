@@ -365,6 +365,80 @@ fn multi_document_ui_previews_and_applies_workspace_edit_transactions() {
 }
 
 #[test]
+fn multi_document_ui_atomic_workspace_edit_preflight_skips_without_mutating() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let app = ui.open_tab("alpha\n", 80);
+    let dirty = ui.open_tab("dirty\n", 80);
+    ui.set_tab_document_uri(app, Some("file:///tmp/project/App.swift".to_string()))
+        .unwrap();
+    ui.set_tab_document_uri(dirty, Some("file:///tmp/project/Dirty.swift".to_string()))
+        .unwrap();
+    ui.replace_tab_text(dirty, "dirty changed\n", false)
+        .unwrap();
+
+    let edit = json!({
+        "applyMode": "atomic",
+        "workspaceEdit": {
+            "documentChanges": [
+                {
+                    "textDocument": {
+                        "uri": "file:///tmp/project/App.swift",
+                        "version": null
+                    },
+                    "edits": [
+                        {
+                            "range": {
+                                "start": { "line": 0, "character": 0 },
+                                "end": { "line": 0, "character": 5 }
+                            },
+                            "newText": "App"
+                        }
+                    ]
+                },
+                {
+                    "kind": "delete",
+                    "uri": "file:///tmp/project/Dirty.swift"
+                }
+            ]
+        }
+    })
+    .to_string();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(edit.as_str())
+        .unwrap();
+    assert_eq!(preview.mode, "preview");
+    assert_eq!(preview.apply_mode, "atomic");
+    assert!(!preview.applied);
+    assert!(
+        preview
+            .skipped_uris
+            .contains(&"file:///tmp/project/Dirty.swift".to_string())
+    );
+
+    let applied = ui.apply_workspace_edit_transaction(edit.as_str()).unwrap();
+    assert_eq!(applied.mode, "apply");
+    assert_eq!(applied.apply_mode, "atomic");
+    assert!(!applied.applied);
+    assert_eq!(applied.applied_edit_count, 0);
+    assert_eq!(applied.applied_resource_operation_count, 0);
+    assert!(applied.applied_uris.is_empty());
+    assert!(applied.skipped_details.iter().any(|detail| {
+        detail.uri == "file:///tmp/project/Dirty.swift"
+            && detail.operation.as_deref() == Some("delete")
+            && detail.reason == "resource_operation_dirty_target"
+    }));
+    assert_eq!(ui.tab_text(app).unwrap(), "alpha\n");
+    assert_eq!(ui.tab_text(dirty).unwrap(), "dirty changed\n");
+    assert!(ui.is_tab_modified(dirty).unwrap());
+
+    let events = ui.workspace_edit_transaction_events_after(0);
+    assert_eq!(events.latest_sequence, 1);
+    assert_eq!(events.events[0].result.apply_mode, "atomic");
+    assert!(!events.events[0].result.applied);
+}
+
+#[test]
 fn multi_document_ui_tracks_workspace_roots() {
     let mut ui = MultiDocumentEditorUi::new();
 
