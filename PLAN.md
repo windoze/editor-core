@@ -946,6 +946,15 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspStatusEventsPanelShowsRecordedFailures`
     - `git diff --check`
+- 中间提交：`feat(app): persist lsp process health log`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 project LSP process health history 从纯内存推进到 App 级 JSONL 持久化日志起点，并让 health 面板在内存为空时回退展示当前 workspace root 的最近持久化记录。
+  - 提交边界：新增纯 Foundation `AttoProjectLspProcessHealthLogStore`，默认写入 Application Support 下的 `logs/lsp-process-health.jsonl`；日志记录包含 workspace root URI、server、availability/state、tab/view 来源、detail、process state/pid/exit/signal/stderr tail 和记录时间。Swift/App 仍只做持久化桥接，workspace root 作为 core/project 身份元数据写入，不新增 Swift workspace ownership，不新增 Rust/C ABI，不改变 state event schema，不实现日志轮转/清理、复杂查询 UI、自动崩溃恢复、更深层 core-owned LSP ownership schema 或完整 dashboard 级健康视图。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStoreAppendsAndLoadsRecentWorkspaceEntries`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthPanelFallsBackToPersistedLog`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthRecordsStatusSnapshots`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthPanelShowsRecordedStatusSnapshots`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

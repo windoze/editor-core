@@ -1,5 +1,6 @@
 @testable import AttoEditor
 import EditorCoreUIFFI
+import Foundation
 import XCTest
 
 final class AttoLspResultLifecycleStoreTests: XCTestCase {
@@ -346,5 +347,76 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
             ).sequence,
             1
         )
+    }
+
+    func testProjectLspProcessHealthLogStoreAppendsAndLoadsRecentWorkspaceEntries() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoProjectLspProcessHealthLogStoreTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let rootA = tempDir.appendingPathComponent("workspace-a", isDirectory: true)
+        let rootB = tempDir.appendingPathComponent("workspace-b", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: rootB, withIntermediateDirectories: true)
+
+        let logURL = tempDir.appendingPathComponent("lsp-process-health.jsonl")
+        let logStore = AttoProjectLspProcessHealthLogStore(logFileURL: logURL)
+        let first = AttoProjectLspProcessHealthEvent(
+            sequence: 1,
+            sourceSequence: 10,
+            tabId: 100,
+            viewIndex: 0,
+            viewId: 1000,
+            serverName: "rust-analyzer",
+            serverCommand: "rust-analyzer",
+            availability: "enabled",
+            state: "ready",
+            detail: nil,
+            process: EcuLspProcessStatus(pid: 101, state: .running)
+        )
+        let second = AttoProjectLspProcessHealthEvent(
+            sequence: 2,
+            sourceSequence: 11,
+            tabId: 101,
+            viewIndex: 1,
+            viewId: 1001,
+            serverName: "pylsp",
+            serverCommand: "pylsp",
+            availability: "failed",
+            state: "failed",
+            detail: "server exited",
+            process: EcuLspProcessStatus(pid: 102, state: .exited, exitCode: 7, stderrTail: "stderr b")
+        )
+        let third = AttoProjectLspProcessHealthEvent(
+            sequence: 3,
+            sourceSequence: 12,
+            tabId: 102,
+            viewIndex: 0,
+            viewId: 1002,
+            serverName: "rust-analyzer",
+            serverCommand: "rust-analyzer",
+            availability: "failed",
+            state: "failed",
+            detail: "server exited",
+            process: EcuLspProcessStatus(pid: 103, state: .exited, exitCode: 9, stderrTail: "stderr a")
+        )
+
+        let recordedAt = Date(timeIntervalSince1970: 1_785_715_200)
+        try logStore.append(event: first, workspaceRootURL: rootA, recordedAt: recordedAt)
+        try logStore.append(event: second, workspaceRootURL: rootB, recordedAt: recordedAt)
+        try logStore.append(event: third, workspaceRootURL: rootA, recordedAt: recordedAt)
+
+        let allA = logStore.loadRecent(workspaceRootURL: rootA, limit: 10)
+        XCTAssertEqual(allA.map(\.sequence), [1, 3])
+        XCTAssertEqual(allA[0].workspaceRootURI, rootA.standardizedFileURL.absoluteString)
+        XCTAssertEqual(allA[1].process.exitCode, 9)
+        XCTAssertEqual(allA[1].process.stderrTail, "stderr a")
+
+        let latestA = logStore.loadRecent(workspaceRootURL: rootA, limit: 1)
+        XCTAssertEqual(latestA.map(\.sequence), [3])
+
+        let rawLog = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(rawLog.split(whereSeparator: \.isNewline).count, 3)
     }
 }

@@ -949,6 +949,7 @@ final class AttoEditorAreaViewController: NSViewController {
     let projectLspProcessHealthEventStore = AttoProjectLspProcessHealthEventStore(
         maxHistoryEntries: maxLspResultEventHistoryEntries
     )
+    let projectLspProcessHealthLogStore: AttoProjectLspProcessHealthLogStore
     var projectLspStatusEventsController: AttoCommandPaletteController?
     var projectLspProcessHealthController: AttoCommandPaletteController?
     var coreLspRequestEventCursor: UInt64 = 0
@@ -1024,12 +1025,14 @@ final class AttoEditorAreaViewController: NSViewController {
         library: EditorCoreUIFFILibrary,
         theme: EditorCoreSkiaTheme,
         workspaceRootURL: URL,
-        preferences: AttoPreferences = .shared
+        preferences: AttoPreferences = .shared,
+        projectLspProcessHealthLogStore: AttoProjectLspProcessHealthLogStore = AttoProjectLspProcessHealthLogStore()
     ) {
         self.library = library
         self.theme = theme
         self.workspaceRootURL = workspaceRootURL
         self.preferences = preferences
+        self.projectLspProcessHealthLogStore = projectLspProcessHealthLogStore
         do {
             let coreDocuments = try MultiDocumentEditorUI(library: library)
             self.coreDocuments = coreDocuments

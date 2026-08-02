@@ -445,8 +445,32 @@ extension AttoEditorAreaViewController {
     func showProjectLspProcessHealthPanel() -> Bool {
         drainProjectLspPanelLifecycleEvents()
 
+        let commands: [AttoCommandPaletteCommand]
         let events = Array(projectLspProcessHealthEventStore.events.reversed())
-        guard events.isEmpty == false else {
+        if events.isEmpty == false {
+            commands = events.enumerated().map { idx, event in
+                AttoCommandPaletteCommand(
+                    id: "lsp.project_process_health.\(idx)",
+                    title: Self.projectLspProcessHealthEventTitle(event)
+                ) {}
+            }
+        } else {
+            let persistedEntries = Array(projectLspProcessHealthLogStore.loadRecent(
+                workspaceRootURL: workspaceRootURL,
+                limit: Self.maxLspResultEventHistoryEntries
+            ).reversed())
+            guard persistedEntries.isEmpty == false else {
+                NSSound.beep()
+                return false
+            }
+            commands = persistedEntries.enumerated().map { idx, entry in
+                AttoCommandPaletteCommand(
+                    id: "lsp.project_process_health_log.\(idx)",
+                    title: Self.projectLspProcessHealthLogEntryTitle(entry)
+                ) {}
+            }
+        }
+        guard commands.isEmpty == false else {
             NSSound.beep()
             return false
         }
@@ -454,12 +478,6 @@ extension AttoEditorAreaViewController {
             return false
         }
 
-        let commands = events.enumerated().map { idx, event in
-            AttoCommandPaletteCommand(
-                id: "lsp.project_process_health.\(idx)",
-                title: Self.projectLspProcessHealthEventTitle(event)
-            ) {}
-        }
         let controller = AttoCommandPaletteController(
             accessibilityPrefix: "AttoEditor.LSP.ProjectProcessHealth",
             commandsProvider: { commands }
@@ -477,31 +495,81 @@ extension AttoEditorAreaViewController {
     }
 
     static func projectLspProcessHealthEventTitle(_ event: AttoProjectLspProcessHealthEvent) -> String {
-        let scope = projectLspEventScope(tabId: event.tabId, viewIndex: event.viewIndex)
-        let sourceSequence = event.sourceSequence > 0 ? " #\(event.sourceSequence)" : ""
-        let server = event.serverName ?? event.serverCommand ?? "LSP"
-        var processParts = [event.process.state.rawValue]
-        if let pid = event.process.pid {
+        projectLspProcessHealthTitle(
+            sourceSequence: event.sourceSequence,
+            tabId: event.tabId,
+            viewIndex: event.viewIndex,
+            serverName: event.serverName,
+            serverCommand: event.serverCommand,
+            availability: event.availability,
+            state: event.state,
+            detail: event.detail,
+            processState: event.process.state.rawValue,
+            pid: event.process.pid,
+            exitCode: event.process.exitCode,
+            signal: event.process.signal,
+            stderrTail: event.process.stderrTail
+        )
+    }
+
+    static func projectLspProcessHealthLogEntryTitle(_ entry: AttoProjectLspProcessHealthLogEntry) -> String {
+        projectLspProcessHealthTitle(
+            sourceSequence: entry.sourceSequence,
+            tabId: entry.tabId,
+            viewIndex: entry.viewIndex,
+            serverName: entry.serverName,
+            serverCommand: entry.serverCommand,
+            availability: entry.availability,
+            state: entry.state,
+            detail: entry.detail,
+            processState: entry.process.state,
+            pid: entry.process.pid,
+            exitCode: entry.process.exitCode,
+            signal: entry.process.signal,
+            stderrTail: entry.process.stderrTail
+        )
+    }
+
+    static func projectLspProcessHealthTitle(
+        sourceSequence: UInt64,
+        tabId: UInt64?,
+        viewIndex: Int?,
+        serverName: String?,
+        serverCommand: String?,
+        availability: String,
+        state: String,
+        detail: String?,
+        processState: String,
+        pid: UInt32?,
+        exitCode: Int32?,
+        signal: Int32?,
+        stderrTail: String?
+    ) -> String {
+        let scope = projectLspEventScope(tabId: tabId, viewIndex: viewIndex)
+        let sourceSequenceLabel = sourceSequence > 0 ? " #\(sourceSequence)" : ""
+        let server = serverName ?? serverCommand ?? "LSP"
+        var processParts = [processState]
+        if let pid {
             processParts.append("pid \(pid)")
         }
-        if let exitCode = event.process.exitCode {
+        if let exitCode {
             processParts.append("exit \(exitCode)")
         }
-        if let signal = event.process.signal {
+        if let signal {
             processParts.append("signal \(signal)")
         }
 
         var detailParts: [String] = []
-        if let detail = compactProjectLspPanelText(event.detail) {
+        if let detail = compactProjectLspPanelText(detail) {
             detailParts.append(detail)
         }
-        if let stderr = compactProjectLspPanelText(event.process.stderrTail),
+        if let stderr = compactProjectLspPanelText(stderrTail),
            detailParts.contains(where: { $0.contains(stderr) }) == false {
             detailParts.append("stderr: \(stderr)")
         }
 
         let processSummary = processParts.joined(separator: " ")
-        var title = "Health\(sourceSequence) [\(scope)] \(server) \(event.availability)/\(event.state), process \(processSummary)"
+        var title = "Health\(sourceSequenceLabel) [\(scope)] \(server) \(availability)/\(state), process \(processSummary)"
         if detailParts.isEmpty == false {
             title += " - \(detailParts.joined(separator: "; "))"
         }
@@ -584,7 +652,7 @@ extension AttoEditorAreaViewController {
             ?? display.failureDetail
             ?? status.detail
 
-        return projectLspProcessHealthEventStore.record(
+        let event = projectLspProcessHealthEventStore.record(
             sourceSequence: sourceSequence,
             tabId: tabId,
             viewIndex: viewIndex,
@@ -596,6 +664,15 @@ extension AttoEditorAreaViewController {
             detail: detail,
             process: process
         )
+        do {
+            try projectLspProcessHealthLogStore.append(
+                event: event,
+                workspaceRootURL: workspaceRootURL
+            )
+        } catch {
+            NSLog("AttoEditor: failed to persist project LSP process health event: %@", String(describing: error))
+        }
+        return event
     }
 
     @discardableResult
