@@ -205,6 +205,10 @@ final class AttoEditorAreaViewController: NSViewController {
         workspaceProblemsPanelController?.currentWorkspaceDiagnostics ?? []
     }
 
+    func _workspaceProblemsPanelUnifiedProblemsForTesting() -> [AttoUnifiedDiagnosticProblem] {
+        workspaceProblemsPanelController?.currentProblems ?? []
+    }
+
     func _workspaceProblemsPanelRowCountForTesting() -> Int {
         workspaceProblemsPanelController?.rowCount ?? 0
     }
@@ -5515,6 +5519,19 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    private func navigateToDiagnosticProblem(_ problem: AttoUnifiedDiagnosticProblem) {
+        switch problem.target {
+        case let .active(diagnostic):
+            guard let tab = activeTab else {
+                NSSound.beep()
+                return
+            }
+            navigateToDiagnostic(diagnostic, in: tab)
+        case let .workspace(diagnostic):
+            navigateToLspTarget(diagnostic.target)
+        }
+    }
+
     private func navigateToDiagnostic(_ diagnostic: EcuDiagnostic, in tab: AttoEditorTab) {
         do {
             tab.editCore.layoutSubtreeIfNeeded()
@@ -5694,10 +5711,10 @@ final class AttoEditorAreaViewController: NSViewController {
         workspaceDiagnosticsResultsController?.hide()
         workspaceDiagnosticsResultsController = nil
 
-        let diagnostics = workspaceProblemsStore.diagnostics
+        let problems = workspaceDiagnosticProblems()
         guard let window = view.window else {
-            if let first = diagnostics.first {
-                navigateToLspTarget(first.target)
+            if let first = problems.first {
+                navigateToDiagnosticProblem(first)
                 return true
             }
             NSSound.beep()
@@ -5705,22 +5722,35 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         let controller = workspaceProblemsPanelController ?? AttoProblemsPanelController(
-            titleForWorkspaceDiagnostic: { [weak self] diagnostic in
-                guard let self else { return diagnostic.message }
-                return self.displayTitle(for: diagnostic)
+            titleForProblem: { [weak self] problem in
+                guard let self else { return problem.message }
+                return self.displayTitle(for: problem)
             },
-            onOpen: { [weak self] diagnostic in
-                self?.navigateToLspTarget(diagnostic.target)
+            onOpen: { [weak self] problem in
+                self?.navigateToDiagnosticProblem(problem)
             },
             accessibilityIDs: .workspaceProblems
         )
         workspaceProblemsPanelController = controller
-        return controller.show(relativeTo: window, workspaceDiagnostics: diagnostics)
+        return controller.show(
+            relativeTo: window,
+            problems: problems,
+            title: "Workspace Problems",
+            placeholder: "Filter workspace problems..."
+        )
     }
 
     private func updateWorkspaceProblemsPanelIfVisible() {
         guard workspaceProblemsPanelController?.isVisible == true else { return }
-        workspaceProblemsPanelController?.update(workspaceDiagnostics: workspaceProblemsStore.diagnostics)
+        workspaceProblemsPanelController?.update(
+            problems: workspaceDiagnosticProblems(),
+            title: "Workspace Problems",
+            placeholder: "Filter workspace problems..."
+        )
+    }
+
+    private func workspaceDiagnosticProblems() -> [AttoUnifiedDiagnosticProblem] {
+        AttoDiagnosticsModel.workspaceProblems(workspaceProblemsStore.diagnostics)
     }
 
     private func displayTitle(for diagnostic: AttoLspWorkspaceDiagnosticsParser.Diagnostic) -> String {
@@ -5729,6 +5759,16 @@ final class AttoEditorAreaViewController: NSViewController {
         let source = diagnostic.source.map { " (\($0))" } ?? ""
         let location = displayTitle(for: diagnostic.target)
         return "\(severity)\(diagnostic.message)\(code)\(source) — \(location)"
+    }
+
+    private func displayTitle(for problem: AttoUnifiedDiagnosticProblem) -> String {
+        switch problem.target {
+        case let .active(diagnostic):
+            guard let tab = activeTab else { return diagnostic.message }
+            return displayTitle(for: diagnostic, in: tab)
+        case let .workspace(diagnostic):
+            return displayTitle(for: diagnostic)
+        }
     }
 
     // MARK: - LSP completion

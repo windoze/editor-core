@@ -43,6 +43,17 @@ struct AttoUnifiedDiagnosticsSnapshot: Equatable {
 }
 
 enum AttoDiagnosticsModel {
+    static func workspaceProblems(
+        _ workspaceDiagnostics: [AttoLspWorkspaceDiagnosticsParser.Diagnostic]
+    ) -> [AttoUnifiedDiagnosticProblem] {
+        uniqueProblems(
+            workspaceDiagnostics.map { diagnostic in
+                workspaceProblem(diagnostic)
+            },
+            includeWorkspaceURI: true
+        )
+    }
+
     static func snapshot(
         activeDiagnostics: [EcuDiagnostic],
         includeActiveDiagnostics: Bool,
@@ -99,16 +110,7 @@ enum AttoDiagnosticsModel {
         problems.append(contentsOf: workspaceDiagnostics.compactMap { diagnostic in
             guard let url = URL(string: diagnostic.target.uri), url.isFileURL else { return nil }
             guard url.standardizedFileURL == tabURL else { return nil }
-            return AttoUnifiedDiagnosticProblem(
-                logicalLine: UInt32(clamping: diagnostic.target.line),
-                column: UInt32(clamping: diagnostic.target.utf16Character),
-                severity: diagnostic.severity.flatMap(Self.severity(forWorkspaceDiagnostic:)),
-                code: diagnostic.code,
-                diagnosticSource: diagnostic.source,
-                message: diagnostic.message,
-                source: .workspace,
-                target: .workspace(diagnostic)
-            )
+            return workspaceProblem(diagnostic)
         })
 
         return AttoUnifiedDiagnosticsSnapshot(
@@ -143,12 +145,13 @@ enum AttoDiagnosticsModel {
     }
 
     private static func uniqueProblems(
-        _ problems: [AttoUnifiedDiagnosticProblem]
+        _ problems: [AttoUnifiedDiagnosticProblem],
+        includeWorkspaceURI: Bool = false
     ) -> [AttoUnifiedDiagnosticProblem] {
         var out: [AttoUnifiedDiagnosticProblem] = []
         var seen = Set<ProblemIdentity>()
         for problem in problems {
-            let identity = ProblemIdentity(problem)
+            let identity = ProblemIdentity(problem, includeWorkspaceURI: includeWorkspaceURI)
             guard seen.insert(identity).inserted else { continue }
             out.append(problem)
         }
@@ -160,13 +163,35 @@ enum AttoDiagnosticsModel {
         let column: UInt32
         let severity: EcuDiagnosticSeverity?
         let message: String
+        let workspaceURI: String?
 
-        init(_ problem: AttoUnifiedDiagnosticProblem) {
+        init(_ problem: AttoUnifiedDiagnosticProblem, includeWorkspaceURI: Bool) {
             self.logicalLine = problem.logicalLine
             self.column = problem.column
             self.severity = problem.severity
             self.message = problem.message
+            if includeWorkspaceURI,
+               case let .workspace(diagnostic) = problem.target {
+                workspaceURI = diagnostic.target.uri
+            } else {
+                workspaceURI = nil
+            }
         }
+    }
+
+    private static func workspaceProblem(
+        _ diagnostic: AttoLspWorkspaceDiagnosticsParser.Diagnostic
+    ) -> AttoUnifiedDiagnosticProblem {
+        AttoUnifiedDiagnosticProblem(
+            logicalLine: UInt32(clamping: diagnostic.target.line),
+            column: UInt32(clamping: diagnostic.target.utf16Character),
+            severity: diagnostic.severity.flatMap(Self.severity(forWorkspaceDiagnostic:)),
+            code: diagnostic.code,
+            diagnosticSource: diagnostic.source,
+            message: diagnostic.message,
+            source: .workspace,
+            target: .workspace(diagnostic)
+        )
     }
 
     private static func severity(forWorkspaceDiagnostic severity: Int) -> EcuDiagnosticSeverity? {

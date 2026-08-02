@@ -154,6 +154,55 @@ final class AttoDiagnosticsModelTests: XCTestCase {
         XCTAssertEqual(snapshot.problemsStatusText, "Problems: 1")
     }
 
+    func testWorkspaceProblemsPreserveWorkspaceTargetsAcrossFiles() throws {
+        let diagnosticA = Self.workspaceDiagnostic(
+            uri: URL(fileURLWithPath: "/project/a.swift").absoluteString,
+            line: 0,
+            utf16Character: 1,
+            severity: 1,
+            message: "same message"
+        )
+        let diagnosticB = Self.workspaceDiagnostic(
+            uri: URL(fileURLWithPath: "/project/b.swift").absoluteString,
+            line: 0,
+            utf16Character: 1,
+            severity: 1,
+            message: "same message"
+        )
+
+        let problems = AttoDiagnosticsModel.workspaceProblems([
+            diagnosticA,
+            diagnosticB,
+            diagnosticA,
+        ])
+
+        XCTAssertEqual(
+            problems,
+            [
+                AttoUnifiedDiagnosticProblem(
+                    logicalLine: 0,
+                    column: 1,
+                    severity: .error,
+                    code: nil,
+                    diagnosticSource: nil,
+                    message: "same message",
+                    source: .workspace,
+                    target: .workspace(diagnosticA)
+                ),
+                AttoUnifiedDiagnosticProblem(
+                    logicalLine: 0,
+                    column: 1,
+                    severity: .error,
+                    code: nil,
+                    diagnosticSource: nil,
+                    message: "same message",
+                    source: .workspace,
+                    target: .workspace(diagnosticB)
+                ),
+            ]
+        )
+    }
+
     private static func workspaceDiagnostic(
         uri: String,
         line: Int,

@@ -1130,6 +1130,11 @@ final class AttoEditorCommandTests: XCTestCase {
             findView(identifier: AttoAccessibilityID.workspaceProblemsPanelTable, in: root) as? NSTableView
         )
         XCTAssertEqual(table.numberOfRows, 2)
+        XCTAssertEqual(vc._workspaceProblemsPanelUnifiedProblemsForTesting().map(\.message), [
+            "first workspace problem",
+            "second workspace warning",
+        ])
+        XCTAssertEqual(vc._workspaceProblemsPanelUnifiedProblemsForTesting().map(\.source), [.workspace, .workspace])
         XCTAssertTrue(vc._workspaceProblemsPanelIsVisibleForTesting())
 
         XCTAssertTrue(vc.showWorkspaceDiagnosticsResultJSONInActiveTab("""
@@ -1155,7 +1160,8 @@ final class AttoEditorCommandTests: XCTestCase {
         }
         """))
         XCTAssertEqual(panel.title, "Workspace Problems (1)")
-        XCTAssertEqual(vc._workspaceProblemsPanelDiagnosticsForTesting().map(\.message), ["third workspace problem"])
+        XCTAssertEqual(vc._workspaceProblemsPanelUnifiedProblemsForTesting().map(\.message), ["third workspace problem"])
+        XCTAssertEqual(vc._workspaceProblemsPanelUnifiedProblemsForTesting().map(\.source), [.workspace])
         XCTAssertEqual(vc._workspaceProblemsPanelRowCountForTesting(), 1)
         XCTAssertEqual(vc._activeMinimapDiagnosticMarkersForTesting(), [
             EditorCoreSkiaMinimapMarker(logicalLine: 2, kind: .error),
