@@ -81,4 +81,67 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         let next = store.record(3)
         XCTAssertEqual(next.sequence, 1)
     }
+
+    func testResultEventStreamBoundsAndFiltersBySequence() {
+        let stream = AttoLspResultEventStream(maxHistoryEntries: 2)
+        let firstDate = Date(timeIntervalSince1970: 200)
+
+        let first = stream.record(
+            family: "locations",
+            title: "Definitions: 1 result",
+            recordedAt: firstDate,
+            sourceSequence: 10,
+            payload: .locations(kind: "definition", itemCount: 1)
+        )
+        let second = stream.record(
+            family: "symbols",
+            title: "Workspace Symbols: 2 results",
+            sourceSequence: 11,
+            payload: .symbols(title: "Workspace Symbols", itemCount: 2)
+        )
+        let third = stream.record(
+            family: "diagnostics.active",
+            title: "main.swift",
+            sourceSequence: 12,
+            payload: .diagnostics(
+                scope: .workspace,
+                problemCount: 3,
+                markerCount: 0,
+                isStale: true,
+                staleReason: .workspaceRefreshRequested
+            )
+        )
+
+        XCTAssertEqual(first.sequence, 1)
+        XCTAssertEqual(first.recordedAt, firstDate)
+        XCTAssertEqual(first.sourceSequence, 10)
+        XCTAssertEqual(stream.latestSequence, 3)
+        XCTAssertEqual(stream.events.map(\.sequence), [2, 3])
+        XCTAssertEqual(stream.entries(after: 2), [third])
+        XCTAssertEqual(stream.entries(after: 3), [])
+        XCTAssertEqual(second.payload, .symbols(title: "Workspace Symbols", itemCount: 2))
+        XCTAssertEqual(
+            third.payload,
+            .diagnostics(
+                scope: .workspace,
+                problemCount: 3,
+                markerCount: 0,
+                isStale: true,
+                staleReason: .workspaceRefreshRequested
+            )
+        )
+
+        stream.clear()
+        XCTAssertEqual(stream.events, [])
+        XCTAssertEqual(stream.latestSequence, 0)
+        XCTAssertEqual(
+            stream.record(
+                family: "locations",
+                title: "References: 1 result",
+                sourceSequence: 1,
+                payload: .locations(kind: "references", itemCount: 1)
+            ).sequence,
+            1
+        )
+    }
 }

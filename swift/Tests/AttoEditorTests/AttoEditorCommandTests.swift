@@ -1149,8 +1149,10 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._workspaceProblemsPanelUnifiedProblemsForTesting().map(\.source), [.workspace, .workspace])
         XCTAssertTrue(vc._workspaceProblemsPanelIsVisibleForTesting())
         let diagnosticsCursor = vc._latestDiagnosticsLifecycleSequenceForTesting()
+        let diagnosticsResultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
         vc._updateStatusBarForTesting()
         XCTAssertEqual(vc._diagnosticsLifecycleEventsForTesting(after: diagnosticsCursor), [])
+        XCTAssertEqual(vc._lspResultLifecycleEventsForTesting(after: diagnosticsResultEventCursor), [])
 
         XCTAssertTrue(vc.showWorkspaceDiagnosticsResultJSONInActiveTab("""
         {
@@ -1181,6 +1183,29 @@ final class AttoEditorCommandTests: XCTestCase {
         let newDiagnosticsEvents = vc._diagnosticsLifecycleEventsForTesting(after: diagnosticsCursor)
         XCTAssertEqual(newDiagnosticsEvents.map(\.family), ["diagnostics.workspace", "diagnostics.active"])
         XCTAssertEqual(newDiagnosticsEvents.last?.snapshot.problems.map(\.message), ["third workspace problem"])
+        let newResultEvents = vc._lspResultLifecycleEventsForTesting(after: diagnosticsResultEventCursor)
+        XCTAssertEqual(newResultEvents.map(\.family), ["diagnostics.workspace", "diagnostics.active"])
+        XCTAssertEqual(newResultEvents.map(\.sourceSequence), newDiagnosticsEvents.map(\.sequence))
+        let activeDiagnosticsScope = try XCTUnwrap(newDiagnosticsEvents.last?.snapshot.scope)
+        XCTAssertEqual(
+            newResultEvents.map(\.payload),
+            [
+                .diagnostics(
+                    scope: .workspace,
+                    problemCount: 1,
+                    markerCount: 0,
+                    isStale: false,
+                    staleReason: nil
+                ),
+                .diagnostics(
+                    scope: activeDiagnosticsScope,
+                    problemCount: 1,
+                    markerCount: 1,
+                    isStale: false,
+                    staleReason: nil
+                ),
+            ]
+        )
         diagnosticsLifecycle = vc._diagnosticsLifecycleHistoryForTesting()
         workspaceLifecycleEntries = diagnosticsLifecycle.filter { $0.family == "diagnostics.workspace" }
         activeLifecycleEntries = diagnosticsLifecycle.filter { $0.family == "diagnostics.active" }
@@ -1211,6 +1236,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         let window = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
+        let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
 
         XCTAssertTrue(vc.showLspLocationResultJSONInActiveTab("""
         [
@@ -1302,6 +1328,17 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(locationEntries.map(\.snapshot.kind), [.implementation, .definition])
         XCTAssertTrue(locationEntries[0].title.hasPrefix("Implementations:"))
         XCTAssertTrue(locationEntries[1].title.hasPrefix("Definitions:"))
+        let resultEvents = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
+        XCTAssertEqual(resultEvents.map(\.sequence), [resultEventCursor + 1, resultEventCursor + 2])
+        XCTAssertEqual(resultEvents.map(\.family), ["locations", "locations"])
+        XCTAssertEqual(resultEvents.map(\.sourceSequence), locationEntries.map(\.sequence))
+        XCTAssertEqual(
+            resultEvents.map(\.payload),
+            [
+                .locations(kind: "implementation", itemCount: 2),
+                .locations(kind: "definition", itemCount: 1),
+            ]
+        )
         let updatedPanelSnapshot = try XCTUnwrap(vc._lspLocationPanelSnapshotForTesting())
         XCTAssertEqual(updatedPanelSnapshot.kind, .definition)
         XCTAssertEqual(vc._lspLocationPanelRowCountForTesting(), 1)
@@ -1341,6 +1378,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         let window = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
+        let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
 
         XCTAssertTrue(vc.showWorkspaceSymbolResultJSONInActiveTab("""
         [
@@ -1441,6 +1479,17 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(symbolEntries.map(\.family), ["symbols", "symbols"])
         XCTAssertEqual(symbolEntries.map(\.snapshot.title), ["Workspace Symbols: Project", "Workspace Symbols: Open"])
         XCTAssertEqual(symbolEntries.map(\.title), ["Workspace Symbols: Project: 2 results", "Workspace Symbols: Open: 1 results"])
+        let resultEvents = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
+        XCTAssertEqual(resultEvents.map(\.sequence), [resultEventCursor + 1, resultEventCursor + 2])
+        XCTAssertEqual(resultEvents.map(\.family), ["symbols", "symbols"])
+        XCTAssertEqual(resultEvents.map(\.sourceSequence), symbolEntries.map(\.sequence))
+        XCTAssertEqual(
+            resultEvents.map(\.payload),
+            [
+                .symbols(title: "Workspace Symbols: Project", itemCount: 2),
+                .symbols(title: "Workspace Symbols: Open", itemCount: 1),
+            ]
+        )
         let updatedPanelSnapshot = try XCTUnwrap(vc._lspSymbolPanelSnapshotForTesting())
         XCTAssertEqual(updatedPanelSnapshot.title, "Workspace Symbols: Open")
         XCTAssertEqual(vc._lspSymbolPanelRowCountForTesting(), 1)

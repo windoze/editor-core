@@ -104,3 +104,71 @@ extension AttoLspResultLifecycleStore where Snapshot: Equatable {
         return record(snapshot, family: family, title: title, recordedAt: recordedAt)
     }
 }
+
+struct AttoLspResultLifecycleEvent: Equatable {
+    enum Payload: Equatable {
+        case locations(kind: String, itemCount: Int)
+        case symbols(title: String, itemCount: Int)
+        case diagnostics(
+            scope: AttoDiagnosticsLifecycleSnapshot.Scope,
+            problemCount: Int,
+            markerCount: Int,
+            isStale: Bool,
+            staleReason: AttoDiagnosticsStaleReason?
+        )
+    }
+
+    let sequence: UInt64
+    let family: String
+    let title: String
+    let recordedAt: Date
+    let sourceSequence: UInt64
+    let payload: Payload
+}
+
+final class AttoLspResultEventStream {
+    private let maxHistoryEntries: Int
+    private var nextSequence: UInt64 = 1
+    private(set) var events: [AttoLspResultLifecycleEvent] = []
+
+    var latestSequence: UInt64 {
+        events.last?.sequence ?? 0
+    }
+
+    init(maxHistoryEntries: Int) {
+        self.maxHistoryEntries = max(1, maxHistoryEntries)
+    }
+
+    @discardableResult
+    func record(
+        family: String,
+        title: String,
+        recordedAt: Date = Date(),
+        sourceSequence: UInt64,
+        payload: AttoLspResultLifecycleEvent.Payload
+    ) -> AttoLspResultLifecycleEvent {
+        let event = AttoLspResultLifecycleEvent(
+            sequence: nextSequence,
+            family: family,
+            title: title,
+            recordedAt: recordedAt,
+            sourceSequence: sourceSequence,
+            payload: payload
+        )
+        nextSequence += 1
+        events.append(event)
+        if events.count > maxHistoryEntries {
+            events.removeFirst(events.count - maxHistoryEntries)
+        }
+        return event
+    }
+
+    func entries(after sequence: UInt64) -> [AttoLspResultLifecycleEvent] {
+        events.filter { $0.sequence > sequence }
+    }
+
+    func clear() {
+        events.removeAll()
+        nextSequence = 1
+    }
+}

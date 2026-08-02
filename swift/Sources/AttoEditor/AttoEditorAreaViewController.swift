@@ -24,6 +24,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private var workspaceRootURL: URL
     private let preferences: AttoPreferences
     private static let maxLspResultHistoryEntries = 20
+    private static let maxLspResultEventHistoryEntries = 80
 
     private var tabs: [AttoEditorTab] = []
     private var selectedTabID: UUID?
@@ -199,6 +200,14 @@ final class AttoEditorAreaViewController: NSViewController {
         diagnosticsLifecycleStore.latestSequence
     }
 
+    func _lspResultLifecycleEventsForTesting(after sequence: UInt64) -> [AttoLspResultLifecycleEvent] {
+        lspResultEventStream.entries(after: sequence)
+    }
+
+    func _latestLspResultLifecycleEventSequenceForTesting() -> UInt64 {
+        lspResultEventStream.latestSequence
+    }
+
     func _problemsPanelDiagnosticsForTesting() -> [EcuDiagnostic] {
         problemsPanelController?.currentDiagnostics ?? []
     }
@@ -307,6 +316,21 @@ final class AttoEditorAreaViewController: NSViewController {
                 return "Implementations"
             case .references:
                 return "References"
+            }
+        }
+
+        var lifecycleKind: String {
+            switch self {
+            case .definition:
+                return "definition"
+            case .declaration:
+                return "declaration"
+            case .typeDefinition:
+                return "type_definition"
+            case .implementation:
+                return "implementation"
+            case .references:
+                return "references"
             }
         }
     }
@@ -610,6 +634,9 @@ final class AttoEditorAreaViewController: NSViewController {
     private var problemsPanelController: AttoProblemsPanelController?
     private let diagnosticsLifecycleStore = AttoLspResultLifecycleStore<AttoDiagnosticsLifecycleSnapshot>(
         maxHistoryEntries: maxLspResultHistoryEntries
+    )
+    private let lspResultEventStream = AttoLspResultEventStream(
+        maxHistoryEntries: maxLspResultEventHistoryEntries
     )
     private var activeDiagnosticsTextFingerprintsByTabID: [UUID: DiagnosticsTextFingerprint] = [:]
     private var activeDiagnosticsBaselinesByTabID: [UUID: [EcuDiagnostic]] = [:]
@@ -3729,6 +3756,19 @@ final class AttoEditorAreaViewController: NSViewController {
         activeDiagnosticsStaleReasonsByTabID.removeValue(forKey: tabID)
     }
 
+    private func recordLspResultLifecycleEvent<Snapshot>(
+        _ entry: AttoLspResultLifecycleEntry<Snapshot>,
+        payload: AttoLspResultLifecycleEvent.Payload
+    ) {
+        lspResultEventStream.record(
+            family: entry.family,
+            title: entry.title,
+            recordedAt: entry.recordedAt,
+            sourceSequence: entry.sequence,
+            payload: payload
+        )
+    }
+
     private func recordActiveDiagnosticsLifecycle(
         _ snapshot: AttoUnifiedDiagnosticsSnapshot,
         for tab: AttoEditorTab
@@ -3740,10 +3780,20 @@ final class AttoEditorAreaViewController: NSViewController {
             statusText: snapshot.problemsStatusText,
             staleReason: activeDiagnosticsStaleReasonsByTabID[tab.id]
         )
-        diagnosticsLifecycleStore.recordIfChanged(
+        guard let entry = diagnosticsLifecycleStore.recordIfChanged(
             lifecycleSnapshot,
             family: "diagnostics.active",
             title: tab.fileURL.lastPathComponent
+        ) else { return }
+        recordLspResultLifecycleEvent(
+            entry,
+            payload: .diagnostics(
+                scope: lifecycleSnapshot.scope,
+                problemCount: lifecycleSnapshot.problems.count,
+                markerCount: lifecycleSnapshot.markerProjections.count,
+                isStale: lifecycleSnapshot.isStale,
+                staleReason: lifecycleSnapshot.staleReason
+            )
         )
     }
 
@@ -3755,16 +3805,27 @@ final class AttoEditorAreaViewController: NSViewController {
             guard count > 0 else { return nil }
             return count == 1 ? "Problems: 1" : "Problems: \(count)"
         }()
-        diagnosticsLifecycleStore.recordIfChanged(
-            AttoDiagnosticsLifecycleSnapshot(
-                scope: .workspace,
-                problems: problems,
-                markerProjections: [],
-                statusText: statusText,
-                staleReason: workspaceDiagnosticsStaleReason
-            ),
+        let lifecycleSnapshot = AttoDiagnosticsLifecycleSnapshot(
+            scope: .workspace,
+            problems: problems,
+            markerProjections: [],
+            statusText: statusText,
+            staleReason: workspaceDiagnosticsStaleReason
+        )
+        guard let entry = diagnosticsLifecycleStore.recordIfChanged(
+            lifecycleSnapshot,
             family: "diagnostics.workspace",
             title: "Workspace Problems"
+        ) else { return }
+        recordLspResultLifecycleEvent(
+            entry,
+            payload: .diagnostics(
+                scope: lifecycleSnapshot.scope,
+                problemCount: lifecycleSnapshot.problems.count,
+                markerCount: lifecycleSnapshot.markerProjections.count,
+                isStale: lifecycleSnapshot.isStale,
+                staleReason: lifecycleSnapshot.staleReason
+            )
         )
     }
 
@@ -4581,10 +4642,14 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func recordLspLocationResultSnapshot(_ snapshot: LspLocationResultSnapshot) {
-        lspLocationResultStore.record(
+        let entry = lspLocationResultStore.record(
             snapshot,
             family: "locations",
             title: locationHistoryTitle(for: snapshot)
+        )
+        recordLspResultLifecycleEvent(
+            entry,
+            payload: .locations(kind: snapshot.kind.lifecycleKind, itemCount: snapshot.items.count)
         )
         lspLocationPanelController?.update(snapshot: snapshot)
     }
@@ -5111,10 +5176,14 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func recordLspSymbolResultSnapshot(_ snapshot: LspSymbolResultSnapshot) {
-        lspSymbolResultStore.record(
+        let entry = lspSymbolResultStore.record(
             snapshot,
             family: "symbols",
             title: symbolHistoryTitle(for: snapshot)
+        )
+        recordLspResultLifecycleEvent(
+            entry,
+            payload: .symbols(title: snapshot.title, itemCount: snapshot.symbols.count)
         )
         lspSymbolPanelController?.update(snapshot: snapshot)
     }
