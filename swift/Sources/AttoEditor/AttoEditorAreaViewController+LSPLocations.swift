@@ -400,7 +400,7 @@ extension AttoEditorAreaViewController {
 
         openFile(url: url, mode: .preview)
 
-        guard let tab = activeTab, tab.fileURL.standardizedFileURL == url.standardizedFileURL else {
+        guard let tab = activeTab, projectedFileURL(for: tab) == url.standardizedFileURL else {
             return
         }
 

@@ -1832,6 +1832,44 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Definition: no results")
     }
 
+    func testLspTargetNavigationUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("lsp-target-source.swift")
+        let projectedURL = tempDir.appendingPathComponent("lsp-target-projected.swift")
+        try "aa\nlet target = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "projected".write(to: projectedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        vc.navigateToLspTarget(.init(
+            uri: projectedURL.standardizedFileURL.absoluteString,
+            line: 1,
+            utf16Character: 4
+        ))
+
+        XCTAssertEqual(vc.tabs.count, 1)
+        XCTAssertEqual(vc.selectedTabID, tab.id)
+
+        let offsets = try tab.editCore.editor.selectionOffsets()
+        let position = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
+        XCTAssertEqual(position.line, 1)
+        XCTAssertEqual(position.column, 4)
+    }
+
     func testEmptySymbolResultsUseUnifiedFeedbackStatus() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

@@ -533,6 +533,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testFindInOpenTabsUsesCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testFindInOpenTabsUsesCoreMirrorForUnsavedText`
     - `git diff --check`
+- 中间提交：`feat(app): navigate lsp targets from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 的 LSP location target navigation 在复用 core-projected existing tab 后，active-tab URL 校验也按 core `document_uri` 投影执行。
+  - 提交边界：放宽 projected file URL helper 供 LSP location extension 复用，并只迁移 `navigateToLspTarget(_:)` 的 active-tab guard；不新增 Rust/FFI ABI，不改变 LSP result parser、location quick panel、jump history、session schema 或真实 `tab.fileURL` 同步策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspTargetNavigationUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileLocationUsesCoreDocumentURIProjection`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

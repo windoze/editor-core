@@ -137,7 +137,7 @@ extension AttoEditorAreaViewController {
         return tabs.first { $0.fileURL.standardizedFileURL == target }
     }
 
-    private func projectedFileURL(for tab: AttoEditorTab) -> URL {
+    func projectedFileURL(for tab: AttoEditorTab) -> URL {
         if let projection = makeCoreProjectedTabs(),
            let projected = projection.tabs.first(where: { $0.tab.id == tab.id })
         {
