@@ -176,10 +176,10 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         XCTAssertEqual(EcuEditorUIStateEventKind.unknown("future").rawValue, "future")
     }
 
-    func testEditorUIStateEventsDecodeTextAndDirtyPayloads() throws {
+    func testEditorUIStateEventsDecodeDocumentPayloads() throws {
         let snapshot = try decode(EcuEditorUIStateEventsSnapshot.self, """
         {
-          "latest_sequence": 2,
+          "latest_sequence": 3,
           "events": [
             {
               "sequence": 1,
@@ -194,6 +194,39 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
             },
             {
               "sequence": 2,
+              "kind": "selection_changed",
+              "family": "document",
+              "title": "Selection changed",
+              "view_id": 3,
+              "source_sequence": 2,
+              "selection": {
+                "view_version": 2,
+                "primary": {
+                  "line": 1,
+                  "column": 2,
+                  "offset": 7
+                },
+                "primary_selection_index": 0,
+                "selection_count": 2,
+                "has_selection": true,
+                "selections": [
+                  {
+                    "start": 4,
+                    "end": 7,
+                    "anchor": 4,
+                    "active": 7
+                  },
+                  {
+                    "start": 9,
+                    "end": 9,
+                    "anchor": 9,
+                    "active": 9
+                  }
+                ]
+              }
+            },
+            {
+              "sequence": 3,
               "kind": "text_changed",
               "family": "document",
               "title": "Text changed",
@@ -209,19 +242,36 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         }
         """)
 
-        XCTAssertEqual(snapshot.latestSequence, 2)
+        XCTAssertEqual(snapshot.latestSequence, 3)
         XCTAssertEqual(snapshot.events[0].kindValue, .dirtyChanged)
         XCTAssertEqual(snapshot.events[0].familyKind, .document)
         XCTAssertEqual(snapshot.events[0].dirty?.isModified, true)
         XCTAssertNil(snapshot.events[0].text)
-        XCTAssertEqual(snapshot.events[1].kindValue, .textChanged)
+        XCTAssertEqual(snapshot.events[1].kindValue, .selectionChanged)
         XCTAssertEqual(snapshot.events[1].familyKind, .document)
-        XCTAssertEqual(snapshot.events[1].text?.textVersion, 1)
-        XCTAssertEqual(snapshot.events[1].text?.charLen, 5)
-        XCTAssertEqual(snapshot.events[1].text?.isModified, true)
+        XCTAssertEqual(snapshot.events[1].selection?.viewVersion, 2)
+        XCTAssertEqual(snapshot.events[1].selection?.primary.line, 1)
+        XCTAssertEqual(snapshot.events[1].selection?.primary.column, 2)
+        XCTAssertEqual(snapshot.events[1].selection?.primary.offset, 7)
+        XCTAssertEqual(snapshot.events[1].selection?.primarySelectionIndex, 0)
+        XCTAssertEqual(snapshot.events[1].selection?.selectionCount, 2)
+        XCTAssertEqual(snapshot.events[1].selection?.hasSelection, true)
+        XCTAssertEqual(snapshot.events[1].selection?.selections.first?.start, 4)
+        XCTAssertEqual(snapshot.events[1].selection?.selections.first?.end, 7)
+        XCTAssertEqual(snapshot.events[1].selection?.selections.first?.anchor, 4)
+        XCTAssertEqual(snapshot.events[1].selection?.selections.first?.active, 7)
         XCTAssertNil(snapshot.events[1].dirty)
+        XCTAssertNil(snapshot.events[1].text)
+        XCTAssertEqual(snapshot.events[2].kindValue, .textChanged)
+        XCTAssertEqual(snapshot.events[2].familyKind, .document)
+        XCTAssertEqual(snapshot.events[2].text?.textVersion, 1)
+        XCTAssertEqual(snapshot.events[2].text?.charLen, 5)
+        XCTAssertEqual(snapshot.events[2].text?.isModified, true)
+        XCTAssertNil(snapshot.events[2].dirty)
+        XCTAssertNil(snapshot.events[2].selection)
         XCTAssertEqual(EcuEditorUIStateEventKind.textChanged.rawValue, "text_changed")
         XCTAssertEqual(EcuEditorUIStateEventKind.dirtyChanged.rawValue, "dirty_changed")
+        XCTAssertEqual(EcuEditorUIStateEventKind.selectionChanged.rawValue, "selection_changed")
         XCTAssertEqual(EcuLspEventFamily.document.rawValue, "document")
     }
 

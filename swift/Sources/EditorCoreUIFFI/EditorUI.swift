@@ -102,6 +102,37 @@ public struct EcuEditorUIDirtyStateEvent: Decodable, Equatable, Sendable {
     }
 }
 
+public struct EcuEditorUIPositionStateEvent: Decodable, Equatable, Sendable {
+    public let line: Int
+    public let column: Int
+    public let offset: Int
+}
+
+public struct EcuEditorUISelectionRangeStateEvent: Decodable, Equatable, Sendable {
+    public let start: Int
+    public let end: Int
+    public let anchor: Int
+    public let active: Int
+}
+
+public struct EcuEditorUISelectionStateEvent: Decodable, Equatable, Sendable {
+    public let viewVersion: UInt64
+    public let primary: EcuEditorUIPositionStateEvent
+    public let primarySelectionIndex: Int
+    public let selectionCount: Int
+    public let hasSelection: Bool
+    public let selections: [EcuEditorUISelectionRangeStateEvent]
+
+    enum CodingKeys: String, CodingKey {
+        case viewVersion = "view_version"
+        case primary
+        case primarySelectionIndex = "primary_selection_index"
+        case selectionCount = "selection_count"
+        case hasSelection = "has_selection"
+        case selections
+    }
+}
+
 public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
     public let sequence: UInt64
     public let kind: String
@@ -113,6 +144,7 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
     public let lspResult: EcuLspResultEvent?
     public let text: EcuEditorUITextStateEvent?
     public let dirty: EcuEditorUIDirtyStateEvent?
+    public let selection: EcuEditorUISelectionStateEvent?
 
     enum CodingKeys: String, CodingKey {
         case sequence
@@ -125,6 +157,7 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
         case lspResult = "lsp_result"
         case text
         case dirty
+        case selection
     }
 }
 

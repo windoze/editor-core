@@ -62,7 +62,8 @@ pub use multi_document::{
 };
 pub use state::EditorUi;
 pub use state_events::{
-    EditorUiDirtyStateEvent, EditorUiStateEvent, EditorUiStateEventsSnapshot,
+    EditorUiDirtyStateEvent, EditorUiPositionStateEvent, EditorUiSelectionRangeStateEvent,
+    EditorUiSelectionStateEvent, EditorUiStateEvent, EditorUiStateEventsSnapshot,
     EditorUiTextStateEvent,
 };
 pub use theme::{ChromeTheme, DamageRect};

@@ -113,6 +113,7 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
     case lspResult
     case textChanged
     case dirtyChanged
+    case selectionChanged
     case unknown(String)
 
     public init(rawValue: String) {
@@ -125,6 +126,8 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
             self = .textChanged
         case "dirty_changed":
             self = .dirtyChanged
+        case "selection_changed":
+            self = .selectionChanged
         default:
             self = .unknown(rawValue)
         }
@@ -140,6 +143,8 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
             return "text_changed"
         case .dirtyChanged:
             return "dirty_changed"
+        case .selectionChanged:
+            return "selection_changed"
         case let .unknown(rawValue):
             return rawValue
         }

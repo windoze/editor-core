@@ -124,23 +124,59 @@ final class EditorCoreUIFFITests: XCTestCase {
 
         try ui.insertText("x")
         var snapshot = try ui.stateEvents()
-        XCTAssertEqual(snapshot.latestSequence, 2)
-        XCTAssertEqual(snapshot.events.map(\.kind), ["dirty_changed", "text_changed"])
+        XCTAssertEqual(snapshot.latestSequence, 3)
+        XCTAssertEqual(snapshot.events.map(\.kind), ["dirty_changed", "selection_changed", "text_changed"])
         XCTAssertEqual(snapshot.events[0].kindValue, .dirtyChanged)
         XCTAssertEqual(snapshot.events[0].familyKind, .document)
         XCTAssertEqual(snapshot.events[0].dirty?.isModified, true)
-        XCTAssertEqual(snapshot.events[1].kindValue, .textChanged)
-        XCTAssertEqual(snapshot.events[1].text?.textVersion, 1)
-        XCTAssertEqual(snapshot.events[1].text?.charLen, 1)
-        XCTAssertEqual(snapshot.events[1].text?.isModified, true)
-        XCTAssertNil(snapshot.events[1].dirty)
+        XCTAssertEqual(snapshot.events[1].kindValue, .selectionChanged)
+        XCTAssertEqual(snapshot.events[1].familyKind, .document)
+        XCTAssertEqual(snapshot.events[1].selection?.primary.offset, 1)
+        XCTAssertEqual(snapshot.events[1].selection?.selectionCount, 1)
+        XCTAssertEqual(snapshot.events[1].selection?.hasSelection, false)
+        XCTAssertEqual(snapshot.events[2].kindValue, .textChanged)
+        XCTAssertEqual(snapshot.events[2].text?.textVersion, 1)
+        XCTAssertEqual(snapshot.events[2].text?.charLen, 1)
+        XCTAssertEqual(snapshot.events[2].text?.isModified, true)
+        XCTAssertNil(snapshot.events[2].dirty)
+        XCTAssertNil(snapshot.events[2].selection)
 
         try ui.markSaved()
         snapshot = try ui.stateEvents(after: snapshot.latestSequence)
-        XCTAssertEqual(snapshot.latestSequence, 3)
+        XCTAssertEqual(snapshot.latestSequence, 4)
         XCTAssertEqual(snapshot.events.count, 1)
         XCTAssertEqual(snapshot.events[0].kindValue, .dirtyChanged)
         XCTAssertEqual(snapshot.events[0].dirty?.isModified, false)
+    }
+
+    func testEditorUIStateEventsRecordSelectionChanges() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "abcd", viewportWidthCells: 80)
+
+        try ui.setSelections(
+            [
+                EcuSelectionRange(start: 1, end: 3),
+                EcuSelectionRange(start: 4, end: 4),
+            ],
+            primaryIndex: 0
+        )
+
+        let snapshot = try ui.stateEvents()
+        XCTAssertEqual(snapshot.latestSequence, 1)
+        XCTAssertEqual(snapshot.events.count, 1)
+        let event = try XCTUnwrap(snapshot.events.first)
+        XCTAssertEqual(event.kindValue, .selectionChanged)
+        XCTAssertEqual(event.familyKind, .document)
+        XCTAssertEqual(event.selection?.primary.offset, 3)
+        XCTAssertEqual(event.selection?.primarySelectionIndex, 0)
+        XCTAssertEqual(event.selection?.selectionCount, 2)
+        XCTAssertEqual(event.selection?.hasSelection, true)
+        XCTAssertEqual(event.selection?.selections.first?.start, 1)
+        XCTAssertEqual(event.selection?.selections.first?.end, 3)
+        XCTAssertEqual(event.selection?.selections.first?.anchor, 1)
+        XCTAssertEqual(event.selection?.selections.first?.active, 3)
+        XCTAssertNil(event.text)
+        XCTAssertNil(event.dirty)
     }
 
     func testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch() throws {

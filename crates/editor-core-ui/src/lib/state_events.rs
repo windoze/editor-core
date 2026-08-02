@@ -18,6 +18,8 @@ pub struct EditorUiStateEvent {
     pub text: Option<EditorUiTextStateEvent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<EditorUiDirtyStateEvent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selection: Option<EditorUiSelectionStateEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -38,6 +40,41 @@ pub struct EditorUiDirtyStateEvent {
     pub is_modified: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EditorUiPositionStateEvent {
+    pub line: usize,
+    pub column: usize,
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EditorUiSelectionRangeStateEvent {
+    pub start: usize,
+    pub end: usize,
+    pub anchor: usize,
+    pub active: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EditorUiSelectionStateEvent {
+    pub view_version: u64,
+    pub primary: EditorUiPositionStateEvent,
+    pub primary_selection_index: usize,
+    pub selection_count: usize,
+    pub has_selection: bool,
+    pub selections: Vec<EditorUiSelectionRangeStateEvent>,
+}
+
+impl EditorUiSelectionStateEvent {
+    pub(crate) fn same_selection_as(&self, other: &Self) -> bool {
+        self.primary == other.primary
+            && self.primary_selection_index == other.primary_selection_index
+            && self.selection_count == other.selection_count
+            && self.has_selection == other.has_selection
+            && self.selections == other.selections
+    }
+}
+
 impl EditorUiDoc {
     pub(crate) fn record_state_event_from_lsp_request(
         &mut self,
@@ -54,6 +91,7 @@ impl EditorUiDoc {
             lsp_result: None,
             text: None,
             dirty: None,
+            selection: None,
         })
     }
 
@@ -72,6 +110,7 @@ impl EditorUiDoc {
             lsp_result: Some(source),
             text: None,
             dirty: None,
+            selection: None,
         })
     }
 
@@ -98,6 +137,7 @@ impl EditorUiDoc {
                 is_modified,
             }),
             dirty: None,
+            selection: None,
         })
     }
 
@@ -117,6 +157,70 @@ impl EditorUiDoc {
             lsp_result: None,
             text: None,
             dirty: Some(EditorUiDirtyStateEvent { is_modified }),
+            selection: None,
+        })
+    }
+
+    pub(crate) fn selection_state_for_view(
+        &self,
+        view_id: ViewId,
+    ) -> Option<EditorUiSelectionStateEvent> {
+        let cursor = self.ws.cursor_state_for_view(view_id).ok()?;
+        let line_index = self.ws.buffer_line_index(self.buffer_id).ok()?;
+        let selections = cursor
+            .selections
+            .iter()
+            .map(|selection| {
+                let start_offset = line_index
+                    .position_to_char_offset(selection.start.line, selection.start.column);
+                let end_offset =
+                    line_index.position_to_char_offset(selection.end.line, selection.end.column);
+                let (start, end) = if start_offset <= end_offset {
+                    (start_offset, end_offset)
+                } else {
+                    (end_offset, start_offset)
+                };
+                EditorUiSelectionRangeStateEvent {
+                    start,
+                    end,
+                    anchor: start_offset,
+                    active: end_offset,
+                }
+            })
+            .collect::<Vec<_>>();
+        let view_version = self.ws.view_version(view_id).unwrap_or(0);
+
+        Some(EditorUiSelectionStateEvent {
+            view_version,
+            primary: EditorUiPositionStateEvent {
+                line: cursor.position.line,
+                column: cursor.position.column,
+                offset: cursor.offset,
+            },
+            primary_selection_index: cursor.primary_selection_index,
+            selection_count: selections.len(),
+            has_selection: cursor.selection.is_some(),
+            selections,
+        })
+    }
+
+    pub(crate) fn record_state_event_from_selection_changed(
+        &mut self,
+        view_id: ViewId,
+        selection: EditorUiSelectionStateEvent,
+    ) -> u64 {
+        self.record_state_event(EditorUiStateEvent {
+            sequence: 0,
+            kind: "selection_changed".to_string(),
+            family: "document".to_string(),
+            title: "Selection changed".to_string(),
+            view_id: view_id.get(),
+            source_sequence: selection.view_version,
+            lsp_request: None,
+            lsp_result: None,
+            text: None,
+            dirty: None,
+            selection: Some(selection),
         })
     }
 
