@@ -1257,6 +1257,68 @@ fn multi_document_ui_keeps_prior_text_edit_when_later_resource_operation_is_skip
 }
 
 #[test]
+fn multi_document_ui_atomic_workspace_edit_preflights_removed_text_edit_dependency() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let tab = ui.open_tab("delete me\n", 80);
+    ui.set_tab_document_uri(tab, Some("file:///tmp/project/Delete.swift".to_string()))
+        .unwrap();
+
+    let edit = json!({
+        "applyMode": "atomic",
+        "workspaceEdit": {
+            "documentChanges": [
+                {
+                    "kind": "delete",
+                    "uri": "file:///tmp/project/Delete.swift"
+                },
+                {
+                    "textDocument": {
+                        "uri": "file:///tmp/project/Delete.swift",
+                        "version": null
+                    },
+                    "edits": [
+                        {
+                            "range": {
+                                "start": { "line": 0, "character": 0 },
+                                "end": { "line": 0, "character": 0 }
+                            },
+                            "newText": "late "
+                        }
+                    ]
+                }
+            ]
+        }
+    })
+    .to_string();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(edit.as_str())
+        .unwrap();
+    assert_eq!(preview.apply_mode, "atomic");
+    assert!(preview.skipped_details.iter().any(|detail| {
+        detail.uri == "file:///tmp/project/Delete.swift"
+            && detail.operation.as_deref() == Some("text_edit")
+            && detail.reason == "resource_operation_dependency_removed"
+    }));
+
+    let applied = ui.apply_workspace_edit_transaction(edit.as_str()).unwrap();
+    assert_eq!(applied.apply_mode, "atomic");
+    assert!(!applied.applied);
+    assert_eq!(applied.applied_resource_operation_count, 0);
+    assert_eq!(applied.applied_edit_count, 0);
+    assert!(applied.skipped_details.iter().any(|detail| {
+        detail.uri == "file:///tmp/project/Delete.swift"
+            && detail.operation.as_deref() == Some("text_edit")
+            && detail.reason == "resource_operation_dependency_removed"
+    }));
+    assert_eq!(
+        ui.tab_document_uri(tab),
+        Some("file:///tmp/project/Delete.swift")
+    );
+    assert_eq!(ui.tab_text(tab).unwrap(), "delete me\n");
+}
+
+#[test]
 fn multi_document_ui_skips_unopened_rename_to_open_tab_target() {
     let root = unique_test_dir("editor-core-ui-workspace-resource-open-target");
     std::fs::create_dir_all(root.join("src")).unwrap();

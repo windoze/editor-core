@@ -1140,6 +1140,12 @@ fn transaction_plan(
         }
         planned_resource_operations.push(PlannedResourceOperation { op, supported });
     }
+    mark_ordered_text_edit_resource_dependencies(
+        workspace_edit,
+        &planned_resource_operations,
+        &mut skipped_uris,
+        &mut skipped_details,
+    );
     let produced_resource_operation_uris = planned_resource_operations
         .iter()
         .filter(|operation| operation.supported)
@@ -1325,6 +1331,50 @@ fn transaction_plan(
         unopened_file_text_edit_uris,
         resource_operations: planned_resource_operations,
         documents,
+    }
+}
+
+fn mark_ordered_text_edit_resource_dependencies(
+    workspace_edit: &Value,
+    planned_resource_operations: &[PlannedResourceOperation],
+    skipped_uris: &mut BTreeSet<String>,
+    skipped_details: &mut BTreeSet<WorkspaceEditTransactionSkippedDetail>,
+) {
+    let mut planned_operations = planned_resource_operations.iter();
+    let mut removed_uris = BTreeSet::<String>::new();
+
+    for step in workspace_edit_steps(workspace_edit) {
+        match step {
+            WorkspaceEditStep::Resource(operation) => {
+                let Some(planned_operation) = planned_operations.next() else {
+                    continue;
+                };
+                if planned_operation.op != operation || !planned_operation.supported {
+                    continue;
+                }
+                for uri in operation.removed_uris() {
+                    removed_uris.insert(uri);
+                }
+                for uri in operation.produced_uris() {
+                    removed_uris.remove(uri.as_str());
+                }
+            }
+            WorkspaceEditStep::TextEdits { uri, edits } => {
+                if edits.is_empty() || !removed_uris.contains(uri.as_str()) {
+                    continue;
+                }
+                mark_skipped(
+                    skipped_uris,
+                    skipped_details,
+                    skipped_detail(
+                        uri,
+                        "resource_operation_dependency_removed",
+                        Some("text_edit"),
+                        "text edits for this URI are blocked because a preceding resource operation removes the target",
+                    ),
+                );
+            }
+        }
     }
 }
 

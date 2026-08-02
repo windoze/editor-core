@@ -336,6 +336,18 @@
     - `cargo test -p editor-core-ui-ffi`
     - `swift test --package-path swift --filter EditorCoreUIFFITests`
     - `git diff --check`
+- 中间提交：`feat(ui): preflight removed workspace edit dependencies`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；让 `MultiDocumentEditorUi` preview/atomic preflight 按 `WorkspaceEdit.documentChanges` 顺序识别“前序 delete/rename 移除 URI，后续 text edit 仍编辑同一 URI”的 resource-order dependency。
+  - 提交边界：只在 Rust transaction plan 中补 ordered text edit dependency preflight，并通过现有 result schema 返回 `resource_operation_dependency_removed` skipped detail；默认 `partial` apply 运行时语义、ABI 函数集合和 AttoEditor App 主路径不变。本提交不实现跨文件用户级 undo command、全量 conflict UI 或完整 transaction-wide undo 语义。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_atomic_workspace_edit_preflights_removed_text_edit_dependency`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAtomicWorkspaceEditPreflightsRemovedTextEditDependency`
+    - `cargo test -p editor-core-ui-ffi`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

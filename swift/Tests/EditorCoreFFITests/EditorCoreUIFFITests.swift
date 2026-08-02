@@ -593,6 +593,66 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(events.events.first?.result.applied, false)
     }
 
+    func testMultiDocumentEditorUIAtomicWorkspaceEditPreflightsRemovedTextEditDependency() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+
+        let tab = try multi.openTab(text: "delete me\n", viewportWidthCells: 80)
+        try multi.setTabDocumentURI("file:///project/Delete.swift", tabId: tab)
+
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "kind": "delete",
+                "uri": "file:///project/Delete.swift"
+              },
+              {
+                "textDocument": {
+                  "uri": "file:///project/Delete.swift",
+                  "version": null
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "late "
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        """
+
+        let preview = try multi.previewWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertEqual(preview.applyMode, "atomic")
+        XCTAssertTrue(preview.skippedDetails.contains {
+            $0.uri == "file:///project/Delete.swift"
+                && $0.operation == "text_edit"
+                && $0.reason == "resource_operation_dependency_removed"
+        })
+
+        let applied = try multi.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertEqual(applied.mode, "apply")
+        XCTAssertEqual(applied.applyMode, "atomic")
+        XCTAssertFalse(applied.applied)
+        XCTAssertEqual(applied.appliedEditCount, 0)
+        XCTAssertEqual(applied.appliedResourceOperationCount, 0)
+        XCTAssertTrue(applied.skippedDetails.contains {
+            $0.uri == "file:///project/Delete.swift"
+                && $0.operation == "text_edit"
+                && $0.reason == "resource_operation_dependency_removed"
+        })
+        XCTAssertEqual(try multi.tabDocumentURI(tabId: tab), "file:///project/Delete.swift")
+        XCTAssertEqual(try multi.tabText(tabId: tab), "delete me\n")
+        XCTAssertTrue(try multi.snapshot().tabs.contains { $0.id == tab })
+    }
+
     func testMultiDocumentEditorUIAtomicWorkspaceEditRollsBackRuntimeTextFailure() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("EditorCoreUIFFITests-\(UUID().uuidString)", isDirectory: true)
