@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 mod lsp_request_events;
 mod lsp_result_events;
+mod project_lsp;
 mod state_events;
 mod workspace_diagnostics;
 mod workspace_edit;
@@ -12,6 +13,7 @@ mod workspace_roots;
 
 pub use lsp_request_events::{MultiDocumentLspRequestEvent, MultiDocumentLspRequestEventsSnapshot};
 pub use lsp_result_events::{MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot};
+pub use project_lsp::ProjectLspServerConfig;
 pub use state_events::{MultiDocumentStateEvent, MultiDocumentStateEventsSnapshot};
 pub use workspace_diagnostics::{
     WorkspaceDiagnostic, WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
@@ -86,6 +88,7 @@ pub struct MultiDocumentEditorUi {
     workspace_diagnostics: WorkspaceDiagnosticsStore,
     lsp_result_events: lsp_result_events::MultiDocumentLspResultEventStore,
     lsp_request_events: lsp_request_events::MultiDocumentLspRequestEventStore,
+    project_lsp_servers: BTreeMap<String, ProjectLspServerConfig>,
     state_events: state_events::MultiDocumentStateEventStore,
     workspace_edit_transactions: workspace_edit::WorkspaceEditTransactionEventStore,
     workspace_edit_undo: Option<workspace_edit::WorkspaceEditTransactionUndoRecord>,
@@ -121,6 +124,27 @@ impl MultiDocumentEditorUi {
     /// Return the workspace root URIs currently owned by this model.
     pub fn workspace_roots(&self) -> &[String] {
         &self.workspace_roots
+    }
+
+    /// Replace the project-level LSP server configs owned by this model.
+    pub fn set_project_lsp_server_configs(
+        &mut self,
+        configs: Vec<ProjectLspServerConfig>,
+    ) -> Result<(), UiError> {
+        self.project_lsp_servers = project_lsp::normalize_project_lsp_servers(configs)?;
+        Ok(())
+    }
+
+    /// Return the project-level LSP server configs in deterministic key order.
+    pub fn project_lsp_server_configs(&self) -> Vec<ProjectLspServerConfig> {
+        self.project_lsp_servers.values().cloned().collect()
+    }
+
+    /// Return one project-level LSP server config by normalized key.
+    pub fn project_lsp_server_config(&self, key: &str) -> Option<ProjectLspServerConfig> {
+        self.project_lsp_servers
+            .get(key.trim().to_ascii_lowercase().as_str())
+            .cloned()
     }
 
     /// Return the active tab id (if any).

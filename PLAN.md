@@ -1108,6 +1108,15 @@
     - `swift test --package-path swift --filter AttoPreferencesTests.testLspAutoRestartServerPolicyOverridesNormalizeAndClamp`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
     - `git diff --check`
+- 中间提交：`feat(ui): store project lsp server configs`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；为更深层 core-owned project/LSP ownership schema 建立最小承载点，把 project-level LSP launch metadata 放入 `MultiDocumentEditorUi` 而不是只留在 Swift tab 投影里。
+  - 提交边界：`MultiDocumentEditorUi` 新增 project LSP server config store 和 snapshot 字段；C ABI 新增 `editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(...)` / `editor_core_ui_ffi_multi_document_project_lsp_servers_json(...)`；Swift wrapper 新增 `EcuProjectLspServerConfig`、`setProjectLspServers(...)`、`projectLspServers()` 和 snapshot decode。该提交只建立 core-owned launch metadata round-trip，不改变 AttoEditor 实际 server start/restart 路径，不实现 typed lifecycle 启停、跨独立 project session 合并或完整 dashboard 产品化。
+  - 验证记录：
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `cargo test -p editor-core-ui --release multi_document_tracks_project_lsp_server_configs`
+    - `cargo test -p editor-core-ui-ffi --release ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

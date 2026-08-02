@@ -181,6 +181,58 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         })
     );
 
+    let lsp_servers = CString::new(
+        r#"[
+          {
+            "key": " Rust ",
+            "command": " /bin/rust-analyzer ",
+            "args": [" ", "--stdio "],
+            "language_id": " rust ",
+            "workspace_roots": ["file:///new", "file:///new", " file:///other "],
+            "auto_start": true
+          },
+          {
+            "key": "",
+            "command": "/bin/sourcekit-lsp",
+            "language_id": "swift",
+            "auto_start": false
+          }
+        ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(multi, lsp_servers.as_ptr()),
+        ECU_OK
+    );
+    let lsp_snapshot_ptr = editor_core_ui_ffi_multi_document_project_lsp_servers_json(multi);
+    assert!(!lsp_snapshot_ptr.is_null());
+    let lsp_snapshot_json = unsafe { std::ffi::CStr::from_ptr(lsp_snapshot_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(lsp_snapshot_ptr) };
+    let lsp_snapshot_value: serde_json::Value = serde_json::from_str(&lsp_snapshot_json).unwrap();
+    assert_eq!(
+        lsp_snapshot_value,
+        serde_json::json!([
+            {
+                "key": "rust",
+                "command": "/bin/rust-analyzer",
+                "args": ["--stdio"],
+                "language_id": "rust",
+                "workspace_roots": ["file:///new", "file:///other"],
+                "auto_start": true
+            },
+            {
+                "key": "swift",
+                "command": "/bin/sourcekit-lsp",
+                "args": [],
+                "language_id": "swift",
+                "workspace_roots": [],
+                "auto_start": false
+            }
+        ])
+    );
+
     let mut has_active: u8 = 0;
     let mut active_id: u64 = 0;
     assert_eq!(

@@ -360,6 +360,31 @@ final class EditorCoreUIFFITests: XCTestCase {
             [EcuLspWorkspaceFolder(uri: "file:///project", name: "project")]
         )
         XCTAssertEqual(try multi.snapshot().workspaceRoots, ["file:///other", "file:///new"])
+
+        try multi.setProjectLspServers([
+            EcuProjectLspServerConfig(
+                key: " Rust ",
+                command: " /bin/rust-analyzer ",
+                args: [" ", "--stdio "],
+                languageId: " rust ",
+                workspaceRoots: ["file:///new", "file:///new", " file:///other "]
+            ),
+            EcuProjectLspServerConfig(
+                key: "",
+                command: "/bin/sourcekit-lsp",
+                languageId: "swift",
+                autoStart: false
+            ),
+        ])
+        let lspServers = try multi.projectLspServers()
+        XCTAssertEqual(lspServers.map(\.key), ["rust", "swift"])
+        XCTAssertEqual(lspServers[0].command, "/bin/rust-analyzer")
+        XCTAssertEqual(lspServers[0].args, ["--stdio"])
+        XCTAssertEqual(lspServers[0].languageId, "rust")
+        XCTAssertEqual(lspServers[0].workspaceRoots, ["file:///new", "file:///other"])
+        XCTAssertFalse(lspServers[1].autoStart)
+        XCTAssertEqual(try multi.snapshot().projectLspServers, lspServers)
+
         try multi.setActiveTab(beta)
         XCTAssertEqual(try multi.activeTabId(), beta)
 

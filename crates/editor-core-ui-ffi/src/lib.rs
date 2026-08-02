@@ -13,7 +13,7 @@
 
 use editor_core::{ExpandSelectionDirection, ExpandSelectionUnit};
 use editor_core_render_skia::{StyleColors, StyleFont, TextDecorations};
-use editor_core_ui::{EditorUi, MultiDocumentEditorUi, TabId};
+use editor_core_ui::{EditorUi, MultiDocumentEditorUi, ProjectLspServerConfig, TabId};
 use libc::{c_char, c_float, c_int, c_void};
 use std::collections::BTreeMap;
 #[cfg(test)]

@@ -1848,6 +1848,52 @@ fn lsp_auxiliary_derived_state_responses_record_request_and_result_events() {
 }
 
 #[test]
+fn multi_document_tracks_project_lsp_server_configs() {
+    let mut multi = MultiDocumentEditorUi::new();
+
+    multi
+        .set_project_lsp_server_configs(vec![
+            ProjectLspServerConfig {
+                key: " Rust ".to_string(),
+                command: " /bin/rust-analyzer ".to_string(),
+                args: vec![" ".to_string(), "--stdio ".to_string()],
+                language_id: " rust ".to_string(),
+                workspace_roots: vec![
+                    " file:///workspace ".to_string(),
+                    "file:///workspace".to_string(),
+                    "file:///other".to_string(),
+                ],
+                auto_start: true,
+            },
+            ProjectLspServerConfig {
+                key: "".to_string(),
+                command: "/bin/sourcekit-lsp".to_string(),
+                args: vec![],
+                language_id: "swift".to_string(),
+                workspace_roots: vec![],
+                auto_start: false,
+            },
+        ])
+        .unwrap();
+
+    let configs = multi.project_lsp_server_configs();
+    assert_eq!(configs.len(), 2);
+    assert_eq!(configs[0].key, "rust");
+    assert_eq!(configs[0].command, "/bin/rust-analyzer");
+    assert_eq!(configs[0].args, vec!["--stdio"]);
+    assert_eq!(
+        configs[0].workspace_roots,
+        vec!["file:///other", "file:///workspace"]
+    );
+    assert_eq!(configs[1].key, "swift");
+    assert!(!configs[1].auto_start);
+    assert_eq!(
+        multi.project_lsp_server_config("RUST").unwrap().language_id,
+        "rust"
+    );
+}
+
+#[test]
 fn multi_document_lsp_result_events_aggregate_tab_and_view_context() {
     let mut multi = MultiDocumentEditorUi::new();
     let first_tab = multi.open_tab("abc", 80);

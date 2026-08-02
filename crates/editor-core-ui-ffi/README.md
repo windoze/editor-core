@@ -100,3 +100,23 @@ char* editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(
 ```
 
 The returned string is owned by the caller and must be freed with `editor_core_ui_ffi_string_free`.
+
+## Multi-document Project LSP Servers
+
+The multi-document model also owns a project-level LSP server configuration list. This is a
+control-plane store for launch metadata and does not start or stop servers by itself:
+
+```c
+int32_t editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(
+    MultiDocumentEditorUi* multi,
+    const char* configs_json_utf8
+);
+
+char* editor_core_ui_ffi_multi_document_project_lsp_servers_json(MultiDocumentEditorUi* multi);
+```
+
+`configs_json_utf8` is a JSON array of objects with `key`, `command`, optional `args`,
+`language_id`, optional `workspace_roots`, and optional `auto_start`. Rust normalizes keys,
+commands, args, language ids, and workspace roots, and the returned JSON array is ordered by the
+normalized key. `editor_core_ui_ffi_multi_document_snapshot_json` includes the same list under
+`project_lsp_servers`.

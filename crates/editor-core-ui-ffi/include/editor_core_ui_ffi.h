@@ -193,6 +193,10 @@ int32_t editor_core_ui_ffi_multi_document_set_workspace_roots_json(
 char* editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(
     MultiDocumentEditorUi* multi,
     const char* roots_json_utf8);
+int32_t editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(
+    MultiDocumentEditorUi* multi,
+    const char* configs_json_utf8);
+char* editor_core_ui_ffi_multi_document_project_lsp_servers_json(MultiDocumentEditorUi* multi);
 int32_t editor_core_ui_ffi_multi_document_is_preview_tab(MultiDocumentEditorUi* multi,
                                                          uint64_t tab_id,
                                                          uint8_t* out_is_preview);

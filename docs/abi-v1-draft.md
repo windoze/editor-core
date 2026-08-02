@@ -235,6 +235,17 @@ replaces the core-owned root list, and returns `{ "added": WorkspaceFolder[], "r
 WorkspaceFolder[] }` so host UIs can drive `workspace/didChangeWorkspaceFolders` from the
 core-owned project/workspace model instead of maintaining a parallel Swift-side root diff.
 
+Project-level LSP launch metadata is also a JSON control-plane surface on `MultiDocumentEditorUi`.
+`editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(MultiDocumentEditorUi* multi,
+const char* configs_json_utf8)` accepts a UTF-8 JSON array of server configs with `key`,
+`command`, optional `args`, `language_id`, optional `workspace_roots`, and optional `auto_start`.
+The companion `editor_core_ui_ffi_multi_document_project_lsp_servers_json(MultiDocumentEditorUi*
+multi)` returns the normalized list ordered by key, and
+`editor_core_ui_ffi_multi_document_snapshot_json` includes the same list as
+`project_lsp_servers`. This is currently a project/workspace ownership schema for launch metadata;
+server process start/stop remains an explicit host action until v1 defines a typed lifecycle
+surface.
+
 This avoids blocking integrations while typed/binary surfaces mature.
 
 ## 4) Generic ioctl-Style Dispatcher (Optional v1)

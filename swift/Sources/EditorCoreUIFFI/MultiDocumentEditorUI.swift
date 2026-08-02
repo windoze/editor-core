@@ -26,11 +26,13 @@ public struct EcuMultiDocumentTabSnapshot: Decodable, Equatable, Sendable {
 public struct EcuMultiDocumentSnapshot: Decodable, Equatable, Sendable {
     public let activeTabId: UInt64?
     public let workspaceRoots: [String]
+    public let projectLspServers: [EcuProjectLspServerConfig]
     public let tabs: [EcuMultiDocumentTabSnapshot]
 
     private enum CodingKeys: String, CodingKey {
         case activeTabId = "active_tab_id"
         case workspaceRoots = "workspace_roots"
+        case projectLspServers = "project_lsp_servers"
         case tabs
     }
 
@@ -38,7 +40,55 @@ public struct EcuMultiDocumentSnapshot: Decodable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         activeTabId = try container.decodeIfPresent(UInt64.self, forKey: .activeTabId)
         workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
+        projectLspServers = try container.decodeIfPresent(
+            [EcuProjectLspServerConfig].self,
+            forKey: .projectLspServers
+        ) ?? []
         tabs = try container.decodeIfPresent([EcuMultiDocumentTabSnapshot].self, forKey: .tabs) ?? []
+    }
+}
+
+public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
+    public let key: String
+    public let command: String
+    public let args: [String]
+    public let languageId: String
+    public let workspaceRoots: [String]
+    public let autoStart: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case command
+        case args
+        case languageId = "language_id"
+        case workspaceRoots = "workspace_roots"
+        case autoStart = "auto_start"
+    }
+
+    public init(
+        key: String,
+        command: String,
+        args: [String] = [],
+        languageId: String,
+        workspaceRoots: [String] = [],
+        autoStart: Bool = true
+    ) {
+        self.key = key
+        self.command = command
+        self.args = args
+        self.languageId = languageId
+        self.workspaceRoots = workspaceRoots
+        self.autoStart = autoStart
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        key = try container.decodeIfPresent(String.self, forKey: .key) ?? ""
+        command = try container.decode(String.self, forKey: .command)
+        args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
+        languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
+        workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
+        autoStart = try container.decodeIfPresent(Bool.self, forKey: .autoStart) ?? true
     }
 }
 
@@ -634,6 +684,35 @@ public final class MultiDocumentEditorUI {
             EcuWorkspaceRootsChange.self,
             from: changeJSON,
             context: "multi_document_set_workspace_roots_with_change_decode"
+        )
+    }
+
+    public func setProjectLspServers(_ configs: [EcuProjectLspServerConfig]) throws {
+        let data = try JSONEncoder().encode(configs)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "multi_document_set_project_lsp_servers_encode",
+                message: "failed to encode project LSP server configs JSON"
+            )
+        }
+        let status = json.withCString { configsPtr in
+            editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(handle, configsPtr)
+        }
+        try library.ensureStatus(status, context: "multi_document_set_project_lsp_servers_json")
+    }
+
+    public func projectLspServersJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_project_lsp_servers_json") {
+            editor_core_ui_ffi_multi_document_project_lsp_servers_json(handle)
+        }
+    }
+
+    public func projectLspServers() throws -> [EcuProjectLspServerConfig] {
+        try decode(
+            [EcuProjectLspServerConfig].self,
+            from: projectLspServersJSON(),
+            context: "multi_document_project_lsp_servers_decode"
         )
     }
 
