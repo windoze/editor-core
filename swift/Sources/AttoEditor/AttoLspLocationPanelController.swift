@@ -288,15 +288,16 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
             family: "locations",
             title: snapshot.kind.historyTitle,
             recordedAt: Date(timeIntervalSince1970: 0),
+            state: .fresh,
             snapshot: snapshot
         )
     }
 
     private static func metadataText(for entry: Entry) -> String {
         if entry.sequence == 0 {
-            return "Snapshot | \(entry.title)"
+            return "\(entry.state.displayText) | Snapshot | \(entry.title)"
         }
-        return "Result #\(entry.sequence) | \(entry.family) | \(entry.title)"
+        return "\(entry.state.displayText) | Result #\(entry.sequence) | \(entry.family) | \(entry.title)"
     }
 }
 

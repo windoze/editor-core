@@ -220,7 +220,7 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         )
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspLocationPanelScrollView, in: root))
         XCTAssertEqual(searchField.placeholderString, "Filter references...")
-        XCTAssertEqual(metadataLabel.stringValue, "Snapshot | References")
+        XCTAssertEqual(metadataLabel.stringValue, "Fresh | Snapshot | References")
         XCTAssertEqual(table.numberOfRows, 2)
 
         searchField.stringValue = ":9:"
@@ -297,7 +297,7 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         )
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspSymbolPanelScrollView, in: root))
         XCTAssertEqual(searchField.placeholderString, "Filter document symbols...")
-        XCTAssertEqual(metadataLabel.stringValue, "Snapshot | Document Symbols")
+        XCTAssertEqual(metadataLabel.stringValue, "Fresh | Snapshot | Document Symbols")
         XCTAssertEqual(table.numberOfRows, 2)
 
         searchField.stringValue = "Struct"

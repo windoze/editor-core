@@ -1562,6 +1562,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         let window = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
         let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
 
         XCTAssertTrue(vc.showLspLocationResultJSONInActiveTab("""
@@ -1630,9 +1631,22 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(panelEntry.sequence, 1)
         XCTAssertEqual(panelEntry.family, "locations")
         XCTAssertTrue(panelEntry.title.hasPrefix("Implementations:"))
+        XCTAssertEqual(panelEntry.state, .fresh)
         XCTAssertEqual(panelEntry.snapshot, snapshot)
-        XCTAssertEqual(persistentMetadataLabel.stringValue, "Result #1 | locations | \(panelEntry.title)")
+        XCTAssertEqual(persistentMetadataLabel.stringValue, "Fresh | Result #1 | locations | \(panelEntry.title)")
         XCTAssertTrue(vc._lspLocationPanelIsVisibleForTesting())
+
+        vc._updateStatusBarForTesting()
+        try editorView.editor.insertText("!")
+        vc._updateStatusBarForTesting()
+
+        let stalePanelEntry = try XCTUnwrap(vc._lspLocationPanelEntryForTesting())
+        XCTAssertEqual(stalePanelEntry.sequence, panelEntry.sequence)
+        XCTAssertEqual(stalePanelEntry.state, .stale(reason: "document edited"))
+        XCTAssertEqual(
+            persistentMetadataLabel.stringValue,
+            "Stale: document edited | Result #1 | locations | \(panelEntry.title)"
+        )
 
         panel.close()
         XCTAssertTrue(vc.showLastLspLocationResults())
@@ -1663,11 +1677,12 @@ final class AttoEditorCommandTests: XCTestCase {
         let locationEntries = vc._lspLocationResultLifecycleHistoryForTesting()
         XCTAssertEqual(locationEntries.map(\.sequence), [1, 2])
         XCTAssertEqual(locationEntries.map(\.family), ["locations", "locations"])
+        XCTAssertEqual(locationEntries.map(\.state), [.stale(reason: "document edited"), .fresh])
         XCTAssertEqual(locationEntries.map(\.snapshot.kind), [.implementation, .definition])
         XCTAssertTrue(locationEntries[0].title.hasPrefix("Implementations:"))
         XCTAssertTrue(locationEntries[1].title.hasPrefix("Definitions:"))
         let resultEvents = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
-        XCTAssertEqual(resultEvents.map(\.sequence), [resultEventCursor + 1, resultEventCursor + 2])
+            .filter { $0.family == "locations" }
         XCTAssertEqual(resultEvents.map(\.family), ["locations", "locations"])
         XCTAssertEqual(resultEvents.map(\.sourceSequence), locationEntries.map { Optional($0.sequence) })
         XCTAssertEqual(
@@ -1683,8 +1698,9 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(updatedPanelEntry.sequence, 2)
         XCTAssertEqual(updatedPanelEntry.family, "locations")
         XCTAssertTrue(updatedPanelEntry.title.hasPrefix("Definitions:"))
+        XCTAssertEqual(updatedPanelEntry.state, .fresh)
         XCTAssertEqual(updatedPanelEntry.snapshot, updatedPanelSnapshot)
-        XCTAssertEqual(persistentMetadataLabel.stringValue, "Result #2 | locations | \(updatedPanelEntry.title)")
+        XCTAssertEqual(persistentMetadataLabel.stringValue, "Fresh | Result #2 | locations | \(updatedPanelEntry.title)")
         XCTAssertEqual(vc._lspLocationPanelRowCountForTesting(), 1)
 
         XCTAssertTrue(vc.showLspLocationHistory())
@@ -1757,6 +1773,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         let window = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
         let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
 
         XCTAssertTrue(vc.showWorkspaceSymbolResultJSONInActiveTab("""
@@ -1817,7 +1834,7 @@ final class AttoEditorCommandTests: XCTestCase {
         )
         XCTAssertEqual(
             persistentMetadataLabel.stringValue,
-            "Result #1 | symbols | Workspace Symbols: Project: 2 results"
+            "Fresh | Result #1 | symbols | Workspace Symbols: Project: 2 results"
         )
         let persistentTable = try XCTUnwrap(
             findView(
@@ -1831,8 +1848,21 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(panelEntry.sequence, 1)
         XCTAssertEqual(panelEntry.family, "symbols")
         XCTAssertEqual(panelEntry.title, "Workspace Symbols: Project: 2 results")
+        XCTAssertEqual(panelEntry.state, .fresh)
         XCTAssertEqual(panelEntry.snapshot, snapshot)
         XCTAssertTrue(vc._lspSymbolPanelIsVisibleForTesting())
+
+        vc._updateStatusBarForTesting()
+        try editorView.editor.insertText("!")
+        vc._updateStatusBarForTesting()
+
+        let stalePanelEntry = try XCTUnwrap(vc._lspSymbolPanelEntryForTesting())
+        XCTAssertEqual(stalePanelEntry.sequence, panelEntry.sequence)
+        XCTAssertEqual(stalePanelEntry.state, .stale(reason: "document edited"))
+        XCTAssertEqual(
+            persistentMetadataLabel.stringValue,
+            "Stale: document edited | Result #1 | symbols | Workspace Symbols: Project: 2 results"
+        )
 
         panel.close()
         XCTAssertTrue(vc.showLastLspSymbolResults())
@@ -1871,10 +1901,11 @@ final class AttoEditorCommandTests: XCTestCase {
         let symbolEntries = vc._lspSymbolResultLifecycleHistoryForTesting()
         XCTAssertEqual(symbolEntries.map(\.sequence), [1, 2])
         XCTAssertEqual(symbolEntries.map(\.family), ["symbols", "symbols"])
+        XCTAssertEqual(symbolEntries.map(\.state), [.stale(reason: "document edited"), .fresh])
         XCTAssertEqual(symbolEntries.map(\.snapshot.title), ["Workspace Symbols: Project", "Workspace Symbols: Open"])
         XCTAssertEqual(symbolEntries.map(\.title), ["Workspace Symbols: Project: 2 results", "Workspace Symbols: Open: 1 results"])
         let resultEvents = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
-        XCTAssertEqual(resultEvents.map(\.sequence), [resultEventCursor + 1, resultEventCursor + 2])
+            .filter { $0.family == "symbols" }
         XCTAssertEqual(resultEvents.map(\.family), ["symbols", "symbols"])
         XCTAssertEqual(resultEvents.map(\.sourceSequence), symbolEntries.map { Optional($0.sequence) })
         XCTAssertEqual(
@@ -1890,8 +1921,9 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(updatedPanelEntry.sequence, 2)
         XCTAssertEqual(updatedPanelEntry.family, "symbols")
         XCTAssertEqual(updatedPanelEntry.title, "Workspace Symbols: Open: 1 results")
+        XCTAssertEqual(updatedPanelEntry.state, .fresh)
         XCTAssertEqual(updatedPanelEntry.snapshot, updatedPanelSnapshot)
-        XCTAssertEqual(persistentMetadataLabel.stringValue, "Result #2 | symbols | Workspace Symbols: Open: 1 results")
+        XCTAssertEqual(persistentMetadataLabel.stringValue, "Fresh | Result #2 | symbols | Workspace Symbols: Open: 1 results")
         XCTAssertEqual(vc._lspSymbolPanelRowCountForTesting(), 1)
 
         XCTAssertTrue(vc.showLspSymbolHistory())

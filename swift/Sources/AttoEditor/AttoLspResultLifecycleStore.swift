@@ -1,10 +1,28 @@
 import Foundation
 
+enum AttoLspResultLifecycleState: Equatable {
+    case fresh
+    case stale(reason: String)
+    case error(message: String)
+
+    var displayText: String {
+        switch self {
+        case .fresh:
+            return "Fresh"
+        case .stale(let reason):
+            return "Stale: \(reason)"
+        case .error(let message):
+            return "Error: \(message)"
+        }
+    }
+}
+
 struct AttoLspResultLifecycleEntry<Snapshot> {
     let sequence: UInt64
     let family: String
     let title: String
     let recordedAt: Date
+    let state: AttoLspResultLifecycleState
     let snapshot: Snapshot
 }
 
@@ -37,9 +55,10 @@ final class AttoLspResultLifecycleStore<Snapshot> {
         _ snapshot: Snapshot,
         family: String = "unknown",
         title: String = "",
-        recordedAt: Date = Date()
+        recordedAt: Date = Date(),
+        state: AttoLspResultLifecycleState = .fresh
     ) -> AttoLspResultLifecycleEntry<Snapshot> {
-        let entry = makeEntry(snapshot, family: family, title: title, recordedAt: recordedAt)
+        let entry = makeEntry(snapshot, family: family, title: title, recordedAt: recordedAt, state: state)
         currentEntry = entry
         historyEntries.append(entry)
         if historyEntries.count > maxHistoryEntries {
@@ -53,15 +72,38 @@ final class AttoLspResultLifecycleStore<Snapshot> {
         _ snapshot: Snapshot,
         family: String = "unknown",
         title: String = "",
-        recordedAt: Date = Date()
+        recordedAt: Date = Date(),
+        state: AttoLspResultLifecycleState = .fresh
     ) -> AttoLspResultLifecycleEntry<Snapshot> {
-        let entry = makeEntry(snapshot, family: family, title: title, recordedAt: recordedAt)
+        let entry = makeEntry(snapshot, family: family, title: title, recordedAt: recordedAt, state: state)
         currentEntry = entry
         return entry
     }
 
     func makeCurrent(_ entry: AttoLspResultLifecycleEntry<Snapshot>) {
         currentEntry = entry
+    }
+
+    @discardableResult
+    func updateCurrentState(
+        _ state: AttoLspResultLifecycleState
+    ) -> AttoLspResultLifecycleEntry<Snapshot>? {
+        guard let currentEntry else { return nil }
+        guard currentEntry.state != state else { return currentEntry }
+
+        let updated = AttoLspResultLifecycleEntry(
+            sequence: currentEntry.sequence,
+            family: currentEntry.family,
+            title: currentEntry.title,
+            recordedAt: currentEntry.recordedAt,
+            state: state,
+            snapshot: currentEntry.snapshot
+        )
+        self.currentEntry = updated
+        if let index = historyEntries.lastIndex(where: { $0.sequence == updated.sequence }) {
+            historyEntries[index] = updated
+        }
+        return updated
     }
 
     func entries(after sequence: UInt64) -> [AttoLspResultLifecycleEntry<Snapshot>] {
@@ -78,13 +120,15 @@ final class AttoLspResultLifecycleStore<Snapshot> {
         _ snapshot: Snapshot,
         family: String,
         title: String,
-        recordedAt: Date
+        recordedAt: Date,
+        state: AttoLspResultLifecycleState
     ) -> AttoLspResultLifecycleEntry<Snapshot> {
         let entry = AttoLspResultLifecycleEntry(
             sequence: nextSequence,
             family: family,
             title: title,
             recordedAt: recordedAt,
+            state: state,
             snapshot: snapshot
         )
         nextSequence += 1
@@ -98,10 +142,13 @@ extension AttoLspResultLifecycleStore where Snapshot: Equatable {
         _ snapshot: Snapshot,
         family: String = "unknown",
         title: String = "",
-        recordedAt: Date = Date()
+        recordedAt: Date = Date(),
+        state: AttoLspResultLifecycleState = .fresh
     ) -> AttoLspResultLifecycleEntry<Snapshot>? {
-        guard current != snapshot else { return nil }
-        return record(snapshot, family: family, title: title, recordedAt: recordedAt)
+        if currentEntry?.snapshot == snapshot, currentEntry?.state == state {
+            return nil
+        }
+        return record(snapshot, family: family, title: title, recordedAt: recordedAt, state: state)
     }
 }
 

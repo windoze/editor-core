@@ -4232,8 +4232,19 @@ final class AttoEditorAreaViewController: NSViewController {
         let fingerprint = DiagnosticsTextFingerprint(text)
         if let previous = activeDiagnosticsTextFingerprintsByTabID[tab.id], previous != fingerprint {
             activeDiagnosticsStaleReasonsByTabID[tab.id] = .documentEdited
+            markCurrentLspResultPanelsStale(reason: "document edited")
         }
         activeDiagnosticsTextFingerprintsByTabID[tab.id] = fingerprint
+    }
+
+    private func markCurrentLspResultPanelsStale(reason: String) {
+        let state = AttoLspResultLifecycleState.stale(reason: reason)
+        if let entry = lspLocationResultStore.updateCurrentState(state) {
+            lspLocationPanelController?.update(entry: entry)
+        }
+        if let entry = lspSymbolResultStore.updateCurrentState(state) {
+            lspSymbolPanelController?.update(entry: entry)
+        }
     }
 
     private func clearActiveDiagnosticsStaleIfDiagnosticsChanged(

@@ -17,7 +17,9 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         XCTAssertEqual(first.family, "numbers")
         XCTAssertEqual(first.title, "One")
         XCTAssertEqual(first.recordedAt, firstDate)
+        XCTAssertEqual(first.state, .fresh)
         XCTAssertEqual(fourth.sequence, 4)
+        XCTAssertEqual(fourth.state, .fresh)
         XCTAssertEqual(store.latestSequence, 4)
         XCTAssertEqual(store.currentEntry?.sequence, 4)
         XCTAssertEqual(store.historyEntries.map(\.sequence), [2, 3, 4])
@@ -49,6 +51,7 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         XCTAssertEqual(current.sequence, 2)
         XCTAssertEqual(current.family, "locations")
         XCTAssertEqual(current.title, "Manual")
+        XCTAssertEqual(current.state, .fresh)
     }
 
     func testRecordIfChangedSkipsDuplicateCurrentSnapshot() {
@@ -64,6 +67,59 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         XCTAssertEqual(store.history, ["same", "changed"])
         XCTAssertEqual(store.historyEntries.map(\.title), ["Initial", "Changed"])
         XCTAssertEqual(store.current, "changed")
+    }
+
+    func testRecordIfChangedRecordsSameSnapshotWhenStateChanges() {
+        let store = AttoLspResultLifecycleStore<String>(maxHistoryEntries: 3)
+
+        let first = store.recordIfChanged("same", family: "symbols", title: "Initial")
+        let stale = store.recordIfChanged(
+            "same",
+            family: "symbols",
+            title: "Stale",
+            state: .stale(reason: "document edited")
+        )
+
+        XCTAssertNotNil(first)
+        XCTAssertNotNil(stale)
+        XCTAssertEqual(store.history, ["same", "same"])
+        XCTAssertEqual(store.historyEntries.map(\.state), [.fresh, .stale(reason: "document edited")])
+        XCTAssertEqual(store.currentEntry?.title, "Stale")
+    }
+
+    func testUpdateCurrentStateKeepsSequenceAndUpdatesHistoryEntry() {
+        let store = AttoLspResultLifecycleStore<String>(maxHistoryEntries: 3)
+
+        let first = store.record("first", family: "locations", title: "First")
+        store.record("second", family: "locations", title: "Second")
+        store.makeCurrent(first)
+
+        let updated = store.updateCurrentState(.stale(reason: "document edited"))
+
+        XCTAssertEqual(updated?.sequence, first.sequence)
+        XCTAssertEqual(updated?.family, first.family)
+        XCTAssertEqual(updated?.title, first.title)
+        XCTAssertEqual(updated?.recordedAt, first.recordedAt)
+        XCTAssertEqual(updated?.snapshot, first.snapshot)
+        XCTAssertEqual(updated?.state, .stale(reason: "document edited"))
+        XCTAssertEqual(store.currentEntry?.state, .stale(reason: "document edited"))
+        XCTAssertEqual(store.historyEntries.map(\.state), [.stale(reason: "document edited"), .fresh])
+
+        let duplicate = store.updateCurrentState(.stale(reason: "document edited"))
+        XCTAssertEqual(duplicate, updated)
+        XCTAssertEqual(store.historyEntries.map(\.sequence), [1, 2])
+    }
+
+    func testNewRecordAfterStaleStateIsFreshByDefault() {
+        let store = AttoLspResultLifecycleStore<String>(maxHistoryEntries: 3)
+
+        store.record("first")
+        store.updateCurrentState(.stale(reason: "document edited"))
+        let second = store.record("second")
+
+        XCTAssertEqual(second.state, .fresh)
+        XCTAssertEqual(store.currentEntry?.state, .fresh)
+        XCTAssertEqual(store.historyEntries.map(\.state), [.stale(reason: "document edited"), .fresh])
     }
 
     func testClearDropsCurrentAndHistory() {
