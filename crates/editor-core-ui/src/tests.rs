@@ -407,6 +407,49 @@ fn lsp_derived_request_events_record_semantic_and_folding_lifecycle() {
 }
 
 #[test]
+fn lsp_publish_diagnostics_notification_records_completed_lifecycle() {
+    let mut ui = EditorUi::new("abc", 80);
+    let doc_uri = "file:///tmp/main.rs";
+    {
+        let mut doc = ui.lock_doc();
+        doc.lsp_document_uri = Some(doc_uri.to_string());
+    }
+
+    let applied = ui
+        .handle_lsp_events(vec![
+            LspEvent::DerivedRequest(editor_core_lsp::LspDerivedRequestEvent {
+                id: 0,
+                method: "textDocument/publishDiagnostics".to_string(),
+                uri: "file:///tmp/other.rs".to_string(),
+                phase: editor_core_lsp::LspDerivedRequestPhase::Completed,
+                status: editor_core_lsp::LspDerivedRequestStatus::Success,
+                error: None,
+            }),
+            LspEvent::DerivedRequest(editor_core_lsp::LspDerivedRequestEvent {
+                id: 0,
+                method: "textDocument/publishDiagnostics".to_string(),
+                uri: doc_uri.to_string(),
+                phase: editor_core_lsp::LspDerivedRequestPhase::Completed,
+                status: editor_core_lsp::LspDerivedRequestStatus::Empty,
+                error: None,
+            }),
+        ])
+        .unwrap();
+
+    assert!(!applied);
+    let events = ui.lsp_request_events_after(0);
+    assert_eq!(events.latest_sequence, 1);
+    assert_eq!(events.events.len(), 1);
+    assert_eq!(events.events[0].family, "diagnostics");
+    assert_eq!(events.events[0].slot, "publish_diagnostics");
+    assert_eq!(events.events[0].method, "textDocument/publishDiagnostics");
+    assert_eq!(events.events[0].request_id, 0);
+    assert_eq!(events.events[0].phase, "completed");
+    assert_eq!(events.events[0].status, "empty");
+    assert_eq!(events.events[0].result_sequence, None);
+}
+
+#[test]
 fn lsp_request_events_record_stale_completion() {
     let mut ui = EditorUi::new("abc", 80);
     let view_id = ui.view_id;

@@ -249,14 +249,14 @@ pub enum LspEvent {
     Notification(LspNotification),
     /// A server->client request that was deferred for the host to answer.
     DeferredRequest(LspServerRequest),
-    /// Lifecycle event for a session-owned derived-state request.
+    /// Lifecycle event for a session-owned derived-state request or notification update.
     DerivedRequest(LspDerivedRequestEvent),
     /// A JSON-RPC response for a client-initiated request.
     Response(LspResponse),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Phase for a session-owned derived-state request.
+/// Phase for a session-owned derived-state request or notification update.
 pub enum LspDerivedRequestPhase {
     /// The request was sent and is pending.
     Started,
@@ -265,7 +265,7 @@ pub enum LspDerivedRequestPhase {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Status for a session-owned derived-state request lifecycle event.
+/// Status for a session-owned derived-state request or notification update lifecycle event.
 pub enum LspDerivedRequestStatus {
     /// The request is pending.
     Pending,
@@ -280,9 +280,9 @@ pub enum LspDerivedRequestStatus {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-/// Lifecycle event for a session-owned derived-state request.
+/// Lifecycle event for a session-owned derived-state request or notification update.
 pub struct LspDerivedRequestEvent {
-    /// Request id.
+    /// Request id, or 0 when the update arrived as an LSP notification.
     pub id: u64,
     /// LSP request method.
     pub method: String,

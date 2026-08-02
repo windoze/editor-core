@@ -99,6 +99,7 @@ pub(crate) enum LspResultSlot {
     LinkedEditingRange,
     DocumentDiagnostic,
     WorkspaceDiagnostic,
+    PublishDiagnostics,
     DocumentColor,
     ColorPresentation,
     PrepareCallHierarchy,
@@ -180,6 +181,7 @@ impl LspResultSlot {
             Self::LinkedEditingRange => "textDocument/linkedEditingRange",
             Self::DocumentDiagnostic => "textDocument/diagnostic",
             Self::WorkspaceDiagnostic => "workspace/diagnostic",
+            Self::PublishDiagnostics => "textDocument/publishDiagnostics",
             Self::DocumentColor => "textDocument/documentColor",
             Self::ColorPresentation => "textDocument/colorPresentation",
             Self::PrepareCallHierarchy => "textDocument/prepareCallHierarchy",
@@ -222,6 +224,7 @@ impl LspResultSlot {
             Self::LinkedEditingRange => "linked_editing_range",
             Self::DocumentDiagnostic => "document_diagnostic",
             Self::WorkspaceDiagnostic => "workspace_diagnostic",
+            Self::PublishDiagnostics => "publish_diagnostics",
             Self::DocumentColor => "document_color",
             Self::ColorPresentation => "color_presentation",
             Self::PrepareCallHierarchy => "prepare_call_hierarchy",
@@ -253,7 +256,9 @@ impl LspResultSlot {
             }
             Self::DocumentSymbols | Self::WorkspaceSymbols => "symbols",
             Self::FoldingRanges | Self::SelectionRange | Self::LinkedEditingRange => "ranges",
-            Self::DocumentDiagnostic | Self::WorkspaceDiagnostic => "diagnostics",
+            Self::DocumentDiagnostic | Self::WorkspaceDiagnostic | Self::PublishDiagnostics => {
+                "diagnostics"
+            }
             Self::DocumentColor | Self::ColorPresentation => "colors",
             Self::PrepareCallHierarchy
             | Self::CallHierarchyIncoming
@@ -295,6 +300,7 @@ impl LspResultSlot {
             Self::LinkedEditingRange => "LSP Linked Editing Range",
             Self::DocumentDiagnostic => "LSP Document Diagnostic",
             Self::WorkspaceDiagnostic => "LSP Workspace Diagnostic",
+            Self::PublishDiagnostics => "LSP Publish Diagnostics",
             Self::DocumentColor => "LSP Document Color",
             Self::ColorPresentation => "LSP Color Presentation",
             Self::PrepareCallHierarchy => "LSP Prepare Call Hierarchy",

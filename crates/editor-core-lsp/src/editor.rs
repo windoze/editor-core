@@ -291,6 +291,19 @@ fn lsp_derived_result_status(result: &Value) -> LspDerivedRequestStatus {
     LspDerivedRequestStatus::Success
 }
 
+fn lsp_diagnostics_notification_status(
+    params: &crate::lsp_events::LspPublishDiagnosticsParams,
+    version_matches: bool,
+) -> LspDerivedRequestStatus {
+    if !version_matches {
+        return LspDerivedRequestStatus::Stale;
+    }
+    if params.diagnostics.is_empty() {
+        return LspDerivedRequestStatus::Empty;
+    }
+    LspDerivedRequestStatus::Success
+}
+
 #[derive(Debug, Clone)]
 struct WorkDoneProgressItem {
     title: String,
@@ -2290,12 +2303,27 @@ impl LspSession {
                             self.observe_notification(&notification);
                             on_notification(&notification);
 
-                            if let LspNotification::PublishDiagnostics(diags) = &notification
-                                && diags.uri == self.document.uri
-                                && self.diagnostics_version_matches(diags)
-                            {
-                                edits
-                                    .extend(lsp_diagnostics_to_processing_edits(line_index, diags));
+                            if let LspNotification::PublishDiagnostics(diags) = &notification {
+                                let status = lsp_diagnostics_notification_status(
+                                    diags,
+                                    self.diagnostics_version_matches(diags),
+                                );
+                                self.push_derived_request_event(
+                                    0,
+                                    "textDocument/publishDiagnostics",
+                                    diags.uri.clone(),
+                                    LspDerivedRequestPhase::Completed,
+                                    status,
+                                    None,
+                                );
+
+                                if diags.uri == self.document.uri
+                                    && status != LspDerivedRequestStatus::Stale
+                                {
+                                    edits.extend(lsp_diagnostics_to_processing_edits(
+                                        line_index, diags,
+                                    ));
+                                }
                             }
                             self.push_event(LspEvent::Notification(notification));
                         }

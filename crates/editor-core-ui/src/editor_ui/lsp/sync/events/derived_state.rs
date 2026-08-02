@@ -7,6 +7,7 @@ fn derived_request_slot(method: &str) -> Option<LspResultSlot> {
         "textDocument/semanticTokens/full/delta" => Some(LspResultSlot::SemanticTokensDelta),
         "textDocument/semanticTokens/range" => Some(LspResultSlot::SemanticTokensRange),
         "textDocument/foldingRange" => Some(LspResultSlot::FoldingRanges),
+        "textDocument/publishDiagnostics" => Some(LspResultSlot::PublishDiagnostics),
         _ => None,
     }
 }
@@ -31,6 +32,11 @@ pub(super) fn record_lsp_derived_request_event(
     let Some(slot) = derived_request_slot(event.method.as_str()) else {
         return EventOutcome::Unhandled;
     };
+    if let Some(doc_uri) = doc.lsp_document_uri.as_deref() {
+        if doc_uri != event.uri {
+            return EventOutcome::Unhandled;
+        }
+    }
 
     match event.phase {
         editor_core_lsp::LspDerivedRequestPhase::Started => {
