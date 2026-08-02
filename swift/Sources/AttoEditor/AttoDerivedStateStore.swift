@@ -44,6 +44,7 @@ struct AttoDerivedStateSnapshot: Equatable {
 final class AttoDerivedStateStore {
     private(set) var active: AttoDerivedStateSnapshot = .empty
     private(set) var activeIsStale = false
+    private(set) var activeLspStatus: EcuLspStatusSnapshot?
     private(set) var lastStateEventKinds: [EcuEditorUIStateEventKind] = []
     private(set) var lastStateEventSequence: UInt64 = 0
     private(set) var snapshotRefreshCount = 0
@@ -53,6 +54,7 @@ final class AttoDerivedStateStore {
     func clearActive() {
         active = .empty
         activeIsStale = false
+        activeLspStatus = nil
         lastStateEventKinds = []
         lastStateEventSequence = 0
         snapshotRefreshCount = 0
@@ -66,6 +68,7 @@ final class AttoDerivedStateStore {
             activeEditorID = editorID
             active = .empty
             activeIsStale = false
+            activeLspStatus = nil
             lastStateEventKinds = []
             lastStateEventSequence = 0
             hasActiveSnapshot = false
@@ -87,6 +90,8 @@ final class AttoDerivedStateStore {
                     shouldRefreshSnapshot = true
                 case .derivedStateStale:
                     stale = true
+                case .lspStatusChanged:
+                    activeLspStatus = event.lspStatus
                 default:
                     continue
                 }
@@ -98,6 +103,7 @@ final class AttoDerivedStateStore {
             activeIsStale = stale
         } catch {
             lastStateEventKinds = []
+            activeLspStatus = nil
             refreshActiveFromSnapshots(editor: editor)
             activeIsStale = false
         }

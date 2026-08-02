@@ -131,6 +131,10 @@ final class AttoEditorAreaViewController: NSViewController {
         derivedStateStore.activeIsStale
     }
 
+    func _activeLspStatusForTesting() -> EcuLspStatusSnapshot? {
+        derivedStateStore.activeLspStatus
+    }
+
     func _derivedStateEventKindsForTesting() -> [EcuEditorUIStateEventKind] {
         derivedStateStore.lastStateEventKinds
     }

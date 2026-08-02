@@ -786,6 +786,13 @@
     - `swift test --package-path swift --filter EditorCoreUIFFILSPEventTypesTests`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(app): consume lsp status state events`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 AttoEditor active state/event drain 缓存 `lsp_status_changed` 的 typed status payload，并让 status bar 优先使用 event-derived status 显示 server/workspace root/capabilities。
+  - 提交边界：只扩展 AttoEditor active UI 投影缓存和 status bar rendering fallback；真实 LSP status 仍来自 Rust `EditorUiStateEvent` / `EcuLspStatusSnapshot`。不新增 Rust/FFI ABI，不改变 LSP session ownership、workspace folder didChange、server restart、project open/close 批量启停或 project-level status panel。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoStatusBarSelectionTests.testStatusBarConsumesLspStatusStateEvent`
+    - `swift test --package-path swift --filter AttoStatusBarSelectionTests.testStatusBarConsumesActiveDerivedDiagnostics`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

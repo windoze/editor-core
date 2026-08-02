@@ -214,7 +214,7 @@ extension AttoEditorAreaViewController {
             guard isRustFile || isEnabled else { return nil }
 
             do {
-                let status = try editor.lspStatusSnapshot()
+                let status = try derivedStateStore.activeLspStatus ?? editor.lspStatusSnapshot()
                 let display = AttoLspStatusFormatter.display(status: status, fallbackEnabled: isEnabled)
                 if let detail = display.failureDetail {
                     presentLspFailureDetailIfNeeded(detail, editorView: tab.editCore.editorView)

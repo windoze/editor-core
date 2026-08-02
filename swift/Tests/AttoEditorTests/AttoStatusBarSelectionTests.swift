@@ -174,6 +174,64 @@ final class AttoStatusBarSelectionTests: XCTestCase {
         XCTAssertTrue(vc._activeDerivedStateIsStaleForTesting())
     }
 
+    func testStatusBarConsumesLspStatusStateEvent() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoStatusBarLspStatusStateEventTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let file = root.appendingPathComponent("main.txt")
+        try "hello".write(to: file, atomically: true, encoding: .utf8)
+        let captureURL = root.appendingPathComponent("lsp-stdin.txt")
+        let scriptURL = root.appendingPathComponent("fake-lsp.sh")
+        try writeFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let lib = EditorCoreUIFFILibrary()
+        let theme = EditorCoreSkiaTheme.defaultLight()
+        let vc = AttoEditorAreaViewController(library: lib, theme: theme, workspaceRootURL: root)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = vc
+        window.makeKeyAndOrderFront(nil)
+        vc.view.layoutSubtreeIfNeeded()
+
+        vc.openFile(url: file, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        try tab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: root.standardizedFileURL.absoluteString,
+            documentURI: file.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer { tab.editCore.editor.lspDisable() }
+
+        vc._updateStatusBarForTesting()
+
+        let status = try XCTUnwrap(vc._activeLspStatusForTesting())
+        XCTAssertEqual(status.availability, .enabled)
+        XCTAssertEqual(status.state, .ready)
+        XCTAssertEqual(
+            status.workspaceFolders.first?.uri.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
+            root.standardizedFileURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        )
+        XCTAssertTrue(vc._derivedStateEventKindsForTesting().contains(.lspStatusChanged))
+
+        let statusBar = try XCTUnwrap(findSubview(of: AttoStatusBarView.self, in: vc.view))
+        let labels = allSubviews(in: statusBar).compactMap { $0 as? NSTextField }
+        let lspText = labels.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.statusBarLspLabel
+        }?.stringValue
+        let text = try XCTUnwrap(lspText)
+        XCTAssertTrue(text.contains("LSP"), text)
+        XCTAssertTrue(text.contains("Ready"), text)
+        XCTAssertTrue(text.contains("@ \(root.lastPathComponent)"), text)
+    }
+
     func testStatusBarConsumesFoldedDerivedState() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoStatusBarFoldingStateTests-\(UUID().uuidString)", isDirectory: true)
@@ -277,6 +335,18 @@ final class AttoStatusBarSelectionTests: XCTestCase {
         let statusBar = try XCTUnwrap(findSubview(of: AttoStatusBarView.self, in: vc.view))
         let labels = allSubviews(in: statusBar).compactMap { $0 as? NSTextField }
         XCTAssertTrue(labels.contains { $0.stringValue == "Code Lens: 2" })
+    }
+
+    private func writeFakeLspServerScript(captureURL: URL, scriptURL: URL) throws {
+        let capturePath = captureURL.path.replacingOccurrences(of: "'", with: "'\\''")
+        let script = """
+        #!/bin/sh
+        body='{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}'
+        printf 'Content-Length: %s\\r\\n\\r\\n%s' "${#body}" "$body"
+        cat > '\(capturePath)'
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
     }
 
     private func allSubviews(in root: NSView) -> [NSView] {
