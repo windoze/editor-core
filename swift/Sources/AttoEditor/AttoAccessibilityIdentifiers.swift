@@ -125,6 +125,18 @@ enum AttoAccessibilityID {
     static let workspaceProblemsPanelRow = "AttoEditor.LSP.WorkspaceProblemsPanel.Row"
     static let workspaceProblemsPanelRowTitle = "AttoEditor.LSP.WorkspaceProblemsPanel.RowTitle"
 
+    static let workspaceEditPreviewPanel = "AttoEditor.WorkspaceEditPreview.Panel"
+    static let workspaceEditPreviewRoot = "AttoEditor.WorkspaceEditPreview.Root"
+    static let workspaceEditPreviewSummary = "AttoEditor.WorkspaceEditPreview.Summary"
+    static let workspaceEditPreviewTable = "AttoEditor.WorkspaceEditPreview.Table"
+    static let workspaceEditPreviewTableScrollView = "AttoEditor.WorkspaceEditPreview.TableScrollView"
+    static let workspaceEditPreviewRow = "AttoEditor.WorkspaceEditPreview.Row"
+    static let workspaceEditPreviewRowTitle = "AttoEditor.WorkspaceEditPreview.RowTitle"
+    static let workspaceEditPreviewDetail = "AttoEditor.WorkspaceEditPreview.Detail"
+    static let workspaceEditPreviewDetailScrollView = "AttoEditor.WorkspaceEditPreview.DetailScrollView"
+    static let workspaceEditPreviewApplyButton = "AttoEditor.WorkspaceEditPreview.Apply"
+    static let workspaceEditPreviewCancelButton = "AttoEditor.WorkspaceEditPreview.Cancel"
+
     static func commandMenuItem(_ commandID: String) -> String {
         "AttoCommand.\(commandID)"
     }

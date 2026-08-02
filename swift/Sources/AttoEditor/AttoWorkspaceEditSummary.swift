@@ -7,6 +7,13 @@ enum AttoWorkspaceEditPreviewDecision: Equatable {
 }
 
 struct AttoWorkspaceEditPreview: Equatable {
+    struct Section: Equatable {
+        let uri: String
+        let title: String
+        let subtitle: String
+        let detailText: String
+    }
+
     struct Document: Equatable {
         let uri: String
         let editCount: Int
@@ -29,6 +36,7 @@ struct AttoWorkspaceEditPreview: Equatable {
     let documents: [Document]
     let skippedDetails: [SkippedDetail]
     let unsupportedOperationURIs: [String]
+    var sections: [Section]
 
     init(
         result: EcuWorkspaceEditTransactionResult,
@@ -81,6 +89,7 @@ struct AttoWorkspaceEditPreview: Equatable {
             )
         }
         unsupportedOperationURIs = result.unsupportedOperationURIs
+        sections = []
     }
 
     var affectedURIs: [String] {
@@ -101,6 +110,20 @@ struct AttoWorkspaceEditPreview: Equatable {
             return true
         }
         return false
+    }
+
+    var panelSections: [Section] {
+        if sections.isEmpty == false {
+            return sections
+        }
+        return [
+            Section(
+                uri: "",
+                title: "Summary",
+                subtitle: summaryLine,
+                detailText: displayText
+            ),
+        ]
     }
 
     var displayText: String {
@@ -187,11 +210,11 @@ struct AttoWorkspaceEditPreview: Equatable {
         return rows.sorted()
     }
 
-    private static func editCountText(_ count: Int) -> String {
+    fileprivate static func editCountText(_ count: Int) -> String {
         count == 1 ? "1 edit" : "\(count) edits"
     }
 
-    private static func resourceOperationCountText(_ count: Int) -> String {
+    fileprivate static func resourceOperationCountText(_ count: Int) -> String {
         count == 1 ? "1 resource operation" : "\(count) resource operations"
     }
 
@@ -208,11 +231,301 @@ struct AttoWorkspaceEditPreview: Equatable {
         return result
     }
 
-    private static func displayName(for uri: String) -> String {
+    fileprivate static func displayName(for uri: String) -> String {
         if let url = URL(string: uri), url.isFileURL, url.lastPathComponent.isEmpty == false {
             return url.lastPathComponent
         }
         return uri
+    }
+}
+
+enum AttoWorkspaceEditPreviewDetailBuilder {
+    typealias TextProvider = (String) -> String?
+
+    static func sections(
+        preview: AttoWorkspaceEditPreview,
+        workspaceEdit: AttoWorkspaceEditParser.ParseResult,
+        textForURI: TextProvider
+    ) -> [AttoWorkspaceEditPreview.Section] {
+        let previewDocumentsByURI = Dictionary(uniqueKeysWithValues: preview.documents.map { ($0.uri, $0) })
+        var sections: [AttoWorkspaceEditPreview.Section] = []
+
+        for document in workspaceEdit.documents {
+            let previewDocument = previewDocumentsByURI[document.uri]
+            sections.append(documentSection(
+                document,
+                previewDocument: previewDocument,
+                textForURI: textForURI
+            ))
+        }
+
+        for operation in workspaceEdit.resourceOperations {
+            sections.append(resourceOperationSection(operation))
+        }
+
+        for detail in preview.skippedDetails {
+            sections.append(skippedSection(detail))
+        }
+
+        let unsupportedURIs = uniqueURIs(workspaceEdit.unsupportedURIs + preview.unsupportedOperationURIs)
+        for uri in unsupportedURIs {
+            sections.append(unsupportedSection(uri))
+        }
+
+        return sections
+    }
+
+    private static func documentSection(
+        _ document: AttoWorkspaceEditParser.DocumentEdit,
+        previewDocument: AttoWorkspaceEditPreview.Document?,
+        textForURI: TextProvider
+    ) -> AttoWorkspaceEditPreview.Section {
+        let title = AttoWorkspaceEditPreview.displayName(for: document.uri)
+        let subtitle = documentSubtitle(document, previewDocument: previewDocument)
+        let detailText = documentDetailText(
+            document,
+            title: title,
+            previewDocument: previewDocument,
+            textForURI: textForURI
+        )
+        return AttoWorkspaceEditPreview.Section(
+            uri: document.uri,
+            title: title,
+            subtitle: subtitle,
+            detailText: detailText
+        )
+    }
+
+    private static func documentSubtitle(
+        _ document: AttoWorkspaceEditParser.DocumentEdit,
+        previewDocument: AttoWorkspaceEditPreview.Document?
+    ) -> String {
+        var parts = [AttoWorkspaceEditPreview.editCountText(document.edits.count)]
+        if previewDocument?.isOpen == true {
+            parts.append("open")
+        } else {
+            parts.append("unopened")
+        }
+        if document.hasOverlappingEdits || previewDocument?.hasOverlappingEdits == true {
+            parts.append("overlapping edits")
+        }
+        if previewDocument?.versionMismatch == true {
+            parts.append("version mismatch")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private static func documentDetailText(
+        _ document: AttoWorkspaceEditParser.DocumentEdit,
+        title: String,
+        previewDocument: AttoWorkspaceEditPreview.Document?,
+        textForURI: TextProvider
+    ) -> String {
+        var lines = detailHeader(title: title, uri: document.uri, subtitle: documentSubtitle(
+            document,
+            previewDocument: previewDocument
+        ))
+
+        guard document.edits.isEmpty == false else {
+            lines.append("No text edits.")
+            return lines.joined(separator: "\n")
+        }
+
+        if document.hasOverlappingEdits || previewDocument?.hasOverlappingEdits == true {
+            lines.append("Diff unavailable: document has overlapping edits.")
+            return lines.joined(separator: "\n")
+        }
+
+        guard let oldText = textForURI(document.uri) else {
+            lines.append("Diff unavailable: document text was not available.")
+            return lines.joined(separator: "\n")
+        }
+
+        guard let result = AttoWorkspaceEditParser.apply(document, to: oldText) else {
+            lines.append("Diff unavailable: edit range is outside the current document.")
+            return lines.joined(separator: "\n")
+        }
+
+        lines.append(lineDiff(oldText: oldText, newText: result.text, title: title))
+        return lines.joined(separator: "\n")
+    }
+
+    private static func resourceOperationSection(
+        _ operation: AttoWorkspaceEditParser.ResourceOperation
+    ) -> AttoWorkspaceEditPreview.Section {
+        switch operation {
+        case .create(let create):
+            let title = AttoWorkspaceEditPreview.displayName(for: create.uri)
+            let subtitle = "create file"
+            let detail = detailHeader(title: title, uri: create.uri, subtitle: subtitle) + [
+                "Create file",
+                "overwrite: \(create.overwrite)",
+                "ignoreIfExists: \(create.ignoreIfExists)",
+            ]
+            return AttoWorkspaceEditPreview.Section(
+                uri: create.uri,
+                title: title,
+                subtitle: subtitle,
+                detailText: detail.joined(separator: "\n")
+            )
+        case .rename(let rename):
+            let title = "\(AttoWorkspaceEditPreview.displayName(for: rename.oldURI)) -> \(AttoWorkspaceEditPreview.displayName(for: rename.newURI))"
+            let subtitle = "rename file"
+            let detail = detailHeader(title: title, uri: rename.oldURI, subtitle: subtitle) + [
+                "Rename file",
+                "from: \(rename.oldURI)",
+                "to: \(rename.newURI)",
+                "overwrite: \(rename.overwrite)",
+                "ignoreIfExists: \(rename.ignoreIfExists)",
+            ]
+            return AttoWorkspaceEditPreview.Section(
+                uri: rename.oldURI,
+                title: title,
+                subtitle: subtitle,
+                detailText: detail.joined(separator: "\n")
+            )
+        case .delete(let delete):
+            let title = AttoWorkspaceEditPreview.displayName(for: delete.uri)
+            let subtitle = "delete file"
+            let detail = detailHeader(title: title, uri: delete.uri, subtitle: subtitle) + [
+                "Delete file",
+                "recursive: \(delete.recursive)",
+                "ignoreIfNotExists: \(delete.ignoreIfNotExists)",
+            ]
+            return AttoWorkspaceEditPreview.Section(
+                uri: delete.uri,
+                title: title,
+                subtitle: subtitle,
+                detailText: detail.joined(separator: "\n")
+            )
+        }
+    }
+
+    private static func skippedSection(
+        _ detail: AttoWorkspaceEditPreview.SkippedDetail
+    ) -> AttoWorkspaceEditPreview.Section {
+        let title = AttoWorkspaceEditPreview.displayName(for: detail.uri)
+        let subtitle = [detail.operation, detail.reason]
+            .compactMap { value in
+                guard let value, value.isEmpty == false else { return nil }
+                return value
+            }
+            .joined(separator: ": ")
+        let detailLines = detailHeader(title: title, uri: detail.uri, subtitle: "not applicable") + [
+            "Operation: \(detail.operation ?? "unknown")",
+            "Reason: \(detail.reason.isEmpty ? "unknown" : detail.reason)",
+            "Message: \(detail.message.isEmpty ? "No detail." : detail.message)",
+        ]
+        return AttoWorkspaceEditPreview.Section(
+            uri: detail.uri,
+            title: title,
+            subtitle: subtitle.isEmpty ? "not applicable" : subtitle,
+            detailText: detailLines.joined(separator: "\n")
+        )
+    }
+
+    private static func unsupportedSection(_ uri: String) -> AttoWorkspaceEditPreview.Section {
+        let title = AttoWorkspaceEditPreview.displayName(for: uri)
+        let detail = detailHeader(title: title, uri: uri, subtitle: "unsupported operation") + [
+            "This WorkspaceEdit operation is not supported by the current App path.",
+        ]
+        return AttoWorkspaceEditPreview.Section(
+            uri: uri,
+            title: title,
+            subtitle: "unsupported operation",
+            detailText: detail.joined(separator: "\n")
+        )
+    }
+
+    private static func detailHeader(title: String, uri: String, subtitle: String) -> [String] {
+        [
+            title,
+            subtitle,
+            uri,
+            "",
+        ]
+    }
+
+    private static func lineDiff(oldText: String, newText: String, title: String) -> String {
+        guard oldText != newText else { return "No visible text change." }
+
+        let oldLines = splitLines(oldText)
+        let newLines = splitLines(newText)
+        var prefix = 0
+        while prefix < oldLines.count,
+              prefix < newLines.count,
+              oldLines[prefix] == newLines[prefix]
+        {
+            prefix += 1
+        }
+
+        var suffix = 0
+        while suffix < oldLines.count - prefix,
+              suffix < newLines.count - prefix,
+              oldLines[oldLines.count - suffix - 1] == newLines[newLines.count - suffix - 1]
+        {
+            suffix += 1
+        }
+
+        let oldChangeEnd = oldLines.count - suffix
+        let newChangeEnd = newLines.count - suffix
+        let context = 3
+        let contextStart = max(0, prefix - context)
+        let contextEnd = min(oldLines.count, oldChangeEnd + context)
+
+        var lines: [String] = []
+        lines.append("--- \(title)")
+        lines.append("+++ \(title)")
+        lines.append("@@ line \(contextStart + 1) @@")
+
+        if contextStart > 0 {
+            lines.append(" ...")
+        }
+        if contextStart < prefix {
+            for index in contextStart..<prefix {
+                lines.append(" \(oldLines[index])")
+            }
+        }
+        if prefix < oldChangeEnd {
+            for index in prefix..<oldChangeEnd {
+                lines.append("-\(oldLines[index])")
+            }
+        }
+        if prefix < newChangeEnd {
+            for index in prefix..<newChangeEnd {
+                lines.append("+\(newLines[index])")
+            }
+        }
+        if oldChangeEnd < contextEnd {
+            for index in oldChangeEnd..<contextEnd {
+                lines.append(" \(oldLines[index])")
+            }
+        }
+        if contextEnd < oldLines.count {
+            lines.append(" ...")
+        }
+
+        return limitedLines(lines).joined(separator: "\n")
+    }
+
+    private static func splitLines(_ text: String) -> [String] {
+        text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+
+    private static func limitedLines(_ lines: [String], maxLineCount: Int = 160) -> [String] {
+        guard lines.count > maxLineCount else { return lines }
+        var result = Array(lines.prefix(maxLineCount))
+        result.append("... diff truncated ...")
+        return result
+    }
+
+    private static func uniqueURIs(_ uris: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for uri in uris where seen.insert(uri).inserted {
+            result.append(uri)
+        }
+        return result
     }
 }
 

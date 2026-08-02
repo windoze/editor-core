@@ -203,6 +203,100 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         )
     }
 
+    func testWorkspaceEditPreviewDetailBuilderBuildsTextDiffSections() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "preview",
+          "applied": true,
+          "applied_uris": ["file:///project/main.swift"],
+          "applied_edit_count": 1,
+          "applied_resource_operation_count": 0,
+          "skipped_uris": [],
+          "documents": [
+            {
+              "uri": "file:///project/main.swift",
+              "edit_count": 1,
+              "is_open": true
+            }
+          ]
+        }
+        """)
+        let workspaceEdit = try XCTUnwrap(AttoWorkspaceEditParser.parse("""
+        {
+          "changes": {
+            "file:///project/main.swift": [
+              {
+                "range": {
+                  "start": { "line": 1, "character": 0 },
+                  "end": { "line": 1, "character": 4 }
+                },
+                "newText": "BETA"
+              }
+            ]
+          }
+        }
+        """))
+        let preview = AttoWorkspaceEditPreview(result: result, parsedWorkspaceEdit: workspaceEdit)
+
+        let sections = AttoWorkspaceEditPreviewDetailBuilder.sections(
+            preview: preview,
+            workspaceEdit: workspaceEdit
+        ) { uri in
+            uri == "file:///project/main.swift" ? "alpha\nbeta\ngamma\n" : nil
+        }
+
+        XCTAssertEqual(sections.count, 1)
+        XCTAssertEqual(sections[0].title, "main.swift")
+        XCTAssertEqual(sections[0].subtitle, "1 edit, open")
+        XCTAssertTrue(sections[0].detailText.contains("--- main.swift"))
+        XCTAssertTrue(sections[0].detailText.contains("-beta"))
+        XCTAssertTrue(sections[0].detailText.contains("+BETA"))
+    }
+
+    func testWorkspaceEditPreviewDetailBuilderBuildsResourceOperationSections() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "preview",
+          "applied": true,
+          "applied_uris": [
+            "file:///project/old.swift",
+            "file:///project/new.swift"
+          ],
+          "applied_edit_count": 0,
+          "applied_resource_operation_count": 1,
+          "skipped_uris": [],
+          "documents": []
+        }
+        """)
+        let workspaceEdit = try XCTUnwrap(AttoWorkspaceEditParser.parse("""
+        {
+          "documentChanges": [
+            {
+              "kind": "rename",
+              "oldUri": "file:///project/old.swift",
+              "newUri": "file:///project/new.swift",
+              "options": {
+                "overwrite": true,
+                "ignoreIfExists": false
+              }
+            }
+          ]
+        }
+        """))
+        let preview = AttoWorkspaceEditPreview(result: result, parsedWorkspaceEdit: workspaceEdit)
+
+        let sections = AttoWorkspaceEditPreviewDetailBuilder.sections(
+            preview: preview,
+            workspaceEdit: workspaceEdit
+        ) { _ in nil }
+
+        XCTAssertEqual(sections.count, 1)
+        XCTAssertEqual(sections[0].title, "old.swift -> new.swift")
+        XCTAssertEqual(sections[0].subtitle, "rename file")
+        XCTAssertTrue(sections[0].detailText.contains("Rename file"))
+        XCTAssertTrue(sections[0].detailText.contains("overwrite: true"))
+    }
+
     private func decodeTransactionResult(_ json: String) throws -> EcuWorkspaceEditTransactionResult {
         try JSONDecoder().decode(EcuWorkspaceEditTransactionResult.self, from: Data(json.utf8))
     }

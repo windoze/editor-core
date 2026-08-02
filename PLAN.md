@@ -280,6 +280,13 @@
     - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEdit`
     - `git diff --check`
+- 中间提交：`feat(app): show workspace edit diff previews`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 AttoEditor 的 WorkspaceEdit confirmation 从基础 alert 推进到专用可导航 diff preview panel 起点，让跨文档、未打开文件、resource operation 和 skipped/conflict 影响在应用前可按文件查看。
+  - 提交边界：只新增 App 层 preview section/diff display model、`AttoWorkspaceEditPreviewPanelController`、稳定 accessibility identifier 和确认入口替换；text edit diff 由 Swift 侧基于当前打开 tab 文本或本地文件文本生成，resource operation/skipped/unsupported 显示结构化详情。本提交不新增 ABI，不实现可筛选/可展开树形 diff、打开 tab undo grouping、完整 batch atomic rollback 或更深层 conflict UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEdit`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

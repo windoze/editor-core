@@ -862,6 +862,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var hoverPopoverLabel: NSTextField?
     var workspaceEditPopover: NSPopover?
     var workspaceEditPopoverLabel: NSTextField?
+    var workspaceEditPreviewPanelController: AttoWorkspaceEditPreviewPanelController?
     var workspaceEditPreviewDecisionProviderForTesting: ((AttoWorkspaceEditPreview) -> AttoWorkspaceEditPreviewDecision)?
 
     var definitionContext: DefinitionRequestContext?

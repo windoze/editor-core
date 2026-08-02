@@ -267,9 +267,14 @@ extension AttoEditorAreaViewController {
         editorView: EditorCoreSkiaView
     ) throws -> Bool {
         let result = try coreDocuments.previewWorkspaceEditTransaction(workspaceEditJSON)
-        let preview = AttoWorkspaceEditPreview(
+        var preview = AttoWorkspaceEditPreview(
             result: result,
             parsedWorkspaceEdit: workspaceEdit
+        )
+        preview.sections = AttoWorkspaceEditPreviewDetailBuilder.sections(
+            preview: preview,
+            workspaceEdit: workspaceEdit,
+            textForURI: workspaceEditPreviewText(for:)
         )
         guard preview.requiresConfirmation else { return true }
         return confirmWorkspaceEditPreview(preview, editorView: editorView)
@@ -284,13 +289,22 @@ extension AttoEditorAreaViewController {
         }
         guard view.window != nil || editorView.window != nil else { return true }
 
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "Apply Workspace Edit?"
-        alert.informativeText = preview.displayText
-        alert.addButton(withTitle: "Apply")
-        alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn
+        let panelController = AttoWorkspaceEditPreviewPanelController()
+        workspaceEditPreviewPanelController = panelController
+        let decision = panelController.runModal(
+            relativeTo: editorView.window ?? view.window,
+            preview: preview
+        )
+        workspaceEditPreviewPanelController = nil
+        return decision == .apply
+    }
+
+    func workspaceEditPreviewText(for uri: String) -> String? {
+        guard let url = Self.fileURL(fromDocumentURI: uri)?.standardizedFileURL else { return nil }
+        if let tab = tabs.first(where: { $0.fileURL.standardizedFileURL == url }) {
+            return try? tab.editCore.editor.text()
+        }
+        return try? String(contentsOf: url, encoding: .utf8)
     }
 
     @discardableResult

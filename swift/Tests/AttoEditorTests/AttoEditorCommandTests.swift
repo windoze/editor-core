@@ -3088,6 +3088,17 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(preview.displayText.contains("Workspace edit preview."))
         XCTAssertTrue(preview.displayText.contains("preview-cancel.txt"))
         XCTAssertTrue(preview.displayText.contains("preview-other.txt"))
+        XCTAssertEqual(preview.sections.count, 2)
+        XCTAssertTrue(preview.sections.contains { section in
+            section.title == "preview-cancel.txt"
+                && section.detailText.contains("-abc")
+                && section.detailText.contains("+aBc")
+        })
+        XCTAssertTrue(preview.sections.contains { section in
+            section.title == "preview-other.txt"
+                && section.detailText.contains("-other")
+                && section.detailText.contains("+Xother")
+        })
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Workspace edit cancelled")
 
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
