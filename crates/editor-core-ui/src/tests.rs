@@ -410,19 +410,12 @@ fn lsp_request_events_record_cancel_and_timeout_completion() {
 
     assert!(ui.lsp_cancel_request(41).unwrap());
     assert!(ui.lsp_mark_request_timed_out(42));
-    assert!(!ui.lsp_mark_request_timed_out(43));
+    assert!(ui.lsp_mark_request_timed_out(43));
     assert!(!ui.lsp_mark_request_timed_out(404));
-    {
-        let doc = ui.lock_doc();
-        assert!(matches!(
-            doc.lsp_client_requests.get(&43),
-            Some(LspClientRequest::OnTypeFormatting { .. })
-        ));
-    }
 
     let events = ui.lsp_request_events_after(0);
-    assert_eq!(events.latest_sequence, 4);
-    assert_eq!(events.events.len(), 4);
+    assert_eq!(events.latest_sequence, 5);
+    assert_eq!(events.events.len(), 5);
     assert_eq!(events.events[2].request_id, 41);
     assert_eq!(events.events[2].phase, "completed");
     assert_eq!(events.events[2].status, "canceled");
@@ -431,6 +424,12 @@ fn lsp_request_events_record_cancel_and_timeout_completion() {
     assert_eq!(events.events[3].phase, "completed");
     assert_eq!(events.events[3].status, "timeout");
     assert_eq!(events.events[3].result_sequence, None);
+    assert_eq!(events.events[4].request_id, 43);
+    assert_eq!(events.events[4].family, "formatting");
+    assert_eq!(events.events[4].slot, "on_type_formatting");
+    assert_eq!(events.events[4].phase, "completed");
+    assert_eq!(events.events[4].status, "timeout");
+    assert_eq!(events.events[4].result_sequence, None);
     assert!(ui.lsp_result_events_after(0).events.is_empty());
 
     let applied = ui
@@ -443,7 +442,7 @@ fn lsp_request_events_record_cancel_and_timeout_completion() {
         })])
         .unwrap();
     assert!(!applied);
-    assert_eq!(ui.lsp_request_events_after(0).events.len(), 4);
+    assert_eq!(ui.lsp_request_events_after(0).events.len(), 5);
     assert!(ui.lsp_result_events_after(0).events.is_empty());
 }
 
@@ -750,6 +749,7 @@ fn on_type_formatting_response_error_records_lsp_status() {
         );
         doc.lsp_latest_on_type_formatting_request_id
             .insert(view_id, request_id);
+        doc.record_lsp_request_started(view_id, LspResultSlot::OnTypeFormatting, request_id);
     }
 
     let applied = ui
@@ -778,6 +778,92 @@ fn on_type_formatting_response_error_records_lsp_status() {
         }),
         "unexpected LSP status: {status}"
     );
+
+    let events = ui.lsp_request_events_after(0);
+    assert_eq!(events.latest_sequence, 2);
+    assert_eq!(events.events.len(), 2);
+    assert_eq!(events.events[0].family, "formatting");
+    assert_eq!(events.events[0].slot, "on_type_formatting");
+    assert_eq!(events.events[0].phase, "started");
+    assert_eq!(events.events[0].status, "pending");
+    assert_eq!(events.events[1].family, "formatting");
+    assert_eq!(events.events[1].slot, "on_type_formatting");
+    assert_eq!(events.events[1].phase, "completed");
+    assert_eq!(events.events[1].status, "error");
+    assert_eq!(events.events[1].error_code, Some(-32603));
+    assert_eq!(
+        events.events[1].error_message.as_deref(),
+        Some("formatter exploded")
+    );
+}
+
+#[test]
+fn on_type_formatting_response_records_empty_and_stale_request_events() {
+    let mut ui = EditorUi::new("abc", 80);
+    let view_id = ui.view_id;
+    {
+        let mut doc = ui.lock_doc();
+        let version = doc.text_version;
+        doc.lsp_client_requests.insert(
+            51,
+            LspClientRequest::OnTypeFormatting {
+                view: view_id,
+                version,
+            },
+        );
+        doc.lsp_latest_on_type_formatting_request_id
+            .insert(view_id, 51);
+        doc.record_lsp_request_started(view_id, LspResultSlot::OnTypeFormatting, 51);
+    }
+
+    let applied = ui
+        .handle_lsp_events(vec![LspEvent::Response(editor_core_lsp::LspResponse {
+            id: 51,
+            method: "textDocument/onTypeFormatting".to_string(),
+            uri: None,
+            result: None,
+            error: None,
+        })])
+        .unwrap();
+    assert!(!applied);
+
+    {
+        let mut doc = ui.lock_doc();
+        let version = doc.text_version;
+        doc.lsp_client_requests.insert(
+            52,
+            LspClientRequest::OnTypeFormatting {
+                view: view_id,
+                version,
+            },
+        );
+        doc.lsp_latest_on_type_formatting_request_id
+            .insert(view_id, 53);
+        doc.record_lsp_request_started(view_id, LspResultSlot::OnTypeFormatting, 52);
+    }
+
+    let applied = ui
+        .handle_lsp_events(vec![LspEvent::Response(editor_core_lsp::LspResponse {
+            id: 52,
+            method: "textDocument/onTypeFormatting".to_string(),
+            uri: None,
+            result: Some(serde_json::json!([])),
+            error: None,
+        })])
+        .unwrap();
+    assert!(!applied);
+
+    let events = ui.lsp_request_events_after(0);
+    assert_eq!(events.latest_sequence, 4);
+    assert_eq!(events.events.len(), 4);
+    assert_eq!(events.events[0].status, "pending");
+    assert_eq!(events.events[1].phase, "completed");
+    assert_eq!(events.events[1].status, "empty");
+    assert_eq!(events.events[1].result_sequence, None);
+    assert_eq!(events.events[2].status, "pending");
+    assert_eq!(events.events[3].phase, "completed");
+    assert_eq!(events.events[3].status, "stale");
+    assert_eq!(events.events[3].result_sequence, None);
 }
 
 #[test]

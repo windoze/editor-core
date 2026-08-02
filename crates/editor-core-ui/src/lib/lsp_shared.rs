@@ -102,6 +102,7 @@ pub(crate) enum LspResultSlot {
     PrepareTypeHierarchy,
     TypeHierarchySupertypes,
     TypeHierarchySubtypes,
+    OnTypeFormatting,
 }
 
 impl LspResultSlot {
@@ -175,6 +176,7 @@ impl LspResultSlot {
             Self::PrepareTypeHierarchy => "textDocument/prepareTypeHierarchy",
             Self::TypeHierarchySupertypes => "typeHierarchy/supertypes",
             Self::TypeHierarchySubtypes => "typeHierarchy/subtypes",
+            Self::OnTypeFormatting => "textDocument/onTypeFormatting",
         }
     }
 
@@ -211,6 +213,7 @@ impl LspResultSlot {
             Self::PrepareTypeHierarchy => "prepare_type_hierarchy",
             Self::TypeHierarchySupertypes => "type_hierarchy_supertypes",
             Self::TypeHierarchySubtypes => "type_hierarchy_subtypes",
+            Self::OnTypeFormatting => "on_type_formatting",
         }
     }
 
@@ -236,6 +239,7 @@ impl LspResultSlot {
             Self::PrepareTypeHierarchy
             | Self::TypeHierarchySupertypes
             | Self::TypeHierarchySubtypes => "type_hierarchy",
+            Self::OnTypeFormatting => "formatting",
         }
     }
 
@@ -272,6 +276,7 @@ impl LspResultSlot {
             Self::PrepareTypeHierarchy => "LSP Prepare Type Hierarchy",
             Self::TypeHierarchySupertypes => "LSP Type Hierarchy Supertypes",
             Self::TypeHierarchySubtypes => "LSP Type Hierarchy Subtypes",
+            Self::OnTypeFormatting => "LSP On-Type Formatting",
         }
     }
 }

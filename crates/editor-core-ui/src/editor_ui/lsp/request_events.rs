@@ -19,10 +19,7 @@ impl EditorUi {
     pub fn lsp_cancel_request(&mut self, request_id: u64) -> Result<bool, UiError> {
         let shared = {
             let doc = self.lock_doc();
-            if !matches!(
-                doc.lsp_client_requests.get(&request_id),
-                Some(LspClientRequest::Result { .. })
-            ) {
+            if !doc.lsp_client_requests.contains_key(&request_id) {
                 return Ok(false);
             }
             doc.lsp.clone()
@@ -34,7 +31,7 @@ impl EditorUi {
 
         let recorded = {
             let mut doc = self.lock_doc();
-            doc.record_lsp_result_request_finished_without_response(
+            doc.record_lsp_request_finished_without_response(
                 request_id,
                 EditorLspRequestEventStatus::Canceled,
             )
@@ -46,7 +43,7 @@ impl EditorUi {
 
     pub fn lsp_mark_request_timed_out(&mut self, request_id: u64) -> bool {
         let mut doc = self.lock_doc();
-        doc.record_lsp_result_request_finished_without_response(
+        doc.record_lsp_request_finished_without_response(
             request_id,
             EditorLspRequestEventStatus::Timeout,
         )

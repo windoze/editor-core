@@ -14,12 +14,37 @@ pub(super) fn collect_on_type_formatting_result(
         doc.lsp_client_requests.remove(&resp.id)
     {
         if doc.lsp_latest_on_type_formatting_request_id.get(&view) != Some(&resp.id) {
+            doc.record_lsp_request_completed(
+                view,
+                LspResultSlot::OnTypeFormatting,
+                resp.id,
+                EditorLspRequestEventStatus::Stale,
+                None,
+                None,
+            );
             return Ok(EventOutcome::Handled);
         }
+        doc.lsp_latest_on_type_formatting_request_id.remove(&view);
         if doc.text_version != version {
+            doc.record_lsp_request_completed(
+                view,
+                LspResultSlot::OnTypeFormatting,
+                resp.id,
+                EditorLspRequestEventStatus::Stale,
+                None,
+                None,
+            );
             return Ok(EventOutcome::Handled);
         }
         if let Some(error) = resp.error.clone() {
+            doc.record_lsp_request_completed(
+                view,
+                LspResultSlot::OnTypeFormatting,
+                resp.id,
+                EditorLspRequestEventStatus::Error,
+                None,
+                Some(&error),
+            );
             doc.lsp_fail(format!(
                 "LSP on-type formatting failed: {} (code {})",
                 error.message, error.code
@@ -28,7 +53,24 @@ pub(super) fn collect_on_type_formatting_result(
         }
 
         let result = resp.result.clone().unwrap_or(serde_json::Value::Null);
-        if !result.is_null() {
+        if result.is_null() {
+            doc.record_lsp_request_completed(
+                view,
+                LspResultSlot::OnTypeFormatting,
+                resp.id,
+                EditorLspRequestEventStatus::Empty,
+                None,
+                None,
+            );
+        } else {
+            doc.record_lsp_request_completed(
+                view,
+                LspResultSlot::OnTypeFormatting,
+                resp.id,
+                EditorLspRequestEventStatus::Success,
+                None,
+                None,
+            );
             out.push(result);
         }
     }

@@ -84,6 +84,7 @@ impl EditorUi {
         );
         doc.lsp_latest_on_type_formatting_request_id
             .insert(self.view_id, request_id);
+        doc.record_lsp_request_started(self.view_id, LspResultSlot::OnTypeFormatting, request_id);
 
         Ok(true)
     }
