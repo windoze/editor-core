@@ -2149,6 +2149,49 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(window.title.contains("●"))
     }
 
+    func testRenameResultRecordsLspResultEvent() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("rename-event.swift")
+        try "let oldName = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
+
+        XCTAssertTrue(vc._applyRenameResultJSONForTesting("""
+        {
+          "changes": {
+            "\(fileURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 4 },
+                  "end": { "line": 0, "character": 11 }
+                },
+                "newText": "newName"
+              }
+            ]
+          }
+        }
+        """, newName: "newName"))
+
+        XCTAssertEqual(try editorView.editor.text(), "let newName = 1\n")
+        let events = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
+        let renameEvents = events.filter { $0.family == "rename" }
+        XCTAssertEqual(renameEvents.count, 1)
+        XCTAssertEqual(renameEvents.last?.title, "Rename: newName")
+        XCTAssertNil(renameEvents.last?.sourceSequence)
+        XCTAssertEqual(
+            renameEvents.last?.payload,
+            .rename(newName: "newName", documentCount: 1, resourceOperationCount: 0, applied: true)
+        )
+    }
+
     func testWorkspaceEditApplicationMutatesAlreadyOpenCrossFileTab() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

@@ -223,6 +223,16 @@ final class AttoEditorAreaViewController: NSViewController {
         return showCompletionList(items: items, context: context, editorView: tab.editCore.editorView)
     }
 
+    func _applyRenameResultJSONForTesting(_ json: String, newName: String) -> Bool {
+        guard let tab = activeTab else { return false }
+        let context = RenameRequestContext(
+            tabID: tab.id,
+            documentURI: tab.fileURL.absoluteString,
+            newName: newName
+        )
+        return applyRenameResultJSON(json, context: context)
+    }
+
     func _problemsPanelDiagnosticsForTesting() -> [EcuDiagnostic] {
         problemsPanelController?.currentDiagnostics ?? []
     }
@@ -521,6 +531,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private struct RenameRequestContext {
         let tabID: UUID
         let documentURI: String
+        let newName: String
     }
 
     private struct RenamePrepareContext {
@@ -7243,7 +7254,11 @@ final class AttoEditorAreaViewController: NSViewController {
                 logicalColumn: pos.column,
                 newName: trimmed
             )
-            renameContext = RenameRequestContext(tabID: tab.id, documentURI: tab.fileURL.absoluteString)
+            renameContext = RenameRequestContext(
+                tabID: tab.id,
+                documentURI: tab.fileURL.absoluteString,
+                newName: trimmed
+            )
             startRenamePollTimer(tabID: tab.id)
             return true
         } catch {
@@ -7733,12 +7748,33 @@ final class AttoEditorAreaViewController: NSViewController {
             self.renamePollTimer?.cancel()
             self.renamePollTimer = nil
             self.renameContext = nil
-            _ = self.applyWorkspaceEditJSONToActiveTab(json, documentURI: ctx.documentURI)
+            _ = self.applyRenameResultJSON(json, context: ctx)
             timer.cancel()
         }
 
         renamePollTimer = timer
         timer.resume()
+    }
+
+    @discardableResult
+    private func applyRenameResultJSON(_ json: String, context: RenameRequestContext) -> Bool {
+        let applied = applyWorkspaceEditJSONToActiveTab(json, documentURI: context.documentURI)
+        recordRenameResultLifecycle(json, newName: context.newName, applied: applied)
+        return applied
+    }
+
+    private func recordRenameResultLifecycle(_ json: String, newName: String, applied: Bool) {
+        let workspaceEdit = AttoWorkspaceEditParser.parse(json)
+        lspResultEventStream.record(
+            family: "rename",
+            title: "Rename: \(newName)",
+            payload: .rename(
+                newName: newName,
+                documentCount: workspaceEdit?.documents.count ?? 0,
+                resourceOperationCount: workspaceEdit?.resourceOperations.count ?? 0,
+                applied: applied
+            )
+        )
     }
 
     private func renameDialogSeedInActiveTab(
