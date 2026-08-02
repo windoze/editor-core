@@ -587,6 +587,11 @@ extension AttoEditorAreaViewController {
             )
         ) {})
 
+        commands.append(AttoCommandPaletteCommand(
+            id: "lsp.project_dashboard.recovery_policy",
+            title: projectLspDashboardRecoveryPolicyTitle()
+        ) {})
+
         commands.append(contentsOf: statusEvents.enumerated().map { idx, event in
             AttoCommandPaletteCommand(
                 id: "lsp.project_dashboard.status.\(idx)",
@@ -628,6 +633,21 @@ extension AttoEditorAreaViewController {
             retrySummary = "recovery retries \(recovery.reduce(0, +)) across \(recovery.count) tab(s)"
         }
         return "Summary - status failures \(statusFailureCount), health events \(healthEventCount), persisted logs \(persistedLogCount), \(retrySummary)"
+    }
+
+    private func projectLspDashboardRecoveryPolicyTitle() -> String {
+        let enabled = preferences.effectiveLspAutoRestartEnabled
+        let enabledText = enabled ? "auto-restart on" : "auto-restart off"
+        let maxAttempts = preferences.effectiveLspAutoRestartMaxAttempts
+        let baseDelay = preferences.effectiveLspAutoRestartBaseDelaySeconds
+        return "Recovery Policy - \(enabledText), max attempts \(maxAttempts), base delay \(Self.formatProjectLspDashboardSeconds(baseDelay))"
+    }
+
+    private static func formatProjectLspDashboardSeconds(_ seconds: Double) -> String {
+        if seconds.rounded() == seconds {
+            return "\(Int(seconds))s"
+        }
+        return "\(seconds)s"
     }
 
     @discardableResult

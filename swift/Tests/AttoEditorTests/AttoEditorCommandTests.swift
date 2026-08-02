@@ -2117,7 +2117,20 @@ final class AttoEditorCommandTests: XCTestCase {
         let logStore = AttoProjectLspProcessHealthLogStore(
             logFileURL: tempDir.appendingPathComponent("lsp-health.jsonl")
         )
-        let vc = makeEditorArea(workspaceRootURL: tempDir, projectLspProcessHealthLogStore: logStore)
+        let suiteName = "atto_command_lsp_dashboard_policy_\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = AttoPreferences(defaults: defaults, env: [:])
+        preferences.setLspAutoRestartEnabled(false)
+        preferences.setLspAutoRestartMaxAttempts(7)
+        preferences.setLspAutoRestartBaseDelaySeconds(2.5)
+
+        let vc = makeEditorArea(
+            workspaceRootURL: tempDir,
+            preferences: preferences,
+            projectLspProcessHealthLogStore: logStore
+        )
         let window = attachToWindow(vc)
         defer { window.close() }
 
@@ -2174,7 +2187,20 @@ final class AttoEditorCommandTests: XCTestCase {
         let logStore = AttoProjectLspProcessHealthLogStore(
             logFileURL: tempDir.appendingPathComponent("lsp-health.jsonl")
         )
-        let vc = makeEditorArea(workspaceRootURL: tempDir, projectLspProcessHealthLogStore: logStore)
+        let suiteName = "atto_command_lsp_dashboard_policy_\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = AttoPreferences(defaults: defaults, env: [:])
+        preferences.setLspAutoRestartEnabled(false)
+        preferences.setLspAutoRestartMaxAttempts(7)
+        preferences.setLspAutoRestartBaseDelaySeconds(2.5)
+
+        let vc = makeEditorArea(
+            workspaceRootURL: tempDir,
+            preferences: preferences,
+            projectLspProcessHealthLogStore: logStore
+        )
         let window = attachToWindow(vc)
         defer { window.close() }
 
@@ -2215,7 +2241,7 @@ final class AttoEditorCommandTests: XCTestCase {
                 in: root
             ) as? NSTableView
         )
-        XCTAssertEqual(table.numberOfRows, 3)
+        XCTAssertEqual(table.numberOfRows, 4)
 
         let summaryCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("Summary -") == true)
@@ -2223,11 +2249,18 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("health events 1") == true)
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("persisted logs 1") == true)
 
-        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 1, makeIfNecessary: true) as? NSTableCellView)
+        let policyCell = try XCTUnwrap(table.view(atColumn: 0, row: 1, makeIfNecessary: true) as? NSTableCellView)
+        let policyTitle = policyCell.textField?.stringValue ?? ""
+        XCTAssertTrue(policyTitle.contains("Recovery Policy -"), policyTitle)
+        XCTAssertTrue(policyTitle.contains("auto-restart off"), policyTitle)
+        XCTAssertTrue(policyTitle.contains("max attempts 7"), policyTitle)
+        XCTAssertTrue(policyTitle.contains("base delay 2.5s"), policyTitle)
+
+        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 2, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("Status -") == true)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("server exited") == true)
 
-        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 2, makeIfNecessary: true) as? NSTableCellView)
+        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 3, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("Health -") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("fake-lsp") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("dashboard stderr") == true)
