@@ -2241,7 +2241,7 @@ final class AttoEditorCommandTests: XCTestCase {
                 in: root
             ) as? NSTableView
         )
-        XCTAssertEqual(table.numberOfRows, 6)
+        XCTAssertEqual(table.numberOfRows, 7)
 
         let summaryCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("Summary -") == true)
@@ -2256,27 +2256,42 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(policyTitle.contains("max attempts 7"), policyTitle)
         XCTAssertTrue(policyTitle.contains("base delay 2.5s"), policyTitle)
 
-        let trendCell = try XCTUnwrap(table.view(atColumn: 0, row: 2, makeIfNecessary: true) as? NSTableCellView)
+        let actionCell = try XCTUnwrap(table.view(atColumn: 0, row: 2, makeIfNecessary: true) as? NSTableCellView)
+        let actionTitle = actionCell.textField?.stringValue ?? ""
+        XCTAssertTrue(actionTitle.contains("Recovery Action - Enable auto-restart"), actionTitle)
+
+        let trendCell = try XCTUnwrap(table.view(atColumn: 0, row: 3, makeIfNecessary: true) as? NSTableCellView)
         let trendTitle = trendCell.textField?.stringValue ?? ""
         XCTAssertTrue(trendTitle.contains("Trend - persisted logs"), trendTitle)
         XCTAssertTrue(trendTitle.contains("last 1h 1 failed 1"), trendTitle)
         XCTAssertTrue(trendTitle.contains("last 24h 1 failed 1"), trendTitle)
 
-        let serverCell = try XCTUnwrap(table.view(atColumn: 0, row: 3, makeIfNecessary: true) as? NSTableCellView)
+        let serverCell = try XCTUnwrap(table.view(atColumn: 0, row: 4, makeIfNecessary: true) as? NSTableCellView)
         let serverTitle = serverCell.textField?.stringValue ?? ""
         XCTAssertTrue(serverTitle.contains("Server - fake-lsp"), serverTitle)
         XCTAssertTrue(serverTitle.contains("health events 1 failed 1"), serverTitle)
         XCTAssertTrue(serverTitle.contains("persisted logs 1 failed 1"), serverTitle)
         XCTAssertTrue(serverTitle.contains("latest process exited"), serverTitle)
 
-        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 4, makeIfNecessary: true) as? NSTableCellView)
+        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 5, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("Status -") == true)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("server exited") == true)
 
-        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 5, makeIfNecessary: true) as? NSTableCellView)
+        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 6, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("Health -") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("fake-lsp") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("dashboard stderr") == true)
+
+        XCTAssertFalse(preferences.effectiveLspAutoRestartEnabled)
+        table.selectRowIndexes(IndexSet(integer: 2), byExtendingSelection: false)
+        let controller = try XCTUnwrap(searchField.delegate as? AttoCommandPaletteController)
+        XCTAssertTrue(controller.control(
+            searchField,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        XCTAssertTrue(preferences.effectiveLspAutoRestartEnabled)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP auto-restart enabled")
     }
 
     func testProjectLspProcessHealthPanelFallsBackToPersistedLog() throws {

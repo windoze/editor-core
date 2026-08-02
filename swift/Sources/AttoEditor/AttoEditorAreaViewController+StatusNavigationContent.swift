@@ -592,6 +592,8 @@ extension AttoEditorAreaViewController {
             title: projectLspDashboardRecoveryPolicyTitle()
         ) {})
 
+        commands.append(projectLspDashboardRecoveryActionCommand())
+
         if let trendTitle = Self.projectLspDashboardTrendTitle(persistedEntries: persistedEntries) {
             commands.append(AttoCommandPaletteCommand(
                 id: "lsp.project_dashboard.trend",
@@ -658,6 +660,20 @@ extension AttoEditorAreaViewController {
         let maxAttempts = preferences.effectiveLspAutoRestartMaxAttempts
         let baseDelay = preferences.effectiveLspAutoRestartBaseDelaySeconds
         return "Recovery Policy - \(enabledText), max attempts \(maxAttempts), base delay \(Self.formatProjectLspDashboardSeconds(baseDelay))"
+    }
+
+    private func projectLspDashboardRecoveryActionCommand() -> AttoCommandPaletteCommand {
+        let currentlyEnabled = preferences.effectiveLspAutoRestartEnabled
+        let verb = currentlyEnabled ? "Disable" : "Enable"
+        return AttoCommandPaletteCommand(
+            id: "lsp.project_dashboard.toggle_auto_restart",
+            title: "Recovery Action - \(verb) auto-restart"
+        ) { [weak self] in
+            guard let self else { return }
+            let enabled = self.preferences.effectiveLspAutoRestartEnabled == false
+            self.preferences.setLspAutoRestartEnabled(enabled)
+            self.setTransientStatusText("LSP auto-restart \(enabled ? "enabled" : "disabled")")
+        }
     }
 
     private static func projectLspDashboardTrendTitle(
