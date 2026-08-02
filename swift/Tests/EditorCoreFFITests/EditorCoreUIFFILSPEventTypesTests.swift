@@ -518,6 +518,7 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
                   "availability": "failed",
                   "state": "failed",
                   "server": { "command": "fake-lsp" },
+                  "process": { "pid": 321, "state": "exited", "exit_code": 9, "signal": null },
                   "activity": null,
                   "detail": "server exited",
                   "capabilities": null,
@@ -550,6 +551,8 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         XCTAssertEqual(statusEvent.stateEvent.lspStatus?.availability, .failed)
         XCTAssertEqual(statusEvent.stateEvent.lspStatus?.state, .failed)
         XCTAssertEqual(statusEvent.stateEvent.lspStatus?.server?.command, "fake-lsp")
+        XCTAssertEqual(statusEvent.stateEvent.lspStatus?.process?.state, .exited)
+        XCTAssertEqual(statusEvent.stateEvent.lspStatus?.process?.exitCode, 9)
         XCTAssertEqual(statusEvent.stateEvent.lspStatus?.detail, "server exited")
         XCTAssertEqual(statusEvent.stateEvent.lspStatus?.workspaceFolders.first?.uri, "file:///project")
     }

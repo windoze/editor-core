@@ -108,3 +108,26 @@ fn session_exit_accepts_responsive_shutdown() {
 
     assert_process_exited(pid);
 }
+
+#[test]
+fn session_status_reports_exited_server_process() {
+    let initialize =
+        framed_message_script(r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#);
+    let script = format!("{initialize}; sleep 0.05; exit 7");
+    let mut session = start_session(&script);
+
+    for _ in 0..50 {
+        session.refresh_process_status().unwrap();
+        if session.status().process.state == editor_core_lsp::LspProcessState::Exited {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    let status = session.status();
+    assert_eq!(
+        status.process.state,
+        editor_core_lsp::LspProcessState::Exited
+    );
+    assert_eq!(status.process.exit_code, Some(7));
+}

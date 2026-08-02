@@ -14,6 +14,12 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
             "command": "rust-analyzer",
             "args": ["--stdio"]
           },
+          "process": {
+            "pid": 4242,
+            "state": "running",
+            "exit_code": null,
+            "signal": null
+          },
           "activity": null,
           "detail": null,
           "workspace_folders": [
@@ -44,6 +50,10 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
         XCTAssertEqual(status.state, .ready)
         XCTAssertEqual(status.server?.name, "rust-analyzer")
         XCTAssertEqual(status.server?.args, ["--stdio"])
+        XCTAssertEqual(status.process?.pid, 4242)
+        XCTAssertEqual(status.process?.state, .running)
+        XCTAssertNil(status.process?.exitCode)
+        XCTAssertNil(status.process?.signal)
         XCTAssertNil(status.activity)
         XCTAssertEqual(status.workspaceFolders, [
             EcuLspWorkspaceFolder(uri: "file:///tmp/editor-core", name: "editor-core"),
@@ -62,6 +72,7 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
           "availability": "failed",
           "state": "failed",
           "server": { "command": "fake-lsp" },
+          "process": { "pid": 123, "state": "exited", "exit_code": 7, "signal": null },
           "activity": { "title": "Indexing", "message": "Crates", "percentage": 42 },
           "detail": "server exited",
           "capabilities": null
@@ -72,6 +83,7 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
         XCTAssertEqual(status.state, .failed)
         XCTAssertEqual(status.server?.command, "fake-lsp")
         XCTAssertEqual(status.server?.args, [])
+        XCTAssertEqual(status.process, EcuLspProcessStatus(pid: 123, state: .exited, exitCode: 7))
         XCTAssertEqual(status.activity?.title, "Indexing")
         XCTAssertEqual(status.activity?.message, "Crates")
         XCTAssertEqual(status.activity?.percentage, 42)
@@ -87,6 +99,7 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
         XCTAssertEqual(status.state, .unknown("restarting"))
         XCTAssertEqual(status.state.rawValue, "restarting")
         XCTAssertNil(status.server)
+        XCTAssertNil(status.process)
         XCTAssertEqual(status.workspaceFolders, [])
         XCTAssertNil(status.capabilities)
     }
@@ -100,6 +113,7 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
         XCTAssertEqual(status.availability, .disabled)
         XCTAssertEqual(status.state, .disabled)
         XCTAssertNil(status.detail)
+        XCTAssertNil(status.process)
         XCTAssertEqual(status.workspaceFolders, [])
     }
 

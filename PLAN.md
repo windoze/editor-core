@@ -834,6 +834,19 @@
     - `cargo test -p editor-core-ui`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ui): expose lsp process health status`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；继续补齐 server process health 可观测性，让 LSP 子进程退出状态进入既有 `lsp_status_json()` / `lsp_status_changed` payload，并提供 Swift typed `process` accessor。
+  - 提交边界：只新增 `LspClient` 非阻塞 exit-status probe、`LspSessionStatus.process`、UI status JSON 的 `process` 字段和 Swift `EcuLspProcessStatus` decode；当进程已退出时，既有 status event stream 会发去重的 failed `lsp_status_changed`。不新增 C ABI 函数，不改变 existing `state_events_json` ABI，不实现 server restart、自动 session teardown/recovery、project open/close 批量 LSP session 管理、stderr capture 或 dashboard 级健康视图。
+  - 验证记录：
+    - `cargo test -p editor-core-lsp session_status_reports_exited_server_process`
+    - `cargo test -p editor-core-ui lsp_process_exit_emits_failed_status_event`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreLSPStatusSnapshotTests`
+    - `swift test --package-path swift --filter EditorCoreUIFFILSPEventTypesTests.testMultiDocumentStateEventsExposeTypedKindsAndNestedPayloads`
+    - `cargo test -p editor-core-lsp`
+    - `cargo test -p editor-core-ui`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

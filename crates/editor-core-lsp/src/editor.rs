@@ -29,7 +29,7 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::path::Path;
-use std::process::Command as ProcessCommand;
+use std::process::{Command as ProcessCommand, ExitStatus};
 use std::time::{Duration, Instant};
 
 /// Clear LSP-derived state in the editor:
@@ -138,6 +138,28 @@ pub struct LspActivity {
     pub percentage: Option<u32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// OS process state for the connected LSP server.
+pub enum LspProcessState {
+    /// The child process has not exited as of the latest non-blocking health check.
+    Running,
+    /// The child process has exited and its status was collected.
+    Exited,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A compact snapshot of the LSP server process health.
+pub struct LspProcessStatus {
+    /// OS process id assigned to the LSP server.
+    pub pid: u32,
+    /// Whether the process is still running or has exited.
+    pub state: LspProcessState,
+    /// Exit code when the process exited normally.
+    pub exit_code: Option<i32>,
+    /// Unix signal when the process was terminated by a signal.
+    pub signal: Option<i32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// A compact snapshot of commonly-used server capabilities.
 pub struct LspSessionCapabilities {
@@ -158,6 +180,8 @@ pub struct LspSessionCapabilities {
 pub struct LspSessionStatus {
     /// Server identity and spawn command.
     pub server: LspServerStatus,
+    /// OS process health for the connected LSP server.
+    pub process: LspProcessStatus,
     /// Current client-side workspace folders returned to `workspace/workspaceFolders`.
     pub workspace_folders: Vec<Value>,
     /// High-level work state (ready/indexing/busy).
@@ -306,6 +330,24 @@ fn lsp_diagnostics_notification_status(
     LspDerivedRequestStatus::Success
 }
 
+fn lsp_process_exit_status(status: ExitStatus) -> LspProcessExitStatus {
+    LspProcessExitStatus {
+        exit_code: status.code(),
+        signal: lsp_process_exit_signal(status),
+    }
+}
+
+#[cfg(unix)]
+fn lsp_process_exit_signal(status: ExitStatus) -> Option<i32> {
+    use std::os::unix::process::ExitStatusExt;
+    status.signal()
+}
+
+#[cfg(not(unix))]
+fn lsp_process_exit_signal(_status: ExitStatus) -> Option<i32> {
+    None
+}
+
 #[derive(Debug, Clone)]
 struct WorkDoneProgressItem {
     title: String,
@@ -318,6 +360,12 @@ struct WorkDoneProgressItem {
 struct WorkDoneProgressTracker {
     seq: u64,
     active: HashMap<String, WorkDoneProgressItem>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LspProcessExitStatus {
+    exit_code: Option<i32>,
+    signal: Option<i32>,
 }
 
 /// A small, runtime-agnostic LSP integration for `editor-core`.
@@ -340,6 +388,7 @@ pub struct LspSession {
     server_args: Vec<String>,
     server_info: Option<LspServerInfo>,
     server_capabilities: Value,
+    process_exit: Option<LspProcessExitStatus>,
 
     semantic_legend: Option<SemanticTokensLegend>,
     supports_semantic_tokens: bool,
@@ -464,6 +513,7 @@ impl LspSession {
             server_args,
             server_info,
             server_capabilities,
+            process_exit: None,
             semantic_legend,
             supports_semantic_tokens,
             supports_semantic_tokens_delta,
@@ -484,6 +534,23 @@ impl LspSession {
 
         session.schedule_refresh(Duration::from_millis(0));
         Ok(session)
+    }
+
+    /// Refresh cached process health without blocking.
+    pub fn refresh_process_status(&mut self) -> Result<(), String> {
+        if self.process_exit.is_some() {
+            return Ok(());
+        }
+
+        if let Some(status) = self
+            .client
+            .try_exit_status()
+            .map_err(|err| format!("LSP process health check failed: {err}"))?
+        {
+            self.process_exit = Some(lsp_process_exit_status(status));
+        }
+
+        Ok(())
     }
 
     /// Return a user-facing snapshot of the current LSP session status.
@@ -556,6 +623,21 @@ impl LspSession {
             LspWorkState::Ready
         };
 
+        let process = match self.process_exit {
+            Some(exit) => LspProcessStatus {
+                pid: self.client.process_id(),
+                state: LspProcessState::Exited,
+                exit_code: exit.exit_code,
+                signal: exit.signal,
+            },
+            None => LspProcessStatus {
+                pid: self.client.process_id(),
+                state: LspProcessState::Running,
+                exit_code: None,
+                signal: None,
+            },
+        };
+
         LspSessionStatus {
             server: LspServerStatus {
                 name: server_name,
@@ -563,6 +645,7 @@ impl LspSession {
                 command: self.server_command.clone(),
                 args: self.server_args.clone(),
             },
+            process,
             workspace_folders: self.client.workspace_folders().to_vec(),
             state,
             activity,

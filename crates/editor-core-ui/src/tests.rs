@@ -719,6 +719,82 @@ fn lsp_progress_activity_emits_deduped_status_events() {
 }
 
 #[test]
+fn lsp_process_exit_emits_failed_status_event() {
+    let capture_path = unique_temp_path("process-exit-status-events");
+    let init = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": { "capabilities": {} },
+    });
+    let body = init.to_string();
+    let script = format!(
+        "body={}; printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${{#body}}\" \"$body\"; sleep 0.05; exit 7",
+        shell_quote(&body),
+    );
+    let args = vec!["-c".to_string(), script];
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root_uri = format!("file:///tmp/editor-core-ui-process-exit-{stamp}");
+    let doc_uri = format!("{root_uri}/main.rs");
+
+    let mut ui = EditorUi::new("fn main() {}\n", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+
+    let enabled_events = ui.state_events_after(0);
+    assert_eq!(enabled_events.events.len(), 1);
+    assert_eq!(
+        enabled_events.events[0].lsp_status.as_ref().unwrap()["process"]["state"],
+        "running"
+    );
+
+    let mut failed_status = None;
+    let mut latest_sequence = enabled_events.latest_sequence;
+    for _ in 0..50 {
+        let _ = ui.poll_processing().unwrap();
+        let events = ui.state_events_after(latest_sequence);
+        latest_sequence = events.latest_sequence;
+        if let Some(event) = events
+            .events
+            .iter()
+            .find(|event| event.kind == "lsp_status_changed")
+        {
+            let status = event.lsp_status.as_ref().unwrap();
+            if status["process"]["state"] == "exited" {
+                failed_status = Some(status.clone());
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
+    let status = failed_status.expect("expected process exit status event");
+    assert_eq!(status["availability"], "failed");
+    assert_eq!(status["state"], "failed");
+    assert_eq!(status["process"]["state"], "exited");
+    assert_eq!(status["process"]["exit_code"], 7);
+    assert!(
+        status["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("exited with code 7")),
+        "unexpected status detail: {status:?}"
+    );
+
+    let _ = ui.poll_processing().unwrap();
+    let repeated = ui.state_events_after(latest_sequence);
+    assert!(
+        repeated.events.is_empty(),
+        "unchanged process health should not emit duplicate status events: {:?}",
+        repeated.events
+    );
+
+    ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
 fn lsp_document_lifecycle_notifications_are_exposed() {
     let capture_path = unique_temp_path("document-save-close");
     let stamp = std::time::SystemTime::now()

@@ -1,5 +1,28 @@
 use super::*;
 
+fn lsp_process_status_json(process: &editor_core_lsp::LspProcessStatus) -> serde_json::Value {
+    let state = match process.state {
+        editor_core_lsp::LspProcessState::Running => "running",
+        editor_core_lsp::LspProcessState::Exited => "exited",
+    };
+    serde_json::json!({
+        "pid": process.pid,
+        "state": state,
+        "exit_code": process.exit_code,
+        "signal": process.signal,
+    })
+}
+
+fn lsp_process_exit_detail(process: &editor_core_lsp::LspProcessStatus) -> String {
+    if let Some(code) = process.exit_code {
+        return format!("LSP server exited with code {code}");
+    }
+    if let Some(signal) = process.signal {
+        return format!("LSP server exited with signal {signal}");
+    }
+    "LSP server exited".to_string()
+}
+
 impl EditorUi {
     /// Return a best-effort LSP status snapshot as a JSON string.
     ///
@@ -25,20 +48,17 @@ impl EditorUi {
         let mut server: Option<serde_json::Value> = None;
         let mut activity: Option<serde_json::Value> = None;
         let mut capabilities: Option<serde_json::Value> = None;
+        let mut process: Option<serde_json::Value> = None;
         let mut workspace_folders: Vec<serde_json::Value> = Vec::new();
 
         if let Some(shared) = shared {
             match shared.session.lock() {
-                Ok(guard) => {
-                    if let Some(session) = guard.as_ref() {
+                Ok(mut guard) => {
+                    if let Some(session) = guard.as_mut() {
+                        let health_error = session.refresh_process_status().err();
                         let s = session.status();
-                        availability = "enabled";
-                        state = match s.state {
-                            editor_core_lsp::LspWorkState::Ready => "ready",
-                            editor_core_lsp::LspWorkState::Indexing => "indexing",
-                            editor_core_lsp::LspWorkState::Busy => "busy",
-                        };
                         workspace_folders = s.workspace_folders;
+                        process = Some(lsp_process_status_json(&s.process));
 
                         server = Some(serde_json::json!({
                             "name": s.server.name,
@@ -64,6 +84,23 @@ impl EditorUi {
                             "on_type_formatting": s.capabilities.on_type_formatting,
                             "signature_help": lsp_signature_help_capability_json(session.server_capabilities()),
                         }));
+
+                        if let Some(err) = health_error {
+                            availability = "failed";
+                            state = "failed";
+                            detail = Some(err);
+                        } else if s.process.state == editor_core_lsp::LspProcessState::Exited {
+                            availability = "failed";
+                            state = "failed";
+                            detail = Some(lsp_process_exit_detail(&s.process));
+                        } else {
+                            availability = "enabled";
+                            state = match s.state {
+                                editor_core_lsp::LspWorkState::Ready => "ready",
+                                editor_core_lsp::LspWorkState::Indexing => "indexing",
+                                editor_core_lsp::LspWorkState::Busy => "busy",
+                            };
+                        }
                     } else {
                         availability = "failed";
                         state = "failed";
@@ -99,6 +136,7 @@ impl EditorUi {
             "availability": availability,
             "state": state,
             "server": server,
+            "process": process,
             "activity": activity,
             "detail": detail,
             "capabilities": capabilities,

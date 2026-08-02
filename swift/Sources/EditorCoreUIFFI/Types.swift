@@ -571,6 +571,70 @@ public struct EcuLspActivity: Equatable, Sendable, Decodable {
     }
 }
 
+public enum EcuLspProcessState: Equatable, Sendable, Decodable {
+    case running
+    case exited
+    case unknown(String)
+
+    public var rawValue: String {
+        switch self {
+        case .running:
+            "running"
+        case .exited:
+            "exited"
+        case .unknown(let value):
+            value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        switch raw {
+        case "running":
+            self = .running
+        case "exited":
+            self = .exited
+        default:
+            self = .unknown(raw)
+        }
+    }
+}
+
+@frozen
+public struct EcuLspProcessStatus: Equatable, Sendable, Decodable {
+    public var pid: UInt32?
+    public var state: EcuLspProcessState
+    public var exitCode: Int32?
+    public var signal: Int32?
+
+    public init(
+        pid: UInt32? = nil,
+        state: EcuLspProcessState,
+        exitCode: Int32? = nil,
+        signal: Int32? = nil
+    ) {
+        self.pid = pid
+        self.state = state
+        self.exitCode = exitCode
+        self.signal = signal
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case pid
+        case state
+        case exitCode = "exit_code"
+        case signal
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.pid = try container.decodeIfPresent(UInt32.self, forKey: .pid)
+        self.state = try container.decodeIfPresent(EcuLspProcessState.self, forKey: .state) ?? .unknown("unknown")
+        self.exitCode = try container.decodeIfPresent(Int32.self, forKey: .exitCode)
+        self.signal = try container.decodeIfPresent(Int32.self, forKey: .signal)
+    }
+}
+
 @frozen
 public struct EcuLspCompletionCapability: Equatable, Sendable, Decodable {
     public var supported: Bool
@@ -681,6 +745,7 @@ public struct EcuLspStatusSnapshot: Equatable, Sendable, Decodable {
     public var activity: EcuLspActivity?
     public var detail: String?
     public var capabilities: EcuLspCapabilities?
+    public var process: EcuLspProcessStatus?
     public var workspaceFolders: [EcuLspWorkspaceFolder]
 
     public init(
@@ -690,6 +755,7 @@ public struct EcuLspStatusSnapshot: Equatable, Sendable, Decodable {
         activity: EcuLspActivity?,
         detail: String?,
         capabilities: EcuLspCapabilities?,
+        process: EcuLspProcessStatus? = nil,
         workspaceFolders: [EcuLspWorkspaceFolder] = []
     ) {
         self.availability = availability
@@ -698,6 +764,7 @@ public struct EcuLspStatusSnapshot: Equatable, Sendable, Decodable {
         self.activity = activity
         self.detail = detail
         self.capabilities = capabilities
+        self.process = process
         self.workspaceFolders = workspaceFolders
     }
 
@@ -708,6 +775,7 @@ public struct EcuLspStatusSnapshot: Equatable, Sendable, Decodable {
         case activity
         case detail
         case capabilities
+        case process
         case workspaceFolders = "workspace_folders"
     }
 
@@ -719,6 +787,7 @@ public struct EcuLspStatusSnapshot: Equatable, Sendable, Decodable {
         self.activity = try container.decodeIfPresent(EcuLspActivity.self, forKey: .activity)
         self.detail = try container.decodeIfPresent(String.self, forKey: .detail)
         self.capabilities = try container.decodeIfPresent(EcuLspCapabilities.self, forKey: .capabilities)
+        self.process = try container.decodeIfPresent(EcuLspProcessStatus.self, forKey: .process)
         self.workspaceFolders = try container.decodeIfPresent([EcuLspWorkspaceFolder].self, forKey: .workspaceFolders) ?? []
     }
 }

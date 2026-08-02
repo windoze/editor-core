@@ -26,9 +26,9 @@ pub mod lsp_uri;
 pub mod workspace_sync;
 
 pub use editor::{
-    LspActivity, LspContentChange, LspDocument, LspServerInfo, LspServerStatus, LspSession,
-    LspSessionCapabilities, LspSessionStartOptions, LspSessionStatus, LspWorkState,
-    SemanticTokensLegend, SemanticTokensUpdate, clear_lsp_state,
+    LspActivity, LspContentChange, LspDocument, LspProcessState, LspProcessStatus, LspServerInfo,
+    LspServerStatus, LspSession, LspSessionCapabilities, LspSessionStartOptions, LspSessionStatus,
+    LspWorkState, SemanticTokensLegend, SemanticTokensUpdate, clear_lsp_state,
     folding_ranges_result_to_processing_edit, lsp_clear_edits, lsp_diagnostics_to_processing_edits,
     semantic_tokens_result_to_update,
 };

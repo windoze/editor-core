@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::io::{self, BufReader, BufWriter};
-use std::process::{Child, Command as ProcessCommand, Stdio};
+use std::process::{Child, Command as ProcessCommand, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -97,6 +97,11 @@ impl LspClient {
     /// Return the OS process id of the connected LSP server.
     pub fn process_id(&self) -> u32 {
         self.child.id()
+    }
+
+    /// Return the LSP server process exit status if it has already exited.
+    pub fn try_exit_status(&mut self) -> io::Result<Option<ExitStatus>> {
+        self.child.try_wait()
     }
 
     /// Return the current client-side workspace folder list used for
