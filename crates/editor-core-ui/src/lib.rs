@@ -45,8 +45,8 @@ pub use keybindings::{
 pub use multi_document::{
     MultiDocumentEditorUi, TabId, TabSearchResult, WorkspaceDiagnostic,
     WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
-    WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsSnapshot,
-    WorkspaceDiagnosticsStore,
+    WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
+    WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
 };
 pub use state::EditorUi;
 pub use theme::{ChromeTheme, DamageRect};

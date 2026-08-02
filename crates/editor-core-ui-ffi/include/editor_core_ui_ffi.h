@@ -143,6 +143,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_WORKSPACE_EDIT_APPLICATION (1ull << 4)
 #define ECU_FEATURE_MULTI_DOCUMENT_UI          (1ull << 5)
 #define ECU_FEATURE_WORKSPACE_DIAGNOSTICS_STORE (1ull << 6)
+#define ECU_FEATURE_WORKSPACE_DIAGNOSTICS_EVENTS (1ull << 7)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 
 MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);
@@ -226,6 +227,12 @@ char* editor_core_ui_ffi_multi_document_workspace_diagnostic_markers_json(
     MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_workspace_diagnostics_previous_result_ids_json(
     MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_workspace_diagnostics_latest_event_sequence(
+    MultiDocumentEditorUi* multi,
+    uint64_t* out_sequence);
+char* editor_core_ui_ffi_multi_document_workspace_diagnostics_events_json(
+    MultiDocumentEditorUi* multi,
+    uint64_t after_sequence);
 int32_t editor_core_ui_ffi_multi_document_clear_workspace_diagnostics(
     MultiDocumentEditorUi* multi);
 

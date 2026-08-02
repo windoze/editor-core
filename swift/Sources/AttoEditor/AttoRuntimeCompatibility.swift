@@ -97,6 +97,11 @@ struct AttoRuntimeCompatibility {
             name: "workspace diagnostics store",
             reason: "Project Problems can use the core-owned multi-document workspace diagnostics snapshot; Swift falls back to local parsing when unavailable."
         ),
+        RuntimeFeature(
+            feature: .workspaceDiagnosticsEvents,
+            name: "workspace diagnostics events",
+            reason: "Project Problems and LSP result consumers can cursor over core-owned workspace diagnostics changes; Swift falls back to App-level lifecycle events when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

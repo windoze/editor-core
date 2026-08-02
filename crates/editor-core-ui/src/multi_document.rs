@@ -6,8 +6,8 @@ mod workspace_diagnostics;
 
 pub use workspace_diagnostics::{
     WorkspaceDiagnostic, WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
-    WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsSnapshot,
-    WorkspaceDiagnosticsStore,
+    WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
+    WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
 };
 
 /// Opaque id for an open tab/document managed by [`MultiDocumentEditorUi`].
@@ -567,5 +567,26 @@ impl MultiDocumentEditorUi {
     /// Return previous-result ids for the next LSP `workspace/diagnostic` request.
     pub fn workspace_diagnostics_previous_result_ids_json(&self) -> Result<String, UiError> {
         self.workspace_diagnostics.previous_result_ids_json()
+    }
+
+    /// Return latest workspace diagnostics event sequence.
+    pub fn workspace_diagnostics_latest_event_sequence(&self) -> u64 {
+        self.workspace_diagnostics.latest_event_sequence()
+    }
+
+    /// Return workspace diagnostics events newer than `after_sequence`.
+    pub fn workspace_diagnostics_events_after(
+        &self,
+        after_sequence: u64,
+    ) -> WorkspaceDiagnosticsEventsSnapshot {
+        self.workspace_diagnostics.events_after(after_sequence)
+    }
+
+    /// Return workspace diagnostics events newer than `after_sequence` as JSON.
+    pub fn workspace_diagnostics_events_json(
+        &self,
+        after_sequence: u64,
+    ) -> Result<String, UiError> {
+        self.workspace_diagnostics.events_after_json(after_sequence)
     }
 }

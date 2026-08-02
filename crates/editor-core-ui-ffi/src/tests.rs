@@ -298,6 +298,28 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         previous_value,
         serde_json::json!([{"uri": "file:///project/a.swift", "value": "a-1"}])
     );
+    let mut latest_sequence: u64 = 0;
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_multi_document_workspace_diagnostics_latest_event_sequence(
+                multi,
+                &mut latest_sequence,
+            )
+        },
+        ECU_OK
+    );
+    assert_eq!(latest_sequence, 1);
+    let events_ptr = editor_core_ui_ffi_multi_document_workspace_diagnostics_events_json(multi, 0);
+    assert!(!events_ptr.is_null());
+    let events_json = unsafe { std::ffi::CStr::from_ptr(events_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(events_ptr) };
+    let events_value: serde_json::Value = serde_json::from_str(&events_json).unwrap();
+    assert_eq!(events_value["latest_sequence"], 1);
+    assert_eq!(events_value["events"][0]["family"], "workspace_diagnostics");
+    assert_eq!(events_value["events"][0]["operation"], "apply");
+    assert_eq!(events_value["events"][0]["diagnostic_count"], 1);
 
     assert_eq!(
         editor_core_ui_ffi_multi_document_clear_workspace_diagnostics(multi),
@@ -311,6 +333,16 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     unsafe { editor_core_ui_ffi_string_free(cleared_ptr) };
     let cleared_value: serde_json::Value = serde_json::from_str(&cleared_json).unwrap();
     assert_eq!(cleared_value["diagnostics"].as_array().unwrap().len(), 0);
+    let events_ptr = editor_core_ui_ffi_multi_document_workspace_diagnostics_events_json(multi, 1);
+    assert!(!events_ptr.is_null());
+    let events_json = unsafe { std::ffi::CStr::from_ptr(events_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(events_ptr) };
+    let events_value: serde_json::Value = serde_json::from_str(&events_json).unwrap();
+    assert_eq!(events_value["latest_sequence"], 2);
+    assert_eq!(events_value["events"][0]["operation"], "clear");
+    assert_eq!(events_value["events"][0]["diagnostic_count"], 0);
 
     let snapshot_ptr = editor_core_ui_ffi_multi_document_snapshot_json(multi);
     assert!(!snapshot_ptr.is_null());

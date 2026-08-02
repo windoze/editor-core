@@ -85,6 +85,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.workspaceEditApplication))
         XCTAssertTrue(info.supports(.multiDocumentUI))
         XCTAssertTrue(info.supports(.workspaceDiagnosticsStore))
+        XCTAssertTrue(info.supports(.workspaceDiagnosticsEvents))
     }
 
     func testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch() throws {
@@ -174,9 +175,22 @@ final class EditorCoreUIFFITests: XCTestCase {
             options: []
         ) as? [[String: String]]
         XCTAssertEqual(previousResultIds, [["uri": "file:///project/a.swift", "value": "a-1"]])
+        XCTAssertEqual(try multi.workspaceDiagnosticsLatestEventSequence(), 1)
+        let diagnosticEvents = try multi.workspaceDiagnosticsEvents()
+        XCTAssertEqual(diagnosticEvents.latestSequence, 1)
+        XCTAssertEqual(diagnosticEvents.events.count, 1)
+        XCTAssertEqual(diagnosticEvents.events[0].family, "workspace_diagnostics")
+        XCTAssertEqual(diagnosticEvents.events[0].operation, "apply")
+        XCTAssertEqual(diagnosticEvents.events[0].documentCount, 1)
+        XCTAssertEqual(diagnosticEvents.events[0].diagnosticCount, 1)
+        XCTAssertEqual(diagnosticEvents.events[0].markerCount, 1)
 
         try multi.clearWorkspaceDiagnostics()
         XCTAssertTrue(try multi.workspaceDiagnosticsSnapshot().diagnostics.isEmpty)
+        let clearEvents = try multi.workspaceDiagnosticsEvents(after: 1)
+        XCTAssertEqual(clearEvents.latestSequence, 2)
+        XCTAssertEqual(clearEvents.events.map(\.operation), ["clear"])
+        XCTAssertEqual(clearEvents.events[0].diagnosticCount, 0)
 
         let snapshot = try multi.snapshot()
         XCTAssertEqual(snapshot.activeTabId, beta)

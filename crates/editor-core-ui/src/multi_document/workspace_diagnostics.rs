@@ -1,7 +1,9 @@
 use crate::UiError;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
+
+const WORKSPACE_DIAGNOSTIC_EVENT_LIMIT: usize = 128;
 
 /// LSP target location for a workspace diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -57,6 +59,25 @@ pub struct WorkspaceDiagnosticMarkersSnapshot {
     pub markers: Vec<WorkspaceDiagnosticMarker>,
 }
 
+/// Event emitted by the core-owned workspace diagnostics store.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkspaceDiagnosticsEvent {
+    pub sequence: u64,
+    pub family: &'static str,
+    pub title: String,
+    pub operation: &'static str,
+    pub document_count: usize,
+    pub diagnostic_count: usize,
+    pub marker_count: usize,
+}
+
+/// Cursor-based event snapshot for core-owned workspace diagnostics updates.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct WorkspaceDiagnosticsEventsSnapshot {
+    pub latest_sequence: u64,
+    pub events: Vec<WorkspaceDiagnosticsEvent>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct PreviousResultId<'a> {
     uri: &'a str,
@@ -68,6 +89,8 @@ struct PreviousResultId<'a> {
 pub struct WorkspaceDiagnosticsStore {
     documents_by_uri: BTreeMap<String, WorkspaceDiagnosticDocumentReport>,
     document_order: Vec<String>,
+    next_event_sequence: u64,
+    events: VecDeque<WorkspaceDiagnosticsEvent>,
 }
 
 impl WorkspaceDiagnosticsStore {
@@ -75,6 +98,7 @@ impl WorkspaceDiagnosticsStore {
     pub fn clear(&mut self) {
         self.documents_by_uri.clear();
         self.document_order.clear();
+        self.record_event("clear", self.snapshot());
     }
 
     /// Return a stable snapshot of remembered reports and their flattened diagnostics.
@@ -149,6 +173,33 @@ impl WorkspaceDiagnosticsStore {
         })
     }
 
+    /// Return latest workspace diagnostics event sequence.
+    pub fn latest_event_sequence(&self) -> u64 {
+        self.next_event_sequence
+    }
+
+    /// Return workspace diagnostics events newer than `after_sequence`.
+    pub fn events_after(&self, after_sequence: u64) -> WorkspaceDiagnosticsEventsSnapshot {
+        WorkspaceDiagnosticsEventsSnapshot {
+            latest_sequence: self.latest_event_sequence(),
+            events: self
+                .events
+                .iter()
+                .filter(|event| event.sequence > after_sequence)
+                .cloned()
+                .collect(),
+        }
+    }
+
+    /// Return workspace diagnostics events newer than `after_sequence` as JSON.
+    pub fn events_after_json(&self, after_sequence: u64) -> Result<String, UiError> {
+        serde_json::to_string(&self.events_after(after_sequence)).map_err(|err| {
+            UiError::Processor(format!(
+                "failed to encode workspace diagnostics events: {err}"
+            ))
+        })
+    }
+
     /// Parse and merge an LSP `workspace/diagnostic` result JSON payload.
     pub fn apply_lsp_result_json(
         &mut self,
@@ -160,7 +211,9 @@ impl WorkspaceDiagnosticsStore {
         let mut reports = Vec::new();
         append_document_reports(&root, None, &mut reports);
         self.apply_reports(reports);
-        Ok(self.snapshot())
+        let snapshot = self.snapshot();
+        self.record_event("apply", snapshot.clone());
+        Ok(snapshot)
     }
 
     fn apply_reports(&mut self, reports: Vec<WorkspaceDiagnosticDocumentReport>) {
@@ -187,6 +240,30 @@ impl WorkspaceDiagnosticsStore {
             return;
         }
         self.document_order.push(uri.to_string());
+    }
+
+    fn record_event(&mut self, operation: &'static str, snapshot: WorkspaceDiagnosticsSnapshot) {
+        self.next_event_sequence = self.next_event_sequence.saturating_add(1);
+        let document_count = snapshot.documents.len();
+        let diagnostic_count = snapshot.diagnostics.len();
+        let marker_count = diagnostic_count;
+        let title = match operation {
+            "clear" => "Workspace Diagnostics: cleared".to_string(),
+            _ if diagnostic_count == 1 => "Workspace Diagnostics: 1 problem".to_string(),
+            _ => format!("Workspace Diagnostics: {diagnostic_count} problems"),
+        };
+        self.events.push_back(WorkspaceDiagnosticsEvent {
+            sequence: self.next_event_sequence,
+            family: "workspace_diagnostics",
+            title,
+            operation,
+            document_count,
+            diagnostic_count,
+            marker_count,
+        });
+        while self.events.len() > WORKSPACE_DIAGNOSTIC_EVENT_LIMIT {
+            self.events.pop_front();
+        }
     }
 }
 

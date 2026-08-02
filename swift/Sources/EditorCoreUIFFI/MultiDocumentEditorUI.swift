@@ -139,6 +139,36 @@ public struct EcuWorkspaceDiagnosticMarkersSnapshot: Decodable, Equatable, Senda
     public let markers: [EcuWorkspaceDiagnosticMarker]
 }
 
+public struct EcuWorkspaceDiagnosticsEvent: Decodable, Equatable, Sendable {
+    public let sequence: UInt64
+    public let family: String
+    public let title: String
+    public let operation: String
+    public let documentCount: Int
+    public let diagnosticCount: Int
+    public let markerCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case sequence
+        case family
+        case title
+        case operation
+        case documentCount = "document_count"
+        case diagnosticCount = "diagnostic_count"
+        case markerCount = "marker_count"
+    }
+}
+
+public struct EcuWorkspaceDiagnosticsEventsSnapshot: Decodable, Equatable, Sendable {
+    public let latestSequence: UInt64
+    public let events: [EcuWorkspaceDiagnosticsEvent]
+
+    private enum CodingKeys: String, CodingKey {
+        case latestSequence = "latest_sequence"
+        case events
+    }
+}
+
 public final class MultiDocumentEditorUI {
     public let library: EditorCoreUIFFILibrary
     private let handle: OpaquePointer
@@ -420,6 +450,27 @@ public final class MultiDocumentEditorUI {
         try ffiStringResult(context: "multi_document_workspace_diagnostics_previous_result_ids_json") {
             editor_core_ui_ffi_multi_document_workspace_diagnostics_previous_result_ids_json(handle)
         }
+    }
+
+    public func workspaceDiagnosticsLatestEventSequence() throws -> UInt64 {
+        var sequence: UInt64 = 0
+        let status = editor_core_ui_ffi_multi_document_workspace_diagnostics_latest_event_sequence(handle, &sequence)
+        try library.ensureStatus(status, context: "multi_document_workspace_diagnostics_latest_event_sequence")
+        return sequence
+    }
+
+    public func workspaceDiagnosticsEventsJSON(after sequence: UInt64 = 0) throws -> String {
+        try ffiStringResult(context: "multi_document_workspace_diagnostics_events_json") {
+            editor_core_ui_ffi_multi_document_workspace_diagnostics_events_json(handle, sequence)
+        }
+    }
+
+    public func workspaceDiagnosticsEvents(after sequence: UInt64 = 0) throws -> EcuWorkspaceDiagnosticsEventsSnapshot {
+        try decode(
+            EcuWorkspaceDiagnosticsEventsSnapshot.self,
+            from: workspaceDiagnosticsEventsJSON(after: sequence),
+            context: "multi_document_workspace_diagnostics_events_decode"
+        )
     }
 
     public func clearWorkspaceDiagnostics() throws {

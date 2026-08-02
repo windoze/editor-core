@@ -312,6 +312,16 @@ fn multi_document_ui_owns_incremental_workspace_diagnostics() {
             {"uri": "file:///project/related.swift", "value": "r-1"},
         ])
     );
+    assert_eq!(ui.workspace_diagnostics_latest_event_sequence(), 1);
+    let events = ui.workspace_diagnostics_events_after(0);
+    assert_eq!(events.latest_sequence, 1);
+    assert_eq!(events.events.len(), 1);
+    assert_eq!(events.events[0].sequence, 1);
+    assert_eq!(events.events[0].family, "workspace_diagnostics");
+    assert_eq!(events.events[0].operation, "apply");
+    assert_eq!(events.events[0].document_count, 2);
+    assert_eq!(events.events[0].diagnostic_count, 2);
+    assert_eq!(events.events[0].marker_count, 2);
 
     let snapshot = ui
         .apply_workspace_diagnostics_json(
@@ -335,6 +345,12 @@ fn multi_document_ui_owns_incremental_workspace_diagnostics() {
         vec!["first problem", "related warning"]
     );
     assert_eq!(snapshot.documents[0].result_id.as_deref(), Some("a-2"));
+    let events = ui.workspace_diagnostics_events_after(1);
+    assert_eq!(events.latest_sequence, 2);
+    assert_eq!(events.events.len(), 1);
+    assert_eq!(events.events[0].sequence, 2);
+    assert_eq!(events.events[0].operation, "apply");
+    assert_eq!(events.events[0].diagnostic_count, 2);
 
     let snapshot = ui
         .apply_workspace_diagnostics_json(
@@ -365,4 +381,12 @@ fn multi_document_ui_owns_incremental_workspace_diagnostics() {
         ui.workspace_diagnostics_previous_result_ids_json().unwrap(),
         "[]"
     );
+    let events: serde_json::Value =
+        serde_json::from_str(&ui.workspace_diagnostics_events_json(2).unwrap()).unwrap();
+    assert_eq!(events["latest_sequence"], 4);
+    assert_eq!(events["events"].as_array().unwrap().len(), 2);
+    assert_eq!(events["events"][0]["operation"], "apply");
+    assert_eq!(events["events"][0]["diagnostic_count"], 1);
+    assert_eq!(events["events"][1]["operation"], "clear");
+    assert_eq!(events["events"][1]["diagnostic_count"], 0);
 }
