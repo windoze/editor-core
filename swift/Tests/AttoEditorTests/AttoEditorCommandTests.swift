@@ -2386,11 +2386,58 @@ final class AttoEditorCommandTests: XCTestCase {
             findView(identifier: AttoAccessibilityID.problemsPanelTable, in: root) as? NSTableView
         )
         XCTAssertEqual(table.numberOfRows, 2)
-        XCTAssertEqual(vc._problemsPanelDiagnosticsForTesting().map(\.message), [
+        XCTAssertEqual(vc._problemsPanelUnifiedProblemsForTesting().map(\.message), [
             "first line problem",
             "second line warning",
         ])
+        XCTAssertEqual(vc._problemsPanelUnifiedProblemsForTesting().map(\.source), [.active, .active])
         XCTAssertTrue(vc._problemsPanelIsVisibleForTesting())
+
+        XCTAssertTrue(vc.showWorkspaceDiagnosticsResultJSONInActiveTab("""
+        {
+          "items": [
+            {
+              "uri": "\(fileURL.absoluteString)",
+              "kind": "full",
+              "resultId": "panel-workspace-1",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 1, "character": 0 },
+                    "end": { "line": 1, "character": 3 }
+                  },
+                  "severity": 1,
+                  "source": "workspace-test",
+                  "message": "workspace current file problem"
+                }
+              ]
+            },
+            {
+              "uri": "\(tempDir.appendingPathComponent("other.txt").absoluteString)",
+              "kind": "full",
+              "resultId": "panel-workspace-other",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 1 }
+                  },
+                  "severity": 2,
+                  "source": "workspace-test",
+                  "message": "workspace other file warning"
+                }
+              ]
+            }
+          ]
+        }
+        """))
+        XCTAssertEqual(panel.title, "Problems (3)")
+        XCTAssertEqual(vc._problemsPanelUnifiedProblemsForTesting().map(\.message), [
+            "first line problem",
+            "second line warning",
+            "workspace current file problem",
+        ])
+        XCTAssertEqual(vc._problemsPanelUnifiedProblemsForTesting().map(\.source), [.active, .active, .workspace])
 
         try editorView.editor.lspApplyDiagnosticsJSON("""
         {
@@ -2410,9 +2457,13 @@ final class AttoEditorCommandTests: XCTestCase {
         }
         """)
         vc._updateStatusBarForTesting()
-        XCTAssertEqual(panel.title, "Problems (1)")
-        XCTAssertEqual(vc._problemsPanelDiagnosticsForTesting().map(\.message), ["third line problem"])
-        XCTAssertEqual(vc._problemsPanelRowCountForTesting(), 1)
+        XCTAssertEqual(panel.title, "Problems (2)")
+        XCTAssertEqual(vc._problemsPanelUnifiedProblemsForTesting().map(\.message), [
+            "third line problem",
+            "workspace current file problem",
+        ])
+        XCTAssertEqual(vc._problemsPanelUnifiedProblemsForTesting().map(\.source), [.active, .workspace])
+        XCTAssertEqual(vc._problemsPanelRowCountForTesting(), 2)
     }
 
     func testRenameCandidateUsesSelectionOrIdentifierAtCaret() throws {

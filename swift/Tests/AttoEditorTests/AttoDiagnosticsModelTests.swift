@@ -6,36 +6,30 @@ final class AttoDiagnosticsModelTests: XCTestCase {
     func testMarkerSnapshotMergesActiveAndWorkspaceDiagnostics() throws {
         let tabURL = URL(fileURLWithPath: "/project/main.swift")
         let text = "first\nab😀cd\nthird\n"
+        let activeWarning = EcuDiagnostic(
+            range: EcuOffsetRange(start: 0, end: 5),
+            severity: .warning,
+            code: nil,
+            source: nil,
+            message: "active warning",
+            relatedInformationJSON: nil,
+            dataJSON: nil
+        )
+        let workspaceError = Self.workspaceDiagnostic(
+            uri: tabURL.absoluteString,
+            line: 1,
+            utf16Character: 4,
+            severity: 1,
+            message: "workspace error"
+        )
         let snapshot = AttoDiagnosticsModel.snapshot(
             activeDiagnostics: [
-                EcuDiagnostic(
-                    range: EcuOffsetRange(start: 0, end: 5),
-                    severity: .warning,
-                    code: nil,
-                    source: nil,
-                    message: "active warning",
-                    relatedInformationJSON: nil,
-                    dataJSON: nil
-                ),
-                EcuDiagnostic(
-                    range: EcuOffsetRange(start: 0, end: 5),
-                    severity: .warning,
-                    code: nil,
-                    source: nil,
-                    message: "active warning",
-                    relatedInformationJSON: nil,
-                    dataJSON: nil
-                ),
+                activeWarning,
+                activeWarning,
             ],
             includeActiveDiagnostics: true,
             workspaceDiagnostics: [
-                Self.workspaceDiagnostic(
-                    uri: tabURL.absoluteString,
-                    line: 1,
-                    utf16Character: 4,
-                    severity: 1,
-                    message: "workspace error"
-                ),
+                workspaceError,
                 Self.workspaceDiagnostic(
                     uri: URL(fileURLWithPath: "/project/other.swift").absoluteString,
                     line: 0,
@@ -87,15 +81,21 @@ final class AttoDiagnosticsModelTests: XCTestCase {
                     logicalLine: 0,
                     column: 0,
                     severity: .warning,
+                    code: nil,
+                    diagnosticSource: nil,
                     message: "active warning",
-                    source: .active
+                    source: .active,
+                    target: .active(activeWarning)
                 ),
                 AttoUnifiedDiagnosticProblem(
                     logicalLine: 1,
                     column: 4,
                     severity: .error,
+                    code: nil,
+                    diagnosticSource: nil,
                     message: "workspace error",
-                    source: .workspace
+                    source: .workspace,
+                    target: .workspace(workspaceError)
                 ),
             ]
         )

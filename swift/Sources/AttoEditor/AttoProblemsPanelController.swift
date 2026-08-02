@@ -39,6 +39,7 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
     private enum Payload {
         case active(EcuDiagnostic)
         case workspace(WorkspaceDiagnostic)
+        case unified(AttoUnifiedDiagnosticProblem)
     }
 
     private struct Row {
@@ -55,8 +56,11 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
     private let onOpenDiagnostic: ((EcuDiagnostic) -> Void)?
     private let titleForWorkspaceDiagnostic: ((WorkspaceDiagnostic) -> String)?
     private let onOpenWorkspaceDiagnostic: ((WorkspaceDiagnostic) -> Void)?
+    private let titleForProblem: ((AttoUnifiedDiagnosticProblem) -> String)?
+    private let onOpenProblem: ((AttoUnifiedDiagnosticProblem) -> Void)?
     private var diagnostics: [EcuDiagnostic] = []
     private var workspaceDiagnostics: [WorkspaceDiagnostic] = []
+    private var problems: [AttoUnifiedDiagnosticProblem] = []
     private var rows: [Row] = []
     private var filteredRows: [Row] = []
     private var title = "Problems"
@@ -76,6 +80,8 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         self.onOpenDiagnostic = onOpen
         titleForWorkspaceDiagnostic = nil
         onOpenWorkspaceDiagnostic = nil
+        titleForProblem = nil
+        onOpenProblem = nil
         super.init()
     }
 
@@ -89,6 +95,23 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         onOpenDiagnostic = nil
         self.titleForWorkspaceDiagnostic = titleForWorkspaceDiagnostic
         self.onOpenWorkspaceDiagnostic = onOpen
+        titleForProblem = nil
+        onOpenProblem = nil
+        super.init()
+    }
+
+    init(
+        titleForProblem: @escaping (AttoUnifiedDiagnosticProblem) -> String,
+        onOpen: @escaping (AttoUnifiedDiagnosticProblem) -> Void,
+        accessibilityIDs: AccessibilityIDs = .activeProblems
+    ) {
+        self.accessibilityIDs = accessibilityIDs
+        titleForDiagnostic = nil
+        onOpenDiagnostic = nil
+        titleForWorkspaceDiagnostic = nil
+        onOpenWorkspaceDiagnostic = nil
+        self.titleForProblem = titleForProblem
+        onOpenProblem = onOpen
         super.init()
     }
 
@@ -98,6 +121,10 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
 
     var currentWorkspaceDiagnostics: [WorkspaceDiagnostic] {
         workspaceDiagnostics
+    }
+
+    var currentProblems: [AttoUnifiedDiagnosticProblem] {
+        problems
     }
 
     var isVisible: Bool {
@@ -111,6 +138,7 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
     func update(diagnostics: [EcuDiagnostic], title: String = "Problems", placeholder: String = "Filter problems...") {
         self.diagnostics = diagnostics
         workspaceDiagnostics = []
+        problems = []
         self.title = title
         self.placeholder = placeholder
         let titleForDiagnostic = titleForDiagnostic ?? { $0.message }
@@ -135,6 +163,7 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
     ) {
         diagnostics = []
         self.workspaceDiagnostics = workspaceDiagnostics
+        problems = []
         self.title = title
         self.placeholder = placeholder
         let titleForWorkspaceDiagnostic = titleForWorkspaceDiagnostic ?? { $0.message }
@@ -146,6 +175,31 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
                 severity: diagnostic.severityLabel,
                 source: diagnostic.source,
                 code: diagnostic.code
+            )
+        }
+        applyFilter()
+        updateTitle()
+    }
+
+    func update(
+        problems: [AttoUnifiedDiagnosticProblem],
+        title: String = "Problems",
+        placeholder: String = "Filter problems..."
+    ) {
+        diagnostics = []
+        workspaceDiagnostics = []
+        self.problems = problems
+        self.title = title
+        self.placeholder = placeholder
+        let titleForProblem = titleForProblem ?? { $0.message }
+        rows = problems.map { problem in
+            Row(
+                payload: .unified(problem),
+                title: titleForProblem(problem),
+                message: problem.message,
+                severity: problem.severity?.rawValue,
+                source: problem.diagnosticSource,
+                code: problem.code
             )
         }
         applyFilter()
@@ -171,6 +225,17 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         placeholder: String = "Filter workspace problems..."
     ) -> Bool {
         update(workspaceDiagnostics: workspaceDiagnostics, title: title, placeholder: placeholder)
+        return showUpdatedPanel(relativeTo: window)
+    }
+
+    @discardableResult
+    func show(
+        relativeTo window: NSWindow,
+        problems: [AttoUnifiedDiagnosticProblem],
+        title: String = "Problems",
+        placeholder: String = "Filter problems..."
+    ) -> Bool {
+        update(problems: problems, title: title, placeholder: placeholder)
         return showUpdatedPanel(relativeTo: window)
     }
 
@@ -352,6 +417,8 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
             onOpenDiagnostic?(diagnostic)
         case let .workspace(diagnostic):
             onOpenWorkspaceDiagnostic?(diagnostic)
+        case let .unified(problem):
+            onOpenProblem?(problem)
         }
     }
 

@@ -14,11 +14,19 @@ struct AttoDiagnosticMarkerProjection: Equatable {
 }
 
 struct AttoUnifiedDiagnosticProblem: Equatable {
+    enum Target: Equatable {
+        case active(EcuDiagnostic)
+        case workspace(AttoLspWorkspaceDiagnosticsParser.Diagnostic)
+    }
+
     let logicalLine: UInt32
     let column: UInt32
     let severity: EcuDiagnosticSeverity?
+    let code: String?
+    let diagnosticSource: String?
     let message: String
     let source: AttoDiagnosticMarkerProjection.Source
+    let target: Target
 }
 
 struct AttoUnifiedDiagnosticsSnapshot: Equatable {
@@ -61,8 +69,11 @@ enum AttoDiagnosticsModel {
                     logicalLine: position.line,
                     column: position.column,
                     severity: diagnostic.severity,
+                    code: diagnostic.code,
+                    diagnosticSource: diagnostic.source,
                     message: diagnostic.message,
-                    source: .active
+                    source: .active,
+                    target: .active(diagnostic)
                 ))
             }
         }
@@ -92,8 +103,11 @@ enum AttoDiagnosticsModel {
                 logicalLine: UInt32(clamping: diagnostic.target.line),
                 column: UInt32(clamping: diagnostic.target.utf16Character),
                 severity: diagnostic.severity.flatMap(Self.severity(forWorkspaceDiagnostic:)),
+                code: diagnostic.code,
+                diagnosticSource: diagnostic.source,
                 message: diagnostic.message,
-                source: .workspace
+                source: .workspace,
+                target: .workspace(diagnostic)
             )
         })
 

@@ -185,6 +185,10 @@ final class AttoEditorAreaViewController: NSViewController {
         problemsPanelController?.currentDiagnostics ?? []
     }
 
+    func _problemsPanelUnifiedProblemsForTesting() -> [AttoUnifiedDiagnosticProblem] {
+        problemsPanelController?.currentProblems ?? []
+    }
+
     func _problemsPanelRowCountForTesting() -> Int {
         problemsPanelController?.rowCount ?? 0
     }
@@ -3463,7 +3467,7 @@ final class AttoEditorAreaViewController: NSViewController {
     private func updateStatusBar() {
         guard let tab = activeTab else {
             derivedStateStore.clearActive()
-            problemsPanelController?.update(diagnostics: [])
+            problemsPanelController?.update(problems: [])
             clearDiagnosticMarkers()
             statusBarView.update(
                 leftText: transientStatusText,
@@ -3479,7 +3483,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         let editor = tab.editCore.editor
         derivedStateStore.refreshActive(editor: editor)
-        problemsPanelController?.update(diagnostics: derivedStateStore.active.diagnostics.diagnostics)
+        updateProblemsPanelIfVisible(for: tab)
         updateDiagnosticMarkers(for: tab, includeActiveDiagnostics: true)
 
         let (line1, col1): (UInt32, UInt32) = {
@@ -3602,6 +3606,12 @@ final class AttoEditorAreaViewController: NSViewController {
             pane.minimapDiagnosticMarkers = minimapMarkers
             pane.gutterDiagnosticMarkers = gutterMarkers
         }
+    }
+
+    private func updateProblemsPanelIfVisible(for tab: AttoEditorTab) {
+        guard problemsPanelController?.isVisible == true else { return }
+        let snapshot = unifiedDiagnosticsSnapshot(for: tab, includeActiveDiagnostics: true)
+        problemsPanelController?.update(problems: snapshot.problems)
     }
 
     private func unifiedDiagnosticsSnapshot(
@@ -5399,24 +5409,24 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelCodeActionUI()
 
         derivedStateStore.refreshActive(editor: tab.editCore.editor)
-        let diagnostics = derivedStateStore.active.diagnostics.diagnostics
-        guard diagnostics.isEmpty == false else {
+        let problems = unifiedDiagnosticsSnapshot(for: tab, includeActiveDiagnostics: true).problems
+        guard problems.isEmpty == false else {
             NSSound.beep()
             return false
         }
 
         guard let window = view.window else {
-            navigateToDiagnostic(diagnostics[0], in: tab)
+            navigateToDiagnosticProblem(problems[0], in: tab)
             return true
         }
 
-        let commands = diagnostics.enumerated().map { idx, diagnostic in
+        let commands = problems.enumerated().map { idx, problem in
             AttoCommandPaletteCommand(
                 id: "lsp.problem.\(idx)",
-                title: displayTitle(for: diagnostic, in: tab)
+                title: displayTitle(for: problem, in: tab)
             ) { [weak self] in
                 guard let self, let current = self.activeTab, current.id == tab.id else { return }
-                self.navigateToDiagnostic(diagnostic, in: current)
+                self.navigateToDiagnosticProblem(problem, in: current)
             }
         }
 
@@ -5447,11 +5457,11 @@ final class AttoEditorAreaViewController: NSViewController {
         problemsResultsController = nil
 
         derivedStateStore.refreshActive(editor: tab.editCore.editor)
-        let diagnostics = derivedStateStore.active.diagnostics.diagnostics
+        let problems = unifiedDiagnosticsSnapshot(for: tab, includeActiveDiagnostics: true).problems
 
         guard let window = view.window else {
-            if let first = diagnostics.first {
-                navigateToDiagnostic(first, in: tab)
+            if let first = problems.first {
+                navigateToDiagnosticProblem(first, in: tab)
                 return true
             }
             NSSound.beep()
@@ -5459,17 +5469,17 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         let controller = problemsPanelController ?? AttoProblemsPanelController(
-            titleForDiagnostic: { [weak self] diagnostic in
-                guard let self, let tab = self.activeTab else { return diagnostic.message }
-                return self.displayTitle(for: diagnostic, in: tab)
+            titleForProblem: { [weak self] problem in
+                guard let self, let tab = self.activeTab else { return problem.message }
+                return self.displayTitle(for: problem, in: tab)
             },
-            onOpen: { [weak self] diagnostic in
+            onOpen: { [weak self] problem in
                 guard let self, let tab = self.activeTab else { return }
-                self.navigateToDiagnostic(diagnostic, in: tab)
+                self.navigateToDiagnosticProblem(problem, in: tab)
             }
         )
         problemsPanelController = controller
-        return controller.show(relativeTo: window, diagnostics: diagnostics)
+        return controller.show(relativeTo: window, problems: problems)
     }
 
     private func displayTitle(for diagnostic: EcuDiagnostic, in tab: AttoEditorTab) -> String {
@@ -5485,6 +5495,24 @@ final class AttoEditorAreaViewController: NSViewController {
         let severity = diagnostic.severity.map { "[\($0.rawValue)] " } ?? ""
         let source = diagnostic.source.map { " (\($0))" } ?? ""
         return "\(severity)\(diagnostic.message)\(source) — \(location)"
+    }
+
+    private func displayTitle(for problem: AttoUnifiedDiagnosticProblem, in tab: AttoEditorTab) -> String {
+        switch problem.target {
+        case let .active(diagnostic):
+            return displayTitle(for: diagnostic, in: tab)
+        case let .workspace(diagnostic):
+            return displayTitle(for: diagnostic)
+        }
+    }
+
+    private func navigateToDiagnosticProblem(_ problem: AttoUnifiedDiagnosticProblem, in tab: AttoEditorTab) {
+        switch problem.target {
+        case let .active(diagnostic):
+            navigateToDiagnostic(diagnostic, in: tab)
+        case let .workspace(diagnostic):
+            navigateToLspTarget(diagnostic.target)
+        }
     }
 
     private func navigateToDiagnostic(_ diagnostic: EcuDiagnostic, in tab: AttoEditorTab) {
