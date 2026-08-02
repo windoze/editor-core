@@ -287,6 +287,16 @@
     - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEdit`
     - `git diff --check`
+- 中间提交：`feat(ui): roll back unopened workspace text edits`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；让 `MultiDocumentEditorUi` 对未打开本地文件 text edits 也接入 WorkspaceEdit transaction 的 filesystem rollback log，避免 text edit 已写盘后后续 resource operation fatal error 留下半应用状态。
+  - 提交边界：只扩展 root-gated 未打开本地文件 text edit 的 rollback 保护；写入前备份原文件，写入失败时局部恢复，后续 fatal resource operation 失败时随整批 rollback 恢复。本提交不新增 ABI，不改变 preview 语义，不实现打开 tab undo grouping、完整 batch atomic apply mode 或更深层 conflict UI。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui --package editor-core-ui-ffi`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_rolls_back_unopened_text_edits_after_runtime_failure`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_rolls_back_unopened_text_edits_after_runtime_failure`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIRollsBackUnopenedTextEditsAfterRuntimeFailure`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

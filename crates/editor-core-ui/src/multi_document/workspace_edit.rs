@@ -304,7 +304,12 @@ pub(super) fn apply(
                 if !unopened_file_text_edit_uris.contains(uri.as_str()) {
                     continue;
                 }
-                match apply_unopened_file_text_edits(workspace_roots, uri.as_str(), &edits) {
+                match apply_unopened_file_text_edits(
+                    workspace_roots,
+                    &mut filesystem_rollback,
+                    uri.as_str(),
+                    &edits,
+                ) {
                     Ok(()) => {
                         applied_uris.insert(uri.clone());
                         applied_edit_count = applied_edit_count.saturating_add(edits.len());
@@ -560,6 +565,14 @@ impl FilesystemRollback {
             Ok(())
         } else {
             Err(errors.join("; "))
+        }
+    }
+
+    fn rollback_latest(&mut self) -> Result<(), String> {
+        if let Some(entry) = self.entries.pop() {
+            rollback_entry(entry)
+        } else {
+            Ok(())
         }
     }
 
@@ -1209,6 +1222,7 @@ fn apply_open_tab_text_edits(
 
 fn apply_unopened_file_text_edits(
     workspace_roots: &[String],
+    filesystem_rollback: &mut FilesystemRollback,
     uri: &str,
     edits: &[LspTextEdit],
 ) -> Result<(), WorkspaceEditTransactionSkippedDetail> {
@@ -1229,12 +1243,29 @@ fn apply_unopened_file_text_edits(
             err,
         )
     })?;
+    filesystem_rollback
+        .backup_existing_path(&path)
+        .map_err(|err| {
+            skipped_detail(
+                uri.to_string(),
+                "file_text_edit_rollback_failed",
+                Some("text_edit"),
+                format!("failed to prepare unopened file text edit rollback: {err}"),
+            )
+        })?;
     fs::write(&path, new_text).map_err(|err| {
+        let rollback_result = filesystem_rollback.rollback_latest();
+        let message = match rollback_result {
+            Ok(()) => format!("failed to write unopened file text edit target: {err}"),
+            Err(rollback_err) => format!(
+                "failed to write unopened file text edit target: {err}; rollback also failed: {rollback_err}"
+            ),
+        };
         skipped_detail(
             uri.to_string(),
             "file_text_edit_write_failed",
             Some("text_edit"),
-            format!("failed to write unopened file text edit target: {err}"),
+            message,
         )
     })
 }

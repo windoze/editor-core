@@ -1048,6 +1048,107 @@ fn ffi_multi_document_rolls_back_unopened_resource_operations_after_runtime_fail
 }
 
 #[test]
+fn ffi_multi_document_rolls_back_unopened_text_edits_after_runtime_failure() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let root = std::env::temp_dir().join(format!(
+        "editor-core-ui-ffi-workspace-text-rollback-root-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    let target = root.join("src").join("Target.swift");
+    let blocker = root.join("blocker");
+    let blocked_child = blocker.join("Child.swift");
+    std::fs::write(&target, "alpha\nbeta\n").unwrap();
+    std::fs::write(&blocker, "blocker\n").unwrap();
+
+    let root_uri = format!("file://{}", root.to_string_lossy());
+    let target_uri = format!("file://{}", target.to_string_lossy());
+    let blocked_child_uri = format!("file://{}", blocked_child.to_string_lossy());
+
+    let roots = CString::new(serde_json::json!([root_uri]).to_string()).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let workspace_edit = CString::new(
+        serde_json::json!({
+            "documentChanges": [
+                {
+                    "textDocument": {
+                        "uri": target_uri.as_str(),
+                        "version": null
+                    },
+                    "edits": [
+                        {
+                            "range": {
+                                "start": { "line": 1, "character": 0 },
+                                "end": { "line": 1, "character": 4 }
+                            },
+                            "newText": "BETA"
+                        }
+                    ]
+                },
+                { "kind": "create", "uri": blocked_child_uri.as_str() }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let preview_ptr = editor_core_ui_ffi_multi_document_preview_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!preview_ptr.is_null());
+    let preview_json = unsafe { std::ffi::CStr::from_ptr(preview_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(preview_ptr) };
+    let preview: serde_json::Value = serde_json::from_str(&preview_json).unwrap();
+    assert_eq!(preview["skipped_uris"].as_array().unwrap().len(), 0);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "alpha\nbeta\n");
+
+    let apply_ptr = editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(apply_ptr.is_null());
+    let msg_ptr = editor_core_ui_ffi_last_error_message();
+    assert!(!msg_ptr.is_null());
+    let msg = unsafe { std::ffi::CStr::from_ptr(msg_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(msg_ptr) };
+    assert!(msg.contains("filesystem side effects were rolled back"));
+
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "alpha\nbeta\n");
+    assert_eq!(std::fs::read_to_string(&blocker).unwrap(), "blocker\n");
+    assert!(!blocked_child.exists());
+
+    let mut sequence = 99;
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_latest_sequence(
+                multi,
+                &mut sequence,
+            )
+        },
+        ECU_OK
+    );
+    assert_eq!(sequence, 0);
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn ffi_multi_document_applies_workspace_edit_document_changes_in_order() {
     let multi = editor_core_ui_ffi_multi_document_new();
     assert!(!multi.is_null());
