@@ -569,6 +569,55 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
     }
 
+    func testMultiDocumentEditorUIReportsWorkspaceEditVersionMismatch() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+
+        let tab = try multi.openTab(text: "versioned", viewportWidthCells: 80)
+        try multi.setTabDocumentURI("file:///project/Versioned.swift", tabId: tab)
+
+        let edit = """
+        {
+          "documentChanges": [
+            {
+              "textDocument": {
+                "uri": "file:///project/Versioned.swift",
+                "version": 1
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "stale "
+                }
+              ]
+            }
+          ]
+        }
+        """
+
+        let preview = try multi.previewWorkspaceEditTransaction(edit)
+        XCTAssertEqual(preview.skippedURIs, ["file:///project/Versioned.swift"])
+        let document = try XCTUnwrap(preview.documents.first {
+            $0.uri == "file:///project/Versioned.swift"
+        })
+        XCTAssertEqual(document.expectedVersion, 1)
+        XCTAssertEqual(document.actualVersion, 0)
+        XCTAssertTrue(document.versionMismatch)
+        XCTAssertTrue(preview.skippedDetails.contains {
+            $0.uri == "file:///project/Versioned.swift"
+                && $0.operation == "text_edit"
+                && $0.reason == "version_mismatch"
+        })
+
+        let applied = try multi.applyWorkspaceEditTransaction(edit)
+        XCTAssertFalse(applied.applied)
+        XCTAssertEqual(applied.appliedEditCount, 0)
+        XCTAssertEqual(try multi.tabText(tabId: tab), "versioned")
+    }
+
     func testParagraphSelectionAPIs() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "aa\nbb\n\ncc\ndd", viewportWidthCells: 80)

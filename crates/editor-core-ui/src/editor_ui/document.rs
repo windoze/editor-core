@@ -104,6 +104,10 @@ impl EditorUi {
             .unwrap_or_else(|_| "".to_string())
     }
 
+    pub fn text_version(&self) -> u64 {
+        self.lock_doc().text_version
+    }
+
     pub fn is_modified(&self) -> bool {
         let doc = self.lock_doc();
         doc.ws.is_modified_for_view(self.view_id).unwrap_or(false)

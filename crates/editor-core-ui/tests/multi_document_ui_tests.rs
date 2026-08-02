@@ -431,11 +431,17 @@ fn multi_document_ui_reports_workspace_edit_transaction_skipped_details() {
     let mut ui = MultiDocumentEditorUi::new();
     let dirty = ui.open_tab("dirty\n", 80);
     let overlap = ui.open_tab("overlap\n", 80);
+    let versioned = ui.open_tab("versioned\n", 80);
     ui.set_tab_document_uri(dirty, Some("file:///tmp/project/Dirty.swift".to_string()))
         .unwrap();
     ui.set_tab_document_uri(
         overlap,
         Some("file:///tmp/project/Overlap.swift".to_string()),
+    )
+    .unwrap();
+    ui.set_tab_document_uri(
+        versioned,
+        Some("file:///tmp/project/Versioned.swift".to_string()),
     )
     .unwrap();
     ui.replace_tab_text(dirty, "dirty changed\n", false)
@@ -481,6 +487,21 @@ fn multi_document_ui_reports_workspace_edit_transaction_skipped_details() {
           ]
         },
         {
+          "textDocument": {
+            "uri": "file:///tmp/project/Versioned.swift",
+            "version": 1
+          },
+          "edits": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 0 }
+              },
+              "newText": "stale "
+            }
+          ]
+        },
+        {
           "kind": "delete",
           "uri": "file:///tmp/project/Dirty.swift"
         }
@@ -494,8 +515,17 @@ fn multi_document_ui_reports_workspace_edit_transaction_skipped_details() {
             "file:///tmp/project/Dirty.swift",
             "file:///tmp/project/Missing.swift",
             "file:///tmp/project/Overlap.swift",
+            "file:///tmp/project/Versioned.swift",
         ]
     );
+    let versioned_document = preview
+        .documents
+        .iter()
+        .find(|doc| doc.uri == "file:///tmp/project/Versioned.swift")
+        .unwrap();
+    assert_eq!(versioned_document.expected_version, Some(1));
+    assert_eq!(versioned_document.actual_version, Some(0));
+    assert!(versioned_document.version_mismatch);
     let detail_reasons = preview
         .skipped_details
         .iter()
@@ -522,6 +552,15 @@ fn multi_document_ui_reports_workspace_edit_transaction_skipped_details() {
         Some("text_edit"),
         "overlapping_text_edits"
     )));
+    assert!(detail_reasons.contains(&(
+        "file:///tmp/project/Versioned.swift",
+        Some("text_edit"),
+        "version_mismatch"
+    )));
+
+    let applied = ui.apply_workspace_edit_transaction(edit).unwrap();
+    assert_eq!(applied.applied_edit_count, 0);
+    assert_eq!(ui.tab_text(versioned).unwrap(), "versioned\n");
 }
 
 #[test]

@@ -1,6 +1,8 @@
 use super::{TabEntry, TabId};
 use crate::{EditorUi, UiError};
-use editor_core_lsp::{summarize_workspace_edit, workspace_edit_text_edits};
+use editor_core_lsp::{
+    summarize_workspace_edit, workspace_edit_expected_versions, workspace_edit_text_edits,
+};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -12,6 +14,9 @@ pub struct WorkspaceEditTransactionDocument {
     pub uri: String,
     pub edit_count: usize,
     pub has_overlapping_edits: bool,
+    pub expected_version: Option<i32>,
+    pub actual_version: Option<u64>,
+    pub version_mismatch: bool,
     pub is_open: bool,
     pub tab_id: Option<u64>,
 }
@@ -183,7 +188,8 @@ pub(super) fn apply(
         doc.is_open = open_tab_id.is_some();
         doc.tab_id = open_tab_id.map(TabId::get);
 
-        if doc.edit_count == 0 || doc.has_overlapping_edits || !doc.is_open {
+        if doc.edit_count == 0 || doc.has_overlapping_edits || doc.version_mismatch || !doc.is_open
+        {
             continue;
         }
         let Some(edits) = text_edits_by_uri.get(doc.uri.as_str()) else {
@@ -329,6 +335,7 @@ fn transaction_plan(
     workspace_edit: &Value,
 ) -> WorkspaceEditTransactionPlan {
     let edit_summary = summarize_workspace_edit(workspace_edit);
+    let expected_versions = workspace_edit_expected_versions(workspace_edit);
     let mut open_tabs_by_uri = open_tabs_by_uri(tabs, tab_order);
     let mut unsupported_operation_uris = BTreeSet::<String>::new();
     let mut skipped_uris = BTreeSet::<String>::new();
@@ -356,6 +363,13 @@ fn transaction_plan(
         .into_iter()
         .map(|doc| {
             let open_tab_id = open_tabs_by_uri.get(doc.uri.as_str()).copied();
+            let expected_version = expected_versions.get(doc.uri.as_str()).copied();
+            let actual_version =
+                open_tab_id.and_then(|tab_id| tab_text_version(tabs, tab_id));
+            let version_mismatch = expected_version
+                .and_then(|expected| u64::try_from(expected).ok())
+                .zip(actual_version)
+                .is_some_and(|(expected, actual)| expected != actual);
             if open_tab_id.is_none() {
                 mark_skipped(
                     &mut skipped_uris,
@@ -365,6 +379,22 @@ fn transaction_plan(
                         "document_not_open",
                         Some("text_edit"),
                         "text edits for this URI are not supported because the document is not open in the core workspace",
+                    ),
+                );
+            }
+            if let (Some(expected), Some(actual)) = (expected_version, actual_version)
+                && version_mismatch
+            {
+                mark_skipped(
+                    &mut skipped_uris,
+                    &mut skipped_details,
+                    skipped_detail(
+                        doc.uri.clone(),
+                        "version_mismatch",
+                        Some("text_edit"),
+                        format!(
+                            "text edits for this URI expect version {expected}, but the open document is at version {actual}",
+                        ),
                     ),
                 );
             }
@@ -384,6 +414,9 @@ fn transaction_plan(
                 uri: doc.uri,
                 edit_count: doc.edit_count,
                 has_overlapping_edits: doc.has_overlapping_edits,
+                expected_version,
+                actual_version,
+                version_mismatch,
                 is_open: open_tab_id.is_some(),
                 tab_id: open_tab_id.map(TabId::get),
             }
@@ -396,6 +429,12 @@ fn transaction_plan(
                 uri: uri.clone(),
                 edit_count: 0,
                 has_overlapping_edits: false,
+                expected_version: None,
+                actual_version: open_tabs_by_uri
+                    .get(uri)
+                    .copied()
+                    .and_then(|tab_id| tab_text_version(tabs, tab_id)),
+                version_mismatch: false,
                 is_open: open_tabs_by_uri.contains_key(uri),
                 tab_id: open_tabs_by_uri.get(uri).copied().map(TabId::get),
             });
@@ -410,6 +449,12 @@ fn transaction_plan(
                 documents.push(WorkspaceEditTransactionDocument {
                     edit_count: 0,
                     has_overlapping_edits: false,
+                    expected_version: None,
+                    actual_version: open_tabs_by_uri
+                        .get(uri.as_str())
+                        .copied()
+                        .and_then(|tab_id| tab_text_version(tabs, tab_id)),
+                    version_mismatch: false,
                     is_open: open_tabs_by_uri.contains_key(uri.as_str()),
                     tab_id: open_tabs_by_uri.get(uri.as_str()).copied().map(TabId::get),
                     uri,
@@ -512,6 +557,12 @@ fn tab_id_for_uri(
             .and_then(|tab| tab.document_uri.as_deref())
             .is_some_and(|document_uri| document_uri == uri)
     })
+}
+
+fn tab_text_version(tabs: &BTreeMap<TabId, TabEntry>, tab_id: TabId) -> Option<u64> {
+    tabs.get(&tab_id)
+        .and_then(TabEntry::active_view)
+        .map(EditorUi::text_version)
 }
 
 fn resource_operations(workspace_edit: &Value) -> Vec<ResourceOperation> {

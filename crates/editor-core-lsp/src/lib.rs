@@ -85,7 +85,7 @@ pub use lsp_sync::{
 pub use lsp_text_edits::{
     LspTextEdit, WorkspaceEditDocumentSummary, WorkspaceEditSummary, apply_text_edits,
     char_offsets_for_lsp_range, summarize_workspace_edit, text_edits_from_value,
-    workspace_edit_text_edits, workspace_edit_text_edits_for_uri,
+    workspace_edit_expected_versions, workspace_edit_text_edits, workspace_edit_text_edits_for_uri,
 };
 pub use lsp_transport::{read_lsp_message, write_lsp_message};
 pub use lsp_type_hierarchy::{type_hierarchy_item_from_value, type_hierarchy_items_from_value};

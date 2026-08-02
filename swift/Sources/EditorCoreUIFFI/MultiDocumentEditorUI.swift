@@ -56,6 +56,9 @@ public struct EcuWorkspaceEditTransactionDocument: Decodable, Equatable, Sendabl
     public let uri: String
     public let editCount: Int
     public let hasOverlappingEdits: Bool
+    public let expectedVersion: Int?
+    public let actualVersion: UInt64?
+    public let versionMismatch: Bool
     public let isOpen: Bool
     public let tabId: UInt64?
 
@@ -63,8 +66,27 @@ public struct EcuWorkspaceEditTransactionDocument: Decodable, Equatable, Sendabl
         case uri
         case editCount = "edit_count"
         case hasOverlappingEdits = "has_overlapping_edits"
+        case expectedVersion = "expected_version"
+        case actualVersion = "actual_version"
+        case versionMismatch = "version_mismatch"
         case isOpen = "is_open"
         case tabId = "tab_id"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        uri = try container.decode(String.self, forKey: .uri)
+        editCount = try container.decodeIfPresent(Int.self, forKey: .editCount) ?? 0
+        hasOverlappingEdits = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .hasOverlappingEdits
+        ) ?? false
+        expectedVersion = try container.decodeIfPresent(Int.self, forKey: .expectedVersion)
+        actualVersion = try container.decodeIfPresent(UInt64.self, forKey: .actualVersion)
+        versionMismatch = try container.decodeIfPresent(Bool.self, forKey: .versionMismatch)
+            ?? false
+        isOpen = try container.decodeIfPresent(Bool.self, forKey: .isOpen) ?? false
+        tabId = try container.decodeIfPresent(UInt64.self, forKey: .tabId)
     }
 }
 
