@@ -24,6 +24,10 @@ final class AttoLspResultLifecycleStore<Snapshot> {
         historyEntries.map(\.snapshot)
     }
 
+    var latestSequence: UInt64 {
+        max(currentEntry?.sequence ?? 0, historyEntries.last?.sequence ?? 0)
+    }
+
     init(maxHistoryEntries: Int) {
         self.maxHistoryEntries = max(1, maxHistoryEntries)
     }
@@ -58,6 +62,10 @@ final class AttoLspResultLifecycleStore<Snapshot> {
 
     func makeCurrent(_ entry: AttoLspResultLifecycleEntry<Snapshot>) {
         currentEntry = entry
+    }
+
+    func entries(after sequence: UInt64) -> [AttoLspResultLifecycleEntry<Snapshot>] {
+        historyEntries.filter { $0.sequence > sequence }
     }
 
     func clear() {

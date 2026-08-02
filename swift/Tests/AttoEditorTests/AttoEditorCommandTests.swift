@@ -1148,6 +1148,9 @@ final class AttoEditorCommandTests: XCTestCase {
         ])
         XCTAssertEqual(vc._workspaceProblemsPanelUnifiedProblemsForTesting().map(\.source), [.workspace, .workspace])
         XCTAssertTrue(vc._workspaceProblemsPanelIsVisibleForTesting())
+        let diagnosticsCursor = vc._latestDiagnosticsLifecycleSequenceForTesting()
+        vc._updateStatusBarForTesting()
+        XCTAssertEqual(vc._diagnosticsLifecycleEventsForTesting(after: diagnosticsCursor), [])
 
         XCTAssertTrue(vc.showWorkspaceDiagnosticsResultJSONInActiveTab("""
         {
@@ -1175,6 +1178,9 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._workspaceProblemsPanelUnifiedProblemsForTesting().map(\.message), ["third workspace problem"])
         XCTAssertEqual(vc._workspaceProblemsPanelUnifiedProblemsForTesting().map(\.source), [.workspace])
         XCTAssertEqual(vc._workspaceProblemsPanelRowCountForTesting(), 1)
+        let newDiagnosticsEvents = vc._diagnosticsLifecycleEventsForTesting(after: diagnosticsCursor)
+        XCTAssertEqual(newDiagnosticsEvents.map(\.family), ["diagnostics.workspace", "diagnostics.active"])
+        XCTAssertEqual(newDiagnosticsEvents.last?.snapshot.problems.map(\.message), ["third workspace problem"])
         diagnosticsLifecycle = vc._diagnosticsLifecycleHistoryForTesting()
         workspaceLifecycleEntries = diagnosticsLifecycle.filter { $0.family == "diagnostics.workspace" }
         activeLifecycleEntries = diagnosticsLifecycle.filter { $0.family == "diagnostics.active" }

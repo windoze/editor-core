@@ -18,8 +18,11 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         XCTAssertEqual(first.title, "One")
         XCTAssertEqual(first.recordedAt, firstDate)
         XCTAssertEqual(fourth.sequence, 4)
+        XCTAssertEqual(store.latestSequence, 4)
         XCTAssertEqual(store.currentEntry?.sequence, 4)
         XCTAssertEqual(store.historyEntries.map(\.sequence), [2, 3, 4])
+        XCTAssertEqual(store.entries(after: 2).map(\.snapshot), [3, 4])
+        XCTAssertEqual(store.entries(after: 4).map(\.snapshot), [])
     }
 
     func testMakeCurrentDoesNotDuplicateHistory() {

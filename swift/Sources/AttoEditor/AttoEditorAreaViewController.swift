@@ -189,6 +189,16 @@ final class AttoEditorAreaViewController: NSViewController {
         diagnosticsLifecycleStore.currentEntry
     }
 
+    func _diagnosticsLifecycleEventsForTesting(
+        after sequence: UInt64
+    ) -> [AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>] {
+        diagnosticsLifecycleEvents(after: sequence)
+    }
+
+    func _latestDiagnosticsLifecycleSequenceForTesting() -> UInt64 {
+        diagnosticsLifecycleStore.latestSequence
+    }
+
     func _problemsPanelDiagnosticsForTesting() -> [EcuDiagnostic] {
         problemsPanelController?.currentDiagnostics ?? []
     }
@@ -3702,6 +3712,12 @@ final class AttoEditorAreaViewController: NSViewController {
             family: "diagnostics.workspace",
             title: "Workspace Problems"
         )
+    }
+
+    private func diagnosticsLifecycleEvents(
+        after sequence: UInt64
+    ) -> [AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>] {
+        diagnosticsLifecycleStore.entries(after: sequence)
     }
 
     private func updateWorkspaceDiagnosticMarkersForOpenTabs() {
