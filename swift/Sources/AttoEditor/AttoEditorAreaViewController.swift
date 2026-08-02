@@ -6124,15 +6124,15 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspCompletionResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastCompletionResultJSON()
+                result = try tab.editCore.editor.lspTakeLastCompletionResult()
             } catch {
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
-            let items = AttoLspCompletionParser.items(fromCompletionResultJSON: json)
+            let items = AttoLspCompletionParser.items(fromCompletionResult: result)
             self.completionPollTimer?.cancel()
             self.completionPollTimer = nil
             self.completionContext = nil
@@ -6318,15 +6318,15 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspCompletionItem?
             do {
-                json = try tab.editCore.editor.lspTakeLastCompletionItemResolveResultJSON()
+                result = try tab.editCore.editor.lspTakeLastCompletionItemResolveResult()
             } catch {
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
-            let resolved = AttoLspCompletionParser.item(fromCompletionItemJSON: json) ?? ctx.item
+            let resolved = AttoLspCompletionParser.item(fromCompletionItem: result) ?? ctx.item
             self.finishCompletionResolve(
                 with: resolved,
                 fallback: ctx.item,

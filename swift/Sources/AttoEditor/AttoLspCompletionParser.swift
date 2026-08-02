@@ -12,6 +12,8 @@ enum AttoLspCompletionParser {
         let filterText: String?
         let sortText: String?
         fileprivate let object: [String: Any]
+        fileprivate let rawJSONString: String?
+        fileprivate let typedItem: EcuLspCompletionItem?
     }
 
     struct ApplicationPlan: Equatable {
@@ -23,6 +25,12 @@ enum AttoLspCompletionParser {
     }
 
     static func items(fromCompletionResultJSON json: String) -> [Item] {
+        if let data = json.data(using: .utf8),
+           let result = try? JSONDecoder().decode(EcuLspCompletionResult.self, from: data)
+        {
+            return items(fromCompletionResult: result)
+        }
+
         guard let data = json.data(using: .utf8) else { return [] }
         guard let root = try? JSONSerialization.jsonObject(with: data, options: []) else { return [] }
         guard !(root is NSNull) else { return [] }
@@ -42,15 +50,49 @@ enum AttoLspCompletionParser {
         }
     }
 
+    static func items(fromCompletionResult result: EcuLspCompletionResult) -> [Item] {
+        result.items.compactMap(item(fromCompletionItem:))
+    }
+
     static func item(fromCompletionItemJSON json: String) -> Item? {
+        if let data = json.data(using: .utf8),
+           let item = try? JSONDecoder().decode(EcuLspCompletionItem.self, from: data)
+        {
+            return self.item(fromCompletionItem: item)
+        }
+
         guard let data = json.data(using: .utf8) else { return nil }
         guard let root = try? JSONSerialization.jsonObject(with: data, options: []) else { return nil }
         guard let dict = root as? [String: Any] else { return nil }
         return item(from: dict)
     }
 
+    static func item(fromCompletionItem item: EcuLspCompletionItem) -> Item? {
+        let label = item.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard label.isEmpty == false else { return nil }
+
+        let rawJSONString = item.raw.flatMap(jsonString)
+        let object = item.raw.flatMap(jsonObject) as? [String: Any] ?? [:]
+        return Item(
+            label: item.label,
+            detail: item.detail,
+            documentation: item.documentation?.text,
+            commitCharacters: item.commitCharacters.filter { $0.isEmpty == false },
+            kind: item.kind,
+            kindLabel: item.kind.flatMap(kindLabel),
+            filterText: item.filterText,
+            sortText: item.sortText,
+            object: object,
+            rawJSONString: rawJSONString,
+            typedItem: item
+        )
+    }
+
     static func rawJSON(for item: Item) -> String? {
-        jsonString(item.object)
+        if let rawJSONString = item.rawJSONString {
+            return rawJSONString
+        }
+        return jsonString(item.object)
     }
 
     static func displayTitle(for item: Item) -> String {
@@ -136,6 +178,15 @@ enum AttoLspCompletionParser {
         fallbackStart: UInt32,
         fallbackEnd: UInt32
     ) -> ApplicationPlan? {
+        if let typedItem = item.typedItem {
+            return applicationPlan(
+                for: typedItem,
+                documentText: documentText,
+                fallbackStart: fallbackStart,
+                fallbackEnd: fallbackEnd
+            )
+        }
+
         let isSnippet = intValue(item.object["insertTextFormat"]) == 2
         let additionalEdits = textEdits(from: item.object["additionalTextEdits"], documentText: documentText)
 
@@ -150,6 +201,35 @@ enum AttoLspCompletionParser {
         }
 
         guard let fallbackText = fallbackInsertText(from: item.object) else { return nil }
+        return ApplicationPlan(
+            start: min(fallbackStart, fallbackEnd),
+            end: max(fallbackStart, fallbackEnd),
+            text: fallbackText,
+            isSnippet: isSnippet,
+            additionalEdits: additionalEdits
+        )
+    }
+
+    private static func applicationPlan(
+        for item: EcuLspCompletionItem,
+        documentText: String,
+        fallbackStart: UInt32,
+        fallbackEnd: UInt32
+    ) -> ApplicationPlan? {
+        let isSnippet = item.insertTextFormatKind == .snippet
+        let additionalEdits = textEdits(from: item.additionalTextEdits, documentText: documentText)
+
+        if let edit = textEdit(from: item.textEdit, documentText: documentText) {
+            return ApplicationPlan(
+                start: edit.start,
+                end: edit.end,
+                text: edit.text,
+                isSnippet: isSnippet,
+                additionalEdits: additionalEdits
+            )
+        }
+
+        guard let fallbackText = fallbackInsertText(from: item) else { return nil }
         return ApplicationPlan(
             start: min(fallbackStart, fallbackEnd),
             end: max(fallbackStart, fallbackEnd),
@@ -177,6 +257,22 @@ enum AttoLspCompletionParser {
         return nil
     }
 
+    private static func textEdit(
+        from completionTextEdit: EcuLspCompletionTextEdit?,
+        documentText: String
+    ) -> EcuTextEdit? {
+        guard let completionTextEdit else { return nil }
+
+        switch completionTextEdit {
+        case let .textEdit(edit):
+            return textEdit(range: edit.range, text: edit.newText, documentText: documentText)
+        case let .insertReplace(edit):
+            return textEdit(range: edit.insert, text: edit.newText, documentText: documentText)
+        case .unknown:
+            return nil
+        }
+    }
+
     private static func item(from dict: [String: Any]) -> Item? {
         guard let label = dict["label"] as? String, label.isEmpty == false else { return nil }
         let kind = intValue(dict["kind"])
@@ -189,7 +285,9 @@ enum AttoLspCompletionParser {
             kindLabel: kind.flatMap(kindLabel),
             filterText: stringValue(dict["filterText"]),
             sortText: stringValue(dict["sortText"]),
-            object: dict
+            object: dict,
+            rawJSONString: jsonString(dict),
+            typedItem: nil
         )
     }
 
@@ -200,6 +298,12 @@ enum AttoLspCompletionParser {
             guard let range = dict["range"] as? [String: Any] else { return nil }
             guard let text = stringValue(dict["newText"]) else { return nil }
             return textEdit(range: range, text: text, documentText: documentText)
+        }
+    }
+
+    private static func textEdits(from edits: [EcuLspTextEdit], documentText: String) -> [EcuTextEdit] {
+        edits.compactMap { edit in
+            textEdit(range: edit.range, text: edit.newText, documentText: documentText)
         }
     }
 
@@ -227,12 +331,39 @@ enum AttoLspCompletionParser {
         return EcuTextEdit(start: min(startOffset, endOffset), end: max(startOffset, endOffset), text: text)
     }
 
+    private static func textEdit(range: EcuLspRange, text: String, documentText: String) -> EcuTextEdit? {
+        let startOffset = AttoLspDefinitionParser.charOffsetForLspPosition(
+            inText: documentText,
+            line: Int(range.start.line),
+            utf16Character: Int(range.start.utf16Character)
+        )
+        let endOffset = AttoLspDefinitionParser.charOffsetForLspPosition(
+            inText: documentText,
+            line: Int(range.end.line),
+            utf16Character: Int(range.end.utf16Character)
+        )
+        return EcuTextEdit(start: min(startOffset, endOffset), end: max(startOffset, endOffset), text: text)
+    }
+
     private static func fallbackInsertText(from dict: [String: Any]) -> String? {
         if let insertText = stringValue(dict["insertText"]), insertText.isEmpty == false {
             return insertText
         }
         if let label = stringValue(dict["label"]), label.isEmpty == false {
             return label
+        }
+        return nil
+    }
+
+    private static func fallbackInsertText(from item: EcuLspCompletionItem) -> String? {
+        if let insertText = item.insertText, insertText.isEmpty == false {
+            return insertText
+        }
+        if let textEditText = item.textEditText, textEditText.isEmpty == false {
+            return textEditText
+        }
+        if item.label.isEmpty == false {
+            return item.label
         }
         return nil
     }
@@ -319,5 +450,26 @@ enum AttoLspCompletionParser {
         guard JSONSerialization.isValidJSONObject(object) else { return nil }
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: []) else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    private static func jsonString(_ value: EcuJSONValue) -> String? {
+        jsonString(jsonObject(from: value))
+    }
+
+    private static func jsonObject(from value: EcuJSONValue) -> Any {
+        switch value {
+        case .null:
+            return NSNull()
+        case let .bool(value):
+            return value
+        case let .number(value):
+            return value
+        case let .string(value):
+            return value
+        case let .array(values):
+            return values.map { jsonObject(from: $0) }
+        case let .object(values):
+            return values.mapValues { jsonObject(from: $0) }
+        }
     }
 }

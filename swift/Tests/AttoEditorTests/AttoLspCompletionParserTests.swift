@@ -57,6 +57,62 @@ final class AttoLspCompletionParserTests: XCTestCase {
         XCTAssertEqual(items.map(\.label), ["abc"])
     }
 
+    func testTypedCompletionResultParsesItemsAndApplicationPlan() throws {
+        let result = try JSONDecoder().decode(EcuLspCompletionResult.self, from: Data("""
+        {
+          "isIncomplete": false,
+          "items": [
+            {
+              "label": "typedPrint",
+              "kind": 3,
+              "documentation": {
+                "kind": "markdown",
+                "value": "Typed completion."
+              },
+              "textEdit": {
+                "insert": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 5 }
+                },
+                "replace": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 10 }
+                },
+                "newText": "typedPrint()"
+              },
+              "additionalTextEdits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "import Typed\\n"
+                }
+              ],
+              "data": { "id": 9 }
+            }
+          ]
+        }
+        """.utf8))
+
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResult: result).first)
+        XCTAssertEqual(item.label, "typedPrint")
+        XCTAssertEqual(item.kindLabel, "Function")
+        XCTAssertEqual(AttoLspCompletionParser.previewText(for: item), "typedPrint\nFunction\n\nTyped completion.")
+        XCTAssertNotNil(AttoLspCompletionParser.rawJSON(for: item))
+
+        let plan = try XCTUnwrap(AttoLspCompletionParser.applicationPlan(
+            for: item,
+            documentText: "typedValue",
+            fallbackStart: 0,
+            fallbackEnd: 10
+        ))
+        XCTAssertEqual(plan.start, 0)
+        XCTAssertEqual(plan.end, 5)
+        XCTAssertEqual(plan.text, "typedPrint()")
+        XCTAssertEqual(plan.additionalEdits, [EcuTextEdit(start: 0, end: 0, text: "import Typed\n")])
+    }
+
     func testFilteredItemsUsePrefixAndFilterText() throws {
         let items = AttoLspCompletionParser.items(
             fromCompletionResultJSON: #"[{"label":"print"},{"label":"private"},{"label":"println","filterText":"writeLine"},{"label":"map"}]"#
