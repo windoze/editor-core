@@ -949,6 +949,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastPrepareCallHierarchyResult() throws -> EcuLspCallHierarchyPrepareResult? {
+        guard let json = try lspTakeLastPrepareCallHierarchyResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspCallHierarchyPrepareResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_prepare_call_hierarchy_decode"
+        )
+    }
+
     public func lspRequestCallHierarchyIncomingCalls(itemJSON: String) throws -> UInt64 {
         try lspRequestJSON(itemJSON, context: "editor_ui_lsp_request_call_hierarchy_incoming_calls") { cstr, out in
             editor_core_ui_ffi_editor_ui_lsp_request_call_hierarchy_incoming_calls(handle, cstr, out)
@@ -961,6 +970,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastCallHierarchyIncomingCallsResult() throws -> EcuLspCallHierarchyIncomingCallsResult? {
+        guard let json = try lspTakeLastCallHierarchyIncomingCallsResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspCallHierarchyIncomingCallsResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_call_hierarchy_incoming_calls_decode"
+        )
+    }
+
     public func lspRequestCallHierarchyOutgoingCalls(itemJSON: String) throws -> UInt64 {
         try lspRequestJSON(itemJSON, context: "editor_ui_lsp_request_call_hierarchy_outgoing_calls") { cstr, out in
             editor_core_ui_ffi_editor_ui_lsp_request_call_hierarchy_outgoing_calls(handle, cstr, out)
@@ -971,6 +989,15 @@ public final class EditorUI {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_call_hierarchy_outgoing_calls_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_call_hierarchy_outgoing_calls_json(handle, has, ptr)
         }
+    }
+
+    public func lspTakeLastCallHierarchyOutgoingCallsResult() throws -> EcuLspCallHierarchyOutgoingCallsResult? {
+        guard let json = try lspTakeLastCallHierarchyOutgoingCallsResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspCallHierarchyOutgoingCallsResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_call_hierarchy_outgoing_calls_decode"
+        )
     }
 
     public func lspRequestPrepareTypeHierarchy(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
@@ -989,6 +1016,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastPrepareTypeHierarchyResult() throws -> EcuLspTypeHierarchyPrepareResult? {
+        guard let json = try lspTakeLastPrepareTypeHierarchyResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspTypeHierarchyPrepareResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_prepare_type_hierarchy_decode"
+        )
+    }
+
     public func lspRequestTypeHierarchySupertypes(itemJSON: String) throws -> UInt64 {
         try lspRequestJSON(itemJSON, context: "editor_ui_lsp_request_type_hierarchy_supertypes") { cstr, out in
             editor_core_ui_ffi_editor_ui_lsp_request_type_hierarchy_supertypes(handle, cstr, out)
@@ -1001,6 +1037,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastTypeHierarchySupertypesResult() throws -> EcuLspTypeHierarchyItemsResult? {
+        guard let json = try lspTakeLastTypeHierarchySupertypesResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspTypeHierarchyItemsResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_type_hierarchy_supertypes_decode"
+        )
+    }
+
     public func lspRequestTypeHierarchySubtypes(itemJSON: String) throws -> UInt64 {
         try lspRequestJSON(itemJSON, context: "editor_ui_lsp_request_type_hierarchy_subtypes") { cstr, out in
             editor_core_ui_ffi_editor_ui_lsp_request_type_hierarchy_subtypes(handle, cstr, out)
@@ -1011,6 +1056,15 @@ public final class EditorUI {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_type_hierarchy_subtypes_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_type_hierarchy_subtypes_json(handle, has, ptr)
         }
+    }
+
+    public func lspTakeLastTypeHierarchySubtypesResult() throws -> EcuLspTypeHierarchyItemsResult? {
+        guard let json = try lspTakeLastTypeHierarchySubtypesResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspTypeHierarchyItemsResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_type_hierarchy_subtypes_decode"
+        )
     }
 
     public func lspRequestWorkspaceSymbols(query: String) throws -> UInt64 {

@@ -1,3 +1,4 @@
+import EditorCoreUIFFI
 import Foundation
 
 enum AttoLspHierarchyParser {
@@ -21,8 +22,16 @@ enum AttoLspHierarchyParser {
         hierarchyItems(fromResultJSON: json)
     }
 
+    static func prepareCallItems(from result: EcuLspCallHierarchyPrepareResult) -> [Item] {
+        result.items.compactMap { item(from: $0) }
+    }
+
     static func prepareTypeItems(fromResultJSON json: String) -> [Item] {
         hierarchyItems(fromResultJSON: json)
+    }
+
+    static func prepareTypeItems(from result: EcuLspTypeHierarchyPrepareResult) -> [Item] {
+        result.items.compactMap { item(from: $0) }
     }
 
     static func incomingCalls(fromResultJSON json: String) -> [Entry] {
@@ -48,6 +57,21 @@ enum AttoLspHierarchyParser {
         }
     }
 
+    static func incomingCalls(from result: EcuLspCallHierarchyIncomingCallsResult) -> [Entry] {
+        result.calls.compactMap { call -> Entry? in
+            guard let item = item(from: call.from) else { return nil }
+            let target = call.fromRanges.compactMap { targetFromRange($0, uri: call.from.uri) }.first
+                ?? item.target
+            return Entry(
+                name: item.name,
+                detail: item.detail,
+                kindLabel: item.kindLabel,
+                target: target,
+                relatedRangeCount: call.fromRanges.isEmpty ? nil : call.fromRanges.count
+            )
+        }
+    }
+
     static func outgoingCalls(fromResultJSON json: String) -> [Entry] {
         guard let root = jsonRoot(json) else { return [] }
         guard let calls = root as? [Any] else { return [] }
@@ -68,9 +92,35 @@ enum AttoLspHierarchyParser {
         }
     }
 
+    static func outgoingCalls(from result: EcuLspCallHierarchyOutgoingCallsResult) -> [Entry] {
+        result.calls.compactMap { call -> Entry? in
+            guard let item = item(from: call.to) else { return nil }
+            return Entry(
+                name: item.name,
+                detail: item.detail,
+                kindLabel: item.kindLabel,
+                target: item.target,
+                relatedRangeCount: call.fromRanges.isEmpty ? nil : call.fromRanges.count
+            )
+        }
+    }
+
     static func typeHierarchyEntries(fromResultJSON json: String) -> [Entry] {
         hierarchyItems(fromResultJSON: json).map { item in
             Entry(
+                name: item.name,
+                detail: item.detail,
+                kindLabel: item.kindLabel,
+                target: item.target,
+                relatedRangeCount: nil
+            )
+        }
+    }
+
+    static func typeHierarchyEntries(from result: EcuLspTypeHierarchyItemsResult) -> [Entry] {
+        result.items.compactMap { typedItem -> Entry? in
+            guard let item = item(from: typedItem) else { return nil }
+            return Entry(
                 name: item.name,
                 detail: item.detail,
                 kindLabel: item.kindLabel,
@@ -119,6 +169,30 @@ enum AttoLspHierarchyParser {
         )
     }
 
+    private static func item(from item: EcuLspCallHierarchyItem) -> Item? {
+        guard let name = nonEmptyString(item.name) else { return nil }
+        guard let requestJSON = item.rawJSONString else { return nil }
+        return Item(
+            name: name,
+            detail: nonEmptyString(item.detail),
+            kindLabel: kindLabel(item.kind),
+            target: targetFromRange(item.selectionRange, uri: item.uri),
+            requestJSON: requestJSON
+        )
+    }
+
+    private static func item(from item: EcuLspTypeHierarchyItem) -> Item? {
+        guard let name = nonEmptyString(item.name) else { return nil }
+        guard let requestJSON = item.rawJSONString else { return nil }
+        return Item(
+            name: name,
+            detail: nonEmptyString(item.detail),
+            kindLabel: kindLabel(item.kind),
+            target: targetFromRange(item.selectionRange, uri: item.uri),
+            requestJSON: requestJSON
+        )
+    }
+
     private static func parseTarget(
         fromRange range: [String: Any]?,
         uri: String
@@ -129,6 +203,17 @@ enum AttoLspHierarchyParser {
             return nil
         }
         return AttoLspDefinitionParser.Target(uri: uri, line: line, utf16Character: character)
+    }
+
+    private static func targetFromRange(
+        _ range: EcuLspRange,
+        uri: String
+    ) -> AttoLspDefinitionParser.Target {
+        AttoLspDefinitionParser.Target(
+            uri: uri,
+            line: Int(range.start.line),
+            utf16Character: Int(range.start.utf16Character)
+        )
     }
 
     private static func jsonRoot(_ json: String) -> Any? {

@@ -5563,22 +5563,27 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let items: [AttoLspHierarchyParser.Item]
             do {
                 if ctx.kind.isCallHierarchy {
-                    json = try tab.editCore.editor.lspTakeLastPrepareCallHierarchyResultJSON()
+                    guard let result = try tab.editCore.editor.lspTakeLastPrepareCallHierarchyResult() else {
+                        return
+                    }
+                    items = AttoLspHierarchyParser.prepareCallItems(from: result)
                 } else {
-                    json = try tab.editCore.editor.lspTakeLastPrepareTypeHierarchyResultJSON()
+                    guard let result = try tab.editCore.editor.lspTakeLastPrepareTypeHierarchyResult() else {
+                        return
+                    }
+                    items = AttoLspHierarchyParser.prepareTypeItems(from: result)
                 }
             } catch {
                 return
             }
-            guard let json else { return }
 
             self.hierarchyPreparePollTimer?.cancel()
             self.hierarchyPreparePollTimer = nil
             self.hierarchyPrepareContext = nil
-            self.handleHierarchyPrepareResultJSON(json, kind: ctx.kind, tab: tab)
+            self.handleHierarchyPrepareItems(items, kind: ctx.kind, tab: tab)
             timer.cancel()
         }
 
@@ -5586,14 +5591,11 @@ final class AttoEditorAreaViewController: NSViewController {
         timer.resume()
     }
 
-    private func handleHierarchyPrepareResultJSON(
-        _ json: String,
+    private func handleHierarchyPrepareItems(
+        _ items: [AttoLspHierarchyParser.Item],
         kind: LspHierarchyRequestKind,
         tab: AttoEditorTab
     ) {
-        let items = kind.isCallHierarchy
-            ? AttoLspHierarchyParser.prepareCallItems(fromResultJSON: json)
-            : AttoLspHierarchyParser.prepareTypeItems(fromResultJSON: json)
         guard items.isEmpty == false else {
             cancelHierarchyUI()
             NSSound.beep()
@@ -5694,47 +5696,43 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let entries: [AttoLspHierarchyParser.Entry]
             do {
                 switch ctx.kind {
                 case .callIncoming:
-                    json = try tab.editCore.editor.lspTakeLastCallHierarchyIncomingCallsResultJSON()
+                    guard let result = try tab.editCore.editor.lspTakeLastCallHierarchyIncomingCallsResult() else {
+                        return
+                    }
+                    entries = AttoLspHierarchyParser.incomingCalls(from: result)
                 case .callOutgoing:
-                    json = try tab.editCore.editor.lspTakeLastCallHierarchyOutgoingCallsResultJSON()
+                    guard let result = try tab.editCore.editor.lspTakeLastCallHierarchyOutgoingCallsResult() else {
+                        return
+                    }
+                    entries = AttoLspHierarchyParser.outgoingCalls(from: result)
                 case .typeSupertypes:
-                    json = try tab.editCore.editor.lspTakeLastTypeHierarchySupertypesResultJSON()
+                    guard let result = try tab.editCore.editor.lspTakeLastTypeHierarchySupertypesResult() else {
+                        return
+                    }
+                    entries = AttoLspHierarchyParser.typeHierarchyEntries(from: result)
                 case .typeSubtypes:
-                    json = try tab.editCore.editor.lspTakeLastTypeHierarchySubtypesResultJSON()
+                    guard let result = try tab.editCore.editor.lspTakeLastTypeHierarchySubtypesResult() else {
+                        return
+                    }
+                    entries = AttoLspHierarchyParser.typeHierarchyEntries(from: result)
                 }
             } catch {
                 return
             }
-            guard let json else { return }
 
             self.hierarchyChildrenPollTimer?.cancel()
             self.hierarchyChildrenPollTimer = nil
             self.hierarchyChildrenContext = nil
-            _ = self.showHierarchyResultJSONInActiveTab(json, kind: ctx.kind)
+            _ = self.showHierarchyResults(entries, placeholder: ctx.kind.resultPlaceholder)
             timer.cancel()
         }
 
         hierarchyChildrenPollTimer = timer
         timer.resume()
-    }
-
-    @discardableResult
-    private func showHierarchyResultJSONInActiveTab(_ json: String, kind: LspHierarchyRequestKind) -> Bool {
-        let entries: [AttoLspHierarchyParser.Entry]
-        switch kind {
-        case .callIncoming:
-            entries = AttoLspHierarchyParser.incomingCalls(fromResultJSON: json)
-        case .callOutgoing:
-            entries = AttoLspHierarchyParser.outgoingCalls(fromResultJSON: json)
-        case .typeSupertypes, .typeSubtypes:
-            entries = AttoLspHierarchyParser.typeHierarchyEntries(fromResultJSON: json)
-        }
-
-        return showHierarchyResults(entries, placeholder: kind.resultPlaceholder)
     }
 
     @discardableResult
