@@ -1610,6 +1610,13 @@ enum AttoLanguageConfiguration {
 }
 
 @MainActor
+struct AttoLspServerLaunchConfig: Equatable {
+    let command: String
+    let args: String?
+    let languageId: String
+}
+
+@MainActor
 final class AttoEditorTab {
     let id: UUID
     /// Projection handle into Rust `MultiDocumentEditorUi`; Swift keeps this only to route
@@ -1622,6 +1629,7 @@ final class AttoEditorTab {
     var syntaxLanguageId: String?
     var panes: [EditCoreUI]
     var activePaneIndex: Int
+    var lspServerConfig: AttoLspServerLaunchConfig?
     var semanticTokensResultId: String?
     var semanticTokensData: [UInt32]
 
@@ -1656,6 +1664,7 @@ final class AttoEditorTab {
         self.syntaxLanguageId = syntaxLanguageId
         self.panes = [editCore]
         self.activePaneIndex = 0
+        self.lspServerConfig = nil
         self.semanticTokensResultId = nil
         self.semanticTokensData = []
     }

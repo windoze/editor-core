@@ -244,6 +244,13 @@ final class AttoLspResultFeedbackTests: XCTestCase {
                 detailText: "No selected text is available to format."
             )
         )
+        XCTAssertEqual(
+            AttoLspResultFeedback.failed(.serverRestart, errorDescription: "spawn failed"),
+            AttoLspResultFeedback.Message(
+                statusText: "LSP server restart: failed",
+                detailText: "LSP server restart failed.\nspawn failed"
+            )
+        )
     }
 
     func testRefreshSummaryFormatsSingularAndPluralCounts() {

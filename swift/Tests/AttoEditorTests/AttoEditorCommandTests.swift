@@ -91,6 +91,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.workspace_diagnostics"))
         XCTAssertTrue(ids.contains("lsp.show_workspace_problems_panel"))
         XCTAssertTrue(ids.contains("lsp.show_project_lsp_status"))
+        XCTAssertTrue(ids.contains("lsp.restart_server"))
         XCTAssertTrue(ids.contains("lsp.document_colors"))
         XCTAssertTrue(ids.contains("lsp.pick_document_color"))
         XCTAssertTrue(ids.contains("lsp.refresh_folding_ranges"))
@@ -1455,6 +1456,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_diagnostics", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workspace_problems_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_project_lsp_status", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_server", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.pick_document_color", in: menu))
     }
@@ -5037,6 +5039,78 @@ final class AttoEditorCommandTests: XCTestCase {
         }
     }
 
+    func testRestartLspServerRequiresSavedLaunchConfig() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("plain.txt")
+        try "plain".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc.restartLspServerInActiveTab())
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server restart: unavailable")
+    }
+
+    func testRestartLspServerRestartsActiveTabSession() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("restart.txt")
+        try "restart".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("restart-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("restart-fake-lsp.sh")
+        try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let config = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try tab.editCore.editor.lspEnable(
+            command: config.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+        tab.lspServerConfig = config
+        defer { tab.editCore.editor.lspDisable() }
+
+        _ = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        XCTAssertTrue(vc.restartLspServerInActiveTab())
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#,
+            minimumOccurrences: 2
+        )
+        XCTAssertGreaterThanOrEqual(occurrenceCount(of: "--session--", in: captured), 2, captured)
+        XCTAssertGreaterThanOrEqual(
+            occurrenceCount(of: #""method":"textDocument/didOpen""#, in: captured),
+            2,
+            captured
+        )
+        XCTAssertTrue(captured.contains(fileURL.standardizedFileURL.absoluteString), captured)
+        XCTAssertTrue(captured.contains(#""languageId":"plaintext""#), captured)
+        XCTAssertEqual(tab.lspServerConfig, config)
+        XCTAssertEqual(tab.syntaxLanguageId, "plaintext")
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server restarted")
+    }
+
     func testSaveAndCloseNotifyLspDocumentLifecycle() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -5982,6 +6056,26 @@ final class AttoEditorCommandTests: XCTestCase {
         return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }
 
+    private func waitForCapturedLspInput(
+        at url: URL,
+        containing needle: String,
+        minimumOccurrences: Int
+    ) -> String {
+        for _ in 0..<100 {
+            let captured = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            if occurrenceCount(of: needle, in: captured) >= minimumOccurrences {
+                return captured
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    }
+
+    private func occurrenceCount(of needle: String, in haystack: String) -> Int {
+        guard needle.isEmpty == false else { return 0 }
+        return haystack.components(separatedBy: needle).count - 1
+    }
+
     private func writeFakeLspServerScript(captureURL: URL, scriptURL: URL) throws {
         let initBody = #"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#
         let capturePath = captureURL.path.replacingOccurrences(of: "'", with: "'\\''")
@@ -5990,6 +6084,20 @@ final class AttoEditorCommandTests: XCTestCase {
         body='\(initBody)'
         printf 'Content-Length: %s\\r\\n\\r\\n%s' "${#body}" "$body"
         cat > '\(capturePath)'
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+    }
+
+    private func writeAppendingFakeLspServerScript(captureURL: URL, scriptURL: URL) throws {
+        let initBody = #"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#
+        let capturePath = captureURL.path.replacingOccurrences(of: "'", with: "'\\''")
+        let script = """
+        #!/bin/sh
+        body='\(initBody)'
+        printf 'Content-Length: %s\\r\\n\\r\\n%s' "${#body}" "$body"
+        printf '\\n--session--\\n' >> '\(capturePath)'
+        cat >> '\(capturePath)'
         """
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)

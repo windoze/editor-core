@@ -5,6 +5,11 @@ import EditorCoreUIFFI
 import Foundation
 
 extension AttoEditorAreaViewController {
+    struct SyntaxSupportConfiguration {
+        let syntaxLanguageId: String?
+        let lspServerConfig: AttoLspServerLaunchConfig?
+    }
+
     // MARK: - Content
 
     func showEmptyState() {
@@ -169,8 +174,8 @@ extension AttoEditorAreaViewController {
         }
 
         // Syntax support (best-effort): LSP -> Tree-sitter -> Sublime `.sublime-syntax`.
-        let syntaxLanguageId = configureSyntaxSupport(for: url, editCore: editCore)
-        applyLanguageConfiguration(fileURL: url, syntaxLanguageId: syntaxLanguageId, to: editCore)
+        let syntaxSupport = configureSyntaxSupport(for: url, editCore: editCore)
+        applyLanguageConfiguration(fileURL: url, syntaxLanguageId: syntaxSupport.syntaxLanguageId, to: editCore)
 
         let tabId = UUID()
         editCore.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorPane(tabId))
@@ -183,9 +188,10 @@ extension AttoEditorAreaViewController {
             isUntitled: isUntitled,
             isPreview: isPreview,
             isDirty: false,
-            syntaxLanguageId: syntaxLanguageId,
+            syntaxLanguageId: syntaxSupport.syntaxLanguageId,
             editCore: editCore
         )
+        tab.lspServerConfig = syntaxSupport.lspServerConfig
         configureEditCoreHooks(editCore, tabID: tabId)
         return tab
     }
@@ -236,7 +242,7 @@ extension AttoEditorAreaViewController {
         return false
     }
 
-    func configureSyntaxSupport(for url: URL, editCore: EditCoreUI) -> String? {
+    func configureSyntaxSupport(for url: URL, editCore: EditCoreUI) -> SyntaxSupportConfiguration {
         // Start from a clean slate (best-effort). This avoids stacking style layers when a host
         // switches engines (e.g. LSP becomes available later).
         editCore.editor.lspDisable()
@@ -249,75 +255,13 @@ extension AttoEditorAreaViewController {
             || env["EDITOR_CORE_APPKIT_DISABLE_LSP"] == "1"
 
         if disableLSP == false {
-            let ext = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let configured = AttoLspRegistry.loadServerMap()[ext]
-
-            let cmd: String? = {
-                if let configured { return configured.command }
-
-                // Backwards-compat: preserve Rust env override + default behavior when no config exists.
-                if ext == "rs" {
-                    return env["ATTO_EDITOR_LSP_CMD"]
-                        ?? env["EDITOR_CORE_APPKIT_LSP_CMD"]
-                        ?? "rust-analyzer"
-                }
-
-                return nil
-            }()
-
-            let args: String? = {
-                if let configured { return configured.args }
-
-                // Backwards-compat for Rust-only env args.
-                if ext == "rs" {
-                    return env["ATTO_EDITOR_LSP_ARGS"]
-                        ?? env["EDITOR_CORE_APPKIT_LSP_ARGS"]
-                }
-
-                return nil
-            }()
-
-            let languageId: String? = {
-                if let configured, let lang = configured.languageId { return lang }
-                if let inferred = inferredTreeSitterLanguageId(for: url) { return inferred }
-                return AttoLspLanguageId.guess(forExtension: ext)
-            }()
-
-            if let cmd, let languageId, languageId.isEmpty == false {
+            if let config = lspLaunchConfig(for: url, environment: env) {
                 do {
-                    try editCore.editor.lspEnable(
-                        command: cmd,
-                        args: args,
-                        rootURI: workspaceRootURL.absoluteString,
-                        documentURI: url.absoluteString,
-                        languageId: languageId
+                    let languageId = try enableLspSupport(for: url, editCore: editCore, config: config)
+                    return SyntaxSupportConfiguration(
+                        syntaxLanguageId: languageId,
+                        lspServerConfig: config
                     )
-
-                    let supportsSemanticTokens: Bool = {
-                        guard let status = try? editCore.editor.lspStatusSnapshot() else { return false }
-                        return status.capabilities?.semanticTokens == true
-                    }()
-
-                    if supportsSemanticTokens {
-                        // Prefer LSP semantic tokens; keep other engines off.
-                        editCore.editor.treeSitterDisable()
-                        editCore.editor.sublimeDisable()
-                    } else {
-                        // LSP without semantic tokens: keep Tree-sitter for baseline highlighting.
-                        do {
-                            try editCore.editor.treeSitterEnableForPath(url.path)
-                            // Kick a short poll window so the initial Tree-sitter parse applies even without edits.
-                            editCore.editorView.kickProcessingPoll()
-                        } catch {
-                            NSLog(
-                                "AttoEditor: Tree-sitter enable failed for %@ (fallback after LSP without semantic tokens): %@",
-                                url.path,
-                                String(describing: error)
-                            )
-                        }
-                        editCore.editor.sublimeDisable()
-                    }
-                    return languageId
                 } catch {
                     NSLog("AttoEditor: LSP enable failed for %@: %@", url.path, String(describing: error))
                 }
@@ -330,7 +274,10 @@ extension AttoEditorAreaViewController {
             editCore.editor.sublimeDisable()
             // Kick a short poll window so the initial Tree-sitter parse applies even without edits.
             editCore.editorView.kickProcessingPoll()
-            return inferredTreeSitterLanguageId(for: url)
+            return SyntaxSupportConfiguration(
+                syntaxLanguageId: inferredTreeSitterLanguageId(for: url),
+                lspServerConfig: nil
+            )
         } catch {
             NSLog("AttoEditor: Tree-sitter enable failed for %@: %@", url.path, String(describing: error))
         }
@@ -341,14 +288,14 @@ extension AttoEditorAreaViewController {
             workspaceRootURL: workspaceRootURL
         ) else {
             NSLog("AttoEditor: no Sublime syntax found for %@ (ext=%@)", url.path, url.pathExtension)
-            return nil
+            return SyntaxSupportConfiguration(syntaxLanguageId: nil, lspServerConfig: nil)
         }
 
         do {
             try editCore.editor.sublimeSetSyntaxPath(syntaxPath)
             editCore.editor.treeSitterDisable()
             editCore.editorView.needsDisplay = true
-            return nil
+            return SyntaxSupportConfiguration(syntaxLanguageId: nil, lspServerConfig: nil)
         } catch {
             NSLog(
                 "AttoEditor: Sublime syntax enable failed (path=%@) for %@: %@",
@@ -356,7 +303,146 @@ extension AttoEditorAreaViewController {
                 url.path,
                 String(describing: error)
             )
+            return SyntaxSupportConfiguration(syntaxLanguageId: nil, lspServerConfig: nil)
+        }
+    }
+
+    func lspLaunchConfig(
+        for url: URL,
+        environment env: [String: String] = ProcessInfo.processInfo.environment
+    ) -> AttoLspServerLaunchConfig? {
+        let ext = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let configured = AttoLspRegistry.loadServerMap()[ext]
+
+        let command: String? = {
+            if let configured { return configured.command }
+
+            if ext == "rs" {
+                return env["ATTO_EDITOR_LSP_CMD"]
+                    ?? env["EDITOR_CORE_APPKIT_LSP_CMD"]
+                    ?? "rust-analyzer"
+            }
+
             return nil
+        }()
+
+        let args: String? = {
+            if let configured { return configured.args }
+
+            if ext == "rs" {
+                return env["ATTO_EDITOR_LSP_ARGS"]
+                    ?? env["EDITOR_CORE_APPKIT_LSP_ARGS"]
+            }
+
+            return nil
+        }()
+
+        let languageId: String? = {
+            if let configured, let lang = configured.languageId { return lang }
+            if let inferred = inferredTreeSitterLanguageId(for: url) { return inferred }
+            return AttoLspLanguageId.guess(forExtension: ext)
+        }()
+
+        guard let command, let languageId, languageId.isEmpty == false else {
+            return nil
+        }
+
+        return AttoLspServerLaunchConfig(
+            command: command,
+            args: args,
+            languageId: languageId
+        )
+    }
+
+    @discardableResult
+    func enableLspSupport(
+        for url: URL,
+        editCore: EditCoreUI,
+        config: AttoLspServerLaunchConfig
+    ) throws -> String {
+        try editCore.editor.lspEnable(
+            command: config.command,
+            args: config.args,
+            rootURI: workspaceRootURL.standardizedFileURL.absoluteString,
+            documentURI: url.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+
+        let supportsSemanticTokens: Bool = {
+            guard let status = try? editCore.editor.lspStatusSnapshot() else { return false }
+            return status.capabilities?.semanticTokens == true
+        }()
+
+        if supportsSemanticTokens {
+            editCore.editor.treeSitterDisable()
+            editCore.editor.sublimeDisable()
+        } else {
+            do {
+                try editCore.editor.treeSitterEnableForPath(url.path)
+                editCore.editorView.kickProcessingPoll()
+            } catch {
+                NSLog(
+                    "AttoEditor: Tree-sitter enable failed for %@ (fallback after LSP without semantic tokens): %@",
+                    url.path,
+                    String(describing: error)
+                )
+            }
+            editCore.editor.sublimeDisable()
+        }
+
+        return config.languageId
+    }
+
+    @discardableResult
+    func restartLspServerInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        guard let config = tab.lspServerConfig else {
+            NSSound.beep()
+            presentLspResultFeedback(
+                AttoLspResultFeedback.unavailable(
+                    .serverRestart,
+                    reason: "No LSP server is configured for this document."
+                ),
+                in: tab.editCore.editorView
+            )
+            return false
+        }
+
+        let documentURL = projectedFileURL(for: tab)
+        tab.editCore.editor.lspDisable()
+
+        do {
+            let languageId = try enableLspSupport(
+                for: documentURL,
+                editCore: tab.editCore,
+                config: config
+            )
+            tab.syntaxLanguageId = languageId
+            tab.lspServerConfig = config
+            applyLanguageConfiguration(for: tab)
+            tab.editCore.editorView.kickProcessingPoll()
+            updateAlwaysPollProcessingForSelectedTab()
+            updateStatusBar()
+            tab.editCore.editorView.needsDisplay = true
+            setTransientStatusText("LSP server restarted")
+            return true
+        } catch {
+            tab.lspServerConfig = config
+            updateAlwaysPollProcessingForSelectedTab()
+            updateStatusBar()
+            NSSound.beep()
+            presentLspResultFeedback(
+                AttoLspResultFeedback.failed(
+                    .serverRestart,
+                    errorDescription: String(describing: error)
+                ),
+                in: tab.editCore.editorView
+            )
+            return false
         }
     }
 }

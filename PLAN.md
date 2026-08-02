@@ -847,6 +847,16 @@
     - `cargo test -p editor-core-ui`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(app): restart active lsp server`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；补齐 AttoEditor active tab 的手动 LSP server restart 起点，让 Swift/App 侧能复用打开文档时保存的 LSP 启动配置重新启用当前 tab 的 LSP session。
+  - 提交边界：只新增 Swift/App 级 `lsp.restart_server` 命令、Go 菜单项、tab 级 LSP launch config 保存、active tab restart helper 和测试；启动参数仍来自既有 `AttoLspRegistry` / Rust 文件环境变量兼容路径，restart 仍通过既有 `EditorUI.lspEnable/lspDisable` binding 完成。不新增 Rust/C ABI，不改变 `editor-core-ui` LSP session ownership，不实现 project-level 批量 restart、shared-session root-set ownership 策略、自动恢复、stderr capture 或 dashboard 级 server health UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerRequiresSavedLaunchConfig`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerRestartsActiveTabSession`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `swift test --package-path swift --filter AttoLspResultFeedbackTests`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
