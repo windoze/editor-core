@@ -770,6 +770,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastCodeLensResult() throws -> EcuLspCodeLensResult? {
+        guard let json = try lspTakeLastCodeLensResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspCodeLensResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_code_lens_decode"
+        )
+    }
+
     public func lspRequestCodeLensResolve(lensJSON: String) throws -> UInt64 {
         try lspRequestJSON(lensJSON, context: "editor_ui_lsp_request_code_lens_resolve") { cstr, out in
             editor_core_ui_ffi_editor_ui_lsp_request_code_lens_resolve(handle, cstr, out)
@@ -780,6 +789,15 @@ public final class EditorUI {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_code_lens_resolve_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_code_lens_resolve_json(handle, has, ptr)
         }
+    }
+
+    public func lspTakeLastCodeLensResolveResult() throws -> EcuLspCodeLens? {
+        guard let json = try lspTakeLastCodeLensResolveResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspCodeLens.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_code_lens_resolve_decode"
+        )
     }
 
     public func lspRequestDocumentSymbols() throws -> UInt64 {

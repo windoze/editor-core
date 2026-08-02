@@ -289,6 +289,10 @@ final class AttoEditorAreaViewController: NSViewController {
         linkedEditingSession != nil
     }
 
+    func _codeLensResultSummaryForTesting(_ result: EcuLspCodeLensResult) -> (errorMessage: String?, count: Int) {
+        (Self.codeLensResultErrorMessage(result), Self.codeLensResultCount(result))
+    }
+
     func _setDocumentColorPickerForTesting(_ picker: ((NSColor) -> NSColor?)?) {
         documentColorPickerForTesting = picker
     }
@@ -6949,20 +6953,20 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspCodeLens?
             do {
-                json = try tab.editCore.editor.lspTakeLastCodeLensResolveResultJSON()
+                result = try tab.editCore.editor.lspTakeLastCodeLensResolveResult()
             } catch {
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             self.codeLensResolvePollTimer?.cancel()
             self.codeLensResolvePollTimer = nil
             self.codeLensResolveContext = nil
 
             let resolved = AttoLspCodeLensParser.item(
-                fromCodeLensJSON: json,
+                from: result,
                 fallbackTitle: ctx.item.title,
                 fallbackRange: ctx.item.range
             ) ?? ctx.item
@@ -7018,9 +7022,9 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspCodeLensResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastCodeLensResultJSON()
+                result = try tab.editCore.editor.lspTakeLastCodeLensResult()
             } catch {
                 let showFeedback = ctx.showFeedback
                 self.cancelCodeLensUI()
@@ -7033,7 +7037,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 NSSound.beep()
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             let showFeedback = ctx.showFeedback
             self.cancelCodeLensUI()
@@ -7044,7 +7048,7 @@ final class AttoEditorAreaViewController: NSViewController {
             self.updateStatusBar()
 
             guard showFeedback else { return }
-            if let errorMessage = Self.codeLensResultErrorMessage(json) {
+            if let errorMessage = Self.codeLensResultErrorMessage(result) {
                 self.showWorkspaceEditPopover(
                     text: "Code lens refresh failed.\n\(errorMessage)",
                     in: editorView
@@ -7052,7 +7056,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 NSSound.beep()
                 return
             }
-            let count = Self.codeLensResultCount(json) ?? 0
+            let count = Self.codeLensResultCount(result)
             let text: String
             if count == 0 {
                 text = "No code lens actions are available."
@@ -7066,6 +7070,14 @@ final class AttoEditorAreaViewController: NSViewController {
 
         codeLensRefreshPollTimer = timer
         timer.resume()
+    }
+
+    private static func codeLensResultCount(_ result: EcuLspCodeLensResult) -> Int {
+        result.items.count
+    }
+
+    private static func codeLensResultErrorMessage(_ result: EcuLspCodeLensResult) -> String? {
+        result.error?.message
     }
 
     private static func codeLensResultCount(_ json: String) -> Int? {

@@ -3,6 +3,10 @@ import EditorCoreUIFFI
 import XCTest
 
 final class AttoLspCodeLensParserTests: XCTestCase {
+    private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
+        try JSONDecoder().decode(T.self, from: Data(json.utf8))
+    }
+
     func testItemsParseCodeLensDecorationsAndCommandPayload() throws {
         let lensJSON = """
         {
@@ -51,6 +55,36 @@ final class AttoLspCodeLensParserTests: XCTestCase {
         XCTAssertTrue(items[0].command?.commandJSON.contains("\"arguments\"") == true)
     }
 
+    func testTypedItemsParseCodeLensResultAndConvertUTF16Range() throws {
+        let text = "\u{1F600}func test() {}\n"
+        let result = try decode(EcuLspCodeLensResult.self, """
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 2 },
+              "end": { "line": 0, "character": 6 }
+            },
+            "command": {
+              "title": "Run Test",
+              "command": "test.run",
+              "arguments": ["caseA"]
+            },
+            "data": { "id": 1 }
+          }
+        ]
+        """)
+
+        let items = AttoLspCodeLensParser.items(from: result, documentText: text)
+
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].title, "Run Test")
+        XCTAssertEqual(items[0].range, EcuOffsetRange(start: 1, end: 5))
+        XCTAssertEqual(items[0].command?.title, "Run Test")
+        XCTAssertEqual(items[0].command?.command, "test.run")
+        XCTAssertTrue(items[0].command?.commandJSON.contains("\"arguments\"") == true)
+        XCTAssertTrue(items[0].lensJSON.contains("\"data\""))
+    }
+
     func testResolvedCodeLensParsesCommandAndFallbackTitle() throws {
         let unresolvedJSON = """
         {
@@ -94,6 +128,35 @@ final class AttoLspCodeLensParserTests: XCTestCase {
         XCTAssertEqual(resolved?.command?.command, "fix.apply")
         XCTAssertEqual(
             AttoLspCodeLensParser.displayTitle(for: try XCTUnwrap(resolved), location: "file.swift:2:1"),
+            "Apply Fix — file.swift:2:1"
+        )
+    }
+
+    func testTypedResolvedCodeLensParsesCommandAndFallbackTitle() throws {
+        let resolved = try decode(EcuLspCodeLens.self, """
+        {
+          "range": {
+            "start": { "line": 1, "character": 0 },
+            "end": { "line": 1, "character": 0 }
+          },
+          "command": {
+            "title": "Apply Fix",
+            "command": "fix.apply"
+          }
+        }
+        """)
+
+        let item = AttoLspCodeLensParser.item(
+            from: resolved,
+            fallbackTitle: "Resolve me",
+            fallbackRange: EcuOffsetRange(start: 10, end: 10)
+        )
+
+        XCTAssertEqual(item?.title, "Apply Fix")
+        XCTAssertEqual(item?.range, EcuOffsetRange(start: 10, end: 10))
+        XCTAssertEqual(item?.command?.command, "fix.apply")
+        XCTAssertEqual(
+            AttoLspCodeLensParser.displayTitle(for: try XCTUnwrap(item), location: "file.swift:2:1"),
             "Apply Fix — file.swift:2:1"
         )
     }

@@ -343,6 +343,51 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(cell.textField?.stringValue.contains("Run One") == true)
     }
 
+    func testTypedCodeLensResultSummaryUsesTypedPayload() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+
+        let result = try JSONDecoder().decode(EcuLspCodeLensResult.self, from: Data("""
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 0 }
+            },
+            "command": { "title": "Run One", "command": "test.runOne" }
+          },
+          {
+            "range": {
+              "start": { "line": 1, "character": 0 },
+              "end": { "line": 1, "character": 0 }
+            },
+            "command": { "title": "Run Two", "command": "test.runTwo" }
+          }
+        ]
+        """.utf8))
+
+        let summary = vc._codeLensResultSummaryForTesting(result)
+        XCTAssertNil(summary.errorMessage)
+        XCTAssertEqual(summary.count, 2)
+
+        let error = try JSONDecoder().decode(EcuLspCodeLensResult.self, from: Data("""
+        {
+          "error": {
+            "code": -32603,
+            "message": "code lens failed"
+          }
+        }
+        """.utf8))
+
+        let errorSummary = vc._codeLensResultSummaryForTesting(error)
+        XCTAssertEqual(errorSummary.errorMessage, "code lens failed")
+        XCTAssertEqual(errorSummary.count, 0)
+    }
+
     func testKeymapParsesSublimeStyleBindingsAndOverridesDefaults() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
