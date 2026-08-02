@@ -407,6 +407,24 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditResourceOperationsApplyToUnopenedLocalFiles`
     - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
     - `git diff --check`
+- 中间提交：`feat(app): command workspace edit undo`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把最近一次 core-owned WorkspaceEdit transaction undo 从测试 hook 推进到用户可触达的 AttoEditor command/menu/keymap 路径，并为该 ABI 能力补独立 feature flag。
+  - 提交边界：新增 UI FFI feature bit `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO`、Swift `EditorCoreUIFFIFeatures.multiDocumentWorkspaceEditTransactionUndo`、runtime optional feature gate、`workspace.undo_last_workspace_edit` command、Edit 菜单项和 `cmd+option+z` 默认 binding；命令调用既有 core undo wrapper 并同步 AppKit 投影。本提交不实现多级 undo/redo stack、不改变普通 editor undo、不新增 AppKit `UndoManager` 聚合，也不实现更深层 conflict UI。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui-ffi`
+    - `cargo test -p editor-core-ui-ffi feature_flags`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesMetadataAndAvailability`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesParameterSchemasAndMacroPolicies`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryDisablesCommandsForMissingOptionalRuntimeFeatures`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditTransactionUndoCommandRestoresAppProjectionAndFiles`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditTransactionUndoRestoresAppProjectionAndFiles`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testExecuteCommandUsesRegisteredCommandIDs`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

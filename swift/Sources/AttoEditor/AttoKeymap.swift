@@ -98,6 +98,7 @@ enum AttoKeymap {
         "file.move_tab_right": AttoKeyBinding(keyEquivalent: "]", modifiers: [.command, .shift]),
         "editor.find": AttoKeyBinding(keyEquivalent: "f", modifiers: [.command]),
         "editor.replace": AttoKeyBinding(keyEquivalent: "f", modifiers: [.command, .option]),
+        "workspace.undo_last_workspace_edit": AttoKeyBinding(keyEquivalent: "z", modifiers: [.command, .option]),
         "editor.format_selection": AttoKeyBinding(keyEquivalent: "f", modifiers: [.option, .shift]),
         "editor.duplicate_lines": AttoKeyBinding(keyEquivalent: "d", modifiers: [.command, .shift]),
         "editor.delete_lines": AttoKeyBinding(keyEquivalent: "k", modifiers: [.command, .shift]),

@@ -167,6 +167,11 @@ struct AttoRuntimeCompatibility {
             name: "multi-document workspace roots",
             reason: "Core-owned workspace/project features can use the same workspace root metadata as the App; Swift keeps App-level root filtering as a fallback."
         ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceEditTransactionUndo,
+            name: "multi-document WorkspaceEdit transaction undo",
+            reason: "WorkspaceEdit undo commands can restore the most recent core-owned transaction; Swift disables that command when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

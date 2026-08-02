@@ -41,6 +41,8 @@ enum AttoMainMenuBuilder {
         editMenu.addItem(commandItem(title: "Replace...", commandID: "editor.replace", appDelegate: appDelegate))
         editMenu.addItem(commandItem(title: "Find in Files...", commandID: "search.find_in_files", appDelegate: appDelegate))
         editMenu.addItem(.separator())
+        editMenu.addItem(commandItem(title: "Undo Last Workspace Edit", commandID: "workspace.undo_last_workspace_edit", appDelegate: appDelegate))
+        editMenu.addItem(.separator())
         editMenu.addItem(commandItem(title: "Format Document", commandID: "editor.format_document", appDelegate: appDelegate))
         editMenu.addItem(commandItem(title: "Format Selection", commandID: "editor.format_selection", appDelegate: appDelegate))
         editMenu.addItem(.separator())

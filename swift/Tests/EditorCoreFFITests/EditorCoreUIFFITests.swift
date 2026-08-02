@@ -98,6 +98,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransaction))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransactionEvents))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceRoots))
+        XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransactionUndo))
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {

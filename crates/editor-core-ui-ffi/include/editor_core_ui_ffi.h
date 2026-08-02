@@ -159,6 +159,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION (1ull << 20)
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_EVENTS (1ull << 21)
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS (1ull << 22)
+#define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO (1ull << 23)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 
 MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);

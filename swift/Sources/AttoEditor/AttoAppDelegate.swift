@@ -651,6 +651,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "editor.replace", title: "Edit: Replace") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showReplaceBar()
             },
+            .init(id: "workspace.undo_last_workspace_edit", title: "Workspace: Undo Last Workspace Edit") { [weak self] in
+                self?.activeWindow()?.editorAreaController.undoLastCoreWorkspaceEditTransaction()
+            },
             .init(id: "view.toggle_sidebar", title: "View: Toggle Sidebar") { [weak self] in
                 self?.activeWindow()?.toggleSidebar()
             },
@@ -1068,6 +1071,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             if commandID.hasPrefix("go.") { return "Go" }
             if commandID.hasPrefix("search.") { return "Search" }
             if commandID.hasPrefix("lsp.") { return "LSP" }
+            if commandID.hasPrefix("workspace.") { return "Workspace" }
             if commandID.hasPrefix("workbench.") { return "AttoEditor" }
             return "General"
         }()
@@ -1076,7 +1080,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             switch commandID {
             case "file.open_folder", "file.open_file", "file.new", "workbench.command_palette", "workbench.preferences":
                 return .none
-            case "go.file", "search.find_in_files", "view.toggle_sidebar":
+            case "go.file", "search.find_in_files", "view.toggle_sidebar", "workspace.undo_last_workspace_edit":
                 return .activeWindow
             case "view.focus_next_pane", "view.focus_previous_pane", "view.move_pane_left", "view.move_pane_right", "view.close_pane":
                 return .multiplePanes
@@ -1134,6 +1138,11 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return AttoCommandSchema(
                 macroPolicy: .notRecordable,
                 requiredRuntimeFeatures: .lspWorkspaceEditCommandRequirements
+            )
+        case "workspace.undo_last_workspace_edit":
+            return AttoCommandSchema(
+                macroPolicy: .notRecordable,
+                requiredRuntimeFeatures: .workspaceEditTransactionUndoCommandRequirements
             )
         case "file.open_folder", "file.open_file", "workbench.preferences", "go.file",
              "editor.find", "editor.replace", "workbench.command_palette":

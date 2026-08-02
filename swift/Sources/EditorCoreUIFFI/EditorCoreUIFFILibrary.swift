@@ -83,6 +83,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let multiDocumentWorkspaceEditTransaction = Self(rawValue: 1 << 20)
     public static let multiDocumentWorkspaceEditTransactionEvents = Self(rawValue: 1 << 21)
     public static let multiDocumentWorkspaceRoots = Self(rawValue: 1 << 22)
+    public static let multiDocumentWorkspaceEditTransactionUndo = Self(rawValue: 1 << 23)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

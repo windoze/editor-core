@@ -355,4 +355,9 @@ extension EditorCoreUIFFIFeatures {
         .lspStatusSnapshot,
         .workspaceEditApplication,
     ]
+
+    static let workspaceEditTransactionUndoCommandRequirements: Self = [
+        .multiDocumentWorkspaceEditTransaction,
+        .multiDocumentWorkspaceEditTransactionUndo,
+    ]
 }

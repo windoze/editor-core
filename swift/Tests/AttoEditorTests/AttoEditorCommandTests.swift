@@ -39,6 +39,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.fold_selection"))
         XCTAssertTrue(ids.contains("editor.unfold"))
         XCTAssertTrue(ids.contains("editor.unfold_all"))
+        XCTAssertTrue(ids.contains("workspace.undo_last_workspace_edit"))
         for command in AttoEditorAreaViewController.CursorMovementCommand.allCases {
             XCTAssertTrue(ids.contains(command.id), command.id)
         }
@@ -111,6 +112,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(cursor.group, "Cursor")
         XCTAssertTrue(cursor.requiresEditor)
         XCTAssertFalse(cursor.isEnabled)
+
+        let workspaceUndo = try XCTUnwrap(commands.first { $0.id == "workspace.undo_last_workspace_edit" })
+        XCTAssertEqual(workspaceUndo.group, "Workspace")
+        XCTAssertFalse(workspaceUndo.requiresEditor)
+        XCTAssertFalse(workspaceUndo.isEnabled)
     }
 
     func testCommandRegistryCarriesParameterSchemasAndMacroPolicies() throws {
@@ -157,6 +163,13 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(rename.macroPolicy, .recordableWithArguments)
         XCTAssertEqual(rename.requiredRuntimeFeatures, .lspWorkspaceEditCommandRequirements)
 
+        let workspaceUndo = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "workspace.undo_last_workspace_edit"))
+        XCTAssertEqual(workspaceUndo.macroPolicy, .notRecordable)
+        XCTAssertEqual(
+            workspaceUndo.requiredRuntimeFeatures,
+            .workspaceEditTransactionUndoCommandRequirements
+        )
+
         let openFile = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "file.open_file"))
         XCTAssertEqual(openFile.macroPolicy, .promptRequired)
     }
@@ -180,6 +193,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "editor.format_document"))
         XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "lsp.workspace_symbols"))
         XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "lsp.rename"))
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "workspace.undo_last_workspace_edit"))
 
         delegate._setRuntimeInfoForTesting(EditorCoreUIFFIRuntimeInfo(
             abiVersion: AttoRuntimeCompatibility.minimumUIABIVersion,
@@ -194,6 +208,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "editor.format_document"))
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "lsp.workspace_symbols"))
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "lsp.rename"))
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "workspace.undo_last_workspace_edit"))
         XCTAssertFalse(delegate.executeCommand(id: "lsp.workspace_symbols", arguments: ["query": .string("A")]))
     }
 
@@ -1220,6 +1235,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let delegate = AttoAppDelegate(
             keyBindings: [
                 "editor.duplicate_lines": AttoKeyBinding(keyEquivalent: "l", modifiers: [.command, .shift]),
+                "workspace.undo_last_workspace_edit": AttoKeyBinding(keyEquivalent: "z", modifiers: [.command, .option]),
             ]
         )
         let menu = AttoMainMenuBuilder.build(appDelegate: delegate)
@@ -1241,6 +1257,12 @@ final class AttoEditorCommandTests: XCTestCase {
 
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_document", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_selection", in: menu))
+        let workspaceUndo = try XCTUnwrap(findMenuItem(commandID: "workspace.undo_last_workspace_edit", in: menu))
+        XCTAssertEqual(workspaceUndo.keyEquivalent, "z")
+        XCTAssertEqual(
+            workspaceUndo.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask),
+            [.command, .option]
+        )
         XCTAssertNotNil(findMenuItem(commandID: "editor.apply_snippet", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.snippet_next_placeholder", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.snippet_prev_placeholder", in: menu))
@@ -3084,6 +3106,63 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "other\n")
         XCTAssertFalse(window.title.contains("●"))
         XCTAssertFalse(vc._undoLastCoreWorkspaceEditTransactionForTesting())
+    }
+
+    func testWorkspaceEditTransactionUndoCommandRestoresAppProjectionAndFiles() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("undo-command-main.txt")
+        let otherURL = tempDir.appendingPathComponent("undo-command-other.txt")
+        try "abc\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "other\n".write(to: otherURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(ctx.editorAreaController)
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "\(fileURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "B"
+              }
+            ],
+            "\(otherURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "X"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(ctx.editorAreaController.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        var editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        XCTAssertEqual(try editorView.editor.text(), "aBc\n")
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "Xother\n")
+        XCTAssertTrue(ctx.window.title.contains("●"))
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "workspace.undo_last_workspace_edit"))
+        XCTAssertTrue(delegate.executeCommand(id: "workspace.undo_last_workspace_edit"))
+
+        editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        XCTAssertEqual(try editorView.editor.text(), "abc\n")
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "other\n")
+        XCTAssertFalse(ctx.window.title.contains("●"))
     }
 
     func testWorkspaceEditPreviewConfirmationCanCancelCoreTransaction() throws {

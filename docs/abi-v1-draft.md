@@ -235,6 +235,9 @@ Guidelines:
 - The UI FFI also exports `editor_core_ui_ffi_abi_version()` and
   `editor_core_ui_ffi_feature_flags()` so Swift/App hosts can probe the loaded UI ABI and gate
   optional feature paths before calling newer symbols.
+- UI FFI feature flags are append-only within the pre-v1 line. As of the current draft, bit 23
+  (`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO`) marks availability of the
+  multi-document WorkspaceEdit transaction undo JSON control-plane symbol.
 - The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
   - new functions
@@ -329,6 +332,7 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_prepare_type_hierarchy(EditorUi
 int32_t editor_core_ui_ffi_editor_ui_lsp_format_document(EditorUi* ui, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);
 int32_t editor_core_ui_ffi_editor_ui_lsp_format_range(EditorUi* ui, uint32_t start_offset, uint32_t end_offset, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);
 int32_t editor_core_ui_ffi_editor_ui_lsp_format_on_type(EditorUi* ui, uint32_t logical_line, uint32_t logical_column, const char* trigger_utf8, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);
+char* editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_editor_ui_minimap_json(EditorUi* ui, uint32_t start_visual_row, uint32_t count);
 int32_t editor_core_ui_ffi_editor_ui_render_rgba(EditorUi* ui, uint8_t* out_buf, uint32_t out_cap, uint32_t* out_len);
 int32_t editor_core_ui_ffi_editor_ui_get_selections(EditorUi* ui, EcuSelectionRange* out_ranges, uint32_t out_cap, uint32_t* out_len, uint32_t* out_primary_index);
@@ -340,6 +344,14 @@ document URI, or the UI's current LSP document URI when the argument is null/emp
 allocated JSON summary with `applied`, `applied_uri`, `applied_edit_count`, `skipped_uris`, and
 per-document edit counts/conflict hints. The caller owns the returned string and must release it
 with the UI FFI string free function.
+
+`editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json` is a pre-v1
+JSON/control-plane surface for restoring the most recent successful core-owned WorkspaceEdit
+transaction in a `MultiDocumentEditorUi`. Hosts must probe
+`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO` before treating the command as
+available. The returned JSON includes `undone`, `restored_uris`,
+`restored_open_tab_count`, `restored_filesystem_entry_count`, and `message`; the caller owns the
+returned string and must release it with the UI FFI string free function.
 
 All public array counts (`style_count`, `font_count`, `decoration_count`, `range_count`, `data_len`, `out_cap`) are `uint32_t`; Rust checks conversion to internal `usize` and validates Rust slice length limits before constructing slices.
 
