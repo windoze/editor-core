@@ -249,6 +249,57 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(scrolled.events[0].viewport?.visibleLines.start, 1)
     }
 
+    func testEditorUIStateEventsRecordDerivedStateChangesAndStale() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc\n", viewportWidthCells: 80)
+
+        try ui.lspApplyDiagnosticsJSON("""
+        {
+          "uri": "file:///tmp/main.rs",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 1 },
+                "end": { "line": 0, "character": 2 }
+              },
+              "severity": 1,
+              "message": "unit"
+            }
+          ],
+          "version": 1
+        }
+        """)
+
+        let changed = try ui.stateEvents()
+        XCTAssertEqual(changed.latestSequence, 1)
+        XCTAssertEqual(changed.events.count, 1)
+        XCTAssertEqual(changed.events[0].kindValue, .derivedStateChanged)
+        XCTAssertEqual(changed.events[0].familyKind, .derivedState)
+        XCTAssertEqual(changed.events[0].derivedState?.status, "changed")
+        XCTAssertEqual(changed.events[0].derivedState?.reason, "processing_edits")
+        XCTAssertEqual(changed.events[0].derivedState?.textVersion, 0)
+        XCTAssertEqual(changed.events[0].derivedState?.editCount, 2)
+        XCTAssertEqual(changed.events[0].derivedState?.families, ["style_intervals", "diagnostics"])
+        XCTAssertNil(changed.events[0].text)
+        XCTAssertNil(changed.events[0].dirty)
+
+        try ui.insertText("z")
+        let stale = try ui.stateEvents(after: changed.latestSequence)
+        XCTAssertEqual(stale.events.map(\.kindValue), [
+            .dirtyChanged,
+            .selectionChanged,
+            .textChanged,
+            .derivedStateStale,
+        ])
+        let staleEvent = try XCTUnwrap(stale.events.last)
+        XCTAssertEqual(staleEvent.familyKind, .derivedState)
+        XCTAssertEqual(staleEvent.derivedState?.status, "stale")
+        XCTAssertEqual(staleEvent.derivedState?.reason, "text_changed")
+        XCTAssertEqual(staleEvent.derivedState?.textVersion, 1)
+        XCTAssertEqual(staleEvent.derivedState?.editCount, 0)
+        XCTAssertEqual(staleEvent.derivedState?.families.last, "document_symbols")
+    }
+
     func testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)

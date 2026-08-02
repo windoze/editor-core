@@ -18,6 +18,7 @@ impl EditorUi {
         // Keep the UI-side monotonic text version consistent with `refresh_processing`.
         doc.text_version = doc.text_version.saturating_add(1);
         doc.record_state_event_from_text_changed(self.view_id);
+        doc.record_state_event_from_derived_state_stale_if_needed(self.view_id, "text_changed");
 
         let Some(shared) = doc.lsp.clone() else {
             return;

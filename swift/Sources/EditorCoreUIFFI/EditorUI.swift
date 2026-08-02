@@ -190,6 +190,22 @@ public struct EcuEditorUILayoutStateEvent: Decodable, Equatable, Sendable {
     }
 }
 
+public struct EcuEditorUIDerivedStateEvent: Decodable, Equatable, Sendable {
+    public let status: String
+    public let reason: String
+    public let textVersion: UInt64
+    public let editCount: Int
+    public let families: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case reason
+        case textVersion = "text_version"
+        case editCount = "edit_count"
+        case families
+    }
+}
+
 public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
     public let sequence: UInt64
     public let kind: String
@@ -204,6 +220,7 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
     public let selection: EcuEditorUISelectionStateEvent?
     public let viewport: EcuEditorUIViewportStateEvent?
     public let layout: EcuEditorUILayoutStateEvent?
+    public let derivedState: EcuEditorUIDerivedStateEvent?
 
     enum CodingKeys: String, CodingKey {
         case sequence
@@ -219,6 +236,7 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
         case selection
         case viewport
         case layout
+        case derivedState = "derived_state"
     }
 }
 

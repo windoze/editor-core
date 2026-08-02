@@ -48,7 +48,7 @@ impl EditorUi {
                 }
             }
 
-            match handle_lsp_derived_state_response(&mut doc, &resp, &mut applied)? {
+            match handle_lsp_derived_state_response(&mut doc, self.view_id, &resp, &mut applied)? {
                 EventOutcome::Handled => continue,
                 EventOutcome::Abort => return Ok(false),
                 EventOutcome::Unhandled => {}

@@ -52,7 +52,7 @@ pub(super) fn handle_lsp_result_slot_response(
     }
 
     let result = resp.result.clone().unwrap_or(serde_json::Value::Null);
-    match apply_slot_result_edits(doc, slot, &result, applied)? {
+    match apply_slot_result_edits(doc, view, slot, &result, applied)? {
         EventOutcome::Abort => Ok(EventOutcome::Abort),
         _ => {
             record_slot_success_result(doc, view, slot, resp.id, result);

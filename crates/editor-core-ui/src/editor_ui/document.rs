@@ -37,6 +37,8 @@ impl EditorUi {
             state_events: std::collections::VecDeque::new(),
             next_state_event_sequence: 1,
             text_version: 0,
+            derived_state_last_changed_text_version: None,
+            derived_state_last_stale_text_version: None,
         }));
         Self {
             doc,

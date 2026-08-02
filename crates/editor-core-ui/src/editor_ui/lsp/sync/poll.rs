@@ -34,7 +34,7 @@ impl EditorUi {
                     return Ok(false);
                 }
             };
-            applied |= doc.apply_lsp_processing_edits(edits)?;
+            applied |= doc.apply_lsp_processing_edits(self.view_id, edits)?;
         }
 
         if let Err(err) = self.maybe_request_lsp_aux() {

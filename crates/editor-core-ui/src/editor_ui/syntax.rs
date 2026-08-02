@@ -103,12 +103,15 @@ impl EditorUi {
 
             doc.treesitter = None;
             doc.treesitter_indenter = None;
-            doc.apply_processing_edits([
-                ProcessingEdit::ClearStyleLayer {
-                    layer: StyleLayerId::TREE_SITTER,
-                },
-                ProcessingEdit::ClearFoldingRegions,
-            ])?;
+            doc.apply_processing_edits(
+                self.view_id,
+                [
+                    ProcessingEdit::ClearStyleLayer {
+                        layer: StyleLayerId::TREE_SITTER,
+                    },
+                    ProcessingEdit::ClearFoldingRegions,
+                ],
+            )?;
 
             let text = doc
                 .ws

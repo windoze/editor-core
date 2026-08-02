@@ -1,6 +1,16 @@
-use crate::{EditorLspRequestEvent, EditorLspResultEvent, EditorUi, EditorUiDoc, UiError, ViewId};
+use crate::{
+    EditorLspRequestEvent, EditorLspResultEvent, EditorUi, EditorUiDoc, ProcessingEdit, UiError,
+    ViewId,
+};
 
 const MAX_EDITOR_UI_STATE_EVENTS: usize = 512;
+const DERIVED_STATE_FAMILIES: [&str; 5] = [
+    "style_intervals",
+    "folding_regions",
+    "diagnostics",
+    "decorations",
+    "document_symbols",
+];
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct EditorUiStateEvent {
@@ -24,6 +34,8 @@ pub struct EditorUiStateEvent {
     pub viewport: Option<EditorUiViewportStateEvent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout: Option<EditorUiLayoutStateEvent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub derived_state: Option<EditorUiDerivedStateEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -132,6 +144,69 @@ impl EditorUiLayoutStateEvent {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EditorUiDerivedStateEvent {
+    pub status: String,
+    pub reason: String,
+    pub text_version: u64,
+    pub edit_count: usize,
+    pub families: Vec<String>,
+}
+
+impl EditorUiDerivedStateEvent {
+    pub(crate) fn changed_from_processing_edits(
+        text_version: u64,
+        edits: &[ProcessingEdit],
+    ) -> Option<Self> {
+        let mut families = Vec::new();
+        let mut edit_count = 0;
+        for edit in edits {
+            let family = match edit {
+                ProcessingEdit::ReplaceStyleLayer { .. }
+                | ProcessingEdit::ClearStyleLayer { .. } => "style_intervals",
+                ProcessingEdit::ReplaceFoldingRegions { .. }
+                | ProcessingEdit::ClearFoldingRegions => "folding_regions",
+                ProcessingEdit::ReplaceDiagnostics { .. } | ProcessingEdit::ClearDiagnostics => {
+                    "diagnostics"
+                }
+                ProcessingEdit::ReplaceDecorations { .. }
+                | ProcessingEdit::ClearDecorations { .. } => "decorations",
+                ProcessingEdit::ReplaceDocumentSymbols { .. }
+                | ProcessingEdit::ClearDocumentSymbols => "document_symbols",
+            };
+            edit_count += 1;
+            if !families.iter().any(|existing| existing == family) {
+                families.push(family.to_string());
+            }
+        }
+
+        if families.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            status: "changed".to_string(),
+            reason: "processing_edits".to_string(),
+            text_version,
+            edit_count,
+            families,
+        })
+    }
+
+    pub(crate) fn stale(text_version: u64, reason: impl Into<String>) -> Self {
+        Self {
+            status: "stale".to_string(),
+            reason: reason.into(),
+            text_version,
+            edit_count: 0,
+            families: DERIVED_STATE_FAMILIES
+                .iter()
+                .map(|family| (*family).to_string())
+                .collect(),
+        }
+    }
+}
+
 impl EditorUiDoc {
     pub(crate) fn record_state_event_from_lsp_request(
         &mut self,
@@ -151,6 +226,7 @@ impl EditorUiDoc {
             selection: None,
             viewport: None,
             layout: None,
+            derived_state: None,
         })
     }
 
@@ -172,6 +248,7 @@ impl EditorUiDoc {
             selection: None,
             viewport: None,
             layout: None,
+            derived_state: None,
         })
     }
 
@@ -201,6 +278,7 @@ impl EditorUiDoc {
             selection: None,
             viewport: None,
             layout: None,
+            derived_state: None,
         })
     }
 
@@ -223,6 +301,7 @@ impl EditorUiDoc {
             selection: None,
             viewport: None,
             layout: None,
+            derived_state: None,
         })
     }
 
@@ -288,6 +367,7 @@ impl EditorUiDoc {
             selection: Some(selection),
             viewport: None,
             layout: None,
+            derived_state: None,
         })
     }
 
@@ -335,6 +415,7 @@ impl EditorUiDoc {
             selection: None,
             viewport: Some(viewport),
             layout: None,
+            derived_state: None,
         })
     }
 
@@ -357,7 +438,64 @@ impl EditorUiDoc {
             selection: None,
             viewport: None,
             layout: Some(layout),
+            derived_state: None,
         })
+    }
+
+    pub(crate) fn record_state_event_from_derived_state_changed(
+        &mut self,
+        view_id: ViewId,
+        derived_state: EditorUiDerivedStateEvent,
+    ) -> u64 {
+        self.record_state_event(EditorUiStateEvent {
+            sequence: 0,
+            kind: "derived_state_changed".to_string(),
+            family: "derived_state".to_string(),
+            title: "Derived state changed".to_string(),
+            view_id: view_id.get(),
+            source_sequence: derived_state.text_version,
+            lsp_request: None,
+            lsp_result: None,
+            text: None,
+            dirty: None,
+            selection: None,
+            viewport: None,
+            layout: None,
+            derived_state: Some(derived_state),
+        })
+    }
+
+    pub(crate) fn record_state_event_from_derived_state_stale_if_needed(
+        &mut self,
+        view_id: ViewId,
+        reason: impl Into<String>,
+    ) -> Option<u64> {
+        let last_changed_text_version = self.derived_state_last_changed_text_version?;
+        if last_changed_text_version >= self.text_version {
+            return None;
+        }
+        if self.derived_state_last_stale_text_version == Some(self.text_version) {
+            return None;
+        }
+
+        self.derived_state_last_stale_text_version = Some(self.text_version);
+        let derived_state = EditorUiDerivedStateEvent::stale(self.text_version, reason);
+        Some(self.record_state_event(EditorUiStateEvent {
+            sequence: 0,
+            kind: "derived_state_stale".to_string(),
+            family: "derived_state".to_string(),
+            title: "Derived state stale".to_string(),
+            view_id: view_id.get(),
+            source_sequence: derived_state.text_version,
+            lsp_request: None,
+            lsp_result: None,
+            text: None,
+            dirty: None,
+            selection: None,
+            viewport: None,
+            layout: None,
+            derived_state: Some(derived_state),
+        }))
     }
 
     fn record_state_event(&mut self, mut event: EditorUiStateEvent) -> u64 {

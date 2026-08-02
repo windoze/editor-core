@@ -19,6 +19,7 @@ public enum EcuLspEventFamily: Hashable, Sendable {
     case typeHierarchy
     case formatting
     case document
+    case derivedState
     case unknown(String)
 
     public init(rawValue: String) {
@@ -59,6 +60,8 @@ public enum EcuLspEventFamily: Hashable, Sendable {
             self = .formatting
         case "document":
             self = .document
+        case "derived_state":
+            self = .derivedState
         default:
             self = .unknown(rawValue)
         }
@@ -102,6 +105,8 @@ public enum EcuLspEventFamily: Hashable, Sendable {
             return "formatting"
         case .document:
             return "document"
+        case .derivedState:
+            return "derived_state"
         case let .unknown(rawValue):
             return rawValue
         }
@@ -116,6 +121,8 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
     case selectionChanged
     case viewportChanged
     case layoutChanged
+    case derivedStateChanged
+    case derivedStateStale
     case unknown(String)
 
     public init(rawValue: String) {
@@ -134,6 +141,10 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
             self = .viewportChanged
         case "layout_changed":
             self = .layoutChanged
+        case "derived_state_changed":
+            self = .derivedStateChanged
+        case "derived_state_stale":
+            self = .derivedStateStale
         default:
             self = .unknown(rawValue)
         }
@@ -155,6 +166,10 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
             return "viewport_changed"
         case .layoutChanged:
             return "layout_changed"
+        case .derivedStateChanged:
+            return "derived_state_changed"
+        case .derivedStateStale:
+            return "derived_state_stale"
         case let .unknown(rawValue):
             return rawValue
         }

@@ -365,6 +365,74 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         XCTAssertEqual(EcuEditorUIStateEventKind.layoutChanged.rawValue, "layout_changed")
     }
 
+    func testEditorUIStateEventsDecodeDerivedStatePayload() throws {
+        let snapshot = try decode(EcuEditorUIStateEventsSnapshot.self, """
+        {
+          "latest_sequence": 2,
+          "events": [
+            {
+              "sequence": 1,
+              "kind": "derived_state_changed",
+              "family": "derived_state",
+              "title": "Derived state changed",
+              "view_id": 3,
+              "source_sequence": 1,
+              "derived_state": {
+                "status": "changed",
+                "reason": "processing_edits",
+                "text_version": 0,
+                "edit_count": 2,
+                "families": ["diagnostics", "decorations"]
+              }
+            },
+            {
+              "sequence": 2,
+              "kind": "derived_state_stale",
+              "family": "derived_state",
+              "title": "Derived state stale",
+              "view_id": 3,
+              "source_sequence": 1,
+              "derived_state": {
+                "status": "stale",
+                "reason": "text_changed",
+                "text_version": 1,
+                "edit_count": 0,
+                "families": [
+                  "style_intervals",
+                  "folding_regions",
+                  "diagnostics",
+                  "decorations",
+                  "document_symbols"
+                ]
+              }
+            }
+          ]
+        }
+        """)
+
+        XCTAssertEqual(snapshot.latestSequence, 2)
+        XCTAssertEqual(snapshot.events[0].kindValue, .derivedStateChanged)
+        XCTAssertEqual(snapshot.events[0].familyKind, .derivedState)
+        XCTAssertEqual(snapshot.events[0].derivedState?.status, "changed")
+        XCTAssertEqual(snapshot.events[0].derivedState?.reason, "processing_edits")
+        XCTAssertEqual(snapshot.events[0].derivedState?.textVersion, 0)
+        XCTAssertEqual(snapshot.events[0].derivedState?.editCount, 2)
+        XCTAssertEqual(snapshot.events[0].derivedState?.families, ["diagnostics", "decorations"])
+        XCTAssertNil(snapshot.events[0].layout)
+        XCTAssertNil(snapshot.events[0].viewport)
+
+        XCTAssertEqual(snapshot.events[1].kindValue, .derivedStateStale)
+        XCTAssertEqual(snapshot.events[1].familyKind, .derivedState)
+        XCTAssertEqual(snapshot.events[1].derivedState?.status, "stale")
+        XCTAssertEqual(snapshot.events[1].derivedState?.reason, "text_changed")
+        XCTAssertEqual(snapshot.events[1].derivedState?.textVersion, 1)
+        XCTAssertEqual(snapshot.events[1].derivedState?.editCount, 0)
+        XCTAssertEqual(snapshot.events[1].derivedState?.families.last, "document_symbols")
+        XCTAssertEqual(EcuEditorUIStateEventKind.derivedStateChanged.rawValue, "derived_state_changed")
+        XCTAssertEqual(EcuEditorUIStateEventKind.derivedStateStale.rawValue, "derived_state_stale")
+        XCTAssertEqual(EcuLspEventFamily.derivedState.rawValue, "derived_state")
+    }
+
     func testMultiDocumentStateEventsExposeTypedKindsAndNestedPayloads() throws {
         let snapshot = try decode(EcuMultiDocumentStateEventsSnapshot.self, """
         {

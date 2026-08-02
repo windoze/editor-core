@@ -1,8 +1,8 @@
 use crate::prelude::*;
 use crate::{
-    EditorLspRequestEvent, EditorLspResultEvent, EditorUiStateEvent, LspClientRequest,
-    LspResultSlot, SharedLspSession, TreeSitterAsyncWorker, TreeSitterCaptureMapper,
-    TreeSitterProcessingConfig, UiError,
+    EditorLspRequestEvent, EditorLspResultEvent, EditorUiDerivedStateEvent, EditorUiStateEvent,
+    LspClientRequest, LspResultSlot, SharedLspSession, TreeSitterAsyncWorker,
+    TreeSitterCaptureMapper, TreeSitterProcessingConfig, UiError,
 };
 use std::collections::VecDeque;
 
@@ -36,6 +36,8 @@ pub(crate) struct EditorUiDoc {
     pub(crate) state_events: VecDeque<EditorUiStateEvent>,
     pub(crate) next_state_event_sequence: u64,
     pub(crate) text_version: u64,
+    pub(crate) derived_state_last_changed_text_version: Option<u64>,
+    pub(crate) derived_state_last_stale_text_version: Option<u64>,
 }
 
 impl EditorUiDoc {
@@ -55,16 +57,55 @@ impl EditorUiDoc {
         })
     }
 
-    pub(crate) fn apply_processing_edits<I>(&mut self, edits: I) -> Result<(), UiError>
+    pub(crate) fn apply_processing_edits<I>(
+        &mut self,
+        view_id: ViewId,
+        edits: I,
+    ) -> Result<(), UiError>
     where
         I: IntoIterator<Item = ProcessingEdit>,
     {
-        self.ws
-            .apply_processing_edits(self.buffer_id, edits)
-            .map_err(|e| UiError::Processor(format!("{e:?}")))
+        self.apply_processing_edits_impl(Some(view_id), edits)
     }
 
-    pub(crate) fn apply_lsp_processing_edits<I>(&mut self, edits: I) -> Result<bool, UiError>
+    pub(crate) fn apply_processing_edits_without_state_event<I>(
+        &mut self,
+        edits: I,
+    ) -> Result<(), UiError>
+    where
+        I: IntoIterator<Item = ProcessingEdit>,
+    {
+        self.apply_processing_edits_impl(None, edits)
+    }
+
+    fn apply_processing_edits_impl<I>(
+        &mut self,
+        view_id: Option<ViewId>,
+        edits: I,
+    ) -> Result<(), UiError>
+    where
+        I: IntoIterator<Item = ProcessingEdit>,
+    {
+        let edits = edits.into_iter().collect::<Vec<_>>();
+        let derived_state_event =
+            EditorUiDerivedStateEvent::changed_from_processing_edits(self.text_version, &edits);
+        self.ws
+            .apply_processing_edits(self.buffer_id, edits)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+
+        if let (Some(view_id), Some(derived_state)) = (view_id, derived_state_event) {
+            self.derived_state_last_changed_text_version = Some(self.text_version);
+            self.record_state_event_from_derived_state_changed(view_id, derived_state);
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn apply_lsp_processing_edits<I>(
+        &mut self,
+        view_id: ViewId,
+        edits: I,
+    ) -> Result<bool, UiError>
     where
         I: IntoIterator<Item = ProcessingEdit>,
     {
@@ -73,7 +114,7 @@ impl EditorUiDoc {
             return Ok(false);
         }
 
-        if let Err(err) = self.apply_processing_edits(edits) {
+        if let Err(err) = self.apply_processing_edits(view_id, edits) {
             let reason = format!("failed to apply LSP processing edits: {err}");
             self.lsp_fail(reason.clone());
             return Err(UiError::Processor(reason));
@@ -130,6 +171,6 @@ impl EditorUiDoc {
         self.lsp_clear_result_state();
         self.lsp_latest_on_type_formatting_request_id.clear();
 
-        let _ = self.apply_processing_edits(editor_core_lsp::lsp_clear_edits());
+        let _ = self.apply_processing_edits_without_state_event(editor_core_lsp::lsp_clear_edits());
     }
 }

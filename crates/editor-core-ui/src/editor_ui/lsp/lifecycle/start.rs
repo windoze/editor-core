@@ -28,7 +28,8 @@ impl EditorUi {
             if doc.lsp.is_some() {
                 doc.lsp_disable();
             }
-            let _ = doc.apply_processing_edits(editor_core_lsp::lsp_clear_edits());
+            let _ =
+                doc.apply_processing_edits_without_state_event(editor_core_lsp::lsp_clear_edits());
             doc.ws
                 .buffer_text(doc.buffer_id)
                 .map_err(|e| UiError::Processor(format!("{e:?}")))?

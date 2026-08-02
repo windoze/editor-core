@@ -111,6 +111,6 @@ impl EditorUi {
         I: IntoIterator<Item = ProcessingEdit>,
     {
         let mut doc = self.lock_doc();
-        doc.apply_processing_edits(edits)
+        doc.apply_processing_edits(self.view_id, edits)
     }
 }

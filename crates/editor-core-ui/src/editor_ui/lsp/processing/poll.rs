@@ -26,7 +26,7 @@ impl EditorUi {
         if let Some((version, edits, update_mode)) = latest_to_apply {
             {
                 let mut doc = self.lock_doc();
-                doc.apply_processing_edits(edits)?;
+                doc.apply_processing_edits(self.view_id, edits)?;
                 if let Some(worker) = doc.treesitter.as_mut() {
                     worker.applied_version = Some(version);
                     worker.last_update_mode = Some(update_mode);

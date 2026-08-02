@@ -21,7 +21,7 @@ impl EditorUi {
             let edits = proc
                 .compute_processing_edits(&line_index)
                 .map_err(|e| UiError::Processor(e.to_string()))?;
-            doc.apply_processing_edits(edits)?;
+            doc.apply_processing_edits(self.view_id, edits)?;
         }
 
         let delta = doc
@@ -38,6 +38,7 @@ impl EditorUi {
         // Monotonic version for "text has changed" events (used to drop stale async results).
         doc.text_version = doc.text_version.saturating_add(1);
         doc.record_state_event_from_text_changed(self.view_id);
+        doc.record_state_event_from_derived_state_stale_if_needed(self.view_id, "text_changed");
 
         if doc.treesitter.is_some() {
             doc.treesitter_doc_version = doc.treesitter_doc_version.saturating_add(1);

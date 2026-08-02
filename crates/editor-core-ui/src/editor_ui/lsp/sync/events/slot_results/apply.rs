@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) fn apply_slot_result_edits(
     doc: &mut EditorUiDoc,
+    view_id: ViewId,
     slot: LspResultSlot,
     result: &serde_json::Value,
     applied: &mut bool,
@@ -15,11 +16,11 @@ pub(super) fn apply_slot_result_edits(
                     return Ok(EventOutcome::Abort);
                 }
             };
-            *applied |= doc.apply_lsp_processing_edits([edit])?;
+            *applied |= doc.apply_lsp_processing_edits(view_id, [edit])?;
         }
         LspResultSlot::FoldingRanges => {
             let edit = folding_ranges_result_to_processing_edit(result);
-            *applied |= doc.apply_lsp_processing_edits([edit])?;
+            *applied |= doc.apply_lsp_processing_edits(view_id, [edit])?;
         }
         LspResultSlot::CodeLens => {
             doc.clear_lsp_in_flight_for_slot(slot);
@@ -30,7 +31,7 @@ pub(super) fn apply_slot_result_edits(
                     return Ok(EventOutcome::Abort);
                 }
             };
-            *applied |= doc.apply_lsp_processing_edits([edit])?;
+            *applied |= doc.apply_lsp_processing_edits(view_id, [edit])?;
         }
         LspResultSlot::InlayHints => {
             doc.clear_lsp_in_flight_for_slot(slot);
@@ -41,7 +42,7 @@ pub(super) fn apply_slot_result_edits(
                     return Ok(EventOutcome::Abort);
                 }
             };
-            *applied |= doc.apply_lsp_processing_edits([edit])?;
+            *applied |= doc.apply_lsp_processing_edits(view_id, [edit])?;
         }
         LspResultSlot::DocumentLinks => {
             doc.clear_lsp_in_flight_for_slot(slot);
@@ -52,7 +53,7 @@ pub(super) fn apply_slot_result_edits(
                     return Ok(EventOutcome::Abort);
                 }
             };
-            *applied |= doc.apply_lsp_processing_edits(edits)?;
+            *applied |= doc.apply_lsp_processing_edits(view_id, edits)?;
         }
         _ => {}
     }

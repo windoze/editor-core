@@ -671,6 +671,91 @@ fn editor_ui_state_events_record_viewport_changes() {
 }
 
 #[test]
+fn editor_ui_state_events_record_derived_state_changes_and_stale() {
+    let mut ui = EditorUi::new("abc\n", 80);
+
+    ui.lsp_apply_publish_diagnostics_json(
+        r#"{
+          "uri": "file:///tmp/main.rs",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 1 },
+                "end": { "line": 0, "character": 2 }
+              },
+              "severity": 1,
+              "message": "unit"
+            }
+          ],
+          "version": 1
+        }"#,
+    )
+    .unwrap();
+
+    let changed = ui.state_events_after(0);
+    assert_eq!(changed.latest_sequence, 1);
+    assert_eq!(changed.events.len(), 1);
+    let changed_event = &changed.events[0];
+    assert_eq!(changed_event.kind, "derived_state_changed");
+    assert_eq!(changed_event.family, "derived_state");
+    assert!(changed_event.text.is_none());
+    assert!(changed_event.dirty.is_none());
+    assert!(changed_event.selection.is_none());
+    assert!(changed_event.viewport.is_none());
+    assert!(changed_event.layout.is_none());
+
+    let derived = changed_event.derived_state.as_ref().unwrap();
+    assert_eq!(derived.status, "changed");
+    assert_eq!(derived.reason, "processing_edits");
+    assert_eq!(derived.text_version, 0);
+    assert_eq!(derived.edit_count, 2);
+    assert_eq!(derived.families, vec!["style_intervals", "diagnostics"]);
+
+    ui.insert_text("z").unwrap();
+    let stale = ui.state_events_after(changed.latest_sequence);
+    assert_eq!(
+        stale
+            .events
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "dirty_changed",
+            "selection_changed",
+            "text_changed",
+            "derived_state_stale"
+        ]
+    );
+    let stale_event = stale.events.last().unwrap();
+    assert_eq!(stale_event.family, "derived_state");
+    let derived = stale_event.derived_state.as_ref().unwrap();
+    assert_eq!(derived.status, "stale");
+    assert_eq!(derived.reason, "text_changed");
+    assert_eq!(derived.text_version, 1);
+    assert_eq!(derived.edit_count, 0);
+    assert_eq!(
+        derived.families,
+        vec![
+            "style_intervals",
+            "folding_regions",
+            "diagnostics",
+            "decorations",
+            "document_symbols"
+        ]
+    );
+
+    let json: serde_json::Value =
+        serde_json::from_str(&ui.state_events_json(changed.latest_sequence).unwrap()).unwrap();
+    assert_eq!(json["latest_sequence"], stale.latest_sequence);
+    assert_eq!(json["events"][3]["kind"], "derived_state_stale");
+    assert_eq!(json["events"][3]["derived_state"]["status"], "stale");
+    assert_eq!(
+        json["events"][3]["derived_state"]["families"][2],
+        "diagnostics"
+    );
+}
+
+#[test]
 fn lsp_derived_request_events_record_semantic_and_folding_lifecycle() {
     let mut ui = EditorUi::new("abc", 80);
 
@@ -1423,6 +1508,56 @@ fn multi_document_state_events_aggregate_text_and_dirty_events() {
 }
 
 #[test]
+fn multi_document_state_events_aggregate_derived_state_events() {
+    let mut multi = MultiDocumentEditorUi::new();
+    let tab = multi.open_tab("abc\n", 80);
+
+    multi
+        .active_editor_mut()
+        .unwrap()
+        .lsp_apply_publish_diagnostics_json(
+            r#"{
+              "uri": "file:///tmp/main.rs",
+              "diagnostics": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 1 }
+                  },
+                  "severity": 2,
+                  "message": "unit"
+                }
+              ],
+              "version": 1
+            }"#,
+        )
+        .unwrap();
+
+    let snapshot = multi.state_events_after(0);
+    assert_eq!(snapshot.latest_sequence, 1);
+    assert_eq!(snapshot.events.len(), 1);
+    assert_eq!(snapshot.events[0].tab_id, tab.get());
+    assert_eq!(snapshot.events[0].view_index, 0);
+    assert_eq!(snapshot.events[0].kind, "derived_state_changed");
+    assert_eq!(snapshot.events[0].family, "derived_state");
+    let derived = snapshot.events[0]
+        .state_event
+        .derived_state
+        .as_ref()
+        .unwrap();
+    assert_eq!(derived.status, "changed");
+    assert_eq!(derived.families, vec!["style_intervals", "diagnostics"]);
+
+    let json: serde_json::Value =
+        serde_json::from_str(&multi.state_events_json(0).unwrap()).unwrap();
+    assert_eq!(json["events"][0]["kind"], "derived_state_changed");
+    assert_eq!(
+        json["events"][0]["state_event"]["derived_state"]["families"][1],
+        "diagnostics"
+    );
+}
+
+#[test]
 fn multi_document_state_events_aggregate_layout_events() {
     let mut multi = MultiDocumentEditorUi::new();
     let tab = multi.open_tab("abc", 80);
@@ -1507,13 +1642,14 @@ fn multi_document_state_events_aggregate_viewport_events() {
 #[test]
 fn lsp_processing_edit_apply_failure_records_status_and_returns_error() {
     let ui = EditorUi::new("abc", 80);
+    let view_id = ui.view_id;
 
     let err = {
         let mut doc = ui.lock_doc();
         doc.lsp_last_cmd = Some("fake-lsp".to_string());
         let buffer_id = doc.buffer_id;
         doc.ws.close_buffer(buffer_id).unwrap();
-        doc.apply_lsp_processing_edits([ProcessingEdit::ClearDiagnostics])
+        doc.apply_lsp_processing_edits(view_id, [ProcessingEdit::ClearDiagnostics])
             .unwrap_err()
     };
 

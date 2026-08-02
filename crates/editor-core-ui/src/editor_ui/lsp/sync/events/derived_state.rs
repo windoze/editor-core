@@ -59,6 +59,7 @@ pub(super) fn record_lsp_derived_request_event(
 
 pub(super) fn handle_lsp_derived_state_response(
     doc: &mut EditorUiDoc,
+    view_id: ViewId,
     resp: &editor_core_lsp::LspResponse,
     applied: &mut bool,
 ) -> Result<EventOutcome, UiError> {
@@ -73,7 +74,7 @@ pub(super) fn handle_lsp_derived_state_response(
                     return Ok(EventOutcome::Abort);
                 }
             };
-            *applied |= doc.apply_lsp_processing_edits([edit])?;
+            *applied |= doc.apply_lsp_processing_edits(view_id, [edit])?;
             Ok(EventOutcome::Handled)
         }
         "textDocument/codeLens" => {
@@ -86,7 +87,7 @@ pub(super) fn handle_lsp_derived_state_response(
                     return Ok(EventOutcome::Abort);
                 }
             };
-            *applied |= doc.apply_lsp_processing_edits([edit])?;
+            *applied |= doc.apply_lsp_processing_edits(view_id, [edit])?;
             Ok(EventOutcome::Handled)
         }
         "textDocument/documentLink" => {
@@ -99,7 +100,7 @@ pub(super) fn handle_lsp_derived_state_response(
                     return Ok(EventOutcome::Abort);
                 }
             };
-            *applied |= doc.apply_lsp_processing_edits(edits)?;
+            *applied |= doc.apply_lsp_processing_edits(view_id, edits)?;
             Ok(EventOutcome::Handled)
         }
         _ => Ok(EventOutcome::Unhandled),
