@@ -491,11 +491,12 @@ extension AttoEditorAreaViewController {
     func showProjectLspProcessHealthLogPanel() -> Bool {
         drainProjectLspPanelLifecycleEvents()
 
-        let entries = Array(projectLspProcessHealthLogStore.loadRecent(
+        let initialEntries = projectLspProcessHealthLogStore.queryRecent(
             workspaceRootURL: workspaceRootURL,
+            query: "",
             limit: Self.maxLspResultEventHistoryEntries
-        ).reversed())
-        guard entries.isEmpty == false else {
+        )
+        guard initialEntries.isEmpty == false else {
             NSSound.beep()
             return false
         }
@@ -503,19 +504,36 @@ extension AttoEditorAreaViewController {
             return false
         }
 
-        let commands = entries.enumerated().map { idx, entry in
+        var query = ""
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.ProjectProcessHealthLog",
+            filtersCommands: false,
+            searchTextDidChange: { [weak self] text in
+                query = text
+                self?.projectLspProcessHealthLogController?.reloadCommands()
+            },
+            commandsProvider: { [weak self] in
+                self?.projectLspProcessHealthLogCommands(query: query) ?? []
+            }
+        )
+        projectLspProcessHealthLogController = controller
+        controller.show(relativeTo: window, placeholder: "Filter LSP process health log...")
+        return true
+    }
+
+    private func projectLspProcessHealthLogCommands(query: String) -> [AttoCommandPaletteCommand] {
+        let entries = Array(projectLspProcessHealthLogStore.queryRecent(
+            workspaceRootURL: workspaceRootURL,
+            query: query,
+            limit: Self.maxLspResultEventHistoryEntries
+        ).reversed())
+
+        return entries.enumerated().map { idx, entry in
             AttoCommandPaletteCommand(
                 id: "lsp.project_process_health_log_entry.\(idx)",
                 title: Self.projectLspProcessHealthLogEntryTitle(entry)
             ) {}
         }
-        let controller = AttoCommandPaletteController(
-            accessibilityPrefix: "AttoEditor.LSP.ProjectProcessHealthLog",
-            commandsProvider: { commands }
-        )
-        projectLspProcessHealthLogController = controller
-        controller.show(relativeTo: window, placeholder: "Filter LSP process health log...")
-        return true
     }
 
     @discardableResult

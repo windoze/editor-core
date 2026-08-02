@@ -29,6 +29,163 @@ struct AttoProjectLspProcessHealthLogEntry: Codable, Equatable {
     let process: Process
 }
 
+struct AttoProjectLspProcessHealthLogFilter: Equatable {
+    private enum Predicate: Equatable {
+        case text(String)
+        case server(String)
+        case availability(String)
+        case state(String)
+        case process(String)
+        case pid(String)
+        case exitCode(String)
+        case signal(String)
+        case detail(String)
+        case stderr(String)
+        case tab(String)
+        case view(String)
+        case since(Date?)
+        case until(Date?)
+    }
+
+    private let predicates: [Predicate]
+
+    init(query: String) {
+        predicates = query
+            .split(whereSeparator: \.isWhitespace)
+            .compactMap { Self.predicate(for: String($0)) }
+    }
+
+    var isEmpty: Bool {
+        predicates.isEmpty
+    }
+
+    func matches(_ entry: AttoProjectLspProcessHealthLogEntry) -> Bool {
+        predicates.allSatisfy { predicate in
+            switch predicate {
+            case .text(let value):
+                return searchableText(entry).contains(value)
+            case .server(let value):
+                return contains(entry.serverName, value) || contains(entry.serverCommand, value)
+            case .availability(let value):
+                return contains(entry.availability, value)
+            case .state(let value):
+                return contains(entry.state, value)
+            case .process(let value):
+                return contains(entry.process.state, value)
+            case .pid(let value):
+                return numericMatches(entry.process.pid.map(String.init), value)
+            case .exitCode(let value):
+                return numericMatches(entry.process.exitCode.map(String.init), value)
+            case .signal(let value):
+                return numericMatches(entry.process.signal.map(String.init), value)
+            case .detail(let value):
+                return contains(entry.detail, value)
+            case .stderr(let value):
+                return contains(entry.process.stderrTail, value)
+            case .tab(let value):
+                return numericMatches(entry.tabId.map(String.init), value)
+            case .view(let value):
+                let viewOrdinal = entry.viewIndex.map { String($0 + 1) }
+                return numericMatches(viewOrdinal, value) || numericMatches(entry.viewId.map(String.init), value)
+            case .since(let date):
+                guard let date else { return false }
+                return entry.recordedAt >= date
+            case .until(let date):
+                guard let date else { return false }
+                return entry.recordedAt <= date
+            }
+        }
+    }
+
+    private static func predicate(for token: String) -> Predicate? {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return nil }
+        let parts = trimmed.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2, parts[1].isEmpty == false else {
+            return .text(trimmed.lowercased())
+        }
+
+        let key = parts[0].lowercased()
+        let value = parts[1].lowercased()
+        switch key {
+        case "server":
+            return .server(value)
+        case "availability":
+            return .availability(value)
+        case "state":
+            return .state(value)
+        case "process":
+            return .process(value)
+        case "pid":
+            return .pid(value)
+        case "exit", "exit_code", "exitcode":
+            return .exitCode(value)
+        case "signal":
+            return .signal(value)
+        case "detail":
+            return .detail(value)
+        case "stderr":
+            return .stderr(value)
+        case "tab":
+            return .tab(value)
+        case "view":
+            return .view(value)
+        case "since":
+            return .since(parseDate(parts[1]))
+        case "until":
+            return .until(parseDate(parts[1]))
+        default:
+            return .text(trimmed.lowercased())
+        }
+    }
+
+    private static func parseDate(_ value: String) -> Date? {
+        if let timestamp = TimeInterval(value) {
+            return Date(timeIntervalSince1970: timestamp)
+        }
+
+        let isoFormatter = ISO8601DateFormatter()
+        if let date = isoFormatter.date(from: value) {
+            return date
+        }
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        return dateFormatter.date(from: value)
+    }
+
+    private func searchableText(_ entry: AttoProjectLspProcessHealthLogEntry) -> String {
+        [
+            entry.serverName,
+            entry.serverCommand,
+            entry.availability,
+            entry.state,
+            entry.detail,
+            entry.process.state,
+            entry.process.pid.map(String.init),
+            entry.process.exitCode.map(String.init),
+            entry.process.signal.map(String.init),
+            entry.process.stderrTail,
+        ]
+        .compactMap { $0?.lowercased() }
+        .joined(separator: " ")
+    }
+
+    private func contains(_ text: String?, _ value: String) -> Bool {
+        text?.lowercased().contains(value) == true
+    }
+
+    private func numericMatches(_ text: String?, _ value: String) -> Bool {
+        guard let text else { return false }
+        if let expected = Int64(value), let actual = Int64(text) {
+            return actual == expected
+        }
+        return text.lowercased().contains(value)
+    }
+}
+
 struct AttoProjectLspProcessHealthLogStore: Sendable {
     let logFileURL: URL
     let maxPersistedEntries: Int
@@ -123,6 +280,15 @@ struct AttoProjectLspProcessHealthLogStore: Sendable {
         limit: Int,
         fileManager: FileManager = .default
     ) -> [AttoProjectLspProcessHealthLogEntry] {
+        queryRecent(workspaceRootURL: workspaceRootURL, query: "", limit: limit, fileManager: fileManager)
+    }
+
+    func queryRecent(
+        workspaceRootURL: URL,
+        query: String,
+        limit: Int,
+        fileManager: FileManager = .default
+    ) -> [AttoProjectLspProcessHealthLogEntry] {
         guard limit > 0,
               fileManager.fileExists(atPath: logFileURL.path),
               let data = try? Data(contentsOf: logFileURL),
@@ -132,13 +298,15 @@ struct AttoProjectLspProcessHealthLogStore: Sendable {
         }
 
         let rootURI = workspaceRootURL.standardizedFileURL.absoluteString
+        let filter = AttoProjectLspProcessHealthLogFilter(query: query)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var entries: [AttoProjectLspProcessHealthLogEntry] = []
         for line in text.split(whereSeparator: \.isNewline) {
             guard let lineData = String(line).data(using: .utf8),
                   let entry = try? decoder.decode(AttoProjectLspProcessHealthLogEntry.self, from: lineData),
-                  entry.workspaceRootURI == rootURI
+                  entry.workspaceRootURI == rootURI,
+                  filter.isEmpty || filter.matches(entry)
             else {
                 continue
             }

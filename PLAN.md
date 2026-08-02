@@ -1011,6 +1011,14 @@
     - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStorePrunesEntriesOlderThanMaxAge`
     - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStorePrunesOldestLinesBySizeBudget`
     - `git diff --check`
+- 中间提交：`feat(app): filter lsp process health log`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；在阶段 276 的显式 log 查询面板基础上补 store-backed filter DSL。
+  - 提交边界：`AttoProjectLspProcessHealthLogStore` 新增 `queryRecent(...)` 与 `AttoProjectLspProcessHealthLogFilter`，支持 free text 以及 `server:` / `state:` / `availability:` / `process:` / `pid:` / `exit:` / `signal:` / `detail:` / `stderr:` / `tab:` / `view:` / `since:` / `until:`；`AttoEditor.LSP.ProjectProcessHealthLog` 面板输入变化时重新查询 store，并关闭 palette 自身 fuzzy filtering。本提交不新增 Rust/C ABI，不改变日志 schema、不实现自动崩溃恢复、更深层 core-owned LSP ownership schema 或完整 dashboard 级健康视图。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthLogStoreQueriesWorkspaceEntriesWithFieldFilters`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthLogPanelUsesFieldFilterQuery`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthLogPanelShowsPersistedLog`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

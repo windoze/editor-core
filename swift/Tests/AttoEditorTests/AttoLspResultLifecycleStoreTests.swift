@@ -603,6 +603,110 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         XCTAssertTrue(rawLog.contains("fake-lsp-6"))
     }
 
+    func testProjectLspProcessHealthLogStoreQueriesWorkspaceEntriesWithFieldFilters() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoProjectLspProcessHealthLogQueryTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let rootA = tempDir.appendingPathComponent("workspace-a", isDirectory: true)
+        let rootB = tempDir.appendingPathComponent("workspace-b", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: rootB, withIntermediateDirectories: true)
+
+        let logURL = tempDir.appendingPathComponent("lsp-process-health.jsonl")
+        let logStore = AttoProjectLspProcessHealthLogStore(logFileURL: logURL)
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 1,
+                sourceSequence: 101,
+                tabId: 10,
+                viewIndex: 0,
+                viewId: 1001,
+                serverName: "rust-analyzer",
+                serverCommand: "rust-analyzer",
+                availability: "enabled",
+                state: "ready",
+                detail: nil,
+                process: EcuLspProcessStatus(pid: 11, state: .running)
+            ),
+            workspaceRootURL: rootA,
+            recordedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 2,
+                sourceSequence: 102,
+                tabId: 20,
+                viewIndex: 1,
+                viewId: 1002,
+                serverName: "pylsp",
+                serverCommand: "pylsp",
+                availability: "failed",
+                state: "failed",
+                detail: "server exited",
+                process: EcuLspProcessStatus(pid: 22, state: .exited, exitCode: 7, stderrTail: "boom stack")
+            ),
+            workspaceRootURL: rootA,
+            recordedAt: Date(timeIntervalSince1970: 2_000)
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 3,
+                sourceSequence: 103,
+                tabId: 30,
+                viewIndex: 0,
+                viewId: 1003,
+                serverName: "rust-analyzer",
+                serverCommand: "rust-analyzer",
+                availability: "failed",
+                state: "failed",
+                detail: "late exit",
+                process: EcuLspProcessStatus(pid: 33, state: .exited, exitCode: 9, stderrTail: "late stderr")
+            ),
+            workspaceRootURL: rootA,
+            recordedAt: Date(timeIntervalSince1970: 3_000)
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 4,
+                sourceSequence: 104,
+                tabId: 40,
+                viewIndex: 0,
+                viewId: 1004,
+                serverName: "pylsp",
+                serverCommand: "pylsp",
+                availability: "failed",
+                state: "failed",
+                detail: "other workspace",
+                process: EcuLspProcessStatus(pid: 44, state: .exited, exitCode: 7, stderrTail: "boom other")
+            ),
+            workspaceRootURL: rootB,
+            recordedAt: Date(timeIntervalSince1970: 4_000)
+        )
+
+        XCTAssertEqual(
+            logStore.queryRecent(workspaceRootURL: rootA, query: "server:rust state:failed process:exited exit:9", limit: 10).map(\.sequence),
+            [3]
+        )
+        XCTAssertEqual(
+            logStore.queryRecent(workspaceRootURL: rootA, query: "pylsp boom", limit: 10).map(\.sequence),
+            [2]
+        )
+        XCTAssertEqual(
+            logStore.queryRecent(workspaceRootURL: rootA, query: "stderr:late since:2500", limit: 10).map(\.sequence),
+            [3]
+        )
+        XCTAssertEqual(
+            logStore.queryRecent(workspaceRootURL: rootA, query: "until:2500", limit: 10).map(\.sequence),
+            [1, 2]
+        )
+        XCTAssertEqual(
+            logStore.queryRecent(workspaceRootURL: rootA, query: "server:rust", limit: 1).map(\.sequence),
+            [3]
+        )
+    }
+
     func testProjectLspProcessHealthLogStoreExportsWorkspaceEntries() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoProjectLspProcessHealthLogExportTests-\(UUID().uuidString)", isDirectory: true)

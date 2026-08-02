@@ -2301,6 +2301,95 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(cell.textField?.stringValue.contains("other-lsp") == true)
     }
 
+    func testProjectLspProcessHealthLogPanelUsesFieldFilterQuery() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let logStore = AttoProjectLspProcessHealthLogStore(
+            logFileURL: tempDir.appendingPathComponent("lsp-health.jsonl")
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 1,
+                sourceSequence: 10,
+                tabId: 1,
+                viewIndex: 0,
+                viewId: 100,
+                serverName: "rust-analyzer",
+                serverCommand: "rust-analyzer",
+                availability: "failed",
+                state: "failed",
+                detail: "rust exit",
+                process: EcuLspProcessStatus(
+                    pid: 101,
+                    state: .exited,
+                    exitCode: 1,
+                    stderrTail: "rust stderr"
+                )
+            ),
+            workspaceRootURL: tempDir,
+            recordedAt: Date(timeIntervalSince1970: 1_785_715_200)
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 2,
+                sourceSequence: 20,
+                tabId: 2,
+                viewIndex: 1,
+                viewId: 200,
+                serverName: "pyright",
+                serverCommand: "pyright-langserver",
+                availability: "failed",
+                state: "failed",
+                detail: "pyright exit",
+                process: EcuLspProcessStatus(
+                    pid: 202,
+                    state: .exited,
+                    exitCode: 2,
+                    stderrTail: "pyright stderr"
+                )
+            ),
+            workspaceRootURL: tempDir,
+            recordedAt: Date(timeIntervalSince1970: 1_785_715_201)
+        )
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir, projectLspProcessHealthLogStore: logStore)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+
+        XCTAssertTrue(vc.showProjectLspProcessHealthLogPanel())
+
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.ProjectProcessHealthLog")
+        })
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.LSP.ProjectProcessHealthLog"),
+                in: root
+            ) as? NSSearchField
+        )
+        let table = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.ProjectProcessHealthLog"),
+                in: root
+            ) as? NSTableView
+        )
+        XCTAssertEqual(table.numberOfRows, 2)
+
+        searchField.stringValue = "server:pyright process:exited"
+        vc.projectLspProcessHealthLogController?.controlTextDidChange(
+            Notification(name: NSControl.textDidChangeNotification, object: searchField)
+        )
+
+        XCTAssertEqual(table.numberOfRows, 1)
+        let cell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(cell.textField?.stringValue.contains("pyright") == true)
+        XCTAssertFalse(cell.textField?.stringValue.contains("rust-analyzer") == true)
+    }
+
     func testClearProjectLspProcessHealthLogClearsCurrentWorkspaceOnly() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
