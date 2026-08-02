@@ -61,7 +61,7 @@ pub use multi_document::{
     WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
     WorkspaceEditTransactionDocument, WorkspaceEditTransactionEvent,
     WorkspaceEditTransactionEventsSnapshot, WorkspaceEditTransactionResult,
-    WorkspaceOutlineDocument, WorkspaceOutlineSnapshot,
+    WorkspaceEditTransactionSkippedDetail, WorkspaceOutlineDocument, WorkspaceOutlineSnapshot,
 };
 pub use state::EditorUi;
 pub use state_events::{

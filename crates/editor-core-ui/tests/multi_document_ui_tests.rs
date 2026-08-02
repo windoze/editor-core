@@ -427,6 +427,104 @@ fn multi_document_ui_applies_open_tab_resource_operations() {
 }
 
 #[test]
+fn multi_document_ui_reports_workspace_edit_transaction_skipped_details() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let dirty = ui.open_tab("dirty\n", 80);
+    let overlap = ui.open_tab("overlap\n", 80);
+    ui.set_tab_document_uri(dirty, Some("file:///tmp/project/Dirty.swift".to_string()))
+        .unwrap();
+    ui.set_tab_document_uri(
+        overlap,
+        Some("file:///tmp/project/Overlap.swift".to_string()),
+    )
+    .unwrap();
+    ui.replace_tab_text(dirty, "dirty changed\n", false)
+        .unwrap();
+
+    let edit = r#"{
+      "documentChanges": [
+        {
+          "textDocument": {
+            "uri": "file:///tmp/project/Missing.swift",
+            "version": null
+          },
+          "edits": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 0 }
+              },
+              "newText": "missing"
+            }
+          ]
+        },
+        {
+          "textDocument": {
+            "uri": "file:///tmp/project/Overlap.swift",
+            "version": null
+          },
+          "edits": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 2 }
+              },
+              "newText": "a"
+            },
+            {
+              "range": {
+                "start": { "line": 0, "character": 1 },
+                "end": { "line": 0, "character": 3 }
+              },
+              "newText": "b"
+            }
+          ]
+        },
+        {
+          "kind": "delete",
+          "uri": "file:///tmp/project/Dirty.swift"
+        }
+      ]
+    }"#;
+
+    let preview = ui.preview_workspace_edit_transaction(edit).unwrap();
+    assert_eq!(
+        preview.skipped_uris,
+        vec![
+            "file:///tmp/project/Dirty.swift",
+            "file:///tmp/project/Missing.swift",
+            "file:///tmp/project/Overlap.swift",
+        ]
+    );
+    let detail_reasons = preview
+        .skipped_details
+        .iter()
+        .map(|detail| {
+            (
+                detail.uri.as_str(),
+                detail.operation.as_deref(),
+                detail.reason.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(detail_reasons.contains(&(
+        "file:///tmp/project/Dirty.swift",
+        Some("delete"),
+        "resource_operation_dirty_target"
+    )));
+    assert!(detail_reasons.contains(&(
+        "file:///tmp/project/Missing.swift",
+        Some("text_edit"),
+        "document_not_open"
+    )));
+    assert!(detail_reasons.contains(&(
+        "file:///tmp/project/Overlap.swift",
+        Some("text_edit"),
+        "overlapping_text_edits"
+    )));
+}
+
+#[test]
 fn multi_document_ui_can_replace_tab_text_and_track_dirty_state() {
     let mut ui = MultiDocumentEditorUi::new();
     let tab = ui.open_tab("hello world\n", 80);

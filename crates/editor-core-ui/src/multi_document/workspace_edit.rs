@@ -16,6 +16,14 @@ pub struct WorkspaceEditTransactionDocument {
     pub tab_id: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct WorkspaceEditTransactionSkippedDetail {
+    pub uri: String,
+    pub reason: String,
+    pub operation: Option<String>,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct WorkspaceEditTransactionResult {
     pub mode: String,
@@ -25,6 +33,7 @@ pub struct WorkspaceEditTransactionResult {
     pub applied_edit_count: usize,
     pub applied_resource_operation_count: usize,
     pub skipped_uris: Vec<String>,
+    pub skipped_details: Vec<WorkspaceEditTransactionSkippedDetail>,
     pub unsupported_operation_uris: Vec<String>,
     pub documents: Vec<WorkspaceEditTransactionDocument>,
 }
@@ -132,23 +141,43 @@ pub(super) fn apply(
                 applied_resource_operation_count =
                     applied_resource_operation_count.saturating_add(1);
                 for uri in operation.op.affected_uris() {
-                    plan.skipped_uris.remove(uri.as_str());
+                    clear_skipped_uri(&mut plan, uri.as_str());
                     applied_uris.insert(uri);
                 }
             }
             ResourceOperationApplyOutcome::Noop => {
                 for uri in operation.op.affected_uris() {
-                    plan.skipped_uris.remove(uri.as_str());
+                    clear_skipped_uri(&mut plan, uri.as_str());
                 }
             }
             ResourceOperationApplyOutcome::Skipped => {
-                for uri in operation.op.affected_uris() {
-                    plan.skipped_uris.insert(uri);
+                let open_tabs_by_uri = open_tabs_by_uri(tabs, tab_order);
+                let details =
+                    resource_operation_skip_details(tabs, &open_tabs_by_uri, &operation.op);
+                if details.is_empty() {
+                    for uri in operation.op.affected_uris() {
+                        mark_skipped(
+                            &mut plan.skipped_uris,
+                            &mut plan.skipped_details,
+                            skipped_detail(
+                                uri,
+                                "resource_operation_apply_skipped",
+                                Some(operation.op.kind()),
+                                "resource operation was skipped during apply",
+                            ),
+                        );
+                    }
+                } else {
+                    for detail in details {
+                        mark_skipped(&mut plan.skipped_uris, &mut plan.skipped_details, detail);
+                    }
                 }
             }
         }
     }
 
+    let mut cleared_text_edit_uris = Vec::<String>::new();
+    let mut failed_text_edit_details = Vec::<WorkspaceEditTransactionSkippedDetail>::new();
     for doc in &mut plan.documents {
         let open_tab_id = tab_id_for_uri(tabs, tab_order, doc.uri.as_str());
         doc.is_open = open_tab_id.is_some();
@@ -183,10 +212,22 @@ pub(super) fn apply(
         {
             applied_uris.insert(doc.uri.clone());
             applied_edit_count = applied_edit_count.saturating_add(edits.len());
-            plan.skipped_uris.remove(doc.uri.as_str());
+            cleared_text_edit_uris.push(doc.uri.clone());
         } else {
-            plan.skipped_uris.insert(doc.uri.clone());
+            failed_text_edit_details.push(skipped_detail(
+                doc.uri.clone(),
+                "text_edit_apply_failed",
+                Some("text_edit"),
+                "open tab text edit apply returned applied=false",
+            ));
         }
+    }
+
+    for uri in cleared_text_edit_uris {
+        clear_skipped_uri(&mut plan, uri.as_str());
+    }
+    for detail in failed_text_edit_details {
+        mark_skipped(&mut plan.skipped_uris, &mut plan.skipped_details, detail);
     }
 
     for doc in &mut plan.documents {
@@ -214,6 +255,7 @@ pub(super) fn preview_json(
 
 struct WorkspaceEditTransactionPlan {
     skipped_uris: BTreeSet<String>,
+    skipped_details: BTreeSet<WorkspaceEditTransactionSkippedDetail>,
     unsupported_operation_uris: Vec<String>,
     resource_operations: Vec<PlannedResourceOperation>,
     documents: Vec<WorkspaceEditTransactionDocument>,
@@ -246,6 +288,14 @@ enum ResourceOperation {
 }
 
 impl ResourceOperation {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Create { .. } => "create",
+            Self::Rename { .. } => "rename",
+            Self::Delete { .. } => "delete",
+        }
+    }
+
     fn affected_uris(&self) -> Vec<String> {
         match self {
             Self::Create { uri, .. } | Self::Delete { uri, .. } => vec![uri.clone()],
@@ -282,6 +332,7 @@ fn transaction_plan(
     let mut open_tabs_by_uri = open_tabs_by_uri(tabs, tab_order);
     let mut unsupported_operation_uris = BTreeSet::<String>::new();
     let mut skipped_uris = BTreeSet::<String>::new();
+    let mut skipped_details = BTreeSet::<WorkspaceEditTransactionSkippedDetail>::new();
     let resource_operations = resource_operations(workspace_edit)
         .into_iter()
         .map(|op| {
@@ -291,7 +342,9 @@ fn transaction_plan(
             } else {
                 for uri in op.affected_uris() {
                     unsupported_operation_uris.insert(uri.clone());
-                    skipped_uris.insert(uri);
+                }
+                for detail in resource_operation_skip_details(tabs, &open_tabs_by_uri, &op) {
+                    mark_skipped(&mut skipped_uris, &mut skipped_details, detail);
                 }
             }
             PlannedResourceOperation { op, supported }
@@ -303,8 +356,29 @@ fn transaction_plan(
         .into_iter()
         .map(|doc| {
             let open_tab_id = open_tabs_by_uri.get(doc.uri.as_str()).copied();
-            if open_tab_id.is_none() || doc.has_overlapping_edits {
-                skipped_uris.insert(doc.uri.clone());
+            if open_tab_id.is_none() {
+                mark_skipped(
+                    &mut skipped_uris,
+                    &mut skipped_details,
+                    skipped_detail(
+                        doc.uri.clone(),
+                        "document_not_open",
+                        Some("text_edit"),
+                        "text edits for this URI are not supported because the document is not open in the core workspace",
+                    ),
+                );
+            }
+            if doc.has_overlapping_edits {
+                mark_skipped(
+                    &mut skipped_uris,
+                    &mut skipped_details,
+                    skipped_detail(
+                        doc.uri.clone(),
+                        "overlapping_text_edits",
+                        Some("text_edit"),
+                        "text edits for this URI overlap and cannot be applied safely",
+                    ),
+                );
             }
             WorkspaceEditTransactionDocument {
                 uri: doc.uri,
@@ -347,6 +421,7 @@ fn transaction_plan(
 
     WorkspaceEditTransactionPlan {
         skipped_uris,
+        skipped_details,
         unsupported_operation_uris: unsupported_operation_uris.into_iter().collect(),
         resource_operations,
         documents,
@@ -368,9 +443,38 @@ fn result_from_plan(
         applied_edit_count,
         applied_resource_operation_count,
         skipped_uris: plan.skipped_uris.into_iter().collect(),
+        skipped_details: plan.skipped_details.into_iter().collect(),
         unsupported_operation_uris: plan.unsupported_operation_uris,
         documents: plan.documents,
     }
+}
+
+fn skipped_detail(
+    uri: impl Into<String>,
+    reason: &str,
+    operation: Option<&str>,
+    message: impl Into<String>,
+) -> WorkspaceEditTransactionSkippedDetail {
+    WorkspaceEditTransactionSkippedDetail {
+        uri: uri.into(),
+        reason: reason.to_string(),
+        operation: operation.map(str::to_string),
+        message: message.into(),
+    }
+}
+
+fn mark_skipped(
+    skipped_uris: &mut BTreeSet<String>,
+    skipped_details: &mut BTreeSet<WorkspaceEditTransactionSkippedDetail>,
+    detail: WorkspaceEditTransactionSkippedDetail,
+) {
+    skipped_uris.insert(detail.uri.clone());
+    skipped_details.insert(detail);
+}
+
+fn clear_skipped_uri(plan: &mut WorkspaceEditTransactionPlan, uri: &str) {
+    plan.skipped_uris.remove(uri);
+    plan.skipped_details.retain(|detail| detail.uri != uri);
 }
 
 fn encode(result: WorkspaceEditTransactionResult) -> Result<String, UiError> {
@@ -508,6 +612,114 @@ fn resource_operation_supported(
                 return false;
             };
             !tab_is_modified(tabs, tab_id)
+        }
+    }
+}
+
+fn resource_operation_skip_details(
+    tabs: &BTreeMap<TabId, TabEntry>,
+    open_tabs_by_uri: &BTreeMap<String, TabId>,
+    operation: &ResourceOperation,
+) -> Vec<WorkspaceEditTransactionSkippedDetail> {
+    match operation {
+        ResourceOperation::Create {
+            uri,
+            overwrite,
+            ignore_if_exists,
+        } => {
+            let Some(tab_id) = open_tabs_by_uri.get(uri.as_str()).copied() else {
+                return vec![skipped_detail(
+                    uri.clone(),
+                    "resource_operation_target_not_open",
+                    Some(operation.kind()),
+                    "create is currently supported only for already-open core tabs",
+                )];
+            };
+            if *ignore_if_exists {
+                return Vec::new();
+            }
+            if !*overwrite {
+                return vec![skipped_detail(
+                    uri.clone(),
+                    "resource_operation_create_exists",
+                    Some(operation.kind()),
+                    "create targets an already-open tab without overwrite or ignoreIfExists",
+                )];
+            }
+            if tab_is_modified(tabs, tab_id) {
+                return vec![skipped_detail(
+                    uri.clone(),
+                    "resource_operation_dirty_target",
+                    Some(operation.kind()),
+                    "create overwrite targets a modified open tab",
+                )];
+            }
+            Vec::new()
+        }
+        ResourceOperation::Rename {
+            old_uri,
+            new_uri,
+            overwrite,
+            ignore_if_exists,
+        } => {
+            let Some(old_tab_id) = open_tabs_by_uri.get(old_uri.as_str()).copied() else {
+                return operation
+                    .affected_uris()
+                    .into_iter()
+                    .map(|uri| {
+                        skipped_detail(
+                            uri,
+                            "resource_operation_source_not_open",
+                            Some(operation.kind()),
+                            "rename source is not open in the core workspace",
+                        )
+                    })
+                    .collect();
+            };
+            if old_uri == new_uri {
+                return Vec::new();
+            }
+            let target_tab_id = open_tabs_by_uri.get(new_uri.as_str()).copied();
+            if target_tab_id == Some(old_tab_id) || *ignore_if_exists {
+                return Vec::new();
+            }
+            if target_tab_id.is_some() {
+                let reason = if *overwrite {
+                    "resource_operation_target_overwrite_not_supported"
+                } else {
+                    "resource_operation_target_exists"
+                };
+                let message = if *overwrite {
+                    "rename target is already open; replacing an existing open tab is not supported by this transaction path"
+                } else {
+                    "rename target is already open and ignoreIfExists is false"
+                };
+                return operation
+                    .affected_uris()
+                    .into_iter()
+                    .map(|uri| skipped_detail(uri, reason, Some(operation.kind()), message))
+                    .collect();
+            }
+            Vec::new()
+        }
+        ResourceOperation::Delete { uri, .. } => {
+            let Some(tab_id) = open_tabs_by_uri.get(uri.as_str()).copied() else {
+                return vec![skipped_detail(
+                    uri.clone(),
+                    "resource_operation_target_not_open",
+                    Some(operation.kind()),
+                    "delete is currently supported only for already-open core tabs",
+                )];
+            };
+            if tab_is_modified(tabs, tab_id) {
+                return vec![skipped_detail(
+                    uri.clone(),
+                    "resource_operation_dirty_target",
+                    Some(operation.kind()),
+                    "delete targets a modified open tab",
+                )];
+            }
+            Vec::new()
         }
     }
 }

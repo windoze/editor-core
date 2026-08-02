@@ -68,6 +68,13 @@ public struct EcuWorkspaceEditTransactionDocument: Decodable, Equatable, Sendabl
     }
 }
 
+public struct EcuWorkspaceEditTransactionSkippedDetail: Decodable, Equatable, Sendable {
+    public let uri: String
+    public let reason: String
+    public let operation: String?
+    public let message: String
+}
+
 public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable {
     public let mode: String
     public let applied: Bool
@@ -76,6 +83,7 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
     public let appliedEditCount: Int
     public let appliedResourceOperationCount: Int
     public let skippedURIs: [String]
+    public let skippedDetails: [EcuWorkspaceEditTransactionSkippedDetail]
     public let unsupportedOperationURIs: [String]
     public let documents: [EcuWorkspaceEditTransactionDocument]
 
@@ -87,8 +95,35 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
         case appliedEditCount = "applied_edit_count"
         case appliedResourceOperationCount = "applied_resource_operation_count"
         case skippedURIs = "skipped_uris"
+        case skippedDetails = "skipped_details"
         case unsupportedOperationURIs = "unsupported_operation_uris"
         case documents
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try container.decode(String.self, forKey: .mode)
+        applied = try container.decode(Bool.self, forKey: .applied)
+        appliedURI = try container.decodeIfPresent(String.self, forKey: .appliedURI)
+        appliedURIs = try container.decodeIfPresent([String].self, forKey: .appliedURIs) ?? []
+        appliedEditCount = try container.decodeIfPresent(Int.self, forKey: .appliedEditCount) ?? 0
+        appliedResourceOperationCount = try container.decodeIfPresent(
+            Int.self,
+            forKey: .appliedResourceOperationCount
+        ) ?? 0
+        skippedURIs = try container.decodeIfPresent([String].self, forKey: .skippedURIs) ?? []
+        skippedDetails = try container.decodeIfPresent(
+            [EcuWorkspaceEditTransactionSkippedDetail].self,
+            forKey: .skippedDetails
+        ) ?? []
+        unsupportedOperationURIs = try container.decodeIfPresent(
+            [String].self,
+            forKey: .unsupportedOperationURIs
+        ) ?? []
+        documents = try container.decodeIfPresent(
+            [EcuWorkspaceEditTransactionDocument].self,
+            forKey: .documents
+        ) ?? []
     }
 }
 

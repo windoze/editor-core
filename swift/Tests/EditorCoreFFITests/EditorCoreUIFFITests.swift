@@ -387,6 +387,11 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(transactionPreview.mode, "preview")
         XCTAssertFalse(transactionPreview.applied)
         XCTAssertEqual(transactionPreview.skippedURIs, ["file:///project/Missing.swift"])
+        XCTAssertTrue(transactionPreview.skippedDetails.contains {
+            $0.uri == "file:///project/Missing.swift"
+                && $0.operation == "text_edit"
+                && $0.reason == "document_not_open"
+        })
         let betaTransactionDocument = try XCTUnwrap(
             transactionPreview.documents.first { $0.uri == "file:///project/Beta.swift" }
         )

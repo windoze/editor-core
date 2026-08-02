@@ -320,6 +320,10 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         preview_value["skipped_uris"][0],
         "file:///project/Missing.swift"
     );
+    assert_eq!(
+        preview_value["skipped_details"][0]["reason"],
+        "document_not_open"
+    );
 
     let apply_ptr = editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
         multi,

@@ -20,6 +20,7 @@ pub use workspace_diagnostics::{
 pub use workspace_edit::{
     WorkspaceEditTransactionDocument, WorkspaceEditTransactionEvent,
     WorkspaceEditTransactionEventsSnapshot, WorkspaceEditTransactionResult,
+    WorkspaceEditTransactionSkippedDetail,
 };
 pub use workspace_outline::{WorkspaceOutlineDocument, WorkspaceOutlineSnapshot};
 
