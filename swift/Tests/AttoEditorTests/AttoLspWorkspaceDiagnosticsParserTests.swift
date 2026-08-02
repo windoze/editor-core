@@ -302,6 +302,7 @@ final class AttoLspWorkspaceDiagnosticsParserTests: XCTestCase {
         """)
         XCTAssertEqual(snapshot.diagnostics.map(\.message), ["first problem"])
         XCTAssertEqual(snapshot.diagnostics.first?.severityLabel, "error")
+        let initialMarkerRefreshCount = store.coreMarkerRefreshCount
         XCTAssertEqual(
             store.diagnosticMarkerProjections(),
             [
@@ -313,6 +314,11 @@ final class AttoLspWorkspaceDiagnosticsParserTests: XCTestCase {
                 ),
             ]
         )
+        XCTAssertEqual(store.coreMarkerRefreshCount, initialMarkerRefreshCount + 1)
+
+        let markerRefreshCountAfterInitialRead = store.coreMarkerRefreshCount
+        _ = store.diagnosticMarkerProjections()
+        XCTAssertEqual(store.coreMarkerRefreshCount, markerRefreshCountAfterInitialRead)
 
         let previous = try XCTUnwrap(
             JSONSerialization.jsonObject(
@@ -365,6 +371,24 @@ final class AttoLspWorkspaceDiagnosticsParserTests: XCTestCase {
         XCTAssertEqual(store.coreSnapshotRefreshCount, refreshCountBeforeCoreEvent + 1)
 
         let refreshCountAfterEventDrain = store.coreSnapshotRefreshCount
+        let markerRefreshCountBeforeEventDrain = store.coreMarkerRefreshCount
+        XCTAssertEqual(
+            store.diagnosticMarkerProjections(),
+            [
+                AttoWorkspaceDiagnosticMarkerProjection(
+                    uri: "file:///project/a.swift",
+                    line: 1,
+                    utf16Character: 0,
+                    severity: .warning
+                ),
+            ]
+        )
+        XCTAssertEqual(store.coreMarkerRefreshCount, markerRefreshCountBeforeEventDrain + 1)
+
+        let markerRefreshCountAfterEventDrain = store.coreMarkerRefreshCount
+        _ = store.diagnosticMarkerProjections()
+        XCTAssertEqual(store.coreMarkerRefreshCount, markerRefreshCountAfterEventDrain)
+
         _ = store.snapshot
         XCTAssertTrue(store.lastWorkspaceDiagnosticsEvents.isEmpty)
         XCTAssertEqual(store.coreSnapshotRefreshCount, refreshCountAfterEventDrain)

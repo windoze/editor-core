@@ -76,7 +76,9 @@ final class AttoWorkspaceProblemsStore {
     private(set) var lastWorkspaceDiagnosticsEventSequence: UInt64 = 0
     private(set) var lastWorkspaceDiagnosticsEvents: [EcuWorkspaceDiagnosticsEvent] = []
     private(set) var coreSnapshotRefreshCount = 0
+    private(set) var coreMarkerRefreshCount = 0
     private var cachedCoreSnapshot: AttoWorkspaceProblemsSnapshot?
+    private var cachedCoreMarkerProjections: [AttoWorkspaceDiagnosticMarkerProjection]?
 
     init(coreDocuments: MultiDocumentEditorUI? = nil) {
         self.coreDocuments = coreDocuments
@@ -106,15 +108,8 @@ final class AttoWorkspaceProblemsStore {
     }
 
     func diagnosticMarkerProjections() -> [AttoWorkspaceDiagnosticMarkerProjection] {
-        if let markers = try? coreDocuments?.workspaceDiagnosticMarkersSnapshot().markers {
-            return markers.map { marker in
-                AttoWorkspaceDiagnosticMarkerProjection(
-                    uri: marker.uri,
-                    line: Int(marker.line),
-                    utf16Character: Int(marker.utf16Character),
-                    severity: Self.severity(forWorkspaceDiagnostic: marker.severity)
-                )
-            }
+        if let projections = refreshCoreMarkerProjectionsIfNeeded() {
+            return projections
         }
 
         return diagnostics.map { diagnostic in
@@ -131,7 +126,9 @@ final class AttoWorkspaceProblemsStore {
         if let coreDocuments {
             try? coreDocuments.clearWorkspaceDiagnostics()
             cachedCoreSnapshot = .empty
+            cachedCoreMarkerProjections = []
             coreSnapshotRefreshCount += 1
+            coreMarkerRefreshCount += 1
             syncWorkspaceDiagnosticsEventCursor()
         }
         documentsByURI.removeAll()
@@ -145,6 +142,7 @@ final class AttoWorkspaceProblemsStore {
             applyToFallback(result)
             let snapshot = AttoWorkspaceProblemsSnapshot(coreSnapshot: coreSnapshot)
             cachedCoreSnapshot = snapshot
+            cachedCoreMarkerProjections = nil
             coreSnapshotRefreshCount += 1
             syncWorkspaceDiagnosticsEventCursor()
             return snapshot
@@ -160,6 +158,7 @@ final class AttoWorkspaceProblemsStore {
             applyToFallback(parsed)
             let snapshot = AttoWorkspaceProblemsSnapshot(coreSnapshot: coreSnapshot)
             cachedCoreSnapshot = snapshot
+            cachedCoreMarkerProjections = nil
             coreSnapshotRefreshCount += 1
             syncWorkspaceDiagnosticsEventCursor()
             return snapshot
@@ -197,10 +196,8 @@ final class AttoWorkspaceProblemsStore {
     private func refreshCoreSnapshotIfNeeded() -> AttoWorkspaceProblemsSnapshot? {
         guard let coreDocuments else { return nil }
         do {
-            let events = try coreDocuments.workspaceDiagnosticsEvents(after: lastWorkspaceDiagnosticsEventSequence)
-            lastWorkspaceDiagnosticsEventSequence = events.latestSequence
-            lastWorkspaceDiagnosticsEvents = events.events
-            if cachedCoreSnapshot == nil || events.events.isEmpty == false {
+            try drainWorkspaceDiagnosticsEvents(from: coreDocuments)
+            if cachedCoreSnapshot == nil {
                 let snapshot = AttoWorkspaceProblemsSnapshot(
                     coreSnapshot: try coreDocuments.workspaceDiagnosticsSnapshot()
                 )
@@ -220,12 +217,56 @@ final class AttoWorkspaceProblemsStore {
         }
     }
 
+    private func refreshCoreMarkerProjectionsIfNeeded() -> [AttoWorkspaceDiagnosticMarkerProjection]? {
+        guard let coreDocuments else { return nil }
+        do {
+            try drainWorkspaceDiagnosticsEvents(from: coreDocuments)
+            if cachedCoreMarkerProjections == nil {
+                cachedCoreMarkerProjections = try coreDocuments
+                    .workspaceDiagnosticMarkersSnapshot()
+                    .markers
+                    .map(Self.markerProjection(from:))
+                coreMarkerRefreshCount += 1
+            }
+            return cachedCoreMarkerProjections
+        } catch {
+            guard let markers = try? coreDocuments.workspaceDiagnosticMarkersSnapshot().markers else {
+                return nil
+            }
+            let projections = markers.map(Self.markerProjection(from:))
+            cachedCoreMarkerProjections = projections
+            coreMarkerRefreshCount += 1
+            lastWorkspaceDiagnosticsEvents = []
+            return projections
+        }
+    }
+
+    private func drainWorkspaceDiagnosticsEvents(from coreDocuments: MultiDocumentEditorUI) throws {
+        let events = try coreDocuments.workspaceDiagnosticsEvents(after: lastWorkspaceDiagnosticsEventSequence)
+        lastWorkspaceDiagnosticsEventSequence = events.latestSequence
+        lastWorkspaceDiagnosticsEvents = events.events
+        guard events.events.isEmpty == false else { return }
+        cachedCoreSnapshot = nil
+        cachedCoreMarkerProjections = nil
+    }
+
     private func syncWorkspaceDiagnosticsEventCursor() {
         guard let coreDocuments else { return }
         lastWorkspaceDiagnosticsEventSequence =
             (try? coreDocuments.workspaceDiagnosticsLatestEventSequence())
             ?? lastWorkspaceDiagnosticsEventSequence
         lastWorkspaceDiagnosticsEvents = []
+    }
+
+    private static func markerProjection(
+        from marker: EcuWorkspaceDiagnosticMarker
+    ) -> AttoWorkspaceDiagnosticMarkerProjection {
+        AttoWorkspaceDiagnosticMarkerProjection(
+            uri: marker.uri,
+            line: Int(marker.line),
+            utf16Character: Int(marker.utf16Character),
+            severity: severity(forWorkspaceDiagnostic: marker.severity)
+        )
     }
 
     private static func severity(forWorkspaceDiagnostic severity: UInt32?) -> EcuDiagnosticSeverity? {
