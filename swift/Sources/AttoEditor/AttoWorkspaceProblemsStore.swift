@@ -73,14 +73,18 @@ final class AttoWorkspaceProblemsStore {
     private let coreDocuments: MultiDocumentEditorUI?
     private var documentsByURI: [String: AttoLspWorkspaceDiagnosticsParser.DocumentReport] = [:]
     private var documentOrder: [String] = []
+    private(set) var lastWorkspaceDiagnosticsEventSequence: UInt64 = 0
+    private(set) var lastWorkspaceDiagnosticsEvents: [EcuWorkspaceDiagnosticsEvent] = []
+    private(set) var coreSnapshotRefreshCount = 0
+    private var cachedCoreSnapshot: AttoWorkspaceProblemsSnapshot?
 
     init(coreDocuments: MultiDocumentEditorUI? = nil) {
         self.coreDocuments = coreDocuments
     }
 
     var snapshot: AttoWorkspaceProblemsSnapshot {
-        if let coreSnapshot = try? coreDocuments?.workspaceDiagnosticsSnapshot() {
-            return AttoWorkspaceProblemsSnapshot(coreSnapshot: coreSnapshot)
+        if let snapshot = refreshCoreSnapshotIfNeeded() {
+            return snapshot
         }
 
         let documents = documentOrder.compactMap { documentsByURI[$0] }
@@ -124,7 +128,12 @@ final class AttoWorkspaceProblemsStore {
     }
 
     func clear() {
-        try? coreDocuments?.clearWorkspaceDiagnostics()
+        if let coreDocuments {
+            try? coreDocuments.clearWorkspaceDiagnostics()
+            cachedCoreSnapshot = .empty
+            coreSnapshotRefreshCount += 1
+            syncWorkspaceDiagnosticsEventCursor()
+        }
         documentsByURI.removeAll()
         documentOrder.removeAll()
     }
@@ -134,7 +143,11 @@ final class AttoWorkspaceProblemsStore {
         let result = AttoLspWorkspaceDiagnosticsParser.parse(json)
         if let coreSnapshot = try? coreDocuments?.applyWorkspaceDiagnosticsJSON(json) {
             applyToFallback(result)
-            return AttoWorkspaceProblemsSnapshot(coreSnapshot: coreSnapshot)
+            let snapshot = AttoWorkspaceProblemsSnapshot(coreSnapshot: coreSnapshot)
+            cachedCoreSnapshot = snapshot
+            coreSnapshotRefreshCount += 1
+            syncWorkspaceDiagnosticsEventCursor()
+            return snapshot
         }
         return apply(result)
     }
@@ -145,7 +158,11 @@ final class AttoWorkspaceProblemsStore {
         if let json = result.rawJSONString,
            let coreSnapshot = try? coreDocuments?.applyWorkspaceDiagnosticsJSON(json) {
             applyToFallback(parsed)
-            return AttoWorkspaceProblemsSnapshot(coreSnapshot: coreSnapshot)
+            let snapshot = AttoWorkspaceProblemsSnapshot(coreSnapshot: coreSnapshot)
+            cachedCoreSnapshot = snapshot
+            coreSnapshotRefreshCount += 1
+            syncWorkspaceDiagnosticsEventCursor()
+            return snapshot
         }
         return apply(parsed)
     }
@@ -175,6 +192,40 @@ final class AttoWorkspaceProblemsStore {
     private func remember(uri: String) {
         guard documentOrder.contains(uri) == false else { return }
         documentOrder.append(uri)
+    }
+
+    private func refreshCoreSnapshotIfNeeded() -> AttoWorkspaceProblemsSnapshot? {
+        guard let coreDocuments else { return nil }
+        do {
+            let events = try coreDocuments.workspaceDiagnosticsEvents(after: lastWorkspaceDiagnosticsEventSequence)
+            lastWorkspaceDiagnosticsEventSequence = events.latestSequence
+            lastWorkspaceDiagnosticsEvents = events.events
+            if cachedCoreSnapshot == nil || events.events.isEmpty == false {
+                let snapshot = AttoWorkspaceProblemsSnapshot(
+                    coreSnapshot: try coreDocuments.workspaceDiagnosticsSnapshot()
+                )
+                cachedCoreSnapshot = snapshot
+                coreSnapshotRefreshCount += 1
+            }
+            return cachedCoreSnapshot
+        } catch {
+            guard let coreSnapshot = try? coreDocuments.workspaceDiagnosticsSnapshot() else {
+                return nil
+            }
+            let snapshot = AttoWorkspaceProblemsSnapshot(coreSnapshot: coreSnapshot)
+            cachedCoreSnapshot = snapshot
+            coreSnapshotRefreshCount += 1
+            lastWorkspaceDiagnosticsEvents = []
+            return snapshot
+        }
+    }
+
+    private func syncWorkspaceDiagnosticsEventCursor() {
+        guard let coreDocuments else { return }
+        lastWorkspaceDiagnosticsEventSequence =
+            (try? coreDocuments.workspaceDiagnosticsLatestEventSequence())
+            ?? lastWorkspaceDiagnosticsEventSequence
+        lastWorkspaceDiagnosticsEvents = []
     }
 
     private static func severity(forWorkspaceDiagnostic severity: UInt32?) -> EcuDiagnosticSeverity? {

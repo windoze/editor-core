@@ -336,6 +336,39 @@ final class AttoLspWorkspaceDiagnosticsParserTests: XCTestCase {
         XCTAssertEqual(snapshot.diagnostics.map(\.message), ["first problem"])
         XCTAssertEqual(snapshot.documents.map(\.resultId), ["a-2"])
 
+        let refreshCountBeforeCoreEvent = store.coreSnapshotRefreshCount
+        _ = try coreDocuments.applyWorkspaceDiagnosticsJSON("""
+        {
+          "items": [
+            {
+              "uri": "file:///project/a.swift",
+              "kind": "full",
+              "resultId": "a-3",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 1, "character": 0 },
+                    "end": { "line": 1, "character": 4 }
+                  },
+                  "severity": 2,
+                  "message": "event refreshed problem"
+                }
+              ]
+            }
+          ]
+        }
+        """)
+
+        snapshot = store.snapshot
+        XCTAssertEqual(snapshot.diagnostics.map(\.message), ["event refreshed problem"])
+        XCTAssertEqual(store.lastWorkspaceDiagnosticsEvents.map(\.operationKind), [.apply])
+        XCTAssertEqual(store.coreSnapshotRefreshCount, refreshCountBeforeCoreEvent + 1)
+
+        let refreshCountAfterEventDrain = store.coreSnapshotRefreshCount
+        _ = store.snapshot
+        XCTAssertTrue(store.lastWorkspaceDiagnosticsEvents.isEmpty)
+        XCTAssertEqual(store.coreSnapshotRefreshCount, refreshCountAfterEventDrain)
+
         store.clear()
         XCTAssertTrue(store.snapshot.diagnostics.isEmpty)
         XCTAssertEqual(store.previousResultIdsJSON(), "[]")
