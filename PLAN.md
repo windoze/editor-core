@@ -744,6 +744,18 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenSaveAndCloseNotifyExistingLspSessions`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(app): notify lsp document changes`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 extra document 的 `textDocument/didChange` 从 headless `LspSession` 暴露到 `EditorUi`、C ABI 和 Swift typed wrapper，并让 AttoEditor 对无自身 LSP session 的 tab 编辑通知其它已打开且 LSP 已启用的 tab session。
+  - 提交边界：只新增 full-document text didChange control-plane API 和 App 编辑 hook fan-out；range/UTF-16 计算由 Rust `DeltaCalculator` 的 per-document mirror 完成，避免 Swift 侧维护 LSP 文本镜像。新 tab 自身已经启用 LSP 时继续走既有 `EditorUi` 增量 didChange；不新增 project open/close 批量 LSP session 管理、server restart/shared-session root-set ownership、更高层 project selector 或跨 session 去重策略。
+  - 验证记录：
+    - `cargo test -p editor-core-ui lsp_document_lifecycle_notifications_are_exposed`
+    - `cargo test -p editor-core-ui-ffi ffi_lsp_request_definition_errors_when_lsp_disabled`
+    - `cargo test -p editor-core-lsp close_document_drops_its_pending_requests`
+    - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testEditorUILSPResultEventsWrapperStartsEmpty`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenSaveAndCloseNotifyExistingLspSessions`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

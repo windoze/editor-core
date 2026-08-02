@@ -218,6 +218,10 @@ Document lifecycle control-plane APIs use typed string parameters for common not
 `editor_core_ui_ffi_editor_ui_lsp_did_open_document(EditorUi* ui, const char* document_uri_utf8,
 const char* language_id_utf8, int32_t version, const char* text_utf8)` sends
 `textDocument/didOpen` for the active UI-owned LSP session and tracks that document in the session.
+`editor_core_ui_ffi_editor_ui_lsp_did_change_document(EditorUi* ui,
+const char* document_uri_utf8, const char* text_utf8)` sends a full-document
+`textDocument/didChange` for a tracked document; the Rust session owns the per-document mirror used
+to compute the LSP range and version.
 `editor_core_ui_ffi_editor_ui_lsp_did_save_document(EditorUi* ui, const char* document_uri_utf8,
 const char* text_utf8)` sends `textDocument/didSave`; `text_utf8` may be null when the host does
 not want to include the optional saved document text. The companion

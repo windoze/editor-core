@@ -31,7 +31,8 @@ the client-side `workspace/workspaceFolders` response list synchronized with the
 
 ## LSP Document Lifecycle
 
-Document open, save, and close notifications are exposed as string-based control-plane functions:
+Document open, change, save, and close notifications are exposed as string-based control-plane
+functions:
 
 ```c
 int32_t editor_core_ui_ffi_editor_ui_lsp_did_open_document(
@@ -39,6 +40,12 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_did_open_document(
     const char* document_uri_utf8,
     const char* language_id_utf8,
     int32_t version,
+    const char* text_utf8
+);
+
+int32_t editor_core_ui_ffi_editor_ui_lsp_did_change_document(
+    EditorUi* ui,
+    const char* document_uri_utf8,
     const char* text_utf8
 );
 
@@ -56,9 +63,11 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_did_close_document(
 
 `document_uri_utf8` must be a UTF-8 LSP document URI. didOpen additionally requires
 `language_id_utf8`, a document `version`, and the initial `text_utf8`; it also tracks the document
-inside the active session. didSave `text_utf8` may be null for callers that do not include the
-optional saved document text. These calls target the active UI-owned LSP session and return an error
-status when LSP is not enabled.
+inside the active session. didChange sends `text_utf8` as a full-document replacement for a tracked
+document; Rust owns the per-document text mirror used to compute the LSP range and next version.
+didSave `text_utf8` may be null for callers that do not include the optional saved document text.
+These calls target the active UI-owned LSP session and return an error status when LSP is not
+enabled.
 
 ## Multi-document Workspace Roots
 

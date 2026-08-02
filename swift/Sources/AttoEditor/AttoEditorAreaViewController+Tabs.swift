@@ -835,6 +835,26 @@ extension AttoEditorAreaViewController {
         return "plaintext"
     }
 
+    func notifyLspDocumentChangedForOpenSessions(_ tab: AttoEditorTab, documentURL: URL, text: String) {
+        guard (try? tab.editCore.editor.lspIsEnabled()) != true else { return }
+
+        for other in tabs where other.id != tab.id {
+            notifyLspDocumentChanged(other, documentURL: documentURL, text: text)
+        }
+    }
+
+    func notifyLspDocumentChanged(_ tab: AttoEditorTab, documentURL: URL, text: String) {
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else { return }
+        do {
+            try tab.editCore.editor.lspDidChangeDocument(
+                uri: documentURL.standardizedFileURL.absoluteString,
+                text: text
+            )
+        } catch {
+            NSLog("AttoEditor: failed to notify LSP didChange for %@: %@", documentURL.path, String(describing: error))
+        }
+    }
+
     func notifyLspDocumentSavedForOpenSessions(_ tab: AttoEditorTab, documentURL: URL, text: String) {
         if (try? tab.editCore.editor.lspIsEnabled()) == true {
             notifyLspDocumentSaved(tab, documentURL: documentURL, text: text)

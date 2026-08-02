@@ -327,6 +327,7 @@ pub struct LspSession {
     client: LspClient,
     document: LspDocument,
     extra_documents: HashMap<String, LspDocument>,
+    extra_document_calculators: HashMap<String, DeltaCalculator>,
 
     /// Mirror of the active document's text, kept in lockstep with what has been sent to the
     /// server via `didChange`. Used to translate a [`TextDelta`] into LSP ranges without the
@@ -455,6 +456,7 @@ impl LspSession {
             client,
             document,
             extra_documents: HashMap::new(),
+            extra_document_calculators: HashMap::new(),
             change_calculator,
             server_command,
             server_args,
@@ -973,7 +975,12 @@ impl LspSession {
 
         if document.uri == self.document.uri {
             self.document = document;
+            self.change_calculator = DeltaCalculator::from_text(&initial_text);
         } else {
+            self.extra_document_calculators.insert(
+                document.uri.clone(),
+                DeltaCalculator::from_text(&initial_text),
+            );
             self.extra_documents.insert(document.uri.clone(), document);
         }
 
@@ -992,9 +999,16 @@ impl LspSession {
         let Some(next) = self.extra_documents.remove(uri) else {
             return Err(format!("LSP document not found for uri={}", uri));
         };
+        let next_calc = self
+            .extra_document_calculators
+            .remove(uri)
+            .unwrap_or_default();
 
         let prev = std::mem::replace(&mut self.document, next);
+        let prev_calc = std::mem::replace(&mut self.change_calculator, next_calc);
+        let prev_uri = prev.uri.clone();
         self.extra_documents.insert(prev.uri.clone(), prev);
+        self.extra_document_calculators.insert(prev_uri, prev_calc);
         self.clear_semantic_tokens_cache();
         self.drop_pending_for_inactive_document();
         self.schedule_refresh(Duration::from_millis(0));
@@ -1021,13 +1035,19 @@ impl LspSession {
             if let Some((next_uri, _)) = self.extra_documents.iter().next() {
                 let next_uri = next_uri.clone();
                 let next = self.extra_documents.remove(&next_uri).expect("checked");
+                let next_calc = self
+                    .extra_document_calculators
+                    .remove(&next_uri)
+                    .unwrap_or_default();
                 self.document = next;
+                self.change_calculator = next_calc;
                 self.clear_semantic_tokens_cache();
                 self.drop_pending_for_inactive_document();
                 self.schedule_refresh(Duration::from_millis(0));
             }
         } else {
             self.extra_documents.remove(uri);
+            self.extra_document_calculators.remove(uri);
         }
 
         // Drop any in-flight requests targeting the closed document regardless of which document
@@ -1085,6 +1105,62 @@ impl LspSession {
                 "contentChanges": content_changes,
             }),
         )?;
+
+        Ok(())
+    }
+
+    /// Send `textDocument/didChange` for a specific document URI as a full-document replacement.
+    ///
+    /// This keeps the per-document text mirror in sync for documents opened through
+    /// [`open_document`](Self::open_document), so hosts that only have the latest full text can
+    /// still notify a shared multi-document LSP session without computing UTF-16 ranges outside
+    /// Rust.
+    pub fn did_change_full_text_for_uri(&mut self, uri: &str, text: String) -> Result<(), String> {
+        if self.document.uri == uri {
+            let change = full_document_change_for_calculator(&self.change_calculator, &text);
+            self.send_active_did_change(std::slice::from_ref(&change))?;
+            self.change_calculator.apply_change(&TextChange {
+                range: change.range,
+                text: change.text,
+            });
+            return Ok(());
+        }
+
+        let (doc_uri, next_version, change) = {
+            let Some(doc) = self.extra_documents.get(uri) else {
+                return Err(format!("LSP document not found for uri={}", uri));
+            };
+            let calc = self
+                .extra_document_calculators
+                .get(uri)
+                .ok_or_else(|| format!("LSP document mirror not found for uri={}", uri))?;
+            (
+                doc.uri.clone(),
+                doc.version.saturating_add(1),
+                full_document_change_for_calculator(calc, &text),
+            )
+        };
+
+        self.notify(
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": doc_uri.as_str(), "version": next_version },
+                "contentChanges": [{
+                    "range": lsp_range_to_json(&change.range),
+                    "text": change.text.as_str(),
+                }],
+            }),
+        )?;
+
+        if let Some(doc) = self.extra_documents.get_mut(uri) {
+            doc.version = next_version;
+        }
+        if let Some(calc) = self.extra_document_calculators.get_mut(uri) {
+            calc.apply_change(&TextChange {
+                range: change.range,
+                text: change.text,
+            });
+        }
 
         Ok(())
     }
@@ -2761,6 +2837,19 @@ fn lsp_position_for_offset(line_index: &LineIndex, offset: usize) -> LspPosition
     let (line, col) = line_index.char_offset_to_position(offset);
     let line_text = line_index.get_line_text(line).unwrap_or_default();
     LspCoordinateConverter::position_to_lsp(&line_text, line, col)
+}
+
+fn full_document_change_for_calculator(calc: &DeltaCalculator, text: &str) -> LspContentChange {
+    let end_line = calc.line_count().saturating_sub(1);
+    let end_char = calc
+        .get_line(end_line)
+        .map(|line| line.chars().count())
+        .unwrap_or(0);
+    let change = calc.calculate_replace_change(0, 0, end_line, end_char, text);
+    LspContentChange {
+        range: change.range,
+        text: change.text,
+    }
 }
 
 fn lsp_range_to_json(range: &LspRange) -> Value {

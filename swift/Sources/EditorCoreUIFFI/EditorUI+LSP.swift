@@ -71,6 +71,15 @@ extension EditorUI {
         try library.ensureStatus(status, context: "editor_ui_lsp_did_open_document")
     }
 
+    public func lspDidChangeDocument(uri: String, text: String) throws {
+        let status = uri.withCString { uriPtr in
+            text.withCString { textPtr in
+                editor_core_ui_ffi_editor_ui_lsp_did_change_document(handle, uriPtr, textPtr)
+            }
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_did_change_document")
+    }
+
     public func lspDidSaveDocument(uri: String, text: String? = nil) throws {
         let status = uri.withCString { uriPtr in
             if let text {

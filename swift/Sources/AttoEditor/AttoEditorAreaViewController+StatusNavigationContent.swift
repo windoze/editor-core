@@ -48,7 +48,15 @@ extension AttoEditorAreaViewController {
         }
 
         tab.isDirty = (try? tab.editCore.editor.isModified()) ?? true
+        let currentText = try? tab.editCore.editor.text()
         syncCoreTabText(tab, markSaved: tab.isDirty == false)
+        if let currentText {
+            notifyLspDocumentChangedForOpenSessions(
+                tab,
+                documentURL: projectedFileURL(for: tab),
+                text: currentText
+            )
+        }
         if didUnpreview {
             pinCoreTabIfPreview(tab)
         }

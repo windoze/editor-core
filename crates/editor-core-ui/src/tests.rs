@@ -593,6 +593,8 @@ fn lsp_document_lifecycle_notifications_are_exposed() {
         .unwrap();
     ui.lsp_did_open_document(&other_uri, "rust", 1, "pub fn other() {}\n".to_string())
         .unwrap();
+    ui.lsp_did_change_document(&other_uri, "pub fn other_changed() {}\n".to_string())
+        .unwrap();
     ui.lsp_did_save_document(&doc_uri, Some("fn main() { saved(); }\n".to_string()))
         .unwrap();
     ui.lsp_did_close_document(&doc_uri).unwrap();
@@ -611,6 +613,19 @@ fn lsp_document_lifecycle_notifications_are_exposed() {
     assert_eq!(
         did_open["params"]["textDocument"]["text"],
         "pub fn other() {}\n"
+    );
+
+    let did_change = messages
+        .iter()
+        .find(|message| {
+            message["method"] == "textDocument/didChange"
+                && message["params"]["textDocument"]["uri"] == other_uri
+        })
+        .expect("missing textDocument/didChange notification");
+    assert_eq!(did_change["params"]["textDocument"]["version"], 2);
+    assert_eq!(
+        did_change["params"]["contentChanges"][0]["text"],
+        "pub fn other_changed() {}\n"
     );
 
     let did_save = messages

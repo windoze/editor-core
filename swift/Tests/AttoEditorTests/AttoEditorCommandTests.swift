@@ -5011,6 +5011,7 @@ final class AttoEditorCommandTests: XCTestCase {
         defer { firstTab.editCore.editor.lspDisable() }
 
         vc.openFile(url: secondURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"changed "}"#))
         vc.saveActiveTab()
         vc.closeActiveTab()
 
@@ -5019,10 +5020,12 @@ final class AttoEditorCommandTests: XCTestCase {
             containing: "textDocument/didClose"
         )
         XCTAssertTrue(captured.contains(#""method":"textDocument/didOpen""#), captured)
+        XCTAssertTrue(captured.contains(#""method":"textDocument/didChange""#), captured)
         XCTAssertTrue(captured.contains(#""method":"textDocument/didSave""#), captured)
         XCTAssertTrue(captured.contains(#""method":"textDocument/didClose""#), captured)
         XCTAssertTrue(captured.contains(secondURL.standardizedFileURL.absoluteString), captured)
         XCTAssertTrue(captured.contains(#""languageId":"plaintext""#), captured)
+        XCTAssertTrue(captured.contains("changed"), captured)
         XCTAssertTrue(captured.contains("second opened"), captured)
     }
 
