@@ -181,6 +181,14 @@ final class AttoEditorAreaViewController: NSViewController {
         lspSymbolResultStore.historyEntries
     }
 
+    func _diagnosticsLifecycleHistoryForTesting() -> [AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>] {
+        diagnosticsLifecycleStore.historyEntries
+    }
+
+    func _currentDiagnosticsLifecycleEntryForTesting() -> AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>? {
+        diagnosticsLifecycleStore.currentEntry
+    }
+
     func _problemsPanelDiagnosticsForTesting() -> [EcuDiagnostic] {
         problemsPanelController?.currentDiagnostics ?? []
     }
@@ -580,6 +588,9 @@ final class AttoEditorAreaViewController: NSViewController {
     private var hierarchyResultsController: AttoCommandPaletteController?
     private var problemsResultsController: AttoCommandPaletteController?
     private var problemsPanelController: AttoProblemsPanelController?
+    private let diagnosticsLifecycleStore = AttoLspResultLifecycleStore<AttoDiagnosticsLifecycleSnapshot>(
+        maxHistoryEntries: maxLspResultHistoryEntries
+    )
     private let workspaceProblemsStore: AttoWorkspaceProblemsStore
     private var workspaceProblemsPanelController: AttoProblemsPanelController?
     private var workspaceDiagnosticsContext: WorkspaceDiagnosticsRequestContext?
@@ -3487,8 +3498,10 @@ final class AttoEditorAreaViewController: NSViewController {
 
         let editor = tab.editCore.editor
         derivedStateStore.refreshActive(editor: editor)
-        updateProblemsPanelIfVisible(for: tab)
-        updateDiagnosticMarkers(for: tab, includeActiveDiagnostics: true)
+        let diagnosticsSnapshot = unifiedDiagnosticsSnapshot(for: tab, includeActiveDiagnostics: true)
+        recordActiveDiagnosticsLifecycle(diagnosticsSnapshot, for: tab)
+        updateProblemsPanelIfVisible(snapshot: diagnosticsSnapshot)
+        updateDiagnosticMarkers(for: tab, projections: diagnosticsSnapshot.markerProjections)
 
         let (line1, col1): (UInt32, UInt32) = {
             do {
@@ -3567,7 +3580,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }()
 
         statusBarView.update(
-            leftText: transientStatusText ?? statusBarLeftText(for: tab),
+            leftText: transientStatusText ?? statusBarLeftText(for: tab, diagnostics: diagnosticsSnapshot),
             languageId: tab.syntaxLanguageId,
             languageIsEnabled: true,
             lspText: lspText,
@@ -3591,7 +3604,13 @@ final class AttoEditorAreaViewController: NSViewController {
             for: tab,
             includeActiveDiagnostics: includeActiveDiagnostics
         ).markerProjections
+        updateDiagnosticMarkers(for: tab, projections: projections)
+    }
 
+    private func updateDiagnosticMarkers(
+        for tab: AttoEditorTab,
+        projections: [AttoDiagnosticMarkerProjection]
+    ) {
         let minimapMarkers = projections.map {
             EditorCoreSkiaMinimapMarker(
                 logicalLine: $0.logicalLine,
@@ -3612,9 +3631,8 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
-    private func updateProblemsPanelIfVisible(for tab: AttoEditorTab) {
+    private func updateProblemsPanelIfVisible(snapshot: AttoUnifiedDiagnosticsSnapshot) {
         guard problemsPanelController?.isVisible == true else { return }
-        let snapshot = unifiedDiagnosticsSnapshot(for: tab, includeActiveDiagnostics: true)
         problemsPanelController?.update(problems: snapshot.problems)
     }
 
@@ -3636,11 +3654,10 @@ final class AttoEditorAreaViewController: NSViewController {
         )
     }
 
-    private func statusBarLeftText(for tab: AttoEditorTab) -> String? {
-        let diagnostics = unifiedDiagnosticsSnapshot(
-            for: tab,
-            includeActiveDiagnostics: true
-        )
+    private func statusBarLeftText(
+        for tab: AttoEditorTab,
+        diagnostics: AttoUnifiedDiagnosticsSnapshot
+    ) -> String? {
         let parts = [
             diagnostics.problemsStatusText,
             derivedStateStore.active.foldedStatusText,
@@ -3648,6 +3665,43 @@ final class AttoEditorAreaViewController: NSViewController {
         ].compactMap { $0 }
         guard parts.isEmpty == false else { return nil }
         return parts.joined(separator: " | ")
+    }
+
+    private func recordActiveDiagnosticsLifecycle(
+        _ snapshot: AttoUnifiedDiagnosticsSnapshot,
+        for tab: AttoEditorTab
+    ) {
+        let lifecycleSnapshot = AttoDiagnosticsLifecycleSnapshot(
+            scope: .activeTab(tabID: tab.id, fileURL: tab.fileURL.standardizedFileURL),
+            problems: snapshot.problems,
+            markerProjections: snapshot.markerProjections,
+            statusText: snapshot.problemsStatusText
+        )
+        diagnosticsLifecycleStore.recordIfChanged(
+            lifecycleSnapshot,
+            family: "diagnostics.active",
+            title: tab.fileURL.lastPathComponent
+        )
+    }
+
+    private func recordWorkspaceDiagnosticsLifecycle(
+        problems: [AttoUnifiedDiagnosticProblem]
+    ) {
+        let statusText: String? = {
+            let count = problems.count
+            guard count > 0 else { return nil }
+            return count == 1 ? "Problems: 1" : "Problems: \(count)"
+        }()
+        diagnosticsLifecycleStore.recordIfChanged(
+            AttoDiagnosticsLifecycleSnapshot(
+                scope: .workspace,
+                problems: problems,
+                markerProjections: [],
+                statusText: statusText
+            ),
+            family: "diagnostics.workspace",
+            title: "Workspace Problems"
+        )
     }
 
     private func updateWorkspaceDiagnosticMarkersForOpenTabs() {
@@ -5601,6 +5655,9 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         let snapshot = workspaceProblemsStore.apply(resultJSON: json)
+        recordWorkspaceDiagnosticsLifecycle(
+            problems: AttoDiagnosticsModel.workspaceProblems(snapshot.diagnostics)
+        )
         updateWorkspaceDiagnosticMarkersForOpenTabs()
         updateWorkspaceProblemsPanelIfVisible()
         updateStatusBar()

@@ -1104,6 +1104,18 @@ final class AttoEditorCommandTests: XCTestCase {
             "first workspace problem",
             "second workspace warning",
         ])
+        var diagnosticsLifecycle = vc._diagnosticsLifecycleHistoryForTesting()
+        var workspaceLifecycleEntries = diagnosticsLifecycle.filter { $0.family == "diagnostics.workspace" }
+        var activeLifecycleEntries = diagnosticsLifecycle.filter { $0.family == "diagnostics.active" }
+        XCTAssertEqual(workspaceLifecycleEntries.last?.snapshot.scope, .workspace)
+        XCTAssertEqual(workspaceLifecycleEntries.last?.snapshot.problems.map(\.message), [
+            "first workspace problem",
+            "second workspace warning",
+        ])
+        XCTAssertEqual(activeLifecycleEntries.last?.snapshot.problems.map(\.message), [
+            "first workspace problem",
+            "second workspace warning",
+        ])
         XCTAssertEqual(vc._activeMinimapDiagnosticMarkersForTesting(), [
             EditorCoreSkiaMinimapMarker(logicalLine: 0, kind: .error),
             EditorCoreSkiaMinimapMarker(logicalLine: 1, kind: .warning),
@@ -1163,6 +1175,14 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._workspaceProblemsPanelUnifiedProblemsForTesting().map(\.message), ["third workspace problem"])
         XCTAssertEqual(vc._workspaceProblemsPanelUnifiedProblemsForTesting().map(\.source), [.workspace])
         XCTAssertEqual(vc._workspaceProblemsPanelRowCountForTesting(), 1)
+        diagnosticsLifecycle = vc._diagnosticsLifecycleHistoryForTesting()
+        workspaceLifecycleEntries = diagnosticsLifecycle.filter { $0.family == "diagnostics.workspace" }
+        activeLifecycleEntries = diagnosticsLifecycle.filter { $0.family == "diagnostics.active" }
+        XCTAssertEqual(
+            Array(workspaceLifecycleEntries.map(\.snapshot.statusText).suffix(2)),
+            ["Problems: 2", "Problems: 1"]
+        )
+        XCTAssertEqual(activeLifecycleEntries.last?.snapshot.problems.map(\.message), ["third workspace problem"])
         XCTAssertEqual(vc._activeMinimapDiagnosticMarkersForTesting(), [
             EditorCoreSkiaMinimapMarker(logicalLine: 2, kind: .error),
         ])

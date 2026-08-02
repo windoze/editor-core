@@ -83,3 +83,16 @@ final class AttoLspResultLifecycleStore<Snapshot> {
         return entry
     }
 }
+
+extension AttoLspResultLifecycleStore where Snapshot: Equatable {
+    @discardableResult
+    func recordIfChanged(
+        _ snapshot: Snapshot,
+        family: String = "unknown",
+        title: String = "",
+        recordedAt: Date = Date()
+    ) -> AttoLspResultLifecycleEntry<Snapshot>? {
+        guard current != snapshot else { return nil }
+        return record(snapshot, family: family, title: title, recordedAt: recordedAt)
+    }
+}

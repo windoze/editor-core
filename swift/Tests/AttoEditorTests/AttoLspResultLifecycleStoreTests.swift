@@ -48,6 +48,21 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         XCTAssertEqual(current.title, "Manual")
     }
 
+    func testRecordIfChangedSkipsDuplicateCurrentSnapshot() {
+        let store = AttoLspResultLifecycleStore<String>(maxHistoryEntries: 3)
+
+        let first = store.recordIfChanged("same", family: "diagnostics", title: "Initial")
+        let duplicate = store.recordIfChanged("same", family: "diagnostics", title: "Duplicate")
+        let changed = store.recordIfChanged("changed", family: "diagnostics", title: "Changed")
+
+        XCTAssertNotNil(first)
+        XCTAssertNil(duplicate)
+        XCTAssertNotNil(changed)
+        XCTAssertEqual(store.history, ["same", "changed"])
+        XCTAssertEqual(store.historyEntries.map(\.title), ["Initial", "Changed"])
+        XCTAssertEqual(store.current, "changed")
+    }
+
     func testClearDropsCurrentAndHistory() {
         let store = AttoLspResultLifecycleStore<Int>(maxHistoryEntries: 0)
 
