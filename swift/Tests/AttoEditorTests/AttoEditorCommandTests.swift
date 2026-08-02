@@ -2348,11 +2348,46 @@ final class AttoEditorCommandTests: XCTestCase {
         )
 
         let vc = makeEditorArea(workspaceRootURL: tempDir, projectLspProcessHealthLogStore: logStore)
-        XCTAssertTrue(vc.clearProjectLspProcessHealthLog())
+        XCTAssertTrue(vc.clearProjectLspProcessHealthLog(confirmBeforeClearing: false))
         XCTAssertFalse(vc.showProjectLspProcessHealthLogPanel())
         XCTAssertEqual(logStore.loadRecent(workspaceRootURL: tempDir, limit: 10), [])
         XCTAssertEqual(logStore.loadRecent(workspaceRootURL: otherRoot, limit: 10).map(\.serverName), ["other-lsp"])
-        XCTAssertFalse(vc.clearProjectLspProcessHealthLog())
+        XCTAssertFalse(vc.clearProjectLspProcessHealthLog(confirmBeforeClearing: false))
+    }
+
+    func testClearProjectLspProcessHealthLogCanBeCancelledByConfirmation() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let logStore = AttoProjectLspProcessHealthLogStore(
+            logFileURL: tempDir.appendingPathComponent("lsp-health.jsonl")
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 1,
+                sourceSequence: 10,
+                tabId: 1,
+                viewIndex: 0,
+                viewId: 100,
+                serverName: "current-lsp",
+                serverCommand: "current-lsp",
+                availability: "failed",
+                state: "failed",
+                detail: "current exit",
+                process: EcuLspProcessStatus(pid: 101, state: .exited, exitCode: 1)
+            ),
+            workspaceRootURL: tempDir,
+            recordedAt: Date(timeIntervalSince1970: 1_785_715_200)
+        )
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir, projectLspProcessHealthLogStore: logStore)
+        XCTAssertFalse(vc.clearProjectLspProcessHealthLog(confirmationProvider: { false }))
+        XCTAssertEqual(logStore.loadRecent(workspaceRootURL: tempDir, limit: 10).map(\.serverName), ["current-lsp"])
+
+        XCTAssertTrue(vc.clearProjectLspProcessHealthLog(confirmationProvider: { true }))
+        XCTAssertEqual(logStore.loadRecent(workspaceRootURL: tempDir, limit: 10), [])
     }
 
     func testExportProjectLspProcessHealthLogExportsCurrentWorkspaceOnly() throws {

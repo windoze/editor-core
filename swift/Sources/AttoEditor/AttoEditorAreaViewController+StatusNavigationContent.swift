@@ -519,7 +519,24 @@ extension AttoEditorAreaViewController {
     }
 
     @discardableResult
-    func clearProjectLspProcessHealthLog() -> Bool {
+    func clearProjectLspProcessHealthLog(
+        confirmBeforeClearing: Bool = true,
+        confirmationProvider: (() -> Bool)? = nil
+    ) -> Bool {
+        guard projectLspProcessHealthLogStore.loadRecent(
+            workspaceRootURL: workspaceRootURL,
+            limit: 1
+        ).isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+        if confirmBeforeClearing {
+            let confirmed = confirmationProvider?() ?? Self.confirmProjectLspProcessHealthLogClear()
+            guard confirmed else {
+                return false
+            }
+        }
+
         do {
             let removed = try projectLspProcessHealthLogStore.clear(workspaceRootURL: workspaceRootURL)
             if removed == 0 {
@@ -534,6 +551,16 @@ extension AttoEditorAreaViewController {
             NSSound.beep()
             return false
         }
+    }
+
+    private static func confirmProjectLspProcessHealthLogClear() -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Clear Project LSP Process Health Log?"
+        alert.informativeText = "This removes persisted process health log entries for the current workspace. Other workspace logs are kept."
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     @discardableResult

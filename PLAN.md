@@ -988,6 +988,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `git diff --check`
+- 中间提交：`feat(app): confirm lsp process health log clear`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；在阶段 277 的 clear command 基础上补当前 workspace root 日志清空前确认。
+  - 提交边界：AttoEditor 的 `clearProjectLspProcessHealthLog(...)` 在默认命令路径上先检查当前 workspace 是否有可清空记录，再弹出 AppKit warning alert；测试路径可注入 confirmation provider 或跳过确认以避免阻塞。该提交不新增 Rust/C ABI，不改变日志记录 schema、不实现复杂查询/filter DSL、按 workspace 独立配额、大小/时间轮转、自动崩溃恢复、更深层 core-owned LSP ownership schema 或完整 dashboard 级健康视图。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testClearProjectLspProcessHealthLogClearsCurrentWorkspaceOnly`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testClearProjectLspProcessHealthLogCanBeCancelledByConfirmation`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
