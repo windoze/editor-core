@@ -16,6 +16,7 @@ enum AttoLspResultFeedback {
         case references
         case documentSymbols
         case workspaceSymbols
+        case completion
         case selectionRange
         case signatureHelp
         case linkedEditing
@@ -42,6 +43,8 @@ enum AttoLspResultFeedback {
                 return "Document symbols"
             case .workspaceSymbols:
                 return "Workspace symbols"
+            case .completion:
+                return "Completion"
             case .selectionRange:
                 return "Selection range"
             case .signatureHelp:
@@ -93,6 +96,8 @@ enum AttoLspResultFeedback {
                 return "Document symbols are unavailable."
             case .workspaceSymbols:
                 return "Workspace symbols are unavailable."
+            case .completion:
+                return "Completion is unavailable."
             case .selectionRange:
                 return "Selection range is unavailable."
             case .signatureHelp:
@@ -126,6 +131,8 @@ enum AttoLspResultFeedback {
                 return "No document symbols are available for this document."
             case .workspaceSymbols:
                 return "No workspace symbols are available."
+            case .completion:
+                return "No completions are available here."
             case .selectionRange:
                 return "No larger selection range is available."
             case .signatureHelp:

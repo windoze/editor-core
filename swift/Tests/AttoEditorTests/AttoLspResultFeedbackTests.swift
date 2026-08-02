@@ -97,6 +97,27 @@ final class AttoLspResultFeedbackTests: XCTestCase {
                 detailText: "No workspace symbols match \"App\"."
             )
         )
+        XCTAssertEqual(
+            AttoLspResultFeedback.requestFailed(.completion, errorDescription: "server busy"),
+            AttoLspResultFeedback.Message(
+                statusText: "Completion: request failed",
+                detailText: "Completion request failed.\nserver busy"
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.timeout(.completion),
+            AttoLspResultFeedback.Message(
+                statusText: "Completion: timed out",
+                detailText: "Completion request timed out."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.completion),
+            AttoLspResultFeedback.Message(
+                statusText: "Completion: no results",
+                detailText: "No completions are available here."
+            )
+        )
     }
 
     func testRefreshSummaryFormatsSingularAndPluralCounts() {

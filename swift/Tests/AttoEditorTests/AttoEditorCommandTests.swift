@@ -1830,6 +1830,22 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(events.last?.payload, .completion(itemCount: 2))
     }
 
+    func testEmptyCompletionResultUsesUnifiedFeedbackStatus() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("completion-empty.swift")
+        try "pri".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc._showCompletionResultJSONForTesting(#"{ "isIncomplete": false, "items": [] }"#))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Completion: no results")
+    }
+
     func testApplyLinkedEditingRangeResultCreatesMulticursorSelections() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

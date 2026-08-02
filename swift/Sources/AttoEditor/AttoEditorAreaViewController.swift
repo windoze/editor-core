@@ -217,8 +217,14 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     func _showCompletionResultJSONForTesting(_ json: String) -> Bool {
+        _showCompletionResultJSONForTesting(json, showFeedback: true)
+    }
+
+    func _showCompletionResultJSONForTesting(_ json: String, showFeedback: Bool) -> Bool {
         guard let tab = activeTab else { return false }
-        guard let context = try? completionRequestContextForCurrentSelection(tab) else { return false }
+        guard let context = try? completionRequestContextForCurrentSelection(tab, showFeedback: showFeedback) else {
+            return false
+        }
         let items = AttoLspCompletionParser.items(fromCompletionResultJSON: json)
         return showCompletionList(items: items, context: context, editorView: tab.editCore.editorView)
     }
@@ -551,6 +557,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let fallbackStart: UInt32
         let fallbackEnd: UInt32
         let beepOnFailure: Bool
+        let showFeedback: Bool
     }
 
     private struct CompletionResolveContext {
@@ -6431,16 +6438,19 @@ final class AttoEditorAreaViewController: NSViewController {
 
     @discardableResult
     func showCompletionsInActiveTab() -> Bool {
-        showCompletionsInActiveTab(beepOnFailure: true)
+        showCompletionsInActiveTab(beepOnFailure: true, showFeedback: true)
     }
 
     @discardableResult
-    private func showCompletionsInActiveTab(beepOnFailure: Bool) -> Bool {
+    private func showCompletionsInActiveTab(beepOnFailure: Bool, showFeedback: Bool) -> Bool {
         guard let tab = activeTab else {
             if beepOnFailure { NSSound.beep() }
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.completion), in: tab.editCore.editorView)
+            }
             if beepOnFailure { NSSound.beep() }
             return false
         }
@@ -6454,7 +6464,11 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelCodeActionUI()
 
         do {
-            let context = try completionRequestContextForCurrentSelection(tab, beepOnFailure: beepOnFailure)
+            let context = try completionRequestContextForCurrentSelection(
+                tab,
+                beepOnFailure: beepOnFailure,
+                showFeedback: showFeedback
+            )
             let offsets = try tab.editCore.editor.selectionOffsets()
             let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
             _ = try tab.editCore.editor.lspRequestCompletion(
@@ -6466,6 +6480,12 @@ final class AttoEditorAreaViewController: NSViewController {
             startCompletionPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
             return true
         } catch {
+            if showFeedback {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(.completion, errorDescription: error.localizedDescription),
+                    in: tab.editCore.editorView
+                )
+            }
             if beepOnFailure { NSSound.beep() }
             return false
         }
@@ -6473,7 +6493,8 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func completionRequestContextForCurrentSelection(
         _ tab: AttoEditorTab,
-        beepOnFailure: Bool = false
+        beepOnFailure: Bool = false,
+        showFeedback: Bool = false
     ) throws -> CompletionRequestContext {
         let offsets = try tab.editCore.editor.selectionOffsets()
         let text = try tab.editCore.editor.text()
@@ -6489,7 +6510,8 @@ final class AttoEditorAreaViewController: NSViewController {
             tabID: tab.id,
             fallbackStart: fallback.start,
             fallbackEnd: fallback.end,
-            beepOnFailure: beepOnFailure
+            beepOnFailure: beepOnFailure,
+            showFeedback: showFeedback
         )
     }
 
@@ -6507,7 +6529,13 @@ final class AttoEditorAreaViewController: NSViewController {
             }
 
             if remainingTicks <= 0 {
+                if ctx.showFeedback {
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.completion), in: editorView)
+                }
                 self.cancelCompletionUI()
+                if ctx.beepOnFailure {
+                    NSSound.beep()
+                }
                 return
             }
             remainingTicks -= 1
@@ -6521,6 +6549,16 @@ final class AttoEditorAreaViewController: NSViewController {
             do {
                 result = try tab.editCore.editor.lspTakeLastCompletionResult()
             } catch {
+                if ctx.showFeedback {
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(.completion, errorDescription: error.localizedDescription),
+                        in: editorView
+                    )
+                }
+                self.cancelCompletionUI()
+                if ctx.beepOnFailure {
+                    NSSound.beep()
+                }
                 return
             }
             guard let result else { return }
@@ -6545,6 +6583,9 @@ final class AttoEditorAreaViewController: NSViewController {
     ) -> Bool {
         guard items.isEmpty == false else {
             cancelCompletionUI()
+            if context.showFeedback {
+                presentLspResultFeedback(AttoLspResultFeedback.empty(.completion), in: editorView)
+            }
             if context.beepOnFailure { NSSound.beep() }
             return false
         }
@@ -8345,7 +8386,7 @@ final class AttoEditorAreaViewController: NSViewController {
             committedText: text,
             lspStatus: status
         ), shouldShowSignatureHelp == false {
-            _ = showCompletionsInActiveTab(beepOnFailure: false)
+            _ = showCompletionsInActiveTab(beepOnFailure: false, showFeedback: false)
         }
 
         if shouldShowSignatureHelp {
