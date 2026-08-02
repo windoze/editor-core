@@ -71,6 +71,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.code_lens_actions"))
         XCTAssertTrue(ids.contains("lsp.code_lens_at_cursor"))
         XCTAssertTrue(ids.contains("lsp.refresh_code_lens"))
+        XCTAssertTrue(ids.contains("lsp.refresh_inlay_hints"))
+        XCTAssertTrue(ids.contains("lsp.refresh_document_links"))
         XCTAssertTrue(ids.contains("lsp.quick_fix"))
         XCTAssertTrue(ids.contains("lsp.refactor"))
         XCTAssertTrue(ids.contains("lsp.source_actions"))
@@ -380,6 +382,23 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(vc.refreshCodeLensInActiveTab(showFeedback: false))
     }
 
+    func testRefreshAuxiliaryLspDecorationsRequireEnabledLsp() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("auxiliary.txt")
+        try "let value = demo()\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc.refreshInlayHintsInActiveTab(showFeedback: false))
+        XCTAssertFalse(vc.refreshDocumentLinksInActiveTab(showFeedback: false))
+    }
+
     func testCodeLensAtCursorFiltersActionsToCurrentLine() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -490,6 +509,60 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let errorSummary = vc._codeLensResultSummaryForTesting(error)
         XCTAssertEqual(errorSummary.errorMessage, "code lens failed")
+        XCTAssertEqual(errorSummary.count, 0)
+    }
+
+    func testTypedAuxiliaryResultSummariesUseTypedPayload() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+
+        let inlayHints = try JSONDecoder().decode(EcuLspInlayHintResult.self, from: Data("""
+        [
+          {
+            "position": { "line": 0, "character": 4 },
+            "label": ": Int",
+            "kind": 1
+          },
+          {
+            "position": { "line": 1, "character": 7 },
+            "label": [{ "value": "name:" }],
+            "kind": 2
+          }
+        ]
+        """.utf8))
+        let inlaySummary = vc._inlayHintResultSummaryForTesting(inlayHints)
+        XCTAssertNil(inlaySummary.errorMessage)
+        XCTAssertEqual(inlaySummary.count, 2)
+
+        let documentLinks = try JSONDecoder().decode(EcuLspDocumentLinkResult.self, from: Data("""
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 5 }
+            },
+            "target": "file:///tmp/readme.md"
+          }
+        ]
+        """.utf8))
+        let linkSummary = vc._documentLinkResultSummaryForTesting(documentLinks)
+        XCTAssertNil(linkSummary.errorMessage)
+        XCTAssertEqual(linkSummary.count, 1)
+
+        let error = try JSONDecoder().decode(EcuLspDocumentLinkResult.self, from: Data("""
+        {
+          "error": {
+            "code": -32603,
+            "message": "links failed"
+          }
+        }
+        """.utf8))
+        let errorSummary = vc._documentLinkResultSummaryForTesting(error)
+        XCTAssertEqual(errorSummary.errorMessage, "links failed")
         XCTAssertEqual(errorSummary.count, 0)
     }
 
@@ -1152,6 +1225,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.code_lens_actions", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.code_lens_at_cursor", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_code_lens", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_inlay_hints", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_document_links", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.quick_fix", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refactor", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.source_actions", in: menu))

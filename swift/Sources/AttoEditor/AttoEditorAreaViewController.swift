@@ -339,6 +339,14 @@ final class AttoEditorAreaViewController: NSViewController {
         (Self.codeLensResultErrorMessage(result), Self.codeLensResultCount(result))
     }
 
+    func _inlayHintResultSummaryForTesting(_ result: EcuLspInlayHintResult) -> (errorMessage: String?, count: Int) {
+        (Self.inlayHintResultErrorMessage(result), Self.inlayHintResultCount(result))
+    }
+
+    func _documentLinkResultSummaryForTesting(_ result: EcuLspDocumentLinkResult) -> (errorMessage: String?, count: Int) {
+        (Self.documentLinkResultErrorMessage(result), Self.documentLinkResultCount(result))
+    }
+
     func _activeSemanticTokensBaselineForTesting() -> (resultId: String?, data: [UInt32])? {
         guard let tab = activeTab else { return nil }
         return (tab.semanticTokensResultId, tab.semanticTokensData)
@@ -652,6 +660,44 @@ final class AttoEditorAreaViewController: NSViewController {
         let showFeedback: Bool
     }
 
+    private enum AuxiliaryRefreshKind {
+        case inlayHints
+        case documentLinks
+
+        var feedbackFeature: AttoLspResultFeedback.Feature {
+            switch self {
+            case .inlayHints:
+                return .inlayHints
+            case .documentLinks:
+                return .documentLinks
+            }
+        }
+
+        var singularNoun: String {
+            switch self {
+            case .inlayHints:
+                return "hint"
+            case .documentLinks:
+                return "link"
+            }
+        }
+
+        var pluralNoun: String {
+            switch self {
+            case .inlayHints:
+                return "hints"
+            case .documentLinks:
+                return "links"
+            }
+        }
+    }
+
+    private struct AuxiliaryRefreshContext {
+        let tabID: UUID
+        let kind: AuxiliaryRefreshKind
+        let showFeedback: Bool
+    }
+
     private struct ExecuteCommandRequestContext {
         let tabID: UUID
         let commandTitle: String
@@ -806,6 +852,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var codeLensRefreshContext: CodeLensRefreshContext?
     private var codeLensRefreshPollTimer: DispatchSourceTimer?
     private var codeLensResultsController: AttoCommandPaletteController?
+    private var auxiliaryRefreshContext: AuxiliaryRefreshContext?
+    private var auxiliaryRefreshPollTimer: DispatchSourceTimer?
     private var executeCommandContext: ExecuteCommandRequestContext?
     private var executeCommandPollTimer: DispatchSourceTimer?
 
@@ -7045,6 +7093,236 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
+    // MARK: - LSP auxiliary decorations
+
+    @discardableResult
+    func refreshInlayHintsInActiveTab(showFeedback: Bool = true) -> Bool {
+        refreshAuxiliaryLspDecorationsInActiveTab(kind: .inlayHints, showFeedback: showFeedback)
+    }
+
+    @discardableResult
+    func refreshDocumentLinksInActiveTab(showFeedback: Bool = true) -> Bool {
+        refreshAuxiliaryLspDecorationsInActiveTab(kind: .documentLinks, showFeedback: showFeedback)
+    }
+
+    @discardableResult
+    private func refreshAuxiliaryLspDecorationsInActiveTab(
+        kind: AuxiliaryRefreshKind,
+        showFeedback: Bool = true
+    ) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.unavailable(kind.feedbackFeature),
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelFoldingRangesUI()
+        cancelSelectionRangeUI()
+        cancelLinkedEditingUI()
+        cancelDocumentColorUI()
+        cancelAuxiliaryRefreshUI()
+
+        do {
+            switch kind {
+            case .inlayHints:
+                let scalarCount = try tab.editCore.editor.text().unicodeScalars.count
+                guard scalarCount <= Int(UInt32.max) else {
+                    throw NSError(
+                        domain: "AttoEditor.LSP",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Document is too large for inlay hint range offsets."]
+                    )
+                }
+                _ = try tab.editCore.editor.lspRequestInlayHints(
+                    startOffset: 0,
+                    endOffset: UInt32(scalarCount)
+                )
+            case .documentLinks:
+                _ = try tab.editCore.editor.lspRequestDocumentLinks()
+            }
+        } catch {
+            if showFeedback {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(
+                        kind.feedbackFeature,
+                        errorDescription: error.localizedDescription
+                    ),
+                    in: tab.editCore.editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        auxiliaryRefreshContext = AuxiliaryRefreshContext(
+            tabID: tab.id,
+            kind: kind,
+            showFeedback: showFeedback
+        )
+        tab.editCore.editorView.kickProcessingPoll()
+        updateStatusBar()
+        startAuxiliaryRefreshPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
+        return true
+    }
+
+    private func startAuxiliaryRefreshPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        auxiliaryRefreshPollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.auxiliaryRefreshContext, ctx.tabID == tabID else {
+                self.cancelAuxiliaryRefreshUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
+                let feature = ctx.kind.feedbackFeature
+                self.cancelAuxiliaryRefreshUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(feature), in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard let tab = self.activeTab, tab.id == tabID else {
+                self.cancelAuxiliaryRefreshUI()
+                return
+            }
+
+            do {
+                _ = try tab.editCore.editor.pollProcessing()
+            } catch {
+                let showFeedback = ctx.showFeedback
+                let feature = ctx.kind.feedbackFeature
+                self.cancelAuxiliaryRefreshUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(feature, errorDescription: error.localizedDescription),
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+
+            let summary: (errorMessage: String?, count: Int)?
+            do {
+                switch ctx.kind {
+                case .inlayHints:
+                    guard let result = try tab.editCore.editor.lspTakeLastInlayHintsResult() else { return }
+                    summary = (
+                        Self.inlayHintResultErrorMessage(result),
+                        Self.inlayHintResultCount(result)
+                    )
+                    if summary?.errorMessage == nil {
+                        try tab.editCore.editor.lspApplyInlayHintsJSON(result.rawJSONString ?? "null")
+                    }
+                case .documentLinks:
+                    guard let result = try tab.editCore.editor.lspTakeLastDocumentLinksResult() else { return }
+                    summary = (
+                        Self.documentLinkResultErrorMessage(result),
+                        Self.documentLinkResultCount(result)
+                    )
+                    if summary?.errorMessage == nil {
+                        try tab.editCore.editor.lspApplyDocumentLinksJSON(result.rawJSONString ?? "null")
+                    }
+                }
+            } catch {
+                let showFeedback = ctx.showFeedback
+                let feature = ctx.kind.feedbackFeature
+                self.cancelAuxiliaryRefreshUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(feature, errorDescription: error.localizedDescription),
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+
+            guard let summary else { return }
+            let showFeedback = ctx.showFeedback
+            let kind = ctx.kind
+            self.cancelAuxiliaryRefreshUI()
+
+            if let errorMessage = summary.errorMessage {
+                if showFeedback {
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(kind.feedbackFeature, errorDescription: errorMessage),
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+
+            tab.editCore.layoutSubtreeIfNeeded()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            self.derivedStateStore.refreshActive(editor: tab.editCore.editor)
+            self.updateStatusBar()
+
+            guard showFeedback else { return }
+            if summary.count == 0 {
+                self.presentLspResultFeedback(AttoLspResultFeedback.empty(kind.feedbackFeature), in: editorView)
+            } else {
+                self.presentLspResultFeedback(
+                    AttoLspResultFeedback.refreshed(
+                        kind.feedbackFeature,
+                        count: summary.count,
+                        singular: kind.singularNoun,
+                        plural: kind.pluralNoun
+                    ),
+                    in: editorView
+                )
+            }
+        }
+
+        auxiliaryRefreshPollTimer = timer
+        timer.resume()
+    }
+
+    private static func inlayHintResultCount(_ result: EcuLspInlayHintResult) -> Int {
+        result.hints.count
+    }
+
+    private static func inlayHintResultErrorMessage(_ result: EcuLspInlayHintResult) -> String? {
+        result.error?.message
+    }
+
+    private static func documentLinkResultCount(_ result: EcuLspDocumentLinkResult) -> Int {
+        result.links.count
+    }
+
+    private static func documentLinkResultErrorMessage(_ result: EcuLspDocumentLinkResult) -> String? {
+        result.error?.message
+    }
+
     // MARK: - LSP code lens
 
     @discardableResult
@@ -7074,6 +7352,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelSelectionRangeUI()
         cancelLinkedEditingUI()
         cancelDocumentColorUI()
+        cancelAuxiliaryRefreshUI()
 
         do {
             _ = try tab.editCore.editor.lspRequestCodeLens()
@@ -9307,6 +9586,7 @@ final class AttoEditorAreaViewController: NSViewController {
         codeActionResultsController = nil
 
         cancelCodeLensUI()
+        cancelAuxiliaryRefreshUI()
         cancelExecuteCommandUI()
     }
 
@@ -9321,6 +9601,12 @@ final class AttoEditorAreaViewController: NSViewController {
 
         codeLensResultsController?.hide()
         codeLensResultsController = nil
+    }
+
+    private func cancelAuxiliaryRefreshUI() {
+        auxiliaryRefreshPollTimer?.cancel()
+        auxiliaryRefreshPollTimer = nil
+        auxiliaryRefreshContext = nil
     }
 
     private func cancelExecuteCommandUI() {

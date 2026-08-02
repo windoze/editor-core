@@ -49,6 +49,20 @@ final class AttoLspResultFeedbackTests: XCTestCase {
             )
         )
         XCTAssertEqual(
+            AttoLspResultFeedback.requestFailed(.inlayHints, errorDescription: "server busy"),
+            AttoLspResultFeedback.Message(
+                statusText: "Inlay hints: request failed",
+                detailText: "Inlay hints request failed.\nserver busy"
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.documentLinks),
+            AttoLspResultFeedback.Message(
+                statusText: "Document links: no results",
+                detailText: "No document links are available for this document."
+            )
+        )
+        XCTAssertEqual(
             AttoLspResultFeedback.empty(.definition),
             AttoLspResultFeedback.Message(
                 statusText: "Definition: no results",
@@ -217,6 +231,13 @@ final class AttoLspResultFeedbackTests: XCTestCase {
             AttoLspResultFeedback.Message(
                 statusText: "Code lens: 3",
                 detailText: "Code lens refreshed.\n3 actions are available."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.refreshed(.inlayHints, count: 2, singular: "hint", plural: "hints"),
+            AttoLspResultFeedback.Message(
+                statusText: "Inlay hints: 2",
+                detailText: "Inlay hints refreshed.\n2 hints are available."
             )
         )
     }

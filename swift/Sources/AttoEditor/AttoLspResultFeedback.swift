@@ -9,6 +9,8 @@ enum AttoLspResultFeedback {
     enum Feature {
         case foldingRanges
         case semanticTokens
+        case inlayHints
+        case documentLinks
         case definition
         case declaration
         case typeDefinition
@@ -38,6 +40,10 @@ enum AttoLspResultFeedback {
                 return "Folding ranges"
             case .semanticTokens:
                 return "Semantic tokens"
+            case .inlayHints:
+                return "Inlay hints"
+            case .documentLinks:
+                return "Document links"
             case .definition:
                 return "Definition"
             case .declaration:
@@ -109,6 +115,10 @@ enum AttoLspResultFeedback {
                 return "Folding ranges are unavailable."
             case .semanticTokens:
                 return "Semantic tokens are unavailable."
+            case .inlayHints:
+                return "Inlay hints are unavailable."
+            case .documentLinks:
+                return "Document links are unavailable."
             case .definition:
                 return "Definition is unavailable."
             case .declaration:
@@ -162,6 +172,10 @@ enum AttoLspResultFeedback {
                 return "No folding ranges are available for this document."
             case .semanticTokens:
                 return "No semantic tokens are available for this document."
+            case .inlayHints:
+                return "No inlay hints are available for this document."
+            case .documentLinks:
+                return "No document links are available for this document."
             case .definition:
                 return "No definitions are available here."
             case .declaration:
