@@ -273,6 +273,13 @@
   - 验证记录：
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEdit`
     - `git diff --check`
+- 中间提交：`feat(app): confirm workspace edit previews`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；让 AttoEditor App 在执行 core WorkspaceEdit transaction 前消费 core preview result，并对跨文档、未打开文件、resource operation 或 skipped/conflict 影响展示基础预览确认。
+  - 提交边界：只新增 App 层 `AttoWorkspaceEditPreview` display model、同步 AppKit `NSAlert` 确认入口和测试决策 hook；取消时不执行 core apply、不推进 transaction event cursor；单个已打开文档普通 text edit 不弹确认。本提交不实现专用可导航 diff preview panel、打开 tab undo grouping、完整 batch atomic rollback 或更深层 conflict UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEdit`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

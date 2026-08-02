@@ -1,4 +1,5 @@
 @testable import AttoEditor
+import EditorCoreUIFFI
 import XCTest
 
 final class AttoWorkspaceEditSummaryTests: XCTestCase {
@@ -88,5 +89,121 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         """)
 
         XCTAssertNil(AttoWorkspaceEditApplyResult.displayText(for: result))
+    }
+
+    func testWorkspaceEditPreviewSummarizesResourceOperations() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "preview",
+          "applied": true,
+          "applied_uris": [
+            "file:///project/main.swift",
+            "file:///project/created.swift"
+          ],
+          "applied_edit_count": 2,
+          "applied_resource_operation_count": 1,
+          "skipped_uris": [],
+          "documents": [
+            {
+              "uri": "file:///project/main.swift",
+              "edit_count": 2,
+              "is_open": true
+            }
+          ]
+        }
+        """)
+
+        let preview = AttoWorkspaceEditPreview(result: result)
+
+        XCTAssertTrue(preview.requiresConfirmation)
+        XCTAssertEqual(
+            preview.displayText,
+            """
+            Workspace edit preview.
+            Will apply 2 edits and 1 resource operation across 2 documents.
+
+            Will affect:
+            - created.swift (resource operation)
+            - main.swift (2 edits, open)
+            """
+        )
+    }
+
+    func testWorkspaceEditPreviewDoesNotConfirmSingleOpenDocumentEdit() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "preview",
+          "applied": true,
+          "applied_uris": ["file:///project/main.swift"],
+          "applied_edit_count": 1,
+          "applied_resource_operation_count": 0,
+          "skipped_uris": [],
+          "documents": [
+            {
+              "uri": "file:///project/main.swift",
+              "edit_count": 1,
+              "is_open": true
+            }
+          ]
+        }
+        """)
+
+        let preview = AttoWorkspaceEditPreview(result: result)
+
+        XCTAssertFalse(preview.requiresConfirmation)
+    }
+
+    func testWorkspaceEditPreviewListsSkippedDetails() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "preview",
+          "applied": true,
+          "applied_uris": ["file:///project/main.swift"],
+          "applied_edit_count": 1,
+          "applied_resource_operation_count": 0,
+          "skipped_uris": ["file:///project/dirty.swift"],
+          "skipped_details": [
+            {
+              "uri": "file:///project/dirty.swift",
+              "reason": "dirty_document",
+              "operation": "delete",
+              "message": "open tab is dirty"
+            }
+          ],
+          "documents": [
+            {
+              "uri": "file:///project/main.swift",
+              "edit_count": 1,
+              "is_open": true
+            },
+            {
+              "uri": "file:///project/dirty.swift",
+              "edit_count": 0,
+              "is_open": true
+            }
+          ]
+        }
+        """)
+
+        let preview = AttoWorkspaceEditPreview(result: result)
+
+        XCTAssertTrue(preview.requiresConfirmation)
+        XCTAssertEqual(
+            preview.displayText,
+            """
+            Workspace edit preview.
+            Will apply 1 edit across 2 documents.
+
+            Will affect:
+            - main.swift (1 edit, open)
+
+            Not applicable:
+            - dirty.swift [delete: dirty_document]
+            """
+        )
+    }
+
+    private func decodeTransactionResult(_ json: String) throws -> EcuWorkspaceEditTransactionResult {
+        try JSONDecoder().decode(EcuWorkspaceEditTransactionResult.self, from: Data(json.utf8))
     }
 }

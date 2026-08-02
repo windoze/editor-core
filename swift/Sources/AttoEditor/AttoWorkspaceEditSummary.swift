@@ -1,4 +1,220 @@
 import Foundation
+import EditorCoreUIFFI
+
+enum AttoWorkspaceEditPreviewDecision: Equatable {
+    case apply
+    case cancel
+}
+
+struct AttoWorkspaceEditPreview: Equatable {
+    struct Document: Equatable {
+        let uri: String
+        let editCount: Int
+        let isOpen: Bool
+        let hasOverlappingEdits: Bool
+        let versionMismatch: Bool
+    }
+
+    struct SkippedDetail: Equatable {
+        let uri: String
+        let reason: String
+        let operation: String?
+        let message: String
+    }
+
+    let applied: Bool
+    let appliedEditCount: Int
+    let appliedResourceOperationCount: Int
+    let appliedURIs: [String]
+    let documents: [Document]
+    let skippedDetails: [SkippedDetail]
+    let unsupportedOperationURIs: [String]
+
+    init(
+        result: EcuWorkspaceEditTransactionResult,
+        parsedWorkspaceEdit: AttoWorkspaceEditParser.ParseResult? = nil
+    ) {
+        applied = result.applied
+        let parsedEditCount = parsedWorkspaceEdit?.documents.reduce(0) { $0 + $1.edits.count } ?? 0
+        appliedEditCount = max(result.appliedEditCount, parsedEditCount)
+        if result.appliedResourceOperationCount > 0 || parsedWorkspaceEdit == nil {
+            appliedResourceOperationCount = result.appliedResourceOperationCount
+        } else {
+            appliedResourceOperationCount = parsedWorkspaceEdit?.resourceOperations.count ?? 0
+        }
+
+        var previewAppliedURIs = result.appliedURIs
+        var previewDocuments = result.documents.map {
+            Document(
+                uri: $0.uri,
+                editCount: $0.editCount,
+                isOpen: $0.isOpen,
+                hasOverlappingEdits: $0.hasOverlappingEdits,
+                versionMismatch: $0.versionMismatch
+            )
+        }
+        if let parsedWorkspaceEdit {
+            let existingDocumentURIs = Set(previewDocuments.map(\.uri))
+            for document in parsedWorkspaceEdit.documents where existingDocumentURIs.contains(document.uri) == false {
+                previewDocuments.append(
+                    Document(
+                        uri: document.uri,
+                        editCount: document.edits.count,
+                        isOpen: false,
+                        hasOverlappingEdits: document.hasOverlappingEdits,
+                        versionMismatch: false
+                    )
+                )
+            }
+            for operation in parsedWorkspaceEdit.resourceOperations {
+                previewAppliedURIs.append(contentsOf: operation.affectedURIs)
+            }
+        }
+        appliedURIs = Self.uniqueURIs(previewAppliedURIs)
+        documents = previewDocuments
+        skippedDetails = result.skippedDetails.map {
+            SkippedDetail(
+                uri: $0.uri,
+                reason: $0.reason,
+                operation: $0.operation,
+                message: $0.message
+            )
+        }
+        unsupportedOperationURIs = result.unsupportedOperationURIs
+    }
+
+    var affectedURIs: [String] {
+        var seen = Set<String>()
+        var uris: [String] = []
+        for uri in documents.map(\.uri) + appliedURIs + skippedDetails.map(\.uri) + unsupportedOperationURIs {
+            guard seen.insert(uri).inserted else { continue }
+            uris.append(uri)
+        }
+        return uris
+    }
+
+    var requiresConfirmation: Bool {
+        if appliedResourceOperationCount > 0 { return true }
+        if affectedURIs.count > 1 { return true }
+        if documents.contains(where: { $0.editCount > 0 && $0.isOpen == false }) { return true }
+        if applied && (skippedDetails.isEmpty == false || unsupportedOperationURIs.isEmpty == false) {
+            return true
+        }
+        return false
+    }
+
+    var displayText: String {
+        var lines: [String] = []
+        lines.append("Workspace edit preview.")
+        lines.append(summaryLine)
+
+        let documentRows = previewRows()
+        if documentRows.isEmpty == false {
+            lines.append("")
+            lines.append("Will affect:")
+            lines.append(contentsOf: documentRows)
+        }
+
+        let skippedRows = skippedPreviewRows()
+        if skippedRows.isEmpty == false {
+            lines.append("")
+            lines.append("Not applicable:")
+            lines.append(contentsOf: skippedRows)
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private var summaryLine: String {
+        let editText = Self.editCountText(appliedEditCount)
+        let resourceText = Self.resourceOperationCountText(appliedResourceOperationCount)
+        let documentText = Self.documentCountText(max(affectedURIs.count, documents.count, 1))
+        if appliedResourceOperationCount > 0 {
+            return "Will apply \(editText) and \(resourceText) across \(documentText)."
+        }
+        return "Will apply \(editText) across \(documentText)."
+    }
+
+    private func previewRows() -> [String] {
+        let documentsByURI = Dictionary(uniqueKeysWithValues: documents.map { ($0.uri, $0) })
+        return affectedURIs.compactMap { uri in
+            if skippedDetails.contains(where: { $0.uri == uri }) {
+                return nil
+            }
+            if unsupportedOperationURIs.contains(uri) {
+                return nil
+            }
+
+            var details: [String] = []
+            if let document = documentsByURI[uri] {
+                if document.editCount > 0 {
+                    details.append(Self.editCountText(document.editCount))
+                }
+                if document.isOpen {
+                    details.append("open")
+                }
+                if document.hasOverlappingEdits {
+                    details.append("overlapping edits")
+                }
+                if document.versionMismatch {
+                    details.append("version mismatch")
+                }
+            }
+            if appliedURIs.contains(uri),
+               documentsByURI[uri] == nil || details.isEmpty {
+                details.append("resource operation")
+            }
+            let suffix = details.isEmpty ? "" : " (\(details.joined(separator: ", ")))"
+            return "- \(Self.displayName(for: uri))\(suffix)"
+        }.sorted()
+    }
+
+    private func skippedPreviewRows() -> [String] {
+        var rows = skippedDetails.map { detail in
+            var details: [String] = []
+            if let operation = detail.operation, operation.isEmpty == false {
+                details.append(operation)
+            }
+            if detail.reason.isEmpty == false {
+                details.append(detail.reason)
+            }
+            let suffix = details.isEmpty ? "" : " [\(details.joined(separator: ": "))]"
+            return "- \(Self.displayName(for: detail.uri))\(suffix)"
+        }
+        rows.append(contentsOf: unsupportedOperationURIs.map {
+            "- \(Self.displayName(for: $0)) [unsupported operation]"
+        })
+        return rows.sorted()
+    }
+
+    private static func editCountText(_ count: Int) -> String {
+        count == 1 ? "1 edit" : "\(count) edits"
+    }
+
+    private static func resourceOperationCountText(_ count: Int) -> String {
+        count == 1 ? "1 resource operation" : "\(count) resource operations"
+    }
+
+    private static func documentCountText(_ count: Int) -> String {
+        count == 1 ? "1 document" : "\(count) documents"
+    }
+
+    private static func uniqueURIs(_ uris: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for uri in uris where seen.insert(uri).inserted {
+            result.append(uri)
+        }
+        return result
+    }
+
+    private static func displayName(for uri: String) -> String {
+        if let url = URL(string: uri), url.isFileURL, url.lastPathComponent.isEmpty == false {
+            return url.lastPathComponent
+        }
+        return uri
+    }
+}
 
 struct AttoWorkspaceEditApplyResult: Equatable {
     struct Document: Equatable {

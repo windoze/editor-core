@@ -172,6 +172,7 @@ extension AttoEditorAreaViewController {
 
         if coreDocuments != nil {
             return applyWorkspaceEditWithCoreTransaction(
+                workspaceEdit,
                 workspaceEditJSON: workspaceEditJSON,
                 documentURI: documentURI,
                 initialActiveTab: initialActiveTab
@@ -188,6 +189,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func applyWorkspaceEditWithCoreTransaction(
+        _ workspaceEdit: AttoWorkspaceEditParser.ParseResult,
         workspaceEditJSON: String,
         documentURI: String?,
         initialActiveTab: AttoEditorTab
@@ -197,6 +199,15 @@ extension AttoEditorAreaViewController {
 
         do {
             try syncOpenTabsToCoreBeforeWorkspaceEditApply(coreDocuments)
+            guard try confirmCoreWorkspaceEditPreviewIfNeeded(
+                coreDocuments,
+                workspaceEdit: workspaceEdit,
+                workspaceEditJSON: workspaceEditJSON,
+                editorView: feedbackEditorView
+            ) else {
+                setTransientStatusText("Workspace edit cancelled")
+                return false
+            }
             let coreResult = try coreDocuments.applyWorkspaceEditTransaction(workspaceEditJSON)
             try syncAppTabsFromCoreWorkspaceEditTransaction(coreDocuments)
 
@@ -247,6 +258,39 @@ extension AttoEditorAreaViewController {
             NSSound.beep()
             return false
         }
+    }
+
+    func confirmCoreWorkspaceEditPreviewIfNeeded(
+        _ coreDocuments: MultiDocumentEditorUI,
+        workspaceEdit: AttoWorkspaceEditParser.ParseResult,
+        workspaceEditJSON: String,
+        editorView: EditorCoreSkiaView
+    ) throws -> Bool {
+        let result = try coreDocuments.previewWorkspaceEditTransaction(workspaceEditJSON)
+        let preview = AttoWorkspaceEditPreview(
+            result: result,
+            parsedWorkspaceEdit: workspaceEdit
+        )
+        guard preview.requiresConfirmation else { return true }
+        return confirmWorkspaceEditPreview(preview, editorView: editorView)
+    }
+
+    func confirmWorkspaceEditPreview(
+        _ preview: AttoWorkspaceEditPreview,
+        editorView: EditorCoreSkiaView
+    ) -> Bool {
+        if let decisionProvider = workspaceEditPreviewDecisionProviderForTesting {
+            return decisionProvider(preview) == .apply
+        }
+        guard view.window != nil || editorView.window != nil else { return true }
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Apply Workspace Edit?"
+        alert.informativeText = preview.displayText
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     @discardableResult

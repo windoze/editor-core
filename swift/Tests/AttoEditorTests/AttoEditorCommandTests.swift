@@ -6,6 +6,10 @@ import XCTest
 
 @MainActor
 final class AttoEditorCommandTests: XCTestCase {
+    private func allowWorkspaceEditPreviewConfirmation(_ vc: AttoEditorAreaViewController) {
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { _ in .apply }
+    }
+
     func testDefaultCommandPaletteIncludesCoreEditorCommandIDs() throws {
         let delegate = AttoAppDelegate()
         let ids = Set(delegate._defaultCommandsForTesting().map(\.id))
@@ -2986,6 +2990,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         let window = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
         let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
@@ -3024,6 +3029,70 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "aBc\n")
         XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "Xother\n")
         XCTAssertTrue(window.title.contains("●"))
+    }
+
+    func testWorkspaceEditPreviewConfirmationCanCancelCoreTransaction() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("preview-cancel.txt")
+        let otherURL = tempDir.appendingPathComponent("preview-other.txt")
+        try "abc\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "other\n".write(to: otherURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        var capturedPreview: AttoWorkspaceEditPreview?
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+            capturedPreview = preview
+            return .cancel
+        }
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "\(fileURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "B"
+              }
+            ],
+            "\(otherURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "X"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertFalse(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor
+        )
+
+        let preview = try XCTUnwrap(capturedPreview)
+        XCTAssertTrue(preview.requiresConfirmation)
+        XCTAssertTrue(preview.displayText.contains("Workspace edit preview."))
+        XCTAssertTrue(preview.displayText.contains("preview-cancel.txt"))
+        XCTAssertTrue(preview.displayText.contains("preview-other.txt"))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Workspace edit cancelled")
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "abc\n")
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "other\n")
     }
 
     func testWorkspaceEditApplicationUsesCoreVersionPreflight() throws {
@@ -3134,6 +3203,7 @@ final class AttoEditorCommandTests: XCTestCase {
         vc.openFile(url: firstURL, mode: .pinned)
         vc.openFile(url: secondURL, mode: .pinned)
         vc.selectFile(url: firstURL)
+        allowWorkspaceEditPreviewConfirmation(vc)
         let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
@@ -3197,6 +3267,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         _ = attachToWindow(vc)
         vc.openFile(url: activeURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
         let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
@@ -3259,6 +3330,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         _ = attachToWindow(vc)
         vc.openFile(url: oldURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
         let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
@@ -3322,6 +3394,7 @@ final class AttoEditorCommandTests: XCTestCase {
         vc.openFile(url: keepURL, mode: .pinned)
         vc.openFile(url: deleteURL, mode: .pinned)
         vc.selectFile(url: keepURL)
+        allowWorkspaceEditPreviewConfirmation(vc)
         let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
@@ -3357,6 +3430,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         _ = attachToWindow(vc)
         vc.openFile(url: url, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
         let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
@@ -3397,6 +3471,7 @@ final class AttoEditorCommandTests: XCTestCase {
         _ = attachToWindow(vc)
         vc.openFile(url: dirtyURL, mode: .pinned)
         XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        allowWorkspaceEditPreviewConfirmation(vc)
         let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
@@ -3438,6 +3513,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc._activeTabDirtyForDataLossDecisionForTesting())
 
         vc._setActiveTabDirtyCacheForTesting(false)
+        allowWorkspaceEditPreviewConfirmation(vc)
         let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
         let workspaceEdit = """
         {

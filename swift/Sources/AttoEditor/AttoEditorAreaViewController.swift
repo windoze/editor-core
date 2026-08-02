@@ -391,6 +391,12 @@ final class AttoEditorAreaViewController: NSViewController {
         try coreDocuments?.workspaceEditTransactionEventsLatestSequence()
     }
 
+    func _setWorkspaceEditPreviewDecisionProviderForTesting(
+        _ provider: ((AttoWorkspaceEditPreview) -> AttoWorkspaceEditPreviewDecision)?
+    ) {
+        workspaceEditPreviewDecisionProviderForTesting = provider
+    }
+
     func _coreMultiDocumentSearchForTesting(query: String) throws -> [EcuTabSearchResult]? {
         try coreDocuments?.searchAllTabs(query: query)
     }
@@ -856,6 +862,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var hoverPopoverLabel: NSTextField?
     var workspaceEditPopover: NSPopover?
     var workspaceEditPopoverLabel: NSTextField?
+    var workspaceEditPreviewDecisionProviderForTesting: ((AttoWorkspaceEditPreview) -> AttoWorkspaceEditPreviewDecision)?
 
     var definitionContext: DefinitionRequestContext?
     var definitionPollTimer: DispatchSourceTimer?
