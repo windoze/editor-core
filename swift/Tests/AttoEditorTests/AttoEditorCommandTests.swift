@@ -1564,6 +1564,44 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(events.last?.payload, .codeActions(onlyKinds: ["quickfix"], itemCount: 1))
     }
 
+    func testCompletionResultRecordsLspResultEvent() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("completion.swift")
+        try "pri".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
+
+        XCTAssertTrue(vc._showCompletionResultJSONForTesting("""
+        {
+          "isIncomplete": false,
+          "items": [
+            { "label": "print", "kind": 3, "detail": "(value: Any)" },
+            { "label": "private", "kind": 14 }
+          ]
+        }
+        """))
+
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.completionPanel
+        })
+        let root = try XCTUnwrap(panel.contentView)
+        let table = try XCTUnwrap(findView(identifier: AttoAccessibilityID.completionTable, in: root) as? NSTableView)
+        XCTAssertEqual(table.numberOfRows, 2)
+
+        let events = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
+        XCTAssertEqual(events.map(\.family), ["completion"])
+        XCTAssertEqual(events.last?.title, "Completion: 2 items")
+        XCTAssertNil(events.last?.sourceSequence)
+        XCTAssertEqual(events.last?.payload, .completion(itemCount: 2))
+    }
+
     func testApplyLinkedEditingRangeResultCreatesMulticursorSelections() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

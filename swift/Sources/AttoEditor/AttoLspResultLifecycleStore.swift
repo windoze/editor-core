@@ -109,6 +109,7 @@ struct AttoLspResultLifecycleEvent: Equatable {
     enum Payload: Equatable {
         case locations(kind: String, itemCount: Int)
         case symbols(title: String, itemCount: Int)
+        case completion(itemCount: Int)
         case codeActions(onlyKinds: [String], itemCount: Int)
         case diagnostics(
             scope: AttoDiagnosticsLifecycleSnapshot.Scope,

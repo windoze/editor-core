@@ -216,6 +216,13 @@ final class AttoEditorAreaViewController: NSViewController {
         return showCodeActionResults(items, onlyKinds: onlyKinds)
     }
 
+    func _showCompletionResultJSONForTesting(_ json: String) -> Bool {
+        guard let tab = activeTab else { return false }
+        guard let context = try? completionRequestContextForCurrentSelection(tab) else { return false }
+        let items = AttoLspCompletionParser.items(fromCompletionResultJSON: json)
+        return showCompletionList(items: items, context: context, editorView: tab.editCore.editorView)
+    }
+
     func _problemsPanelDiagnosticsForTesting() -> [EcuDiagnostic] {
         problemsPanelController?.currentDiagnostics ?? []
     }
@@ -6005,34 +6012,43 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelCodeActionUI()
 
         do {
+            let context = try completionRequestContextForCurrentSelection(tab, beepOnFailure: beepOnFailure)
             let offsets = try tab.editCore.editor.selectionOffsets()
-            let text = try tab.editCore.editor.text()
-            let fallback: (start: UInt32, end: UInt32) = {
-                let start = min(offsets.start, offsets.end)
-                let end = max(offsets.start, offsets.end)
-                if start != end {
-                    return (start, end)
-                }
-                return AttoLspCompletionParser.identifierFallbackRange(in: text, caretOffset: offsets.end)
-            }()
             let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
             _ = try tab.editCore.editor.lspRequestCompletion(
                 logicalLine: pos.line,
                 logicalColumn: pos.column
             )
 
-            completionContext = CompletionRequestContext(
-                tabID: tab.id,
-                fallbackStart: fallback.start,
-                fallbackEnd: fallback.end,
-                beepOnFailure: beepOnFailure
-            )
+            completionContext = context
             startCompletionPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
             return true
         } catch {
             if beepOnFailure { NSSound.beep() }
             return false
         }
+    }
+
+    private func completionRequestContextForCurrentSelection(
+        _ tab: AttoEditorTab,
+        beepOnFailure: Bool = false
+    ) throws -> CompletionRequestContext {
+        let offsets = try tab.editCore.editor.selectionOffsets()
+        let text = try tab.editCore.editor.text()
+        let fallback: (start: UInt32, end: UInt32) = {
+            let start = min(offsets.start, offsets.end)
+            let end = max(offsets.start, offsets.end)
+            if start != end {
+                return (start, end)
+            }
+            return AttoLspCompletionParser.identifierFallbackRange(in: text, caretOffset: offsets.end)
+        }()
+        return CompletionRequestContext(
+            tabID: tab.id,
+            fallbackStart: fallback.start,
+            fallbackEnd: fallback.end,
+            beepOnFailure: beepOnFailure
+        )
     }
 
     private func startCompletionPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
@@ -6071,7 +6087,7 @@ final class AttoEditorAreaViewController: NSViewController {
             self.completionPollTimer?.cancel()
             self.completionPollTimer = nil
             self.completionContext = nil
-            self.showCompletionList(items: items, context: ctx, editorView: editorView)
+            _ = self.showCompletionList(items: items, context: ctx, editorView: editorView)
             timer.cancel()
         }
 
@@ -6079,17 +6095,19 @@ final class AttoEditorAreaViewController: NSViewController {
         timer.resume()
     }
 
+    @discardableResult
     private func showCompletionList(
         items: [AttoLspCompletionParser.Item],
         context: CompletionRequestContext,
         editorView: EditorCoreSkiaView
-    ) {
+    ) -> Bool {
         guard items.isEmpty == false else {
             cancelCompletionUI()
             if context.beepOnFailure { NSSound.beep() }
-            return
+            return false
         }
-        guard editorView.window != nil else { return }
+        recordCompletionResultLifecycle(items: items)
+        guard editorView.window != nil else { return false }
 
         let controller = AttoCompletionListController()
         completionListController = controller
@@ -6114,6 +6132,15 @@ final class AttoEditorAreaViewController: NSViewController {
         ) { [weak self] item, commitCharacter in
             self?.applyCompletion(item, context: context, commitCharacter: commitCharacter)
         }
+        return true
+    }
+
+    private func recordCompletionResultLifecycle(items: [AttoLspCompletionParser.Item]) {
+        lspResultEventStream.record(
+            family: "completion",
+            title: items.count == 1 ? "Completion: 1 item" : "Completion: \(items.count) items",
+            payload: .completion(itemCount: items.count)
+        )
     }
 
     @discardableResult
