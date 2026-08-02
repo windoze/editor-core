@@ -8569,15 +8569,15 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspHoverResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastHoverResultJSON()
+                result = try tab.editCore.editor.lspTakeLastHoverResult()
             } catch {
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
-            let text = AttoLspHoverFormatter.displayText(fromHoverResultJSON: json)
+            let text = AttoLspHoverFormatter.displayText(fromHoverResult: result)
             self.showHoverPopover(text: text, at: ctx.info, in: editorView)
             timer.cancel()
         }

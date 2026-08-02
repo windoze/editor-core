@@ -252,7 +252,7 @@ Swift 侧已经具备以下基础能力：
 
 | LSP family | request / take | Swift typed payload | App consumer | lifecycle / events | 阶段 2 后续缺口 |
 | --- | --- | --- | --- | --- | --- |
-| hover | 已有 raw request/take | 仍缺 public `EcuLspHoverResult` wrapper，App 侧 formatter 直接解析 raw JSON | hover popover 主路径已有 | result/request events 已覆盖 | 补 typed envelope；接入统一 empty/error/timeout/stale feedback，自动 hover 仍应保持低噪声 |
+| hover | 已有 raw request/take | 阶段 164 已补 public `EcuLspHoverResult` wrapper，覆盖 MarkupContent、MarkedString、range 和 raw payload | hover popover 主路径已有，阶段 164 已改为消费 typed result；JSON formatter 入口保留兼容 | result/request events 已覆盖 | 自动 hover 仍保持低噪声；若后续增加显式 hover command，再接入统一 empty/error/timeout/stale feedback |
 | completion / completion resolve | 已有 request/take | 已有 `EcuLspCompletionResult` / typed resolve item | completion popup、resolve、commit characters、trigger characters、增量过滤已消费 typed payload | result/request events 已覆盖 | 统一 feedback；跨文件 additional edits 后续交给 core-owned WorkspaceEdit transaction |
 | signature help | 已有 raw request/take | App formatter 内部有 typed display model；Swift UIFFI 仍缺 public take wrapper | 手动/自动 signature popup 已有，手动空/错反馈已有 | result/request events 已覆盖 | 将 formatter model 上提为 UIFFI typed result；接入统一 feedback，自动触发路径保持静默失败策略 |
 | definition / declaration / type definition / implementation / references | 已有 request/take | 已有 `EcuLspLocationResult` | location quick panel、history、persistent panel、cmd-click 已消费 typed payload | result/request events 已覆盖，MultiDocument 聚合已有 | 统一 feedback；补项目级 freshness/ownership 与状态订阅驱动 |
@@ -280,6 +280,12 @@ Swift 侧已经具备以下基础能力：
 本阶段已迁移这些用户可见路径：folding ranges refresh/apply、semantic tokens typed apply、selection range、linked editing、code lens refresh、workspace diagnostics 的空结果/失败/超时/不可用反馈。测试新增 `AttoLspResultFeedbackTests`，并用 `AttoEditorCommandTests/testUnifiedLspFeedbackUpdatesTransientStatusForEmptyFoldingRanges` 验证 App 主路径会写入 transient status。
 
 阶段 163 仍只是统一 feedback 的第一步：hover、signature help、completion、location、symbols、rename/code action、document color、hierarchy 等路径仍有各自的 popup/panel/formatter 逻辑；下一步应继续把这些路径接入同一个 feedback sink，并让 core-owned request/result/state event stream 驱动 feedback 的生命周期、stale/refresh 展示和 result panel metadata。
+
+## 阶段 164: Hover typed payload wrapper
+
+2026-08-02 阶段 164 已补齐 hover result 的 Swift typed payload 起点：`EditorCoreUIFFI` 新增 `EcuLspHoverResult` / `EcuLspHoverContent`，覆盖 LSP `Hover | null`、`MarkupContent`、`MarkedString` 字符串/语言对象、可选 `range` 和 raw payload preservation；`EditorUI.lspTakeLastHoverResult()` 复用既有 `lspTakeLastHoverResultJSON()` C ABI escape hatch 做 typed decode，因此不需要扩大 C ABI 表面。
+
+AttoEditor hover formatter 和 hover popover 轮询路径已改为消费 typed result，原有 JSON formatter 入口保留给兼容和测试。自动 hover 的失败、空结果和超时仍按低噪声策略取消 popover，不弹出统一错误提示；后续如果增加显式 hover command，再把显式命令接入 `AttoLspResultFeedback`。
 
 ## 分层结论
 

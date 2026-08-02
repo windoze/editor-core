@@ -397,6 +397,15 @@ public final class EditorUI {
         return String(cString: ptr)
     }
 
+    public func lspTakeLastHoverResult() throws -> EcuLspHoverResult? {
+        guard let json = try lspTakeLastHoverResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspHoverResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_hover_decode"
+        )
+    }
+
     /// Request LSP go-to-definition (`textDocument/definition`) for a logical position.
     ///
     /// Notes:
