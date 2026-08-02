@@ -937,6 +937,15 @@
     - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspProcessHealthEventStoreBoundsAndFiltersBySequence`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthRecordsStatusSnapshots`
     - `git diff --check`
+- 中间提交：`feat(app): show lsp process health panel`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把阶段 272 的 bounded project LSP process health history 暴露为用户可打开的轻量面板。
+  - 提交边界：只新增 Swift/App 级 `lsp.show_project_lsp_health` 命令、Go 菜单项、`AttoEditor.LSP.ProjectProcessHealth` command-palette panel 和测试；面板展示最近 process health snapshots 的 server、availability/state、process state、pid、exit/signal、scope 和 detail/stderr 摘要。不新增 Rust/C ABI，不改变 health history store schema，不实现持久化 stderr/process log、自动崩溃恢复、更深层 core-owned LSP ownership schema 或完整 dashboard 级健康视图。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthPanelShowsRecordedStatusSnapshots`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspStatusEventsPanelShowsRecordedFailures`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

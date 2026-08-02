@@ -91,6 +91,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.workspace_diagnostics"))
         XCTAssertTrue(ids.contains("lsp.show_workspace_problems_panel"))
         XCTAssertTrue(ids.contains("lsp.show_project_lsp_status"))
+        XCTAssertTrue(ids.contains("lsp.show_project_lsp_health"))
         XCTAssertTrue(ids.contains("lsp.restart_server"))
         XCTAssertTrue(ids.contains("lsp.restart_project_servers"))
         XCTAssertTrue(ids.contains("lsp.document_colors"))
@@ -1457,6 +1458,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_diagnostics", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workspace_problems_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_project_lsp_status", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_project_lsp_health", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_server", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_project_servers", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
@@ -2093,6 +2095,60 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(cell.textField?.stringValue.contains("Status") == true)
         XCTAssertTrue(cell.textField?.stringValue.contains("server exited") == true)
         XCTAssertTrue(cell.textField?.stringValue.contains("panel stderr tail") == true)
+    }
+
+    func testProjectLspProcessHealthPanelShowsRecordedStatusSnapshots() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+
+        XCTAssertFalse(vc.showProjectLspProcessHealthPanel())
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: EcuLspStatusSnapshot(
+            availability: .failed,
+            state: .failed,
+            server: EcuLspServerStatus(name: "fake-lsp", version: nil, command: "fake-lsp"),
+            activity: nil,
+            detail: "server exited",
+            capabilities: nil,
+            process: EcuLspProcessStatus(
+                pid: 321,
+                state: .exited,
+                exitCode: 9,
+                stderrTail: "health panel stderr"
+            ),
+            workspaceFolders: []
+        )))
+        XCTAssertTrue(vc.showProjectLspProcessHealthPanel())
+
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.ProjectProcessHealth")
+        })
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.LSP.ProjectProcessHealth"),
+                in: root
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter LSP process health...")
+        let table = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.ProjectProcessHealth"),
+                in: root
+            ) as? NSTableView
+        )
+        XCTAssertEqual(table.numberOfRows, 1)
+        let cell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(cell.textField?.stringValue.contains("Health") == true)
+        XCTAssertTrue(cell.textField?.stringValue.contains("fake-lsp") == true)
+        XCTAssertTrue(cell.textField?.stringValue.contains("failed/failed") == true)
+        XCTAssertTrue(cell.textField?.stringValue.contains("process exited pid 321 exit 9") == true)
+        XCTAssertTrue(cell.textField?.stringValue.contains("health panel stderr") == true)
     }
 
     func testEmptyLocationResultUsesUnifiedFeedbackStatus() throws {

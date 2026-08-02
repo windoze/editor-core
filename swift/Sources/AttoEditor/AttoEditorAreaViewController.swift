@@ -950,6 +950,7 @@ final class AttoEditorAreaViewController: NSViewController {
         maxHistoryEntries: maxLspResultEventHistoryEntries
     )
     var projectLspStatusEventsController: AttoCommandPaletteController?
+    var projectLspProcessHealthController: AttoCommandPaletteController?
     var coreLspRequestEventCursor: UInt64 = 0
     var coreLspResultEventCursor: UInt64 = 0
     var coreLspStateEventCursor: UInt64 = 0

@@ -441,19 +441,94 @@ extension AttoEditorAreaViewController {
         return true
     }
 
+    @discardableResult
+    func showProjectLspProcessHealthPanel() -> Bool {
+        drainProjectLspPanelLifecycleEvents()
+
+        let events = Array(projectLspProcessHealthEventStore.events.reversed())
+        guard events.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+        guard let window = view.window else {
+            return false
+        }
+
+        let commands = events.enumerated().map { idx, event in
+            AttoCommandPaletteCommand(
+                id: "lsp.project_process_health.\(idx)",
+                title: Self.projectLspProcessHealthEventTitle(event)
+            ) {}
+        }
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.LSP.ProjectProcessHealth",
+            commandsProvider: { commands }
+        )
+        projectLspProcessHealthController = controller
+        controller.show(relativeTo: window, placeholder: "Filter LSP process health...")
+        return true
+    }
+
     static func projectLspStatusEventTitle(_ event: AttoProjectLspPanelErrorEvent) -> String {
         let source = event.source.rawValue.capitalized
-        let scope: String = {
-            if let tabId = event.tabId {
-                if let viewIndex = event.viewIndex {
-                    return "tab \(tabId), view \(viewIndex + 1)"
-                }
-                return "tab \(tabId)"
-            }
-            return "project"
-        }()
+        let scope = projectLspEventScope(tabId: event.tabId, viewIndex: event.viewIndex)
         let sourceSequence = event.sourceSequence > 0 ? " #\(event.sourceSequence)" : ""
         return "\(source)\(sourceSequence) [\(scope)] \(event.message)"
+    }
+
+    static func projectLspProcessHealthEventTitle(_ event: AttoProjectLspProcessHealthEvent) -> String {
+        let scope = projectLspEventScope(tabId: event.tabId, viewIndex: event.viewIndex)
+        let sourceSequence = event.sourceSequence > 0 ? " #\(event.sourceSequence)" : ""
+        let server = event.serverName ?? event.serverCommand ?? "LSP"
+        var processParts = [event.process.state.rawValue]
+        if let pid = event.process.pid {
+            processParts.append("pid \(pid)")
+        }
+        if let exitCode = event.process.exitCode {
+            processParts.append("exit \(exitCode)")
+        }
+        if let signal = event.process.signal {
+            processParts.append("signal \(signal)")
+        }
+
+        var detailParts: [String] = []
+        if let detail = compactProjectLspPanelText(event.detail) {
+            detailParts.append(detail)
+        }
+        if let stderr = compactProjectLspPanelText(event.process.stderrTail),
+           detailParts.contains(where: { $0.contains(stderr) }) == false {
+            detailParts.append("stderr: \(stderr)")
+        }
+
+        let processSummary = processParts.joined(separator: " ")
+        var title = "Health\(sourceSequence) [\(scope)] \(server) \(event.availability)/\(event.state), process \(processSummary)"
+        if detailParts.isEmpty == false {
+            title += " - \(detailParts.joined(separator: "; "))"
+        }
+        return title
+    }
+
+    static func projectLspEventScope(tabId: UInt64?, viewIndex: Int?) -> String {
+        if let tabId {
+            if let viewIndex {
+                return "tab \(tabId), view \(viewIndex + 1)"
+            }
+            return "tab \(tabId)"
+        }
+        return "project"
+    }
+
+    static func compactProjectLspPanelText(_ text: String?) -> String? {
+        let compacted = text?
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.isEmpty == false }
+            .joined(separator: " / ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let compacted, compacted.isEmpty == false else {
+            return nil
+        }
+        return compacted
     }
 
     @discardableResult

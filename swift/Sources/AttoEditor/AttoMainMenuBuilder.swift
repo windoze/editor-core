@@ -160,6 +160,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Workspace Diagnostics", commandID: "lsp.workspace_diagnostics", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Show Workspace Problems Panel", commandID: "lsp.show_workspace_problems_panel", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Show Project LSP Status Events", commandID: "lsp.show_project_lsp_status", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Show Project LSP Process Health", commandID: "lsp.show_project_lsp_health", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Restart LSP Server", commandID: "lsp.restart_server", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Restart Project LSP Servers", commandID: "lsp.restart_project_servers", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Show Workspace Outline Panel", commandID: "lsp.show_workspace_outline_panel", appDelegate: appDelegate))
