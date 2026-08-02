@@ -711,7 +711,15 @@
     - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCoreMultiDocumentMirrorTracksTabsAndPanes`
-    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeNotifiesActiveLspWorkspaceFolders`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeNotifiesOpenTabLspWorkspaceFolders`（阶段 250 后由 open-tab fan-out 覆盖原 active-tab 用例）
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): broadcast workspace root changes to lsp tabs`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把阶段 249 的 core-owned workspace root diff 从 active editor 单点通知扩展为对所有已打开且 LSP 已启用的 tab 逐一发送 `workspace/didChangeWorkspaceFolders`。
+  - 提交边界：只调整 AttoEditor root-change notification fan-out 和对应假 LSP AppKit 测试；仍按 tab 去重，不按 split pane 重复通知；不改变 Rust/FFI ABI、不新增 project selector、不实现 LSP server restart/shared-session root-set ownership 或 project open/close 批量启动停止策略。
+  - 验证记录：
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeNotifiesOpenTabLspWorkspaceFolders`
     - `cargo fmt --check`
     - `git diff --check`
 

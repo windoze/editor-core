@@ -4887,50 +4887,63 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNil(snapshot.activeTabId)
     }
 
-    func testWorkspaceRootChangeNotifiesActiveLspWorkspaceFolders() throws {
+    func testWorkspaceRootChangeNotifiesOpenTabLspWorkspaceFolders() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let fileURL = tempDir.appendingPathComponent("main.txt")
-        try "main".write(to: fileURL, atomically: true, encoding: .utf8)
-        let captureURL = tempDir.appendingPathComponent("lsp-stdin.txt")
-        let scriptURL = tempDir.appendingPathComponent("fake-lsp.sh")
-        let initBody = #"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#
-        let capturePath = captureURL.path.replacingOccurrences(of: "'", with: "'\\''")
-        let script = """
-        #!/bin/sh
-        body='\(initBody)'
-        printf 'Content-Length: %s\\r\\n\\r\\n%s' "${#body}" "$body"
-        cat > '\(capturePath)'
-        """
-        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+        let firstURL = tempDir.appendingPathComponent("first.txt")
+        let secondURL = tempDir.appendingPathComponent("second.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        let firstCaptureURL = tempDir.appendingPathComponent("first-lsp-stdin.txt")
+        let secondCaptureURL = tempDir.appendingPathComponent("second-lsp-stdin.txt")
+        let firstScriptURL = tempDir.appendingPathComponent("first-fake-lsp.sh")
+        let secondScriptURL = tempDir.appendingPathComponent("second-fake-lsp.sh")
+        try writeFakeLspServerScript(captureURL: firstCaptureURL, scriptURL: firstScriptURL)
+        try writeFakeLspServerScript(captureURL: secondCaptureURL, scriptURL: secondScriptURL)
 
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         _ = attachToWindow(vc)
-        vc.openFile(url: fileURL, mode: .pinned)
-        let tab = try XCTUnwrap(vc.activeTab)
-        try tab.editCore.editor.lspEnable(
-            command: scriptURL.path,
+        vc.openFile(url: firstURL, mode: .pinned)
+        let firstTab = try XCTUnwrap(vc.activeTab)
+        try firstTab.editCore.editor.lspEnable(
+            command: firstScriptURL.path,
             rootURI: tempDir.standardizedFileURL.absoluteString,
-            documentURI: fileURL.standardizedFileURL.absoluteString,
+            documentURI: firstURL.standardizedFileURL.absoluteString,
             languageId: "plaintext"
         )
-        defer { tab.editCore.editor.lspDisable() }
+        vc.openFile(url: secondURL, mode: .pinned)
+        let secondTab = try XCTUnwrap(vc.activeTab)
+        try secondTab.editCore.editor.lspEnable(
+            command: secondScriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: secondURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer {
+            firstTab.editCore.editor.lspDisable()
+            secondTab.editCore.editor.lspDisable()
+        }
 
         let alternateRoot = tempDir.appendingPathComponent("alternate", isDirectory: true)
         try FileManager.default.createDirectory(at: alternateRoot, withIntermediateDirectories: true)
         vc.setWorkspaceRootURL(alternateRoot)
 
-        let captured = waitForCapturedLspInput(
-            at: captureURL,
+        let firstCaptured = waitForCapturedLspInput(
+            at: firstCaptureURL,
             containing: "workspace/didChangeWorkspaceFolders"
         )
-        XCTAssertTrue(captured.contains(#""method":"workspace/didChangeWorkspaceFolders""#), captured)
-        XCTAssertTrue(captured.contains(alternateRoot.standardizedFileURL.absoluteString), captured)
-        XCTAssertTrue(captured.contains(tempDir.standardizedFileURL.absoluteString), captured)
+        let secondCaptured = waitForCapturedLspInput(
+            at: secondCaptureURL,
+            containing: "workspace/didChangeWorkspaceFolders"
+        )
+        for captured in [firstCaptured, secondCaptured] {
+            XCTAssertTrue(captured.contains(#""method":"workspace/didChangeWorkspaceFolders""#), captured)
+            XCTAssertTrue(captured.contains(alternateRoot.standardizedFileURL.absoluteString), captured)
+            XCTAssertTrue(captured.contains(tempDir.standardizedFileURL.absoluteString), captured)
+        }
     }
 
     func testCoreMultiDocumentMirrorTracksEditedTextDirtyAndSearch() throws {
@@ -5793,6 +5806,19 @@ final class AttoEditorCommandTests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
         }
         return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    }
+
+    private func writeFakeLspServerScript(captureURL: URL, scriptURL: URL) throws {
+        let initBody = #"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#
+        let capturePath = captureURL.path.replacingOccurrences(of: "'", with: "'\\''")
+        let script = """
+        #!/bin/sh
+        body='\(initBody)'
+        printf 'Content-Length: %s\\r\\n\\r\\n%s' "${#body}" "$body"
+        cat > '\(capturePath)'
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
     }
 
     private func findSubview<T: NSView>(of type: T.Type, in root: NSView) -> T? {
