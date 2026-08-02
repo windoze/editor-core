@@ -653,6 +653,63 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(try multi.snapshot().tabs.contains { $0.id == tab })
     }
 
+    func testMultiDocumentEditorUIPreviewsOrderedUnsupportedWorkspaceEditDependency() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+
+        let tab = try multi.openTab(text: "old\n", viewportWidthCells: 80)
+        try multi.setTabDocumentURI("file:///project/Old.swift", tabId: tab)
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "create",
+              "uri": "file:///project/Old.swift"
+            },
+            {
+              "textDocument": {
+                "uri": "file:///project/Old.swift",
+                "version": null
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "later "
+                }
+              ]
+            }
+          ]
+        }
+        """
+
+        let preview = try multi.previewWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertTrue(preview.skippedDetails.contains {
+            $0.uri == "file:///project/Old.swift"
+                && $0.operation == "create"
+                && $0.reason == "resource_operation_create_exists"
+        })
+        XCTAssertTrue(preview.skippedDetails.contains {
+            $0.uri == "file:///project/Old.swift"
+                && $0.operation == "text_edit"
+                && $0.reason == "resource_operation_dependency_unsupported"
+        })
+
+        let applied = try multi.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertFalse(applied.applied)
+        XCTAssertEqual(applied.appliedEditCount, 0)
+        XCTAssertEqual(applied.appliedResourceOperationCount, 0)
+        XCTAssertTrue(applied.skippedDetails.contains {
+            $0.uri == "file:///project/Old.swift"
+                && $0.operation == "text_edit"
+                && $0.reason == "resource_operation_dependency_skipped"
+        })
+        XCTAssertEqual(try multi.tabText(tabId: tab), "old\n")
+    }
+
     func testMultiDocumentEditorUIAtomicWorkspaceEditRollsBackRuntimeTextFailure() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("EditorCoreUIFFITests-\(UUID().uuidString)", isDirectory: true)

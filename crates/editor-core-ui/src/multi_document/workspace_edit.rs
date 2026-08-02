@@ -1172,18 +1172,9 @@ fn transaction_plan(
                 .and_then(|expected| u64::try_from(expected).ok())
                 .zip(actual_version)
                 .is_some_and(|(expected, actual)| expected != actual);
-            if unsupported_operation_uris.contains(&doc.uri) {
-                mark_skipped(
-                    &mut skipped_uris,
-                    &mut skipped_details,
-                    skipped_detail(
-                        doc.uri.clone(),
-                        "resource_operation_dependency_unsupported",
-                        Some("text_edit"),
-                        "text edits for this URI are blocked because a related resource operation is unsupported",
-                    ),
-                );
-            } else if open_tab_id.is_none() {
+            let has_ordered_resource_dependency =
+                text_edit_has_ordered_resource_dependency(&skipped_details, doc.uri.as_str());
+            if !has_ordered_resource_dependency && open_tab_id.is_none() {
                 if workspace_roots.is_empty() {
                     mark_skipped(
                         &mut skipped_uris,
@@ -1342,6 +1333,7 @@ fn mark_ordered_text_edit_resource_dependencies(
 ) {
     let mut planned_operations = planned_resource_operations.iter();
     let mut removed_uris = BTreeSet::<String>::new();
+    let mut blocked_uris = BTreeSet::<String>::new();
 
     for step in workspace_edit_steps(workspace_edit) {
         match step {
@@ -1349,7 +1341,13 @@ fn mark_ordered_text_edit_resource_dependencies(
                 let Some(planned_operation) = planned_operations.next() else {
                     continue;
                 };
-                if planned_operation.op != operation || !planned_operation.supported {
+                if planned_operation.op != operation {
+                    continue;
+                }
+                if !planned_operation.supported {
+                    for uri in operation.affected_uris() {
+                        blocked_uris.insert(uri);
+                    }
                     continue;
                 }
                 for uri in operation.removed_uris() {
@@ -1357,25 +1355,54 @@ fn mark_ordered_text_edit_resource_dependencies(
                 }
                 for uri in operation.produced_uris() {
                     removed_uris.remove(uri.as_str());
+                    blocked_uris.remove(uri.as_str());
                 }
             }
             WorkspaceEditStep::TextEdits { uri, edits } => {
-                if edits.is_empty() || !removed_uris.contains(uri.as_str()) {
+                if edits.is_empty() {
                     continue;
                 }
-                mark_skipped(
-                    skipped_uris,
-                    skipped_details,
-                    skipped_detail(
-                        uri,
-                        "resource_operation_dependency_removed",
-                        Some("text_edit"),
-                        "text edits for this URI are blocked because a preceding resource operation removes the target",
-                    ),
-                );
+                if removed_uris.contains(uri.as_str()) {
+                    mark_skipped(
+                        skipped_uris,
+                        skipped_details,
+                        skipped_detail(
+                            uri,
+                            "resource_operation_dependency_removed",
+                            Some("text_edit"),
+                            "text edits for this URI are blocked because a preceding resource operation removes the target",
+                        ),
+                    );
+                } else if blocked_uris.contains(uri.as_str()) {
+                    mark_skipped(
+                        skipped_uris,
+                        skipped_details,
+                        skipped_detail(
+                            uri,
+                            "resource_operation_dependency_unsupported",
+                            Some("text_edit"),
+                            "text edits for this URI are blocked because a preceding resource operation is unsupported",
+                        ),
+                    );
+                }
             }
         }
     }
+}
+
+fn text_edit_has_ordered_resource_dependency(
+    skipped_details: &BTreeSet<WorkspaceEditTransactionSkippedDetail>,
+    uri: &str,
+) -> bool {
+    skipped_details.iter().any(|detail| {
+        detail.uri == uri
+            && detail.operation.as_deref() == Some("text_edit")
+            && matches!(
+                detail.reason.as_str(),
+                "resource_operation_dependency_removed"
+                    | "resource_operation_dependency_unsupported"
+            )
+    })
 }
 
 fn result_from_plan(

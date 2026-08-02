@@ -348,6 +348,18 @@
     - `cargo test -p editor-core-ui-ffi`
     - `swift test --package-path swift --filter EditorCoreUIFFITests`
     - `git diff --check`
+- 中间提交：`feat(ui): order unsupported workspace edit dependencies`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；让 `MultiDocumentEditorUi` preview 按 `WorkspaceEdit.documentChanges` 顺序识别 unsupported resource operation 对后续 text edit 的依赖阻断，同时避免后置 unsupported operation 误标前序 text edit。
+  - 提交边界：只精化 Rust transaction plan 的 text edit/resource operation dependency 判断，复用现有 `resource_operation_dependency_unsupported` / `resource_operation_dependency_skipped` result detail；默认 `partial` apply、ABI 函数集合和 AttoEditor App 主路径不变。本提交不实现跨文件用户级 undo command、全量 conflict UI 或完整 transaction-wide undo 语义。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_previews_later_text_edit_blocked_by_unsupported_resource_operation`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIPreviewsOrderedUnsupportedWorkspaceEditDependency`
+    - `cargo test -p editor-core-ui-ffi`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

@@ -1239,6 +1239,18 @@ fn multi_document_ui_keeps_prior_text_edit_when_later_resource_operation_is_skip
       ]
     }"#;
 
+    let preview = ui.preview_workspace_edit_transaction(edit).unwrap();
+    assert!(preview.skipped_details.iter().any(|detail| {
+        detail.uri == "file:///tmp/project/Old.swift"
+            && detail.operation.as_deref() == Some("create")
+            && detail.reason == "resource_operation_create_exists"
+    }));
+    assert!(!preview.skipped_details.iter().any(|detail| {
+        detail.uri == "file:///tmp/project/Old.swift"
+            && detail.operation.as_deref() == Some("text_edit")
+            && detail.reason == "resource_operation_dependency_unsupported"
+    }));
+
     let applied = ui.apply_workspace_edit_transaction(edit).unwrap();
     assert!(applied.applied);
     assert_eq!(applied.applied_edit_count, 1);
@@ -1254,6 +1266,61 @@ fn multi_document_ui_keeps_prior_text_edit_when_later_resource_operation_is_skip
             && detail.reason == "resource_operation_create_exists"
     }));
     assert_eq!(ui.tab_text(tab).unwrap(), "first old\n");
+}
+
+#[test]
+fn multi_document_ui_previews_later_text_edit_blocked_by_unsupported_resource_operation() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let tab = ui.open_tab("old\n", 80);
+    ui.set_tab_document_uri(tab, Some("file:///tmp/project/Old.swift".to_string()))
+        .unwrap();
+
+    let edit = r#"{
+      "documentChanges": [
+        {
+          "kind": "create",
+          "uri": "file:///tmp/project/Old.swift"
+        },
+        {
+          "textDocument": {
+            "uri": "file:///tmp/project/Old.swift",
+            "version": null
+          },
+          "edits": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 0 }
+              },
+              "newText": "later "
+            }
+          ]
+        }
+      ]
+    }"#;
+
+    let preview = ui.preview_workspace_edit_transaction(edit).unwrap();
+    assert!(preview.skipped_details.iter().any(|detail| {
+        detail.uri == "file:///tmp/project/Old.swift"
+            && detail.operation.as_deref() == Some("create")
+            && detail.reason == "resource_operation_create_exists"
+    }));
+    assert!(preview.skipped_details.iter().any(|detail| {
+        detail.uri == "file:///tmp/project/Old.swift"
+            && detail.operation.as_deref() == Some("text_edit")
+            && detail.reason == "resource_operation_dependency_unsupported"
+    }));
+
+    let applied = ui.apply_workspace_edit_transaction(edit).unwrap();
+    assert!(!applied.applied);
+    assert_eq!(applied.applied_edit_count, 0);
+    assert_eq!(applied.applied_resource_operation_count, 0);
+    assert!(applied.skipped_details.iter().any(|detail| {
+        detail.uri == "file:///tmp/project/Old.swift"
+            && detail.operation.as_deref() == Some("text_edit")
+            && detail.reason == "resource_operation_dependency_skipped"
+    }));
+    assert_eq!(ui.tab_text(tab).unwrap(), "old\n");
 }
 
 #[test]
