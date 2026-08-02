@@ -430,6 +430,10 @@ final class AttoEditorAreaViewController: NSViewController {
         try coreDocuments?.snapshot()
     }
 
+    func _coreProjectLspServerConfigsForTesting() throws -> [EcuProjectLspServerConfig] {
+        try coreDocuments?.projectLspServers() ?? []
+    }
+
     func _coreWorkspaceEditTransactionLatestSequenceForTesting() throws -> UInt64? {
         try coreDocuments?.workspaceEditTransactionEventsLatestSequence()
     }
@@ -1210,6 +1214,7 @@ final class AttoEditorAreaViewController: NSViewController {
     func setWorkspaceRootURL(_ url: URL) {
         workspaceRootURL = url
         syncCoreWorkspaceRoots()
+        syncProjectLspServerConfigsToCore()
         startProjectLspServersForOpenTabs()
     }
 

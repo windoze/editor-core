@@ -1117,6 +1117,14 @@
     - `cargo test -p editor-core-ui-ffi --release ffi_multi_document_exposes_tab_preview_split_and_search`
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
     - `git diff --check`
+- 中间提交：`feat(app): mirror lsp launch configs to core`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 AttoEditor App 开始消费上一提交新增的 core-owned project LSP launch metadata store，把 Swift tab 投影中已有的 `lspServerConfig` 同步到 `MultiDocumentEditorUI.projectLspServers`。
+  - 提交边界：只新增 App 层 metadata projection：打开/关闭 tab、session restore、workspace root 变更、project auto-start、restart 成功/失败恢复和显式切换到非 LSP 语言时，会把当前打开 tabs 的 launch config 写入 `MultiDocumentEditorUI.setProjectLspServers(...)`；args 仍按既有 LSP FFI 规则做 whitespace split，workspace root 使用当前 core workspace root。该提交不改变实际 LSP 启动/停止/restart 路径，不实现 typed lifecycle 启停、跨独立 project session 合并、更深层 ownership schema 或 dashboard 产品化。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspLaunchConfigsSyncToCoreProjectStore`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeAutoStartsConfiguredOpenTabLsp`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartProjectLspServersRestartsConfiguredOpenTabs`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

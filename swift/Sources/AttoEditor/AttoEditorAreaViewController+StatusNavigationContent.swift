@@ -1549,6 +1549,7 @@ extension AttoEditorAreaViewController {
             tab.editCore.editor.sublimeDisable()
             tab.lspServerConfig = nil
             tab.suppressesAutomaticLspStart = true
+            syncProjectLspServerConfigsToCore()
             tab.syntaxLanguageId = nil
             applyLanguageConfiguration(for: tab)
             updateAlwaysPollProcessingForSelectedTab()
@@ -1574,6 +1575,7 @@ extension AttoEditorAreaViewController {
         tab.editCore.editor.sublimeDisable()
         tab.lspServerConfig = nil
         tab.suppressesAutomaticLspStart = true
+        syncProjectLspServerConfigsToCore()
 
         do {
             try tab.editCore.editor.treeSitterEnableLanguage(lang)

@@ -186,6 +186,7 @@ extension AttoEditorAreaViewController {
         closeAllCoreDocumentTabs()
         tabs = []
         selectedTabID = nil
+        syncProjectLspServerConfigsToCore()
 
         var didUsePreview = false
         var newTabs: [AttoEditorTab] = []
@@ -222,6 +223,7 @@ extension AttoEditorAreaViewController {
         }
 
         tabs = newTabs
+        syncProjectLspServerConfigsToCore()
         startProjectLspServersForOpenTabs()
 
         if newTabs.isEmpty {
@@ -452,6 +454,7 @@ extension AttoEditorAreaViewController {
                         let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
                         tabs[previewIdx] = tab
                         selectTab(id: tab.id)
+                        syncProjectLspServerConfigsToCore()
                         notifyOtherLspSessionsDocumentOpened(tab)
                         onDidCloseFile?(oldURL)
                         notifySessionStateChanged()
@@ -462,6 +465,7 @@ extension AttoEditorAreaViewController {
                 let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
                 tabs.append(tab)
                 selectTab(id: tab.id)
+                syncProjectLspServerConfigsToCore()
                 notifyOtherLspSessionsDocumentOpened(tab)
                 notifySessionStateChanged()
 
@@ -469,6 +473,7 @@ extension AttoEditorAreaViewController {
                 let tab = try makeTab(for: url, isPreview: false, isUntitled: isUntitled)
                 tabs.append(tab)
                 selectTab(id: tab.id)
+                syncProjectLspServerConfigsToCore()
                 notifyOtherLspSessionsDocumentOpened(tab)
                 notifySessionStateChanged()
             }
@@ -790,6 +795,7 @@ extension AttoEditorAreaViewController {
         closeCoreTab(tab)
         clearDiagnosticsLifecycleState(forTabID: tab.id)
         tabs.remove(at: idx)
+        syncProjectLspServerConfigsToCore()
         onDidCloseFile?(url)
         notifySessionStateChanged()
 

@@ -5832,6 +5832,71 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(captured.contains(alternateRoot.standardizedFileURL.absoluteString), captured)
     }
 
+    func testProjectLspLaunchConfigsSyncToCoreProjectStore() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let rustURL = tempDir.appendingPathComponent("main.rs")
+        let swiftURL = tempDir.appendingPathComponent("App.swift")
+        try "fn main() {}".write(to: rustURL, atomically: true, encoding: .utf8)
+        try "print(\"hello\")".write(to: swiftURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc._setLspEnvironmentProviderForTesting { ["ATTO_EDITOR_DISABLE_LSP": "1"] }
+        vc.openFile(url: rustURL, mode: .pinned)
+        let rustTab = try XCTUnwrap(vc.activeTab)
+        let rustConfig = AttoLspServerLaunchConfig(
+            command: "/usr/bin/rust-analyzer",
+            args: "--stdio --log-file",
+            languageId: "rust"
+        )
+        rustTab.lspServerConfig = rustConfig
+        vc.syncProjectLspServerConfigsToCore()
+
+        var configsByKey = Dictionary(
+            uniqueKeysWithValues: try vc._coreProjectLspServerConfigsForTesting().map { ($0.key, $0) }
+        )
+        let rustKey = "rust:/usr/bin/rust-analyzer:--stdio:--log-file"
+        let rootURI = tempDir.standardizedFileURL.absoluteString
+        let projectedRust = try XCTUnwrap(configsByKey[rustKey])
+        XCTAssertEqual(projectedRust.command, "/usr/bin/rust-analyzer")
+        XCTAssertEqual(projectedRust.args, ["--stdio", "--log-file"])
+        XCTAssertEqual(projectedRust.languageId, "rust")
+        XCTAssertEqual(projectedRust.workspaceRoots, [rootURI])
+        XCTAssertTrue(projectedRust.autoStart)
+
+        vc.openFile(url: swiftURL, mode: .pinned)
+        let swiftTab = try XCTUnwrap(vc.activeTab)
+        let swiftConfig = AttoLspServerLaunchConfig(
+            command: "/usr/bin/sourcekit-lsp",
+            args: nil,
+            languageId: "swift"
+        )
+        swiftTab.lspServerConfig = swiftConfig
+        swiftTab.suppressesAutomaticLspStart = true
+        vc.syncProjectLspServerConfigsToCore()
+
+        configsByKey = Dictionary(
+            uniqueKeysWithValues: try vc._coreProjectLspServerConfigsForTesting().map { ($0.key, $0) }
+        )
+        let swiftKey = "swift:/usr/bin/sourcekit-lsp"
+        XCTAssertEqual(Set(configsByKey.keys), [rustKey, swiftKey])
+        XCTAssertFalse(try XCTUnwrap(configsByKey[swiftKey]).autoStart)
+
+        vc.closeTab(id: rustTab.id)
+        configsByKey = Dictionary(
+            uniqueKeysWithValues: try vc._coreProjectLspServerConfigsForTesting().map { ($0.key, $0) }
+        )
+        XCTAssertEqual(Set(configsByKey.keys), [swiftKey])
+
+        swiftTab.lspServerConfig = nil
+        vc.syncProjectLspServerConfigsToCore()
+        XCTAssertEqual(try vc._coreProjectLspServerConfigsForTesting(), [])
+    }
+
     func testRestartLspServerRequiresSavedLaunchConfig() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

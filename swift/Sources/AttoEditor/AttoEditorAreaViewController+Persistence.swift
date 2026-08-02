@@ -358,6 +358,71 @@ extension AttoEditorAreaViewController {
             || env["EDITOR_CORE_APPKIT_DISABLE_LSP"] == "1"
     }
 
+    func syncProjectLspServerConfigsToCore() {
+        guard let coreDocuments else { return }
+
+        do {
+            try coreDocuments.setProjectLspServers(projectLspServerConfigsForOpenTabs())
+        } catch {
+            NSLog("AttoEditor: failed to sync project LSP server configs: %@", String(describing: error))
+        }
+    }
+
+    private func projectLspServerConfigsForOpenTabs() -> [EcuProjectLspServerConfig] {
+        let workspaceRootURI = workspaceRootURL.standardizedFileURL.absoluteString
+        var configsByKey: [String: EcuProjectLspServerConfig] = [:]
+        var orderedKeys: [String] = []
+
+        for projected in coreProjectedTabsForWorkspaceLifecycle() {
+            guard let launchConfig = projected.tab.lspServerConfig else { continue }
+
+            let key = Self.projectLspServerConfigKey(for: launchConfig)
+            guard key.isEmpty == false else { continue }
+
+            let autoStart = projected.tab.suppressesAutomaticLspStart == false
+            if let existing = configsByKey[key] {
+                var workspaceRoots = existing.workspaceRoots
+                if workspaceRoots.contains(workspaceRootURI) == false {
+                    workspaceRoots.append(workspaceRootURI)
+                }
+                configsByKey[key] = EcuProjectLspServerConfig(
+                    key: existing.key,
+                    command: existing.command,
+                    args: existing.args,
+                    languageId: existing.languageId,
+                    workspaceRoots: workspaceRoots,
+                    autoStart: existing.autoStart || autoStart
+                )
+                continue
+            }
+
+            orderedKeys.append(key)
+            configsByKey[key] = EcuProjectLspServerConfig(
+                key: key,
+                command: launchConfig.command,
+                args: Self.projectLspServerConfigArgs(from: launchConfig.args),
+                languageId: launchConfig.languageId,
+                workspaceRoots: [workspaceRootURI],
+                autoStart: autoStart
+            )
+        }
+
+        return orderedKeys.compactMap { configsByKey[$0] }
+    }
+
+    private static func projectLspServerConfigKey(for config: AttoLspServerLaunchConfig) -> String {
+        ([config.languageId, config.command] + projectLspServerConfigArgs(from: config.args))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.isEmpty == false }
+            .joined(separator: ":")
+            .lowercased()
+    }
+
+    private static func projectLspServerConfigArgs(from args: String?) -> [String] {
+        guard let args else { return [] }
+        return args.split { $0.isWhitespace }.map(String.init)
+    }
+
     @discardableResult
     func enableLspSupport(
         for url: URL,
@@ -400,6 +465,7 @@ extension AttoEditorAreaViewController {
     @discardableResult
     func startProjectLspServersForOpenTabs() -> Int {
         let env = lspEnvironmentProvider()
+        defer { syncProjectLspServerConfigsToCore() }
         guard isLspDisabled(environment: env) == false else { return 0 }
 
         var startedCount = 0
@@ -473,6 +539,7 @@ extension AttoEditorAreaViewController {
             return true
         } catch {
             tab.lspServerConfig = config
+            syncProjectLspServerConfigsToCore()
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
             NSSound.beep()
@@ -532,6 +599,7 @@ extension AttoEditorAreaViewController {
                 failures.append("\(target.fileURL.lastPathComponent): \(error)")
             }
         }
+        syncProjectLspServerConfigsToCore()
 
         updateAlwaysPollProcessingForSelectedTab()
         updateStatusBar()
@@ -616,6 +684,7 @@ extension AttoEditorAreaViewController {
             return true
         } catch {
             target.tab.lspServerConfig = config
+            syncProjectLspServerConfigsToCore()
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
             NSLog(
@@ -646,6 +715,7 @@ extension AttoEditorAreaViewController {
         tab.syntaxLanguageId = languageId
         tab.lspServerConfig = config
         tab.suppressesAutomaticLspStart = false
+        syncProjectLspServerConfigsToCore()
         applyLanguageConfiguration(for: tab)
         tab.editCore.editorView.kickProcessingPoll()
         tab.editCore.editorView.needsDisplay = true
