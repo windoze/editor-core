@@ -622,8 +622,8 @@ extension AttoEditorAreaViewController {
             ) {}
         })
 
-        commands.append(contentsOf: serverGroups.enumerated().map { idx, group in
-            projectLspDashboardServerRecoveryActionCommand(group: group, index: idx)
+        commands.append(contentsOf: serverGroups.enumerated().flatMap { idx, group in
+            projectLspDashboardServerRecoveryActionCommands(group: group, index: idx)
         })
 
         commands.append(contentsOf: statusEvents.enumerated().map { idx, event in
@@ -776,7 +776,7 @@ extension AttoEditorAreaViewController {
                 serverName: event.serverName,
                 serverCommand: event.serverCommand
             )
-            var group = groups[identity.key] ?? ProjectLspDashboardServerGroup(displayName: identity.displayName)
+            var group = groups[identity.key] ?? ProjectLspDashboardServerGroup(identity: identity)
             group.recordHealth(
                 availability: event.availability,
                 state: event.state,
@@ -791,7 +791,7 @@ extension AttoEditorAreaViewController {
                 serverName: entry.serverName,
                 serverCommand: entry.serverCommand
             )
-            var group = groups[identity.key] ?? ProjectLspDashboardServerGroup(displayName: identity.displayName)
+            var group = groups[identity.key] ?? ProjectLspDashboardServerGroup(identity: identity)
             group.recordPersistedLog(
                 availability: entry.availability,
                 state: entry.state,
@@ -804,8 +804,16 @@ extension AttoEditorAreaViewController {
         return groups.values.map { group in
             var group = group
             group.recoveryDisabled = preferences.isLspAutoRestartDisabledForServer(
-                serverName: group.displayName,
-                serverCommand: nil
+                serverName: group.serverName,
+                serverCommand: group.serverCommand
+            )
+            group.recoveryMaxAttempts = preferences.effectiveLspAutoRestartMaxAttempts(
+                serverName: group.serverName,
+                serverCommand: group.serverCommand
+            )
+            group.recoveryBaseDelaySeconds = preferences.effectiveLspAutoRestartBaseDelaySeconds(
+                serverName: group.serverName,
+                serverCommand: group.serverCommand
             )
             return group
         }.sorted { lhs, rhs in
@@ -818,6 +826,8 @@ extension AttoEditorAreaViewController {
 
     private struct ProjectLspDashboardServerGroup {
         let displayName: String
+        let serverName: String?
+        let serverCommand: String?
         var healthEventCount: Int = 0
         var healthFailedCount: Int = 0
         var persistedLogCount: Int = 0
@@ -825,6 +835,14 @@ extension AttoEditorAreaViewController {
         var latestProcessState: String?
         var latestSequence: UInt64 = 0
         var recoveryDisabled: Bool = false
+        var recoveryMaxAttempts: Int = 0
+        var recoveryBaseDelaySeconds: Double = 0.0
+
+        init(identity: ProjectLspDashboardServerIdentity) {
+            self.displayName = identity.displayName
+            self.serverName = identity.serverName
+            self.serverCommand = identity.serverCommand
+        }
 
         mutating func recordHealth(availability: String, state: String, processState: String, sequence: UInt64) {
             healthEventCount += 1
@@ -857,37 +875,111 @@ extension AttoEditorAreaViewController {
     private static func projectLspDashboardServerIdentity(
         serverName: String?,
         serverCommand: String?
-    ) -> (key: String, displayName: String) {
-        let displayName = compactProjectLspPanelText(serverName)
-            ?? compactProjectLspPanelText(serverCommand)
+    ) -> ProjectLspDashboardServerIdentity {
+        let compactServerName = compactProjectLspPanelText(serverName)
+        let compactServerCommand = compactProjectLspPanelText(serverCommand)
+        let displayName = compactServerName
+            ?? compactServerCommand
             ?? "LSP"
-        return (displayName.lowercased(), displayName)
+        return ProjectLspDashboardServerIdentity(
+            key: displayName.lowercased(),
+            displayName: displayName,
+            serverName: compactServerName ?? (compactServerCommand == nil ? displayName : nil),
+            serverCommand: compactServerCommand
+        )
+    }
+
+    private struct ProjectLspDashboardServerIdentity {
+        let key: String
+        let displayName: String
+        let serverName: String?
+        let serverCommand: String?
     }
 
     private static func projectLspDashboardServerGroupTitle(_ group: ProjectLspDashboardServerGroup) -> String {
         let latestProcess = group.latestProcessState.map { ", latest process \($0)" } ?? ""
         let recovery = group.recoveryDisabled ? "recovery disabled" : "recovery enabled"
-        return "Server - \(group.displayName): health events \(group.healthEventCount) failed \(group.healthFailedCount), persisted logs \(group.persistedLogCount) failed \(group.persistedFailedCount), \(recovery)\(latestProcess)"
+        let baseDelay = formatProjectLspDashboardSeconds(group.recoveryBaseDelaySeconds)
+        return "Server - \(group.displayName): health events \(group.healthEventCount) failed \(group.healthFailedCount), persisted logs \(group.persistedLogCount) failed \(group.persistedFailedCount), \(recovery), max attempts \(group.recoveryMaxAttempts), base delay \(baseDelay)\(latestProcess)"
     }
 
-    private func projectLspDashboardServerRecoveryActionCommand(
+    private func projectLspDashboardServerRecoveryActionCommands(
         group: ProjectLspDashboardServerGroup,
         index: Int
-    ) -> AttoCommandPaletteCommand {
+    ) -> [AttoCommandPaletteCommand] {
         let verb = group.recoveryDisabled ? "Enable" : "Disable"
-        return AttoCommandPaletteCommand(
-            id: "lsp.project_dashboard.server_recovery.\(index)",
-            title: "Recovery Action - \(verb) auto-restart for \(group.displayName)"
-        ) { [weak self] in
-            guard let self else { return }
-            let disabled = group.recoveryDisabled == false
-            self.preferences.setLspAutoRestartDisabled(
-                disabled,
-                forServerName: group.displayName,
-                serverCommand: nil
-            )
-            self.setTransientStatusText("LSP auto-restart \(disabled ? "disabled" : "enabled") for \(group.displayName)")
-        }
+        let increasedMaxAttempts = min(group.recoveryMaxAttempts + 1, 10)
+        let decreasedMaxAttempts = max(group.recoveryMaxAttempts - 1, 0)
+        let increasedBaseDelay = min(group.recoveryBaseDelaySeconds + 1.0, 3_600.0)
+        let decreasedBaseDelay = max(group.recoveryBaseDelaySeconds - 1.0, 0.0)
+
+        return [
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.server_recovery.\(index)",
+                title: "Recovery Action - \(verb) auto-restart for \(group.displayName)"
+            ) { [weak self] in
+                guard let self else { return }
+                let disabled = group.recoveryDisabled == false
+                self.preferences.setLspAutoRestartDisabled(
+                    disabled,
+                    forServerName: group.serverName,
+                    serverCommand: group.serverCommand
+                )
+                self.setTransientStatusText("LSP auto-restart \(disabled ? "disabled" : "enabled") for \(group.displayName)")
+            },
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.server_recovery.increase_max_attempts.\(index)",
+                title: "Recovery Action - Increase max attempts for \(group.displayName) to \(increasedMaxAttempts)",
+                isEnabled: group.recoveryMaxAttempts < 10
+            ) { [weak self] in
+                guard let self else { return }
+                self.preferences.setLspAutoRestartMaxAttempts(
+                    increasedMaxAttempts,
+                    forServerName: group.serverName,
+                    serverCommand: group.serverCommand
+                )
+                self.setTransientStatusText("LSP auto-restart max attempts \(increasedMaxAttempts) for \(group.displayName)")
+            },
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.server_recovery.decrease_max_attempts.\(index)",
+                title: "Recovery Action - Decrease max attempts for \(group.displayName) to \(decreasedMaxAttempts)",
+                isEnabled: group.recoveryMaxAttempts > 0
+            ) { [weak self] in
+                guard let self else { return }
+                self.preferences.setLspAutoRestartMaxAttempts(
+                    decreasedMaxAttempts,
+                    forServerName: group.serverName,
+                    serverCommand: group.serverCommand
+                )
+                self.setTransientStatusText("LSP auto-restart max attempts \(decreasedMaxAttempts) for \(group.displayName)")
+            },
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.server_recovery.increase_base_delay.\(index)",
+                title: "Recovery Action - Increase base delay for \(group.displayName) to \(Self.formatProjectLspDashboardSeconds(increasedBaseDelay))",
+                isEnabled: group.recoveryBaseDelaySeconds < 3_600.0
+            ) { [weak self] in
+                guard let self else { return }
+                self.preferences.setLspAutoRestartBaseDelaySeconds(
+                    increasedBaseDelay,
+                    forServerName: group.serverName,
+                    serverCommand: group.serverCommand
+                )
+                self.setTransientStatusText("LSP auto-restart base delay \(Self.formatProjectLspDashboardSeconds(increasedBaseDelay)) for \(group.displayName)")
+            },
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.server_recovery.decrease_base_delay.\(index)",
+                title: "Recovery Action - Decrease base delay for \(group.displayName) to \(Self.formatProjectLspDashboardSeconds(decreasedBaseDelay))",
+                isEnabled: group.recoveryBaseDelaySeconds > 0.0
+            ) { [weak self] in
+                guard let self else { return }
+                self.preferences.setLspAutoRestartBaseDelaySeconds(
+                    decreasedBaseDelay,
+                    forServerName: group.serverName,
+                    serverCommand: group.serverCommand
+                )
+                self.setTransientStatusText("LSP auto-restart base delay \(Self.formatProjectLspDashboardSeconds(decreasedBaseDelay)) for \(group.displayName)")
+            },
+        ]
     }
 
     private static func formatProjectLspDashboardSeconds(_ seconds: Double) -> String {

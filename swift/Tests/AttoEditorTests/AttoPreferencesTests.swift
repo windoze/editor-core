@@ -188,6 +188,30 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.storedLspAutoRestartDisabledServerKeys, ["/bin/other-lsp"])
     }
 
+    func testLspAutoRestartServerPolicyOverridesNormalizeAndClamp() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        let prefs = AttoPreferences(defaults: defaults, env: [
+            "ATTO_EDITOR_LSP_AUTO_RESTART_MAX_ATTEMPTS": "4",
+            "ATTO_EDITOR_LSP_AUTO_RESTART_BASE_DELAY_SECONDS": "9.5",
+        ])
+        XCTAssertEqual(prefs.effectiveLspAutoRestartMaxAttempts(serverName: "fake-lsp", serverCommand: nil), 4)
+        XCTAssertEqual(prefs.effectiveLspAutoRestartBaseDelaySeconds(serverName: "fake-lsp", serverCommand: nil), 9.5)
+
+        prefs.setLspAutoRestartMaxAttempts(25, forServerName: " Fake-LSP ", serverCommand: nil)
+        prefs.setLspAutoRestartBaseDelaySeconds(-5, forServerName: nil, serverCommand: " /BIN/Other-LSP ")
+
+        XCTAssertEqual(prefs.storedLspAutoRestartServerMaxAttempts, ["fake-lsp": 10])
+        XCTAssertEqual(prefs.storedLspAutoRestartServerBaseDelaySeconds, ["/bin/other-lsp": 0.0])
+        XCTAssertEqual(prefs.effectiveLspAutoRestartMaxAttempts(serverName: "fake-lsp", serverCommand: nil), 10)
+        XCTAssertEqual(
+            prefs.effectiveLspAutoRestartBaseDelaySeconds(serverName: nil, serverCommand: "/bin/other-lsp"),
+            0.0
+        )
+        XCTAssertEqual(prefs.effectiveLspAutoRestartMaxAttempts(serverName: "other", serverCommand: nil), 4)
+        XCTAssertEqual(prefs.effectiveLspAutoRestartBaseDelaySeconds(serverName: "other", serverCommand: nil), 9.5)
+    }
+
     func testWrapModeDefaultEnvAndStoredPreference() {
         let (defaults, _) = makeIsolatedDefaults()
 

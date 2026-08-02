@@ -1093,6 +1093,14 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoRestartCanBeDisabledForServerByPreferences`
     - `git diff --check`
+- 中间提交：`feat(app): tune lsp recovery per server`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；继续产品化 project LSP health dashboard，把阶段 293 的 server-level auto-restart 策略从禁用列表扩展到 per-server max attempts 和 base delay。
+  - 提交边界：`AttoPreferences` 新增按 server name / command 归一化的 LSP auto-restart max attempts / base delay override；AttoEditor 自动恢复路径优先读取 server-specific effective policy；`AttoEditor.LSP.ProjectDashboard` 的 Server 行展示该 server 的实际 max attempts/base delay，并新增 server-level Recovery Action 调整这两个值。该提交不新增 Rust/C ABI，不改变日志 schema、不实现自由输入/完整设置表单、真正图表、跨 project dashboard 或更深层 core-owned LSP ownership schema。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoPreferencesTests.testLspAutoRestartServerPolicyOverridesNormalizeAndClamp`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoRestartUsesServerSpecificBackoffPolicy`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

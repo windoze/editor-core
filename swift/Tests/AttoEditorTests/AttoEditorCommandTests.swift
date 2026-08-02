@@ -2241,7 +2241,7 @@ final class AttoEditorCommandTests: XCTestCase {
                 in: root
             ) as? NSTableView
         )
-        XCTAssertEqual(table.numberOfRows, 12)
+        XCTAssertEqual(table.numberOfRows, 16)
 
         let summaryCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("Summary -") == true)
@@ -2289,6 +2289,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(serverTitle.contains("health events 1 failed 1"), serverTitle)
         XCTAssertTrue(serverTitle.contains("persisted logs 1 failed 1"), serverTitle)
         XCTAssertTrue(serverTitle.contains("recovery enabled"), serverTitle)
+        XCTAssertTrue(serverTitle.contains("max attempts 7"), serverTitle)
+        XCTAssertTrue(serverTitle.contains("base delay 2.5s"), serverTitle)
         XCTAssertTrue(serverTitle.contains("latest process exited"), serverTitle)
 
         let serverActionCell = try XCTUnwrap(table.view(atColumn: 0, row: 9, makeIfNecessary: true) as? NSTableCellView)
@@ -2296,11 +2298,28 @@ final class AttoEditorCommandTests: XCTestCase {
             (serverActionCell.textField?.stringValue ?? "").contains("Recovery Action - Disable auto-restart for fake-lsp")
         )
 
-        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 10, makeIfNecessary: true) as? NSTableCellView)
+        let serverIncreaseAttemptsCell = try XCTUnwrap(table.view(atColumn: 0, row: 10, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(
+            (serverIncreaseAttemptsCell.textField?.stringValue ?? "").contains("Recovery Action - Increase max attempts for fake-lsp to 8")
+        )
+        let serverDecreaseAttemptsCell = try XCTUnwrap(table.view(atColumn: 0, row: 11, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(
+            (serverDecreaseAttemptsCell.textField?.stringValue ?? "").contains("Recovery Action - Decrease max attempts for fake-lsp to 6")
+        )
+        let serverIncreaseBaseDelayCell = try XCTUnwrap(table.view(atColumn: 0, row: 12, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(
+            (serverIncreaseBaseDelayCell.textField?.stringValue ?? "").contains("Recovery Action - Increase base delay for fake-lsp to 3.5s")
+        )
+        let serverDecreaseBaseDelayCell = try XCTUnwrap(table.view(atColumn: 0, row: 13, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(
+            (serverDecreaseBaseDelayCell.textField?.stringValue ?? "").contains("Recovery Action - Decrease base delay for fake-lsp to 1.5s")
+        )
+
+        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 14, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("Status -") == true)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("server exited") == true)
 
-        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 11, makeIfNecessary: true) as? NSTableCellView)
+        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 15, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("Health -") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("fake-lsp") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("dashboard stderr") == true)
@@ -2309,6 +2328,22 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc._runProjectLspDashboardCommandForTesting(id: "lsp.project_dashboard.server_recovery.0"))
         XCTAssertTrue(preferences.isLspAutoRestartDisabledForServer(serverName: "fake-lsp", serverCommand: nil))
         XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP auto-restart disabled for fake-lsp")
+
+        XCTAssertEqual(preferences.effectiveLspAutoRestartMaxAttempts(serverName: "fake-lsp", serverCommand: nil), 7)
+        XCTAssertTrue(vc._runProjectLspDashboardCommandForTesting(
+            id: "lsp.project_dashboard.server_recovery.increase_max_attempts.0"
+        ))
+        XCTAssertEqual(preferences.effectiveLspAutoRestartMaxAttempts(serverName: "fake-lsp", serverCommand: nil), 8)
+        XCTAssertEqual(preferences.effectiveLspAutoRestartMaxAttempts, 7)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP auto-restart max attempts 8 for fake-lsp")
+
+        XCTAssertEqual(preferences.effectiveLspAutoRestartBaseDelaySeconds(serverName: "fake-lsp", serverCommand: nil), 2.5)
+        XCTAssertTrue(vc._runProjectLspDashboardCommandForTesting(
+            id: "lsp.project_dashboard.server_recovery.increase_base_delay.0"
+        ))
+        XCTAssertEqual(preferences.effectiveLspAutoRestartBaseDelaySeconds(serverName: "fake-lsp", serverCommand: nil), 3.5)
+        XCTAssertEqual(preferences.effectiveLspAutoRestartBaseDelaySeconds, 2.5)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP auto-restart base delay 3.5s for fake-lsp")
 
         XCTAssertEqual(preferences.effectiveLspAutoRestartMaxAttempts, 7)
         XCTAssertTrue(vc._runProjectLspDashboardCommandForTesting(
@@ -6048,6 +6083,97 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._projectLspAutoRestartAttemptsForTesting(tabId: coreTabID), 0)
         XCTAssertEqual(occurrenceCount(of: #""method":"textDocument/didOpen""#, in: captured), 1, captured)
         XCTAssertEqual(occurrenceCount(of: "--session--", in: captured), 1, captured)
+    }
+
+    func testProjectLspAutoRestartUsesServerSpecificBackoffPolicy() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("auto_restart_server_policy.txt")
+        try "restart".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("auto-restart-server-policy-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("auto-restart-server-policy-fake-lsp.sh")
+        try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let suiteName = "atto_command_lsp_auto_restart_server_policy_\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = AttoPreferences(defaults: defaults, env: [:])
+        preferences.setLspAutoRestartMaxAttempts(0)
+        preferences.setLspAutoRestartBaseDelaySeconds(30)
+        preferences.setLspAutoRestartMaxAttempts(2, forServerName: "fake-lsp", serverCommand: nil)
+        preferences.setLspAutoRestartBaseDelaySeconds(1, forServerName: "fake-lsp", serverCommand: nil)
+
+        var now = Date(timeIntervalSince1970: 10_000)
+        let vc = makeEditorArea(workspaceRootURL: tempDir, preferences: preferences)
+        vc._setProjectLspAutoRestartNowProviderForTesting { now }
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        let config = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try tab.editCore.editor.lspEnable(
+            command: config.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+        tab.lspServerConfig = config
+        defer { tab.editCore.editor.lspDisable() }
+
+        _ = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        let failedStatus = EcuLspStatusSnapshot(
+            availability: .failed,
+            state: .failed,
+            server: EcuLspServerStatus(name: "fake-lsp", version: nil, command: scriptURL.path),
+            activity: nil,
+            detail: "server exited",
+            capabilities: nil,
+            process: EcuLspProcessStatus(pid: 321, state: .exited, exitCode: 9, stderrTail: "crash"),
+            workspaceFolders: []
+        )
+
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: failedStatus))
+        XCTAssertEqual(vc._projectLspAutoRestartAttemptsForTesting(tabId: coreTabID), 1)
+        var captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#,
+            minimumOccurrences: 2
+        )
+        XCTAssertEqual(occurrenceCount(of: "--session--", in: captured), 2, captured)
+
+        now = Date(timeIntervalSince1970: 10_000.5)
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: failedStatus))
+        XCTAssertEqual(vc._projectLspAutoRestartAttemptsForTesting(tabId: coreTabID), 1)
+        captured = try String(contentsOf: captureURL, encoding: .utf8)
+        XCTAssertEqual(occurrenceCount(of: "--session--", in: captured), 2, captured)
+
+        now = Date(timeIntervalSince1970: 10_001)
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: failedStatus))
+        XCTAssertEqual(vc._projectLspAutoRestartAttemptsForTesting(tabId: coreTabID), 2)
+        captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#,
+            minimumOccurrences: 3
+        )
+        XCTAssertEqual(occurrenceCount(of: "--session--", in: captured), 3, captured)
+
+        now = Date(timeIntervalSince1970: 10_002)
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: failedStatus))
+        XCTAssertEqual(vc._projectLspAutoRestartAttemptsForTesting(tabId: coreTabID), 2)
+        captured = try String(contentsOf: captureURL, encoding: .utf8)
+        XCTAssertEqual(occurrenceCount(of: "--session--", in: captured), 3, captured)
     }
 
     func testProjectLspAutoRestartUsesBackoffAndResetsAfterHealthyStatus() throws {

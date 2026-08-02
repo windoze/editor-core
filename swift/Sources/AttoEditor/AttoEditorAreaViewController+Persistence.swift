@@ -572,7 +572,14 @@ extension AttoEditorAreaViewController {
 
         let now = projectLspAutoRestartNowProvider()
         let currentState = projectLspAutoRestartStatesByTabID[tabId]
-        let maxAttempts = preferences.effectiveLspAutoRestartMaxAttempts
+        let maxAttempts = preferences.effectiveLspAutoRestartMaxAttempts(
+            serverName: status.server?.name,
+            serverCommand: status.server?.command
+        )
+        let baseDelaySeconds = preferences.effectiveLspAutoRestartBaseDelaySeconds(
+            serverName: status.server?.name,
+            serverCommand: status.server?.command
+        )
         guard process.state == .exited,
               status.availability == .failed || status.state == .failed,
               preferences.effectiveLspAutoRestartEnabled,
@@ -598,7 +605,7 @@ extension AttoEditorAreaViewController {
             attempts: attempts,
             nextAllowedAt: now.addingTimeInterval(Self.projectLspAutoRestartDelay(
                 forAttempt: attempts,
-                baseDelaySeconds: preferences.effectiveLspAutoRestartBaseDelaySeconds
+                baseDelaySeconds: baseDelaySeconds
             ))
         )
         do {

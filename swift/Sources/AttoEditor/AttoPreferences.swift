@@ -66,6 +66,8 @@ final class AttoPreferences: NSObject {
         static let lspAutoRestartMaxAttempts = "AttoEditor.preferences.lspAutoRestartMaxAttempts"
         static let lspAutoRestartBaseDelaySeconds = "AttoEditor.preferences.lspAutoRestartBaseDelaySeconds"
         static let lspAutoRestartDisabledServerKeys = "AttoEditor.preferences.lspAutoRestartDisabledServerKeys"
+        static let lspAutoRestartServerMaxAttempts = "AttoEditor.preferences.lspAutoRestartServerMaxAttempts"
+        static let lspAutoRestartServerBaseDelaySeconds = "AttoEditor.preferences.lspAutoRestartServerBaseDelaySeconds"
     }
 
     private let defaults: UserDefaults
@@ -241,6 +243,18 @@ final class AttoPreferences: NSObject {
         )
     }
 
+    var storedLspAutoRestartServerMaxAttempts: [String: Int] {
+        Self.normalizeLspAutoRestartServerMaxAttempts(
+            defaults.dictionary(forKey: Keys.lspAutoRestartServerMaxAttempts) ?? [:]
+        )
+    }
+
+    var storedLspAutoRestartServerBaseDelaySeconds: [String: Double] {
+        Self.normalizeLspAutoRestartServerBaseDelaySeconds(
+            defaults.dictionary(forKey: Keys.lspAutoRestartServerBaseDelaySeconds) ?? [:]
+        )
+    }
+
     func setFontFaces(_ faces: [String]) {
         let normalized = Self.normalizeFontFaces(faces)
         defaults.set(normalized, forKey: Keys.fontFaces)
@@ -310,6 +324,20 @@ final class AttoPreferences: NSObject {
         postDidChange()
     }
 
+    func effectiveLspAutoRestartMaxAttempts(serverName: String?, serverCommand: String?) -> Int {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return effectiveLspAutoRestartMaxAttempts
+        }
+        return storedLspAutoRestartServerMaxAttempts[key] ?? effectiveLspAutoRestartMaxAttempts
+    }
+
+    func effectiveLspAutoRestartBaseDelaySeconds(serverName: String?, serverCommand: String?) -> Double {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return effectiveLspAutoRestartBaseDelaySeconds
+        }
+        return storedLspAutoRestartServerBaseDelaySeconds[key] ?? effectiveLspAutoRestartBaseDelaySeconds
+    }
+
     func isLspAutoRestartDisabledForServer(serverName: String?, serverCommand: String?) -> Bool {
         guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
             return false
@@ -337,6 +365,34 @@ final class AttoPreferences: NSObject {
         } else {
             defaults.set(sorted, forKey: Keys.lspAutoRestartDisabledServerKeys)
         }
+        postDidChange()
+    }
+
+    func setLspAutoRestartMaxAttempts(
+        _ attempts: Int,
+        forServerName serverName: String?,
+        serverCommand: String?
+    ) {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return
+        }
+        var overrides = storedLspAutoRestartServerMaxAttempts
+        overrides[key] = Self.normalizeLspAutoRestartMaxAttempts(attempts)
+        defaults.set(overrides, forKey: Keys.lspAutoRestartServerMaxAttempts)
+        postDidChange()
+    }
+
+    func setLspAutoRestartBaseDelaySeconds(
+        _ seconds: Double,
+        forServerName serverName: String?,
+        serverCommand: String?
+    ) {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return
+        }
+        var overrides = storedLspAutoRestartServerBaseDelaySeconds
+        overrides[key] = Self.normalizeLspAutoRestartBaseDelaySeconds(seconds)
+        defaults.set(overrides, forKey: Keys.lspAutoRestartServerBaseDelaySeconds)
         postDidChange()
     }
 
@@ -466,6 +522,28 @@ final class AttoPreferences: NSObject {
         })).sorted()
     }
 
+    private static func normalizeLspAutoRestartServerMaxAttempts(_ raw: [String: Any]) -> [String: Int] {
+        var out: [String: Int] = [:]
+        for (rawKey, rawValue) in raw {
+            let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard key.isEmpty == false else { continue }
+            guard let value = parseStoredInt(rawValue) else { continue }
+            out[key] = normalizeLspAutoRestartMaxAttempts(value)
+        }
+        return out
+    }
+
+    private static func normalizeLspAutoRestartServerBaseDelaySeconds(_ raw: [String: Any]) -> [String: Double] {
+        var out: [String: Double] = [:]
+        for (rawKey, rawValue) in raw {
+            let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard key.isEmpty == false else { continue }
+            guard let value = parseStoredDouble(rawValue) else { continue }
+            out[key] = normalizeLspAutoRestartBaseDelaySeconds(value)
+        }
+        return out
+    }
+
     static func normalizeCommentConfigurationKey(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -519,6 +597,32 @@ final class AttoPreferences: NSObject {
     private static func parseDoubleEnv(_ raw: String?) -> Double? {
         guard let raw else { return nil }
         return Double(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func parseStoredInt(_ raw: Any) -> Int? {
+        if let value = raw as? Int {
+            return value
+        }
+        if let value = raw as? NSNumber {
+            return value.intValue
+        }
+        if let value = raw as? String {
+            return Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    private static func parseStoredDouble(_ raw: Any) -> Double? {
+        if let value = raw as? Double {
+            return value
+        }
+        if let value = raw as? NSNumber {
+            return value.doubleValue
+        }
+        if let value = raw as? String {
+            return Double(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
     }
 
     private static func parseWrapModeEnv(_ raw: String?) -> EcuWrapMode? {
