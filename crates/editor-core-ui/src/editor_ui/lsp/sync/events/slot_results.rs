@@ -26,11 +26,21 @@ pub(super) fn handle_lsp_result_slot_response(
         if slot == LspResultSlot::CodeLens {
             doc.lsp_code_lens_in_flight = false;
         }
-        if let Some(json) = stored_lsp_error_result_json(slot, error) {
+        let stored_json = stored_lsp_error_result_json(slot, error.clone());
+        let result_json_len = stored_json.as_ref().map_or(0, String::len);
+        if let Some(json) = stored_json {
             doc.lsp_last_result_json.insert((view, slot), json);
         } else {
             doc.lsp_last_result_json.remove(&(view, slot));
         }
+        doc.record_lsp_result_event(
+            view,
+            slot,
+            resp.id,
+            EditorLspResultEventStatus::Error,
+            result_json_len,
+            Some(&error),
+        );
         return Ok(EventOutcome::Handled);
     }
 
@@ -64,10 +74,18 @@ pub(super) fn handle_lsp_result_slot_response(
         _ => {}
     }
 
-    if let Some(json) = stored_lsp_success_result_json(slot, result) {
+    let stored_json = stored_lsp_success_result_json(slot, result);
+    let result_json_len = stored_json.as_ref().map_or(0, String::len);
+    let status = if result_json_len == 0 {
+        EditorLspResultEventStatus::Empty
+    } else {
+        EditorLspResultEventStatus::Success
+    };
+    if let Some(json) = stored_json {
         doc.lsp_last_result_json.insert((view, slot), json);
     } else {
         doc.lsp_last_result_json.remove(&(view, slot));
     }
+    doc.record_lsp_result_event(view, slot, resp.id, status, result_json_len, None);
     Ok(EventOutcome::Handled)
 }

@@ -102,6 +102,11 @@ struct AttoRuntimeCompatibility {
             name: "workspace diagnostics events",
             reason: "Project Problems and LSP result consumers can cursor over core-owned workspace diagnostics changes; Swift falls back to App-level lifecycle events when unavailable."
         ),
+        RuntimeFeature(
+            feature: .lspResultEvents,
+            name: "LSP result events",
+            reason: "LSP result consumers can cursor over core-owned per-editor result slot events; Swift falls back to App-level lifecycle events when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

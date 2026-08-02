@@ -171,6 +171,101 @@ fn lsp_result_slots_store_special_success_null_and_error_envelopes() {
 }
 
 #[test]
+fn lsp_result_events_record_success_empty_and_error_slots() {
+    let mut ui = EditorUi::new("abc", 80);
+    let view_id = ui.view_id;
+    {
+        let mut doc = ui.lock_doc();
+        for (id, slot) in [
+            (7, LspResultSlot::Hover),
+            (8, LspResultSlot::References),
+            (9, LspResultSlot::CodeAction),
+        ] {
+            doc.lsp_client_requests.insert(
+                id,
+                LspClientRequest::Result {
+                    view: view_id,
+                    slot,
+                },
+            );
+            doc.lsp_latest_result_request_id.insert((view_id, slot), id);
+        }
+    }
+
+    assert_eq!(ui.lsp_result_events_latest_sequence(), 0);
+    assert!(ui.lsp_result_events_after(0).events.is_empty());
+
+    let applied = ui
+        .handle_lsp_events(vec![
+            LspEvent::Response(editor_core_lsp::LspResponse {
+                id: 7,
+                method: "textDocument/hover".to_string(),
+                uri: None,
+                result: Some(serde_json::json!({ "contents": "hello" })),
+                error: None,
+            }),
+            LspEvent::Response(editor_core_lsp::LspResponse {
+                id: 8,
+                method: "textDocument/references".to_string(),
+                uri: None,
+                result: Some(serde_json::Value::Null),
+                error: None,
+            }),
+            LspEvent::Response(editor_core_lsp::LspResponse {
+                id: 9,
+                method: "textDocument/codeAction".to_string(),
+                uri: None,
+                result: None,
+                error: Some(LspResponseError {
+                    code: -32603,
+                    message: "actions failed".to_string(),
+                    data: None,
+                }),
+            }),
+        ])
+        .unwrap();
+
+    assert!(!applied);
+    let snapshot = ui.lsp_result_events_after(0);
+    assert_eq!(snapshot.latest_sequence, 3);
+    assert_eq!(snapshot.events.len(), 3);
+
+    let hover = &snapshot.events[0];
+    assert_eq!(hover.sequence, 1);
+    assert_eq!(hover.family, "hover");
+    assert_eq!(hover.slot, "hover");
+    assert_eq!(hover.method, "textDocument/hover");
+    assert_eq!(hover.request_id, 7);
+    assert_eq!(hover.status, "success");
+    assert!(hover.has_result);
+    assert!(hover.result_json_len > 0);
+    assert_eq!(hover.error_code, None);
+
+    let references = &snapshot.events[1];
+    assert_eq!(references.sequence, 2);
+    assert_eq!(references.family, "locations");
+    assert_eq!(references.slot, "references");
+    assert_eq!(references.status, "empty");
+    assert!(!references.has_result);
+    assert_eq!(references.result_json_len, 0);
+
+    let code_action = &snapshot.events[2];
+    assert_eq!(code_action.sequence, 3);
+    assert_eq!(code_action.family, "actions");
+    assert_eq!(code_action.slot, "code_action");
+    assert_eq!(code_action.status, "error");
+    assert!(!code_action.has_result);
+    assert_eq!(code_action.error_code, Some(-32603));
+    assert_eq!(code_action.error_message.as_deref(), Some("actions failed"));
+
+    let after_first: serde_json::Value =
+        serde_json::from_str(&ui.lsp_result_events_json(1).unwrap()).unwrap();
+    assert_eq!(after_first["latest_sequence"], 3);
+    assert_eq!(after_first["events"].as_array().unwrap().len(), 2);
+    assert_eq!(after_first["events"][0]["sequence"], 2);
+}
+
+#[test]
 fn lsp_processing_edit_apply_failure_records_status_and_returns_error() {
     let ui = EditorUi::new("abc", 80);
 

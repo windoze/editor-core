@@ -144,6 +144,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_MULTI_DOCUMENT_UI          (1ull << 5)
 #define ECU_FEATURE_WORKSPACE_DIAGNOSTICS_STORE (1ull << 6)
 #define ECU_FEATURE_WORKSPACE_DIAGNOSTICS_EVENTS (1ull << 7)
+#define ECU_FEATURE_LSP_RESULT_EVENTS          (1ull << 8)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 
 MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);
@@ -299,6 +300,9 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_enable(EditorUi* ui,
 void editor_core_ui_ffi_editor_ui_lsp_disable(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_lsp_is_enabled(EditorUi* ui, uint8_t* out_enabled);
 int32_t editor_core_ui_ffi_editor_ui_lsp_status_json(EditorUi* ui, char** out_status_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_result_events_latest_sequence(EditorUi* ui,
+                                                                        uint64_t* out_sequence);
+char* editor_core_ui_ffi_editor_ui_lsp_result_events_json(EditorUi* ui, uint64_t after_sequence);
 
 // LSP interactive requests (optional; demo UX).
 //

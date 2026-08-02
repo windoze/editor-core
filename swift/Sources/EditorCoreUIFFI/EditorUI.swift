@@ -2,6 +2,46 @@ import CEditorCoreUIFFI
 import Foundation
 import Metal
 
+public struct EcuLspResultEvent: Decodable, Equatable, Sendable {
+    public let sequence: UInt64
+    public let family: String
+    public let title: String
+    public let slot: String
+    public let method: String
+    public let viewId: UInt64
+    public let requestId: UInt64
+    public let status: String
+    public let hasResult: Bool
+    public let resultJSONLength: Int
+    public let errorCode: Int64?
+    public let errorMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case sequence
+        case family
+        case title
+        case slot
+        case method
+        case viewId = "view_id"
+        case requestId = "request_id"
+        case status
+        case hasResult = "has_result"
+        case resultJSONLength = "result_json_len"
+        case errorCode = "error_code"
+        case errorMessage = "error_message"
+    }
+}
+
+public struct EcuLspResultEventsSnapshot: Decodable, Equatable, Sendable {
+    public let latestSequence: UInt64
+    public let events: [EcuLspResultEvent]
+
+    enum CodingKeys: String, CodingKey {
+        case latestSequence = "latest_sequence"
+        case events
+    }
+}
+
 public final class EditorUI {
     public let library: EditorCoreUIFFILibrary
     private let handle: OpaquePointer
@@ -221,6 +261,33 @@ public final class EditorUI {
             EcuLspStatusSnapshot.self,
             from: lspStatusJSON(),
             context: "editor_ui_lsp_status_snapshot"
+        )
+    }
+
+    public func lspResultEventsLatestSequence() throws -> UInt64 {
+        var out: UInt64 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_result_events_latest_sequence(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_lsp_result_events_latest_sequence")
+        return out
+    }
+
+    public func lspResultEventsJSON(after sequence: UInt64 = 0) throws -> String {
+        guard let ptr = editor_core_ui_ffi_editor_ui_lsp_result_events_json(handle, sequence) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_lsp_result_events_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func lspResultEvents(after sequence: UInt64 = 0) throws -> EcuLspResultEventsSnapshot {
+        try Self.decodeSnapshot(
+            EcuLspResultEventsSnapshot.self,
+            from: lspResultEventsJSON(after: sequence),
+            context: "editor_ui_lsp_result_events"
         )
     }
 

@@ -47,6 +47,8 @@ pub const ECU_FEATURE_MULTI_DOCUMENT_UI: u64 = 1 << 5;
 pub const ECU_FEATURE_WORKSPACE_DIAGNOSTICS_STORE: u64 = 1 << 6;
 /// Feature bit: multi-document workspace diagnostics event stream is available.
 pub const ECU_FEATURE_WORKSPACE_DIAGNOSTICS_EVENTS: u64 = 1 << 7;
+/// Feature bit: per-EditorUi LSP result slot event stream is available.
+pub const ECU_FEATURE_LSP_RESULT_EVENTS: u64 = 1 << 8;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -55,7 +57,8 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_WORKSPACE_EDIT_APPLICATION
     | ECU_FEATURE_MULTI_DOCUMENT_UI
     | ECU_FEATURE_WORKSPACE_DIAGNOSTICS_STORE
-    | ECU_FEATURE_WORKSPACE_DIAGNOSTICS_EVENTS;
+    | ECU_FEATURE_WORKSPACE_DIAGNOSTICS_EVENTS
+    | ECU_FEATURE_LSP_RESULT_EVENTS;
 
 fn set_last_error(msg: impl Into<String>) {
     LAST_ERROR.with(|slot| {

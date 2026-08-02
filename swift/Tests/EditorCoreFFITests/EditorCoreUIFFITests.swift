@@ -86,6 +86,17 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentUI))
         XCTAssertTrue(info.supports(.workspaceDiagnosticsStore))
         XCTAssertTrue(info.supports(.workspaceDiagnosticsEvents))
+        XCTAssertTrue(info.supports(.lspResultEvents))
+    }
+
+    func testEditorUILSPResultEventsWrapperStartsEmpty() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc", viewportWidthCells: 80)
+
+        XCTAssertEqual(try ui.lspResultEventsLatestSequence(), 0)
+        let events = try ui.lspResultEvents()
+        XCTAssertEqual(events.latestSequence, 0)
+        XCTAssertTrue(events.events.isEmpty)
     }
 
     func testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch() throws {

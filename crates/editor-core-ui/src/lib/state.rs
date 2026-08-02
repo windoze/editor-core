@@ -1,8 +1,9 @@
 use crate::prelude::*;
 use crate::{
-    LspClientRequest, LspResultSlot, SharedLspSession, TreeSitterAsyncWorker,
+    EditorLspResultEvent, LspClientRequest, LspResultSlot, SharedLspSession, TreeSitterAsyncWorker,
     TreeSitterCaptureMapper, TreeSitterProcessingConfig, UiError,
 };
+use std::collections::VecDeque;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MarkedRange {
@@ -62,6 +63,8 @@ pub(crate) struct EditorUiDoc {
     pub(crate) lsp_latest_result_request_id: HashMap<(ViewId, LspResultSlot), u64>,
     pub(crate) lsp_latest_on_type_formatting_request_id: HashMap<ViewId, u64>,
     pub(crate) lsp_last_result_json: HashMap<(ViewId, LspResultSlot), String>,
+    pub(crate) lsp_result_events: VecDeque<EditorLspResultEvent>,
+    pub(crate) next_lsp_result_event_sequence: u64,
     pub(crate) text_version: u64,
 }
 

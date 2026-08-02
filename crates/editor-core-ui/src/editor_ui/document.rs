@@ -30,6 +30,8 @@ impl EditorUi {
             lsp_latest_result_request_id: HashMap::new(),
             lsp_latest_on_type_formatting_request_id: HashMap::new(),
             lsp_last_result_json: HashMap::new(),
+            lsp_result_events: std::collections::VecDeque::new(),
+            next_lsp_result_event_sequence: 1,
             text_version: 0,
         }));
         Self {
