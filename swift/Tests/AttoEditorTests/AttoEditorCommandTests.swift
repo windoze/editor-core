@@ -3970,6 +3970,55 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc.openFileItems().contains { $0.url.standardizedFileURL == keepURL.standardizedFileURL })
     }
 
+    func testWorkspaceEditRemovedTabCallbackUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let keepURL = tempDir.appendingPathComponent("keep-projected-delete.txt")
+        let localURL = tempDir.appendingPathComponent("delete-local-open.txt")
+        let projectedURL = tempDir.appendingPathComponent("delete-projected-open.txt")
+        try "keep\n".write(to: keepURL, atomically: true, encoding: .utf8)
+        try "delete\n".write(to: localURL, atomically: true, encoding: .utf8)
+        try "projected delete\n".write(to: projectedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: keepURL, mode: .pinned)
+        vc.openFile(url: localURL, mode: .pinned)
+        vc.selectFile(url: keepURL)
+        allowWorkspaceEditPreviewConfirmation(vc)
+
+        let tab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == localURL.standardizedFileURL })
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, localURL.standardizedFileURL)
+
+        var closedURLs: [URL] = []
+        vc.onDidCloseFile = { closedURLs.append($0.standardizedFileURL) }
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "kind": "delete",
+              "uri": "\(projectedURL.standardizedFileURL.absoluteString)"
+            }
+          ]
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertFalse(vc.tabs.contains { $0.id == tab.id })
+        XCTAssertEqual(closedURLs, [projectedURL.standardizedFileURL])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectedURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: localURL.path))
+    }
+
     func testWorkspaceEditResourceOperationOverwritesOpenCleanTabCreate() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

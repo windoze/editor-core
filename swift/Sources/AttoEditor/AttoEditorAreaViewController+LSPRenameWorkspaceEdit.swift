@@ -208,8 +208,12 @@ extension AttoEditorAreaViewController {
                 setTransientStatusText("Workspace edit cancelled")
                 return false
             }
+            let projectedURLsBeforeApply = projectedFileURLsByTabID()
             let coreResult = try coreDocuments.applyWorkspaceEditTransaction(workspaceEditJSON)
-            try syncAppTabsFromCoreWorkspaceEditTransaction(coreDocuments)
+            try syncAppTabsFromCoreWorkspaceEditTransaction(
+                coreDocuments,
+                projectedURLsBeforeSync: projectedURLsBeforeApply
+            )
 
             let result = AttoWorkspaceEditApplyResult(
                 applied: coreResult.applied,
@@ -489,7 +493,8 @@ extension AttoEditorAreaViewController {
     }
 
     func syncAppTabsFromCoreWorkspaceEditTransaction(
-        _ coreDocuments: MultiDocumentEditorUI
+        _ coreDocuments: MultiDocumentEditorUI,
+        projectedURLsBeforeSync: [UUID: URL] = [:]
     ) throws {
         let snapshot = try coreDocuments.snapshot()
         let coreTabsByID = Dictionary(uniqueKeysWithValues: snapshot.tabs.map { ($0.id, $0) })
@@ -499,7 +504,7 @@ extension AttoEditorAreaViewController {
             guard let coreTabID = tab.coreTabID,
                   coreTabsByID[coreTabID] == nil
             else { return nil }
-            return (tab.id, tab.fileURL)
+            return (tab.id, projectedURLsBeforeSync[tab.id] ?? projectedFileURL(for: tab))
         }
         for removedTab in removedTabs {
             removedSelectedTab = removedSelectedTab || selectedTabID == removedTab.id
@@ -562,12 +567,16 @@ extension AttoEditorAreaViewController {
         }
 
         do {
+            let projectedURLsBeforeUndo = projectedFileURLsByTabID()
             let result = try coreDocuments.undoLastWorkspaceEditTransaction()
             guard result.undone else {
                 setTransientStatusText("No WorkspaceEdit transaction to undo")
                 return false
             }
-            try syncAppTabsFromCoreWorkspaceEditTransaction(coreDocuments)
+            try syncAppTabsFromCoreWorkspaceEditTransaction(
+                coreDocuments,
+                projectedURLsBeforeSync: projectedURLsBeforeUndo
+            )
             setTransientStatusText("Workspace edit undone")
             return true
         } catch {
@@ -576,6 +585,12 @@ extension AttoEditorAreaViewController {
             NSSound.beep()
             return false
         }
+    }
+
+    func projectedFileURLsByTabID() -> [UUID: URL] {
+        Dictionary(uniqueKeysWithValues: tabs.map { tab in
+            (tab.id, projectedFileURL(for: tab))
+        })
     }
 
     func replaceAppTabTextFromCoreProjection(

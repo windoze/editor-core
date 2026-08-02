@@ -633,6 +633,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCloseTabCallbackUsesCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCloseAllTabsUsesCoreTabProjectionOrder`
     - `git diff --check`
+- 中间提交：`feat(app): project workspace edit close callbacks`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 WorkspaceEdit core transaction / undo 导致的 removed-tab close callback URL 使用 apply/undo 前的 core tab snapshot `document_uri` 投影。
+  - 提交边界：只在 core WorkspaceEdit apply/undo 前缓存 tab id 到 projected URL，并将其用于 `syncAppTabsFromCoreWorkspaceEditTransaction(...)` 中 removed tabs 的 `onDidCloseFile` URL；不改变 WorkspaceEdit transaction planner/apply/undo、resource operation 文件系统副作用、dirty close confirmation、真实保存路径、session schema、真实 `tab.fileURL` 同步策略或 Rust/FFI ABI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditRemovedTabCallbackUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditResourceOperationDeletesOpenCleanTab`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 
