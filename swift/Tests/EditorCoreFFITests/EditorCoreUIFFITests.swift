@@ -138,6 +138,8 @@ final class EditorCoreUIFFITests: XCTestCase {
         let stateEvents = try ui.stateEvents()
         XCTAssertEqual(stateEvents.latestSequence, 0)
         XCTAssertTrue(stateEvents.events.isEmpty)
+        XCTAssertFalse(try ui.lspShutdown())
+        XCTAssertFalse(try ui.lspIsEnabled())
     }
 
     func testEditorUIStateEventsRecordTextAndDirtyChanges() throws {

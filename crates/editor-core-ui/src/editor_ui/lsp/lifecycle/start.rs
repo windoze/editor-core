@@ -117,6 +117,24 @@ impl EditorUi {
         self.record_lsp_status_state_event();
     }
 
+    pub fn lsp_shutdown(&mut self) -> Result<bool, UiError> {
+        let result = {
+            let mut doc = self.lock_doc();
+            doc.lsp_shutdown()
+        };
+
+        match result {
+            Ok(shutdown) => {
+                self.record_lsp_status_state_event();
+                Ok(shutdown)
+            }
+            Err(err) => {
+                self.fail_lsp_and_record_status(format!("LSP shutdown failed: {err}"));
+                Err(err)
+            }
+        }
+    }
+
     pub fn lsp_is_enabled(&self) -> bool {
         let doc = self.lock_doc();
         doc.lsp_is_enabled()

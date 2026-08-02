@@ -35,17 +35,32 @@ impl SharedLspSession {
             }
         }
     }
+
+    pub(crate) fn shutdown(&self) -> Result<bool, String> {
+        let mut guard = self
+            .session
+            .lock()
+            .map_err(|_| "LSP session lock poisoned".to_string())?;
+
+        let Some(mut session) = guard.take() else {
+            return Ok(false);
+        };
+
+        session.exit()?;
+        Ok(true)
+    }
+
+    pub(crate) fn is_alive(&self) -> bool {
+        self.session
+            .lock()
+            .map(|guard| guard.is_some())
+            .unwrap_or(false)
+    }
 }
 
 impl Drop for SharedLspSession {
     fn drop(&mut self) {
-        let Ok(mut guard) = self.session.lock() else {
-            return;
-        };
-        let Some(mut session) = guard.take() else {
-            return;
-        };
-        let _ = session.exit();
+        let _ = self.shutdown();
     }
 }
 
@@ -63,7 +78,9 @@ pub(crate) fn get_or_start_shared_lsp_session(
     // Fast path: try an existing session.
     if let Ok(mut pool) = shared_lsp_pool().lock() {
         if let Some(existing) = pool.get(&key).and_then(|w| w.upgrade()) {
-            return Ok(existing);
+            if existing.is_alive() {
+                return Ok(existing);
+            }
         }
         // Drop stale weak entries.
         pool.remove(&key);

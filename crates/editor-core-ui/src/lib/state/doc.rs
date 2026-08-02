@@ -144,6 +144,24 @@ impl EditorUiDoc {
         self.lsp_reset();
     }
 
+    pub(crate) fn lsp_shutdown(&mut self) -> Result<bool, UiError> {
+        self.lsp_last_error = None;
+
+        let shared = self.lsp.as_ref().cloned();
+        if let (Some(shared), Some(uri)) = (shared.as_ref(), self.lsp_document_uri.as_deref()) {
+            let uri = uri.to_string();
+            let _ = shared.with_session_mut(|session| session.close_document(uri.as_str()));
+        }
+
+        let shutdown = match shared {
+            Some(shared) => shared.shutdown().map_err(UiError::Processor),
+            None => Ok(false),
+        };
+
+        self.lsp_clear_local_state();
+        shutdown
+    }
+
     pub(crate) fn lsp_clear_result_state(&mut self) {
         self.lsp_latest_result_request_id.clear();
         self.lsp_last_result_json.clear();
@@ -161,6 +179,10 @@ impl EditorUiDoc {
             let _ = shared.with_session_mut(|session| session.close_document(uri.as_str()));
         }
 
+        self.lsp_clear_local_state();
+    }
+
+    fn lsp_clear_local_state(&mut self) {
         self.lsp = None;
         self.lsp_document_uri = None;
         self.lsp_delta_calc = None;

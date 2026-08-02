@@ -66,6 +66,40 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_disable(ui: *mut Edito
     });
 }
 
+/// Explicitly shut down the active LSP session for the current document.
+///
+/// On success, `out_shutdown` is set to `1` when a live session was closed and `0` when there was
+/// no active session to close.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `out_shutdown` must be a valid pointer to a `u8`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_shutdown(
+    ui: *mut EditorUi,
+    out_shutdown: *mut u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        if out_shutdown.is_null() {
+            return Err(invalid_argument("out_shutdown is null"));
+        }
+
+        let shutdown = ui.lsp_shutdown().map_err(map_ui_error)?;
+        unsafe {
+            *out_shutdown = if shutdown { 1 } else { 0 };
+        }
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Notify `workspace/didChangeWorkspaceFolders` for the active LSP session.
 ///
 /// `added_json_utf8` and `removed_json_utf8` must be JSON arrays of LSP `WorkspaceFolder`

@@ -5244,6 +5244,20 @@ fn ffi_lsp_request_definition_errors_when_lsp_disabled() {
 }
 
 #[test]
+fn ffi_lsp_shutdown_returns_false_when_lsp_disabled() {
+    let initial = CString::new("hello").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+
+    let mut shutdown: u8 = 1;
+    let code = unsafe { editor_core_ui_ffi_editor_ui_lsp_shutdown(ui, &mut shutdown) };
+    assert_eq!(code, ECU_OK);
+    assert_eq!(shutdown, 0);
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
 fn ffi_lsp_format_document_errors_when_lsp_disabled() {
     let initial = CString::new("hello").unwrap();
     let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);

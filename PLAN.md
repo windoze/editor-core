@@ -883,6 +883,18 @@
     - `cargo test -p editor-core-ui lsp_disable_gracefully_exits_last_shared_session`（受限未完成：sandbox 内 `skia-bindings` 需要访问 GitHub 下载，提升权限请求被审批层拒绝）
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ui): expose lsp shutdown control`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把阶段 266 的 graceful shutdown 从 drop-time fallback 提升为 host-visible 控制面，让 Rust `EditorUi`、C ABI 和 Swift `EditorUI` wrapper 可以显式关闭当前 LSP session，并返回是否实际关闭了一个 live session。
+  - 提交边界：新增 `EditorUi::lsp_shutdown() -> Result<bool, UiError>`、C ABI `editor_core_ui_ffi_editor_ui_lsp_shutdown(...)` 和 Swift `EditorUI.lspShutdown() throws -> Bool`；显式 shutdown 会 best-effort 发送当前文档 `didClose`，再通过 shared session 的 `shutdown()` 调用既有 `LspSession::exit()`，最后清理当前 view 的 LSP 状态；shared-session pool 会跳过已经被 shutdown/take 的 dead handle，避免同 key 后续 enable 复用不可用 session。本提交不改变 `lspDisable()` 的兼容行为，不新增 App command/menu，不实现 shared-session root-set 完整 ownership、project open 自动批量启动、stderr capture、server process history 或 dashboard 级 server health UI。
+  - 验证记录：
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `cargo test -p editor-core-lsp session_exit_accepts_responsive_shutdown`
+    - `cargo test -p editor-core-ui lsp_shutdown_gracefully_exits_active_session --release`
+    - `cargo test -p editor-core-ui lsp_disable_gracefully_exits_last_shared_session --release`
+    - `cargo test -p editor-core-ui-ffi ffi_lsp_shutdown_returns_false_when_lsp_disabled --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testEditorUILSPResultEventsWrapperStartsEmpty`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

@@ -547,6 +547,54 @@ fn lsp_disable_gracefully_exits_last_shared_session() {
 }
 
 #[test]
+fn lsp_shutdown_gracefully_exits_active_session() {
+    let capture_path = unique_temp_path("explicit-shared-session-shutdown");
+    let script = lsp_graceful_shutdown_capture_server_script(&capture_path);
+    let args = vec!["-c".to_string(), script];
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root_uri = format!("file:///tmp/editor-core-ui-explicit-shutdown-{stamp}");
+    let doc_uri = format!("{root_uri}/main.rs");
+    let shared_doc_uri = format!("{root_uri}/lib.rs");
+    let restarted_doc_uri = format!("{root_uri}/again.rs");
+
+    let mut ui = EditorUi::new("fn main() {}\n", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+    let mut shared_holder = EditorUi::new("fn lib() {}\n", 80);
+    shared_holder
+        .lsp_enable_stdio("/bin/sh", &args, &root_uri, &shared_doc_uri, "rust")
+        .unwrap();
+    assert!(ui.lsp_shutdown().unwrap());
+    assert!(!ui.lsp_is_enabled());
+    assert!(!shared_holder.lsp_is_enabled());
+    assert!(!ui.lsp_shutdown().unwrap());
+
+    let mut restarted = EditorUi::new("fn again() {}\n", 80);
+    restarted
+        .lsp_enable_stdio("/bin/sh", &args, &root_uri, &restarted_doc_uri, "rust")
+        .unwrap();
+    assert!(restarted.lsp_shutdown().unwrap());
+
+    let captured = wait_for_captured_lsp_stdin(&capture_path, "again.rs");
+    assert!(
+        captured.matches("\"method\":\"initialize\"").count() >= 2,
+        "expected restart after explicit shutdown to create a new LSP process: {captured}"
+    );
+    assert!(
+        captured.contains("\"method\":\"shutdown\""),
+        "missing shutdown request: {captured}"
+    );
+    assert!(
+        captured.contains("\"method\":\"exit\""),
+        "missing exit notification: {captured}"
+    );
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
 fn lsp_did_change_workspace_folders_notifies_and_updates_workspace_response() {
     let capture_path = unique_temp_path("workspace-folders-change");
     let stamp = std::time::SystemTime::now()

@@ -25,6 +25,14 @@ extension EditorUI {
         editor_core_ui_ffi_editor_ui_lsp_disable(handle)
     }
 
+    @discardableResult
+    public func lspShutdown() throws -> Bool {
+        var out: UInt8 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_shutdown(handle, &out)
+        try library.ensureStatus(status, context: "editor_ui_lsp_shutdown")
+        return out != 0
+    }
+
     public func lspDidChangeWorkspaceFolders(
         added: [EcuLspWorkspaceFolder],
         removed: [EcuLspWorkspaceFolder]
