@@ -1,4 +1,4 @@
-#[path = "treesitter_worker/async_worker.rs"]
+#[path = "treesitter_worker/async_worker/mod.rs"]
 mod async_worker;
 #[path = "treesitter_worker/mapper.rs"]
 mod mapper;

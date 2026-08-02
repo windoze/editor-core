@@ -1,78 +1,11 @@
-use super::*;
+use super::{
+    EditorLspRequestEvent, EditorLspRequestEventPhase, EditorLspRequestEventStatus,
+    EditorLspRequestEventsSnapshot,
+};
+use crate::prelude::*;
+use crate::{EditorUiDoc, LspClientRequest, LspResultSlot};
 
 const MAX_LSP_REQUEST_EVENTS: usize = 256;
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct EditorLspRequestEvent {
-    pub sequence: u64,
-    pub family: String,
-    pub title: String,
-    pub slot: String,
-    pub method: String,
-    pub view_id: u64,
-    pub request_id: u64,
-    pub phase: String,
-    pub status: String,
-    pub result_sequence: Option<u64>,
-    pub error_code: Option<i64>,
-    pub error_message: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct EditorLspRequestEventsSnapshot {
-    pub latest_sequence: u64,
-    pub events: Vec<EditorLspRequestEvent>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum EditorLspRequestEventPhase {
-    Started,
-    Completed,
-}
-
-impl EditorLspRequestEventPhase {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Started => "started",
-            Self::Completed => "completed",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum EditorLspRequestEventStatus {
-    Pending,
-    Success,
-    Empty,
-    Error,
-    Stale,
-    Mismatched,
-    Canceled,
-    Timeout,
-}
-
-impl EditorLspRequestEventStatus {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Success => "success",
-            Self::Empty => "empty",
-            Self::Error => "error",
-            Self::Stale => "stale",
-            Self::Mismatched => "mismatched",
-            Self::Canceled => "canceled",
-            Self::Timeout => "timeout",
-        }
-    }
-
-    pub(crate) fn from_result_status(status: EditorLspResultEventStatus) -> Self {
-        match status {
-            EditorLspResultEventStatus::Success => Self::Success,
-            EditorLspResultEventStatus::Empty => Self::Empty,
-            EditorLspResultEventStatus::Error => Self::Error,
-        }
-    }
-}
 
 impl EditorUiDoc {
     pub(crate) fn track_lsp_result_request(

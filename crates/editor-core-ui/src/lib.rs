@@ -11,18 +11,18 @@ mod ime;
 #[path = "lib/json_helpers.rs"]
 mod json_helpers;
 mod keybindings;
-#[path = "lib/lsp_request_events.rs"]
+#[path = "lib/lsp_request_events/mod.rs"]
 mod lsp_request_events;
 #[path = "lib/lsp_result_events.rs"]
 mod lsp_result_events;
-#[path = "lib/lsp_shared.rs"]
+#[path = "lib/lsp_shared/mod.rs"]
 mod lsp_shared;
 mod multi_document;
 #[path = "lib/prelude.rs"]
 mod prelude;
 #[path = "lib/render_helpers.rs"]
 mod render_helpers;
-#[path = "lib/state.rs"]
+#[path = "lib/state/mod.rs"]
 mod state;
 #[path = "lib/theme.rs"]
 mod theme;

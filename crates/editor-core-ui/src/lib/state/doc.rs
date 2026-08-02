@@ -5,41 +5,6 @@ use crate::{
 };
 use std::collections::VecDeque;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MarkedRange {
-    pub(crate) start: usize,
-    pub(crate) len: usize,
-    /// Text that was replaced when the IME composition started.
-    ///
-    /// Needed to support "cancel composition" without losing the original selection.
-    pub(crate) original_text: String,
-    pub(crate) original_len: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SearchQueryState {
-    pub(crate) query: String,
-    pub(crate) options: SearchOptions,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MouseSelectionMode {
-    Char,
-    Word,
-    Line,
-    Paragraph,
-    Rect,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct MouseDragState {
-    pub(crate) mode: MouseSelectionMode,
-    pub(crate) anchor_pos: Position,
-    pub(crate) anchor_offset: usize,
-    /// For unit-based selections (word), store the initial selected unit range.
-    pub(crate) anchor_unit_range: Option<(usize, usize)>,
-}
-
 pub(crate) struct EditorUiDoc {
     pub(crate) ws: Workspace,
     pub(crate) buffer_id: BufferId,
@@ -164,43 +129,4 @@ impl EditorUiDoc {
 
         let _ = self.apply_processing_edits(editor_core_lsp::lsp_clear_edits());
     }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct RenderFrameCache {
-    pub(crate) view_version: u64,
-    pub(crate) render_config: RenderConfig,
-    pub(crate) theme_hash: u64,
-    pub(crate) start_visual_row: usize,
-    pub(crate) row_count: usize,
-    pub(crate) has_virtual_text: bool,
-    pub(crate) row_signatures: Vec<u64>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct MinimapCache {
-    pub(crate) view_version: u64,
-    pub(crate) start_visual_row: usize,
-    pub(crate) count: usize,
-    pub(crate) json: String,
-}
-
-/// 单 buffer UI 句柄（每个实例对应一个 `Workspace` view）。
-///
-/// - 通过 [`Self::clone_view`] 可为同一文档创建额外 view（用于 split panes / 多视图）。
-/// - 文本与派生状态（Sublime/Tree-sitter/LSP）在同一 buffer 内共享；光标/选择/滚动等是 view 级别。
-pub struct EditorUi {
-    pub(crate) doc: Arc<Mutex<EditorUiDoc>>,
-    pub(crate) buffer_id: BufferId,
-    pub(crate) view_id: ViewId,
-    pub(crate) renderer: SkiaRenderer,
-    pub(crate) theme: RenderTheme,
-    pub(crate) render_config: RenderConfig,
-    pub(crate) marked: Option<MarkedRange>,
-    pub(crate) search_query: Option<SearchQueryState>,
-    pub(crate) mouse_drag: Option<MouseDragState>,
-    pub(crate) auto_pairs: AutoPairsConfig,
-    pub(crate) bracket_match_highlights_enabled: bool,
-    pub(crate) render_cache: Option<RenderFrameCache>,
-    pub(crate) minimap_cache: Option<MinimapCache>,
 }
