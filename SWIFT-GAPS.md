@@ -515,7 +515,13 @@ transaction result 新增 `applied_resource_operation_count`，Rust JSON、C ABI
 
 `WorkspaceEditTransactionDocument` 新增 `expected_version`、`actual_version` 和 `version_mismatch`，Swift `EcuWorkspaceEditTransactionDocument` 暴露为 `expectedVersion`、`actualVersion`、`versionMismatch`，并提供默认值 decode 以兼容旧 runtime。测试覆盖 Rust MultiDocument stale version preview/apply 跳过、Swift typed 字段 decode 和 apply 后文本保持不变。
 
-本阶段的 version check 仅覆盖 core-owned open tab text edits；未打开磁盘文件、跨文件 filesystem side effect、atomic rollback、undo grouping，以及 App rename/code action/completion 主路径切换仍按 `PLAN.md` 后续阶段推进。
+本阶段的 version check 仅覆盖 core-owned open tab text edits；未打开磁盘文件、跨文件 filesystem side effect、atomic rollback、undo grouping，以及 App rename/code action/completion 主路径切换仍按 `PLAN.md` 后续阶段推进。阶段 201 已把该 open-tab version preflight 接入 AttoEditor WorkspaceEdit App 主路径，先关闭 stale edit 绕过 Swift fallback 的风险。
+
+## 阶段 201: AttoEditor WorkspaceEdit core preflight
+
+2026-08-02 阶段 201 已让 AttoEditor App 的 WorkspaceEdit 应用主路径在进入 Swift fallback 前调用 `MultiDocumentEditorUI.previewWorkspaceEditTransaction(...)`，消费 core transaction 的 `skippedDetails`。当前只把已打开 core tab 的 `text_edit` / `version_mismatch` 作为 hard block，避免 stale `TextDocumentEdit` 绕过阶段 200 的 version check 继续由 Swift fallback 应用到可见编辑器。
+
+本阶段不把 rename/code action/completion 的完整 WorkspaceEdit apply 切到 core transaction，也不接管未打开文件和 resource operations；这些仍保留现有 Swift fallback，用于维持当前产品能力。测试覆盖打开 tab 收到 stale versioned WorkspaceEdit 时不修改编辑器文本、不写磁盘、不标 dirty。
 
 ## 分层结论
 

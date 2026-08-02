@@ -8990,6 +8990,9 @@ final class AttoEditorAreaViewController: NSViewController {
             return false
         }
 
+        let coreTransactionPreview = previewCoreWorkspaceEditTransaction(workspaceEditJSON)
+        let coreBlockedTextEditURIs = coreWorkspaceEditBlockedTextEditURIs(coreTransactionPreview)
+
         var documents = workspaceEdit.documents.map { document in
             AttoWorkspaceEditApplyResult.Document(
                 uri: document.uri,
@@ -9022,6 +9025,7 @@ final class AttoEditorAreaViewController: NSViewController {
         var appliedEditCount = 0
         var appliedResourceOperationCount = 0
         var skippedURIs = Set(workspaceEdit.unsupportedURIs)
+        skippedURIs.formUnion(coreBlockedTextEditURIs)
 
         for operation in workspaceEdit.resourceOperations {
             guard applyWorkspaceResourceOperation(operation) else {
@@ -9038,6 +9042,10 @@ final class AttoEditorAreaViewController: NSViewController {
 
             if document.hasOverlappingEdits {
                 skippedURIs.insert(document.uri)
+                continue
+            }
+
+            if coreBlockedTextEditURIs.contains(document.uri) {
                 continue
             }
 
@@ -9115,6 +9123,33 @@ final class AttoEditorAreaViewController: NSViewController {
             view.window?.makeFirstResponder(activeEditorView)
         }
         return true
+    }
+
+    private func previewCoreWorkspaceEditTransaction(_ workspaceEditJSON: String) -> EcuWorkspaceEditTransactionResult? {
+        guard let coreDocuments else { return nil }
+        do {
+            return try coreDocuments.previewWorkspaceEditTransaction(workspaceEditJSON)
+        } catch {
+            NSLog(
+                "AttoEditor: core WorkspaceEdit transaction preview failed: %@",
+                String(describing: error)
+            )
+            return nil
+        }
+    }
+
+    private func coreWorkspaceEditBlockedTextEditURIs(
+        _ preview: EcuWorkspaceEditTransactionResult?
+    ) -> Set<String> {
+        guard let preview else { return [] }
+        return Set(preview.skippedDetails.compactMap { detail in
+            guard detail.operation == "text_edit",
+                  detail.reason == "version_mismatch"
+            else {
+                return nil
+            }
+            return detail.uri
+        })
     }
 
     private func showWorkspaceEditSummaryIfNeeded(

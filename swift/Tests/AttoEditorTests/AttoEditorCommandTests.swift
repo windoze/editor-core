@@ -3021,6 +3021,50 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(window.title.contains("●"))
     }
 
+    func testWorkspaceEditApplicationUsesCoreVersionPreflight() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("versioned.txt")
+        try "abc\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "textDocument": {
+                "uri": "\(fileURL.absoluteString)",
+                "version": 1
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 1 },
+                    "end": { "line": 0, "character": 2 }
+                  },
+                  "newText": "B"
+                }
+              ]
+            }
+          ]
+        }
+        """
+
+        XCTAssertFalse(window.title.contains("●"))
+        XCTAssertFalse(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "abc\n")
+        XCTAssertEqual(try String(contentsOf: fileURL, encoding: .utf8), "abc\n")
+        XCTAssertFalse(window.title.contains("●"))
+    }
+
     func testRenameResultRecordsLspResultEvent() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
