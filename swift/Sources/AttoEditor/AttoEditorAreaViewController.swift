@@ -528,6 +528,12 @@ final class AttoEditorAreaViewController: NSViewController {
         let showFeedback: Bool
     }
 
+    private struct DiagnosticMarkerProjection: Equatable {
+        let logicalLine: UInt32
+        let charOffset: UInt32
+        let severity: EcuDiagnosticSeverity?
+    }
+
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
@@ -3467,8 +3473,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let editor = tab.editCore.editor
         derivedStateStore.refreshActive(editor: editor)
         problemsPanelController?.update(diagnostics: derivedStateStore.active.diagnostics.diagnostics)
-        updateMinimapDiagnosticMarkers(for: tab)
-        updateGutterDiagnosticMarkers(for: tab)
+        updateDiagnosticMarkers(for: tab, includeActiveDiagnostics: true)
 
         let (line1, col1): (UInt32, UInt32) = {
             do {
@@ -3566,38 +3571,98 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
-    private func updateMinimapDiagnosticMarkers(for tab: AttoEditorTab) {
-        let markers = derivedStateStore.active.diagnostics.diagnostics.compactMap { diagnostic -> EditorCoreSkiaMinimapMarker? in
-            let offset = min(diagnostic.range.start, diagnostic.range.end)
-            guard let position = try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offset) else {
-                return nil
-            }
-            return EditorCoreSkiaMinimapMarker(
-                logicalLine: position.line,
-                kind: minimapMarkerKind(for: diagnostic.severity)
+    private func updateDiagnosticMarkers(for tab: AttoEditorTab, includeActiveDiagnostics: Bool) {
+        var projections: [DiagnosticMarkerProjection] = []
+        if includeActiveDiagnostics {
+            projections.append(contentsOf: activeDiagnosticMarkerProjections(for: tab))
+        }
+        projections.append(contentsOf: workspaceDiagnosticMarkerProjections(for: tab))
+        projections = uniqueDiagnosticMarkerProjections(projections)
+
+        let minimapMarkers = projections.map {
+            EditorCoreSkiaMinimapMarker(
+                logicalLine: $0.logicalLine,
+                kind: minimapMarkerKind(for: $0.severity)
+            )
+        }
+        let gutterMarkers = projections.map {
+            EditorCoreSkiaGutterDiagnosticMarker(
+                logicalLine: $0.logicalLine,
+                charOffset: $0.charOffset,
+                kind: gutterMarkerKind(for: $0.severity)
             )
         }
 
         for pane in tab.panes {
-            pane.minimapDiagnosticMarkers = markers
+            pane.minimapDiagnosticMarkers = minimapMarkers
+            pane.gutterDiagnosticMarkers = gutterMarkers
         }
     }
 
-    private func updateGutterDiagnosticMarkers(for tab: AttoEditorTab) {
-        let markers = derivedStateStore.active.diagnostics.diagnostics.compactMap { diagnostic -> EditorCoreSkiaGutterDiagnosticMarker? in
+    private func activeDiagnosticMarkerProjections(for tab: AttoEditorTab) -> [DiagnosticMarkerProjection] {
+        derivedStateStore.active.diagnostics.diagnostics.compactMap { diagnostic -> DiagnosticMarkerProjection? in
             let offset = min(diagnostic.range.start, diagnostic.range.end)
             guard let position = try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offset) else {
                 return nil
             }
-            return EditorCoreSkiaGutterDiagnosticMarker(
+            return DiagnosticMarkerProjection(
                 logicalLine: position.line,
                 charOffset: offset,
-                kind: gutterMarkerKind(for: diagnostic.severity)
+                severity: diagnostic.severity
             )
         }
+    }
 
-        for pane in tab.panes {
-            pane.gutterDiagnosticMarkers = markers
+    private func workspaceDiagnosticMarkerProjections(for tab: AttoEditorTab) -> [DiagnosticMarkerProjection] {
+        let tabURL = tab.fileURL.standardizedFileURL
+        guard let text = try? tab.editCore.editor.text() else { return [] }
+
+        return workspaceProblemsStore.diagnostics.compactMap { diagnostic -> DiagnosticMarkerProjection? in
+            guard let url = URL(string: diagnostic.target.uri), url.isFileURL else { return nil }
+            guard url.standardizedFileURL == tabURL else { return nil }
+
+            let offset = AttoLspDefinitionParser.charOffsetForLspPosition(
+                inText: text,
+                line: diagnostic.target.line,
+                utf16Character: diagnostic.target.utf16Character
+            )
+            guard let position = try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offset) else {
+                return nil
+            }
+            return DiagnosticMarkerProjection(
+                logicalLine: position.line,
+                charOffset: offset,
+                severity: severity(forWorkspaceDiagnostic: diagnostic.severity)
+            )
+        }
+    }
+
+    private func updateWorkspaceDiagnosticMarkersForOpenTabs() {
+        for tab in tabs {
+            updateDiagnosticMarkers(for: tab, includeActiveDiagnostics: tab.id == activeTab?.id)
+        }
+    }
+
+    private func uniqueDiagnosticMarkerProjections(_ projections: [DiagnosticMarkerProjection]) -> [DiagnosticMarkerProjection] {
+        var out: [DiagnosticMarkerProjection] = []
+        for projection in projections where out.contains(projection) == false {
+            out.append(projection)
+        }
+        return out
+    }
+
+    private func severity(forWorkspaceDiagnostic severity: Int?) -> EcuDiagnosticSeverity? {
+        switch severity {
+        case 1:
+            return .error
+        case 2:
+            return .warning
+        case 3:
+            return .information
+        case 4:
+            return .hint
+        default:
+            return nil
         }
     }
 
@@ -5481,6 +5546,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         let result = AttoLspWorkspaceDiagnosticsParser.parse(json)
         let snapshot = workspaceProblemsStore.apply(result)
+        updateWorkspaceDiagnosticMarkersForOpenTabs()
         updateWorkspaceProblemsPanelIfVisible()
         guard snapshot.diagnostics.isEmpty == false else {
             if showFeedback {

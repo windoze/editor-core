@@ -1104,6 +1104,14 @@ final class AttoEditorCommandTests: XCTestCase {
             "first workspace problem",
             "second workspace warning",
         ])
+        XCTAssertEqual(vc._activeMinimapDiagnosticMarkersForTesting(), [
+            EditorCoreSkiaMinimapMarker(logicalLine: 0, kind: .error),
+            EditorCoreSkiaMinimapMarker(logicalLine: 1, kind: .warning),
+        ])
+        XCTAssertEqual(vc._activeGutterDiagnosticMarkersForTesting(), [
+            EditorCoreSkiaGutterDiagnosticMarker(logicalLine: 0, charOffset: 0, kind: .error),
+            EditorCoreSkiaGutterDiagnosticMarker(logicalLine: 1, charOffset: 6, kind: .warning),
+        ])
 
         XCTAssertTrue(vc.showWorkspaceProblemsPanelInActiveTab())
         let panel = try XCTUnwrap(window.childWindows?.first {
@@ -1146,6 +1154,12 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(panel.title, "Workspace Problems (1)")
         XCTAssertEqual(vc._workspaceProblemsPanelDiagnosticsForTesting().map(\.message), ["third workspace problem"])
         XCTAssertEqual(vc._workspaceProblemsPanelRowCountForTesting(), 1)
+        XCTAssertEqual(vc._activeMinimapDiagnosticMarkersForTesting(), [
+            EditorCoreSkiaMinimapMarker(logicalLine: 2, kind: .error),
+        ])
+        XCTAssertEqual(vc._activeGutterDiagnosticMarkersForTesting(), [
+            EditorCoreSkiaGutterDiagnosticMarker(logicalLine: 2, charOffset: 13, kind: .error),
+        ])
     }
 
     func testImplementationMultiLocationResultUsesPanel() throws {
