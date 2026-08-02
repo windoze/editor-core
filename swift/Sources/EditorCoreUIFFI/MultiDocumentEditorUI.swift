@@ -4,6 +4,7 @@ import Foundation
 public struct EcuMultiDocumentTabSnapshot: Decodable, Equatable, Sendable {
     public let id: UInt64
     public let title: String?
+    public let documentURI: String?
     public let isPreview: Bool
     public let isActive: Bool
     public let isModified: Bool
@@ -13,6 +14,7 @@ public struct EcuMultiDocumentTabSnapshot: Decodable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id
         case title
+        case documentURI = "document_uri"
         case isPreview = "is_preview"
         case isActive = "is_active"
         case isModified = "is_modified"
@@ -372,6 +374,27 @@ public final class MultiDocumentEditorUI {
             status = editor_core_ui_ffi_multi_document_set_tab_title(handle, tabId, nil)
         }
         try library.ensureStatus(status, context: "multi_document_set_tab_title")
+    }
+
+    public func tabDocumentURI(tabId: UInt64) throws -> String? {
+        var out: UnsafeMutablePointer<CChar>?
+        let status = editor_core_ui_ffi_multi_document_tab_document_uri(handle, tabId, &out)
+        try library.ensureStatus(status, context: "multi_document_tab_document_uri")
+        guard let out else { return nil }
+        defer { editor_core_ui_ffi_string_free(out) }
+        return String(cString: out)
+    }
+
+    public func setTabDocumentURI(_ documentURI: String?, tabId: UInt64) throws {
+        let status: Int32
+        if let documentURI {
+            status = documentURI.withCString { uriPtr in
+                editor_core_ui_ffi_multi_document_set_tab_document_uri(handle, tabId, uriPtr)
+            }
+        } else {
+            status = editor_core_ui_ffi_multi_document_set_tab_document_uri(handle, tabId, nil)
+        }
+        try library.ensureStatus(status, context: "multi_document_set_tab_document_uri")
     }
 
     public func isPreviewTab(_ tabId: UInt64) throws -> Bool {

@@ -45,6 +45,7 @@ pub struct TabSearchResult {
 
 struct TabEntry {
     title: Option<String>,
+    document_uri: Option<String>,
     views: Vec<EditorUi>,
     active_view: usize,
     is_preview: bool,
@@ -122,6 +123,7 @@ impl MultiDocumentEditorUi {
                 entry.views = vec![ui];
                 entry.active_view = 0;
                 entry.title = None;
+                entry.document_uri = None;
                 entry.is_preview = true;
             }
             return prev;
@@ -147,6 +149,7 @@ impl MultiDocumentEditorUi {
             tab_id,
             TabEntry {
                 title: None,
+                document_uri: None,
                 views: vec![ui],
                 active_view: 0,
                 is_preview,
@@ -315,6 +318,25 @@ impl MultiDocumentEditorUi {
             .get_mut(&tab_id)
             .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
         tab.title = title;
+        Ok(())
+    }
+
+    /// Get the document URI associated with a tab, if one is known.
+    pub fn tab_document_uri(&self, tab_id: TabId) -> Option<&str> {
+        self.tabs.get(&tab_id)?.document_uri.as_deref()
+    }
+
+    /// Set or clear the document URI associated with a tab.
+    pub fn set_tab_document_uri(
+        &mut self,
+        tab_id: TabId,
+        document_uri: Option<String>,
+    ) -> Result<(), UiError> {
+        let tab = self
+            .tabs
+            .get_mut(&tab_id)
+            .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
+        tab.document_uri = document_uri;
         Ok(())
     }
 

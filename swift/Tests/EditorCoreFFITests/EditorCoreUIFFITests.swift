@@ -94,6 +94,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.editorUIStateEvents))
         XCTAssertTrue(info.supports(.multiDocumentStateEvents))
         XCTAssertTrue(info.supports(.workspaceOutlineSnapshot))
+        XCTAssertTrue(info.supports(.multiDocumentTabDocumentURI))
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {
@@ -315,11 +316,15 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertNotEqual(alpha, beta)
 
         try multi.setTabTitle("Beta", tabId: beta)
+        try multi.setTabDocumentURI("file:///project/Beta.swift", tabId: beta)
+        XCTAssertEqual(try multi.tabDocumentURI(tabId: beta), "file:///project/Beta.swift")
         try multi.setActiveTab(beta)
         XCTAssertEqual(try multi.activeTabId(), beta)
 
         XCTAssertTrue(try multi.moveTab(fromIndex: 1, toIndex: 0))
-        XCTAssertEqual(try multi.snapshot().tabs.map(\.id), [beta, alpha])
+        let movedSnapshot = try multi.snapshot()
+        XCTAssertEqual(movedSnapshot.tabs.map(\.id), [beta, alpha])
+        XCTAssertEqual(movedSnapshot.tabs.first?.documentURI, "file:///project/Beta.swift")
         XCTAssertTrue(try multi.moveTab(fromIndex: 0, toIndex: 1))
         XCTAssertEqual(try multi.snapshot().tabs.map(\.id), [alpha, beta])
 
@@ -372,6 +377,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(outline.documents.count, 3)
         let betaOutline = try XCTUnwrap(outline.documents.first { $0.tabId == beta })
         XCTAssertEqual(betaOutline.title, "Beta")
+        XCTAssertEqual(betaOutline.documentURI, "file:///project/Beta.swift")
         XCTAssertEqual(betaOutline.viewIndex, 0)
         XCTAssertEqual(betaOutline.symbolCount, 1)
         XCTAssertEqual(betaOutline.symbols.map(\.name), ["Beta"])
@@ -444,11 +450,16 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(lspRequestEvents.latestSequence, 0)
         XCTAssertTrue(lspRequestEvents.events.isEmpty)
 
-        let snapshot = try multi.snapshot()
-        XCTAssertEqual(snapshot.activeTabId, beta)
-        XCTAssertEqual(snapshot.tabs.count, 3)
-        XCTAssertTrue(snapshot.tabs.contains { $0.id == beta && $0.title == "Beta" && $0.viewCount == 3 && $0.activeViewIndex == 0 && $0.isModified == false })
-        XCTAssertTrue(snapshot.tabs.contains { $0.id == preview && $0.isPreview == false })
+        let finalSnapshot = try multi.snapshot()
+        XCTAssertEqual(finalSnapshot.activeTabId, beta)
+        XCTAssertEqual(finalSnapshot.tabs.count, 3)
+        let finalBetaTab = try XCTUnwrap(finalSnapshot.tabs.first { $0.id == beta })
+        XCTAssertEqual(finalBetaTab.title, "Beta")
+        XCTAssertEqual(finalBetaTab.documentURI, "file:///project/Beta.swift")
+        XCTAssertEqual(finalBetaTab.viewCount, 3)
+        XCTAssertEqual(finalBetaTab.activeViewIndex, 0)
+        XCTAssertFalse(finalBetaTab.isModified)
+        XCTAssertTrue(finalSnapshot.tabs.contains { $0.id == preview && $0.isPreview == false })
 
         XCTAssertEqual(try multi.closeTabsToRight(of: beta), 1)
         XCTAssertEqual(try multi.closeOtherTabs(keeping: beta), 1)

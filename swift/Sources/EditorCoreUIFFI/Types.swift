@@ -890,6 +890,7 @@ public struct EcuDocumentSymbolsSnapshot: Equatable, Sendable, Decodable {
 public struct EcuWorkspaceOutlineDocument: Equatable, Sendable, Decodable {
     public var tabId: UInt64
     public var viewIndex: UInt32
+    public var documentURI: String?
     public var title: String?
     public var symbolCount: UInt32
     public var symbols: [EcuDocumentSymbol]
@@ -897,12 +898,14 @@ public struct EcuWorkspaceOutlineDocument: Equatable, Sendable, Decodable {
     public init(
         tabId: UInt64,
         viewIndex: UInt32,
+        documentURI: String?,
         title: String?,
         symbolCount: UInt32,
         symbols: [EcuDocumentSymbol]
     ) {
         self.tabId = tabId
         self.viewIndex = viewIndex
+        self.documentURI = documentURI
         self.title = title
         self.symbolCount = symbolCount
         self.symbols = symbols
@@ -911,6 +914,7 @@ public struct EcuWorkspaceOutlineDocument: Equatable, Sendable, Decodable {
     private enum CodingKeys: String, CodingKey {
         case tabId = "tab_id"
         case viewIndex = "view_index"
+        case documentURI = "document_uri"
         case title
         case symbolCount = "symbol_count"
         case symbols

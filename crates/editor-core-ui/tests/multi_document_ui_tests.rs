@@ -35,6 +35,23 @@ fn multi_document_ui_tabs_are_independent_documents() {
 }
 
 #[test]
+fn multi_document_ui_tracks_tab_document_uri() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let tab = ui.open_tab("hello", 80);
+
+    assert_eq!(ui.tab_document_uri(tab), None);
+    ui.set_tab_document_uri(tab, Some("file:///tmp/project/App.swift".to_string()))
+        .unwrap();
+    assert_eq!(
+        ui.tab_document_uri(tab),
+        Some("file:///tmp/project/App.swift")
+    );
+
+    ui.set_tab_document_uri(tab, None).unwrap();
+    assert_eq!(ui.tab_document_uri(tab), None);
+}
+
+#[test]
 fn multi_document_ui_can_move_tabs() {
     let mut ui = MultiDocumentEditorUi::new();
     let a = ui.open_tab("a", 80);
@@ -161,6 +178,10 @@ fn multi_document_ui_exports_workspace_outline_snapshot() {
         .unwrap();
     ui.set_tab_title(model, Some("Model.swift".to_string()))
         .unwrap();
+    ui.set_tab_document_uri(app, Some("file:///tmp/project/App.swift".to_string()))
+        .unwrap();
+    ui.set_tab_document_uri(model, Some("file:///tmp/project/Model.swift".to_string()))
+        .unwrap();
 
     ui.apply_tab_document_symbols_json(
         app,
@@ -217,6 +238,10 @@ fn multi_document_ui_exports_workspace_outline_snapshot() {
     assert_eq!(snapshot.documents.len(), 2);
     assert_eq!(snapshot.documents[0].tab_id, app.get());
     assert_eq!(snapshot.documents[0].title.as_deref(), Some("App.swift"));
+    assert_eq!(
+        snapshot.documents[0].document_uri.as_deref(),
+        Some("file:///tmp/project/App.swift")
+    );
     assert_eq!(snapshot.documents[0].symbol_count, 2);
     assert_eq!(snapshot.documents[0].symbols[0]["name"], "App");
     assert_eq!(
@@ -230,6 +255,10 @@ fn multi_document_ui_exports_workspace_outline_snapshot() {
     let json: serde_json::Value =
         serde_json::from_str(&ui.workspace_outline_snapshot_json().unwrap()).unwrap();
     assert_eq!(json["documents"][0]["tab_id"], app.get());
+    assert_eq!(
+        json["documents"][0]["document_uri"],
+        "file:///tmp/project/App.swift"
+    );
     assert_eq!(json["documents"][0]["symbol_count"], 2);
 }
 

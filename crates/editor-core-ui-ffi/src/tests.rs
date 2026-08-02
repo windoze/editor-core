@@ -64,6 +64,14 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_AUXILIARY_RESOLVE_REQUESTS,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_TAB_DOCUMENT_URI,
+        0
+    );
 }
 
 #[test]
@@ -90,6 +98,22 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         editor_core_ui_ffi_multi_document_set_tab_title(multi, beta_id, title.as_ptr()),
         ECU_OK
     );
+    let beta_uri = CString::new("file:///project/Beta.swift").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_document_uri(multi, beta_id, beta_uri.as_ptr(),),
+        ECU_OK
+    );
+    let mut beta_uri_ptr: *mut c_char = std::ptr::null_mut();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_tab_document_uri(multi, beta_id, &mut beta_uri_ptr,),
+        ECU_OK
+    );
+    assert!(!beta_uri_ptr.is_null());
+    let beta_uri_value = unsafe { std::ffi::CStr::from_ptr(beta_uri_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(beta_uri_ptr) };
+    assert_eq!(beta_uri_value, "file:///project/Beta.swift");
     assert_eq!(
         editor_core_ui_ffi_multi_document_set_active_tab(multi, beta_id),
         ECU_OK
@@ -285,6 +309,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         .find(|document| document["tab_id"] == beta_id)
         .unwrap();
     assert_eq!(beta_outline["title"], "Beta");
+    assert_eq!(beta_outline["document_uri"], "file:///project/Beta.swift");
     assert_eq!(beta_outline["symbol_count"], 1);
     assert_eq!(beta_outline["symbols"][0]["name"], "Beta");
 
@@ -415,6 +440,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     assert_eq!(tabs[1]["id"], alpha_id);
     assert!(tabs.iter().any(|tab| tab["id"] == beta_id
         && tab["title"] == "Beta"
+        && tab["document_uri"] == "file:///project/Beta.swift"
         && tab["view_count"] == 3
         && tab["active_view_index"] == 0
         && tab["is_modified"] == false));

@@ -1303,6 +1303,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 tabID = try coreDocuments.openTab(text: initialText, viewportWidthCells: 120)
             }
             try coreDocuments.setTabTitle(url.lastPathComponent, tabId: tabID)
+            try coreDocuments.setTabDocumentURI(url.standardizedFileURL.absoluteString, tabId: tabID)
             return tabID
         } catch {
             NSLog("AttoEditor: core multi-document open failed for %@: %@", url.path, String(describing: error))
@@ -1335,6 +1336,18 @@ final class AttoEditorAreaViewController: NSViewController {
             try coreDocuments.setTabTitle(tab.fileURL.lastPathComponent, tabId: coreTabID)
         } catch {
             NSLog("AttoEditor: core multi-document setTabTitle failed: %@", String(describing: error))
+        }
+    }
+
+    private func updateCoreTabDocumentURI(_ tab: AttoEditorTab) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+        do {
+            try coreDocuments.setTabDocumentURI(
+                tab.fileURL.standardizedFileURL.absoluteString,
+                tabId: coreTabID
+            )
+        } catch {
+            NSLog("AttoEditor: core multi-document setTabDocumentURI failed: %@", String(describing: error))
         }
     }
 
@@ -1678,6 +1691,7 @@ final class AttoEditorAreaViewController: NSViewController {
             syncCoreTabText(tab, markSaved: true)
             pinCoreTabIfPreview(tab)
             updateCoreTabTitle(tab)
+            updateCoreTabDocumentURI(tab)
             refreshTabBar()
             updateWindowTitle()
             updateStatusBar()
@@ -9349,6 +9363,7 @@ final class AttoEditorAreaViewController: NSViewController {
             applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
         }
         updateCoreTabTitle(tab)
+        updateCoreTabDocumentURI(tab)
         refreshTabBar()
         updateWindowTitle()
         updateStatusBar()

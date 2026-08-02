@@ -3228,6 +3228,10 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(items.contains { $0.url.standardizedFileURL == oldURL.standardizedFileURL })
         let renamedItem = try XCTUnwrap(items.first { $0.url.standardizedFileURL == renamedURL.standardizedFileURL })
         XCTAssertTrue(renamedItem.isDirty)
+        let snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertTrue(snapshot.tabs.contains { tab in
+            tab.documentURI == renamedURL.standardizedFileURL.absoluteString
+        })
 
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
         XCTAssertEqual(try editorView.editor.text(), "renamed old\n")
@@ -3910,18 +3914,21 @@ final class AttoEditorCommandTests: XCTestCase {
         var snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
         XCTAssertEqual(snapshot.tabs.count, 1)
         XCTAssertEqual(snapshot.tabs[0].title, "first.txt")
+        XCTAssertEqual(snapshot.tabs[0].documentURI, firstURL.standardizedFileURL.absoluteString)
         XCTAssertTrue(snapshot.tabs[0].isPreview)
 
         vc.openFile(url: secondURL, mode: .preview)
         snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
         XCTAssertEqual(snapshot.tabs.count, 1)
         XCTAssertEqual(snapshot.tabs[0].title, "second.txt")
+        XCTAssertEqual(snapshot.tabs[0].documentURI, secondURL.standardizedFileURL.absoluteString)
         XCTAssertTrue(snapshot.tabs[0].isPreview)
 
         vc.openFile(url: secondURL, mode: .pinned)
         snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
         XCTAssertEqual(snapshot.tabs.count, 1)
         XCTAssertEqual(snapshot.tabs[0].title, "second.txt")
+        XCTAssertEqual(snapshot.tabs[0].documentURI, secondURL.standardizedFileURL.absoluteString)
         XCTAssertFalse(snapshot.tabs[0].isPreview)
         XCTAssertEqual(snapshot.activeTabId, snapshot.tabs[0].id)
 
@@ -3961,6 +3968,7 @@ final class AttoEditorCommandTests: XCTestCase {
         var snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
         let tabId = try XCTUnwrap(snapshot.activeTabId)
         var tabSnapshot = try XCTUnwrap(snapshot.tabs.first { $0.id == tabId })
+        XCTAssertEqual(tabSnapshot.documentURI, fileURL.standardizedFileURL.absoluteString)
         XCTAssertFalse(tabSnapshot.isModified)
 
         XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":" needle"}"#))

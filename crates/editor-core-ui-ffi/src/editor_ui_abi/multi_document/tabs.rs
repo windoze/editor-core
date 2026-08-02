@@ -191,6 +191,61 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_set_tab_title(
     }
 }
 
+/// Return the document URI associated with a tab, if any.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_tab_document_uri(
+    multi: *mut MultiDocumentEditorUi,
+    tab_id: u64,
+    out_uri_utf8: *mut *mut c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let out_uri = require_out_mut(out_uri_utf8, "out_uri_utf8")?;
+        let tab_id = tab_id_from_raw(tab_id);
+        if multi.is_preview_tab(tab_id).is_none() {
+            return Err(format!("unknown tab id {}", tab_id.get()));
+        }
+        *out_uri = multi
+            .tab_document_uri(tab_id)
+            .map(|uri| make_c_string_ptr(uri.to_string()))
+            .unwrap_or(ptr::null_mut());
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+/// Set or clear the document URI associated with a tab.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_set_tab_document_uri(
+    multi: *mut MultiDocumentEditorUi,
+    tab_id: u64,
+    document_uri_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let document_uri = if document_uri_utf8.is_null() {
+            None
+        } else {
+            Some(require_str(document_uri_utf8, "document_uri_utf8")?.to_string())
+        };
+        multi
+            .set_tab_document_uri(tab_id_from_raw(tab_id), document_uri)
+            .map_err(map_ui_error)?;
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Return whether a tab is a preview tab.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_multi_document_is_preview_tab(

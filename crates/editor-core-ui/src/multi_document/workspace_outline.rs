@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 pub struct WorkspaceOutlineDocument {
     pub tab_id: u64,
     pub view_index: usize,
+    pub document_uri: Option<String>,
     pub title: Option<String>,
     pub symbol_count: usize,
     pub symbols: Vec<Value>,
@@ -44,6 +45,7 @@ pub(super) fn snapshot(
         documents.push(WorkspaceOutlineDocument {
             tab_id: tab_id.get(),
             view_index: tab.active_view,
+            document_uri: tab.document_uri.clone(),
             title: tab.title.clone(),
             symbol_count: symbols.iter().map(symbol_tree_count).sum(),
             symbols,

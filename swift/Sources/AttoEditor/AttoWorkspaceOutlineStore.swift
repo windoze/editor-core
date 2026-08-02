@@ -109,7 +109,7 @@ final class AttoWorkspaceOutlineStore {
         var documents: [AttoWorkspaceOutlineDocument] = []
         var symbols: [AttoLspSymbolParser.Symbol] = []
         for coreDocument in coreSnapshot.documents {
-            guard let uri = uriByCoreTabID[coreDocument.tabId],
+            guard let uri = coreDocument.documentURI ?? uriByCoreTabID[coreDocument.tabId],
                   let fallback = entriesByURI[uri]
             else {
                 continue

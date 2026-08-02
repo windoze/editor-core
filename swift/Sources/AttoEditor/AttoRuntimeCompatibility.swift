@@ -147,6 +147,11 @@ struct AttoRuntimeCompatibility {
             name: "workspace outline snapshot",
             reason: "Workspace Outline can consume the core-owned MultiDocumentEditorUI symbol snapshot; Swift falls back to opened-document App projection when unavailable."
         ),
+        RuntimeFeature(
+            feature: .multiDocumentTabDocumentURI,
+            name: "multi-document tab document URI",
+            reason: "Project-level features can resolve open core tabs by document URI for WorkspaceEdit and outline ownership; Swift keeps App-level file URL mappings as a fallback."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {
