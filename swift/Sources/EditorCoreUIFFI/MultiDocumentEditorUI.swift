@@ -69,6 +69,7 @@ public struct EcuWorkspaceEditTransactionDocument: Decodable, Equatable, Sendabl
     public let actualVersion: UInt64?
     public let versionMismatch: Bool
     public let isOpen: Bool
+    public let isDirty: Bool
     public let tabId: UInt64?
 
     private enum CodingKeys: String, CodingKey {
@@ -79,6 +80,7 @@ public struct EcuWorkspaceEditTransactionDocument: Decodable, Equatable, Sendabl
         case actualVersion = "actual_version"
         case versionMismatch = "version_mismatch"
         case isOpen = "is_open"
+        case isDirty = "is_dirty"
         case tabId = "tab_id"
     }
 
@@ -95,6 +97,7 @@ public struct EcuWorkspaceEditTransactionDocument: Decodable, Equatable, Sendabl
         versionMismatch = try container.decodeIfPresent(Bool.self, forKey: .versionMismatch)
             ?? false
         isOpen = try container.decodeIfPresent(Bool.self, forKey: .isOpen) ?? false
+        isDirty = try container.decodeIfPresent(Bool.self, forKey: .isDirty) ?? false
         tabId = try container.decodeIfPresent(UInt64.self, forKey: .tabId)
     }
 }
@@ -104,6 +107,31 @@ public struct EcuWorkspaceEditTransactionSkippedDetail: Decodable, Equatable, Se
     public let reason: String
     public let operation: String?
     public let message: String
+}
+
+public struct EcuWorkspaceEditTransactionConflict: Decodable, Equatable, Sendable {
+    public let uri: String
+    public let kind: String
+    public let reason: String
+    public let operation: String?
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case uri
+        case kind
+        case reason
+        case operation
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        uri = try container.decodeIfPresent(String.self, forKey: .uri) ?? ""
+        kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? ""
+        reason = try container.decodeIfPresent(String.self, forKey: .reason) ?? ""
+        operation = try container.decodeIfPresent(String.self, forKey: .operation)
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+    }
 }
 
 public struct EcuWorkspaceEditTransactionResourceOperation: Decodable, Equatable, Sendable {
@@ -146,6 +174,8 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
     public let appliedEditCount: Int
     public let appliedResourceOperationCount: Int
     public let resourceOperations: [EcuWorkspaceEditTransactionResourceOperation]
+    public let dirtyDocumentURIs: [String]
+    public let conflicts: [EcuWorkspaceEditTransactionConflict]
     public let skippedURIs: [String]
     public let skippedDetails: [EcuWorkspaceEditTransactionSkippedDetail]
     public let unsupportedOperationURIs: [String]
@@ -160,6 +190,8 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
         case appliedEditCount = "applied_edit_count"
         case appliedResourceOperationCount = "applied_resource_operation_count"
         case resourceOperations = "resource_operations"
+        case dirtyDocumentURIs = "dirty_document_uris"
+        case conflicts
         case skippedURIs = "skipped_uris"
         case skippedDetails = "skipped_details"
         case unsupportedOperationURIs = "unsupported_operation_uris"
@@ -181,6 +213,14 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
         resourceOperations = try container.decodeIfPresent(
             [EcuWorkspaceEditTransactionResourceOperation].self,
             forKey: .resourceOperations
+        ) ?? []
+        dirtyDocumentURIs = try container.decodeIfPresent(
+            [String].self,
+            forKey: .dirtyDocumentURIs
+        ) ?? []
+        conflicts = try container.decodeIfPresent(
+            [EcuWorkspaceEditTransactionConflict].self,
+            forKey: .conflicts
         ) ?? []
         skippedURIs = try container.decodeIfPresent([String].self, forKey: .skippedURIs) ?? []
         skippedDetails = try container.decodeIfPresent(

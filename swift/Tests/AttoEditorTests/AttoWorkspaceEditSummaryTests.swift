@@ -243,6 +243,95 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         )
     }
 
+    func testWorkspaceEditPreviewListsTypedConflicts() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "preview",
+          "applied": true,
+          "applied_uris": ["file:///project/main.swift"],
+          "applied_edit_count": 1,
+          "applied_resource_operation_count": 0,
+          "dirty_document_uris": ["file:///project/dirty.swift"],
+          "conflicts": [
+            {
+              "uri": "file:///project/dirty.swift",
+              "kind": "dirty_document",
+              "reason": "resource_operation_dirty_target",
+              "operation": "delete",
+              "message": "delete targets a modified open tab"
+            }
+          ],
+          "skipped_uris": ["file:///project/dirty.swift"],
+          "skipped_details": [
+            {
+              "uri": "file:///project/dirty.swift",
+              "reason": "resource_operation_dirty_target",
+              "operation": "delete",
+              "message": "delete targets a modified open tab"
+            }
+          ],
+          "documents": [
+            {
+              "uri": "file:///project/main.swift",
+              "edit_count": 1,
+              "is_open": true
+            },
+            {
+              "uri": "file:///project/dirty.swift",
+              "edit_count": 0,
+              "is_open": true,
+              "is_dirty": true
+            }
+          ]
+        }
+        """)
+        let workspaceEdit = try XCTUnwrap(AttoWorkspaceEditParser.parse("""
+        {
+          "changes": {
+            "file:///project/main.swift": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "main"
+              }
+            ]
+          }
+        }
+        """))
+
+        let preview = AttoWorkspaceEditPreview(result: result, parsedWorkspaceEdit: workspaceEdit)
+
+        XCTAssertTrue(preview.requiresConfirmation)
+        XCTAssertEqual(
+            preview.displayText,
+            """
+            Workspace edit preview.
+            Will apply 1 edit across 2 documents.
+
+            Will affect:
+            - main.swift (1 edit, open)
+
+            Conflicts:
+            - dirty.swift [dirty_document: delete: resource_operation_dirty_target]
+            """
+        )
+
+        let sections = AttoWorkspaceEditPreviewDetailBuilder.sections(
+            preview: preview,
+            workspaceEdit: workspaceEdit
+        ) { uri in
+            uri == "file:///project/main.swift" ? "alpha\n" : nil
+        }
+
+        XCTAssertEqual(sections.count, 2)
+        XCTAssertEqual(sections[1].title, "dirty.swift")
+        XCTAssertEqual(sections[1].subtitle, "dirty_document: delete: resource_operation_dirty_target")
+        XCTAssertTrue(sections[1].detailText.contains("Kind: dirty_document"))
+        XCTAssertTrue(sections[1].detailText.contains("Message: delete targets a modified open tab"))
+    }
+
     func testWorkspaceEditPreviewDetailBuilderBuildsTextDiffSections() throws {
         let result = try decodeTransactionResult("""
         {

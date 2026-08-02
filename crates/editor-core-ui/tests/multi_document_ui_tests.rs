@@ -1762,6 +1762,16 @@ fn multi_document_ui_reports_workspace_edit_transaction_skipped_details() {
     assert_eq!(versioned_document.expected_version, Some(1));
     assert_eq!(versioned_document.actual_version, Some(0));
     assert!(versioned_document.version_mismatch);
+    let dirty_document = preview
+        .documents
+        .iter()
+        .find(|doc| doc.uri == "file:///tmp/project/Dirty.swift")
+        .unwrap();
+    assert!(dirty_document.is_dirty);
+    assert_eq!(
+        preview.dirty_document_uris,
+        vec!["file:///tmp/project/Dirty.swift"]
+    );
     let detail_reasons = preview
         .skipped_details
         .iter()
@@ -1793,9 +1803,52 @@ fn multi_document_ui_reports_workspace_edit_transaction_skipped_details() {
         Some("text_edit"),
         "version_mismatch"
     )));
+    let conflict_kinds = preview
+        .conflicts
+        .iter()
+        .map(|conflict| {
+            (
+                conflict.uri.as_str(),
+                conflict.operation.as_deref(),
+                conflict.reason.as_str(),
+                conflict.kind.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(conflict_kinds.contains(&(
+        "file:///tmp/project/Dirty.swift",
+        Some("delete"),
+        "resource_operation_dirty_target",
+        "dirty_document",
+    )));
+    assert!(conflict_kinds.contains(&(
+        "file:///tmp/project/Missing.swift",
+        Some("text_edit"),
+        "document_not_open",
+        "missing_resource",
+    )));
+    assert!(conflict_kinds.contains(&(
+        "file:///tmp/project/Overlap.swift",
+        Some("text_edit"),
+        "overlapping_text_edits",
+        "overlap",
+    )));
+    assert!(conflict_kinds.contains(&(
+        "file:///tmp/project/Versioned.swift",
+        Some("text_edit"),
+        "version_mismatch",
+        "version",
+    )));
 
     let applied = ui.apply_workspace_edit_transaction(edit).unwrap();
     assert_eq!(applied.applied_edit_count, 0);
+    assert_eq!(
+        applied.dirty_document_uris,
+        vec!["file:///tmp/project/Dirty.swift"]
+    );
+    assert!(applied.conflicts.iter().any(|conflict| {
+        conflict.uri == "file:///tmp/project/Dirty.swift" && conflict.kind == "dirty_document"
+    }));
     assert_eq!(ui.tab_text(versioned).unwrap(), "versioned\n");
 }
 

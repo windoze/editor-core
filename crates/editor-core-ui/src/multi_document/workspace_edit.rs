@@ -22,12 +22,22 @@ pub struct WorkspaceEditTransactionDocument {
     pub actual_version: Option<u64>,
     pub version_mismatch: bool,
     pub is_open: bool,
+    pub is_dirty: bool,
     pub tab_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct WorkspaceEditTransactionSkippedDetail {
     pub uri: String,
+    pub reason: String,
+    pub operation: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkspaceEditTransactionConflict {
+    pub uri: String,
+    pub kind: String,
     pub reason: String,
     pub operation: Option<String>,
     pub message: String,
@@ -54,6 +64,8 @@ pub struct WorkspaceEditTransactionResult {
     pub applied_edit_count: usize,
     pub applied_resource_operation_count: usize,
     pub resource_operations: Vec<WorkspaceEditTransactionResourceOperation>,
+    pub dirty_document_uris: Vec<String>,
+    pub conflicts: Vec<WorkspaceEditTransactionConflict>,
     pub skipped_uris: Vec<String>,
     pub skipped_details: Vec<WorkspaceEditTransactionSkippedDetail>,
     pub unsupported_operation_uris: Vec<String>,
@@ -447,6 +459,7 @@ pub(super) fn apply(
     for doc in &mut plan.documents {
         let open_tab_id = tab_id_for_uri(tabs, tab_order, doc.uri.as_str());
         doc.is_open = open_tab_id.is_some();
+        doc.is_dirty = open_tab_id.is_some_and(|tab_id| tab_is_modified(tabs, tab_id));
         doc.tab_id = open_tab_id.map(TabId::get);
     }
 
@@ -1302,6 +1315,7 @@ fn transaction_plan(
                 actual_version,
                 version_mismatch,
                 is_open: open_tab_id.is_some(),
+                is_dirty: open_tab_id.is_some_and(|tab_id| tab_is_modified(tabs, tab_id)),
                 tab_id: open_tab_id.map(TabId::get),
             }
         })
@@ -1309,18 +1323,17 @@ fn transaction_plan(
 
     for uri in &unsupported_operation_uris {
         if !documents.iter().any(|doc| doc.uri == *uri) {
+            let tab_id = open_tabs_by_uri.get(uri).copied();
             documents.push(WorkspaceEditTransactionDocument {
                 uri: uri.clone(),
                 edit_count: 0,
                 has_overlapping_edits: false,
                 expected_version: None,
-                actual_version: open_tabs_by_uri
-                    .get(uri)
-                    .copied()
-                    .and_then(|tab_id| tab_text_version(tabs, tab_id)),
+                actual_version: tab_id.and_then(|tab_id| tab_text_version(tabs, tab_id)),
                 version_mismatch: false,
-                is_open: open_tabs_by_uri.contains_key(uri),
-                tab_id: open_tabs_by_uri.get(uri).copied().map(TabId::get),
+                is_open: tab_id.is_some(),
+                is_dirty: tab_id.is_some_and(|tab_id| tab_is_modified(tabs, tab_id)),
+                tab_id: tab_id.map(TabId::get),
             });
         }
     }
@@ -1330,17 +1343,16 @@ fn transaction_plan(
         }
         for uri in operation.op.affected_uris() {
             if !documents.iter().any(|doc| doc.uri == uri) {
+                let tab_id = open_tabs_by_uri.get(uri.as_str()).copied();
                 documents.push(WorkspaceEditTransactionDocument {
                     edit_count: 0,
                     has_overlapping_edits: false,
                     expected_version: None,
-                    actual_version: open_tabs_by_uri
-                        .get(uri.as_str())
-                        .copied()
-                        .and_then(|tab_id| tab_text_version(tabs, tab_id)),
+                    actual_version: tab_id.and_then(|tab_id| tab_text_version(tabs, tab_id)),
                     version_mismatch: false,
-                    is_open: open_tabs_by_uri.contains_key(uri.as_str()),
-                    tab_id: open_tabs_by_uri.get(uri.as_str()).copied().map(TabId::get),
+                    is_open: tab_id.is_some(),
+                    is_dirty: tab_id.is_some_and(|tab_id| tab_is_modified(tabs, tab_id)),
+                    tab_id: tab_id.map(TabId::get),
                     uri,
                 });
             }
@@ -1459,6 +1471,17 @@ fn result_from_plan(
             .iter()
             .map(workspace_edit_transaction_resource_operation)
             .collect(),
+        dirty_document_uris: plan
+            .documents
+            .iter()
+            .filter(|document| document.is_dirty)
+            .map(|document| document.uri.clone())
+            .collect(),
+        conflicts: plan
+            .skipped_details
+            .iter()
+            .map(workspace_edit_transaction_conflict)
+            .collect(),
         skipped_uris: plan.skipped_uris.into_iter().collect(),
         skipped_details: plan.skipped_details.into_iter().collect(),
         unsupported_operation_uris: plan.unsupported_operation_uris,
@@ -1485,6 +1508,52 @@ fn workspace_edit_transaction_resource_operation(
         affected_uris: planned.op.affected_uris(),
         supported: planned.supported,
         applied: planned.applied,
+    }
+}
+
+fn workspace_edit_transaction_conflict(
+    detail: &WorkspaceEditTransactionSkippedDetail,
+) -> WorkspaceEditTransactionConflict {
+    WorkspaceEditTransactionConflict {
+        uri: detail.uri.clone(),
+        kind: conflict_kind_for_skipped_reason(detail.reason.as_str()).to_string(),
+        reason: detail.reason.clone(),
+        operation: detail.operation.clone(),
+        message: detail.message.clone(),
+    }
+}
+
+fn conflict_kind_for_skipped_reason(reason: &str) -> &'static str {
+    match reason {
+        "resource_operation_dirty_target" => "dirty_document",
+        "version_mismatch" | "version_unavailable" => "version",
+        "overlapping_text_edits" => "overlap",
+        "resource_operation_dependency_removed"
+        | "resource_operation_dependency_skipped"
+        | "resource_operation_dependency_unsupported" => "resource_dependency",
+        "resource_operation_create_exists"
+        | "resource_operation_target_exists"
+        | "resource_operation_target_open"
+        | "resource_operation_target_not_file"
+        | "resource_operation_target_overwrite_not_supported" => "resource_target",
+        "resource_operation_source_not_found"
+        | "resource_operation_source_not_open"
+        | "resource_operation_target_not_found"
+        | "resource_operation_target_not_open"
+        | "document_not_open"
+        | "file_not_found" => "missing_resource",
+        "document_outside_workspace"
+        | "resource_operation_path_traversal"
+        | "resource_operation_path_unavailable" => "workspace_boundary",
+        "unsupported_uri" => "unsupported_uri",
+        "resource_operation_delete_directory_requires_recursive" => "resource_options",
+        "resource_operation_apply_skipped"
+        | "text_edit_apply_failed"
+        | "file_text_edit_apply_failed"
+        | "file_text_edit_read_failed"
+        | "file_text_edit_rollback_failed"
+        | "file_text_edit_write_failed" => "apply_failure",
+        _ => "other",
     }
 }
 

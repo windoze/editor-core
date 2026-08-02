@@ -18,6 +18,7 @@ struct AttoWorkspaceEditPreview: Equatable {
         let uri: String
         let editCount: Int
         let isOpen: Bool
+        let isDirty: Bool
         let hasOverlappingEdits: Bool
         let versionMismatch: Bool
     }
@@ -29,11 +30,20 @@ struct AttoWorkspaceEditPreview: Equatable {
         let message: String
     }
 
+    struct Conflict: Equatable {
+        let uri: String
+        let kind: String
+        let reason: String
+        let operation: String?
+        let message: String
+    }
+
     let applied: Bool
     let appliedEditCount: Int
     let appliedResourceOperationCount: Int
     let appliedURIs: [String]
     let documents: [Document]
+    let conflicts: [Conflict]
     let skippedDetails: [SkippedDetail]
     let unsupportedOperationURIs: [String]
     var sections: [Section]
@@ -55,11 +65,13 @@ struct AttoWorkspaceEditPreview: Equatable {
         }
 
         var previewAppliedURIs = result.appliedURIs
+        let dirtyDocumentURIs = Set(result.dirtyDocumentURIs)
         var previewDocuments = result.documents.map {
             Document(
                 uri: $0.uri,
                 editCount: $0.editCount,
                 isOpen: $0.isOpen,
+                isDirty: $0.isDirty || dirtyDocumentURIs.contains($0.uri),
                 hasOverlappingEdits: $0.hasOverlappingEdits,
                 versionMismatch: $0.versionMismatch
             )
@@ -72,6 +84,7 @@ struct AttoWorkspaceEditPreview: Equatable {
                         uri: document.uri,
                         editCount: document.edits.count,
                         isOpen: false,
+                        isDirty: dirtyDocumentURIs.contains(document.uri),
                         hasOverlappingEdits: document.hasOverlappingEdits,
                         versionMismatch: false
                     )
@@ -87,6 +100,15 @@ struct AttoWorkspaceEditPreview: Equatable {
         }
         appliedURIs = Self.uniqueURIs(previewAppliedURIs)
         documents = previewDocuments
+        conflicts = result.conflicts.map {
+            Conflict(
+                uri: $0.uri,
+                kind: $0.kind,
+                reason: $0.reason,
+                operation: $0.operation,
+                message: $0.message
+            )
+        }
         skippedDetails = result.skippedDetails.map {
             SkippedDetail(
                 uri: $0.uri,
@@ -102,7 +124,7 @@ struct AttoWorkspaceEditPreview: Equatable {
     var affectedURIs: [String] {
         var seen = Set<String>()
         var uris: [String] = []
-        for uri in documents.map(\.uri) + appliedURIs + skippedDetails.map(\.uri) + unsupportedOperationURIs {
+        for uri in documents.map(\.uri) + appliedURIs + conflicts.map(\.uri) + skippedDetails.map(\.uri) + unsupportedOperationURIs {
             guard seen.insert(uri).inserted else { continue }
             uris.append(uri)
         }
@@ -111,11 +133,11 @@ struct AttoWorkspaceEditPreview: Equatable {
 
     var requiresConfirmation: Bool {
         if appliedResourceOperationCount > 0 { return true }
+        if conflicts.isEmpty == false { return true }
+        if skippedDetails.isEmpty == false { return true }
+        if unsupportedOperationURIs.isEmpty == false { return true }
         if affectedURIs.count > 1 { return true }
         if documents.contains(where: { $0.editCount > 0 && $0.isOpen == false }) { return true }
-        if applied && (skippedDetails.isEmpty == false || unsupportedOperationURIs.isEmpty == false) {
-            return true
-        }
         return false
     }
 
@@ -145,7 +167,14 @@ struct AttoWorkspaceEditPreview: Equatable {
             lines.append(contentsOf: documentRows)
         }
 
-        let skippedRows = skippedPreviewRows()
+        let conflictRows = conflictPreviewRows()
+        if conflictRows.isEmpty == false {
+            lines.append("")
+            lines.append("Conflicts:")
+            lines.append(contentsOf: conflictRows)
+        }
+
+        let skippedRows = skippedPreviewRows(excluding: conflictIdentities())
         if skippedRows.isEmpty == false {
             lines.append("")
             lines.append("Not applicable:")
@@ -183,6 +212,9 @@ struct AttoWorkspaceEditPreview: Equatable {
                 if document.isOpen {
                     details.append("open")
                 }
+                if document.isDirty {
+                    details.append("dirty")
+                }
                 if document.hasOverlappingEdits {
                     details.append("overlapping edits")
                 }
@@ -199,8 +231,32 @@ struct AttoWorkspaceEditPreview: Equatable {
         }.sorted()
     }
 
-    private func skippedPreviewRows() -> [String] {
-        var rows = skippedDetails.map { detail in
+    private func conflictPreviewRows() -> [String] {
+        conflicts.map { conflict in
+            var details: [String] = []
+            if conflict.kind.isEmpty == false {
+                details.append(conflict.kind)
+            }
+            if let operation = conflict.operation, operation.isEmpty == false {
+                details.append(operation)
+            }
+            if conflict.reason.isEmpty == false {
+                details.append(conflict.reason)
+            }
+            let suffix = details.isEmpty ? "" : " [\(details.joined(separator: ": "))]"
+            return "- \(Self.displayName(for: conflict.uri))\(suffix)"
+        }.sorted()
+    }
+
+    private func skippedPreviewRows(excluding excludedIdentities: Set<String>) -> [String] {
+        var rows: [String] = skippedDetails.compactMap { detail -> String? in
+            guard excludedIdentities.contains(Self.detailIdentity(
+                uri: detail.uri,
+                reason: detail.reason,
+                operation: detail.operation
+            )) == false else {
+                return nil
+            }
             var details: [String] = []
             if let operation = detail.operation, operation.isEmpty == false {
                 details.append(operation)
@@ -215,6 +271,12 @@ struct AttoWorkspaceEditPreview: Equatable {
             "- \(Self.displayName(for: $0)) [unsupported operation]"
         })
         return rows.sorted()
+    }
+
+    fileprivate func conflictIdentities() -> Set<String> {
+        Set(conflicts.map {
+            Self.detailIdentity(uri: $0.uri, reason: $0.reason, operation: $0.operation)
+        })
     }
 
     fileprivate static func editCountText(_ count: Int) -> String {
@@ -244,6 +306,10 @@ struct AttoWorkspaceEditPreview: Equatable {
         }
         return uri
     }
+
+    fileprivate static func detailIdentity(uri: String, reason: String, operation: String?) -> String {
+        "\(uri)\u{1F}\(reason)\u{1F}\(operation ?? "")"
+    }
 }
 
 enum AttoWorkspaceEditPreviewDetailBuilder {
@@ -270,7 +336,18 @@ enum AttoWorkspaceEditPreviewDetailBuilder {
             sections.append(resourceOperationSection(operation))
         }
 
-        for detail in preview.skippedDetails {
+        for conflict in preview.conflicts {
+            sections.append(conflictSection(conflict))
+        }
+
+        let conflictIdentities = preview.conflictIdentities()
+        for detail in preview.skippedDetails where conflictIdentities.contains(
+            AttoWorkspaceEditPreview.detailIdentity(
+                uri: detail.uri,
+                reason: detail.reason,
+                operation: detail.operation
+            )
+        ) == false {
             sections.append(skippedSection(detail))
         }
 
@@ -312,6 +389,9 @@ enum AttoWorkspaceEditPreviewDetailBuilder {
             parts.append("open")
         } else {
             parts.append("unopened")
+        }
+        if previewDocument?.isDirty == true {
+            parts.append("dirty")
         }
         if document.hasOverlappingEdits || previewDocument?.hasOverlappingEdits == true {
             parts.append("overlapping edits")
@@ -406,6 +486,30 @@ enum AttoWorkspaceEditPreviewDetailBuilder {
                 detailText: detail.joined(separator: "\n")
             )
         }
+    }
+
+    private static func conflictSection(
+        _ conflict: AttoWorkspaceEditPreview.Conflict
+    ) -> AttoWorkspaceEditPreview.Section {
+        let title = AttoWorkspaceEditPreview.displayName(for: conflict.uri)
+        let subtitle = [conflict.kind, conflict.operation, conflict.reason]
+            .compactMap { value in
+                guard let value, value.isEmpty == false else { return nil }
+                return value
+            }
+            .joined(separator: ": ")
+        let detailLines = detailHeader(title: title, uri: conflict.uri, subtitle: "conflict") + [
+            "Kind: \(conflict.kind.isEmpty ? "other" : conflict.kind)",
+            "Operation: \(conflict.operation ?? "unknown")",
+            "Reason: \(conflict.reason.isEmpty ? "unknown" : conflict.reason)",
+            "Message: \(conflict.message.isEmpty ? "No detail." : conflict.message)",
+        ]
+        return AttoWorkspaceEditPreview.Section(
+            uri: conflict.uri,
+            title: title,
+            subtitle: subtitle.isEmpty ? "conflict" : subtitle,
+            detailText: detailLines.joined(separator: "\n")
+        )
     }
 
     private static func skippedSection(

@@ -584,6 +584,18 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && $0.operation == "delete"
                 && $0.reason == "resource_operation_dirty_target"
         })
+        XCTAssertEqual(applied.dirtyDocumentURIs, ["file:///project/Dirty.swift"])
+        let dirtyDocument = try XCTUnwrap(applied.documents.first {
+            $0.uri == "file:///project/Dirty.swift"
+        })
+        XCTAssertTrue(dirtyDocument.isDirty)
+        let dirtyConflict = try XCTUnwrap(applied.conflicts.first {
+            $0.uri == "file:///project/Dirty.swift"
+                && $0.operation == "delete"
+                && $0.reason == "resource_operation_dirty_target"
+        })
+        XCTAssertEqual(dirtyConflict.kind, "dirty_document")
+        XCTAssertEqual(dirtyConflict.message, "delete targets a modified open tab")
         XCTAssertEqual(try multi.tabText(tabId: app), "alpha\n")
         XCTAssertEqual(try multi.tabText(tabId: dirty), "dirty changed\n")
         XCTAssertTrue(try multi.isTabModified(dirty))
@@ -591,6 +603,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         let events = try multi.workspaceEditTransactionEvents()
         XCTAssertEqual(events.events.first?.result.applyMode, "atomic")
         XCTAssertEqual(events.events.first?.result.applied, false)
+        XCTAssertEqual(events.events.first?.result.dirtyDocumentURIs, ["file:///project/Dirty.swift"])
     }
 
     func testMultiDocumentEditorUIAtomicWorkspaceEditPreflightsRemovedTextEditDependency() throws {

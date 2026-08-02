@@ -374,6 +374,20 @@
     - `swift test --package-path swift --filter EditorCoreUIFFITests`
     - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
     - `git diff --check`
+- 中间提交：`feat(ui): expose workspace edit conflict summaries`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 dirty document 和 skipped blocker 从 raw skipped details 推进到 typed conflict summary，供 Swift/App preview panel 和后续更完整 conflict UI 消费。
+  - 提交边界：只新增兼容 JSON 字段 `documents[].is_dirty`、`dirty_document_uris` 和 `conflicts`，其中 conflict 包含 kind、uri、reason、operation 和 message；Swift typed wrapper 新增对应 decoder，Atto preview/panel 将 typed conflicts 显示为独立 conflict 区块并避免和 skipped detail 重复展示。本提交不新增 ABI 函数，不改变 preview/apply 语义，不实现跨文件用户级 undo command 或完整 transaction-wide undo。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_reports_workspace_edit_transaction_skipped_details`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAtomicWorkspaceEditPreflightSkipsWithoutMutating`
+    - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests.testWorkspaceEditPreviewListsTypedConflicts`
+    - `cargo test -p editor-core-ui-ffi`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests`
+    - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 
