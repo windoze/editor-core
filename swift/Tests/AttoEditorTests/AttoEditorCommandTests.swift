@@ -92,6 +92,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.show_workspace_problems_panel"))
         XCTAssertTrue(ids.contains("lsp.show_project_lsp_status"))
         XCTAssertTrue(ids.contains("lsp.restart_server"))
+        XCTAssertTrue(ids.contains("lsp.restart_project_servers"))
         XCTAssertTrue(ids.contains("lsp.document_colors"))
         XCTAssertTrue(ids.contains("lsp.pick_document_color"))
         XCTAssertTrue(ids.contains("lsp.refresh_folding_ranges"))
@@ -1457,6 +1458,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workspace_problems_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_project_lsp_status", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_server", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_project_servers", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.pick_document_color", in: menu))
     }
@@ -5109,6 +5111,115 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(tab.lspServerConfig, config)
         XCTAssertEqual(tab.syntaxLanguageId, "plaintext")
         XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server restarted")
+    }
+
+    func testRestartProjectLspServersRequiresConfiguredTabs() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("plain.txt")
+        try "plain".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc.restartProjectLspServers())
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server restart: unavailable")
+    }
+
+    func testRestartProjectLspServersRestartsConfiguredOpenTabs() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first.txt")
+        let secondURL = tempDir.appendingPathComponent("second.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let firstCaptureURL = tempDir.appendingPathComponent("first-project-lsp-stdin.txt")
+        let secondCaptureURL = tempDir.appendingPathComponent("second-project-lsp-stdin.txt")
+        let firstScriptURL = tempDir.appendingPathComponent("first-project-fake-lsp.sh")
+        let secondScriptURL = tempDir.appendingPathComponent("second-project-fake-lsp.sh")
+        try writeAppendingFakeLspServerScript(captureURL: firstCaptureURL, scriptURL: firstScriptURL)
+        try writeAppendingFakeLspServerScript(captureURL: secondCaptureURL, scriptURL: secondScriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        let firstTab = try XCTUnwrap(vc.activeTab)
+        let firstConfig = AttoLspServerLaunchConfig(
+            command: firstScriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try firstTab.editCore.editor.lspEnable(
+            command: firstConfig.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: firstURL.standardizedFileURL.absoluteString,
+            languageId: firstConfig.languageId
+        )
+        firstTab.lspServerConfig = firstConfig
+
+        vc.openFile(url: secondURL, mode: .pinned)
+        let secondTab = try XCTUnwrap(vc.activeTab)
+        let secondConfig = AttoLspServerLaunchConfig(
+            command: secondScriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try secondTab.editCore.editor.lspEnable(
+            command: secondConfig.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: secondURL.standardizedFileURL.absoluteString,
+            languageId: secondConfig.languageId
+        )
+        secondTab.lspServerConfig = secondConfig
+        defer {
+            firstTab.editCore.editor.lspDisable()
+            secondTab.editCore.editor.lspDisable()
+        }
+
+        _ = waitForCapturedLspInput(
+            at: firstCaptureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+        _ = waitForCapturedLspInput(
+            at: secondCaptureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        XCTAssertTrue(vc.restartProjectLspServers())
+
+        let firstCaptured = waitForCapturedLspInput(
+            at: firstCaptureURL,
+            containing: #""method":"textDocument/didOpen""#,
+            minimumOccurrences: 2
+        )
+        let secondCaptured = waitForCapturedLspInput(
+            at: secondCaptureURL,
+            containing: #""method":"textDocument/didOpen""#,
+            minimumOccurrences: 2
+        )
+        XCTAssertGreaterThanOrEqual(
+            occurrenceCount(of: "--session--", in: firstCaptured),
+            2,
+            firstCaptured
+        )
+        XCTAssertGreaterThanOrEqual(
+            occurrenceCount(of: "--session--", in: secondCaptured),
+            2,
+            secondCaptured
+        )
+        XCTAssertTrue(firstCaptured.contains(firstURL.standardizedFileURL.absoluteString), firstCaptured)
+        XCTAssertTrue(secondCaptured.contains(secondURL.standardizedFileURL.absoluteString), secondCaptured)
+        XCTAssertEqual(firstTab.lspServerConfig, firstConfig)
+        XCTAssertEqual(secondTab.lspServerConfig, secondConfig)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP servers restarted: 2")
     }
 
     func testSaveAndCloseNotifyLspDocumentLifecycle() throws {

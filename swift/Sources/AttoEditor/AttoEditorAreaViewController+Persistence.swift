@@ -413,21 +413,11 @@ extension AttoEditorAreaViewController {
         }
 
         let documentURL = projectedFileURL(for: tab)
-        tab.editCore.editor.lspDisable()
 
         do {
-            let languageId = try enableLspSupport(
-                for: documentURL,
-                editCore: tab.editCore,
-                config: config
-            )
-            tab.syntaxLanguageId = languageId
-            tab.lspServerConfig = config
-            applyLanguageConfiguration(for: tab)
-            tab.editCore.editorView.kickProcessingPoll()
+            try restartLspServer(for: tab, documentURL: documentURL, config: config)
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
-            tab.editCore.editorView.needsDisplay = true
             setTransientStatusText("LSP server restarted")
             return true
         } catch {
@@ -444,5 +434,92 @@ extension AttoEditorAreaViewController {
             )
             return false
         }
+    }
+
+    @discardableResult
+    func restartProjectLspServers() -> Bool {
+        let projectedTabs = coreProjectedTabsForWorkspaceLifecycle()
+        let restartTargets = projectedTabs.compactMap {
+            projected -> (tab: AttoEditorTab, fileURL: URL, config: AttoLspServerLaunchConfig)? in
+            guard let config = projected.tab.lspServerConfig else {
+                return nil
+            }
+            return (
+                tab: projected.tab,
+                fileURL: projected.fileURL,
+                config: config
+            )
+        }
+
+        guard restartTargets.isEmpty == false else {
+            NSSound.beep()
+            if let tab = activeTab {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.unavailable(
+                        .serverRestart,
+                        reason: "No open document has a configured LSP server."
+                    ),
+                    in: tab.editCore.editorView
+                )
+            }
+            return false
+        }
+
+        var restartedCount = 0
+        var failures: [String] = []
+
+        for target in restartTargets {
+            do {
+                try restartLspServer(
+                    for: target.tab,
+                    documentURL: target.fileURL,
+                    config: target.config
+                )
+                restartedCount += 1
+            } catch {
+                target.tab.lspServerConfig = target.config
+                failures.append("\(target.fileURL.lastPathComponent): \(error)")
+            }
+        }
+
+        updateAlwaysPollProcessingForSelectedTab()
+        updateStatusBar()
+
+        if failures.isEmpty {
+            let noun = restartedCount == 1 ? "server" : "servers"
+            setTransientStatusText("LSP \(noun) restarted: \(restartedCount)")
+            return restartedCount > 0
+        }
+
+        NSSound.beep()
+        let detail = "Restarted \(restartedCount) of \(restartTargets.count) LSP servers.\n"
+            + failures.joined(separator: "\n")
+        if let tab = activeTab {
+            presentLspResultFeedback(
+                AttoLspResultFeedback.failed(.serverRestart, errorDescription: detail),
+                in: tab.editCore.editorView
+            )
+        } else {
+            setTransientStatusText("LSP server restart: failed")
+        }
+        return false
+    }
+
+    private func restartLspServer(
+        for tab: AttoEditorTab,
+        documentURL: URL,
+        config: AttoLspServerLaunchConfig
+    ) throws {
+        tab.editCore.editor.lspDisable()
+        let languageId = try enableLspSupport(
+            for: documentURL,
+            editCore: tab.editCore,
+            config: config
+        )
+        tab.syntaxLanguageId = languageId
+        tab.lspServerConfig = config
+        applyLanguageConfiguration(for: tab)
+        tab.editCore.editorView.kickProcessingPoll()
+        tab.editCore.editorView.needsDisplay = true
     }
 }

@@ -157,6 +157,18 @@ extension AttoEditorAreaViewController {
         return tab.fileURL.standardizedFileURL
     }
 
+    func coreProjectedTabsForWorkspaceLifecycle() -> [(tab: AttoEditorTab, fileURL: URL)] {
+        if let projection = makeCoreProjectedTabs() {
+            return projection.tabs.map { projected in
+                (tab: projected.tab, fileURL: projected.fileURL.standardizedFileURL)
+            }
+        }
+
+        return tabs.map { tab in
+            (tab: tab, fileURL: tab.fileURL.standardizedFileURL)
+        }
+    }
+
     func restoreSession(tabs tabSnapshots: [AttoTabSnapshot], selectedTabIndex: Int?) {
         isRestoringSession = true
         defer { isRestoringSession = false }

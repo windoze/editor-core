@@ -818,6 +818,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.restart_server", title: "LSP: Restart Server") { [weak self] in
                 self?.activeWindow()?.editorAreaController.restartLspServerInActiveTab()
             },
+            .init(id: "lsp.restart_project_servers", title: "LSP: Restart Project Servers") { [weak self] in
+                self?.activeWindow()?.editorAreaController.restartProjectLspServers()
+            },
             .init(id: "lsp.document_colors", title: "LSP: Document Colors") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showDocumentColorsInActiveTab()
             },
