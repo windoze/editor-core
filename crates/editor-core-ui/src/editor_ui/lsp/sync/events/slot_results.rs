@@ -16,9 +16,25 @@ pub(super) fn handle_lsp_result_slot_response(
     };
 
     if request_slot != slot {
+        doc.record_lsp_request_completed(
+            view,
+            request_slot,
+            resp.id,
+            EditorLspRequestEventStatus::Mismatched,
+            None,
+            None,
+        );
         return Ok(EventOutcome::Handled);
     }
     if doc.lsp_latest_result_request_id.get(&(view, slot)) != Some(&resp.id) {
+        doc.record_lsp_request_completed(
+            view,
+            slot,
+            resp.id,
+            EditorLspRequestEventStatus::Stale,
+            None,
+            None,
+        );
         return Ok(EventOutcome::Handled);
     }
 
@@ -33,12 +49,20 @@ pub(super) fn handle_lsp_result_slot_response(
         } else {
             doc.lsp_last_result_json.remove(&(view, slot));
         }
-        doc.record_lsp_result_event(
+        let result_sequence = doc.record_lsp_result_event(
             view,
             slot,
             resp.id,
             EditorLspResultEventStatus::Error,
             result_json_len,
+            Some(&error),
+        );
+        doc.record_lsp_request_completed(
+            view,
+            slot,
+            resp.id,
+            EditorLspRequestEventStatus::Error,
+            Some(result_sequence),
             Some(&error),
         );
         return Ok(EventOutcome::Handled);
@@ -86,6 +110,15 @@ pub(super) fn handle_lsp_result_slot_response(
     } else {
         doc.lsp_last_result_json.remove(&(view, slot));
     }
-    doc.record_lsp_result_event(view, slot, resp.id, status, result_json_len, None);
+    let result_sequence =
+        doc.record_lsp_result_event(view, slot, resp.id, status, result_json_len, None);
+    doc.record_lsp_request_completed(
+        view,
+        slot,
+        resp.id,
+        EditorLspRequestEventStatus::from_result_status(status),
+        Some(result_sequence),
+        None,
+    );
     Ok(EventOutcome::Handled)
 }

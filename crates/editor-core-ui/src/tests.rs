@@ -266,6 +266,112 @@ fn lsp_result_events_record_success_empty_and_error_slots() {
 }
 
 #[test]
+fn lsp_request_events_record_start_completion_and_result_sequence() {
+    let capture_path = unique_temp_path("request-events");
+    let script = lsp_capture_server_script(&capture_path, serde_json::json!({}));
+    let args = vec!["-c".to_string(), script];
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root_uri = format!("file:///tmp/editor-core-ui-request-events-{stamp}");
+    let doc_uri = format!("{root_uri}/main.rs");
+
+    let mut ui = EditorUi::new("abc", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+
+    assert_eq!(ui.lsp_request_events_latest_sequence(), 0);
+    assert!(ui.lsp_request_events_after(0).events.is_empty());
+
+    let request_id = ui.lsp_request_hover(0, 1).unwrap();
+    let started = ui.lsp_request_events_after(0);
+    assert_eq!(started.latest_sequence, 1);
+    assert_eq!(started.events.len(), 1);
+    assert_eq!(started.events[0].sequence, 1);
+    assert_eq!(started.events[0].family, "hover");
+    assert_eq!(started.events[0].slot, "hover");
+    assert_eq!(started.events[0].method, "textDocument/hover");
+    assert_eq!(started.events[0].request_id, request_id);
+    assert_eq!(started.events[0].phase, "started");
+    assert_eq!(started.events[0].status, "pending");
+    assert_eq!(started.events[0].result_sequence, None);
+
+    let applied = ui
+        .handle_lsp_events(vec![LspEvent::Response(editor_core_lsp::LspResponse {
+            id: request_id,
+            method: "textDocument/hover".to_string(),
+            uri: None,
+            result: Some(serde_json::json!({ "contents": "hello" })),
+            error: None,
+        })])
+        .unwrap();
+    assert!(!applied);
+
+    let events = ui.lsp_request_events_after(0);
+    assert_eq!(events.latest_sequence, 2);
+    assert_eq!(events.events.len(), 2);
+    let completed = &events.events[1];
+    assert_eq!(completed.sequence, 2);
+    assert_eq!(completed.request_id, request_id);
+    assert_eq!(completed.phase, "completed");
+    assert_eq!(completed.status, "success");
+    assert_eq!(completed.result_sequence, Some(1));
+    assert_eq!(completed.error_code, None);
+
+    let result_events = ui.lsp_result_events_after(0);
+    assert_eq!(result_events.latest_sequence, 1);
+    assert_eq!(result_events.events[0].request_id, request_id);
+
+    let after_started: serde_json::Value =
+        serde_json::from_str(&ui.lsp_request_events_json(1).unwrap()).unwrap();
+    assert_eq!(after_started["latest_sequence"], 2);
+    assert_eq!(after_started["events"].as_array().unwrap().len(), 1);
+    assert_eq!(after_started["events"][0]["status"], "success");
+
+    ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
+fn lsp_request_events_record_stale_completion() {
+    let mut ui = EditorUi::new("abc", 80);
+    let view_id = ui.view_id;
+    {
+        let mut doc = ui.lock_doc();
+        doc.lsp_client_requests.insert(
+            21,
+            LspClientRequest::Result {
+                view: view_id,
+                slot: LspResultSlot::Hover,
+            },
+        );
+        doc.lsp_latest_result_request_id
+            .insert((view_id, LspResultSlot::Hover), 22);
+        doc.record_lsp_request_started(view_id, LspResultSlot::Hover, 21);
+    }
+
+    let applied = ui
+        .handle_lsp_events(vec![LspEvent::Response(editor_core_lsp::LspResponse {
+            id: 21,
+            method: "textDocument/hover".to_string(),
+            uri: None,
+            result: Some(serde_json::json!({ "contents": "old" })),
+            error: None,
+        })])
+        .unwrap();
+    assert!(!applied);
+
+    let events = ui.lsp_request_events_after(0);
+    assert_eq!(events.latest_sequence, 2);
+    assert_eq!(events.events.len(), 2);
+    assert_eq!(events.events[1].phase, "completed");
+    assert_eq!(events.events[1].status, "stale");
+    assert_eq!(events.events[1].result_sequence, None);
+    assert!(ui.lsp_result_events_after(0).events.is_empty());
+}
+
+#[test]
 fn multi_document_lsp_result_events_aggregate_tab_and_view_context() {
     let mut multi = MultiDocumentEditorUi::new();
     let first_tab = multi.open_tab("abc", 80);

@@ -11,6 +11,8 @@ mod ime;
 #[path = "lib/json_helpers.rs"]
 mod json_helpers;
 mod keybindings;
+#[path = "lib/lsp_request_events.rs"]
+mod lsp_request_events;
 #[path = "lib/lsp_result_events.rs"]
 mod lsp_result_events;
 #[path = "lib/lsp_shared.rs"]
@@ -29,6 +31,7 @@ mod treesitter_worker;
 mod windowing;
 
 pub(crate) use json_helpers::*;
+pub(crate) use lsp_request_events::*;
 pub(crate) use lsp_result_events::*;
 pub(crate) use lsp_shared::*;
 pub(crate) use prelude::*;
@@ -45,6 +48,7 @@ pub use keybindings::{
     Key, KeyStroke, Keybinding, KeybindingContext, KeybindingResolver, KeybindingResolverResult,
     KeybindingWhen, Keymap, Modifiers, Platform, ResolvedCommand, dispatch_command_to_editor_ui,
 };
+pub use lsp_request_events::{EditorLspRequestEvent, EditorLspRequestEventsSnapshot};
 pub use lsp_result_events::{EditorLspResultEvent, EditorLspResultEventsSnapshot};
 pub use multi_document::{
     MultiDocumentEditorUi, MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot,

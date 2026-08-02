@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use crate::{
-    EditorLspResultEvent, LspClientRequest, LspResultSlot, SharedLspSession, TreeSitterAsyncWorker,
-    TreeSitterCaptureMapper, TreeSitterProcessingConfig, UiError,
+    EditorLspRequestEvent, EditorLspResultEvent, LspClientRequest, LspResultSlot, SharedLspSession,
+    TreeSitterAsyncWorker, TreeSitterCaptureMapper, TreeSitterProcessingConfig, UiError,
 };
 use std::collections::VecDeque;
 
@@ -65,6 +65,8 @@ pub(crate) struct EditorUiDoc {
     pub(crate) lsp_last_result_json: HashMap<(ViewId, LspResultSlot), String>,
     pub(crate) lsp_result_events: VecDeque<EditorLspResultEvent>,
     pub(crate) next_lsp_result_event_sequence: u64,
+    pub(crate) lsp_request_events: VecDeque<EditorLspRequestEvent>,
+    pub(crate) next_lsp_request_event_sequence: u64,
     pub(crate) text_version: u64,
 }
 

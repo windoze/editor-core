@@ -47,6 +47,7 @@ impl EditorUi {
             .insert((self.view_id, LspResultSlot::CodeAction), id);
         doc.lsp_last_result_json
             .remove(&(self.view_id, LspResultSlot::CodeAction));
+        doc.record_lsp_request_started(self.view_id, LspResultSlot::CodeAction, id);
         Ok(id)
     }
 

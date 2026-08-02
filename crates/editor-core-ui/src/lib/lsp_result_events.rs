@@ -50,7 +50,7 @@ impl EditorUiDoc {
         status: EditorLspResultEventStatus,
         result_json_len: usize,
         error: Option<&LspResponseError>,
-    ) {
+    ) -> u64 {
         let sequence = self.next_lsp_result_event_sequence;
         self.next_lsp_result_event_sequence = self.next_lsp_result_event_sequence.saturating_add(1);
 
@@ -72,6 +72,8 @@ impl EditorUiDoc {
         while self.lsp_result_events.len() > MAX_LSP_RESULT_EVENTS {
             self.lsp_result_events.pop_front();
         }
+
+        sequence
     }
 
     pub(crate) fn lsp_result_events_latest_sequence(&self) -> u64 {
