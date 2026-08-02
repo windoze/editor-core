@@ -562,6 +562,16 @@ final class AttoEditorAreaViewController: NSViewController {
         let showFeedback: Bool
     }
 
+    private struct DiagnosticsTextFingerprint: Equatable {
+        let count: Int
+        let hashValue: Int
+
+        init(_ text: String) {
+            self.count = text.count
+            self.hashValue = text.hashValue
+        }
+    }
+
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
@@ -601,11 +611,15 @@ final class AttoEditorAreaViewController: NSViewController {
     private let diagnosticsLifecycleStore = AttoLspResultLifecycleStore<AttoDiagnosticsLifecycleSnapshot>(
         maxHistoryEntries: maxLspResultHistoryEntries
     )
+    private var activeDiagnosticsTextFingerprintsByTabID: [UUID: DiagnosticsTextFingerprint] = [:]
+    private var activeDiagnosticsBaselinesByTabID: [UUID: [EcuDiagnostic]] = [:]
+    private var activeDiagnosticsStaleReasonsByTabID: [UUID: AttoDiagnosticsStaleReason] = [:]
     private let workspaceProblemsStore: AttoWorkspaceProblemsStore
     private var workspaceProblemsPanelController: AttoProblemsPanelController?
     private var workspaceDiagnosticsContext: WorkspaceDiagnosticsRequestContext?
     private var workspaceDiagnosticsPollTimer: DispatchSourceTimer?
     private var workspaceDiagnosticsResultsController: AttoCommandPaletteController?
+    private var workspaceDiagnosticsStaleReason: AttoDiagnosticsStaleReason?
     private var documentColorResultsController: AttoCommandPaletteController?
     private var colorPresentationResultsController: AttoCommandPaletteController?
 
@@ -1415,6 +1429,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let url = tab.fileURL
         let wasSelected = (selectedTabID == id)
         closeCoreTab(tab)
+        clearDiagnosticsLifecycleState(forTabID: tab.id)
         tabs.remove(at: idx)
         onDidCloseFile?(url)
         notifySessionStateChanged()
@@ -3507,8 +3522,20 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         let editor = tab.editCore.editor
+        let editorText = try? editor.text()
+        if let editorText {
+            markActiveDiagnosticsStaleIfNeeded(for: tab, text: editorText)
+        }
         derivedStateStore.refreshActive(editor: editor)
-        let diagnosticsSnapshot = unifiedDiagnosticsSnapshot(for: tab, includeActiveDiagnostics: true)
+        clearActiveDiagnosticsStaleIfDiagnosticsChanged(
+            for: tab,
+            diagnostics: derivedStateStore.active.diagnostics.diagnostics
+        )
+        let diagnosticsSnapshot = unifiedDiagnosticsSnapshot(
+            for: tab,
+            text: editorText,
+            includeActiveDiagnostics: true
+        )
         recordActiveDiagnosticsLifecycle(diagnosticsSnapshot, for: tab)
         updateProblemsPanelIfVisible(snapshot: diagnosticsSnapshot)
         updateDiagnosticMarkers(for: tab, projections: diagnosticsSnapshot.markerProjections)
@@ -3648,9 +3675,10 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func unifiedDiagnosticsSnapshot(
         for tab: AttoEditorTab,
+        text: String? = nil,
         includeActiveDiagnostics: Bool
     ) -> AttoUnifiedDiagnosticsSnapshot {
-        guard let text = try? tab.editCore.editor.text() else { return .empty }
+        guard let text = text ?? (try? tab.editCore.editor.text()) else { return .empty }
         return AttoDiagnosticsModel.snapshot(
             activeDiagnostics: derivedStateStore.active.diagnostics.diagnostics,
             includeActiveDiagnostics: includeActiveDiagnostics,
@@ -3677,6 +3705,30 @@ final class AttoEditorAreaViewController: NSViewController {
         return parts.joined(separator: " | ")
     }
 
+    private func markActiveDiagnosticsStaleIfNeeded(for tab: AttoEditorTab, text: String) {
+        let fingerprint = DiagnosticsTextFingerprint(text)
+        if let previous = activeDiagnosticsTextFingerprintsByTabID[tab.id], previous != fingerprint {
+            activeDiagnosticsStaleReasonsByTabID[tab.id] = .documentEdited
+        }
+        activeDiagnosticsTextFingerprintsByTabID[tab.id] = fingerprint
+    }
+
+    private func clearActiveDiagnosticsStaleIfDiagnosticsChanged(
+        for tab: AttoEditorTab,
+        diagnostics: [EcuDiagnostic]
+    ) {
+        if let previous = activeDiagnosticsBaselinesByTabID[tab.id], previous != diagnostics {
+            activeDiagnosticsStaleReasonsByTabID.removeValue(forKey: tab.id)
+        }
+        activeDiagnosticsBaselinesByTabID[tab.id] = diagnostics
+    }
+
+    private func clearDiagnosticsLifecycleState(forTabID tabID: UUID) {
+        activeDiagnosticsTextFingerprintsByTabID.removeValue(forKey: tabID)
+        activeDiagnosticsBaselinesByTabID.removeValue(forKey: tabID)
+        activeDiagnosticsStaleReasonsByTabID.removeValue(forKey: tabID)
+    }
+
     private func recordActiveDiagnosticsLifecycle(
         _ snapshot: AttoUnifiedDiagnosticsSnapshot,
         for tab: AttoEditorTab
@@ -3685,7 +3737,8 @@ final class AttoEditorAreaViewController: NSViewController {
             scope: .activeTab(tabID: tab.id, fileURL: tab.fileURL.standardizedFileURL),
             problems: snapshot.problems,
             markerProjections: snapshot.markerProjections,
-            statusText: snapshot.problemsStatusText
+            statusText: snapshot.problemsStatusText,
+            staleReason: activeDiagnosticsStaleReasonsByTabID[tab.id]
         )
         diagnosticsLifecycleStore.recordIfChanged(
             lifecycleSnapshot,
@@ -3707,7 +3760,8 @@ final class AttoEditorAreaViewController: NSViewController {
                 scope: .workspace,
                 problems: problems,
                 markerProjections: [],
-                statusText: statusText
+                statusText: statusText,
+                staleReason: workspaceDiagnosticsStaleReason
             ),
             family: "diagnostics.workspace",
             title: "Workspace Problems"
@@ -5659,6 +5713,8 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         workspaceDiagnosticsContext = WorkspaceDiagnosticsRequestContext(tabID: tab.id, showFeedback: showFeedback)
+        workspaceDiagnosticsStaleReason = .workspaceRefreshRequested
+        recordWorkspaceDiagnosticsLifecycle(problems: workspaceDiagnosticProblems())
         startWorkspaceDiagnosticsPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
         return true
     }
@@ -5671,6 +5727,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }
 
         let snapshot = workspaceProblemsStore.apply(resultJSON: json)
+        workspaceDiagnosticsStaleReason = nil
         recordWorkspaceDiagnosticsLifecycle(
             problems: AttoDiagnosticsModel.workspaceProblems(snapshot.diagnostics)
         )

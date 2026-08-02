@@ -2363,6 +2363,83 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(offsets.end, 6)
     }
 
+    func testDiagnosticsLifecycleMarksActiveDiagnosticsStaleAfterDocumentEdit() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("diagnostics-stale.txt")
+        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.lspApplyDiagnosticsJSON("""
+        {
+          "uri": "\(fileURL.absoluteString)",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 3 }
+              },
+              "severity": 1,
+              "source": "unit-test",
+              "message": "first diagnostic"
+            }
+          ],
+          "version": 1
+        }
+        """)
+        vc._updateStatusBarForTesting()
+        XCTAssertFalse(vc._currentDiagnosticsLifecycleEntryForTesting()?.snapshot.isStale ?? true)
+        XCTAssertEqual(
+            vc._currentDiagnosticsLifecycleEntryForTesting()?.snapshot.problems.map(\.message),
+            ["first diagnostic"]
+        )
+
+        let baselineCursor = vc._latestDiagnosticsLifecycleSequenceForTesting()
+        try editorView.editor.insertText("!")
+        vc._updateStatusBarForTesting()
+
+        let staleEvents = vc._diagnosticsLifecycleEventsForTesting(after: baselineCursor)
+        XCTAssertEqual(staleEvents.map(\.family), ["diagnostics.active"])
+        let staleSnapshot = try XCTUnwrap(staleEvents.last?.snapshot)
+        XCTAssertTrue(staleSnapshot.isStale)
+        XCTAssertEqual(staleSnapshot.staleReason, .documentEdited)
+        XCTAssertEqual(staleSnapshot.problems.map(\.message), ["first diagnostic"])
+
+        let staleCursor = vc._latestDiagnosticsLifecycleSequenceForTesting()
+        try editorView.editor.lspApplyDiagnosticsJSON("""
+        {
+          "uri": "\(fileURL.absoluteString)",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 1, "character": 0 },
+                "end": { "line": 1, "character": 3 }
+              },
+              "severity": 2,
+              "source": "unit-test",
+              "message": "updated diagnostic"
+            }
+          ],
+          "version": 2
+        }
+        """)
+        vc._updateStatusBarForTesting()
+
+        let refreshedEvents = vc._diagnosticsLifecycleEventsForTesting(after: staleCursor)
+        XCTAssertEqual(refreshedEvents.map(\.family), ["diagnostics.active"])
+        let refreshedSnapshot = try XCTUnwrap(refreshedEvents.last?.snapshot)
+        XCTAssertFalse(refreshedSnapshot.isStale)
+        XCTAssertNil(refreshedSnapshot.staleReason)
+        XCTAssertEqual(refreshedSnapshot.problems.map(\.message), ["updated diagnostic"])
+    }
+
     func testProblemsPanelUsesDerivedDiagnosticsAndRefreshesWithStatusUpdate() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
