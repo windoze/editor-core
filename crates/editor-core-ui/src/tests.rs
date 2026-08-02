@@ -525,6 +525,11 @@ fn lsp_did_change_workspace_folders_notifies_and_updates_workspace_response() {
         &serde_json::json!([{ "uri": old_root_uri, "name": old_root_name }]).to_string(),
     )
     .unwrap();
+    ui.lsp_did_change_workspace_folders_json(
+        &serde_json::json!([{ "uri": new_root_uri, "name": new_root_name }]).to_string(),
+        &serde_json::json!([{ "uri": old_root_uri, "name": old_root_name }]).to_string(),
+    )
+    .unwrap();
     'poll: loop {
         for _ in 0..100 {
             let _ = ui.poll_processing().unwrap();
@@ -552,6 +557,13 @@ fn lsp_did_change_workspace_folders_notifies_and_updates_workspace_response() {
     assert_eq!(
         did_change["params"]["event"]["removed"][0]["uri"],
         old_root_uri
+    );
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|message| message["method"] == "workspace/didChangeWorkspaceFolders")
+            .count(),
+        1
     );
 
     let workspace_folders_response = messages

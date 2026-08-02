@@ -136,6 +136,41 @@ impl LspClient {
         }
     }
 
+    /// Return only the workspace folder changes that would mutate the current client-side folder
+    /// list.
+    pub fn effective_workspace_folder_change(
+        &self,
+        added: &[Value],
+        removed: &[Value],
+    ) -> (Vec<Value>, Vec<Value>) {
+        let effective_removed = removed
+            .iter()
+            .filter_map(|folder| {
+                let uri = workspace_folder_uri(folder)?;
+                self.workspace_folders
+                    .iter()
+                    .any(|existing| workspace_folder_uri(existing) == Some(uri))
+                    .then(|| folder.clone())
+            })
+            .collect::<Vec<_>>();
+
+        let effective_added = added
+            .iter()
+            .filter_map(|folder| {
+                let uri = workspace_folder_uri(folder)?;
+                let already_present = self.workspace_folders.iter().any(|existing| {
+                    workspace_folder_uri(existing) == Some(uri)
+                        && !effective_removed
+                            .iter()
+                            .any(|removed| workspace_folder_uri(removed) == Some(uri))
+                });
+                (!already_present).then(|| folder.clone())
+            })
+            .collect::<Vec<_>>();
+
+        (effective_added, effective_removed)
+    }
+
     /// Send an error JSON-RPC response for a server-initiated request.
     pub fn respond_error(
         &self,

@@ -756,6 +756,15 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenSaveAndCloseNotifyExistingLspSessions`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(lsp): dedupe workspace folder changes`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 `LspSession::did_change_workspace_folders(...)` 在 Rust LSP client 持有的 workspace folder set 上计算有效 diff，避免 AttoEditor 对多个共享同一 `SharedLspSession` 的 tab fan-out root change 时，同一个 server 收到重复 `workspace/didChangeWorkspaceFolders`。
+  - 提交边界：只在 headless LSP client/session 层过滤已存在的 added folder 和已不存在的 removed folder，并保持 `workspace/workspaceFolders` response 列表与实际变更一致；不改变 Swift fan-out 入口、不新增 shared-session identity ABI、不实现 server restart、project open/close 批量 session 管理或 root-set ownership 的完整策略。
+  - 验证记录：
+    - `cargo test -p editor-core-ui lsp_did_change_workspace_folders_notifies_and_updates_workspace_response`
+    - `cargo test -p editor-core-ui-ffi ffi_lsp_request_definition_errors_when_lsp_disabled`
+    - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

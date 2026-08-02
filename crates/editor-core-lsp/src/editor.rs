@@ -1256,6 +1256,13 @@ impl LspSession {
         added: Vec<Value>,
         removed: Vec<Value>,
     ) -> Result<(), String> {
+        let (added, removed) = self
+            .client
+            .effective_workspace_folder_change(&added, &removed);
+        if added.is_empty() && removed.is_empty() {
+            return Ok(());
+        }
+
         self.notify(
             "workspace/didChangeWorkspaceFolders",
             json!({
