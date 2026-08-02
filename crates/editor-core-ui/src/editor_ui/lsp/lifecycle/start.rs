@@ -40,7 +40,7 @@ impl EditorUi {
 
         let mut cmd_proc = std::process::Command::new(cmd);
         cmd_proc.args(args);
-        cmd_proc.stderr(Stdio::null());
+        cmd_proc.stderr(Stdio::piped());
 
         let start = LspSessionStartOptions {
             cmd: cmd_proc,

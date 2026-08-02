@@ -158,6 +158,8 @@ pub struct LspProcessStatus {
     pub exit_code: Option<i32>,
     /// Unix signal when the process was terminated by a signal.
     pub signal: Option<i32>,
+    /// Bounded stderr tail captured from the LSP server when stderr is piped.
+    pub stderr_tail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -629,12 +631,14 @@ impl LspSession {
                 state: LspProcessState::Exited,
                 exit_code: exit.exit_code,
                 signal: exit.signal,
+                stderr_tail: self.client.stderr_tail(),
             },
             None => LspProcessStatus {
                 pid: self.client.process_id(),
                 state: LspProcessState::Running,
                 exit_code: None,
                 signal: None,
+                stderr_tail: self.client.stderr_tail(),
             },
         };
 

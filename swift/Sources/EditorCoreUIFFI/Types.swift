@@ -606,17 +606,20 @@ public struct EcuLspProcessStatus: Equatable, Sendable, Decodable {
     public var state: EcuLspProcessState
     public var exitCode: Int32?
     public var signal: Int32?
+    public var stderrTail: String?
 
     public init(
         pid: UInt32? = nil,
         state: EcuLspProcessState,
         exitCode: Int32? = nil,
-        signal: Int32? = nil
+        signal: Int32? = nil,
+        stderrTail: String? = nil
     ) {
         self.pid = pid
         self.state = state
         self.exitCode = exitCode
         self.signal = signal
+        self.stderrTail = stderrTail
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -624,6 +627,7 @@ public struct EcuLspProcessStatus: Equatable, Sendable, Decodable {
         case state
         case exitCode = "exit_code"
         case signal
+        case stderrTail = "stderr_tail"
     }
 
     public init(from decoder: Decoder) throws {
@@ -632,6 +636,7 @@ public struct EcuLspProcessStatus: Equatable, Sendable, Decodable {
         self.state = try container.decodeIfPresent(EcuLspProcessState.self, forKey: .state) ?? .unknown("unknown")
         self.exitCode = try container.decodeIfPresent(Int32.self, forKey: .exitCode)
         self.signal = try container.decodeIfPresent(Int32.self, forKey: .signal)
+        self.stderrTail = try container.decodeIfPresent(String.self, forKey: .stderrTail)
     }
 }
 

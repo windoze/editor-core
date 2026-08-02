@@ -972,6 +972,51 @@ fn lsp_process_exit_emits_failed_status_event() {
 }
 
 #[test]
+fn lsp_status_reports_stderr_tail() {
+    let init = lsp_initialize_response(serde_json::json!({}));
+    let body = init.to_string();
+    let script = format!(
+        "printf 'stderr one\\nstderr two\\n' >&2; body={}; printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${{#body}}\" \"$body\"; sleep 30",
+        shell_quote(&body),
+    );
+    let args = vec!["-c".to_string(), script];
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root_uri = format!("file:///tmp/editor-core-ui-stderr-status-{stamp}");
+    let doc_uri = format!("{root_uri}/main.rs");
+
+    let mut ui = EditorUi::new("fn main() {}\n", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+
+    let mut status = serde_json::Value::Null;
+    for _ in 0..50 {
+        status = serde_json::from_str(ui.lsp_status_json().as_str()).unwrap();
+        if status["process"]["stderr_tail"]
+            .as_str()
+            .is_some_and(|tail| tail.contains("stderr two"))
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
+    let stderr_tail = status["process"]["stderr_tail"]
+        .as_str()
+        .expect("expected stderr_tail in lsp status json");
+    assert!(stderr_tail.contains("stderr one"), "{stderr_tail}");
+    assert!(stderr_tail.contains("stderr two"), "{stderr_tail}");
+
+    let events = ui.state_events_after(0);
+    let enabled_status = events.events[0].lsp_status.as_ref().unwrap();
+    assert_eq!(enabled_status["process"]["state"], "running");
+
+    ui.lsp_disable();
+}
+
+#[test]
 fn lsp_document_lifecycle_notifications_are_exposed() {
     let capture_path = unique_temp_path("document-save-close");
     let stamp = std::time::SystemTime::now()

@@ -18,7 +18,8 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
             "pid": 4242,
             "state": "running",
             "exit_code": null,
-            "signal": null
+            "signal": null,
+            "stderr_tail": "server warning\\n"
           },
           "activity": null,
           "detail": null,
@@ -54,6 +55,7 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
         XCTAssertEqual(status.process?.state, .running)
         XCTAssertNil(status.process?.exitCode)
         XCTAssertNil(status.process?.signal)
+        XCTAssertEqual(status.process?.stderrTail, "server warning\n")
         XCTAssertNil(status.activity)
         XCTAssertEqual(status.workspaceFolders, [
             EcuLspWorkspaceFolder(uri: "file:///tmp/editor-core", name: "editor-core"),

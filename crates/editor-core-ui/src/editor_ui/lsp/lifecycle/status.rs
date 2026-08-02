@@ -10,6 +10,7 @@ fn lsp_process_status_json(process: &editor_core_lsp::LspProcessStatus) -> serde
         "state": state,
         "exit_code": process.exit_code,
         "signal": process.signal,
+        "stderr_tail": process.stderr_tail,
     })
 }
 

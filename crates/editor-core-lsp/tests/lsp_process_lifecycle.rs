@@ -28,6 +28,12 @@ fn shell_command(script: &str) -> Command {
     cmd
 }
 
+fn shell_command_with_piped_stderr(script: &str) -> Command {
+    let mut cmd = Command::new("/bin/sh");
+    cmd.arg("-c").arg(script).stderr(Stdio::piped());
+    cmd
+}
+
 fn process_exists(pid: u32) -> bool {
     let output = Command::new("ps")
         .arg("-p")
@@ -57,6 +63,22 @@ fn assert_process_exited(pid: u32) {
 fn start_session(script: &str) -> LspSession {
     LspSession::start(LspSessionStartOptions {
         cmd: shell_command(script),
+        workspace_folders: Vec::new(),
+        initialize_params: json!({}),
+        initialize_timeout: Duration::from_secs(1),
+        document: LspDocument {
+            uri: "file:///tmp/lifecycle-test.rs".to_string(),
+            language_id: "rust".to_string(),
+            version: 1,
+        },
+        initial_text: String::new(),
+    })
+    .expect("session starts")
+}
+
+fn start_session_with_cmd(cmd: Command) -> LspSession {
+    LspSession::start(LspSessionStartOptions {
+        cmd,
         workspace_folders: Vec::new(),
         initialize_params: json!({}),
         initialize_timeout: Duration::from_secs(1),
@@ -130,4 +152,33 @@ fn session_status_reports_exited_server_process() {
         editor_core_lsp::LspProcessState::Exited
     );
     assert_eq!(status.process.exit_code, Some(7));
+}
+
+#[test]
+fn session_status_reports_stderr_tail() {
+    let initialize =
+        framed_message_script(r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#);
+    let script = format!("printf 'first warning\\nsecond warning\\n' >&2; {initialize}; sleep 30");
+    let session = start_session_with_cmd(shell_command_with_piped_stderr(&script));
+
+    for _ in 0..50 {
+        if session
+            .status()
+            .process
+            .stderr_tail
+            .as_deref()
+            .is_some_and(|tail| tail.contains("second warning"))
+        {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    let status = session.status();
+    let stderr_tail = status
+        .process
+        .stderr_tail
+        .expect("expected stderr tail in process status");
+    assert!(stderr_tail.contains("first warning"), "{stderr_tail}");
+    assert!(stderr_tail.contains("second warning"), "{stderr_tail}");
 }

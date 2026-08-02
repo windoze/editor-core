@@ -913,6 +913,17 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartProjectLspServersRestartsConfiguredOpenTabs`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerRequiresSavedLaunchConfig`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testSessionRestoreRestoresSplitPanesIntoCoreMirror`
+- 中间提交：`feat(ui): expose lsp stderr tail status`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；补齐 server process health 可观测性的 stderr 起点，让 LSP 子进程 stderr 的 bounded tail 进入 `LspSessionStatus` / `EditorUi.lsp_status_json()` / Swift typed `EcuLspProcessStatus`。
+  - 提交边界：只在 `editor-core-lsp` 的 `LspClient` 内部为 piped stderr 启动后台 tail reader，`EditorUi::lsp_enable_stdio(...)` 改为 pipe stderr，并在既有 process status JSON 增加兼容字段 `stderr_tail`；Swift typed wrapper 新增可选 `stderrTail` decode。本提交不新增 C ABI 函数，不改变 request/event schema 的主结构，不实现持久在线 stderr log、server process history、自动崩溃恢复或 dashboard 级 server health UI。
+  - 验证记录：
+    - `cargo test -p editor-core-lsp session_status_reports_stderr_tail`
+    - `cargo test -p editor-core-lsp session_status_reports_exited_server_process`
+    - `cargo test -p editor-core-ui lsp_status_reports_stderr_tail --release`
+    - `cargo test -p editor-core-ui lsp_process_exit_emits_failed_status_event --release`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreLSPStatusSnapshotTests.testDecodesReadyStatusWithCapabilities`
+    - `swift test --package-path swift --filter EditorCoreLSPStatusSnapshotTests.testDecodesFailedStatusWithMinimalServer`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
