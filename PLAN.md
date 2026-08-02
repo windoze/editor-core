@@ -489,6 +489,16 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileProjectionUsesCoreTabSnapshotWhenAvailable`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMoveTabCommandsReorderAppKitProjectionAndCoreMirror`
     - `git diff --check`
+- 中间提交：`feat(app): close tab groups from core tabs`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 的 Close Other Tabs / Close Tabs to Right 用户命令按 core tab snapshot 的 active tab 和 tab order 计算关闭目标。
+  - 提交边界：新增 App 命令、File 菜单项和 AppKit group-close helper；关闭每个目标 tab 仍复用既有 `closeTab` dirty/save/cancel 保护路径。此提交不新增 Rust/FFI ABI，不实现拖拽 tab-to-split、pane layout tree 或 session schema migration。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCloseTabGroupCommandsUseCoreTabProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesMetadataAndAvailability`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesParameterSchemasAndMacroPolicies`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

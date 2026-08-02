@@ -633,6 +633,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "file.close_tab", title: "File: Close Tab") { [weak self] in
                 self?.closeTabMenuClicked(nil)
             },
+            .init(id: "file.close_other_tabs", title: "File: Close Other Tabs") { [weak self] in
+                self?.activeWindow()?.editorAreaController.closeOtherTabsForActiveTab()
+            },
+            .init(id: "file.close_tabs_to_right", title: "File: Close Tabs to Right") { [weak self] in
+                self?.activeWindow()?.editorAreaController.closeTabsToRightOfActiveTab()
+            },
             .init(id: "file.move_tab_left", title: "File: Move Tab Left") { [weak self] in
                 self?.activeWindow()?.editorAreaController.moveActiveTabLeft()
             },
@@ -1084,7 +1090,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                 return .activeWindow
             case "view.focus_next_pane", "view.focus_previous_pane", "view.move_pane_left", "view.move_pane_right", "view.close_pane":
                 return .multiplePanes
-            case "file.move_tab_left", "file.move_tab_right":
+            case "file.close_other_tabs", "file.close_tabs_to_right",
+                 "file.move_tab_left", "file.move_tab_right":
                 return .multipleTabs
             default:
                 if commandID == "file.save" || commandID == "file.close_tab" {
@@ -1148,6 +1155,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
              "editor.find", "editor.replace", "workbench.command_palette":
             return AttoCommandSchema(macroPolicy: .promptRequired)
         case "file.new", "file.save", "file.close_tab",
+             "file.close_other_tabs", "file.close_tabs_to_right",
              "file.move_tab_left", "file.move_tab_right",
              "view.toggle_sidebar", "view.toggle_minimap", "view.split_right",
              "view.focus_next_pane", "view.focus_previous_pane",

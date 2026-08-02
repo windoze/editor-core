@@ -18,6 +18,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.format_selection"))
         XCTAssertTrue(ids.contains("editor.duplicate_lines"))
         XCTAssertTrue(ids.contains("file.close_tab"))
+        XCTAssertTrue(ids.contains("file.close_other_tabs"))
+        XCTAssertTrue(ids.contains("file.close_tabs_to_right"))
         XCTAssertTrue(ids.contains("file.move_tab_left"))
         XCTAssertTrue(ids.contains("file.move_tab_right"))
         XCTAssertTrue(ids.contains("editor.delete_lines"))
@@ -117,6 +119,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(workspaceUndo.group, "Workspace")
         XCTAssertFalse(workspaceUndo.requiresEditor)
         XCTAssertFalse(workspaceUndo.isEnabled)
+
+        let closeRight = try XCTUnwrap(commands.first { $0.id == "file.close_tabs_to_right" })
+        XCTAssertEqual(closeRight.group, "File")
+        XCTAssertTrue(closeRight.requiresEditor)
+        XCTAssertFalse(closeRight.isEnabled)
     }
 
     func testCommandRegistryCarriesParameterSchemasAndMacroPolicies() throws {
@@ -135,6 +142,10 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(snippet.parameters.first?.kind, .string)
         XCTAssertTrue(snippet.parameters.first?.isRequired == true)
         XCTAssertTrue(snippet.requiredRuntimeFeatures.isEmpty)
+
+        let closeRight = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "file.close_tabs_to_right"))
+        XCTAssertEqual(closeRight.macroPolicy, .recordable)
+        XCTAssertFalse(closeRight.isParameterized)
 
         let goLine = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "go.line"))
         XCTAssertEqual(goLine.macroPolicy, .recordableWithArguments)
@@ -1241,6 +1252,8 @@ final class AttoEditorCommandTests: XCTestCase {
         let menu = AttoMainMenuBuilder.build(appDelegate: delegate)
 
         let fileMenu = try XCTUnwrap(topLevelMenu(title: "File", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "file.close_other_tabs", in: fileMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "file.close_tabs_to_right", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.move_tab_left", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.move_tab_right", in: fileMenu))
 
@@ -4571,6 +4584,62 @@ final class AttoEditorCommandTests: XCTestCase {
             "third-tab.txt",
             "second-tab.txt",
         ])
+    }
+
+    func testCloseTabGroupCommandsUseCoreTabProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-close.txt")
+        let secondURL = tempDir.appendingPathComponent("second-close.txt")
+        let thirdURL = tempDir.appendingPathComponent("third-close.txt")
+        let fourthURL = tempDir.appendingPathComponent("fourth-close.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "third".write(to: thirdURL, atomically: true, encoding: .utf8)
+        try "fourth".write(to: fourthURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.openFile(url: thirdURL, mode: .pinned)
+        vc.openFile(url: fourthURL, mode: .pinned)
+
+        let secondTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == secondURL.standardizedFileURL })
+        let thirdTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == thirdURL.standardizedFileURL })
+        let fourthTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == fourthURL.standardizedFileURL })
+        XCTAssertEqual(vc.selectedTabID, fourthTab.id)
+
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        XCTAssertTrue(try coreDocuments.moveTab(fromIndex: 3, toIndex: 1))
+        try coreDocuments.setActiveTab(try XCTUnwrap(secondTab.coreTabID))
+        XCTAssertEqual(vc.activeTab?.id, secondTab.id)
+
+        XCTAssertEqual(vc.closeTabsToRightOfActiveTab(), 1)
+        XCTAssertFalse(vc.tabs.contains { $0.id == thirdTab.id })
+        XCTAssertTrue(vc.tabs.contains { $0.id == fourthTab.id })
+        XCTAssertEqual(vc.selectedTabID, secondTab.id)
+
+        var snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs.map(\.title), [
+            "first-close.txt",
+            "fourth-close.txt",
+            "second-close.txt",
+        ])
+        XCTAssertEqual(vc.openFileItems().map { $0.url.lastPathComponent }, [
+            "first-close.txt",
+            "fourth-close.txt",
+            "second-close.txt",
+        ])
+
+        XCTAssertEqual(vc.closeOtherTabsForActiveTab(), 2)
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs.map(\.title), ["second-close.txt"])
+        XCTAssertEqual(snapshot.activeTabId, try XCTUnwrap(secondTab.coreTabID))
+        XCTAssertEqual(vc.openFileItems().map { $0.url.lastPathComponent }, ["second-close.txt"])
     }
 
     func testSessionSnapshotUsesCoreTabProjectionWhenAvailable() throws {
