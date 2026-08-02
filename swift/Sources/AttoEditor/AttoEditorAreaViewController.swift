@@ -367,6 +367,21 @@ final class AttoEditorAreaViewController: NSViewController {
                 return "references"
             }
         }
+
+        var feedbackFeature: AttoLspResultFeedback.Feature {
+            switch self {
+            case .definition:
+                return .definition
+            case .declaration:
+                return .declaration
+            case .typeDefinition:
+                return .typeDefinition
+            case .implementation:
+                return .implementation
+            case .references:
+                return .references
+            }
+        }
     }
 
     struct LspLocationResultSnapshot: Equatable {
@@ -496,6 +511,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let logicalLine: UInt32
         let logicalColumn: UInt32
         let kind: LspLocationRequestKind
+        let showFeedback: Bool
     }
 
     private struct SymbolRequestContext {
@@ -4700,7 +4716,13 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private func handleCommandClick(ctx: EditorCoreSkiaContextMenuContext, tabID: UUID) -> Bool {
         guard activeTab?.id == tabID else { return false }
-        return requestLspLocation(tabID: tabID, logicalLine: ctx.logicalLine, logicalColumn: ctx.logicalColumn, kind: .definition)
+        return requestLspLocation(
+            tabID: tabID,
+            logicalLine: ctx.logicalLine,
+            logicalColumn: ctx.logicalColumn,
+            kind: .definition,
+            showFeedback: false
+        )
     }
 
     @discardableResult
@@ -4737,7 +4759,8 @@ final class AttoEditorAreaViewController: NSViewController {
                 tabID: tab.id,
                 logicalLine: pos.line,
                 logicalColumn: pos.column,
-                kind: kind
+                kind: kind,
+                showFeedback: true
             )
         } catch {
             NSSound.beep()
@@ -4749,11 +4772,15 @@ final class AttoEditorAreaViewController: NSViewController {
         tabID: UUID,
         logicalLine: UInt32,
         logicalColumn: UInt32,
-        kind: LspLocationRequestKind
+        kind: LspLocationRequestKind,
+        showFeedback: Bool
     ) -> Bool {
         guard activeTab?.id == tabID else { return false }
         guard let tab = activeTab else { return false }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(kind.feedbackFeature), in: tab.editCore.editorView)
+            }
             NSSound.beep()
             return false
         }
@@ -4768,7 +4795,8 @@ final class AttoEditorAreaViewController: NSViewController {
             tabID: tabID,
             logicalLine: logicalLine,
             logicalColumn: logicalColumn,
-            kind: kind
+            kind: kind,
+            showFeedback: showFeedback
         )
         definitionPollTimer?.cancel()
 
@@ -4776,6 +4804,12 @@ final class AttoEditorAreaViewController: NSViewController {
             try requestLspLocation(kind: kind, editor: tab.editCore.editor, line: logicalLine, column: logicalColumn)
         } catch {
             cancelDefinitionUI()
+            if showFeedback {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(kind.feedbackFeature, errorDescription: error.localizedDescription),
+                    in: tab.editCore.editorView
+                )
+            }
             NSSound.beep()
             return false
         }
@@ -4813,7 +4847,13 @@ final class AttoEditorAreaViewController: NSViewController {
             }
 
             if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
+                let feature = ctx.kind.feedbackFeature
+                let editorView = self.activeTab?.editCore.editorView
                 self.cancelDefinitionUI()
+                if showFeedback, let editorView {
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(feature), in: editorView)
+                }
                 return
             }
             remainingTicks -= 1
@@ -4827,12 +4867,22 @@ final class AttoEditorAreaViewController: NSViewController {
             do {
                 result = try self.takeLspLocationResult(kind: ctx.kind, editor: tab.editCore.editor)
             } catch {
+                let showFeedback = ctx.showFeedback
+                let feature = ctx.kind.feedbackFeature
+                self.cancelDefinitionUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(feature, errorDescription: error.localizedDescription),
+                        in: tab.editCore.editorView
+                    )
+                }
+                timer.cancel()
                 return
             }
             guard let result else { return }
 
             self.cancelDefinitionUI()
-            _ = self.showLspLocationResultInActiveTab(result, kind: ctx.kind)
+            _ = self.showLspLocationResultInActiveTab(result, kind: ctx.kind, showFeedback: ctx.showFeedback)
             timer.cancel()
         }
 
@@ -4858,18 +4908,34 @@ final class AttoEditorAreaViewController: NSViewController {
     @discardableResult
     func showLspLocationResultJSONInActiveTab(_ json: String, kind: LspLocationRequestKind) -> Bool {
         let targets = AttoLspDefinitionParser.targets(fromLocationResultJSON: json)
-        return showLspLocationTargetsInActiveTab(targets, kind: kind)
+        return showLspLocationTargetsInActiveTab(targets, kind: kind, showFeedback: true)
     }
 
     @discardableResult
     func showLspLocationResultInActiveTab(_ result: EcuLspLocationResult, kind: LspLocationRequestKind) -> Bool {
-        let targets = AttoLspDefinitionParser.targets(fromLocationResult: result)
-        return showLspLocationTargetsInActiveTab(targets, kind: kind)
+        showLspLocationResultInActiveTab(result, kind: kind, showFeedback: true)
     }
 
     @discardableResult
-    private func showLspLocationTargetsInActiveTab(_ targets: [AttoLspDefinitionParser.Target], kind: LspLocationRequestKind) -> Bool {
+    private func showLspLocationResultInActiveTab(
+        _ result: EcuLspLocationResult,
+        kind: LspLocationRequestKind,
+        showFeedback: Bool
+    ) -> Bool {
+        let targets = AttoLspDefinitionParser.targets(fromLocationResult: result)
+        return showLspLocationTargetsInActiveTab(targets, kind: kind, showFeedback: showFeedback)
+    }
+
+    @discardableResult
+    private func showLspLocationTargetsInActiveTab(
+        _ targets: [AttoLspDefinitionParser.Target],
+        kind: LspLocationRequestKind,
+        showFeedback: Bool
+    ) -> Bool {
         guard targets.isEmpty == false else {
+            if showFeedback, let tab = activeTab {
+                presentLspResultFeedback(AttoLspResultFeedback.empty(kind.feedbackFeature), in: tab.editCore.editorView)
+            }
             NSSound.beep()
             return false
         }

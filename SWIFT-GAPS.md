@@ -255,7 +255,7 @@ Swift 侧已经具备以下基础能力：
 | hover | 已有 raw request/take | 阶段 164 已补 public `EcuLspHoverResult` wrapper，覆盖 MarkupContent、MarkedString、range 和 raw payload | hover popover 主路径已有，阶段 164 已改为消费 typed result；JSON formatter 入口保留兼容 | result/request events 已覆盖 | 自动 hover 仍保持低噪声；若后续增加显式 hover command，再接入统一 empty/error/timeout/stale feedback |
 | completion / completion resolve | 已有 request/take | 已有 `EcuLspCompletionResult` / typed resolve item | completion popup、resolve、commit characters、trigger characters、增量过滤已消费 typed payload | result/request events 已覆盖 | 统一 feedback；跨文件 additional edits 后续交给 core-owned WorkspaceEdit transaction |
 | signature help | 已有 raw request/take | 阶段 165 已补 public `EcuLspSignatureHelpResult` wrapper，覆盖 SignatureInformation、ParameterInformation、documentation、active index 和 raw payload | 手动/自动 signature popup 已有，阶段 165 已改为消费 typed result；手动空/错反馈接入统一 feedback，自动触发保持静默失败策略 | result/request events 已覆盖 | 后续由状态订阅驱动 stale/refresh metadata；自动触发继续保持低噪声 |
-| definition / declaration / type definition / implementation / references | 已有 request/take | 已有 `EcuLspLocationResult` | location quick panel、history、persistent panel、cmd-click 已消费 typed payload | result/request events 已覆盖，MultiDocument 聚合已有 | 统一 feedback；补项目级 freshness/ownership 与状态订阅驱动 |
+| definition / declaration / type definition / implementation / references | 已有 request/take | 已有 `EcuLspLocationResult` | location quick panel、history、persistent panel、cmd-click 已消费 typed payload；阶段 166 已让显式 location 命令的 unavailable/request failed/failed/timeout/empty 接入统一 feedback，Cmd-click 保持低噪声 | result/request events 已覆盖，MultiDocument 聚合已有 | 补项目级 freshness/ownership；后续由状态订阅驱动 stale/refresh metadata |
 | prepare rename / rename | 已有 request/take | 已有 `EcuLspPrepareRenameResult` / `EcuLspWorkspaceEdit` | rename 输入、typed seed、WorkspaceEdit apply/summary 已消费 typed payload | result/request events 已覆盖 | WorkspaceEdit 应迁到 core-owned 跨文件事务；统一 feedback 和冲突展示 |
 | code action / code action resolve / execute command | 已有 request/take/resolve/executeCommand | code action typed 已有；executeCommand result 仍偏 raw/result envelope | quick panel、kind filter、resolve、command 执行和 HUD 已有 | result/request events 已覆盖 | typed workspace command/result model；WorkspaceEdit 事务化；统一 feedback |
 | document symbols / workspace symbols | 已有 request/take | 已有 symbols typed payload | quick panel、incremental workspace symbol panel、outline/persistent panel 已消费 typed payload | result/request events 和 history entry 已有 | 统一 feedback；状态订阅驱动 outline/symbols refresh 与 stale 展示 |
@@ -292,6 +292,12 @@ AttoEditor hover formatter 和 hover popover 轮询路径已改为消费 typed r
 2026-08-02 阶段 165 已补齐 signature help result 的 Swift typed payload：`EditorCoreUIFFI` 新增 `EcuLspSignatureHelpResult`、`EcuLspSignatureInformation`、`EcuLspParameterInformation` 和 `EcuLspParameterLabel`，覆盖 LSP `SignatureHelp | null`、active signature/parameter、signature-level active parameter、string / UTF-16 range 参数 label、string / MarkupContent documentation、unknown parameter label fallback 和 raw payload preservation；`EditorUI.lspTakeLastSignatureHelpResult()` 复用既有 `lspTakeLastSignatureHelpResultJSON()` C ABI escape hatch 做 typed decode。
 
 AttoEditor `AttoLspSignatureHelpFormatter` 已改为直接消费 UIFFI typed result，原 JSON formatter/parse 入口作为兼容包装保留。手动 signature help 的 unavailable、request failed、failed、timeout 和 empty 路径已接入 `AttoLspResultFeedback` 的统一 status/detail 文案，并继续用 signature popover 在 caret 附近显示详细信息；自动 trigger path 仍保持静默失败策略，避免输入过程中弹出噪声。
+
+## 阶段 166: Location result feedback unification
+
+2026-08-02 阶段 166 已把 locations family 的显式用户命令接入统一 feedback：definition、declaration、type definition、implementation 和 references 共享 `AttoLspResultFeedback` 的 unavailable、request failed、failed、timeout 和 empty 文案，`requestLspLocation(...)` 的上下文新增 `showFeedback` 标志，菜单/command palette 主路径会写入 transient status 并展示 detail popover，Cmd-click definition 仍保持低噪声，不把自动式导航探测变成打扰式错误弹窗。
+
+本阶段还让空 typed/JSON location result 统一走同一 feedback sink，因此 `showLspLocationResultJSONInActiveTab("[]", kind: .definition)` 这类 App 测试入口也会得到 `Definition: no results` 的 status 反馈。后续 locations family 的剩余工作转为项目级 freshness/ownership、状态订阅驱动 stale/refresh metadata，以及跨 workspace/multi-document 聚合的一致性。
 
 ## 分层结论
 

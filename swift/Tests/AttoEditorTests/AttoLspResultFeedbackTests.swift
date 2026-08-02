@@ -48,6 +48,20 @@ final class AttoLspResultFeedbackTests: XCTestCase {
                 detailText: "No signature help is available here."
             )
         )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.definition),
+            AttoLspResultFeedback.Message(
+                statusText: "Definition: no results",
+                detailText: "No definitions are available here."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.requestFailed(.references, errorDescription: "server busy"),
+            AttoLspResultFeedback.Message(
+                statusText: "References: request failed",
+                detailText: "References request failed.\nserver busy"
+            )
+        )
     }
 
     func testRefreshSummaryFormatsSingularAndPluralCounts() {

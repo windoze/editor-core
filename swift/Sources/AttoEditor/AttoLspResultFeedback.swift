@@ -9,6 +9,11 @@ enum AttoLspResultFeedback {
     enum Feature {
         case foldingRanges
         case semanticTokens
+        case definition
+        case declaration
+        case typeDefinition
+        case implementation
+        case references
         case selectionRange
         case signatureHelp
         case linkedEditing
@@ -21,6 +26,16 @@ enum AttoLspResultFeedback {
                 return "Folding ranges"
             case .semanticTokens:
                 return "Semantic tokens"
+            case .definition:
+                return "Definition"
+            case .declaration:
+                return "Declaration"
+            case .typeDefinition:
+                return "Type definition"
+            case .implementation:
+                return "Implementation"
+            case .references:
+                return "References"
             case .selectionRange:
                 return "Selection range"
             case .signatureHelp:
@@ -58,6 +73,16 @@ enum AttoLspResultFeedback {
                 return "Folding ranges are unavailable."
             case .semanticTokens:
                 return "Semantic tokens are unavailable."
+            case .definition:
+                return "Definition is unavailable."
+            case .declaration:
+                return "Declaration is unavailable."
+            case .typeDefinition:
+                return "Type definition is unavailable."
+            case .implementation:
+                return "Implementation is unavailable."
+            case .references:
+                return "References are unavailable."
             case .selectionRange:
                 return "Selection range is unavailable."
             case .signatureHelp:
@@ -77,6 +102,16 @@ enum AttoLspResultFeedback {
                 return "No folding ranges are available for this document."
             case .semanticTokens:
                 return "No semantic tokens are available for this document."
+            case .definition:
+                return "No definitions are available here."
+            case .declaration:
+                return "No declarations are available here."
+            case .typeDefinition:
+                return "No type definitions are available here."
+            case .implementation:
+                return "No implementations are available here."
+            case .references:
+                return "No references are available here."
             case .selectionRange:
                 return "No larger selection range is available."
             case .signatureHelp:
