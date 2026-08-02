@@ -57,8 +57,9 @@ extension AttoEditorAreaViewController {
     }
 
     func applyLanguageConfiguration(for tab: AttoEditorTab) {
+        let fileURL = projectedFileURL(for: tab)
         for editCore in tab.panes {
-            applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: editCore)
+            applyLanguageConfiguration(fileURL: fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: editCore)
         }
     }
 

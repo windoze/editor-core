@@ -4704,6 +4704,37 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "{\n  ")
     }
 
+    func testLanguageIndentationConfigUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("indent-local.txt")
+        let projectedURL = tempDir.appendingPathComponent("indent-projected.js")
+        try "{".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        vc.applyLanguageConfiguration(for: tab)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.moveTo(line: 0, column: 1)
+        try editorView.editor.insertNewline(autoIndent: true)
+
+        XCTAssertEqual(try editorView.editor.text(), "{\n  ")
+    }
+
     func testGoToLineCommandParsesInputAndMovesCaret() throws {
         XCTAssertEqual(
             AttoEditorAreaViewController.parseGoToLineTarget("3:2"),

@@ -612,6 +612,13 @@
     - `swift test --package-path swift --filter AttoStatusBarSelectionTests.testStatusBarMetadataUsesCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoStatusBarSelectionTests.testStatusBarShowsSelectionRangeAndSize`
     - `git diff --check`
+- 中间提交：`feat(app): project language config from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor indentation/comment language configuration application 使用 core tab snapshot 的 `document_uri` 投影。
+  - 提交边界：只迁移 `applyLanguageConfiguration(for:)`、split pane creation 和 WorkspaceEdit/resource-operation 后 pane refresh 中的 language configuration file URL 来源；不改变 syntax engine selection、用户显式 language override、真实保存路径、WorkspaceEdit apply/resource-operation 语义、session schema、真实 `tab.fileURL` 同步策略或 Rust/FFI ABI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLanguageIndentationConfigUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileAppliesLanguageIndentationConfig`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

@@ -53,7 +53,7 @@ extension AttoEditorAreaViewController {
         )
 
         try configureEditorChrome(pane)
-        applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
+        applyLanguageConfiguration(fileURL: projectedFileURL(for: tab), syntaxLanguageId: tab.syntaxLanguageId, to: pane)
         configureEditCoreHooks(pane, tabID: tab.id)
 
         tab.panes.append(pane)

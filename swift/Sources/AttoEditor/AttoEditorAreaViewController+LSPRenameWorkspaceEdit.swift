@@ -600,12 +600,13 @@ extension AttoEditorAreaViewController {
     }
 
     func refreshTabAfterCoreWorkspaceEditProjection(_ tab: AttoEditorTab) {
+        let fileURL = projectedFileURL(for: tab)
         for pane in tab.panes {
             pane.layoutSubtreeIfNeeded()
             pane.editorView.kickProcessingPoll()
             pane.editorView.needsDisplay = true
             pane.needsDisplay = true
-            applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
+            applyLanguageConfiguration(fileURL: fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
         }
     }
 
@@ -877,12 +878,13 @@ extension AttoEditorAreaViewController {
     }
 
     func refreshTabAfterWorkspaceResourceOperation(_ tab: AttoEditorTab) {
+        let fileURL = projectedFileURL(for: tab)
         for pane in tab.panes {
             pane.layoutSubtreeIfNeeded()
             pane.editorView.kickProcessingPoll()
             pane.editorView.needsDisplay = true
             pane.needsDisplay = true
-            applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
+            applyLanguageConfiguration(fileURL: fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
         }
         updateCoreTabTitle(tab)
         updateCoreTabDocumentURI(tab)
