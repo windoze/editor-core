@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
     typealias Snapshot = AttoEditorAreaViewController.LspSymbolResultSnapshot
+    typealias Entry = AttoLspResultLifecycleEntry<Snapshot>
     typealias Symbol = AttoLspSymbolParser.Symbol
 
     private struct Row {
@@ -13,7 +14,7 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
 
     private let titleForSymbol: (Symbol) -> String
     private let onOpen: (AttoLspDefinitionParser.Target) -> Void
-    private var snapshot: Snapshot?
+    private var entry: Entry?
     private var rows: [Row] = []
     private var filteredRows: [Row] = []
     private var panel: NSPanel?
@@ -31,7 +32,11 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
     }
 
     var currentSnapshot: Snapshot? {
-        snapshot
+        entry?.snapshot
+    }
+
+    var currentEntry: Entry? {
+        entry
     }
 
     var isVisible: Bool {
@@ -42,16 +47,21 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
         filteredRows.count
     }
 
-    func update(snapshot: Snapshot) {
-        self.snapshot = snapshot
+    func update(entry: Entry) {
+        self.entry = entry
+        let snapshot = entry.snapshot
         rows = snapshot.symbols.map { Row(symbol: $0, title: titleForSymbol($0)) }
         applyFilter()
         updateTitle()
     }
 
+    func update(snapshot: Snapshot) {
+        update(entry: Self.syntheticEntry(for: snapshot))
+    }
+
     @discardableResult
-    func show(relativeTo window: NSWindow, snapshot: Snapshot) -> Bool {
-        update(snapshot: snapshot)
+    func show(relativeTo window: NSWindow, entry: Entry) -> Bool {
+        update(entry: entry)
 
         if panel == nil {
             panel = buildPanel()
@@ -68,6 +78,11 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(searchField)
         return true
+    }
+
+    @discardableResult
+    func show(relativeTo window: NSWindow, snapshot: Snapshot) -> Bool {
+        show(relativeTo: window, entry: Self.syntheticEntry(for: snapshot))
     }
 
     func hide() {
@@ -147,7 +162,7 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
 
     private func updateTitle() {
         guard let panel else { return }
-        guard let snapshot else {
+        guard let snapshot = entry?.snapshot else {
             panel.title = "Symbols"
             return
         }
@@ -263,6 +278,16 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
 
     func windowWillClose(_ notification: Notification) {
         hide()
+    }
+
+    private static func syntheticEntry(for snapshot: Snapshot) -> Entry {
+        Entry(
+            sequence: 0,
+            family: "symbols",
+            title: snapshot.title,
+            recordedAt: Date(timeIntervalSince1970: 0),
+            snapshot: snapshot
+        )
     }
 }
 

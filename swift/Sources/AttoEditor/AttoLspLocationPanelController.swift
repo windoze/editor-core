@@ -4,9 +4,10 @@ import Foundation
 @MainActor
 final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
     typealias Snapshot = AttoEditorAreaViewController.LspLocationResultSnapshot
+    typealias Entry = AttoLspResultLifecycleEntry<Snapshot>
 
     private let onOpen: (AttoLspDefinitionParser.Target) -> Void
-    private var snapshot: Snapshot?
+    private var entry: Entry?
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
     private let tableView = NSTableView(frame: .zero)
@@ -19,7 +20,11 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
     }
 
     var currentSnapshot: Snapshot? {
-        snapshot
+        entry?.snapshot
+    }
+
+    var currentEntry: Entry? {
+        entry
     }
 
     var isVisible: Bool {
@@ -30,15 +35,19 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
         filteredItems.count
     }
 
-    func update(snapshot: Snapshot) {
-        self.snapshot = snapshot
+    func update(entry: Entry) {
+        self.entry = entry
         applyFilter()
         updateTitle()
     }
 
+    func update(snapshot: Snapshot) {
+        update(entry: Self.syntheticEntry(for: snapshot))
+    }
+
     @discardableResult
-    func show(relativeTo window: NSWindow, snapshot: Snapshot) -> Bool {
-        update(snapshot: snapshot)
+    func show(relativeTo window: NSWindow, entry: Entry) -> Bool {
+        update(entry: entry)
 
         if panel == nil {
             panel = buildPanel()
@@ -55,6 +64,11 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(searchField)
         return true
+    }
+
+    @discardableResult
+    func show(relativeTo window: NSWindow, snapshot: Snapshot) -> Bool {
+        show(relativeTo: window, entry: Self.syntheticEntry(for: snapshot))
     }
 
     func hide() {
@@ -134,7 +148,7 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
 
     private func updateTitle() {
         guard let panel else { return }
-        guard let snapshot else {
+        guard let snapshot = entry?.snapshot else {
             panel.title = "Locations"
             return
         }
@@ -158,7 +172,7 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
     }
 
     private func applyFilter() {
-        let items = snapshot?.items ?? []
+        let items = entry?.snapshot.items ?? []
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if query.isEmpty {
             filteredItems = items
@@ -248,6 +262,16 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
 
     func windowWillClose(_ notification: Notification) {
         hide()
+    }
+
+    private static func syntheticEntry(for snapshot: Snapshot) -> Entry {
+        Entry(
+            sequence: 0,
+            family: "locations",
+            title: snapshot.kind.historyTitle,
+            recordedAt: Date(timeIntervalSince1970: 0),
+            snapshot: snapshot
+        )
     }
 }
 

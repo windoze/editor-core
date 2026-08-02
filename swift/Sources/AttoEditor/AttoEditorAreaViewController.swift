@@ -166,6 +166,10 @@ final class AttoEditorAreaViewController: NSViewController {
         lspLocationPanelController?.currentSnapshot
     }
 
+    func _lspLocationPanelEntryForTesting() -> AttoLspResultLifecycleEntry<LspLocationResultSnapshot>? {
+        lspLocationPanelController?.currentEntry
+    }
+
     func _lspLocationPanelRowCountForTesting() -> Int {
         lspLocationPanelController?.rowCount ?? 0
     }
@@ -180,6 +184,10 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func _lspSymbolPanelSnapshotForTesting() -> LspSymbolResultSnapshot? {
         lspSymbolPanelController?.currentSnapshot
+    }
+
+    func _lspSymbolPanelEntryForTesting() -> AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>? {
+        lspSymbolPanelController?.currentEntry
     }
 
     func _lspSymbolPanelRowCountForTesting() -> Int {
@@ -5187,7 +5195,6 @@ final class AttoEditorAreaViewController: NSViewController {
             NSSound.beep()
             return false
         }
-        let snapshot = entry.snapshot
         guard let window = view.window else {
             return openLspLocationEntry(entry)
         }
@@ -5195,7 +5202,7 @@ final class AttoEditorAreaViewController: NSViewController {
             self?.navigateToLspTarget(target)
         }
         lspLocationPanelController = controller
-        return controller.show(relativeTo: window, snapshot: snapshot)
+        return controller.show(relativeTo: window, entry: entry)
     }
 
     private func recordLspLocationResultSnapshot(_ snapshot: LspLocationResultSnapshot) {
@@ -5208,7 +5215,7 @@ final class AttoEditorAreaViewController: NSViewController {
             entry,
             payload: .locations(kind: snapshot.kind.lifecycleKind, itemCount: snapshot.items.count)
         )
-        lspLocationPanelController?.update(snapshot: snapshot)
+        lspLocationPanelController?.update(entry: entry)
     }
 
     @discardableResult
@@ -5664,7 +5671,6 @@ final class AttoEditorAreaViewController: NSViewController {
             NSSound.beep()
             return false
         }
-        let snapshot = entry.snapshot
         guard let window = view.window else {
             return openLspSymbolEntry(entry)
         }
@@ -5677,7 +5683,7 @@ final class AttoEditorAreaViewController: NSViewController {
             }
         )
         lspSymbolPanelController = controller
-        return controller.show(relativeTo: window, snapshot: snapshot)
+        return controller.show(relativeTo: window, entry: entry)
     }
 
     private func handleLspDocumentSymbolResult(
@@ -5788,7 +5794,7 @@ final class AttoEditorAreaViewController: NSViewController {
             entry,
             payload: .symbols(title: snapshot.title, itemCount: snapshot.symbols.count)
         )
-        lspSymbolPanelController?.update(snapshot: snapshot)
+        lspSymbolPanelController?.update(entry: entry)
     }
 
     @discardableResult
