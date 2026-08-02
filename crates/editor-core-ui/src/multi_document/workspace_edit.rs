@@ -85,6 +85,15 @@ pub struct WorkspaceEditTransactionEventsSnapshot {
     pub events: Vec<WorkspaceEditTransactionEvent>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkspaceEditTransactionUndoResult {
+    pub undone: bool,
+    pub restored_uris: Vec<String>,
+    pub restored_open_tab_count: usize,
+    pub restored_filesystem_entry_count: usize,
+    pub message: String,
+}
+
 #[derive(Default)]
 pub(crate) struct WorkspaceEditTransactionEventStore {
     next_sequence: u64,
@@ -141,6 +150,92 @@ impl WorkspaceEditTransactionEventStore {
     }
 }
 
+pub(super) struct WorkspaceEditTransactionApplyResult {
+    pub result: WorkspaceEditTransactionResult,
+    pub undo_record: Option<WorkspaceEditTransactionUndoRecord>,
+}
+
+pub(super) struct WorkspaceEditTransactionUndoRecord {
+    open_tab_rollback: OpenTabRollback,
+    filesystem_rollback: FilesystemRollback,
+    restored_uris: Vec<String>,
+    restored_open_tab_count: usize,
+    restored_filesystem_entry_count: usize,
+}
+
+impl WorkspaceEditTransactionUndoRecord {
+    fn new(
+        open_tab_rollback: OpenTabRollback,
+        filesystem_rollback: FilesystemRollback,
+        restored_uris: Vec<String>,
+    ) -> Self {
+        let restored_open_tab_count = open_tab_rollback.affected_tab_count();
+        let restored_filesystem_entry_count = filesystem_rollback.entry_count();
+        Self {
+            open_tab_rollback,
+            filesystem_rollback,
+            restored_uris,
+            restored_open_tab_count,
+            restored_filesystem_entry_count,
+        }
+    }
+
+    pub(super) fn discard(mut self) -> Result<(), UiError> {
+        self.filesystem_rollback.cleanup_backups()
+    }
+
+    pub(super) fn undo(
+        &mut self,
+        tabs: &mut BTreeMap<TabId, TabEntry>,
+        tab_order: &mut Vec<TabId>,
+        active_tab: &mut Option<TabId>,
+        preview_tab: &mut Option<TabId>,
+    ) -> Result<WorkspaceEditTransactionUndoResult, UiError> {
+        let filesystem_result = self.filesystem_rollback.rollback();
+        let open_tab_result = if self.open_tab_rollback.has_entries() {
+            self.open_tab_rollback
+                .rollback(tabs, tab_order, active_tab, preview_tab)
+        } else {
+            Ok(())
+        };
+
+        match (filesystem_result, open_tab_result) {
+            (Ok(()), Ok(())) => Ok(WorkspaceEditTransactionUndoResult {
+                undone: true,
+                restored_uris: self.restored_uris.clone(),
+                restored_open_tab_count: self.restored_open_tab_count,
+                restored_filesystem_entry_count: self.restored_filesystem_entry_count,
+                message: "workspace edit transaction was undone".to_string(),
+            }),
+            (Err(filesystem_err), Ok(())) => Err(UiError::Processor(format!(
+                "failed to undo WorkspaceEdit filesystem changes: {filesystem_err}; open tab state was restored"
+            ))),
+            (Ok(()), Err(open_tab_err)) => Err(UiError::Processor(format!(
+                "WorkspaceEdit filesystem changes were undone; failed to restore open tab state: {open_tab_err}"
+            ))),
+            (Err(filesystem_err), Err(open_tab_err)) => Err(UiError::Processor(format!(
+                "failed to undo WorkspaceEdit filesystem changes: {filesystem_err}; failed to restore open tab state: {open_tab_err}"
+            ))),
+        }
+    }
+}
+
+impl Drop for WorkspaceEditTransactionUndoRecord {
+    fn drop(&mut self) {
+        let _ = self.filesystem_rollback.cleanup_backups();
+    }
+}
+
+pub(super) fn undo_unavailable_result() -> WorkspaceEditTransactionUndoResult {
+    WorkspaceEditTransactionUndoResult {
+        undone: false,
+        restored_uris: Vec::new(),
+        restored_open_tab_count: 0,
+        restored_filesystem_entry_count: 0,
+        message: "no WorkspaceEdit transaction undo record is available".to_string(),
+    }
+}
+
 pub(super) fn preview(
     tabs: &BTreeMap<TabId, TabEntry>,
     tab_order: &[TabId],
@@ -166,21 +261,17 @@ pub(super) fn apply(
     preview_tab: &mut Option<TabId>,
     workspace_roots: &[String],
     workspace_edit_json: &str,
-) -> Result<WorkspaceEditTransactionResult, UiError> {
+) -> Result<WorkspaceEditTransactionApplyResult, UiError> {
     let input = workspace_edit_input(workspace_edit_json)?;
     let steps = workspace_edit_steps(&input.workspace_edit);
     let mut plan = transaction_plan(tabs, tab_order, workspace_roots, &input.workspace_edit);
     if input.apply_mode == WorkspaceEditApplyMode::Atomic
         && (!plan.skipped_uris.is_empty() || !plan.unsupported_operation_uris.is_empty())
     {
-        return Ok(result_from_plan(
-            "apply",
-            input.apply_mode,
-            plan,
-            Vec::new(),
-            0,
-            0,
-        ));
+        return Ok(WorkspaceEditTransactionApplyResult {
+            result: result_from_plan("apply", input.apply_mode, plan, Vec::new(), 0, 0),
+            undo_record: None,
+        });
     }
     let mut applied_uris = BTreeSet::<String>::new();
     let mut applied_edit_count = 0usize;
@@ -463,16 +554,31 @@ pub(super) fn apply(
         doc.tab_id = open_tab_id.map(TabId::get);
     }
 
-    filesystem_rollback.commit()?;
-
-    Ok(result_from_plan(
+    let result = result_from_plan(
         "apply",
         input.apply_mode,
         plan,
         applied_uris.into_iter().collect(),
         applied_edit_count,
         applied_resource_operation_count,
-    ))
+    );
+    let undo_record = if result.applied
+        && (open_tab_rollback.has_entries() || filesystem_rollback.has_entries())
+    {
+        Some(WorkspaceEditTransactionUndoRecord::new(
+            open_tab_rollback,
+            filesystem_rollback,
+            result.applied_uris.clone(),
+        ))
+    } else {
+        filesystem_rollback.commit()?;
+        None
+    };
+
+    Ok(WorkspaceEditTransactionApplyResult {
+        result,
+        undo_record,
+    })
 }
 
 pub(super) fn preview_json(
@@ -688,6 +794,16 @@ impl OpenTabRollback {
             || !self.closed_tabs.is_empty()
     }
 
+    fn affected_tab_count(&self) -> usize {
+        self.text_snapshots
+            .keys()
+            .chain(self.uri_snapshots.keys())
+            .chain(self.closed_tabs.keys())
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .len()
+    }
+
     fn backup_text(
         &mut self,
         tabs: &BTreeMap<TabId, TabEntry>,
@@ -824,6 +940,14 @@ enum FilesystemRollbackEntry {
 }
 
 impl FilesystemRollback {
+    fn has_entries(&self) -> bool {
+        !self.entries.is_empty()
+    }
+
+    fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+
     fn record_created_path(&mut self, path: PathBuf) {
         self.entries
             .push(FilesystemRollbackEntry::RemovePath { path });
@@ -891,11 +1015,11 @@ impl FilesystemRollback {
         }
     }
 
-    fn commit(self) -> Result<(), UiError> {
+    fn cleanup_backups(&mut self) -> Result<(), UiError> {
         let mut errors = Vec::new();
-        for entry in self.entries {
+        for entry in &self.entries {
             if let FilesystemRollbackEntry::RestoreBackup { backup, .. } = entry
-                && let Err(err) = remove_path_if_exists(&backup)
+                && let Err(err) = remove_path_if_exists(backup)
             {
                 errors.push(format!(
                     "failed to remove WorkspaceEdit rollback backup: {err}"
@@ -907,6 +1031,10 @@ impl FilesystemRollback {
         } else {
             Err(UiError::Processor(errors.join("; ")))
         }
+    }
+
+    fn commit(mut self) -> Result<(), UiError> {
+        self.cleanup_backups()
     }
 
     fn next_backup_path(&mut self, path: &Path) -> Result<PathBuf, UiError> {
@@ -1032,7 +1160,7 @@ fn atomic_apply_runtime_failure_result(
     open_tab_rollback: &mut OpenTabRollback,
     apply_mode: WorkspaceEditApplyMode,
     plan: WorkspaceEditTransactionPlan,
-) -> Result<WorkspaceEditTransactionResult, UiError> {
+) -> Result<WorkspaceEditTransactionApplyResult, UiError> {
     let mut plan = plan;
     rollback_atomic_apply_side_effects(
         tabs,
@@ -1043,14 +1171,10 @@ fn atomic_apply_runtime_failure_result(
         open_tab_rollback,
     )?;
     clear_applied_resource_operations(&mut plan);
-    Ok(result_from_plan(
-        "apply",
-        apply_mode,
-        plan,
-        Vec::new(),
-        0,
-        0,
-    ))
+    Ok(WorkspaceEditTransactionApplyResult {
+        result: result_from_plan("apply", apply_mode, plan, Vec::new(), 0, 0),
+        undo_record: None,
+    })
 }
 
 fn clear_applied_resource_operations(plan: &mut WorkspaceEditTransactionPlan) {

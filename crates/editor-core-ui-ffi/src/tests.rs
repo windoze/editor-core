@@ -402,6 +402,36 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         .into_owned();
     unsafe { editor_core_ui_ffi_string_free(edited_beta_text_ptr) };
     assert_eq!(edited_beta_text, "BETA saved mirror");
+
+    let undo_ptr =
+        editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(multi);
+    assert!(!undo_ptr.is_null());
+    let undo_json = unsafe { std::ffi::CStr::from_ptr(undo_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(undo_ptr) };
+    let undo_value: serde_json::Value = serde_json::from_str(&undo_json).unwrap();
+    assert_eq!(undo_value["undone"], true);
+    assert_eq!(undo_value["restored_uris"][0], "file:///project/Beta.swift");
+    let restored_beta_text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, beta_id);
+    assert!(!restored_beta_text_ptr.is_null());
+    let restored_beta_text = unsafe { std::ffi::CStr::from_ptr(restored_beta_text_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(restored_beta_text_ptr) };
+    assert_eq!(restored_beta_text, "beta saved mirror");
+
+    let unavailable_undo_ptr =
+        editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(multi);
+    assert!(!unavailable_undo_ptr.is_null());
+    let unavailable_undo_json = unsafe { std::ffi::CStr::from_ptr(unavailable_undo_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(unavailable_undo_ptr) };
+    let unavailable_undo_value: serde_json::Value =
+        serde_json::from_str(&unavailable_undo_json).unwrap();
+    assert_eq!(unavailable_undo_value["undone"], false);
+
     assert_eq!(
         editor_core_ui_ffi_multi_document_mark_tab_saved(multi, beta_id),
         ECU_OK

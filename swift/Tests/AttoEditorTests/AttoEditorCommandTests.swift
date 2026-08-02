@@ -3031,6 +3031,61 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(window.title.contains("●"))
     }
 
+    func testWorkspaceEditTransactionUndoRestoresAppProjectionAndFiles() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("undo-main.txt")
+        let otherURL = tempDir.appendingPathComponent("undo-other.txt")
+        try "abc\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "other\n".write(to: otherURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "\(fileURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "B"
+              }
+            ],
+            "\(otherURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "X"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        var editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "aBc\n")
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "Xother\n")
+        XCTAssertTrue(window.title.contains("●"))
+
+        XCTAssertTrue(vc._undoLastCoreWorkspaceEditTransactionForTesting())
+        editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "abc\n")
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "other\n")
+        XCTAssertFalse(window.title.contains("●"))
+        XCTAssertFalse(vc._undoLastCoreWorkspaceEditTransactionForTesting())
+    }
+
     func testWorkspaceEditPreviewConfirmationCanCancelCoreTransaction() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

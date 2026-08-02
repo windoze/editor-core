@@ -391,6 +391,10 @@ final class AttoEditorAreaViewController: NSViewController {
         try coreDocuments?.workspaceEditTransactionEventsLatestSequence()
     }
 
+    func _undoLastCoreWorkspaceEditTransactionForTesting() -> Bool {
+        undoLastCoreWorkspaceEditTransaction()
+    }
+
     func _setWorkspaceEditPreviewDecisionProviderForTesting(
         _ provider: ((AttoWorkspaceEditPreview) -> AttoWorkspaceEditPreviewDecision)?
     ) {

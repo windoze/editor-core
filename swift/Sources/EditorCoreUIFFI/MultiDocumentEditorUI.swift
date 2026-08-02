@@ -254,6 +254,37 @@ public struct EcuWorkspaceEditTransactionEventsSnapshot: Decodable, Equatable, S
     }
 }
 
+public struct EcuWorkspaceEditTransactionUndoResult: Decodable, Equatable, Sendable {
+    public let undone: Bool
+    public let restoredURIs: [String]
+    public let restoredOpenTabCount: Int
+    public let restoredFilesystemEntryCount: Int
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case undone
+        case restoredURIs = "restored_uris"
+        case restoredOpenTabCount = "restored_open_tab_count"
+        case restoredFilesystemEntryCount = "restored_filesystem_entry_count"
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        undone = try container.decodeIfPresent(Bool.self, forKey: .undone) ?? false
+        restoredURIs = try container.decodeIfPresent([String].self, forKey: .restoredURIs) ?? []
+        restoredOpenTabCount = try container.decodeIfPresent(
+            Int.self,
+            forKey: .restoredOpenTabCount
+        ) ?? 0
+        restoredFilesystemEntryCount = try container.decodeIfPresent(
+            Int.self,
+            forKey: .restoredFilesystemEntryCount
+        ) ?? 0
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+    }
+}
+
 public struct EcuWorkspaceDiagnosticTarget: Decodable, Equatable, Sendable {
     public let uri: String
     public let line: UInt32
@@ -817,6 +848,20 @@ public final class MultiDocumentEditorUI {
             EcuWorkspaceEditTransactionResult.self,
             from: applyWorkspaceEditTransactionJSON(workspaceEditJSON),
             context: "multi_document_apply_workspace_edit_transaction_decode"
+        )
+    }
+
+    public func undoLastWorkspaceEditTransactionJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_undo_last_workspace_edit_transaction_json") {
+            editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(handle)
+        }
+    }
+
+    public func undoLastWorkspaceEditTransaction() throws -> EcuWorkspaceEditTransactionUndoResult {
+        try decode(
+            EcuWorkspaceEditTransactionUndoResult.self,
+            from: undoLastWorkspaceEditTransactionJSON(),
+            context: "multi_document_undo_last_workspace_edit_transaction_decode"
         )
     }
 

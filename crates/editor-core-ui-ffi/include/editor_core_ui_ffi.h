@@ -254,6 +254,8 @@ char* editor_core_ui_ffi_multi_document_preview_workspace_edit_transaction_json(
 char* editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
     MultiDocumentEditorUi* multi,
     const char* workspace_edit_json_utf8);
+char* editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(
+    MultiDocumentEditorUi* multi);
 int32_t editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_latest_sequence(
     MultiDocumentEditorUi* multi,
     uint64_t* out_sequence);

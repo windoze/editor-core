@@ -388,6 +388,25 @@
     - `swift test --package-path swift --filter EditorCoreUIFFITests`
     - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
     - `git diff --check`
+- 中间提交：`feat(ui): undo workspace edit transactions`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；为最近一次成功的 `MultiDocumentEditorUi` WorkspaceEdit transaction 增加 core-owned 一次性 undo 起点，并通过 C ABI、Swift typed wrapper 和 AttoEditor App 投影同步入口暴露给上层。
+  - 提交边界：只保留最近一次成功 transaction 的 open-tab/filesystem rollback record；新的 transaction 会丢弃旧 record，undo 成功或失败后该 record 都会被消费；可恢复打开 tab 文本/URI/close/order/dirty 状态和 root-gated 本地文件 text/resource operation 副作用，并返回 typed undo summary。本提交不实现多级 undo stack、redo、全局 AppKit 菜单命令、跨 transaction conflict resolution 或完整 transaction-wide undo 产品化 UI。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui --package editor-core-ui-ffi`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_undoes_last_workspace_edit_transaction`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIUndoesLastWorkspaceEditTransaction`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditTransactionUndoRestoresAppProjectionAndFiles`
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests workspace_edit`
+    - `cargo test -p editor-core-ui-ffi workspace_edit`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests.testMultiDocumentEditorUI.*WorkspaceEdit'`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditApplicationMutatesTextAndDirtyState`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditPreviewConfirmationCanCancelCoreTransaction`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditOpenTabProjectionCreatesUndoGroups`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditResourceOperationsApplyToUnopenedLocalFiles`
+    - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

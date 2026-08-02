@@ -50,6 +50,28 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_apply_workspace_edit_transac
     }
 }
 
+/// Undo the most recent successful WorkspaceEdit transaction.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(
+    multi: *mut MultiDocumentEditorUi,
+) -> *mut c_char {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        multi
+            .undo_last_workspace_edit_transaction_json()
+            .map_err(map_ui_error)
+    }) {
+        Ok(json) => {
+            clear_last_error();
+            make_c_string_ptr(json)
+        }
+        Err(err) => {
+            set_last_error_from_error(err);
+            ptr::null_mut()
+        }
+    }
+}
+
 /// Return latest WorkspaceEdit transaction event sequence.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_latest_sequence(

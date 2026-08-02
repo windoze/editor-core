@@ -543,6 +543,30 @@ extension AttoEditorAreaViewController {
         notifySessionStateChanged()
     }
 
+    @discardableResult
+    func undoLastCoreWorkspaceEditTransaction() -> Bool {
+        guard let coreDocuments else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let result = try coreDocuments.undoLastWorkspaceEditTransaction()
+            guard result.undone else {
+                setTransientStatusText("No WorkspaceEdit transaction to undo")
+                return false
+            }
+            try syncAppTabsFromCoreWorkspaceEditTransaction(coreDocuments)
+            setTransientStatusText("Workspace edit undone")
+            return true
+        } catch {
+            NSLog("AttoEditor: failed to undo WorkspaceEdit transaction: %@", String(describing: error))
+            setTransientStatusText("Workspace edit undo failed")
+            NSSound.beep()
+            return false
+        }
+    }
+
     func replaceAppTabTextFromCoreProjection(
         _ tab: AttoEditorTab,
         text: String,

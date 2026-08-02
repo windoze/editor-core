@@ -1067,6 +1067,87 @@ fn multi_document_ui_rolls_back_open_tabs_after_runtime_failure() {
 }
 
 #[test]
+fn multi_document_ui_undoes_last_workspace_edit_transaction() {
+    let root = unique_test_dir("editor-core-ui-workspace-edit-undo");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    let unopened = root.join("src").join("Unopened.swift");
+    std::fs::write(&unopened, "unopened\n").unwrap();
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let open_uri = path_to_file_uri(root.join("src").join("Open.swift").as_path());
+    let unopened_uri = path_to_file_uri(unopened.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+    let tab = ui.open_tab("open\n", 80);
+    ui.set_tab_document_uri(tab, Some(open_uri.clone()))
+        .unwrap();
+
+    let edit = json!({
+        "documentChanges": [
+            {
+                "textDocument": {
+                    "uri": open_uri.as_str(),
+                    "version": null
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 4 }
+                        },
+                        "newText": "OPEN"
+                    }
+                ]
+            },
+            {
+                "textDocument": {
+                    "uri": unopened_uri.as_str(),
+                    "version": null
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 8 }
+                        },
+                        "newText": "UNOPENED"
+                    }
+                ]
+            }
+        ]
+    })
+    .to_string();
+
+    let applied = ui.apply_workspace_edit_transaction(&edit).unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_edit_count, 2);
+    assert_eq!(ui.tab_text(tab).unwrap(), "OPEN\n");
+    assert_eq!(std::fs::read_to_string(&unopened).unwrap(), "UNOPENED\n");
+
+    let undone = ui.undo_last_workspace_edit_transaction().unwrap();
+    assert!(undone.undone);
+    assert_eq!(undone.restored_open_tab_count, 1);
+    assert!(undone.restored_filesystem_entry_count >= 1);
+    assert_eq!(
+        undone
+            .restored_uris
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        [open_uri, unopened_uri].into_iter().collect()
+    );
+    assert_eq!(ui.tab_text(tab).unwrap(), "open\n");
+    assert!(!ui.is_tab_modified(tab).unwrap());
+    assert_eq!(std::fs::read_to_string(&unopened).unwrap(), "unopened\n");
+
+    let unavailable = ui.undo_last_workspace_edit_transaction().unwrap();
+    assert!(!unavailable.undone);
+    assert!(unavailable.restored_uris.is_empty());
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn multi_document_ui_applies_unopened_document_changes_in_order() {
     let root = unique_test_dir("editor-core-ui-workspace-resource-order-root");
     std::fs::create_dir_all(root.join("src")).unwrap();

@@ -937,6 +937,81 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertFalse(try multi.isTabModified(overwriteTab))
     }
 
+    func testMultiDocumentEditorUIUndoesLastWorkspaceEditTransaction() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-workspace-edit-undo-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("src", isDirectory: true), withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let openURL = root.appendingPathComponent("src/Open.swift")
+        let unopenedURL = root.appendingPathComponent("src/Unopened.swift")
+        try "unopened\n".write(to: unopenedURL, atomically: true, encoding: .utf8)
+        try multi.setWorkspaceRoots([root.absoluteString])
+
+        let tab = try multi.openTab(text: "open\n", viewportWidthCells: 80)
+        try multi.setTabDocumentURI(openURL.absoluteString, tabId: tab)
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "textDocument": {
+                "uri": "\(openURL.absoluteString)",
+                "version": null
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 4 }
+                  },
+                  "newText": "OPEN"
+                }
+              ]
+            },
+            {
+              "textDocument": {
+                "uri": "\(unopenedURL.absoluteString)",
+                "version": null
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 8 }
+                  },
+                  "newText": "UNOPENED"
+                }
+              ]
+            }
+          ]
+        }
+        """
+
+        let applied = try multi.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertTrue(applied.applied)
+        XCTAssertEqual(applied.appliedEditCount, 2)
+        XCTAssertEqual(try multi.tabText(tabId: tab), "OPEN\n")
+        XCTAssertEqual(try String(contentsOf: unopenedURL, encoding: .utf8), "UNOPENED\n")
+
+        let undone = try multi.undoLastWorkspaceEditTransaction()
+        XCTAssertTrue(undone.undone)
+        XCTAssertEqual(undone.restoredOpenTabCount, 1)
+        XCTAssertGreaterThanOrEqual(undone.restoredFilesystemEntryCount, 1)
+        XCTAssertEqual(undone.restoredURIs, [openURL.absoluteString, unopenedURL.absoluteString])
+        XCTAssertEqual(try multi.tabText(tabId: tab), "open\n")
+        XCTAssertFalse(try multi.isTabModified(tab))
+        XCTAssertEqual(try String(contentsOf: unopenedURL, encoding: .utf8), "unopened\n")
+
+        let unavailable = try multi.undoLastWorkspaceEditTransaction()
+        XCTAssertFalse(unavailable.undone)
+        XCTAssertTrue(unavailable.restoredURIs.isEmpty)
+    }
+
     func testMultiDocumentEditorUIAppliesUnopenedWorkspaceFileTextEdits() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)

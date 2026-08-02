@@ -59,9 +59,11 @@ pub use multi_document::{
     WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
     WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
     WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
-    WorkspaceEditTransactionDocument, WorkspaceEditTransactionEvent,
-    WorkspaceEditTransactionEventsSnapshot, WorkspaceEditTransactionResult,
-    WorkspaceEditTransactionSkippedDetail, WorkspaceOutlineDocument, WorkspaceOutlineSnapshot,
+    WorkspaceEditTransactionConflict, WorkspaceEditTransactionDocument,
+    WorkspaceEditTransactionEvent, WorkspaceEditTransactionEventsSnapshot,
+    WorkspaceEditTransactionResourceOperation, WorkspaceEditTransactionResult,
+    WorkspaceEditTransactionSkippedDetail, WorkspaceEditTransactionUndoResult,
+    WorkspaceOutlineDocument, WorkspaceOutlineSnapshot,
 };
 pub use state::EditorUi;
 pub use state_events::{

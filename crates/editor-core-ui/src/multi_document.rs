@@ -18,9 +18,10 @@ pub use workspace_diagnostics::{
     WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
 };
 pub use workspace_edit::{
-    WorkspaceEditTransactionDocument, WorkspaceEditTransactionEvent,
-    WorkspaceEditTransactionEventsSnapshot, WorkspaceEditTransactionResult,
-    WorkspaceEditTransactionSkippedDetail,
+    WorkspaceEditTransactionConflict, WorkspaceEditTransactionDocument,
+    WorkspaceEditTransactionEvent, WorkspaceEditTransactionEventsSnapshot,
+    WorkspaceEditTransactionResourceOperation, WorkspaceEditTransactionResult,
+    WorkspaceEditTransactionSkippedDetail, WorkspaceEditTransactionUndoResult,
 };
 pub use workspace_outline::{WorkspaceOutlineDocument, WorkspaceOutlineSnapshot};
 
@@ -85,6 +86,7 @@ pub struct MultiDocumentEditorUi {
     lsp_request_events: lsp_request_events::MultiDocumentLspRequestEventStore,
     state_events: state_events::MultiDocumentStateEventStore,
     workspace_edit_transactions: workspace_edit::WorkspaceEditTransactionEventStore,
+    workspace_edit_undo: Option<workspace_edit::WorkspaceEditTransactionUndoRecord>,
 }
 
 impl MultiDocumentEditorUi {
@@ -651,7 +653,8 @@ impl MultiDocumentEditorUi {
         &mut self,
         workspace_edit_json: &str,
     ) -> Result<WorkspaceEditTransactionResult, UiError> {
-        let result = workspace_edit::apply(
+        self.discard_workspace_edit_undo_record()?;
+        let apply_result = workspace_edit::apply(
             &mut self.tabs,
             &mut self.tab_order,
             &mut self.active_tab,
@@ -659,6 +662,8 @@ impl MultiDocumentEditorUi {
             &self.workspace_roots,
             workspace_edit_json,
         )?;
+        let result = apply_result.result;
+        self.workspace_edit_undo = apply_result.undo_record;
         self.workspace_edit_transactions
             .record("apply", result.clone());
         Ok(result)
@@ -675,6 +680,38 @@ impl MultiDocumentEditorUi {
                 "failed to encode workspace edit transaction: {err}"
             ))
         })
+    }
+
+    /// Undo the most recent successful WorkspaceEdit transaction owned by this model.
+    pub fn undo_last_workspace_edit_transaction(
+        &mut self,
+    ) -> Result<WorkspaceEditTransactionUndoResult, UiError> {
+        let Some(mut record) = self.workspace_edit_undo.take() else {
+            return Ok(workspace_edit::undo_unavailable_result());
+        };
+        record.undo(
+            &mut self.tabs,
+            &mut self.tab_order,
+            &mut self.active_tab,
+            &mut self.preview_tab,
+        )
+    }
+
+    /// Undo the most recent successful WorkspaceEdit transaction as JSON.
+    pub fn undo_last_workspace_edit_transaction_json(&mut self) -> Result<String, UiError> {
+        let result = self.undo_last_workspace_edit_transaction()?;
+        serde_json::to_string(&result).map_err(|err| {
+            UiError::Processor(format!(
+                "failed to encode workspace edit transaction undo result: {err}"
+            ))
+        })
+    }
+
+    fn discard_workspace_edit_undo_record(&mut self) -> Result<(), UiError> {
+        if let Some(record) = self.workspace_edit_undo.take() {
+            record.discard()?;
+        }
+        Ok(())
     }
 
     /// Return latest WorkspaceEdit transaction event sequence.
