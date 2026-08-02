@@ -36,4 +36,58 @@ struct AttoTabSnapshot: Codable, Equatable, Sendable {
     var showsMinimap: Bool?
     var paneCount: Int?
     var activePaneIndex: Int?
+    var paneLayout: AttoPaneLayoutSnapshot?
+}
+
+struct AttoPaneLayoutSnapshot: Codable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable {
+        case leaf
+        case split
+    }
+
+    enum Axis: String, Codable, Sendable {
+        case horizontal
+        case vertical
+    }
+
+    var kind: Kind
+    var axis: Axis?
+    var paneIndex: Int?
+    var activePaneIndex: Int?
+    var children: [AttoPaneLayoutSnapshot]?
+
+    static func horizontalSplit(paneCount: Int, activePaneIndex: Int) -> AttoPaneLayoutSnapshot {
+        let safePaneCount = max(1, paneCount)
+        let safeActiveIndex = max(0, min(activePaneIndex, safePaneCount - 1))
+        return AttoPaneLayoutSnapshot(
+            kind: .split,
+            axis: .horizontal,
+            paneIndex: nil,
+            activePaneIndex: safeActiveIndex,
+            children: (0..<safePaneCount).map { paneIndex in
+                AttoPaneLayoutSnapshot(
+                    kind: .leaf,
+                    axis: nil,
+                    paneIndex: paneIndex,
+                    activePaneIndex: nil,
+                    children: nil
+                )
+            }
+        )
+    }
+
+    var flattenedPaneCount: Int {
+        switch kind {
+        case .leaf:
+            return 1
+        case .split:
+            let count = children?.reduce(0) { $0 + $1.flattenedPaneCount } ?? 0
+            return max(1, count)
+        }
+    }
+
+    var clampedActivePaneIndex: Int {
+        let count = flattenedPaneCount
+        return max(0, min(activePaneIndex ?? 0, count - 1))
+    }
 }

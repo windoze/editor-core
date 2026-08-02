@@ -5341,6 +5341,9 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(session.selectedTabIndex, 0)
         XCTAssertEqual(session.tabs[0].paneCount, 2)
         XCTAssertEqual(session.tabs[0].activePaneIndex, 1)
+        XCTAssertEqual(session.tabs[0].paneLayout?.axis, .horizontal)
+        XCTAssertEqual(session.tabs[0].paneLayout?.flattenedPaneCount, 2)
+        XCTAssertEqual(session.tabs[0].paneLayout?.clampedActivePaneIndex, 1)
     }
 
     func testOpenFileProjectionUsesCoreTabSnapshotWhenAvailable() throws {
@@ -5660,11 +5663,53 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(restoredSnapshot.tabs.count, 1)
         XCTAssertEqual(restoredSnapshot.tabs[0].paneCount, 2)
         XCTAssertEqual(restoredSnapshot.tabs[0].activePaneIndex, 0)
+        XCTAssertEqual(restoredSnapshot.tabs[0].paneLayout?.axis, .horizontal)
+        XCTAssertEqual(restoredSnapshot.tabs[0].paneLayout?.flattenedPaneCount, 2)
+        XCTAssertEqual(restoredSnapshot.tabs[0].paneLayout?.clampedActivePaneIndex, 0)
 
         let coreSnapshot = try XCTUnwrap(restored._coreMultiDocumentSnapshotForTesting())
         XCTAssertEqual(coreSnapshot.tabs.count, 1)
         XCTAssertEqual(coreSnapshot.tabs[0].viewCount, 2)
         XCTAssertEqual(coreSnapshot.tabs[0].activeViewIndex, 0)
+    }
+
+    func testSessionRestorePrefersPaneLayoutSnapshotOverLegacyPaneCount() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("session-layout.txt")
+        try "abc".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let tabSnapshot = AttoTabSnapshot(
+            filePath: fileURL.path,
+            isPreview: false,
+            showsMinimap: true,
+            paneCount: 1,
+            activePaneIndex: 0,
+            paneLayout: AttoPaneLayoutSnapshot.horizontalSplit(paneCount: 3, activePaneIndex: 2)
+        )
+
+        let restored = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(restored)
+        restored.restoreSession(tabs: [tabSnapshot], selectedTabIndex: 0)
+        restored.view.layoutSubtreeIfNeeded()
+
+        let editorViews = findSubviews(of: EditorCoreSkiaView.self, in: restored.view)
+        XCTAssertEqual(editorViews.count, 3)
+
+        let restoredSnapshot = restored.makeSessionSnapshot()
+        XCTAssertEqual(restoredSnapshot.tabs.count, 1)
+        XCTAssertEqual(restoredSnapshot.tabs[0].paneCount, 3)
+        XCTAssertEqual(restoredSnapshot.tabs[0].activePaneIndex, 2)
+        XCTAssertEqual(restoredSnapshot.tabs[0].paneLayout?.flattenedPaneCount, 3)
+        XCTAssertEqual(restoredSnapshot.tabs[0].paneLayout?.clampedActivePaneIndex, 2)
+
+        let coreSnapshot = try XCTUnwrap(restored._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(coreSnapshot.tabs.count, 1)
+        XCTAssertEqual(coreSnapshot.tabs[0].viewCount, 3)
+        XCTAssertEqual(coreSnapshot.tabs[0].activeViewIndex, 2)
     }
 
     private func makeEditorArea(

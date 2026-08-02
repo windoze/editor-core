@@ -640,6 +640,15 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditRemovedTabCallbackUsesCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditResourceOperationDeletesOpenCleanTab`
     - `git diff --check`
+- 中间提交：`feat(app): persist pane layout snapshots`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；为 AttoEditor session tab snapshot 增加可选 pane layout descriptor，并让 snapshot/restore 优先按 core-projected view count 与 active view index 生成和消费该布局字段。
+  - 提交边界：只新增 Swift session `paneLayout` 编码模型和 restore 优先级；保留旧 `paneCount` / `activePaneIndex` 作为兼容 fallback，不改变真实 pane UI 结构、core `MultiDocumentEditorUi` view model、Rust/FFI ABI、session 文件路径或 workspace/project ownership。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testSessionSnapshotUsesCoreTabProjectionWhenAvailable`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testSessionRestoreRestoresSplitPanesIntoCoreMirror`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testSessionRestorePrefersPaneLayoutSnapshotOverLegacyPaneCount`
+    - `swift test --package-path swift --filter AttoSessionStoreTests.testLoadAcceptsLegacyTabSnapshotWithoutPaneLayout`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

@@ -28,12 +28,18 @@ extension AttoEditorAreaViewController {
         }()
 
         let tabSnaps: [AttoTabSnapshot] = tabs.map { tab in
-            AttoTabSnapshot(
+            let paneCount = tab.panes.count
+            let activePaneIndex = max(0, min(tab.activePaneIndex, paneCount - 1))
+            return AttoTabSnapshot(
                 filePath: tab.fileURL.standardizedFileURL.path,
                 isPreview: tab.isPreview,
                 showsMinimap: tab.editCore.showsMinimap,
-                paneCount: tab.panes.count,
-                activePaneIndex: max(0, min(tab.activePaneIndex, tab.panes.count - 1))
+                paneCount: paneCount,
+                activePaneIndex: activePaneIndex,
+                paneLayout: AttoPaneLayoutSnapshot.horizontalSplit(
+                    paneCount: paneCount,
+                    activePaneIndex: activePaneIndex
+                )
             )
         }
 
@@ -64,7 +70,11 @@ extension AttoEditorAreaViewController {
                     isPreview: coreTab.isPreview,
                     showsMinimap: projected.tab.editCore.showsMinimap,
                     paneCount: paneCount,
-                    activePaneIndex: activePaneIndex
+                    activePaneIndex: activePaneIndex,
+                    paneLayout: AttoPaneLayoutSnapshot.horizontalSplit(
+                        paneCount: paneCount,
+                        activePaneIndex: activePaneIndex
+                    )
                 )
             )
         }
@@ -183,12 +193,13 @@ extension AttoEditorAreaViewController {
                     showsMinimap: snap.showsMinimap ?? true
                 )
 
-                let paneCount = max(1, min(snap.paneCount ?? 1, 8))
+                let paneCount = max(1, min(snap.paneLayout?.flattenedPaneCount ?? snap.paneCount ?? 1, 8))
                 if paneCount > 1 {
                     for _ in 1..<paneCount {
                         _ = try appendSplitPane(to: tab)
                     }
-                    tab.activePaneIndex = max(0, min(snap.activePaneIndex ?? 0, tab.panes.count - 1))
+                    let activePaneIndex = snap.paneLayout?.clampedActivePaneIndex ?? snap.activePaneIndex ?? 0
+                    tab.activePaneIndex = max(0, min(activePaneIndex, tab.panes.count - 1))
                     setCoreActiveView(tab)
                 }
 
