@@ -536,12 +536,6 @@ final class AttoEditorAreaViewController: NSViewController {
         let showFeedback: Bool
     }
 
-    private struct DiagnosticMarkerProjection: Equatable {
-        let logicalLine: UInt32
-        let charOffset: UInt32
-        let severity: EcuDiagnosticSeverity?
-    }
-
     private var hoverContext: HoverRequestContext?
     private var hoverDebounceWorkItem: DispatchWorkItem?
     private var hoverPollTimer: DispatchSourceTimer?
@@ -3585,12 +3579,10 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func updateDiagnosticMarkers(for tab: AttoEditorTab, includeActiveDiagnostics: Bool) {
-        var projections: [DiagnosticMarkerProjection] = []
-        if includeActiveDiagnostics {
-            projections.append(contentsOf: activeDiagnosticMarkerProjections(for: tab))
-        }
-        projections.append(contentsOf: workspaceDiagnosticMarkerProjections(for: tab))
-        projections = uniqueDiagnosticMarkerProjections(projections)
+        let projections = unifiedDiagnosticMarkerProjections(
+            for: tab,
+            includeActiveDiagnostics: includeActiveDiagnostics
+        )
 
         let minimapMarkers = projections.map {
             EditorCoreSkiaMinimapMarker(
@@ -3612,56 +3604,27 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
-    private func activeDiagnosticMarkerProjections(for tab: AttoEditorTab) -> [DiagnosticMarkerProjection] {
-        derivedStateStore.active.diagnostics.diagnostics.compactMap { diagnostic -> DiagnosticMarkerProjection? in
-            let offset = min(diagnostic.range.start, diagnostic.range.end)
-            guard let position = try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offset) else {
-                return nil
-            }
-            return DiagnosticMarkerProjection(
-                logicalLine: position.line,
-                charOffset: offset,
-                severity: diagnostic.severity
-            )
-        }
-    }
-
-    private func workspaceDiagnosticMarkerProjections(for tab: AttoEditorTab) -> [DiagnosticMarkerProjection] {
-        let tabURL = tab.fileURL.standardizedFileURL
+    private func unifiedDiagnosticMarkerProjections(
+        for tab: AttoEditorTab,
+        includeActiveDiagnostics: Bool
+    ) -> [AttoDiagnosticMarkerProjection] {
         guard let text = try? tab.editCore.editor.text() else { return [] }
-
-        return workspaceProblemsStore.diagnosticMarkerProjections().compactMap { marker -> DiagnosticMarkerProjection? in
-            guard let url = URL(string: marker.uri), url.isFileURL else { return nil }
-            guard url.standardizedFileURL == tabURL else { return nil }
-
-            let offset = AttoLspDefinitionParser.charOffsetForLspPosition(
-                inText: text,
-                line: marker.line,
-                utf16Character: marker.utf16Character
-            )
-            guard let position = try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offset) else {
-                return nil
+        return AttoDiagnosticsModel.markerSnapshot(
+            activeDiagnostics: derivedStateStore.active.diagnostics.diagnostics,
+            includeActiveDiagnostics: includeActiveDiagnostics,
+            workspaceMarkers: workspaceProblemsStore.diagnosticMarkerProjections(),
+            tabURL: tab.fileURL,
+            text: text,
+            logicalPositionForOffset: { offset in
+                try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offset)
             }
-            return DiagnosticMarkerProjection(
-                logicalLine: position.line,
-                charOffset: offset,
-                severity: marker.severity
-            )
-        }
+        ).markerProjections
     }
 
     private func updateWorkspaceDiagnosticMarkersForOpenTabs() {
         for tab in tabs {
             updateDiagnosticMarkers(for: tab, includeActiveDiagnostics: tab.id == activeTab?.id)
         }
-    }
-
-    private func uniqueDiagnosticMarkerProjections(_ projections: [DiagnosticMarkerProjection]) -> [DiagnosticMarkerProjection] {
-        var out: [DiagnosticMarkerProjection] = []
-        for projection in projections where out.contains(projection) == false {
-            out.append(projection)
-        }
-        return out
     }
 
     private func minimapMarkerKind(for severity: EcuDiagnosticSeverity?) -> EditorCoreSkiaMinimapMarker.Kind {
