@@ -621,6 +621,15 @@
 ### 提交
 
 - `docs: close swift gaps audit`
+- 维护性中间提交：`refactor(swift): split long editor integration files`
+  - 所属任务：拆分过长 Swift 集成文件，降低后续执行本计划时在 AppKit controller、Swift FFI wrapper、Skia view 三个高频改动面上的冲突和审查成本。
+  - 提交边界：只做结构性模块化拆分；将 `AttoEditorAreaViewController.swift`、`EditorUI.swift`、`EditorCoreSkiaView.swift` 按命令、LSP、编辑、渲染、输入、鼠标、tabs/panes、偏好设置等职责拆到同目录扩展文件；仅为跨文件 extension 调用放宽必要的 Swift 访问级别；不改变 ABI、Rust 代码或产品行为。
+  - 验证记录：
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests`
+    - `swift test --package-path swift --filter EditorCoreUITests`
+    - `swift test --package-path swift --filter AttoEditorTests`
+    - `git diff --check`
 
 ## 常用验证命令
 
