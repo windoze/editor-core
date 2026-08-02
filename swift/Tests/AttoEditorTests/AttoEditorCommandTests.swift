@@ -4573,6 +4573,50 @@ final class AttoEditorCommandTests: XCTestCase {
         ])
     }
 
+    func testSessionSnapshotUsesCoreTabProjectionWhenAvailable() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-session.txt")
+        let secondURL = tempDir.appendingPathComponent("second-session.txt")
+        let thirdURL = tempDir.appendingPathComponent("third-session.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "third".write(to: thirdURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.openFile(url: thirdURL, mode: .pinned)
+
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        let thirdTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == thirdURL.standardizedFileURL })
+        let thirdCoreTabID = try XCTUnwrap(thirdTab.coreTabID)
+        XCTAssertEqual(vc.openFileItems().map { $0.url.lastPathComponent }, [
+            "first-session.txt",
+            "second-session.txt",
+            "third-session.txt",
+        ])
+
+        XCTAssertTrue(try coreDocuments.moveTab(fromIndex: 2, toIndex: 0))
+        try coreDocuments.setActiveTab(thirdCoreTabID)
+        XCTAssertEqual(try coreDocuments.splitTab(thirdCoreTabID, viewportWidthCells: 120), 1)
+        try coreDocuments.setActiveViewIndex(tabId: thirdCoreTabID, viewIndex: 1)
+
+        let session = vc.makeSessionSnapshot()
+        XCTAssertEqual(session.tabs.map { URL(fileURLWithPath: $0.filePath).lastPathComponent }, [
+            "third-session.txt",
+            "first-session.txt",
+            "second-session.txt",
+        ])
+        XCTAssertEqual(session.selectedTabIndex, 0)
+        XCTAssertEqual(session.tabs[0].paneCount, 2)
+        XCTAssertEqual(session.tabs[0].activePaneIndex, 1)
+    }
+
     func testSessionRestoreRestoresSplitPanesIntoCoreMirror() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

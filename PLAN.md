@@ -458,6 +458,13 @@
 ### 提交
 
 - `feat(app): project tabs and panes from core workspace`
+- 中间提交：`feat(app): save sessions from core tabs`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor session snapshot 保存路径优先消费 `MultiDocumentEditorUI.snapshot()` 中的 tab 顺序、active tab、preview、view count 和 active view index，而不是只从 Swift `tabs` 数组读取长期事实。
+  - 提交边界：只调整 App session 保存投影和对应测试；保留 Swift 本地 fallback，用于 core multi-document runtime 不可用、core tab id 缺失或 core snapshot 读取失败时维持既有行为。本提交不改变 restore 语义、不新增 Rust/FFI ABI、不实现 pane layout tree、drag/drop split 或 session schema migration。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testSessionSnapshotUsesCoreTabProjectionWhenAvailable`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testSessionRestoreRestoresSplitPanesIntoCoreMirror`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

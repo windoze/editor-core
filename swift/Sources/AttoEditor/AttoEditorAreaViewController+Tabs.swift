@@ -8,6 +8,14 @@ extension AttoEditorAreaViewController {
     // MARK: - Tabs
 
     func makeSessionSnapshot() -> (tabs: [AttoTabSnapshot], selectedTabIndex: Int?) {
+        if let coreSnapshot = makeCoreProjectedSessionSnapshot() {
+            return coreSnapshot
+        }
+
+        return makeLocalSessionSnapshot()
+    }
+
+    private func makeLocalSessionSnapshot() -> (tabs: [AttoTabSnapshot], selectedTabIndex: Int?) {
         let selectedIndex: Int? = {
             guard let selectedTabID else { return nil }
             return tabs.firstIndex(where: { $0.id == selectedTabID })
@@ -24,6 +32,64 @@ extension AttoEditorAreaViewController {
         }
 
         return (tabs: tabSnaps, selectedTabIndex: selectedIndex)
+    }
+
+    private func makeCoreProjectedSessionSnapshot() -> (tabs: [AttoTabSnapshot], selectedTabIndex: Int?)? {
+        guard let coreDocuments else { return nil }
+        let coreSnapshot: EcuMultiDocumentSnapshot
+        do {
+            coreSnapshot = try coreDocuments.snapshot()
+        } catch {
+            NSLog("AttoEditor: core multi-document session snapshot failed: %@", String(describing: error))
+            return nil
+        }
+
+        var tabsByCoreID: [UInt64: AttoEditorTab] = [:]
+        tabsByCoreID.reserveCapacity(tabs.count)
+        for tab in tabs {
+            guard let coreTabID = tab.coreTabID else { return nil }
+            guard tabsByCoreID[coreTabID] == nil else { return nil }
+            tabsByCoreID[coreTabID] = tab
+        }
+
+        var tabSnaps: [AttoTabSnapshot] = []
+        tabSnaps.reserveCapacity(coreSnapshot.tabs.count)
+        var selectedIndex: Int?
+
+        for coreTab in coreSnapshot.tabs {
+            guard let tab = tabsByCoreID[coreTab.id] else { return nil }
+            let fileURL = sessionFileURL(for: coreTab, fallback: tab.fileURL)
+            let paneCount = max(1, Int(coreTab.viewCount))
+            let activePaneIndex = max(0, min(Int(coreTab.activeViewIndex), paneCount - 1))
+
+            if coreTab.isActive || coreSnapshot.activeTabId == coreTab.id {
+                selectedIndex = tabSnaps.count
+            }
+
+            tabSnaps.append(
+                AttoTabSnapshot(
+                    filePath: fileURL.standardizedFileURL.path,
+                    isPreview: coreTab.isPreview,
+                    showsMinimap: tab.editCore.showsMinimap,
+                    paneCount: paneCount,
+                    activePaneIndex: activePaneIndex
+                )
+            )
+        }
+
+        guard tabSnaps.count == tabs.count else { return nil }
+        return (tabs: tabSnaps, selectedTabIndex: selectedIndex)
+    }
+
+    private func sessionFileURL(for coreTab: EcuMultiDocumentTabSnapshot, fallback: URL) -> URL {
+        if let documentURI = coreTab.documentURI,
+           let url = URL(string: documentURI),
+           url.isFileURL
+        {
+            return url.standardizedFileURL
+        }
+
+        return fallback.standardizedFileURL
     }
 
     func restoreSession(tabs tabSnapshots: [AttoTabSnapshot], selectedTabIndex: Int?) {
