@@ -650,6 +650,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastSignatureHelpResult() throws -> EcuLspSignatureHelpResult? {
+        guard let json = try lspTakeLastSignatureHelpResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspSignatureHelpResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_signature_help_decode"
+        )
+    }
+
     public func lspRequestPrepareRename(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
         try lspRequestPosition(
             logicalLine: logicalLine,

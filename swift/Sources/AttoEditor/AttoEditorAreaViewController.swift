@@ -8303,8 +8303,8 @@ final class AttoEditorAreaViewController: NSViewController {
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
             if showEmptyResults {
-                showSignatureHelpPopover(
-                    display: AttoLspSignatureHelpFormatter.messageDisplay("Signature help is unavailable.\nLSP is not enabled for this document."),
+                showSignatureHelpFeedback(
+                    AttoLspResultFeedback.unavailable(.signatureHelp),
                     in: tab.editCore.editorView
                 )
             }
@@ -8328,8 +8328,8 @@ final class AttoEditorAreaViewController: NSViewController {
             )
         } catch {
             if showEmptyResults {
-                showSignatureHelpPopover(
-                    display: AttoLspSignatureHelpFormatter.messageDisplay("Signature help request failed.\n\(error.localizedDescription)"),
+                showSignatureHelpFeedback(
+                    AttoLspResultFeedback.requestFailed(.signatureHelp, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -8362,8 +8362,8 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showEmptyResults = ctx.showEmptyResults
                 self.cancelSignatureHelpUI()
                 if showEmptyResults {
-                    self.showSignatureHelpPopover(
-                        display: AttoLspSignatureHelpFormatter.messageDisplay("Signature help timed out."),
+                    self.showSignatureHelpFeedback(
+                        AttoLspResultFeedback.timeout(.signatureHelp),
                         in: editorView
                     )
                 }
@@ -8376,32 +8376,50 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspSignatureHelpResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastSignatureHelpResultJSON()
+                result = try tab.editCore.editor.lspTakeLastSignatureHelpResult()
             } catch {
                 let showEmptyResults = ctx.showEmptyResults
                 self.cancelSignatureHelpUI()
                 if showEmptyResults {
-                    self.showSignatureHelpPopover(
-                        display: AttoLspSignatureHelpFormatter.messageDisplay("Signature help failed.\n\(error.localizedDescription)"),
+                    self.showSignatureHelpFeedback(
+                        AttoLspResultFeedback.failed(.signatureHelp, errorDescription: error.localizedDescription),
                         in: editorView
                     )
                 }
                 timer.cancel()
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
-            let display = AttoLspSignatureHelpFormatter.display(fromSignatureHelpResultJSON: json)
-                ?? (ctx.showEmptyResults ? AttoLspSignatureHelpFormatter.messageDisplay("No signature help is available here.") : nil)
+            let display = AttoLspSignatureHelpFormatter.display(from: result)
+            let showEmptyResults = ctx.showEmptyResults
             self.cancelSignatureHelpUI()
-            self.showSignatureHelpPopover(display: display, in: editorView)
+            if let display {
+                self.showSignatureHelpPopover(display: display, in: editorView)
+            } else if showEmptyResults {
+                self.showSignatureHelpFeedback(
+                    AttoLspResultFeedback.empty(.signatureHelp),
+                    in: editorView
+                )
+            }
             timer.cancel()
         }
 
         signatureHelpPollTimer = timer
         timer.resume()
+    }
+
+    private func showSignatureHelpFeedback(
+        _ message: AttoLspResultFeedback.Message,
+        in editorView: EditorCoreSkiaView
+    ) {
+        setTransientStatusText(message.statusText)
+        showSignatureHelpPopover(
+            display: AttoLspSignatureHelpFormatter.messageDisplay(message.detailText),
+            in: editorView
+        )
     }
 
     private func showSignatureHelpPopover(display: AttoLspSignatureHelpFormatter.Display?, in editorView: EditorCoreSkiaView) {

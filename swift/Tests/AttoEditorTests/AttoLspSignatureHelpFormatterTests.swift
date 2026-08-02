@@ -33,9 +33,9 @@ final class AttoLspSignatureHelpFormatterTests: XCTestCase {
         XCTAssertEqual(model.activeParameter, 0)
         XCTAssertEqual(model.signatures.count, 2)
         XCTAssertEqual(model.signatures[1].label, "open(path: String, mode: Mode)")
-        XCTAssertEqual(model.signatures[1].documentation, "Open a file.")
+        XCTAssertEqual(model.signatures[1].documentation?.text, "Open a file.")
         XCTAssertEqual(model.signatures[1].parameters.count, 2)
-        XCTAssertEqual(model.signatures[1].parameters[0].label, .utf16Range(NSRange(location: 5, length: 12)))
+        XCTAssertEqual(model.signatures[1].parameters[0].label, .utf16Range(start: 5, end: 17))
 
         let display = try XCTUnwrap(AttoLspSignatureHelpFormatter.display(fromSignatureHelpResultJSON: json))
         let text = display.text
@@ -88,6 +88,27 @@ final class AttoLspSignatureHelpFormatterTests: XCTestCase {
         let display = try XCTUnwrap(AttoLspSignatureHelpFormatter.display(fromSignatureHelpResultJSON: json))
         XCTAssertTrue(display.activeParameterRanges.contains(NSRange(location: 4, length: 7)))
         XCTAssertTrue(highlightedSubstrings(in: display).contains("😀: Int"))
+    }
+
+    func testSignatureHelpFormatterConsumesTypedResult() throws {
+        let result = try JSONDecoder().decode(EcuLspSignatureHelpResult.self, from: Data("""
+        {
+          "signatures": [
+            {
+              "label": "sum(a: Int, b: Int)",
+              "parameters": [
+                { "label": "a: Int" },
+                { "label": "b: Int" }
+              ]
+            }
+          ],
+          "activeParameter": 1
+        }
+        """.utf8))
+
+        let display = try XCTUnwrap(AttoLspSignatureHelpFormatter.display(from: result))
+        XCTAssertTrue(display.text.contains("parameter: b: Int"))
+        XCTAssertTrue(highlightedSubstrings(in: display).contains("b: Int"))
     }
 
     func testSignatureHelpReturnsNilForNullOrEmptyResult() throws {

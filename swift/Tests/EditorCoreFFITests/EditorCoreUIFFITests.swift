@@ -869,6 +869,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertNil(try ui.lspTakeLastCompletionResultJSON())
         XCTAssertNil(try ui.lspTakeLastCompletionItemResolveResultJSON())
         XCTAssertNil(try ui.lspTakeLastSignatureHelpResultJSON())
+        XCTAssertNil(try ui.lspTakeLastSignatureHelpResult())
         XCTAssertNil(try ui.lspTakeLastPrepareRenameResultJSON())
         XCTAssertNil(try ui.lspTakeLastRenameResultJSON())
         XCTAssertNil(try ui.lspTakeLastCodeActionResultJSON())

@@ -41,6 +41,13 @@ final class AttoLspResultFeedbackTests: XCTestCase {
                 detailText: "No workspace diagnostics are available."
             )
         )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.signatureHelp),
+            AttoLspResultFeedback.Message(
+                statusText: "Signature help: no results",
+                detailText: "No signature help is available here."
+            )
+        )
     }
 
     func testRefreshSummaryFormatsSingularAndPluralCounts() {

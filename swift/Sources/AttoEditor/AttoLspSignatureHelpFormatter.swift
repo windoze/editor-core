@@ -1,28 +1,7 @@
 import Foundation
+import EditorCoreUIFFI
 
 enum AttoLspSignatureHelpFormatter {
-    struct SignatureHelp {
-        let signatures: [Signature]
-        let activeSignature: Int
-        let activeParameter: Int?
-    }
-
-    struct Signature {
-        let label: String
-        let documentation: String?
-        let parameters: [Parameter]
-        let activeParameter: Int?
-    }
-
-    struct Parameter {
-        let label: ParameterLabel
-    }
-
-    enum ParameterLabel: Equatable {
-        case string(String)
-        case utf16Range(NSRange)
-    }
-
     struct Display {
         let text: String
         let activeParameterRanges: [NSRange]
@@ -37,29 +16,13 @@ enum AttoLspSignatureHelpFormatter {
         return display(from: help)
     }
 
-    static func parse(fromSignatureHelpResultJSON json: String) -> SignatureHelp? {
+    static func parse(fromSignatureHelpResultJSON json: String) -> EcuLspSignatureHelpResult? {
         guard let data = json.data(using: .utf8) else { return nil }
-        guard let root = try? JSONSerialization.jsonObject(with: data, options: []) else { return nil }
-        guard !(root is NSNull) else { return nil }
-        guard let dict = root as? [String: Any] else { return nil }
-        guard let signatures = dict["signatures"] as? [[String: Any]], signatures.isEmpty == false else {
-            return nil
-        }
-
-        let parsedSignatures = signatures.compactMap(parseSignature(_:))
-        guard parsedSignatures.isEmpty == false else { return nil }
-        return SignatureHelp(
-            signatures: parsedSignatures,
-            activeSignature: clamp(
-                intValue(dict["activeSignature"]) ?? 0,
-                lower: 0,
-                upper: parsedSignatures.count - 1
-            ),
-            activeParameter: intValue(dict["activeParameter"])
-        )
+        guard let help = try? JSONDecoder().decode(EcuLspSignatureHelpResult.self, from: data) else { return nil }
+        return help.isEmpty ? nil : help
     }
 
-    static func display(from help: SignatureHelp) -> Display? {
+    static func display(from help: EcuLspSignatureHelpResult) -> Display? {
         guard help.signatures.isEmpty == false else { return nil }
         let activeSignature = clamp(
             help.activeSignature,
@@ -86,7 +49,7 @@ enum AttoLspSignatureHelpFormatter {
             ))
         }
 
-        if let documentation = sig.documentation {
+        if let documentation = sig.documentation?.text {
             text += "\n\n\(documentation)"
         }
 
@@ -102,7 +65,10 @@ enum AttoLspSignatureHelpFormatter {
         let signatureRange: NSRange?
     }
 
-    private static func activeParameterDisplay(signature sig: Signature, help: SignatureHelp) -> ParameterDisplay? {
+    private static func activeParameterDisplay(
+        signature sig: EcuLspSignatureInformation,
+        help: EcuLspSignatureHelpResult
+    ) -> ParameterDisplay? {
         guard sig.parameters.isEmpty == false else {
             return nil
         }
@@ -116,62 +82,19 @@ enum AttoLspSignatureHelpFormatter {
 
         switch param.label {
         case let .string(label):
+            guard label.isEmpty == false else { return nil }
             let signatureRange = sig.label.range(of: label).map { NSRange($0, in: sig.label) }
             return ParameterDisplay(text: label, signatureRange: signatureRange)
-        case let .utf16Range(range):
+        case let .utf16Range(start, end):
             guard let substring = substringUTF16(
                 sig.label,
-                start: range.location,
-                end: range.location + range.length
+                start: Int(start),
+                end: Int(end)
             ) else { return nil }
             return ParameterDisplay(text: substring.text, signatureRange: substring.range)
+        case .unknown:
+            return nil
         }
-    }
-
-    private static func parseSignature(_ dict: [String: Any]) -> Signature? {
-        guard let label = dict["label"] as? String, label.isEmpty == false else { return nil }
-        let parameters = (dict["parameters"] as? [[String: Any]] ?? [])
-            .compactMap(parseParameter(_:))
-        return Signature(
-            label: label,
-            documentation: markdownText(dict["documentation"]),
-            parameters: parameters,
-            activeParameter: intValue(dict["activeParameter"])
-        )
-    }
-
-    private static func parseParameter(_ dict: [String: Any]) -> Parameter? {
-        guard let label = parameterLabel(dict["label"]) else { return nil }
-        return Parameter(label: label)
-    }
-
-    private static func parameterLabel(_ any: Any?) -> ParameterLabel? {
-        if let label = any as? String, label.isEmpty == false {
-            return .string(label)
-        }
-        if let range = any as? [Any],
-           range.count == 2,
-           let start = intValue(range[0]),
-           let end = intValue(range[1]),
-           end > start
-        {
-            return .utf16Range(NSRange(location: start, length: end - start))
-        }
-        return nil
-    }
-
-    private static func markdownText(_ any: Any?) -> String? {
-        if let s = any as? String {
-            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : s
-        }
-        if let dict = any as? [String: Any],
-           let value = dict["value"] as? String
-        {
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : value
-        }
-        return nil
     }
 
     private static func substringUTF16(_ text: String, start: Int, end: Int) -> (text: String, range: NSRange)? {
@@ -188,12 +111,6 @@ enum AttoLspSignatureHelpFormatter {
         }
         let out = String(text[startIdx..<endIdx])
         return out.isEmpty ? nil : (out, NSRange(location: safeStart, length: safeEnd - safeStart))
-    }
-
-    private static func intValue(_ any: Any?) -> Int? {
-        if let v = any as? Int { return v }
-        if let n = any as? NSNumber { return n.intValue }
-        return nil
     }
 
     private static func clamp(_ value: Int, lower: Int, upper: Int) -> Int {

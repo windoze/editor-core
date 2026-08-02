@@ -254,7 +254,7 @@ Swift 侧已经具备以下基础能力：
 | --- | --- | --- | --- | --- | --- |
 | hover | 已有 raw request/take | 阶段 164 已补 public `EcuLspHoverResult` wrapper，覆盖 MarkupContent、MarkedString、range 和 raw payload | hover popover 主路径已有，阶段 164 已改为消费 typed result；JSON formatter 入口保留兼容 | result/request events 已覆盖 | 自动 hover 仍保持低噪声；若后续增加显式 hover command，再接入统一 empty/error/timeout/stale feedback |
 | completion / completion resolve | 已有 request/take | 已有 `EcuLspCompletionResult` / typed resolve item | completion popup、resolve、commit characters、trigger characters、增量过滤已消费 typed payload | result/request events 已覆盖 | 统一 feedback；跨文件 additional edits 后续交给 core-owned WorkspaceEdit transaction |
-| signature help | 已有 raw request/take | App formatter 内部有 typed display model；Swift UIFFI 仍缺 public take wrapper | 手动/自动 signature popup 已有，手动空/错反馈已有 | result/request events 已覆盖 | 将 formatter model 上提为 UIFFI typed result；接入统一 feedback，自动触发路径保持静默失败策略 |
+| signature help | 已有 raw request/take | 阶段 165 已补 public `EcuLspSignatureHelpResult` wrapper，覆盖 SignatureInformation、ParameterInformation、documentation、active index 和 raw payload | 手动/自动 signature popup 已有，阶段 165 已改为消费 typed result；手动空/错反馈接入统一 feedback，自动触发保持静默失败策略 | result/request events 已覆盖 | 后续由状态订阅驱动 stale/refresh metadata；自动触发继续保持低噪声 |
 | definition / declaration / type definition / implementation / references | 已有 request/take | 已有 `EcuLspLocationResult` | location quick panel、history、persistent panel、cmd-click 已消费 typed payload | result/request events 已覆盖，MultiDocument 聚合已有 | 统一 feedback；补项目级 freshness/ownership 与状态订阅驱动 |
 | prepare rename / rename | 已有 request/take | 已有 `EcuLspPrepareRenameResult` / `EcuLspWorkspaceEdit` | rename 输入、typed seed、WorkspaceEdit apply/summary 已消费 typed payload | result/request events 已覆盖 | WorkspaceEdit 应迁到 core-owned 跨文件事务；统一 feedback 和冲突展示 |
 | code action / code action resolve / execute command | 已有 request/take/resolve/executeCommand | code action typed 已有；executeCommand result 仍偏 raw/result envelope | quick panel、kind filter、resolve、command 执行和 HUD 已有 | result/request events 已覆盖 | typed workspace command/result model；WorkspaceEdit 事务化；统一 feedback |
@@ -286,6 +286,12 @@ Swift 侧已经具备以下基础能力：
 2026-08-02 阶段 164 已补齐 hover result 的 Swift typed payload 起点：`EditorCoreUIFFI` 新增 `EcuLspHoverResult` / `EcuLspHoverContent`，覆盖 LSP `Hover | null`、`MarkupContent`、`MarkedString` 字符串/语言对象、可选 `range` 和 raw payload preservation；`EditorUI.lspTakeLastHoverResult()` 复用既有 `lspTakeLastHoverResultJSON()` C ABI escape hatch 做 typed decode，因此不需要扩大 C ABI 表面。
 
 AttoEditor hover formatter 和 hover popover 轮询路径已改为消费 typed result，原有 JSON formatter 入口保留给兼容和测试。自动 hover 的失败、空结果和超时仍按低噪声策略取消 popover，不弹出统一错误提示；后续如果增加显式 hover command，再把显式命令接入 `AttoLspResultFeedback`。
+
+## 阶段 165: Signature help typed payload wrapper
+
+2026-08-02 阶段 165 已补齐 signature help result 的 Swift typed payload：`EditorCoreUIFFI` 新增 `EcuLspSignatureHelpResult`、`EcuLspSignatureInformation`、`EcuLspParameterInformation` 和 `EcuLspParameterLabel`，覆盖 LSP `SignatureHelp | null`、active signature/parameter、signature-level active parameter、string / UTF-16 range 参数 label、string / MarkupContent documentation、unknown parameter label fallback 和 raw payload preservation；`EditorUI.lspTakeLastSignatureHelpResult()` 复用既有 `lspTakeLastSignatureHelpResultJSON()` C ABI escape hatch 做 typed decode。
+
+AttoEditor `AttoLspSignatureHelpFormatter` 已改为直接消费 UIFFI typed result，原 JSON formatter/parse 入口作为兼容包装保留。手动 signature help 的 unavailable、request failed、failed、timeout 和 empty 路径已接入 `AttoLspResultFeedback` 的统一 status/detail 文案，并继续用 signature popover 在 caret 附近显示详细信息；自动 trigger path 仍保持静默失败策略，避免输入过程中弹出噪声。
 
 ## 分层结论
 

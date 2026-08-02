@@ -10,6 +10,7 @@ enum AttoLspResultFeedback {
         case foldingRanges
         case semanticTokens
         case selectionRange
+        case signatureHelp
         case linkedEditing
         case codeLensRefresh
         case workspaceDiagnostics
@@ -22,6 +23,8 @@ enum AttoLspResultFeedback {
                 return "Semantic tokens"
             case .selectionRange:
                 return "Selection range"
+            case .signatureHelp:
+                return "Signature help"
             case .linkedEditing:
                 return "Linked editing"
             case .codeLensRefresh:
@@ -57,6 +60,8 @@ enum AttoLspResultFeedback {
                 return "Semantic tokens are unavailable."
             case .selectionRange:
                 return "Selection range is unavailable."
+            case .signatureHelp:
+                return "Signature help is unavailable."
             case .linkedEditing:
                 return "Linked editing is unavailable."
             case .codeLensRefresh:
@@ -74,6 +79,8 @@ enum AttoLspResultFeedback {
                 return "No semantic tokens are available for this document."
             case .selectionRange:
                 return "No larger selection range is available."
+            case .signatureHelp:
+                return "No signature help is available here."
             case .linkedEditing:
                 return "No linked editing ranges are available here."
             case .codeLensRefresh:
