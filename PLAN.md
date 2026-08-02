@@ -540,6 +540,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspTargetNavigationUsesCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileLocationUsesCoreDocumentURIProjection`
     - `git diff --check`
+- 中间提交：`feat(app): preview workspace edits from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor WorkspaceEdit diff preview 的 text provider 在 URI 对应打开 tab 时，按 core `document_uri` 投影读取打开 tab 当前文本。
+  - 提交边界：放宽 projected tab lookup helper 供 WorkspaceEdit preview 复用，并只迁移 `workspaceEditPreviewText(for:)` 的打开 tab 查找；不改变 WorkspaceEdit apply/transaction 语义、resource operation 执行、preview panel UI、session schema 或真实 `tab.fileURL` 同步策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditPreviewTextUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditPreviewConfirmationCanCancelCoreTransaction`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

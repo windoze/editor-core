@@ -301,7 +301,7 @@ extension AttoEditorAreaViewController {
 
     func workspaceEditPreviewText(for uri: String) -> String? {
         guard let url = Self.fileURL(fromDocumentURI: uri)?.standardizedFileURL else { return nil }
-        if let tab = tabs.first(where: { $0.fileURL.standardizedFileURL == url }) {
+        if let tab = projectedTab(forFileURL: url) {
             return try? tab.editCore.editor.text()
         }
         return try? String(contentsOf: url, encoding: .utf8)
