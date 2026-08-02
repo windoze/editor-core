@@ -97,12 +97,13 @@ extension AttoEditorAreaViewController {
     }
 
     func displayTitle(for diagnostic: EcuDiagnostic, in tab: AttoEditorTab) -> String {
+        let documentURL = projectedFileURL(for: tab)
         let location: String = {
             do {
                 let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: diagnostic.range.start)
-                return "\(tab.fileURL.lastPathComponent):\(pos.line + 1):\(pos.column + 1)"
+                return "\(documentURL.lastPathComponent):\(pos.line + 1):\(pos.column + 1)"
             } catch {
-                return tab.fileURL.lastPathComponent
+                return documentURL.lastPathComponent
             }
         }()
 

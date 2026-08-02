@@ -4281,6 +4281,103 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._problemsPanelRowCountForTesting(), 2)
     }
 
+    func testActiveProblemsUseCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("diagnostics-local.swift")
+        let projectedURL = tempDir.appendingPathComponent("diagnostics-projected.swift")
+        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.lspApplyDiagnosticsJSON("""
+        {
+          "uri": "\(projectedURL.standardizedFileURL.absoluteString)",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 3 }
+              },
+              "severity": 1,
+              "source": "unit-test",
+              "message": "active projected problem"
+            }
+          ],
+          "version": 1
+        }
+        """)
+
+        XCTAssertTrue(vc.showWorkspaceDiagnosticsResultJSONInActiveTab("""
+        {
+          "items": [
+            {
+              "uri": "\(projectedURL.standardizedFileURL.absoluteString)",
+              "kind": "full",
+              "resultId": "projected-diagnostics",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 1, "character": 1 },
+                    "end": { "line": 1, "character": 2 }
+                  },
+                  "severity": 2,
+                  "source": "workspace-test",
+                  "message": "projected workspace problem"
+                }
+              ]
+            }
+          ]
+        }
+        """))
+
+        let lifecycleEntry = try XCTUnwrap(vc._currentDiagnosticsLifecycleEntryForTesting())
+        XCTAssertEqual(lifecycleEntry.family, "diagnostics.active")
+        XCTAssertEqual(lifecycleEntry.title, "diagnostics-projected.swift")
+        guard case let .activeTab(tabID: lifecycleTabID, fileURL: lifecycleURL) = lifecycleEntry.snapshot.scope else {
+            return XCTFail("Expected active-tab diagnostics scope")
+        }
+        XCTAssertEqual(lifecycleTabID, tab.id)
+        XCTAssertEqual(lifecycleURL, projectedURL.standardizedFileURL)
+        XCTAssertEqual(lifecycleEntry.snapshot.problems.map(\.message), [
+            "active projected problem",
+            "projected workspace problem",
+        ])
+        XCTAssertEqual(lifecycleEntry.snapshot.problems.map(\.source), [.active, .workspace])
+        XCTAssertEqual(lifecycleEntry.snapshot.markerProjections, [
+            AttoDiagnosticMarkerProjection(logicalLine: 0, charOffset: 0, severity: .error, source: .active),
+            AttoDiagnosticMarkerProjection(logicalLine: 1, charOffset: 5, severity: .warning, source: .workspace),
+        ])
+
+        let activeProblem = try XCTUnwrap(lifecycleEntry.snapshot.problems.first { $0.source == .active })
+        XCTAssertTrue(vc.displayTitle(for: activeProblem, in: tab).contains("diagnostics-projected.swift:1:1"))
+
+        XCTAssertTrue(vc.showProblemsPanelInActiveTab())
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.problemsPanel
+        })
+        XCTAssertEqual(panel.title, "Problems (2)")
+        XCTAssertEqual(vc._problemsPanelUnifiedProblemsForTesting().map(\.message), [
+            "active projected problem",
+            "projected workspace problem",
+        ])
+        XCTAssertEqual(vc._problemsPanelUnifiedProblemsForTesting().map(\.source), [.active, .workspace])
+    }
+
     func testRenameCandidateUsesSelectionOrIdentifierAtCaret() throws {
         XCTAssertEqual(
             AttoLspRenameSupport.candidateName(documentText: "let alpha = beta\n", selectedText: "alpha", caretOffset: 0),

@@ -584,6 +584,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testKeymapDynamicContextDispatchesActiveEditorBindings`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testToggleLineCommentUsesFileLanguageDefault`
     - `git diff --check`
+- 中间提交：`feat(app): project active problems from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor active Problems/diagnostics snapshot、lifecycle scope 和 active diagnostic display title 使用 core tab snapshot 的 `document_uri` 投影。
+  - 提交边界：只迁移 active diagnostics/Problems 里的 tab URL 输入、lifecycle scope/title 和 active diagnostic title 文件名；不改变 workspace diagnostics store schema、diagnostic parsing、marker projection math、Problems panel UI、navigation behavior、真实保存路径、session schema 或真实 `tab.fileURL` 同步策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testActiveProblemsUseCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProblemsPanelUsesDerivedDiagnosticsAndRefreshesWithStatusUpdate`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

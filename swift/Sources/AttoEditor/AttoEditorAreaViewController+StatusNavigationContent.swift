@@ -286,7 +286,7 @@ extension AttoEditorAreaViewController {
             includeActiveDiagnostics: includeActiveDiagnostics,
             workspaceDiagnostics: workspaceProblemsStore.diagnostics,
             workspaceMarkers: workspaceProblemsStore.diagnosticMarkerProjections(),
-            tabURL: tab.fileURL,
+            tabURL: projectedFileURL(for: tab),
             text: text,
             logicalPositionForOffset: { offset in
                 try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offset)
@@ -516,8 +516,9 @@ extension AttoEditorAreaViewController {
         _ snapshot: AttoUnifiedDiagnosticsSnapshot,
         for tab: AttoEditorTab
     ) {
+        let documentURL = projectedFileURL(for: tab)
         let lifecycleSnapshot = AttoDiagnosticsLifecycleSnapshot(
-            scope: .activeTab(tabID: tab.id, fileURL: tab.fileURL.standardizedFileURL),
+            scope: .activeTab(tabID: tab.id, fileURL: documentURL.standardizedFileURL),
             problems: snapshot.problems,
             markerProjections: snapshot.markerProjections,
             statusText: snapshot.problemsStatusText,
@@ -526,7 +527,7 @@ extension AttoEditorAreaViewController {
         guard let entry = diagnosticsLifecycleStore.recordIfChanged(
             lifecycleSnapshot,
             family: "diagnostics.active",
-            title: tab.fileURL.lastPathComponent
+            title: documentURL.lastPathComponent
         ) else { return }
         recordLspResultLifecycleEvent(
             entry,
