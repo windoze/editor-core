@@ -765,6 +765,16 @@
     - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ui): expose lsp workspace folders in status`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 Rust LSP client 当前持有的 `workspace_folders` 投影到 `LspSessionStatus` / `EditorUi.lsp_status_json()`，并让 Swift typed `EcuLspStatusSnapshot` 与 AttoEditor status bar 可显示 workspace root 和 compact capabilities。
+  - 提交边界：只扩展既有 status JSON / Swift typed snapshot / App status formatter；不新增 C ABI 函数，不改变 LSP enable 或 workspace folder didChange 控制面，不实现 project open/close 批量 LSP session 管理、server restart/shared-session root-set ownership、多 root selector 或完整状态订阅模型。
+  - 验证记录：
+    - `cargo test -p editor-core-ui lsp_status_reports_current_workspace_folders`
+    - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreLSPStatusSnapshotTests`
+    - `swift test --package-path swift --filter AttoLspStatusFormatterTests`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

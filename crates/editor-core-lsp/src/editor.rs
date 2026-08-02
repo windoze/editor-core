@@ -158,6 +158,8 @@ pub struct LspSessionCapabilities {
 pub struct LspSessionStatus {
     /// Server identity and spawn command.
     pub server: LspServerStatus,
+    /// Current client-side workspace folders returned to `workspace/workspaceFolders`.
+    pub workspace_folders: Vec<Value>,
     /// High-level work state (ready/indexing/busy).
     pub state: LspWorkState,
     /// Optional active work details derived from `$/progress`.
@@ -561,6 +563,7 @@ impl LspSession {
                 command: self.server_command.clone(),
                 args: self.server_args.clone(),
             },
+            workspace_folders: self.client.workspace_folders().to_vec(),
             state,
             activity,
             capabilities: LspSessionCapabilities {

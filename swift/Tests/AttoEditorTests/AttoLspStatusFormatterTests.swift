@@ -23,6 +23,36 @@ final class AttoLspStatusFormatterTests: XCTestCase {
         XCTAssertNil(display.failureDetail)
     }
 
+    func testFormatsWorkspaceRootAndCapabilitySummary() {
+        let status = EcuLspStatusSnapshot(
+            availability: .enabled,
+            state: .ready,
+            server: .init(name: "rust-analyzer", version: nil, command: "rust-analyzer", args: []),
+            activity: nil,
+            detail: nil,
+            capabilities: EcuLspCapabilities(
+                semanticTokens: true,
+                completionItemResolve: true,
+                completion: .init(supported: true),
+                foldingRanges: true,
+                onTypeFormatting: true,
+                signatureHelp: .init(supported: true)
+            ),
+            workspaceFolders: [
+                EcuLspWorkspaceFolder(uri: "file:///tmp/editor-core", name: "editor-core"),
+                EcuLspWorkspaceFolder(uri: "file:///tmp/fixtures", name: "fixtures"),
+            ]
+        )
+
+        let display = AttoLspStatusFormatter.display(status: status, fallbackEnabled: true)
+
+        XCTAssertEqual(
+            display.text,
+            "LSP rust-analyzer @ editor-core +1: Ready [semantic, completion, completion resolve, signature, folding, on-type]"
+        )
+        XCTAssertNil(display.failureDetail)
+    }
+
     func testFormatsFailedStatusWithDetailForHud() {
         let display = AttoLspStatusFormatter.display(
             statusJSON: #"{"state":"failed","detail":"formatter exploded","server":{"command":"fake-lsp"}}"#,

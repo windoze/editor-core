@@ -99,6 +99,12 @@ impl LspClient {
         self.child.id()
     }
 
+    /// Return the current client-side workspace folder list used for
+    /// `workspace/workspaceFolders` responses.
+    pub fn workspace_folders(&self) -> &[Value] {
+        &self.workspace_folders
+    }
+
     /// Send a JSON-RPC notification to the server.
     pub fn notify(&self, method: &str, params: Value) -> io::Result<()> {
         self.send_message(json_rpc_notification(method, params))

@@ -16,6 +16,10 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
           },
           "activity": null,
           "detail": null,
+          "workspace_folders": [
+            { "uri": "file:///tmp/editor-core", "name": "editor-core" },
+            { "uri": "file:///tmp/fixtures", "name": "fixtures" }
+          ],
           "capabilities": {
             "semantic_tokens": true,
             "semantic_tokens_delta": false,
@@ -41,6 +45,10 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
         XCTAssertEqual(status.server?.name, "rust-analyzer")
         XCTAssertEqual(status.server?.args, ["--stdio"])
         XCTAssertNil(status.activity)
+        XCTAssertEqual(status.workspaceFolders, [
+            EcuLspWorkspaceFolder(uri: "file:///tmp/editor-core", name: "editor-core"),
+            EcuLspWorkspaceFolder(uri: "file:///tmp/fixtures", name: "fixtures"),
+        ])
         XCTAssertEqual(status.capabilities?.semanticTokens, true)
         XCTAssertEqual(status.capabilities?.completion.triggerCharacters, [".", ":"])
         XCTAssertEqual(status.capabilities?.completion.allCommitCharacters, [";", ")"])
@@ -79,6 +87,7 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
         XCTAssertEqual(status.state, .unknown("restarting"))
         XCTAssertEqual(status.state.rawValue, "restarting")
         XCTAssertNil(status.server)
+        XCTAssertEqual(status.workspaceFolders, [])
         XCTAssertNil(status.capabilities)
     }
 
@@ -91,6 +100,7 @@ final class EditorCoreLSPStatusSnapshotTests: XCTestCase {
         XCTAssertEqual(status.availability, .disabled)
         XCTAssertEqual(status.state, .disabled)
         XCTAssertNil(status.detail)
+        XCTAssertEqual(status.workspaceFolders, [])
     }
 
     private func decode(_ json: String) throws -> EcuLspStatusSnapshot {

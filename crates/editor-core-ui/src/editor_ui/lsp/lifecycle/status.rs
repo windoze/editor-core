@@ -21,6 +21,7 @@ impl EditorUi {
         let mut server: Option<serde_json::Value> = None;
         let mut activity: Option<serde_json::Value> = None;
         let mut capabilities: Option<serde_json::Value> = None;
+        let mut workspace_folders: Vec<serde_json::Value> = Vec::new();
 
         if let Some(shared) = shared {
             match shared.session.lock() {
@@ -33,6 +34,7 @@ impl EditorUi {
                             editor_core_lsp::LspWorkState::Indexing => "indexing",
                             editor_core_lsp::LspWorkState::Busy => "busy",
                         };
+                        workspace_folders = s.workspace_folders;
 
                         server = Some(serde_json::json!({
                             "name": s.server.name,
@@ -96,6 +98,7 @@ impl EditorUi {
             "activity": activity,
             "detail": detail,
             "capabilities": capabilities,
+            "workspace_folders": workspace_folders,
         })
         .to_string()
     }

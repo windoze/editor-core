@@ -588,6 +588,46 @@ fn lsp_did_change_workspace_folders_notifies_and_updates_workspace_response() {
 }
 
 #[test]
+fn lsp_status_reports_current_workspace_folders() {
+    let capture_path = unique_temp_path("workspace-folders-status");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let old_root_name = format!("editor-core-ui-old-status-workspace-{stamp}");
+    let new_root_name = format!("editor-core-ui-new-status-workspace-{stamp}");
+    let old_root_uri = format!("file:///tmp/{old_root_name}");
+    let new_root_uri = format!("file:///tmp/{new_root_name}");
+    let doc_uri = format!("{old_root_uri}/main.rs");
+    let script = lsp_capture_server_script(&capture_path, serde_json::json!({}));
+    let args = vec!["-c".to_string(), script];
+
+    let mut ui = EditorUi::new("fn main() {}\n", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &old_root_uri, &doc_uri, "rust")
+        .unwrap();
+
+    let status: serde_json::Value = serde_json::from_str(ui.lsp_status_json().as_str()).unwrap();
+    assert_eq!(status["availability"], "enabled");
+    assert_eq!(status["workspace_folders"].as_array().unwrap().len(), 1);
+    assert_eq!(status["workspace_folders"][0]["uri"], old_root_uri);
+    assert_eq!(status["workspace_folders"][0]["name"], old_root_name);
+
+    ui.lsp_did_change_workspace_folders_json(
+        &serde_json::json!([{ "uri": new_root_uri, "name": new_root_name }]).to_string(),
+        &serde_json::json!([{ "uri": old_root_uri, "name": old_root_name }]).to_string(),
+    )
+    .unwrap();
+
+    let status: serde_json::Value = serde_json::from_str(ui.lsp_status_json().as_str()).unwrap();
+    assert_eq!(status["workspace_folders"].as_array().unwrap().len(), 1);
+    assert_eq!(status["workspace_folders"][0]["uri"], new_root_uri);
+    assert_eq!(status["workspace_folders"][0]["name"], new_root_name);
+
+    ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
 fn lsp_document_lifecycle_notifications_are_exposed() {
     let capture_path = unique_temp_path("document-save-close");
     let stamp = std::time::SystemTime::now()

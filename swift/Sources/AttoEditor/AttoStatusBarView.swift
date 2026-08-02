@@ -61,7 +61,8 @@ final class AttoStatusBarView: NSView {
 
         lspLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         lspLabel.textColor = NSColor(attoHex: 0xB5B5B5)
-        lspLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        lspLabel.lineBreakMode = .byTruncatingMiddle
+        lspLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         lspLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarLspLabel)
         lspLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -151,6 +152,7 @@ final class AttoStatusBarView: NSView {
         }
 
         lspLabel.stringValue = lspText ?? ""
+        lspLabel.toolTip = lspText
         lspLabel.isHidden = (lspText?.isEmpty != false)
         positionLabel.stringValue = positionText
         selectionLabel.stringValue = selectionText ?? ""

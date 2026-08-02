@@ -681,6 +681,7 @@ public struct EcuLspStatusSnapshot: Equatable, Sendable, Decodable {
     public var activity: EcuLspActivity?
     public var detail: String?
     public var capabilities: EcuLspCapabilities?
+    public var workspaceFolders: [EcuLspWorkspaceFolder]
 
     public init(
         availability: EcuLspAvailability,
@@ -688,7 +689,8 @@ public struct EcuLspStatusSnapshot: Equatable, Sendable, Decodable {
         server: EcuLspServerStatus?,
         activity: EcuLspActivity?,
         detail: String?,
-        capabilities: EcuLspCapabilities?
+        capabilities: EcuLspCapabilities?,
+        workspaceFolders: [EcuLspWorkspaceFolder] = []
     ) {
         self.availability = availability
         self.state = state
@@ -696,6 +698,7 @@ public struct EcuLspStatusSnapshot: Equatable, Sendable, Decodable {
         self.activity = activity
         self.detail = detail
         self.capabilities = capabilities
+        self.workspaceFolders = workspaceFolders
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -705,6 +708,7 @@ public struct EcuLspStatusSnapshot: Equatable, Sendable, Decodable {
         case activity
         case detail
         case capabilities
+        case workspaceFolders = "workspace_folders"
     }
 
     public init(from decoder: Decoder) throws {
@@ -715,6 +719,7 @@ public struct EcuLspStatusSnapshot: Equatable, Sendable, Decodable {
         self.activity = try container.decodeIfPresent(EcuLspActivity.self, forKey: .activity)
         self.detail = try container.decodeIfPresent(String.self, forKey: .detail)
         self.capabilities = try container.decodeIfPresent(EcuLspCapabilities.self, forKey: .capabilities)
+        self.workspaceFolders = try container.decodeIfPresent([EcuLspWorkspaceFolder].self, forKey: .workspaceFolders) ?? []
     }
 }
 
