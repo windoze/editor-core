@@ -229,6 +229,7 @@ struct AttoProjectLspPanelErrorEvent: Equatable {
     enum Source: String, Equatable {
         case request
         case result
+        case status
     }
 
     let sequence: UInt64

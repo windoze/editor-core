@@ -1925,6 +1925,50 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(firstCell.textField?.stringValue.contains("Definitions") == true)
     }
 
+    func testProjectLspPanelRecordsStatusFailures() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let cursor = vc._latestProjectLspPanelErrorEventSequenceForTesting()
+
+        XCTAssertFalse(vc._recordProjectLspStatusFailureForTesting(status: EcuLspStatusSnapshot(
+            availability: .enabled,
+            state: .ready,
+            server: EcuLspServerStatus(name: "fake-lsp", version: nil, command: "fake-lsp"),
+            activity: nil,
+            detail: nil,
+            capabilities: nil,
+            workspaceFolders: []
+        )))
+
+        XCTAssertTrue(vc._recordProjectLspStatusFailureForTesting(status: EcuLspStatusSnapshot(
+            availability: .failed,
+            state: .failed,
+            server: EcuLspServerStatus(name: nil, version: nil, command: "fake-lsp"),
+            activity: nil,
+            detail: "server exited",
+            capabilities: nil,
+            workspaceFolders: [
+                EcuLspWorkspaceFolder(uri: tempDir.absoluteString, name: tempDir.lastPathComponent),
+            ]
+        )))
+
+        let events = vc._projectLspPanelErrorEventsForTesting(after: cursor)
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events[0].source, .status)
+        XCTAssertEqual(events[0].family, "lsp")
+        XCTAssertEqual(events[0].slot, "lsp_status")
+        XCTAssertEqual(events[0].method, "lsp/status")
+        XCTAssertEqual(events[0].requestId, 0)
+        XCTAssertEqual(events[0].status, "failed")
+        XCTAssertTrue(events[0].title.contains("LSP fake-lsp"))
+        XCTAssertTrue(events[0].title.contains("Failed"))
+        XCTAssertTrue(events[0].message.contains("server exited"))
+    }
+
     func testEmptyLocationResultUsesUnifiedFeedbackStatus() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

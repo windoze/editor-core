@@ -805,6 +805,15 @@
     - `cargo test -p editor-core-ui`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(app): drain project lsp status events`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 AttoEditor project-level LSP lifecycle drain 同时消费 `MultiDocumentEditorUI.stateEvents(...)` 中的 `lsp_status_changed`，并把 failed status 投入 project LSP event store，供后续项目级 status panel / feedback UI 按 cursor 消费。
+  - 提交边界：只扩展 Swift/App 层事件消费和测试：新增 project LSP error event source `.status`、`coreLspStateEventCursor`、status failure recorder，以及 MultiDocument nested `lspStatus` typed decode 覆盖；不新增 Rust/C ABI，不改变 `MultiDocumentEditorUi` state event schema，不把 status failure 误投到 Locations/Symbols panel，不实现完整 project status panel UI、server progress/activity/process health monitor、server restart 或 project open/close 批量 LSP session 管理。
+  - 验证记录：
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspPanelRecordsStatusFailures`
+    - `swift test --package-path swift --filter EditorCoreUIFFILSPEventTypesTests.testMultiDocumentStateEventsExposeTypedKindsAndNestedPayloads`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspPanelErrorEventStoreBoundsAndFiltersBySequence`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

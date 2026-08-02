@@ -273,6 +273,17 @@ final class AttoEditorAreaViewController: NSViewController {
         ) != nil
     }
 
+    @discardableResult
+    func _recordProjectLspStatusFailureForTesting(status: EcuLspStatusSnapshot) -> Bool {
+        recordProjectLspStatusFailure(
+            sourceSequence: 0,
+            tabId: activeTab?.coreTabID,
+            viewIndex: activeTab?.activePaneIndex,
+            viewId: nil,
+            status: status
+        ) != nil
+    }
+
     func _showCodeActionResultJSONForTesting(
         _ json: String,
         onlyKinds: [String] = [],
@@ -914,6 +925,7 @@ final class AttoEditorAreaViewController: NSViewController {
     )
     var coreLspRequestEventCursor: UInt64 = 0
     var coreLspResultEventCursor: UInt64 = 0
+    var coreLspStateEventCursor: UInt64 = 0
     var activeDiagnosticsTextFingerprintsByTabID: [UUID: DiagnosticsTextFingerprint] = [:]
     var activeDiagnosticsBaselinesByTabID: [UUID: [EcuDiagnostic]] = [:]
     var activeDiagnosticsStaleReasonsByTabID: [UUID: AttoDiagnosticsStaleReason] = [:]

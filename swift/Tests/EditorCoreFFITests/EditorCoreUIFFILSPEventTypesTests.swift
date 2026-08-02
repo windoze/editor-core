@@ -467,7 +467,7 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
     func testMultiDocumentStateEventsExposeTypedKindsAndNestedPayloads() throws {
         let snapshot = try decode(EcuMultiDocumentStateEventsSnapshot.self, """
         {
-          "latest_sequence": 1,
+          "latest_sequence": 2,
           "events": [
             {
               "sequence": 1,
@@ -497,13 +497,42 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
                   "status": "pending"
                 }
               }
+            },
+            {
+              "sequence": 2,
+              "tab_id": 8,
+              "view_index": 0,
+              "view_id": 10,
+              "source_sequence": 5,
+              "kind": "lsp_status_changed",
+              "family": "lsp",
+              "title": "LSP status changed",
+              "state_event": {
+                "sequence": 5,
+                "kind": "lsp_status_changed",
+                "family": "lsp",
+                "title": "LSP status changed",
+                "view_id": 10,
+                "source_sequence": 0,
+                "lsp_status": {
+                  "availability": "failed",
+                  "state": "failed",
+                  "server": { "command": "fake-lsp" },
+                  "activity": null,
+                  "detail": "server exited",
+                  "capabilities": null,
+                  "workspace_folders": [
+                    { "uri": "file:///project", "name": "project" }
+                  ]
+                }
+              }
             }
           ]
         }
         """)
 
         let event = try XCTUnwrap(snapshot.events.first)
-        XCTAssertEqual(snapshot.latestSequence, 1)
+        XCTAssertEqual(snapshot.latestSequence, 2)
         XCTAssertEqual(event.tabId, 7)
         XCTAssertEqual(event.viewIndex, 2)
         XCTAssertEqual(event.viewId, 9)
@@ -512,6 +541,17 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         XCTAssertEqual(event.stateEvent.kindValue, .lspRequest)
         XCTAssertEqual(event.stateEvent.lspRequest?.slotKind, .codeAction)
         XCTAssertEqual(event.stateEvent.lspRequest?.requestId, 77)
+
+        let statusEvent = try XCTUnwrap(snapshot.events.last)
+        XCTAssertEqual(statusEvent.tabId, 8)
+        XCTAssertEqual(statusEvent.kindValue, .lspStatusChanged)
+        XCTAssertEqual(statusEvent.familyKind, .lsp)
+        XCTAssertEqual(statusEvent.stateEvent.kindValue, .lspStatusChanged)
+        XCTAssertEqual(statusEvent.stateEvent.lspStatus?.availability, .failed)
+        XCTAssertEqual(statusEvent.stateEvent.lspStatus?.state, .failed)
+        XCTAssertEqual(statusEvent.stateEvent.lspStatus?.server?.command, "fake-lsp")
+        XCTAssertEqual(statusEvent.stateEvent.lspStatus?.detail, "server exited")
+        XCTAssertEqual(statusEvent.stateEvent.lspStatus?.workspaceFolders.first?.uri, "file:///project")
     }
 
     func testWorkspaceDiagnosticsExposeTypedKinds() throws {

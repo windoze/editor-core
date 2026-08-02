@@ -389,9 +389,57 @@ extension AttoEditorAreaViewController {
                     errorMessage: event.errorMessage
                 )
             }
+
+            let stateSnapshot = try coreDocuments.stateEvents(after: coreLspStateEventCursor)
+            coreLspStateEventCursor = stateSnapshot.latestSequence
+            for event in stateSnapshot.events where event.kindValue == .lspStatusChanged {
+                recordProjectLspStatusFailure(
+                    sourceSequence: event.sequence,
+                    tabId: event.tabId,
+                    viewIndex: event.viewIndex,
+                    viewId: event.viewId,
+                    status: event.stateEvent.lspStatus
+                )
+            }
         } catch {
             NSLog("AttoEditor: project LSP panel lifecycle event drain failed: %@", String(describing: error))
         }
+    }
+
+    @discardableResult
+    func recordProjectLspStatusFailure(
+        sourceSequence: UInt64,
+        tabId: UInt64?,
+        viewIndex: Int?,
+        viewId: UInt64?,
+        status: EcuLspStatusSnapshot?
+    ) -> AttoProjectLspPanelErrorEvent? {
+        guard let status,
+              status.availability == .failed || status.state == .failed
+        else {
+            return nil
+        }
+
+        let display = AttoLspStatusFormatter.display(status: status, fallbackEnabled: false)
+        let message = Self.projectLspPanelErrorMessage(
+            title: display.text,
+            status: status.state.rawValue,
+            errorMessage: display.failureDetail ?? status.detail
+        )
+        return projectLspPanelErrorEventStore.record(
+            source: .status,
+            sourceSequence: sourceSequence,
+            tabId: tabId,
+            viewIndex: viewIndex,
+            viewId: viewId,
+            family: "lsp",
+            title: display.text,
+            slot: "lsp_status",
+            method: "lsp/status",
+            requestId: 0,
+            status: status.state.rawValue,
+            message: message
+        )
     }
 
     @discardableResult
