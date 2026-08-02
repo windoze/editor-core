@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 const MAX_MULTI_DOCUMENT_STATE_EVENTS: usize = 1024;
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct MultiDocumentStateEvent {
     pub sequence: u64,
     pub tab_id: u64,
@@ -17,7 +17,7 @@ pub struct MultiDocumentStateEvent {
     pub state_event: EditorUiStateEvent,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct MultiDocumentStateEventsSnapshot {
     pub latest_sequence: u64,
     pub events: Vec<MultiDocumentStateEvent>,

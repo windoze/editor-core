@@ -115,6 +115,7 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
     case dirtyChanged
     case selectionChanged
     case viewportChanged
+    case layoutChanged
     case unknown(String)
 
     public init(rawValue: String) {
@@ -131,6 +132,8 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
             self = .selectionChanged
         case "viewport_changed":
             self = .viewportChanged
+        case "layout_changed":
+            self = .layoutChanged
         default:
             self = .unknown(rawValue)
         }
@@ -150,6 +153,8 @@ public enum EcuEditorUIStateEventKind: Hashable, Sendable {
             return "selection_changed"
         case .viewportChanged:
             return "viewport_changed"
+        case .layoutChanged:
+            return "layout_changed"
         case let .unknown(rawValue):
             return rawValue
         }

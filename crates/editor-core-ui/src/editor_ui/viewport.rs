@@ -2,7 +2,9 @@ use super::*;
 
 impl EditorUi {
     pub fn set_render_config(&mut self, config: RenderConfig) {
+        let before_layout = self.layout_state();
         self.render_config = config;
+        self.record_layout_state_event_if_changed(before_layout);
     }
 
     pub fn set_render_metrics(
@@ -13,15 +15,19 @@ impl EditorUi {
         padding_x_px: f32,
         padding_y_px: f32,
     ) {
+        let before_layout = self.layout_state();
         self.render_config.font_size = font_size;
         self.render_config.line_height_px = line_height_px;
         self.render_config.cell_width_px = cell_width_px;
         self.render_config.padding_x_px = padding_x_px;
         self.render_config.padding_y_px = padding_y_px;
+        self.record_layout_state_event_if_changed(before_layout);
     }
 
     pub fn set_text_vertical_align(&mut self, align: TextVerticalAlign) {
+        let before_layout = self.layout_state();
         self.render_config.text_vertical_align = align;
+        self.record_layout_state_event_if_changed(before_layout);
     }
 
     /// Configure font fallback list for rendering (comma-separated family names).
@@ -86,9 +92,11 @@ impl EditorUi {
     /// - visual layout/rendering of `'\t'` characters
     /// - `EditCommand::InsertTab` in spaces mode (insert to the next tab stop)
     pub fn set_tab_width(&mut self, width_cells: usize) -> Result<(), UiError> {
+        let before_layout = self.layout_state();
         self.exec_core(Command::View(ViewCommand::SetTabWidth {
             width: width_cells,
         }))?;
+        self.record_layout_state_event_if_changed(before_layout);
         Ok(())
     }
 
@@ -99,12 +107,14 @@ impl EditorUi {
     }
 
     pub fn set_gutter_width_cells(&mut self, width_cells: u32) -> Result<(), UiError> {
+        let before_layout = self.layout_state();
         self.render_config.gutter_width_cells = width_cells;
         // Keep wrap width in sync with the available text area.
-        self.set_viewport_px(
+        self.set_viewport_px_with_layout_before(
             self.render_config.width_px,
             self.render_config.height_px,
             self.render_config.scale,
+            before_layout,
         )?;
         Ok(())
     }
@@ -133,6 +143,17 @@ impl EditorUi {
         width_px: u32,
         height_px: u32,
         scale: f32,
+    ) -> Result<(), UiError> {
+        let before_layout = self.layout_state();
+        self.set_viewport_px_with_layout_before(width_px, height_px, scale, before_layout)
+    }
+
+    fn set_viewport_px_with_layout_before(
+        &mut self,
+        width_px: u32,
+        height_px: u32,
+        scale: f32,
+        before_layout: crate::EditorUiLayoutStateEvent,
     ) -> Result<(), UiError> {
         self.render_config.width_px = width_px;
         self.render_config.height_px = height_px;
@@ -173,6 +194,7 @@ impl EditorUi {
                 doc.record_state_event_from_viewport_changed(self.view_id, viewport);
             }
         }
+        self.record_layout_state_event_if_changed(before_layout);
         Ok(())
     }
 

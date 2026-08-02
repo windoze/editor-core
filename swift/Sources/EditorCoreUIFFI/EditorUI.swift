@@ -162,6 +162,34 @@ public struct EcuEditorUIViewportStateEvent: Decodable, Equatable, Sendable {
     }
 }
 
+public struct EcuEditorUILayoutStateEvent: Decodable, Equatable, Sendable {
+    public let widthPx: UInt32
+    public let heightPx: UInt32
+    public let scale: Float
+    public let fontSize: Float
+    public let lineHeightPx: Float
+    public let cellWidthPx: Float
+    public let paddingXPx: Float
+    public let paddingYPx: Float
+    public let gutterWidthCells: UInt32
+    public let tabWidthCells: UInt32
+    public let textVerticalAlign: String
+
+    enum CodingKeys: String, CodingKey {
+        case widthPx = "width_px"
+        case heightPx = "height_px"
+        case scale
+        case fontSize = "font_size"
+        case lineHeightPx = "line_height_px"
+        case cellWidthPx = "cell_width_px"
+        case paddingXPx = "padding_x_px"
+        case paddingYPx = "padding_y_px"
+        case gutterWidthCells = "gutter_width_cells"
+        case tabWidthCells = "tab_width_cells"
+        case textVerticalAlign = "text_vertical_align"
+    }
+}
+
 public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
     public let sequence: UInt64
     public let kind: String
@@ -175,6 +203,7 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
     public let dirty: EcuEditorUIDirtyStateEvent?
     public let selection: EcuEditorUISelectionStateEvent?
     public let viewport: EcuEditorUIViewportStateEvent?
+    public let layout: EcuEditorUILayoutStateEvent?
 
     enum CodingKeys: String, CodingKey {
         case sequence
@@ -189,6 +218,7 @@ public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
         case dirty
         case selection
         case viewport
+        case layout
     }
 }
 

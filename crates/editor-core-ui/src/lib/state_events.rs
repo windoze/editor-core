@@ -2,7 +2,7 @@ use crate::{EditorLspRequestEvent, EditorLspResultEvent, EditorUi, EditorUiDoc, 
 
 const MAX_EDITOR_UI_STATE_EVENTS: usize = 512;
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct EditorUiStateEvent {
     pub sequence: u64,
     pub kind: String,
@@ -22,9 +22,11 @@ pub struct EditorUiStateEvent {
     pub selection: Option<EditorUiSelectionStateEvent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub viewport: Option<EditorUiViewportStateEvent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout: Option<EditorUiLayoutStateEvent>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct EditorUiStateEventsSnapshot {
     pub latest_sequence: u64,
     pub events: Vec<EditorUiStateEvent>,
@@ -109,6 +111,27 @@ impl EditorUiViewportStateEvent {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct EditorUiLayoutStateEvent {
+    pub width_px: u32,
+    pub height_px: u32,
+    pub scale: f32,
+    pub font_size: f32,
+    pub line_height_px: f32,
+    pub cell_width_px: f32,
+    pub padding_x_px: f32,
+    pub padding_y_px: f32,
+    pub gutter_width_cells: u32,
+    pub tab_width_cells: u32,
+    pub text_vertical_align: String,
+}
+
+impl EditorUiLayoutStateEvent {
+    pub(crate) fn same_layout_as(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
 impl EditorUiDoc {
     pub(crate) fn record_state_event_from_lsp_request(
         &mut self,
@@ -127,6 +150,7 @@ impl EditorUiDoc {
             dirty: None,
             selection: None,
             viewport: None,
+            layout: None,
         })
     }
 
@@ -147,6 +171,7 @@ impl EditorUiDoc {
             dirty: None,
             selection: None,
             viewport: None,
+            layout: None,
         })
     }
 
@@ -175,6 +200,7 @@ impl EditorUiDoc {
             dirty: None,
             selection: None,
             viewport: None,
+            layout: None,
         })
     }
 
@@ -196,6 +222,7 @@ impl EditorUiDoc {
             dirty: Some(EditorUiDirtyStateEvent { is_modified }),
             selection: None,
             viewport: None,
+            layout: None,
         })
     }
 
@@ -260,6 +287,7 @@ impl EditorUiDoc {
             dirty: None,
             selection: Some(selection),
             viewport: None,
+            layout: None,
         })
     }
 
@@ -306,6 +334,29 @@ impl EditorUiDoc {
             dirty: None,
             selection: None,
             viewport: Some(viewport),
+            layout: None,
+        })
+    }
+
+    pub(crate) fn record_state_event_from_layout_changed(
+        &mut self,
+        view_id: ViewId,
+        layout: EditorUiLayoutStateEvent,
+    ) -> u64 {
+        self.record_state_event(EditorUiStateEvent {
+            sequence: 0,
+            kind: "layout_changed".to_string(),
+            family: "document".to_string(),
+            title: "Layout changed".to_string(),
+            view_id: view_id.get(),
+            source_sequence: 0,
+            lsp_request: None,
+            lsp_result: None,
+            text: None,
+            dirty: None,
+            selection: None,
+            viewport: None,
+            layout: Some(layout),
         })
     }
 
@@ -343,6 +394,43 @@ impl EditorUiDoc {
 }
 
 impl EditorUi {
+    pub(crate) fn layout_state(&self) -> EditorUiLayoutStateEvent {
+        let tab_width_cells = {
+            let doc = self.lock_doc();
+            doc.ws.tab_width_for_view(self.view_id).unwrap_or(4)
+        };
+        EditorUiLayoutStateEvent {
+            width_px: self.render_config.width_px,
+            height_px: self.render_config.height_px,
+            scale: self.render_config.scale,
+            font_size: self.render_config.font_size,
+            line_height_px: self.render_config.line_height_px,
+            cell_width_px: self.render_config.cell_width_px,
+            padding_x_px: self.render_config.padding_x_px,
+            padding_y_px: self.render_config.padding_y_px,
+            gutter_width_cells: self.render_config.gutter_width_cells,
+            tab_width_cells: tab_width_cells.min(u32::MAX as usize) as u32,
+            text_vertical_align: match self.render_config.text_vertical_align {
+                crate::prelude::TextVerticalAlign::Top => "top",
+                crate::prelude::TextVerticalAlign::Center => "center",
+                crate::prelude::TextVerticalAlign::Bottom => "bottom",
+            }
+            .to_string(),
+        }
+    }
+
+    pub(crate) fn record_layout_state_event_if_changed(
+        &self,
+        before_layout: EditorUiLayoutStateEvent,
+    ) {
+        let after_layout = self.layout_state();
+        if before_layout.same_layout_as(&after_layout) {
+            return;
+        }
+        let mut doc = self.lock_doc();
+        doc.record_state_event_from_layout_changed(self.view_id, after_layout);
+    }
+
     pub fn state_events_latest_sequence(&self) -> u64 {
         let doc = self.lock_doc();
         doc.state_events_latest_sequence()

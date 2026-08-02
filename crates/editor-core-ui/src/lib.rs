@@ -62,9 +62,10 @@ pub use multi_document::{
 };
 pub use state::EditorUi;
 pub use state_events::{
-    EditorUiDirtyStateEvent, EditorUiPositionStateEvent, EditorUiSelectionRangeStateEvent,
-    EditorUiSelectionStateEvent, EditorUiStateEvent, EditorUiStateEventsSnapshot,
-    EditorUiTextStateEvent, EditorUiViewportRangeStateEvent, EditorUiViewportStateEvent,
+    EditorUiDirtyStateEvent, EditorUiLayoutStateEvent, EditorUiPositionStateEvent,
+    EditorUiSelectionRangeStateEvent, EditorUiSelectionStateEvent, EditorUiStateEvent,
+    EditorUiStateEventsSnapshot, EditorUiTextStateEvent, EditorUiViewportRangeStateEvent,
+    EditorUiViewportStateEvent,
 };
 pub use theme::{ChromeTheme, DamageRect};
 pub use windowing::{WindowingError, rgba8_to_argb_u32};

@@ -316,6 +316,55 @@ final class EditorCoreUIFFILSPEventTypesTests: XCTestCase {
         XCTAssertEqual(EcuLspEventFamily.document.rawValue, "document")
     }
 
+    func testEditorUIStateEventsDecodeLayoutPayload() throws {
+        let snapshot = try decode(EcuEditorUIStateEventsSnapshot.self, """
+        {
+          "latest_sequence": 1,
+          "events": [
+            {
+              "sequence": 1,
+              "kind": "layout_changed",
+              "family": "document",
+              "title": "Layout changed",
+              "view_id": 3,
+              "source_sequence": 1,
+              "layout": {
+                "width_px": 800,
+                "height_px": 600,
+                "scale": 2.0,
+                "font_size": 14.0,
+                "line_height_px": 20.0,
+                "cell_width_px": 9.0,
+                "padding_x_px": 3.0,
+                "padding_y_px": 4.0,
+                "gutter_width_cells": 5,
+                "tab_width_cells": 2,
+                "text_vertical_align": "bottom"
+              }
+            }
+          ]
+        }
+        """)
+
+        let event = try XCTUnwrap(snapshot.events.first)
+        XCTAssertEqual(snapshot.latestSequence, 1)
+        XCTAssertEqual(event.kindValue, .layoutChanged)
+        XCTAssertEqual(event.familyKind, .document)
+        XCTAssertEqual(event.layout?.widthPx, 800)
+        XCTAssertEqual(event.layout?.heightPx, 600)
+        XCTAssertEqual(event.layout?.scale, 2)
+        XCTAssertEqual(event.layout?.fontSize, 14)
+        XCTAssertEqual(event.layout?.lineHeightPx, 20)
+        XCTAssertEqual(event.layout?.cellWidthPx, 9)
+        XCTAssertEqual(event.layout?.paddingXPx, 3)
+        XCTAssertEqual(event.layout?.paddingYPx, 4)
+        XCTAssertEqual(event.layout?.gutterWidthCells, 5)
+        XCTAssertEqual(event.layout?.tabWidthCells, 2)
+        XCTAssertEqual(event.layout?.textVerticalAlign, "bottom")
+        XCTAssertNil(event.viewport)
+        XCTAssertEqual(EcuEditorUIStateEventKind.layoutChanged.rawValue, "layout_changed")
+    }
+
     func testMultiDocumentStateEventsExposeTypedKindsAndNestedPayloads() throws {
         let snapshot = try decode(EcuMultiDocumentStateEventsSnapshot.self, """
         {

@@ -550,23 +550,86 @@ fn editor_ui_state_events_record_selection_changes() {
 }
 
 #[test]
+fn editor_ui_state_events_record_layout_changes() {
+    let mut ui = EditorUi::new("abc", 80);
+
+    ui.set_render_metrics(14.0, 20.0, 9.0, 3.0, 4.0);
+    let metrics = ui.state_events_after(0);
+    assert_eq!(metrics.latest_sequence, 1);
+    assert_eq!(metrics.events.len(), 1);
+    assert_eq!(metrics.events[0].kind, "layout_changed");
+    assert_eq!(metrics.events[0].family, "document");
+    assert!(metrics.events[0].viewport.is_none());
+    assert!(metrics.events[0].selection.is_none());
+    let layout = metrics.events[0].layout.as_ref().unwrap();
+    assert_eq!(layout.width_px, 800);
+    assert_eq!(layout.height_px, 600);
+    assert_eq!(layout.font_size, 14.0);
+    assert_eq!(layout.line_height_px, 20.0);
+    assert_eq!(layout.cell_width_px, 9.0);
+    assert_eq!(layout.padding_x_px, 3.0);
+    assert_eq!(layout.padding_y_px, 4.0);
+    assert_eq!(layout.gutter_width_cells, 0);
+    assert_eq!(layout.tab_width_cells, 4);
+    assert_eq!(layout.text_vertical_align, "center");
+
+    ui.set_render_metrics(14.0, 20.0, 9.0, 3.0, 4.0);
+    assert!(
+        ui.state_events_after(metrics.latest_sequence)
+            .events
+            .is_empty()
+    );
+
+    ui.set_text_vertical_align(TextVerticalAlign::Bottom);
+    let align = ui.state_events_after(metrics.latest_sequence);
+    assert_eq!(align.latest_sequence, 2);
+    assert_eq!(align.events.len(), 1);
+    let layout = align.events[0].layout.as_ref().unwrap();
+    assert_eq!(layout.text_vertical_align, "bottom");
+
+    ui.set_tab_width(2).unwrap();
+    let tab_width = ui.state_events_after(align.latest_sequence);
+    assert_eq!(tab_width.latest_sequence, 3);
+    assert_eq!(tab_width.events.len(), 1);
+    let layout = tab_width.events[0].layout.as_ref().unwrap();
+    assert_eq!(layout.tab_width_cells, 2);
+
+    let json: serde_json::Value =
+        serde_json::from_str(&ui.state_events_json(align.latest_sequence).unwrap()).unwrap();
+    assert_eq!(json["latest_sequence"], 3);
+    assert_eq!(json["events"][0]["kind"], "layout_changed");
+    assert_eq!(json["events"][0]["layout"]["tab_width_cells"], 2);
+}
+
+#[test]
 fn editor_ui_state_events_record_viewport_changes() {
     let mut ui = EditorUi::new("abcdefghij\nsecond line\nthird line\nfourth line", 80);
     ui.set_render_metrics(10.0, 10.0, 10.0, 0.0, 0.0);
+    let baseline = ui.state_events_latest_sequence();
 
     ui.set_viewport_px(80, 20, 1.0).unwrap();
-    let resize = ui.state_events_after(0);
-    assert_eq!(resize.latest_sequence, 1);
-    assert_eq!(resize.events.len(), 1);
-    assert_eq!(resize.events[0].kind, "viewport_changed");
-    assert_eq!(resize.events[0].family, "document");
-    assert!(resize.events[0].lsp_request.is_none());
-    assert!(resize.events[0].lsp_result.is_none());
-    assert!(resize.events[0].text.is_none());
-    assert!(resize.events[0].dirty.is_none());
-    assert!(resize.events[0].selection.is_none());
+    let resize = ui.state_events_after(baseline);
+    assert_eq!(
+        resize
+            .events
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect::<Vec<_>>(),
+        vec!["viewport_changed", "layout_changed"]
+    );
+    let resize_event = resize
+        .events
+        .iter()
+        .find(|event| event.kind == "viewport_changed")
+        .unwrap();
+    assert_eq!(resize_event.family, "document");
+    assert!(resize_event.lsp_request.is_none());
+    assert!(resize_event.lsp_result.is_none());
+    assert!(resize_event.text.is_none());
+    assert!(resize_event.dirty.is_none());
+    assert!(resize_event.selection.is_none());
 
-    let viewport = resize.events[0].viewport.as_ref().unwrap();
+    let viewport = resize_event.viewport.as_ref().unwrap();
     assert_eq!(viewport.width, 8);
     assert_eq!(viewport.height, Some(2));
     assert_eq!(viewport.scroll_top, 0);
@@ -577,7 +640,6 @@ fn editor_ui_state_events_record_viewport_changes() {
 
     ui.set_smooth_scroll_state(1, 32768);
     let scrolled = ui.state_events_after(resize.latest_sequence);
-    assert_eq!(scrolled.latest_sequence, 2);
     assert_eq!(scrolled.events.len(), 1);
     assert_eq!(scrolled.events[0].kind, "viewport_changed");
     let viewport = scrolled.events[0].viewport.as_ref().unwrap();
@@ -588,7 +650,6 @@ fn editor_ui_state_events_record_viewport_changes() {
     ui.execute(Command::View(ViewCommand::SetViewportWidth { width: 4 }))
         .unwrap();
     let width_changed = ui.state_events_after(scrolled.latest_sequence);
-    assert_eq!(width_changed.latest_sequence, 3);
     assert_eq!(width_changed.events.len(), 1);
     let viewport = width_changed.events[0].viewport.as_ref().unwrap();
     assert_eq!(viewport.width, 4);
@@ -603,7 +664,7 @@ fn editor_ui_state_events_record_viewport_changes() {
 
     let json: serde_json::Value =
         serde_json::from_str(&ui.state_events_json(scrolled.latest_sequence).unwrap()).unwrap();
-    assert_eq!(json["latest_sequence"], 3);
+    assert_eq!(json["latest_sequence"], width_changed.latest_sequence);
     assert_eq!(json["events"][0]["kind"], "viewport_changed");
     assert_eq!(json["events"][0]["viewport"]["width"], 4);
     assert_eq!(json["events"][0]["viewport"]["visible_lines"]["start"], 1);
@@ -1362,6 +1423,39 @@ fn multi_document_state_events_aggregate_text_and_dirty_events() {
 }
 
 #[test]
+fn multi_document_state_events_aggregate_layout_events() {
+    let mut multi = MultiDocumentEditorUi::new();
+    let tab = multi.open_tab("abc", 80);
+
+    {
+        let editor = multi.active_editor_mut().unwrap();
+        editor.set_render_metrics(15.0, 22.0, 11.0, 2.0, 3.0);
+    }
+
+    let snapshot = multi.state_events_after(0);
+    assert_eq!(snapshot.latest_sequence, 1);
+    assert_eq!(snapshot.events.len(), 1);
+    assert_eq!(snapshot.events[0].tab_id, tab.get());
+    assert_eq!(snapshot.events[0].view_index, 0);
+    assert_eq!(snapshot.events[0].kind, "layout_changed");
+    let layout = snapshot.events[0].state_event.layout.as_ref().unwrap();
+    assert_eq!(layout.font_size, 15.0);
+    assert_eq!(layout.line_height_px, 22.0);
+    assert_eq!(layout.cell_width_px, 11.0);
+    assert_eq!(layout.padding_x_px, 2.0);
+    assert_eq!(layout.padding_y_px, 3.0);
+
+    let json: serde_json::Value =
+        serde_json::from_str(&multi.state_events_json(0).unwrap()).unwrap();
+    assert_eq!(json["latest_sequence"], 1);
+    assert_eq!(json["events"][0]["kind"], "layout_changed");
+    assert_eq!(
+        json["events"][0]["state_event"]["layout"]["font_size"],
+        15.0
+    );
+}
+
+#[test]
 fn multi_document_state_events_aggregate_viewport_events() {
     let mut multi = MultiDocumentEditorUi::new();
     let tab = multi.open_tab("one\ntwo\nthree\nfour", 80);
@@ -1370,35 +1464,27 @@ fn multi_document_state_events_aggregate_viewport_events() {
         let editor = multi.active_editor_mut().unwrap();
         editor.set_render_metrics(10.0, 10.0, 10.0, 0.0, 0.0);
         editor.set_viewport_px(80, 20, 1.0).unwrap();
+    }
+    let baseline = multi.state_events_after(0).latest_sequence;
+
+    {
+        let editor = multi.active_editor_mut().unwrap();
         editor.set_smooth_scroll_state(1, 0);
     }
 
-    let snapshot = multi.state_events_after(0);
-    assert_eq!(snapshot.latest_sequence, 2);
-    assert_eq!(snapshot.events.len(), 2);
+    let snapshot = multi.state_events_after(baseline);
+    assert_eq!(snapshot.events.len(), 1);
     assert_eq!(
         snapshot
             .events
             .iter()
             .map(|event| (event.tab_id, event.kind.as_str(), event.family.as_str()))
             .collect::<Vec<_>>(),
-        vec![
-            (tab.get(), "viewport_changed", "document"),
-            (tab.get(), "viewport_changed", "document"),
-        ]
+        vec![(tab.get(), "viewport_changed", "document")]
     );
     assert_eq!(snapshot.events[0].view_index, 0);
     assert_eq!(
         snapshot.events[0]
-            .state_event
-            .viewport
-            .as_ref()
-            .unwrap()
-            .height,
-        Some(2)
-    );
-    assert_eq!(
-        snapshot.events[1]
             .state_event
             .viewport
             .as_ref()
@@ -1408,8 +1494,8 @@ fn multi_document_state_events_aggregate_viewport_events() {
     );
 
     let json: serde_json::Value =
-        serde_json::from_str(&multi.state_events_json(1).unwrap()).unwrap();
-    assert_eq!(json["latest_sequence"], 2);
+        serde_json::from_str(&multi.state_events_json(baseline).unwrap()).unwrap();
+    assert_eq!(json["latest_sequence"], snapshot.latest_sequence);
     assert_eq!(json["events"].as_array().unwrap().len(), 1);
     assert_eq!(json["events"][0]["kind"], "viewport_changed");
     assert_eq!(
