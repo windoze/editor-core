@@ -2145,6 +2145,25 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Type hierarchy: no results")
     }
 
+    func testFormattingResultsUseUnifiedFeedbackStatus() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("formatting.swift")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc.formatDocumentWithLspInActiveTab())
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Format document: unavailable")
+
+        XCTAssertFalse(vc.formatSelectionWithLspInActiveTab())
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Format selection: no results")
+    }
+
     func testDocumentColorResultsRecordLspResultEvents() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

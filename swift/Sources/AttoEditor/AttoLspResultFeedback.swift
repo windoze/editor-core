@@ -24,6 +24,8 @@ enum AttoLspResultFeedback {
         case codeActionResolve
         case callHierarchy
         case typeHierarchy
+        case formatDocument
+        case formatSelection
         case selectionRange
         case signatureHelp
         case linkedEditing
@@ -66,6 +68,10 @@ enum AttoLspResultFeedback {
                 return "Call hierarchy"
             case .typeHierarchy:
                 return "Type hierarchy"
+            case .formatDocument:
+                return "Format document"
+            case .formatSelection:
+                return "Format selection"
             case .selectionRange:
                 return "Selection range"
             case .signatureHelp:
@@ -133,6 +139,10 @@ enum AttoLspResultFeedback {
                 return "Call hierarchy is unavailable."
             case .typeHierarchy:
                 return "Type hierarchy is unavailable."
+            case .formatDocument:
+                return "Format document is unavailable."
+            case .formatSelection:
+                return "Format selection is unavailable."
             case .selectionRange:
                 return "Selection range is unavailable."
             case .signatureHelp:
@@ -182,6 +192,10 @@ enum AttoLspResultFeedback {
                 return "No call hierarchy results are available here."
             case .typeHierarchy:
                 return "No type hierarchy results are available here."
+            case .formatDocument:
+                return "No formatting edits were produced."
+            case .formatSelection:
+                return "No selected text is available to format."
             case .selectionRange:
                 return "No larger selection range is available."
             case .signatureHelp:
@@ -196,10 +210,10 @@ enum AttoLspResultFeedback {
         }
     }
 
-    static func unavailable(_ feature: Feature) -> Message {
+    static func unavailable(_ feature: Feature, reason: String = "LSP is not enabled for this document.") -> Message {
         Message(
             statusText: "\(feature.statusTitle): unavailable",
-            detailText: "\(feature.unavailableTitle)\nLSP is not enabled for this document."
+            detailText: "\(feature.unavailableTitle)\n\(reason)"
         )
     }
 

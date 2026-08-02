@@ -188,6 +188,20 @@ final class AttoLspResultFeedbackTests: XCTestCase {
                 detailText: "Type hierarchy request failed.\nserver busy"
             )
         )
+        XCTAssertEqual(
+            AttoLspResultFeedback.unavailable(.formatDocument, reason: "server has no formatter"),
+            AttoLspResultFeedback.Message(
+                statusText: "Format document: unavailable",
+                detailText: "Format document is unavailable.\nserver has no formatter"
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.formatSelection),
+            AttoLspResultFeedback.Message(
+                statusText: "Format selection: no results",
+                detailText: "No selected text is available to format."
+            )
+        )
     }
 
     func testRefreshSummaryFormatsSingularAndPluralCounts() {

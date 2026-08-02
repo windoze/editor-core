@@ -3524,7 +3524,7 @@ final class AttoEditorAreaViewController: NSViewController {
         if result.didApply {
             updateStatusBar()
         }
-        return handleFormattingResult(result, title: "Format Document", editorView: tab.editCore.editorView)
+        return handleFormattingResult(result, feature: .formatDocument, editorView: tab.editCore.editorView)
     }
 
     @discardableResult
@@ -3539,7 +3539,7 @@ final class AttoEditorAreaViewController: NSViewController {
             let startOffset = min(offsets.start, offsets.end)
             let endOffset = max(offsets.start, offsets.end)
             guard startOffset < endOffset else {
-                showWorkspaceEditPopover(text: "Format Selection requires a non-empty selection.", in: tab.editCore.editorView)
+                presentLspResultFeedback(AttoLspResultFeedback.empty(.formatSelection), in: tab.editCore.editorView)
                 NSSound.beep()
                 return false
             }
@@ -3551,10 +3551,10 @@ final class AttoEditorAreaViewController: NSViewController {
             if result.didApply {
                 updateStatusBar()
             }
-            return handleFormattingResult(result, title: "Format Selection", editorView: tab.editCore.editorView)
+            return handleFormattingResult(result, feature: .formatSelection, editorView: tab.editCore.editorView)
         } catch {
-            showWorkspaceEditPopover(
-                text: "Format Selection failed.\n\(error.localizedDescription)",
+            presentLspResultFeedback(
+                AttoLspResultFeedback.failed(.formatSelection, errorDescription: error.localizedDescription),
                 in: tab.editCore.editorView
             )
             NSSound.beep()
@@ -3565,21 +3565,21 @@ final class AttoEditorAreaViewController: NSViewController {
     @discardableResult
     private func handleFormattingResult(
         _ result: EditorCoreLSPFormattingResult,
-        title: String,
+        feature: AttoLspResultFeedback.Feature,
         editorView: EditorCoreSkiaView
     ) -> Bool {
         switch result {
         case .applied:
             return true
         case .noEdits:
-            showWorkspaceEditPopover(text: "\(title) completed with no edits.", in: editorView)
+            presentLspResultFeedback(AttoLspResultFeedback.empty(feature), in: editorView)
             return false
         case .unavailable(let reason):
-            showWorkspaceEditPopover(text: "\(title) is unavailable.\n\(reason)", in: editorView)
+            presentLspResultFeedback(AttoLspResultFeedback.unavailable(feature, reason: reason), in: editorView)
             NSSound.beep()
             return false
         case .failed(let message):
-            showWorkspaceEditPopover(text: "\(title) failed.\n\(message)", in: editorView)
+            presentLspResultFeedback(AttoLspResultFeedback.failed(feature, errorDescription: message), in: editorView)
             NSSound.beep()
             return false
         }
