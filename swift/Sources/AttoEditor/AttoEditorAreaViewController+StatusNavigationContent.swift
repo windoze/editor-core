@@ -518,6 +518,24 @@ extension AttoEditorAreaViewController {
         return true
     }
 
+    @discardableResult
+    func clearProjectLspProcessHealthLog() -> Bool {
+        do {
+            let removed = try projectLspProcessHealthLogStore.clear(workspaceRootURL: workspaceRootURL)
+            if removed == 0 {
+                NSSound.beep()
+                return false
+            }
+            projectLspProcessHealthLogController?.hide()
+            projectLspProcessHealthLogController = nil
+            return true
+        } catch {
+            NSLog("AttoEditor: failed to clear project LSP process health log: %@", String(describing: error))
+            NSSound.beep()
+            return false
+        }
+    }
+
     static func projectLspStatusEventTitle(_ event: AttoProjectLspPanelErrorEvent) -> String {
         let source = event.source.rawValue.capitalized
         let scope = projectLspEventScope(tabId: event.tabId, viewIndex: event.viewIndex)

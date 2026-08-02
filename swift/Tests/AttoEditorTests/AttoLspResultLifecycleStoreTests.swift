@@ -459,4 +459,62 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         XCTAssertEqual(rawLog.split(whereSeparator: \.isNewline).count, 2)
         XCTAssertFalse(rawLog.contains("fake-lsp-1"))
     }
+
+    func testProjectLspProcessHealthLogStoreClearsWorkspaceEntries() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoProjectLspProcessHealthLogClearTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let rootA = tempDir.appendingPathComponent("workspace-a", isDirectory: true)
+        let rootB = tempDir.appendingPathComponent("workspace-b", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: rootB, withIntermediateDirectories: true)
+
+        let logURL = tempDir.appendingPathComponent("lsp-process-health.jsonl")
+        let logStore = AttoProjectLspProcessHealthLogStore(logFileURL: logURL)
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 1,
+                sourceSequence: 101,
+                tabId: 1,
+                viewIndex: 0,
+                viewId: 1001,
+                serverName: "root-a-lsp",
+                serverCommand: "root-a-lsp",
+                availability: "failed",
+                state: "failed",
+                detail: "root a",
+                process: EcuLspProcessStatus(pid: 11, state: .exited, exitCode: 1)
+            ),
+            workspaceRootURL: rootA,
+            recordedAt: Date(timeIntervalSince1970: 1_785_715_200)
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 2,
+                sourceSequence: 102,
+                tabId: 2,
+                viewIndex: 0,
+                viewId: 1002,
+                serverName: "root-b-lsp",
+                serverCommand: "root-b-lsp",
+                availability: "enabled",
+                state: "ready",
+                detail: nil,
+                process: EcuLspProcessStatus(pid: 12, state: .running)
+            ),
+            workspaceRootURL: rootB,
+            recordedAt: Date(timeIntervalSince1970: 1_785_715_201)
+        )
+
+        XCTAssertEqual(try logStore.clear(workspaceRootURL: rootA), 1)
+        XCTAssertEqual(logStore.loadRecent(workspaceRootURL: rootA, limit: 10), [])
+        XCTAssertEqual(logStore.loadRecent(workspaceRootURL: rootB, limit: 10).map(\.serverName), ["root-b-lsp"])
+        XCTAssertEqual(try logStore.clear(workspaceRootURL: rootA), 0)
+
+        let rawLog = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertFalse(rawLog.contains("root-a-lsp"))
+        XCTAssertTrue(rawLog.contains("root-b-lsp"))
+    }
 }

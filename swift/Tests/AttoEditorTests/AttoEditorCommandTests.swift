@@ -93,6 +93,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.show_project_lsp_status"))
         XCTAssertTrue(ids.contains("lsp.show_project_lsp_health"))
         XCTAssertTrue(ids.contains("lsp.show_project_lsp_health_log"))
+        XCTAssertTrue(ids.contains("lsp.clear_project_lsp_health_log"))
         XCTAssertTrue(ids.contains("lsp.restart_server"))
         XCTAssertTrue(ids.contains("lsp.restart_project_servers"))
         XCTAssertTrue(ids.contains("lsp.document_colors"))
@@ -1461,6 +1462,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_project_lsp_status", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_project_lsp_health", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_project_lsp_health_log", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.clear_project_lsp_health_log", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_server", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_project_servers", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
@@ -2295,6 +2297,60 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(cell.textField?.stringValue.contains("process exited pid 999 exit 12") == true)
         XCTAssertTrue(cell.textField?.stringValue.contains("persisted stderr") == true)
         XCTAssertFalse(cell.textField?.stringValue.contains("other-lsp") == true)
+    }
+
+    func testClearProjectLspProcessHealthLogClearsCurrentWorkspaceOnly() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let otherRoot = tempDir.appendingPathComponent("other", isDirectory: true)
+        try FileManager.default.createDirectory(at: otherRoot, withIntermediateDirectories: true)
+        let logStore = AttoProjectLspProcessHealthLogStore(
+            logFileURL: tempDir.appendingPathComponent("lsp-health.jsonl")
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 1,
+                sourceSequence: 10,
+                tabId: 1,
+                viewIndex: 0,
+                viewId: 100,
+                serverName: "current-lsp",
+                serverCommand: "current-lsp",
+                availability: "failed",
+                state: "failed",
+                detail: "current exit",
+                process: EcuLspProcessStatus(pid: 101, state: .exited, exitCode: 1)
+            ),
+            workspaceRootURL: tempDir,
+            recordedAt: Date(timeIntervalSince1970: 1_785_715_200)
+        )
+        try logStore.append(
+            event: AttoProjectLspProcessHealthEvent(
+                sequence: 2,
+                sourceSequence: 20,
+                tabId: 2,
+                viewIndex: 0,
+                viewId: 200,
+                serverName: "other-lsp",
+                serverCommand: "other-lsp",
+                availability: "enabled",
+                state: "ready",
+                detail: nil,
+                process: EcuLspProcessStatus(pid: 202, state: .running)
+            ),
+            workspaceRootURL: otherRoot,
+            recordedAt: Date(timeIntervalSince1970: 1_785_715_201)
+        )
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir, projectLspProcessHealthLogStore: logStore)
+        XCTAssertTrue(vc.clearProjectLspProcessHealthLog())
+        XCTAssertFalse(vc.showProjectLspProcessHealthLogPanel())
+        XCTAssertEqual(logStore.loadRecent(workspaceRootURL: tempDir, limit: 10), [])
+        XCTAssertEqual(logStore.loadRecent(workspaceRootURL: otherRoot, limit: 10).map(\.serverName), ["other-lsp"])
+        XCTAssertFalse(vc.clearProjectLspProcessHealthLog())
     }
 
     func testEmptyLocationResultUsesUnifiedFeedbackStatus() throws {

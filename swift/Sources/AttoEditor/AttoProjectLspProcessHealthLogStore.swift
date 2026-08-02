@@ -145,4 +145,45 @@ struct AttoProjectLspProcessHealthLogStore: Sendable {
         }
         return entries
     }
+
+    @discardableResult
+    func clear(
+        workspaceRootURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> Int {
+        guard fileManager.fileExists(atPath: logFileURL.path) else {
+            return 0
+        }
+
+        let rootURI = workspaceRootURL.standardizedFileURL.absoluteString
+        let data = try Data(contentsOf: logFileURL)
+        let text = String(data: data, encoding: .utf8) ?? ""
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        var keptLines: [String] = []
+        var removedCount = 0
+        for line in text.split(whereSeparator: \.isNewline).map(String.init) {
+            guard let lineData = line.data(using: .utf8),
+                  let entry = try? decoder.decode(AttoProjectLspProcessHealthLogEntry.self, from: lineData)
+            else {
+                keptLines.append(line)
+                continue
+            }
+
+            if entry.workspaceRootURI == rootURI {
+                removedCount += 1
+            } else {
+                keptLines.append(line)
+            }
+        }
+
+        guard removedCount > 0 else {
+            return 0
+        }
+
+        let output = keptLines.isEmpty ? "" : keptLines.joined(separator: "\n") + "\n"
+        try output.write(to: logFileURL, atomically: true, encoding: .utf8)
+        return removedCount
+    }
 }
