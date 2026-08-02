@@ -90,6 +90,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentLSPResultEvents))
         XCTAssertTrue(info.supports(.lspRequestEvents))
         XCTAssertTrue(info.supports(.multiDocumentLSPRequestEvents))
+        XCTAssertTrue(info.supports(.lspRequestCancelTimeoutEvents))
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {
@@ -105,6 +106,9 @@ final class EditorCoreUIFFITests: XCTestCase {
         let requestEvents = try ui.lspRequestEvents()
         XCTAssertEqual(requestEvents.latestSequence, 0)
         XCTAssertTrue(requestEvents.events.isEmpty)
+        XCTAssertFalse(try ui.lspCancelRequest(999))
+        XCTAssertFalse(try ui.lspMarkRequestTimedOut(999))
+        XCTAssertEqual(try ui.lspRequestEventsLatestSequence(), 0)
     }
 
     func testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch() throws {

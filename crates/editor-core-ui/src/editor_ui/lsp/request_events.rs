@@ -15,4 +15,40 @@ impl EditorUi {
         serde_json::to_string(&self.lsp_request_events_after(after_sequence))
             .map_err(|e| UiError::Processor(e.to_string()))
     }
+
+    pub fn lsp_cancel_request(&mut self, request_id: u64) -> Result<bool, UiError> {
+        let shared = {
+            let doc = self.lock_doc();
+            if !matches!(
+                doc.lsp_client_requests.get(&request_id),
+                Some(LspClientRequest::Result { .. })
+            ) {
+                return Ok(false);
+            }
+            doc.lsp.clone()
+        };
+
+        let cancel_result = shared
+            .map(|shared| shared.with_session_mut(|lsp| lsp.cancel_request(request_id)))
+            .unwrap_or(Ok(()));
+
+        let recorded = {
+            let mut doc = self.lock_doc();
+            doc.record_lsp_result_request_finished_without_response(
+                request_id,
+                EditorLspRequestEventStatus::Canceled,
+            )
+        };
+
+        cancel_result.map_err(UiError::Processor)?;
+        Ok(recorded)
+    }
+
+    pub fn lsp_mark_request_timed_out(&mut self, request_id: u64) -> bool {
+        let mut doc = self.lock_doc();
+        doc.record_lsp_result_request_finished_without_response(
+            request_id,
+            EditorLspRequestEventStatus::Timeout,
+        )
+    }
 }

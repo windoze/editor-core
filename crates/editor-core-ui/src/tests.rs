@@ -372,6 +372,82 @@ fn lsp_request_events_record_stale_completion() {
 }
 
 #[test]
+fn lsp_request_events_record_cancel_and_timeout_completion() {
+    let mut ui = EditorUi::new("abc", 80);
+    let view_id = ui.view_id;
+    {
+        let mut doc = ui.lock_doc();
+        doc.lsp_client_requests.insert(
+            41,
+            LspClientRequest::Result {
+                view: view_id,
+                slot: LspResultSlot::Hover,
+            },
+        );
+        doc.lsp_latest_result_request_id
+            .insert((view_id, LspResultSlot::Hover), 41);
+        doc.record_lsp_request_started(view_id, LspResultSlot::Hover, 41);
+
+        doc.lsp_client_requests.insert(
+            42,
+            LspClientRequest::Result {
+                view: view_id,
+                slot: LspResultSlot::CodeAction,
+            },
+        );
+        doc.lsp_latest_result_request_id
+            .insert((view_id, LspResultSlot::CodeAction), 42);
+        doc.record_lsp_request_started(view_id, LspResultSlot::CodeAction, 42);
+
+        doc.lsp_client_requests.insert(
+            43,
+            LspClientRequest::OnTypeFormatting {
+                view: view_id,
+                version: 7,
+            },
+        );
+    }
+
+    assert!(ui.lsp_cancel_request(41).unwrap());
+    assert!(ui.lsp_mark_request_timed_out(42));
+    assert!(!ui.lsp_mark_request_timed_out(43));
+    assert!(!ui.lsp_mark_request_timed_out(404));
+    {
+        let doc = ui.lock_doc();
+        assert!(matches!(
+            doc.lsp_client_requests.get(&43),
+            Some(LspClientRequest::OnTypeFormatting { .. })
+        ));
+    }
+
+    let events = ui.lsp_request_events_after(0);
+    assert_eq!(events.latest_sequence, 4);
+    assert_eq!(events.events.len(), 4);
+    assert_eq!(events.events[2].request_id, 41);
+    assert_eq!(events.events[2].phase, "completed");
+    assert_eq!(events.events[2].status, "canceled");
+    assert_eq!(events.events[2].result_sequence, None);
+    assert_eq!(events.events[3].request_id, 42);
+    assert_eq!(events.events[3].phase, "completed");
+    assert_eq!(events.events[3].status, "timeout");
+    assert_eq!(events.events[3].result_sequence, None);
+    assert!(ui.lsp_result_events_after(0).events.is_empty());
+
+    let applied = ui
+        .handle_lsp_events(vec![LspEvent::Response(editor_core_lsp::LspResponse {
+            id: 41,
+            method: "textDocument/hover".to_string(),
+            uri: None,
+            result: Some(serde_json::json!({ "contents": "late" })),
+            error: None,
+        })])
+        .unwrap();
+    assert!(!applied);
+    assert_eq!(ui.lsp_request_events_after(0).events.len(), 4);
+    assert!(ui.lsp_result_events_after(0).events.is_empty());
+}
+
+#[test]
 fn multi_document_lsp_result_events_aggregate_tab_and_view_context() {
     let mut multi = MultiDocumentEditorUi::new();
     let first_tab = multi.open_tab("abc", 80);

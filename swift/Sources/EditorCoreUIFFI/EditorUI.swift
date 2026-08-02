@@ -358,6 +358,20 @@ public final class EditorUI {
         )
     }
 
+    public func lspCancelRequest(_ requestId: UInt64) throws -> Bool {
+        var recorded: UInt8 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_cancel_request(handle, requestId, &recorded)
+        try library.ensureStatus(status, context: "editor_ui_lsp_cancel_request")
+        return recorded != 0
+    }
+
+    public func lspMarkRequestTimedOut(_ requestId: UInt64) throws -> Bool {
+        var recorded: UInt8 = 0
+        let status = editor_core_ui_ffi_editor_ui_lsp_mark_request_timed_out(handle, requestId, &recorded)
+        try library.ensureStatus(status, context: "editor_ui_lsp_mark_request_timed_out")
+        return recorded != 0
+    }
+
     /// Request an LSP hover (`textDocument/hover`) for a logical position.
     ///
     /// Notes:

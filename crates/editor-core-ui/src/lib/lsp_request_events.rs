@@ -47,6 +47,8 @@ pub(crate) enum EditorLspRequestEventStatus {
     Error,
     Stale,
     Mismatched,
+    Canceled,
+    Timeout,
 }
 
 impl EditorLspRequestEventStatus {
@@ -58,6 +60,8 @@ impl EditorLspRequestEventStatus {
             Self::Error => "error",
             Self::Stale => "stale",
             Self::Mismatched => "mismatched",
+            Self::Canceled => "canceled",
+            Self::Timeout => "timeout",
         }
     }
 
@@ -106,6 +110,31 @@ impl EditorUiDoc {
             result_sequence,
             error,
         );
+    }
+
+    pub(crate) fn record_lsp_result_request_finished_without_response(
+        &mut self,
+        request_id: u64,
+        status: EditorLspRequestEventStatus,
+    ) -> bool {
+        let (view, slot) = match self.lsp_client_requests.remove(&request_id) {
+            Some(LspClientRequest::Result { view, slot }) => (view, slot),
+            Some(other) => {
+                self.lsp_client_requests.insert(request_id, other);
+                return false;
+            }
+            None => return false,
+        };
+
+        if self.lsp_latest_result_request_id.get(&(view, slot)) == Some(&request_id) {
+            self.lsp_latest_result_request_id.remove(&(view, slot));
+        }
+        if slot == LspResultSlot::CodeLens {
+            self.lsp_code_lens_in_flight = false;
+        }
+
+        self.record_lsp_request_completed(view, slot, request_id, status, None, None);
+        true
     }
 
     fn record_lsp_request_event(

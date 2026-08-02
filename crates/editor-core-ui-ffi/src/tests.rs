@@ -414,6 +414,10 @@ fn ffi_editor_ui_lsp_request_events_snapshot_empty() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_REQUEST_EVENTS,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_REQUEST_CANCEL_TIMEOUT_EVENTS,
+        0
+    );
 
     let initial = CString::new("abc").unwrap();
     let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
@@ -440,6 +444,29 @@ fn ffi_editor_ui_lsp_request_events_snapshot_empty() {
     let events: serde_json::Value = serde_json::from_str(&events_json).unwrap();
     assert_eq!(events["latest_sequence"], 0);
     assert_eq!(events["events"].as_array().unwrap().len(), 0);
+
+    let mut recorded: u8 = u8::MAX;
+    assert_eq!(
+        unsafe { editor_core_ui_ffi_editor_ui_lsp_cancel_request(ui, 999, &mut recorded) },
+        ECU_OK
+    );
+    assert_eq!(recorded, 0);
+    recorded = u8::MAX;
+    assert_eq!(
+        unsafe { editor_core_ui_ffi_editor_ui_lsp_mark_request_timed_out(ui, 999, &mut recorded) },
+        ECU_OK
+    );
+    assert_eq!(recorded, 0);
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_editor_ui_lsp_request_events_latest_sequence(
+                ui,
+                &mut latest_sequence,
+            )
+        },
+        ECU_OK
+    );
+    assert_eq!(latest_sequence, 0);
 
     unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
 }

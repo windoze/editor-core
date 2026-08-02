@@ -122,6 +122,11 @@ struct AttoRuntimeCompatibility {
             name: "multi-document LSP request events",
             reason: "Project-level request consumers can cursor over core-owned LSP request lifecycle events aggregated across tabs and split views; Swift falls back to App-level lifecycle events when unavailable."
         ),
+        RuntimeFeature(
+            feature: .lspRequestCancelTimeoutEvents,
+            name: "LSP request cancel/timeout events",
+            reason: "Request lifecycle consumers can explicitly close pending request events as canceled or timed out; Swift falls back to App-level timeout/cancel bookkeeping when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {
