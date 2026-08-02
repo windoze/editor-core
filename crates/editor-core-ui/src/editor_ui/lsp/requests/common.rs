@@ -6,9 +6,5 @@ mod result;
 use super::super::*;
 
 fn record_lsp_result_request(doc: &mut EditorUiDoc, view: ViewId, slot: LspResultSlot, id: u64) {
-    doc.lsp_client_requests
-        .insert(id, LspClientRequest::Result { view, slot });
-    doc.lsp_latest_result_request_id.insert((view, slot), id);
-    doc.lsp_last_result_json.remove(&(view, slot));
-    doc.record_lsp_request_started(view, slot, id);
+    doc.track_lsp_result_request(view, slot, id);
 }

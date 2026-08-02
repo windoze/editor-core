@@ -7,9 +7,7 @@ pub(super) fn record_slot_error_result(
     request_id: u64,
     error: LspResponseError,
 ) {
-    if slot == LspResultSlot::CodeLens {
-        doc.lsp_code_lens_in_flight = false;
-    }
+    doc.clear_lsp_in_flight_for_slot(slot);
 
     let stored_json = stored_lsp_error_result_json(slot, error.clone());
     let result_json_len = stored_json.as_ref().map_or(0, String::len);

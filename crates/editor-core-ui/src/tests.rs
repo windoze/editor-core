@@ -447,6 +447,138 @@ fn lsp_request_events_record_cancel_and_timeout_completion() {
 }
 
 #[test]
+fn lsp_auxiliary_refresh_records_derived_state_request_events() {
+    let capture_path = unique_temp_path("aux-request-events");
+    let capabilities = serde_json::json!({});
+    let script = lsp_capture_server_script(&capture_path, capabilities);
+    let args = vec!["-c".to_string(), script];
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root_uri = format!("file:///tmp/editor-core-ui-aux-request-events-{stamp}");
+    let doc_uri = format!("{root_uri}/main.rs");
+
+    let mut ui = EditorUi::new("fn main() {\n    println!(\"hi\");\n}\n", 80);
+    ui.set_viewport_px(200, 40, 1.0).unwrap();
+    ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+
+    let _ = ui.poll_processing().unwrap();
+    let captured = wait_for_captured_lsp_stdin(&capture_path, "textDocument/documentLink");
+    assert!(captured.contains("textDocument/codeLens"));
+
+    let events = ui.lsp_request_events_after(0);
+    assert!(events.latest_sequence >= 2);
+    assert!(
+        events.events.iter().any(|event| {
+            event.family == "code_lens"
+                && event.slot == "code_lens"
+                && event.method == "textDocument/codeLens"
+                && event.phase == "started"
+                && event.status == "pending"
+        }),
+        "missing code lens request event: {:?}",
+        events.events
+    );
+    assert!(
+        events.events.iter().any(|event| {
+            event.family == "document_links"
+                && event.slot == "document_links"
+                && event.method == "textDocument/documentLink"
+                && event.phase == "started"
+                && event.status == "pending"
+        }),
+        "missing document links request event: {:?}",
+        events.events
+    );
+
+    ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
+fn lsp_auxiliary_derived_state_responses_record_request_and_result_events() {
+    let mut ui = EditorUi::new("abc\nlink", 80);
+    let view_id = ui.view_id;
+    {
+        let mut doc = ui.lock_doc();
+        doc.lsp_inlay_in_flight = true;
+        doc.track_lsp_result_request(view_id, LspResultSlot::InlayHints, 61);
+        doc.lsp_document_links_in_flight = true;
+        doc.track_lsp_result_request(view_id, LspResultSlot::DocumentLinks, 62);
+    }
+
+    let applied = ui
+        .handle_lsp_events(vec![
+            LspEvent::Response(editor_core_lsp::LspResponse {
+                id: 61,
+                method: "textDocument/inlayHint".to_string(),
+                uri: None,
+                result: Some(serde_json::json!([])),
+                error: None,
+            }),
+            LspEvent::Response(editor_core_lsp::LspResponse {
+                id: 62,
+                method: "textDocument/documentLink".to_string(),
+                uri: None,
+                result: None,
+                error: Some(LspResponseError {
+                    code: -32603,
+                    message: "links failed".to_string(),
+                    data: None,
+                }),
+            }),
+        ])
+        .unwrap();
+
+    assert!(applied);
+    {
+        let doc = ui.lock_doc();
+        assert!(!doc.lsp_inlay_in_flight);
+        assert!(!doc.lsp_document_links_in_flight);
+    }
+
+    let request_events = ui.lsp_request_events_after(0);
+    assert_eq!(request_events.latest_sequence, 4);
+    assert_eq!(request_events.events.len(), 4);
+    assert_eq!(request_events.events[0].family, "inlay_hints");
+    assert_eq!(request_events.events[0].slot, "inlay_hints");
+    assert_eq!(request_events.events[0].phase, "started");
+    assert_eq!(request_events.events[0].status, "pending");
+    assert_eq!(request_events.events[1].family, "document_links");
+    assert_eq!(request_events.events[1].slot, "document_links");
+    assert_eq!(request_events.events[1].phase, "started");
+    assert_eq!(request_events.events[1].status, "pending");
+    assert_eq!(request_events.events[2].request_id, 61);
+    assert_eq!(request_events.events[2].phase, "completed");
+    assert_eq!(request_events.events[2].status, "success");
+    assert_eq!(request_events.events[2].result_sequence, Some(1));
+    assert_eq!(request_events.events[3].request_id, 62);
+    assert_eq!(request_events.events[3].phase, "completed");
+    assert_eq!(request_events.events[3].status, "error");
+    assert_eq!(request_events.events[3].result_sequence, Some(2));
+    assert_eq!(request_events.events[3].error_code, Some(-32603));
+    assert_eq!(
+        request_events.events[3].error_message.as_deref(),
+        Some("links failed")
+    );
+
+    let result_events = ui.lsp_result_events_after(0);
+    assert_eq!(result_events.latest_sequence, 2);
+    assert_eq!(result_events.events.len(), 2);
+    assert_eq!(result_events.events[0].family, "inlay_hints");
+    assert_eq!(result_events.events[0].slot, "inlay_hints");
+    assert_eq!(result_events.events[0].status, "success");
+    assert_eq!(result_events.events[0].request_id, 61);
+    assert_eq!(result_events.events[1].family, "document_links");
+    assert_eq!(result_events.events[1].slot, "document_links");
+    assert_eq!(result_events.events[1].status, "error");
+    assert_eq!(result_events.events[1].request_id, 62);
+    assert_eq!(result_events.events[1].error_code, Some(-32603));
+}
+
+#[test]
 fn multi_document_lsp_result_events_aggregate_tab_and_view_context() {
     let mut multi = MultiDocumentEditorUi::new();
     let first_tab = multi.open_tab("abc", 80);

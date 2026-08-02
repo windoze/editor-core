@@ -75,6 +75,34 @@ impl EditorLspRequestEventStatus {
 }
 
 impl EditorUiDoc {
+    pub(crate) fn track_lsp_result_request(
+        &mut self,
+        view_id: ViewId,
+        slot: LspResultSlot,
+        request_id: u64,
+    ) {
+        self.lsp_client_requests.insert(
+            request_id,
+            LspClientRequest::Result {
+                view: view_id,
+                slot,
+            },
+        );
+        self.lsp_latest_result_request_id
+            .insert((view_id, slot), request_id);
+        self.lsp_last_result_json.remove(&(view_id, slot));
+        self.record_lsp_request_started(view_id, slot, request_id);
+    }
+
+    pub(crate) fn clear_lsp_in_flight_for_slot(&mut self, slot: LspResultSlot) {
+        match slot {
+            LspResultSlot::CodeLens => self.lsp_code_lens_in_flight = false,
+            LspResultSlot::InlayHints => self.lsp_inlay_in_flight = false,
+            LspResultSlot::DocumentLinks => self.lsp_document_links_in_flight = false,
+            _ => {}
+        }
+    }
+
     pub(crate) fn record_lsp_request_started(
         &mut self,
         view_id: ViewId,
@@ -135,9 +163,7 @@ impl EditorUiDoc {
                 if self.lsp_latest_result_request_id.get(&(view, slot)) == Some(&request_id) {
                     self.lsp_latest_result_request_id.remove(&(view, slot));
                 }
-                if slot == LspResultSlot::CodeLens {
-                    self.lsp_code_lens_in_flight = false;
-                }
+                self.clear_lsp_in_flight_for_slot(slot);
             }
         }
 

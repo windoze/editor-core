@@ -22,7 +22,7 @@ pub(super) fn apply_slot_result_edits(
             *applied |= doc.apply_lsp_processing_edits([edit])?;
         }
         LspResultSlot::CodeLens => {
-            doc.lsp_code_lens_in_flight = false;
+            doc.clear_lsp_in_flight_for_slot(slot);
             let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
                 Ok(line_index) => lsp_code_lens_to_processing_edit(line_index, result),
                 Err(_) => {
@@ -31,6 +31,28 @@ pub(super) fn apply_slot_result_edits(
                 }
             };
             *applied |= doc.apply_lsp_processing_edits([edit])?;
+        }
+        LspResultSlot::InlayHints => {
+            doc.clear_lsp_in_flight_for_slot(slot);
+            let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
+                Ok(line_index) => lsp_inlay_hints_to_processing_edit(line_index, result),
+                Err(_) => {
+                    doc.lsp_fail("LSP buffer line index unavailable");
+                    return Ok(EventOutcome::Abort);
+                }
+            };
+            *applied |= doc.apply_lsp_processing_edits([edit])?;
+        }
+        LspResultSlot::DocumentLinks => {
+            doc.clear_lsp_in_flight_for_slot(slot);
+            let edits = match doc.ws.buffer_line_index(doc.buffer_id) {
+                Ok(line_index) => lsp_document_links_to_processing_edits(line_index, result),
+                Err(_) => {
+                    doc.lsp_fail("LSP buffer line index unavailable");
+                    return Ok(EventOutcome::Abort);
+                }
+            };
+            *applied |= doc.apply_lsp_processing_edits(edits)?;
         }
         _ => {}
     }

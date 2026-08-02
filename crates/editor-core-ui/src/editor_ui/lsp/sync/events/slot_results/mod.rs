@@ -21,6 +21,7 @@ pub(super) fn handle_lsp_result_slot_response(
     };
 
     if request_slot != slot {
+        doc.clear_lsp_in_flight_for_slot(request_slot);
         doc.record_lsp_request_completed(
             view,
             request_slot,
@@ -33,6 +34,7 @@ pub(super) fn handle_lsp_result_slot_response(
     }
 
     if doc.lsp_latest_result_request_id.get(&(view, slot)) != Some(&resp.id) {
+        doc.clear_lsp_in_flight_for_slot(slot);
         doc.record_lsp_request_completed(
             view,
             slot,
