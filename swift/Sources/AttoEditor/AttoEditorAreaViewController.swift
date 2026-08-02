@@ -387,6 +387,10 @@ final class AttoEditorAreaViewController: NSViewController {
         try coreDocuments?.snapshot()
     }
 
+    func _coreWorkspaceEditTransactionLatestSequenceForTesting() throws -> UInt64? {
+        try coreDocuments?.workspaceEditTransactionEventsLatestSequence()
+    }
+
     func _coreMultiDocumentSearchForTesting(query: String) throws -> [EcuTabSearchResult]? {
         try coreDocuments?.searchAllTabs(query: query)
     }

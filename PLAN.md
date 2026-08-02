@@ -267,6 +267,12 @@
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIAppliesOpenTabResourceOperationFilesystemSideEffects`
     - `swift test --package-path swift --filter EditorCoreUIFFITests`
     - `git diff --check`
+- 中间提交：`feat(app): apply workspace edits via core transaction`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 AttoEditor `applyWorkspaceEditJSONToActiveTab` / rename / code action / completion additional edit 共享的 WorkspaceEdit App apply helper 主路径切到 `MultiDocumentEditorUI.applyWorkspaceEditTransaction(...)`，并把 Swift-only parser/apply 保留为 core multi-document model 不可用时的兼容 fallback。
+  - 提交边界：只切换 App apply helper 的主路径；apply 前把打开 tab 的文本、URI、dirty 和 active view 差异同步到 core transaction，apply 后从 core snapshot/text/dirty/URI/close state 投影回 AppKit tabs；不新增 ABI 函数，不移除旧 Swift fallback，不实现 preview panel 产品化、打开 tab undo grouping、完整 batch atomic rollback 或更深层 conflict UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEdit`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

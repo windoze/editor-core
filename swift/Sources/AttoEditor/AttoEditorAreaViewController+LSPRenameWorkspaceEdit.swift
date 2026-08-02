@@ -170,6 +170,92 @@ extension AttoEditorAreaViewController {
             return false
         }
 
+        if coreDocuments != nil {
+            return applyWorkspaceEditWithCoreTransaction(
+                workspaceEditJSON: workspaceEditJSON,
+                documentURI: documentURI,
+                initialActiveTab: initialActiveTab
+            )
+        }
+
+        return applyWorkspaceEditWithSwiftFallback(
+            workspaceEdit,
+            workspaceEditJSON: workspaceEditJSON,
+            documentURI: documentURI,
+            initialActiveTab: initialActiveTab
+        )
+    }
+
+    @discardableResult
+    func applyWorkspaceEditWithCoreTransaction(
+        workspaceEditJSON: String,
+        documentURI: String?,
+        initialActiveTab: AttoEditorTab
+    ) -> Bool {
+        guard let coreDocuments else { return false }
+        let feedbackEditorView = activeTab?.editCore.editorView ?? initialActiveTab.editCore.editorView
+
+        do {
+            try syncOpenTabsToCoreBeforeWorkspaceEditApply(coreDocuments)
+            let coreResult = try coreDocuments.applyWorkspaceEditTransaction(workspaceEditJSON)
+            try syncAppTabsFromCoreWorkspaceEditTransaction(coreDocuments)
+
+            let result = AttoWorkspaceEditApplyResult(
+                applied: coreResult.applied,
+                appliedURI: coreResult.appliedURI ?? documentURI ?? initialActiveTab.fileURL.absoluteString,
+                appliedEditCount: coreResult.appliedEditCount + coreResult.appliedResourceOperationCount,
+                skippedURIs: coreResult.skippedURIs,
+                documents: coreResult.documents.map {
+                    AttoWorkspaceEditApplyResult.Document(
+                        uri: $0.uri,
+                        editCount: $0.editCount,
+                        hasOverlappingEdits: $0.hasOverlappingEdits
+                    )
+                }
+            )
+
+            guard result.applied else {
+                showWorkspaceEditSummaryIfNeeded(result, editorView: feedbackEditorView)
+                if result.skippedURIs.isEmpty == false {
+                    NSLog(
+                        "AttoEditor: core WorkspaceEdit transaction was not applied; skipped URIs: %@",
+                        result.skippedURIs.joined(separator: ", ")
+                    )
+                }
+                NSSound.beep()
+                return false
+            }
+
+            if result.skippedURIs.isEmpty == false {
+                NSLog(
+                    "AttoEditor: core WorkspaceEdit transaction partially applied; skipped URIs: %@",
+                    result.skippedURIs.joined(separator: ", ")
+                )
+            }
+
+            updateStatusBar()
+            showWorkspaceEditSummaryIfNeeded(result, editorView: feedbackEditorView)
+            if let activeEditorView = activeTab?.editCore.editorView {
+                view.window?.makeFirstResponder(activeEditorView)
+            }
+            return true
+        } catch {
+            NSLog(
+                "AttoEditor: core WorkspaceEdit transaction apply failed: %@",
+                String(describing: error)
+            )
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
+    func applyWorkspaceEditWithSwiftFallback(
+        _ workspaceEdit: AttoWorkspaceEditParser.ParseResult,
+        workspaceEditJSON: String,
+        documentURI: String?,
+        initialActiveTab: AttoEditorTab
+    ) -> Bool {
         let coreTransactionPreview = previewCoreWorkspaceEditTransaction(workspaceEditJSON)
         let coreBlockedTextEditURIs = coreWorkspaceEditBlockedTextEditURIs(coreTransactionPreview)
 
@@ -303,6 +389,130 @@ extension AttoEditorAreaViewController {
             view.window?.makeFirstResponder(activeEditorView)
         }
         return true
+    }
+
+    func syncOpenTabsToCoreBeforeWorkspaceEditApply(_ coreDocuments: MultiDocumentEditorUI) throws {
+        let snapshot = try coreDocuments.snapshot()
+        let coreTabsByID = Dictionary(uniqueKeysWithValues: snapshot.tabs.map { ($0.id, $0) })
+
+        for tab in tabs {
+            guard let coreTabID = tab.coreTabID else { continue }
+            let isDirty = localTabDirtyState(tab)
+            let text = try tab.editCore.editor.text()
+            let coreText = try coreDocuments.tabText(tabId: coreTabID)
+            let coreIsDirty = coreTabsByID[coreTabID]?.isModified ?? false
+            try coreDocuments.setTabTitle(tab.fileURL.lastPathComponent, tabId: coreTabID)
+            try coreDocuments.setTabDocumentURI(
+                tab.fileURL.standardizedFileURL.absoluteString,
+                tabId: coreTabID
+            )
+            if coreText != text || coreIsDirty != isDirty {
+                try coreDocuments.replaceTabText(tabId: coreTabID, text: text, markSaved: isDirty == false)
+            }
+            try coreDocuments.setActiveViewIndex(
+                tabId: coreTabID,
+                viewIndex: UInt32(clamping: tab.activePaneIndex)
+            )
+        }
+        if let activeTab, let coreTabID = activeTab.coreTabID {
+            try coreDocuments.setActiveTab(coreTabID)
+        }
+    }
+
+    func syncAppTabsFromCoreWorkspaceEditTransaction(
+        _ coreDocuments: MultiDocumentEditorUI
+    ) throws {
+        let snapshot = try coreDocuments.snapshot()
+        let coreTabsByID = Dictionary(uniqueKeysWithValues: snapshot.tabs.map { ($0.id, $0) })
+        var removedSelectedTab = false
+
+        let removedTabs = tabs.compactMap { tab -> (id: UUID, url: URL)? in
+            guard let coreTabID = tab.coreTabID,
+                  coreTabsByID[coreTabID] == nil
+            else { return nil }
+            return (tab.id, tab.fileURL)
+        }
+        for removedTab in removedTabs {
+            removedSelectedTab = removedSelectedTab || selectedTabID == removedTab.id
+            clearDiagnosticsLifecycleState(forTabID: removedTab.id)
+            tabs.removeAll { $0.id == removedTab.id }
+            onDidCloseFile?(removedTab.url)
+        }
+
+        for tab in tabs {
+            guard let coreTabID = tab.coreTabID,
+                  let snapshotTab = coreTabsByID[coreTabID]
+            else {
+                continue
+            }
+
+            if let documentURI = snapshotTab.documentURI,
+               let url = Self.fileURL(fromDocumentURI: documentURI) {
+                tab.fileURL = url
+                tab.isUntitled = false
+            }
+            tab.isPreview = snapshotTab.isPreview
+            tab.isDirty = snapshotTab.isModified
+            let text = try coreDocuments.tabText(tabId: coreTabID)
+            try replaceAppTabTextFromCoreProjection(
+                tab,
+                text: text,
+                markSaved: snapshotTab.isModified == false
+            )
+            refreshTabAfterCoreWorkspaceEditProjection(tab)
+        }
+
+        let selectedTabStillExists = selectedTabID.map { selectedID in
+            tabs.contains(where: { $0.id == selectedID })
+        } ?? false
+        if removedSelectedTab || selectedTabStillExists == false {
+            if let activeCoreTabID = snapshot.activeTabId,
+               let tab = tabs.first(where: { $0.coreTabID == activeCoreTabID }) {
+                selectTab(id: tab.id)
+            } else if let first = tabs.first {
+                selectTab(id: first.id)
+            } else {
+                selectedTabID = nil
+                showEmptyState()
+            }
+        } else if let activeTab {
+            showTabContent(activeTab)
+        }
+
+        refreshTabBar()
+        updateWindowTitle()
+        updateStatusBar()
+        notifySessionStateChanged()
+    }
+
+    func replaceAppTabTextFromCoreProjection(
+        _ tab: AttoEditorTab,
+        text: String,
+        markSaved: Bool
+    ) throws {
+        let oldText = try tab.editCore.editor.text()
+        if oldText != text {
+            let fullRange = UInt32(clamping: oldText.unicodeScalars.count)
+            _ = try tab.editCore.editor.applyTextEdits([
+                EcuTextEdit(start: 0, end: fullRange, text: text),
+            ])
+        }
+        if markSaved {
+            try tab.editCore.editor.markSaved()
+            tab.isDirty = false
+        } else {
+            tab.isDirty = true
+        }
+    }
+
+    func refreshTabAfterCoreWorkspaceEditProjection(_ tab: AttoEditorTab) {
+        for pane in tab.panes {
+            pane.layoutSubtreeIfNeeded()
+            pane.editorView.kickProcessingPoll()
+            pane.editorView.needsDisplay = true
+            pane.needsDisplay = true
+            applyLanguageConfiguration(fileURL: tab.fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
+        }
     }
 
     func previewCoreWorkspaceEditTransaction(_ workspaceEditJSON: String) -> EcuWorkspaceEditTransactionResult? {

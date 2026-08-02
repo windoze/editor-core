@@ -2986,6 +2986,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         let window = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
         {
@@ -3014,6 +3015,10 @@ final class AttoEditorCommandTests: XCTestCase {
 
         XCTAssertFalse(window.title.contains("●"))
         XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
 
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
         XCTAssertEqual(try editorView.editor.text(), "aBc\n")
@@ -3033,6 +3038,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         let window = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
         {
@@ -3058,6 +3064,10 @@ final class AttoEditorCommandTests: XCTestCase {
 
         XCTAssertFalse(window.title.contains("●"))
         XCTAssertFalse(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
 
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
         XCTAssertEqual(try editorView.editor.text(), "abc\n")
@@ -3124,6 +3134,7 @@ final class AttoEditorCommandTests: XCTestCase {
         vc.openFile(url: firstURL, mode: .pinned)
         vc.openFile(url: secondURL, mode: .pinned)
         vc.selectFile(url: firstURL)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
         {
@@ -3151,6 +3162,10 @@ final class AttoEditorCommandTests: XCTestCase {
         """
 
         XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
 
         var editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
         XCTAssertEqual(try editorView.editor.text(), "aBc\n")
@@ -3182,6 +3197,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         _ = attachToWindow(vc)
         vc.openFile(url: activeURL, mode: .pinned)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
         {
@@ -3217,6 +3233,10 @@ final class AttoEditorCommandTests: XCTestCase {
         """
 
         XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
         XCTAssertEqual(try String(contentsOf: createdURL, encoding: .utf8), "created\n")
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldURL.path))
         XCTAssertEqual(try String(contentsOf: renamedURL, encoding: .utf8), "old\n")
@@ -3239,6 +3259,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         _ = attachToWindow(vc)
         vc.openFile(url: oldURL, mode: .pinned)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
         {
@@ -3265,6 +3286,10 @@ final class AttoEditorCommandTests: XCTestCase {
         """
 
         XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldURL.path))
         XCTAssertEqual(try String(contentsOf: renamedURL, encoding: .utf8), "old\n")
 
@@ -3297,6 +3322,7 @@ final class AttoEditorCommandTests: XCTestCase {
         vc.openFile(url: keepURL, mode: .pinned)
         vc.openFile(url: deleteURL, mode: .pinned)
         vc.selectFile(url: keepURL)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
         {
@@ -3310,6 +3336,10 @@ final class AttoEditorCommandTests: XCTestCase {
         """
 
         XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
         XCTAssertFalse(FileManager.default.fileExists(atPath: deleteURL.path))
         XCTAssertFalse(vc.openFileItems().contains { $0.url.standardizedFileURL == deleteURL.standardizedFileURL })
         XCTAssertTrue(vc.openFileItems().contains { $0.url.standardizedFileURL == keepURL.standardizedFileURL })
@@ -3327,6 +3357,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         _ = attachToWindow(vc)
         vc.openFile(url: url, mode: .pinned)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
         {
@@ -3341,6 +3372,10 @@ final class AttoEditorCommandTests: XCTestCase {
         """
 
         XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
         XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "")
         let item = try XCTUnwrap(vc.openFileItems().first { $0.url.standardizedFileURL == url.standardizedFileURL })
         XCTAssertFalse(item.isDirty)
@@ -3362,6 +3397,7 @@ final class AttoEditorCommandTests: XCTestCase {
         _ = attachToWindow(vc)
         vc.openFile(url: dirtyURL, mode: .pinned)
         XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
         {
@@ -3375,6 +3411,10 @@ final class AttoEditorCommandTests: XCTestCase {
         """
 
         XCTAssertFalse(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
         XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
         let dirtyItem = try XCTUnwrap(vc.openFileItems().first { $0.url.standardizedFileURL == dirtyURL.standardizedFileURL })
         XCTAssertTrue(dirtyItem.isDirty)
@@ -3398,6 +3438,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc._activeTabDirtyForDataLossDecisionForTesting())
 
         vc._setActiveTabDirtyCacheForTesting(false)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
         let workspaceEdit = """
         {
           "documentChanges": [
@@ -3410,6 +3451,10 @@ final class AttoEditorCommandTests: XCTestCase {
         """
 
         XCTAssertFalse(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
         XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
         let dirtyItem = try XCTUnwrap(vc.openFileItems().first { $0.url.standardizedFileURL == dirtyURL.standardizedFileURL })
         XCTAssertTrue(dirtyItem.isDirty)
