@@ -63,6 +63,20 @@ final class AttoLspResultFeedbackTests: XCTestCase {
             )
         )
         XCTAssertEqual(
+            AttoLspResultFeedback.timeout(.documentLinkResolve),
+            AttoLspResultFeedback.Message(
+                statusText: "Document link resolve: timed out",
+                detailText: "Document link resolve request timed out."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.empty(.documentLinkResolve),
+            AttoLspResultFeedback.Message(
+                statusText: "Document link resolve: no results",
+                detailText: "Resolved document link has no target."
+            )
+        )
+        XCTAssertEqual(
             AttoLspResultFeedback.empty(.definition),
             AttoLspResultFeedback.Message(
                 statusText: "Definition: no results",

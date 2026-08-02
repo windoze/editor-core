@@ -138,6 +138,11 @@ public final class EditorCoreSkiaView: MTKView {
         NSWorkspace.shared.open(url)
     }
 
+    /// Called when Cmd-click hits an LSP `DocumentLink` that has no direct target URL.
+    ///
+    /// Hosts can use this to run `documentLink/resolve` and open the resolved target.
+    public var onDocumentLinkClick: ((String) -> Bool)?
+
     /// Called when Cmd-click hits LSP code lens virtual text.
     ///
     /// The payload is the raw `CodeLens` JSON returned by the Rust hit-test. Hosts should parse and
@@ -1646,11 +1651,11 @@ public final class EditorCoreSkiaView: MTKView {
             guard let json = try editor.documentLinkJSONAtViewPoint(xPx: xPx, yPx: yPx) else {
                 return false
             }
-            guard let url = Self.documentLinkTargetURL(from: json) else {
-                return false
+            if let url = Self.documentLinkTargetURL(from: json) {
+                onOpenURL(url)
+                return true
             }
-            onOpenURL(url)
-            return true
+            return onDocumentLinkClick?(json) ?? false
         } catch {
             return false
         }
@@ -1671,11 +1676,15 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
-    private static func documentLinkTargetURL(from json: String) -> URL? {
+    public static func documentLinkTargetURL(from json: String) -> URL? {
         guard let data = json.data(using: .utf8) else { return nil }
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         guard let target = obj["target"] as? String, target.isEmpty == false else { return nil }
 
+        return documentLinkTargetURL(fromTarget: target)
+    }
+
+    public static func documentLinkTargetURL(fromTarget target: String) -> URL? {
         // LSP `DocumentLink.target` is typically a URI string (file://, https://, ...).
         if let url = URL(string: target), url.scheme != nil {
             return url

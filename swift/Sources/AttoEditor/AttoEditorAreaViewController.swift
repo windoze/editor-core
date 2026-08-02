@@ -698,6 +698,11 @@ final class AttoEditorAreaViewController: NSViewController {
         let showFeedback: Bool
     }
 
+    private struct DocumentLinkResolveContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
     private struct ExecuteCommandRequestContext {
         let tabID: UUID
         let commandTitle: String
@@ -854,6 +859,8 @@ final class AttoEditorAreaViewController: NSViewController {
     private var codeLensResultsController: AttoCommandPaletteController?
     private var auxiliaryRefreshContext: AuxiliaryRefreshContext?
     private var auxiliaryRefreshPollTimer: DispatchSourceTimer?
+    private var documentLinkResolveContext: DocumentLinkResolveContext?
+    private var documentLinkResolvePollTimer: DispatchSourceTimer?
     private var executeCommandContext: ExecuteCommandRequestContext?
     private var executeCommandPollTimer: DispatchSourceTimer?
 
@@ -4605,6 +4612,10 @@ final class AttoEditorAreaViewController: NSViewController {
         editCore.editorView.onCommandClick = { [weak self] ctx in
             self?.handleCommandClick(ctx: ctx, tabID: tabID) ?? false
         }
+        editCore.editorView.onDocumentLinkClick = { [weak self, weak editCore] json in
+            guard let editCore else { return false }
+            return self?.handleDocumentLinkClick(json: json, tabID: tabID, editorView: editCore.editorView) ?? false
+        }
         editCore.editorView.onCodeLensClick = { [weak self] json in
             self?.handleCodeLensClick(json: json, tabID: tabID) ?? false
         }
@@ -7139,6 +7150,7 @@ final class AttoEditorAreaViewController: NSViewController {
         cancelLinkedEditingUI()
         cancelDocumentColorUI()
         cancelAuxiliaryRefreshUI()
+        cancelDocumentLinkResolveUI()
 
         do {
             switch kind {
@@ -7321,6 +7333,119 @@ final class AttoEditorAreaViewController: NSViewController {
 
     private static func documentLinkResultErrorMessage(_ result: EcuLspDocumentLinkResult) -> String? {
         result.error?.message
+    }
+
+    @discardableResult
+    private func handleDocumentLinkClick(json: String, tabID: UUID, editorView: EditorCoreSkiaView) -> Bool {
+        guard activeTab?.id == tabID else { return false }
+        if let url = EditorCoreSkiaView.documentLinkTargetURL(from: json) {
+            editorView.onOpenURL(url)
+            return true
+        }
+        return requestDocumentLinkResolve(json: json, tabID: tabID, editorView: editorView)
+    }
+
+    @discardableResult
+    private func requestDocumentLinkResolve(json: String, tabID: UUID, editorView: EditorCoreSkiaView, showFeedback: Bool = true) -> Bool {
+        guard let tab = activeTab, tab.id == tabID else {
+            NSSound.beep()
+            return false
+        }
+
+        guard (try? editorView.editor.lspIsEnabled()) == true else {
+            if showFeedback {
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.documentLinkResolve), in: editorView)
+            }
+            NSSound.beep()
+            return false
+        }
+
+        cancelDocumentLinkResolveUI()
+
+        do {
+            _ = try editorView.editor.lspRequestDocumentLinkResolve(linkJSON: json)
+        } catch {
+            if showFeedback {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(.documentLinkResolve, errorDescription: error.localizedDescription),
+                    in: editorView
+                )
+            }
+            NSSound.beep()
+            return false
+        }
+
+        documentLinkResolveContext = DocumentLinkResolveContext(tabID: tabID, showFeedback: showFeedback)
+        editorView.kickProcessingPoll()
+        updateStatusBar()
+        startDocumentLinkResolvePollTimer(tabID: tabID, editorView: editorView)
+        return true
+    }
+
+    private func startDocumentLinkResolvePollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
+        documentLinkResolvePollTimer?.cancel()
+
+        var remainingTicks = 40 // ~2s at 50ms
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        timer.setEventHandler { [weak self, weak editorView] in
+            guard let self, let editorView else { return }
+            guard let ctx = self.documentLinkResolveContext, ctx.tabID == tabID else {
+                self.cancelDocumentLinkResolveUI()
+                return
+            }
+
+            if remainingTicks <= 0 {
+                let showFeedback = ctx.showFeedback
+                self.cancelDocumentLinkResolveUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.documentLinkResolve), in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+            remainingTicks -= 1
+
+            guard self.activeTab?.id == tabID else {
+                self.cancelDocumentLinkResolveUI()
+                return
+            }
+
+            let result: EcuLspDocumentLink?
+            do {
+                result = try editorView.editor.lspTakeLastDocumentLinkResolveResult()
+            } catch {
+                let showFeedback = ctx.showFeedback
+                self.cancelDocumentLinkResolveUI()
+                if showFeedback {
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(.documentLinkResolve, errorDescription: error.localizedDescription),
+                        in: editorView
+                    )
+                }
+                NSSound.beep()
+                return
+            }
+            guard let result else { return }
+
+            let showFeedback = ctx.showFeedback
+            self.cancelDocumentLinkResolveUI()
+
+            guard let target = result.target,
+                  let url = EditorCoreSkiaView.documentLinkTargetURL(fromTarget: target)
+            else {
+                if showFeedback {
+                    self.presentLspResultFeedback(AttoLspResultFeedback.empty(.documentLinkResolve), in: editorView)
+                }
+                NSSound.beep()
+                return
+            }
+
+            editorView.onOpenURL(url)
+        }
+
+        documentLinkResolvePollTimer = timer
+        timer.resume()
     }
 
     // MARK: - LSP code lens
@@ -9587,6 +9712,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         cancelCodeLensUI()
         cancelAuxiliaryRefreshUI()
+        cancelDocumentLinkResolveUI()
         cancelExecuteCommandUI()
     }
 
@@ -9607,6 +9733,12 @@ final class AttoEditorAreaViewController: NSViewController {
         auxiliaryRefreshPollTimer?.cancel()
         auxiliaryRefreshPollTimer = nil
         auxiliaryRefreshContext = nil
+    }
+
+    private func cancelDocumentLinkResolveUI() {
+        documentLinkResolvePollTimer?.cancel()
+        documentLinkResolvePollTimer = nil
+        documentLinkResolveContext = nil
     }
 
     private func cancelExecuteCommandUI() {

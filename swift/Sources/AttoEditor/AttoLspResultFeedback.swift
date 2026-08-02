@@ -11,6 +11,7 @@ enum AttoLspResultFeedback {
         case semanticTokens
         case inlayHints
         case documentLinks
+        case documentLinkResolve
         case definition
         case declaration
         case typeDefinition
@@ -44,6 +45,8 @@ enum AttoLspResultFeedback {
                 return "Inlay hints"
             case .documentLinks:
                 return "Document links"
+            case .documentLinkResolve:
+                return "Document link resolve"
             case .definition:
                 return "Definition"
             case .declaration:
@@ -119,6 +122,8 @@ enum AttoLspResultFeedback {
                 return "Inlay hints are unavailable."
             case .documentLinks:
                 return "Document links are unavailable."
+            case .documentLinkResolve:
+                return "Document link resolve is unavailable."
             case .definition:
                 return "Definition is unavailable."
             case .declaration:
@@ -176,6 +181,8 @@ enum AttoLspResultFeedback {
                 return "No inlay hints are available for this document."
             case .documentLinks:
                 return "No document links are available for this document."
+            case .documentLinkResolve:
+                return "Resolved document link has no target."
             case .definition:
                 return "No definitions are available here."
             case .declaration:
