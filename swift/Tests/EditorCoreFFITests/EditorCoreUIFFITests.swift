@@ -397,7 +397,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(transactionPreview.skippedDetails.contains {
             $0.uri == "file:///project/Missing.swift"
                 && $0.operation == "text_edit"
-                && $0.reason == "document_not_open"
+                && $0.reason == "file_not_found"
         })
         let betaTransactionDocument = try XCTUnwrap(
             transactionPreview.documents.first { $0.uri == "file:///project/Beta.swift" }
@@ -573,6 +573,77 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(resourceApply.appliedResourceOperationCount, 1)
         XCTAssertEqual(try multi.tabDocumentURI(tabId: tab), "file:///project/Renamed.swift")
         XCTAssertEqual(try multi.tabText(tabId: tab), "RENAMED saved mirror")
+        XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
+    }
+
+    func testMultiDocumentEditorUIAppliesUnopenedWorkspaceFileTextEdits() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-workspace-edit-\(UUID().uuidString)", isDirectory: true)
+        let outsideRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-workspace-edit-outside-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideRoot, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outsideRoot)
+        }
+
+        let target = root.appendingPathComponent("Unopened.swift")
+        let outside = outsideRoot.appendingPathComponent("Outside.swift")
+        try "alpha\nbeta\n".write(to: target, atomically: true, encoding: .utf8)
+        try "outside\n".write(to: outside, atomically: true, encoding: .utf8)
+
+        let targetURI = target.absoluteString
+        let outsideURI = outside.absoluteString
+        try multi.setWorkspaceRoots([root.absoluteString])
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "\(targetURI)": [
+              {
+                "range": {
+                  "start": { "line": 1, "character": 0 },
+                  "end": { "line": 1, "character": 4 }
+                },
+                "newText": "BETA"
+              }
+            ],
+            "\(outsideURI)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "changed "
+              }
+            ]
+          }
+        }
+        """
+
+        let preview = try multi.previewWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertFalse(preview.applied)
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "alpha\nbeta\n")
+        let targetDocument = try XCTUnwrap(preview.documents.first { $0.uri == targetURI })
+        XCTAssertFalse(targetDocument.isOpen)
+        XCTAssertNil(targetDocument.tabId)
+        XCTAssertEqual(targetDocument.editCount, 1)
+        XCTAssertTrue(preview.skippedDetails.contains {
+            $0.uri == outsideURI
+                && $0.operation == "text_edit"
+                && $0.reason == "document_outside_workspace"
+        })
+
+        let applied = try multi.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertTrue(applied.applied)
+        XCTAssertEqual(applied.appliedURIs, [targetURI])
+        XCTAssertEqual(applied.appliedEditCount, 1)
+        XCTAssertEqual(applied.appliedResourceOperationCount, 0)
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "alpha\nBETA\n")
+        XCTAssertEqual(try String(contentsOf: outside, encoding: .utf8), "outside\n")
         XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 1)
     }
 

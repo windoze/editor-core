@@ -1,11 +1,15 @@
 use super::{TabEntry, TabId};
 use crate::{EditorUi, UiError};
+use editor_core::LineIndex;
 use editor_core_lsp::{
-    summarize_workspace_edit, workspace_edit_expected_versions, workspace_edit_text_edits,
+    LspTextEdit, char_offsets_for_lsp_range, file_uri_to_path, summarize_workspace_edit,
+    workspace_edit_expected_versions, workspace_edit_text_edits,
 };
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fs;
+use std::path::PathBuf;
 
 const MAX_WORKSPACE_EDIT_TRANSACTION_EVENTS: usize = 256;
 
@@ -115,10 +119,11 @@ impl WorkspaceEditTransactionEventStore {
 pub(super) fn preview(
     tabs: &BTreeMap<TabId, TabEntry>,
     tab_order: &[TabId],
+    workspace_roots: &[String],
     workspace_edit_json: &str,
 ) -> Result<WorkspaceEditTransactionResult, UiError> {
     let value = workspace_edit_value(workspace_edit_json)?;
-    let plan = transaction_plan(tabs, tab_order, &value);
+    let plan = transaction_plan(tabs, tab_order, workspace_roots, &value);
     Ok(result_from_plan("preview", plan, Vec::new(), 0, 0))
 }
 
@@ -127,14 +132,16 @@ pub(super) fn apply(
     tab_order: &mut Vec<TabId>,
     active_tab: &mut Option<TabId>,
     preview_tab: &mut Option<TabId>,
+    workspace_roots: &[String],
     workspace_edit_json: &str,
 ) -> Result<WorkspaceEditTransactionResult, UiError> {
     let value = workspace_edit_value(workspace_edit_json)?;
     let text_edits_by_uri = workspace_edit_text_edits(&value);
-    let mut plan = transaction_plan(tabs, tab_order, &value);
+    let mut plan = transaction_plan(tabs, tab_order, workspace_roots, &value);
     let mut applied_uris = BTreeSet::<String>::new();
     let mut applied_edit_count = 0usize;
     let mut applied_resource_operation_count = 0usize;
+    let unopened_file_text_edit_uris = plan.unopened_file_text_edit_uris.clone();
 
     for operation in plan.resource_operations.clone() {
         if !operation.supported {
@@ -188,44 +195,60 @@ pub(super) fn apply(
         doc.is_open = open_tab_id.is_some();
         doc.tab_id = open_tab_id.map(TabId::get);
 
-        if doc.edit_count == 0 || doc.has_overlapping_edits || doc.version_mismatch || !doc.is_open
-        {
+        if doc.edit_count == 0 || doc.has_overlapping_edits || doc.version_mismatch {
             continue;
         }
         let Some(edits) = text_edits_by_uri.get(doc.uri.as_str()) else {
             continue;
         };
-        let Some(tab_id) = doc.tab_id.map(TabId::from_raw) else {
+
+        if doc.is_open {
+            let Some(tab_id) = doc.tab_id.map(TabId::from_raw) else {
+                continue;
+            };
+            let tab = tabs
+                .get_mut(&tab_id)
+                .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
+            let view = tab.active_view_mut().ok_or_else(|| {
+                UiError::Processor(format!("tab {} has no active view", tab_id.get()))
+            })?;
+            let result_json =
+                view.lsp_apply_workspace_edit_json(workspace_edit_json, Some(&doc.uri))?;
+            let result: Value = serde_json::from_str(&result_json).map_err(|err| {
+                UiError::Processor(format!(
+                    "failed to decode workspace edit apply result: {err}"
+                ))
+            })?;
+            if result
+                .get("applied")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                applied_uris.insert(doc.uri.clone());
+                applied_edit_count = applied_edit_count.saturating_add(edits.len());
+                cleared_text_edit_uris.push(doc.uri.clone());
+            } else {
+                failed_text_edit_details.push(skipped_detail(
+                    doc.uri.clone(),
+                    "text_edit_apply_failed",
+                    Some("text_edit"),
+                    "open tab text edit apply returned applied=false",
+                ));
+            }
             continue;
-        };
-        let tab = tabs
-            .get_mut(&tab_id)
-            .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
-        let view = tab.active_view_mut().ok_or_else(|| {
-            UiError::Processor(format!("tab {} has no active view", tab_id.get()))
-        })?;
-        let result_json =
-            view.lsp_apply_workspace_edit_json(workspace_edit_json, Some(&doc.uri))?;
-        let result: Value = serde_json::from_str(&result_json).map_err(|err| {
-            UiError::Processor(format!(
-                "failed to decode workspace edit apply result: {err}"
-            ))
-        })?;
-        if result
-            .get("applied")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            applied_uris.insert(doc.uri.clone());
-            applied_edit_count = applied_edit_count.saturating_add(edits.len());
-            cleared_text_edit_uris.push(doc.uri.clone());
-        } else {
-            failed_text_edit_details.push(skipped_detail(
-                doc.uri.clone(),
-                "text_edit_apply_failed",
-                Some("text_edit"),
-                "open tab text edit apply returned applied=false",
-            ));
+        }
+
+        if !unopened_file_text_edit_uris.contains(doc.uri.as_str()) {
+            continue;
+        }
+
+        match apply_unopened_file_text_edits(workspace_roots, doc.uri.as_str(), edits) {
+            Ok(()) => {
+                applied_uris.insert(doc.uri.clone());
+                applied_edit_count = applied_edit_count.saturating_add(edits.len());
+                cleared_text_edit_uris.push(doc.uri.clone());
+            }
+            Err(detail) => failed_text_edit_details.push(detail),
         }
     }
 
@@ -254,15 +277,22 @@ pub(super) fn apply(
 pub(super) fn preview_json(
     tabs: &BTreeMap<TabId, TabEntry>,
     tab_order: &[TabId],
+    workspace_roots: &[String],
     workspace_edit_json: &str,
 ) -> Result<String, UiError> {
-    encode(preview(tabs, tab_order, workspace_edit_json)?)
+    encode(preview(
+        tabs,
+        tab_order,
+        workspace_roots,
+        workspace_edit_json,
+    )?)
 }
 
 struct WorkspaceEditTransactionPlan {
     skipped_uris: BTreeSet<String>,
     skipped_details: BTreeSet<WorkspaceEditTransactionSkippedDetail>,
     unsupported_operation_uris: Vec<String>,
+    unopened_file_text_edit_uris: BTreeSet<String>,
     resource_operations: Vec<PlannedResourceOperation>,
     documents: Vec<WorkspaceEditTransactionDocument>,
 }
@@ -332,12 +362,14 @@ fn workspace_edit_value(workspace_edit_json: &str) -> Result<Value, UiError> {
 fn transaction_plan(
     tabs: &BTreeMap<TabId, TabEntry>,
     tab_order: &[TabId],
+    workspace_roots: &[String],
     workspace_edit: &Value,
 ) -> WorkspaceEditTransactionPlan {
     let edit_summary = summarize_workspace_edit(workspace_edit);
     let expected_versions = workspace_edit_expected_versions(workspace_edit);
     let mut open_tabs_by_uri = open_tabs_by_uri(tabs, tab_order);
     let mut unsupported_operation_uris = BTreeSet::<String>::new();
+    let mut unopened_file_text_edit_uris = BTreeSet::<String>::new();
     let mut skipped_uris = BTreeSet::<String>::new();
     let mut skipped_details = BTreeSet::<WorkspaceEditTransactionSkippedDetail>::new();
     let resource_operations = resource_operations(workspace_edit)
@@ -371,16 +403,49 @@ fn transaction_plan(
                 .zip(actual_version)
                 .is_some_and(|(expected, actual)| expected != actual);
             if open_tab_id.is_none() {
-                mark_skipped(
-                    &mut skipped_uris,
-                    &mut skipped_details,
-                    skipped_detail(
-                        doc.uri.clone(),
-                        "document_not_open",
-                        Some("text_edit"),
-                        "text edits for this URI are not supported because the document is not open in the core workspace",
-                    ),
-                );
+                if workspace_roots.is_empty() {
+                    mark_skipped(
+                        &mut skipped_uris,
+                        &mut skipped_details,
+                        skipped_detail(
+                            doc.uri.clone(),
+                            "document_not_open",
+                            Some("text_edit"),
+                            "text edits for this URI are not supported because the document is not open in the core workspace",
+                        ),
+                    );
+                } else if expected_version.is_some() {
+                    mark_skipped(
+                        &mut skipped_uris,
+                        &mut skipped_details,
+                        skipped_detail(
+                            doc.uri.clone(),
+                            "version_unavailable",
+                            Some("text_edit"),
+                            "versioned text edits for unopened files cannot be checked against a core document version",
+                        ),
+                    );
+                } else if unsupported_operation_uris.contains(&doc.uri) {
+                    mark_skipped(
+                        &mut skipped_uris,
+                        &mut skipped_details,
+                        skipped_detail(
+                            doc.uri.clone(),
+                            "resource_operation_dependency_unsupported",
+                            Some("text_edit"),
+                            "text edits for this URI are blocked because a related resource operation is unsupported",
+                        ),
+                    );
+                } else {
+                    match workspace_file_path_for_text_edit(workspace_roots, doc.uri.as_str()) {
+                        Ok(_) => {
+                            unopened_file_text_edit_uris.insert(doc.uri.clone());
+                        }
+                        Err(detail) => {
+                            mark_skipped(&mut skipped_uris, &mut skipped_details, detail);
+                        }
+                    }
+                }
             }
             if let (Some(expected), Some(actual)) = (expected_version, actual_version)
                 && version_mismatch
@@ -468,6 +533,7 @@ fn transaction_plan(
         skipped_uris,
         skipped_details,
         unsupported_operation_uris: unsupported_operation_uris.into_iter().collect(),
+        unopened_file_text_edit_uris,
         resource_operations,
         documents,
     }
@@ -563,6 +629,144 @@ fn tab_text_version(tabs: &BTreeMap<TabId, TabEntry>, tab_id: TabId) -> Option<u
     tabs.get(&tab_id)
         .and_then(TabEntry::active_view)
         .map(EditorUi::text_version)
+}
+
+fn workspace_file_path_for_text_edit(
+    workspace_roots: &[String],
+    uri: &str,
+) -> Result<PathBuf, WorkspaceEditTransactionSkippedDetail> {
+    let path = file_uri_to_path(uri).ok_or_else(|| {
+        skipped_detail(
+            uri.to_string(),
+            "unsupported_uri",
+            Some("text_edit"),
+            "unopened file text edits require a local file:// URI",
+        )
+    })?;
+
+    let metadata = fs::metadata(&path).map_err(|err| {
+        skipped_detail(
+            uri.to_string(),
+            "file_not_found",
+            Some("text_edit"),
+            format!("unopened file text edit target cannot be read: {err}"),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(skipped_detail(
+            uri.to_string(),
+            "file_not_regular_file",
+            Some("text_edit"),
+            "unopened file text edit target is not a regular file",
+        ));
+    }
+
+    let canonical_path = fs::canonicalize(&path).map_err(|err| {
+        skipped_detail(
+            uri.to_string(),
+            "file_not_found",
+            Some("text_edit"),
+            format!("unopened file text edit target cannot be canonicalized: {err}"),
+        )
+    })?;
+    let mut canonical_roots = Vec::<PathBuf>::new();
+    for root in workspace_roots {
+        let Some(root_path) = file_uri_to_path(root) else {
+            continue;
+        };
+        let Ok(root_metadata) = fs::metadata(&root_path) else {
+            continue;
+        };
+        if !root_metadata.is_dir() {
+            continue;
+        }
+        if let Ok(canonical_root) = fs::canonicalize(root_path) {
+            canonical_roots.push(canonical_root);
+        }
+    }
+
+    if canonical_roots.is_empty() {
+        return Err(skipped_detail(
+            uri.to_string(),
+            "workspace_roots_unavailable",
+            Some("text_edit"),
+            "no configured workspace root can be resolved to a local directory",
+        ));
+    }
+
+    if canonical_roots
+        .iter()
+        .any(|root| canonical_path == *root || canonical_path.starts_with(root))
+    {
+        Ok(path)
+    } else {
+        Err(skipped_detail(
+            uri.to_string(),
+            "document_outside_workspace",
+            Some("text_edit"),
+            "unopened file text edit target is outside the configured workspace roots",
+        ))
+    }
+}
+
+fn apply_unopened_file_text_edits(
+    workspace_roots: &[String],
+    uri: &str,
+    edits: &[LspTextEdit],
+) -> Result<(), WorkspaceEditTransactionSkippedDetail> {
+    let path = workspace_file_path_for_text_edit(workspace_roots, uri)?;
+    let old_text = fs::read_to_string(&path).map_err(|err| {
+        skipped_detail(
+            uri.to_string(),
+            "file_text_edit_read_failed",
+            Some("text_edit"),
+            format!("failed to read unopened file text edit target: {err}"),
+        )
+    })?;
+    let new_text = apply_text_edits_to_text(old_text.as_str(), edits).map_err(|err| {
+        skipped_detail(
+            uri.to_string(),
+            "file_text_edit_apply_failed",
+            Some("text_edit"),
+            err,
+        )
+    })?;
+    fs::write(&path, new_text).map_err(|err| {
+        skipped_detail(
+            uri.to_string(),
+            "file_text_edit_write_failed",
+            Some("text_edit"),
+            format!("failed to write unopened file text edit target: {err}"),
+        )
+    })
+}
+
+fn apply_text_edits_to_text(text: &str, edits: &[LspTextEdit]) -> Result<String, String> {
+    let line_index = LineIndex::from_text(text);
+    let mut resolved = edits
+        .iter()
+        .map(|edit| {
+            let (start, end) = char_offsets_for_lsp_range(&line_index, &edit.range);
+            let start_byte = line_index.char_offset_to_byte_offset(start);
+            let end_byte = line_index.char_offset_to_byte_offset(end);
+            (start, start_byte, end_byte, edit.new_text.as_str())
+        })
+        .collect::<Vec<_>>();
+
+    resolved.sort_by_key(|(start, _, _, _)| std::cmp::Reverse(*start));
+
+    let mut out = text.to_string();
+    for (_, start_byte, end_byte, new_text) in resolved {
+        let range = start_byte..end_byte;
+        if !out.is_char_boundary(range.start) || !out.is_char_boundary(range.end) {
+            return Err(format!(
+                "text edit byte range {}..{} does not align to UTF-8 character boundaries",
+                range.start, range.end
+            ));
+        }
+        out.replace_range(range, new_text);
+    }
+    Ok(out)
 }
 
 fn resource_operations(workspace_edit: &Value) -> Vec<ResourceOperation> {

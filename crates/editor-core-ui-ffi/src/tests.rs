@@ -350,7 +350,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     );
     assert_eq!(
         preview_value["skipped_details"][0]["reason"],
-        "document_not_open"
+        "file_not_found"
     );
 
     let apply_ptr = editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
@@ -594,6 +594,84 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     assert!(closed >= 1);
 
     unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+}
+
+#[test]
+fn ffi_multi_document_applies_unopened_workspace_file_text_edits() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let root = std::env::temp_dir().join(format!(
+        "editor-core-ui-ffi-workspace-edit-root-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let file = root.join("Unopened.swift");
+    std::fs::write(&file, "alpha\nbeta\n").unwrap();
+
+    let root_uri = format!("file://{}", root.to_string_lossy());
+    let file_uri = format!("file://{}", file.to_string_lossy());
+    let roots = CString::new(serde_json::json!([root_uri]).to_string()).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let workspace_edit = CString::new(
+        serde_json::json!({
+            "changes": {
+                (file_uri.as_str()): [
+                    {
+                        "range": {
+                            "start": { "line": 1, "character": 0 },
+                            "end": { "line": 1, "character": 4 }
+                        },
+                        "newText": "BETA"
+                    }
+                ]
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let preview_ptr = editor_core_ui_ffi_multi_document_preview_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!preview_ptr.is_null());
+    let preview_json = unsafe { std::ffi::CStr::from_ptr(preview_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(preview_ptr) };
+    let preview: serde_json::Value = serde_json::from_str(&preview_json).unwrap();
+    assert_eq!(preview["mode"], "preview");
+    assert_eq!(preview["applied"], false);
+    assert_eq!(preview["skipped_uris"].as_array().unwrap().len(), 0);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "alpha\nbeta\n");
+
+    let apply_ptr = editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
+        multi,
+        workspace_edit.as_ptr(),
+    );
+    assert!(!apply_ptr.is_null());
+    let apply_json = unsafe { std::ffi::CStr::from_ptr(apply_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(apply_ptr) };
+    let applied: serde_json::Value = serde_json::from_str(&apply_json).unwrap();
+    assert_eq!(applied["mode"], "apply");
+    assert_eq!(applied["applied"], true);
+    assert_eq!(applied["applied_uris"][0], file_uri);
+    assert_eq!(applied["applied_edit_count"], 1);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "alpha\nBETA\n");
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]

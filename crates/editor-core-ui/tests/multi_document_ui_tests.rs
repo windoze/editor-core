@@ -1,6 +1,21 @@
 use editor_core::SearchOptions;
+use editor_core_lsp::path_to_file_uri;
 use editor_core_ui::MultiDocumentEditorUi;
 use serde_json::json;
+use std::path::PathBuf;
+
+fn unique_test_dir(prefix: &str) -> PathBuf {
+    let unique = format!(
+        "{}-{}-{}",
+        prefix,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    std::env::temp_dir().join(unique)
+}
 
 #[test]
 fn multi_document_ui_can_open_switch_and_close_tabs() {
@@ -365,6 +380,115 @@ fn multi_document_ui_tracks_workspace_roots() {
         "file:///tmp/other".to_string(),
     ];
     assert_eq!(ui.workspace_roots(), expected.as_slice());
+}
+
+#[test]
+fn multi_document_ui_applies_unopened_workspace_file_text_edits() {
+    let root = unique_test_dir("editor-core-ui-workspace-edit-root");
+    let outside_root = unique_test_dir("editor-core-ui-workspace-edit-outside");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::create_dir_all(&outside_root).unwrap();
+
+    let target = root.join("src").join("App.swift");
+    let versioned = root.join("src").join("Versioned.swift");
+    let outside = outside_root.join("Outside.swift");
+    std::fs::write(&target, "alpha\nbeta\n").unwrap();
+    std::fs::write(&versioned, "versioned\n").unwrap();
+    std::fs::write(&outside, "outside\n").unwrap();
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let target_uri = path_to_file_uri(target.as_path());
+    let versioned_uri = path_to_file_uri(versioned.as_path());
+    let outside_uri = path_to_file_uri(outside.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+
+    let edit = json!({
+        "changes": {
+            (target_uri.as_str()): [
+                {
+                    "range": {
+                        "start": { "line": 1, "character": 0 },
+                        "end": { "line": 1, "character": 4 }
+                    },
+                    "newText": "BETA"
+                }
+            ],
+            (outside_uri.as_str()): [
+                {
+                    "range": {
+                        "start": { "line": 0, "character": 0 },
+                        "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "changed "
+                }
+            ]
+        },
+        "documentChanges": [
+            {
+                "textDocument": {
+                    "uri": versioned_uri.as_str(),
+                    "version": 7
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 0 }
+                        },
+                        "newText": "stale "
+                    }
+                ]
+            }
+        ]
+    })
+    .to_string();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(edit.as_str())
+        .unwrap();
+    assert_eq!(preview.mode, "preview");
+    assert!(!preview.applied);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "alpha\nbeta\n");
+    let target_document = preview
+        .documents
+        .iter()
+        .find(|doc| doc.uri == target_uri)
+        .unwrap();
+    assert_eq!(target_document.edit_count, 1);
+    assert!(!target_document.is_open);
+    assert_eq!(target_document.tab_id, None);
+    assert!(preview.skipped_uris.contains(&outside_uri));
+    assert!(preview.skipped_uris.contains(&versioned_uri));
+    assert!(preview.skipped_details.iter().any(|detail| {
+        detail.uri == outside_uri
+            && detail.operation.as_deref() == Some("text_edit")
+            && detail.reason == "document_outside_workspace"
+    }));
+    assert!(preview.skipped_details.iter().any(|detail| {
+        detail.uri == versioned_uri
+            && detail.operation.as_deref() == Some("text_edit")
+            && detail.reason == "version_unavailable"
+    }));
+
+    let applied = ui.apply_workspace_edit_transaction(edit.as_str()).unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_uris, vec![target_uri.clone()]);
+    assert_eq!(applied.applied_edit_count, 1);
+    assert_eq!(applied.applied_resource_operation_count, 0);
+    assert!(applied.skipped_uris.contains(&outside_uri));
+    assert!(applied.skipped_uris.contains(&versioned_uri));
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "alpha\nBETA\n");
+    assert_eq!(std::fs::read_to_string(&versioned).unwrap(), "versioned\n");
+    assert_eq!(std::fs::read_to_string(&outside).unwrap(), "outside\n");
+
+    let events = ui.workspace_edit_transaction_events_after(0);
+    assert_eq!(events.latest_sequence, 1);
+    assert_eq!(events.events[0].result.applied_uris, vec![target_uri]);
+
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(outside_root);
 }
 
 #[test]

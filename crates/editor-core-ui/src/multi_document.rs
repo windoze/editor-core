@@ -625,7 +625,12 @@ impl MultiDocumentEditorUi {
         &self,
         workspace_edit_json: &str,
     ) -> Result<WorkspaceEditTransactionResult, UiError> {
-        workspace_edit::preview(&self.tabs, &self.tab_order, workspace_edit_json)
+        workspace_edit::preview(
+            &self.tabs,
+            &self.tab_order,
+            &self.workspace_roots,
+            workspace_edit_json,
+        )
     }
 
     /// Preview applying an LSP `WorkspaceEdit` across open tabs as JSON.
@@ -633,7 +638,12 @@ impl MultiDocumentEditorUi {
         &self,
         workspace_edit_json: &str,
     ) -> Result<String, UiError> {
-        workspace_edit::preview_json(&self.tabs, &self.tab_order, workspace_edit_json)
+        workspace_edit::preview_json(
+            &self.tabs,
+            &self.tab_order,
+            &self.workspace_roots,
+            workspace_edit_json,
+        )
     }
 
     /// Apply an LSP `WorkspaceEdit` to matching open tabs owned by this model.
@@ -646,6 +656,7 @@ impl MultiDocumentEditorUi {
             &mut self.tab_order,
             &mut self.active_tab,
             &mut self.preview_tab,
+            &self.workspace_roots,
             workspace_edit_json,
         )?;
         self.workspace_edit_transactions
