@@ -296,6 +296,24 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(regions[0].placeholder, "use ...")
     }
 
+    func testUnifiedLspFeedbackUpdatesTransientStatusForEmptyFoldingRanges() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("empty-folds.txt")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let result = try JSONDecoder().decode(EcuLspFoldingRangeResult.self, from: Data("[]".utf8))
+        XCTAssertTrue(vc.applyFoldingRangesResultToActiveTab(result, showFeedback: true))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Folding ranges: no results")
+    }
+
     func testApplyTypedSemanticTokensResultUpdatesDerivedStateAndBaseline() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

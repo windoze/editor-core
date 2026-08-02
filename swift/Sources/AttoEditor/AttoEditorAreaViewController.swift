@@ -2082,10 +2082,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Folding ranges are unavailable.\nLSP is not enabled for this document.",
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.foldingRanges), in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -2117,8 +2114,8 @@ final class AttoEditorAreaViewController: NSViewController {
             _ = try tab.editCore.editor.lspRequestFoldingRanges()
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Folding ranges request failed.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(.foldingRanges, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2143,8 +2140,8 @@ final class AttoEditorAreaViewController: NSViewController {
             return applyFoldingRangesResultToActiveTab(result, showFeedback: showFeedback)
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Folding ranges could not be applied.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.foldingRanges, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2172,16 +2169,13 @@ final class AttoEditorAreaViewController: NSViewController {
             updateStatusBar()
 
             if showFeedback, result.ranges.isEmpty {
-                showWorkspaceEditPopover(
-                    text: "No folding ranges are available for this document.",
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(AttoLspResultFeedback.empty(.foldingRanges), in: tab.editCore.editorView)
             }
             return true
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Folding ranges could not be applied.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.foldingRanges, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2214,18 +2208,15 @@ final class AttoEditorAreaViewController: NSViewController {
             updateStatusBar()
 
             if showFeedback, result.isEmpty {
-                showWorkspaceEditPopover(
-                    text: "No semantic tokens are available for this document.",
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(AttoLspResultFeedback.empty(.semanticTokens), in: tab.editCore.editorView)
             }
             return true
         } catch {
             tab.semanticTokensData = []
             tab.semanticTokensResultId = nil
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Semantic tokens could not be applied.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.semanticTokens, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2251,7 +2242,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelFoldingRangesUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(text: "Folding ranges request timed out.", in: editorView)
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.foldingRanges), in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -2270,8 +2261,8 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelFoldingRangesUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(
-                        text: "Folding ranges failed.\n\(error.localizedDescription)",
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(.foldingRanges, errorDescription: error.localizedDescription),
                         in: editorView
                     )
                 }
@@ -2298,10 +2289,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Selection range is unavailable.\nLSP is not enabled for this document.",
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.selectionRange), in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -2350,8 +2338,8 @@ final class AttoEditorAreaViewController: NSViewController {
             _ = try tab.editCore.editor.lspRequestSelectionRange(positionsJSON: positionsJSON)
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Selection range request failed.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(.selectionRange, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2380,8 +2368,8 @@ final class AttoEditorAreaViewController: NSViewController {
             return applySelectionRangeCandidateChainsToActiveTab(candidateChains, showFeedback: showFeedback)
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Selection range could not be applied.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.selectionRange, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2409,8 +2397,8 @@ final class AttoEditorAreaViewController: NSViewController {
             return applySelectionRangeCandidateChainsToActiveTab(candidateChains, showFeedback: showFeedback)
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Selection range could not be applied.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.selectionRange, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2452,10 +2440,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
             guard didExpand else {
                 if showFeedback {
-                    showWorkspaceEditPopover(
-                        text: "No larger selection range is available.",
-                        in: tab.editCore.editorView
-                    )
+                    presentLspResultFeedback(AttoLspResultFeedback.empty(.selectionRange), in: tab.editCore.editorView)
                 }
                 NSSound.beep()
                 return false
@@ -2473,8 +2458,8 @@ final class AttoEditorAreaViewController: NSViewController {
             return true
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Selection range could not be applied.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.selectionRange, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2500,7 +2485,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelSelectionRangeUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(text: "Selection range request timed out.", in: editorView)
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.selectionRange), in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -2519,8 +2504,8 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelSelectionRangeUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(
-                        text: "Selection range failed.\n\(error.localizedDescription)",
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(.selectionRange, errorDescription: error.localizedDescription),
                         in: editorView
                     )
                 }
@@ -2547,10 +2532,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Linked editing is unavailable.\nLSP is not enabled for this document.",
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.linkedEditing), in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -2593,8 +2575,8 @@ final class AttoEditorAreaViewController: NSViewController {
             )
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Linked editing request failed.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(.linkedEditing, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2637,8 +2619,8 @@ final class AttoEditorAreaViewController: NSViewController {
             )
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Linked editing ranges could not be applied.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.linkedEditing, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2673,8 +2655,8 @@ final class AttoEditorAreaViewController: NSViewController {
             )
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Linked editing ranges could not be applied.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.linkedEditing, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2696,10 +2678,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         guard let result, result.ranges.count > 1 else {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "No linked editing ranges are available here.",
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(AttoLspResultFeedback.empty(.linkedEditing), in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -2720,8 +2699,8 @@ final class AttoEditorAreaViewController: NSViewController {
             return true
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Linked editing ranges could not be applied.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.linkedEditing, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -2747,7 +2726,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelLinkedEditingUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(text: "Linked editing request timed out.", in: editorView)
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.linkedEditing), in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -2766,8 +2745,8 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelLinkedEditingUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(
-                        text: "Linked editing failed.\n\(error.localizedDescription)",
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(.linkedEditing, errorDescription: error.localizedDescription),
                         in: editorView
                     )
                 }
@@ -6134,7 +6113,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
             if showFeedback {
-                showWorkspaceEditPopover(text: "Workspace diagnostics require an active LSP server.", in: tab.editCore.editorView)
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.workspaceDiagnostics), in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -6156,8 +6135,8 @@ final class AttoEditorAreaViewController: NSViewController {
             )
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Workspace diagnostics request failed.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.requestFailed(.workspaceDiagnostics, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -6220,7 +6199,7 @@ final class AttoEditorAreaViewController: NSViewController {
         updateStatusBar()
         guard snapshot.diagnostics.isEmpty == false else {
             if showFeedback {
-                showWorkspaceEditPopover(text: "No workspace diagnostics are available.", in: tab.editCore.editorView)
+                presentLspResultFeedback(AttoLspResultFeedback.empty(.workspaceDiagnostics), in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -6247,7 +6226,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelWorkspaceDiagnosticsUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(text: "Workspace diagnostics request timed out.", in: editorView)
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.workspaceDiagnostics), in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -6794,10 +6773,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Code lens is unavailable.\nLSP is not enabled for this document.",
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.codeLensRefresh), in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -6820,8 +6796,8 @@ final class AttoEditorAreaViewController: NSViewController {
             _ = try tab.editCore.editor.lspRequestCodeLens()
         } catch {
             if showFeedback {
-                showWorkspaceEditPopover(
-                    text: "Code lens refresh failed.\n\(error.localizedDescription)",
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.codeLensRefresh, errorDescription: error.localizedDescription),
                     in: tab.editCore.editorView
                 )
             }
@@ -7059,7 +7035,7 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelCodeLensUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(text: "Code lens refresh timed out.", in: editorView)
+                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.codeLensRefresh), in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -7077,8 +7053,8 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelCodeLensUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(
-                        text: "Code lens refresh failed.\n\(error.localizedDescription)",
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(.codeLensRefresh, errorDescription: error.localizedDescription),
                         in: editorView
                     )
                 }
@@ -7093,8 +7069,8 @@ final class AttoEditorAreaViewController: NSViewController {
                 let showFeedback = ctx.showFeedback
                 self.cancelCodeLensUI()
                 if showFeedback {
-                    self.showWorkspaceEditPopover(
-                        text: "Code lens refresh failed.\n\(error.localizedDescription)",
+                    self.presentLspResultFeedback(
+                        AttoLspResultFeedback.failed(.codeLensRefresh, errorDescription: error.localizedDescription),
                         in: editorView
                     )
                 }
@@ -7113,23 +7089,22 @@ final class AttoEditorAreaViewController: NSViewController {
 
             guard showFeedback else { return }
             if let errorMessage = Self.codeLensResultErrorMessage(result) {
-                self.showWorkspaceEditPopover(
-                    text: "Code lens refresh failed.\n\(errorMessage)",
+                self.presentLspResultFeedback(
+                    AttoLspResultFeedback.failed(.codeLensRefresh, errorDescription: errorMessage),
                     in: editorView
                 )
                 NSSound.beep()
                 return
             }
             let count = Self.codeLensResultCount(result)
-            let text: String
             if count == 0 {
-                text = "No code lens actions are available."
-            } else if count == 1 {
-                text = "Code lens refreshed.\n1 action is available."
+                self.presentLspResultFeedback(AttoLspResultFeedback.empty(.codeLensRefresh), in: editorView)
             } else {
-                text = "Code lens refreshed.\n\(count) actions are available."
+                self.presentLspResultFeedback(
+                    AttoLspResultFeedback.refreshed(.codeLensRefresh, count: count, singular: "action", plural: "actions"),
+                    in: editorView
+                )
             }
-            self.showWorkspaceEditPopover(text: text, in: editorView)
         }
 
         codeLensRefreshPollTimer = timer
@@ -8672,6 +8647,14 @@ final class AttoEditorAreaViewController: NSViewController {
         lastPresentedLspFailureDetail = trimmed
         NSLog("AttoEditor: LSP status failed: %@", trimmed)
         showWorkspaceEditPopover(text: "LSP failed.\n\(trimmed)", in: editorView)
+    }
+
+    private func presentLspResultFeedback(
+        _ message: AttoLspResultFeedback.Message,
+        in editorView: EditorCoreSkiaView
+    ) {
+        setTransientStatusText(message.statusText)
+        showWorkspaceEditPopover(text: message.detailText, in: editorView)
     }
 
     private func showWorkspaceEditPopover(text: String, in editorView: EditorCoreSkiaView) {
