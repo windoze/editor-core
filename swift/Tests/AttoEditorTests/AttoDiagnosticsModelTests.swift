@@ -6,7 +6,7 @@ final class AttoDiagnosticsModelTests: XCTestCase {
     func testMarkerSnapshotMergesActiveAndWorkspaceDiagnostics() throws {
         let tabURL = URL(fileURLWithPath: "/project/main.swift")
         let text = "first\nab😀cd\nthird\n"
-        let snapshot = AttoDiagnosticsModel.markerSnapshot(
+        let snapshot = AttoDiagnosticsModel.snapshot(
             activeDiagnostics: [
                 EcuDiagnostic(
                     range: EcuOffsetRange(start: 0, end: 5),
@@ -22,12 +22,28 @@ final class AttoDiagnosticsModelTests: XCTestCase {
                     severity: .warning,
                     code: nil,
                     source: nil,
-                    message: "duplicate active warning",
+                    message: "active warning",
                     relatedInformationJSON: nil,
                     dataJSON: nil
                 ),
             ],
             includeActiveDiagnostics: true,
+            workspaceDiagnostics: [
+                Self.workspaceDiagnostic(
+                    uri: tabURL.absoluteString,
+                    line: 1,
+                    utf16Character: 4,
+                    severity: 1,
+                    message: "workspace error"
+                ),
+                Self.workspaceDiagnostic(
+                    uri: URL(fileURLWithPath: "/project/other.swift").absoluteString,
+                    line: 0,
+                    utf16Character: 0,
+                    severity: 4,
+                    message: "other file hint"
+                ),
+            ],
             workspaceMarkers: [
                 AttoWorkspaceDiagnosticMarkerProjection(
                     uri: tabURL.absoluteString,
@@ -64,12 +80,32 @@ final class AttoDiagnosticsModelTests: XCTestCase {
                 ),
             ]
         )
+        XCTAssertEqual(
+            snapshot.problems,
+            [
+                AttoUnifiedDiagnosticProblem(
+                    logicalLine: 0,
+                    column: 0,
+                    severity: .warning,
+                    message: "active warning",
+                    source: .active
+                ),
+                AttoUnifiedDiagnosticProblem(
+                    logicalLine: 1,
+                    column: 4,
+                    severity: .error,
+                    message: "workspace error",
+                    source: .workspace
+                ),
+            ]
+        )
+        XCTAssertEqual(snapshot.problemsStatusText, "Problems: 2")
     }
 
     func testMarkerSnapshotCanExcludeActiveDiagnostics() throws {
         let tabURL = URL(fileURLWithPath: "/project/main.swift")
         let text = "abc\n"
-        let snapshot = AttoDiagnosticsModel.markerSnapshot(
+        let snapshot = AttoDiagnosticsModel.snapshot(
             activeDiagnostics: [
                 EcuDiagnostic(
                     range: EcuOffsetRange(start: 0, end: 1),
@@ -82,6 +118,15 @@ final class AttoDiagnosticsModelTests: XCTestCase {
                 ),
             ],
             includeActiveDiagnostics: false,
+            workspaceDiagnostics: [
+                Self.workspaceDiagnostic(
+                    uri: tabURL.absoluteString,
+                    line: 0,
+                    utf16Character: 1,
+                    severity: 4,
+                    message: "workspace hint"
+                ),
+            ],
             workspaceMarkers: [
                 AttoWorkspaceDiagnosticMarkerProjection(
                     uri: tabURL.absoluteString,
@@ -105,6 +150,31 @@ final class AttoDiagnosticsModelTests: XCTestCase {
                     source: .workspace
                 ),
             ]
+        )
+        XCTAssertEqual(snapshot.problemsStatusText, "Problems: 1")
+    }
+
+    private static func workspaceDiagnostic(
+        uri: String,
+        line: Int,
+        utf16Character: Int,
+        severity: Int,
+        message: String
+    ) -> AttoLspWorkspaceDiagnosticsParser.Diagnostic {
+        AttoLspWorkspaceDiagnosticsParser.Diagnostic(
+            target: AttoLspDefinitionParser.Target(
+                uri: uri,
+                line: line,
+                utf16Character: utf16Character
+            ),
+            endLine: line,
+            endUTF16Character: utf16Character + 1,
+            severity: severity,
+            severityLabel: nil,
+            code: nil,
+            source: nil,
+            message: message,
+            resultId: nil
         )
     }
 

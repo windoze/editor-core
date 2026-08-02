@@ -1112,6 +1112,9 @@ final class AttoEditorCommandTests: XCTestCase {
             EditorCoreSkiaGutterDiagnosticMarker(logicalLine: 0, charOffset: 0, kind: .error),
             EditorCoreSkiaGutterDiagnosticMarker(logicalLine: 1, charOffset: 6, kind: .warning),
         ])
+        let statusBar = try XCTUnwrap(findSubview(of: AttoStatusBarView.self, in: vc.view))
+        var statusLabels = findSubviews(of: NSTextField.self, in: statusBar)
+        XCTAssertTrue(statusLabels.contains { $0.stringValue == "Problems: 2" })
 
         XCTAssertTrue(vc.showWorkspaceProblemsPanelInActiveTab())
         let panel = try XCTUnwrap(window.childWindows?.first {
@@ -1160,6 +1163,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._activeGutterDiagnosticMarkersForTesting(), [
             EditorCoreSkiaGutterDiagnosticMarker(logicalLine: 2, charOffset: 13, kind: .error),
         ])
+        statusLabels = findSubviews(of: NSTextField.self, in: statusBar)
+        XCTAssertTrue(statusLabels.contains { $0.stringValue == "Problems: 1" })
     }
 
     func testImplementationMultiLocationResultUsesPanel() throws {

@@ -3559,7 +3559,7 @@ final class AttoEditorAreaViewController: NSViewController {
         }()
 
         statusBarView.update(
-            leftText: transientStatusText ?? derivedStateStore.active.statusBarLeftText,
+            leftText: transientStatusText ?? statusBarLeftText(for: tab),
             languageId: tab.syntaxLanguageId,
             languageIsEnabled: true,
             lspText: lspText,
@@ -3579,10 +3579,10 @@ final class AttoEditorAreaViewController: NSViewController {
     }
 
     private func updateDiagnosticMarkers(for tab: AttoEditorTab, includeActiveDiagnostics: Bool) {
-        let projections = unifiedDiagnosticMarkerProjections(
+        let projections = unifiedDiagnosticsSnapshot(
             for: tab,
             includeActiveDiagnostics: includeActiveDiagnostics
-        )
+        ).markerProjections
 
         let minimapMarkers = projections.map {
             EditorCoreSkiaMinimapMarker(
@@ -3604,21 +3604,36 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
-    private func unifiedDiagnosticMarkerProjections(
+    private func unifiedDiagnosticsSnapshot(
         for tab: AttoEditorTab,
         includeActiveDiagnostics: Bool
-    ) -> [AttoDiagnosticMarkerProjection] {
-        guard let text = try? tab.editCore.editor.text() else { return [] }
-        return AttoDiagnosticsModel.markerSnapshot(
+    ) -> AttoUnifiedDiagnosticsSnapshot {
+        guard let text = try? tab.editCore.editor.text() else { return .empty }
+        return AttoDiagnosticsModel.snapshot(
             activeDiagnostics: derivedStateStore.active.diagnostics.diagnostics,
             includeActiveDiagnostics: includeActiveDiagnostics,
+            workspaceDiagnostics: workspaceProblemsStore.diagnostics,
             workspaceMarkers: workspaceProblemsStore.diagnosticMarkerProjections(),
             tabURL: tab.fileURL,
             text: text,
             logicalPositionForOffset: { offset in
                 try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offset)
             }
-        ).markerProjections
+        )
+    }
+
+    private func statusBarLeftText(for tab: AttoEditorTab) -> String? {
+        let diagnostics = unifiedDiagnosticsSnapshot(
+            for: tab,
+            includeActiveDiagnostics: true
+        )
+        let parts = [
+            diagnostics.problemsStatusText,
+            derivedStateStore.active.foldedStatusText,
+            derivedStateStore.active.codeLensStatusText,
+        ].compactMap { $0 }
+        guard parts.isEmpty == false else { return nil }
+        return parts.joined(separator: " | ")
     }
 
     private func updateWorkspaceDiagnosticMarkersForOpenTabs() {
@@ -5543,6 +5558,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let snapshot = workspaceProblemsStore.apply(resultJSON: json)
         updateWorkspaceDiagnosticMarkersForOpenTabs()
         updateWorkspaceProblemsPanelIfVisible()
+        updateStatusBar()
         guard snapshot.diagnostics.isEmpty == false else {
             if showFeedback {
                 showWorkspaceEditPopover(text: "No workspace diagnostics are available.", in: tab.editCore.editorView)
