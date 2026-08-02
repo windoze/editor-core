@@ -467,7 +467,7 @@ extension AttoEditorAreaViewController {
         let message = Self.projectLspPanelErrorMessage(
             title: display.text,
             status: status.state.rawValue,
-            errorMessage: display.failureDetail ?? status.detail
+            errorMessage: Self.projectLspStatusFailureDetail(status: status, display: display)
         )
         return projectLspPanelErrorEventStore.record(
             source: .status,
@@ -534,6 +534,24 @@ extension AttoEditorAreaViewController {
         }
 
         return event
+    }
+
+    static func projectLspStatusFailureDetail(
+        status: EcuLspStatusSnapshot,
+        display: AttoLspStatusFormatter.Display
+    ) -> String? {
+        var parts: [String] = []
+        if let detail = (display.failureDetail ?? status.detail)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           detail.isEmpty == false
+        {
+            parts.append(detail)
+        }
+        if let stderrTail = status.process?.stderrTail?.trimmingCharacters(in: .whitespacesAndNewlines),
+           stderrTail.isEmpty == false
+        {
+            parts.append("stderr:\n\(stderrTail)")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }
 
     static func isProjectLspPanelErrorStatus(_ status: String) -> Bool {

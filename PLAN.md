@@ -924,6 +924,12 @@
     - `cargo build -p editor-core-ui-ffi --release`
     - `swift test --package-path swift --filter EditorCoreLSPStatusSnapshotTests.testDecodesReadyStatusWithCapabilities`
     - `swift test --package-path swift --filter EditorCoreLSPStatusSnapshotTests.testDecodesFailedStatusWithMinimalServer`
+- 中间提交：`feat(app): show lsp stderr in project status events`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 AttoEditor project LSP status events 消费 `EcuLspProcessStatus.stderrTail`，把失败状态的 stderr tail 附加到 bounded project status event message 中。
+  - 提交边界：只扩展 Swift/App 层 `recordProjectLspStatusFailure(...)` 的 message 组装，并补项目级 status event store/panel 测试；不新增 Rust/C ABI，不改变事件 store schema，不改变 status event drain cursor，不实现持久化 stderr log、独立进程历史表、自动崩溃恢复或 dashboard 级 server health UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspPanelRecordsStatusFailures`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspStatusEventsPanelShowsRecordedFailures`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

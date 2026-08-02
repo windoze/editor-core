@@ -1957,6 +1957,12 @@ final class AttoEditorCommandTests: XCTestCase {
             activity: nil,
             detail: "server exited",
             capabilities: nil,
+            process: EcuLspProcessStatus(
+                pid: 123,
+                state: .exited,
+                exitCode: 7,
+                stderrTail: "fatal: missing workspace\nlast line"
+            ),
             workspaceFolders: [
                 EcuLspWorkspaceFolder(uri: tempDir.absoluteString, name: tempDir.lastPathComponent),
             ]
@@ -1973,6 +1979,9 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(events[0].title.contains("LSP fake-lsp"))
         XCTAssertTrue(events[0].title.contains("Failed"))
         XCTAssertTrue(events[0].message.contains("server exited"))
+        XCTAssertTrue(events[0].message.contains("stderr:"))
+        XCTAssertTrue(events[0].message.contains("fatal: missing workspace"))
+        XCTAssertTrue(events[0].message.contains("last line"))
     }
 
     func testProjectLspStatusEventsPanelShowsRecordedFailures() throws {
@@ -1993,6 +2002,12 @@ final class AttoEditorCommandTests: XCTestCase {
             activity: nil,
             detail: "server exited",
             capabilities: nil,
+            process: EcuLspProcessStatus(
+                pid: 321,
+                state: .exited,
+                exitCode: 9,
+                stderrTail: "panel stderr tail"
+            ),
             workspaceFolders: []
         )))
         XCTAssertTrue(vc.showProjectLspStatusEventsPanel())
@@ -2018,6 +2033,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let cell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(cell.textField?.stringValue.contains("Status") == true)
         XCTAssertTrue(cell.textField?.stringValue.contains("server exited") == true)
+        XCTAssertTrue(cell.textField?.stringValue.contains("panel stderr tail") == true)
     }
 
     func testEmptyLocationResultUsesUnifiedFeedbackStatus() throws {
