@@ -12,7 +12,7 @@ pub(super) fn apply_slot_result_edits(
             let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
                 Ok(line_index) => lsp_document_symbols_to_processing_edit(line_index, result),
                 Err(_) => {
-                    doc.lsp_fail("LSP buffer line index unavailable");
+                    doc.fail_lsp_and_record_status(view_id, "LSP buffer line index unavailable");
                     return Ok(EventOutcome::Abort);
                 }
             };
@@ -27,7 +27,7 @@ pub(super) fn apply_slot_result_edits(
             let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
                 Ok(line_index) => lsp_code_lens_to_processing_edit(line_index, result),
                 Err(_) => {
-                    doc.lsp_fail("LSP buffer line index unavailable");
+                    doc.fail_lsp_and_record_status(view_id, "LSP buffer line index unavailable");
                     return Ok(EventOutcome::Abort);
                 }
             };
@@ -38,7 +38,7 @@ pub(super) fn apply_slot_result_edits(
             let edit = match doc.ws.buffer_line_index(doc.buffer_id) {
                 Ok(line_index) => lsp_inlay_hints_to_processing_edit(line_index, result),
                 Err(_) => {
-                    doc.lsp_fail("LSP buffer line index unavailable");
+                    doc.fail_lsp_and_record_status(view_id, "LSP buffer line index unavailable");
                     return Ok(EventOutcome::Abort);
                 }
             };
@@ -49,7 +49,7 @@ pub(super) fn apply_slot_result_edits(
             let edits = match doc.ws.buffer_line_index(doc.buffer_id) {
                 Ok(line_index) => lsp_document_links_to_processing_edits(line_index, result),
                 Err(_) => {
-                    doc.lsp_fail("LSP buffer line index unavailable");
+                    doc.fail_lsp_and_record_status(view_id, "LSP buffer line index unavailable");
                     return Ok(EventOutcome::Abort);
                 }
             };

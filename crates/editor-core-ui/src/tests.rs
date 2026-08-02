@@ -2080,6 +2080,50 @@ fn poll_processing_reports_lsp_failure_without_applied_success() {
 }
 
 #[test]
+fn flush_did_change_failure_records_lsp_status_event() {
+    let mut ui = EditorUi::new("abc", 80);
+    {
+        let mut doc = ui.lock_doc();
+        doc.lsp_last_cmd = Some("fake-lsp".to_string());
+        doc.lsp_document_uri = Some("file:///test.rs".to_string());
+        doc.lsp_delta_calc = Some(editor_core_lsp::DeltaCalculator::from_text("abc"));
+        doc.lsp = Some(Arc::new(SharedLspSession {
+            session: Mutex::new(None),
+        }));
+    }
+
+    ui.insert_text("d").unwrap();
+    ui.flush_lsp_did_change_from_delta();
+
+    let status: serde_json::Value = serde_json::from_str(ui.lsp_status_json().as_str()).unwrap();
+    assert_eq!(status["availability"], "failed");
+    assert!(
+        status["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("LSP session is not available")),
+        "unexpected LSP status: {status}"
+    );
+
+    let events = ui.state_events_after(0);
+    let status_event = events
+        .events
+        .iter()
+        .find(|event| event.kind == "lsp_status_changed")
+        .expect("expected lsp_status_changed event");
+    assert_eq!(
+        status_event.lsp_status.as_ref().unwrap()["availability"],
+        "failed"
+    );
+    assert!(
+        status_event.lsp_status.as_ref().unwrap()["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("LSP session is not available")),
+        "unexpected LSP status event: {:?}",
+        status_event.lsp_status
+    );
+}
+
+#[test]
 fn on_type_formatting_response_error_records_lsp_status() {
     let mut ui = EditorUi::new("abc", 80);
     let request_id = 42;
@@ -2142,6 +2186,28 @@ fn on_type_formatting_response_error_records_lsp_status() {
     assert_eq!(
         events.events[1].error_message.as_deref(),
         Some("formatter exploded")
+    );
+
+    let state_events = ui.state_events_after(0);
+    let status_event = state_events
+        .events
+        .iter()
+        .find(|event| event.kind == "lsp_status_changed")
+        .expect("expected lsp_status_changed event");
+    assert_eq!(
+        status_event.lsp_status.as_ref().unwrap()["availability"],
+        "failed"
+    );
+    assert!(
+        status_event.lsp_status.as_ref().unwrap()["detail"]
+            .as_str()
+            .is_some_and(|detail| {
+                detail.contains("LSP on-type formatting failed")
+                    && detail.contains("formatter exploded")
+                    && detail.contains("-32603")
+            }),
+        "unexpected LSP status event: {:?}",
+        status_event.lsp_status
     );
 }
 

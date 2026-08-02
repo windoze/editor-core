@@ -12,6 +12,19 @@ const DERIVED_STATE_FAMILIES: [&str; 5] = [
     "document_symbols",
 ];
 
+fn lsp_failed_status_value(command: Option<&str>, detail: String) -> serde_json::Value {
+    let server = command.map(|cmd| serde_json::json!({ "command": cmd }));
+    serde_json::json!({
+        "availability": "failed",
+        "state": "failed",
+        "server": server,
+        "activity": Option::<serde_json::Value>::None,
+        "detail": detail,
+        "capabilities": Option::<serde_json::Value>::None,
+        "workspace_folders": Vec::<serde_json::Value>::new(),
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct EditorUiStateEvent {
     pub sequence: u64,
@@ -278,6 +291,17 @@ impl EditorUiDoc {
             layout: None,
             derived_state: None,
         })
+    }
+
+    pub(crate) fn fail_lsp_and_record_status(
+        &mut self,
+        view_id: ViewId,
+        reason: impl Into<String>,
+    ) -> u64 {
+        let reason = reason.into();
+        self.lsp_fail(reason.clone());
+        let status = lsp_failed_status_value(self.lsp_last_cmd.as_deref(), reason);
+        self.record_state_event_from_lsp_status_changed(view_id, status)
     }
 
     pub(crate) fn record_state_event_from_text_changed(&mut self, view_id: ViewId) -> u64 {

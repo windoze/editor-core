@@ -13,7 +13,7 @@ impl EditorUi {
                 return Ok(false);
             };
             let Some(doc_uri) = doc.lsp_document_uri.clone() else {
-                doc.lsp_fail("LSP document URI missing");
+                doc.fail_lsp_and_record_status(self.view_id, "LSP document URI missing");
                 return Ok(false);
             };
 
@@ -53,8 +53,7 @@ impl EditorUi {
             match shared.with_session_mut(|lsp| Ok(lsp.supports_on_type_formatting_trigger(ch))) {
                 Ok(v) => v,
                 Err(reason) => {
-                    let mut doc = self.lock_doc();
-                    doc.lsp_fail(reason);
+                    self.fail_lsp_and_record_status(reason);
                     return Ok(false);
                 }
             };
@@ -68,8 +67,7 @@ impl EditorUi {
         }) {
             Ok(id) => id,
             Err(reason) => {
-                let mut doc = self.lock_doc();
-                doc.lsp_fail(reason);
+                self.fail_lsp_and_record_status(reason);
                 return Ok(false);
             }
         };

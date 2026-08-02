@@ -24,12 +24,12 @@ impl EditorUi {
             return;
         };
         let Some(doc_uri) = doc.lsp_document_uri.clone() else {
-            doc.lsp_fail("LSP document URI missing");
+            doc.fail_lsp_and_record_status(self.view_id, "LSP document URI missing");
             return;
         };
 
         let Some(calc) = doc.lsp_delta_calc.as_mut() else {
-            doc.lsp_fail("LSP incremental sync state missing");
+            doc.fail_lsp_and_record_status(self.view_id, "LSP incremental sync state missing");
             return;
         };
 
@@ -42,7 +42,7 @@ impl EditorUi {
             session.set_active_document(doc_uri.as_str())?;
             session.did_change_many(changes)
         }) {
-            doc.lsp_fail(err);
+            doc.fail_lsp_and_record_status(self.view_id, err);
             return;
         }
 

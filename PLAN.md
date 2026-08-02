@@ -793,6 +793,18 @@
     - `swift test --package-path swift --filter AttoStatusBarSelectionTests.testStatusBarConsumesLspStatusStateEvent`
     - `swift test --package-path swift --filter AttoStatusBarSelectionTests.testStatusBarConsumesActiveDerivedDiagnostics`
     - `git diff --check`
+- 中间提交：`feat(ui): emit lsp sync failure status events`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；继续补齐阶段 256 的 LSP status state event 覆盖，让低层 LSP sync / on-type formatting / result-derived apply failure 也在写入 `lsp_status_json()` 失败状态时同步发出 `lsp_status_changed`。
+  - 提交边界：只在 Rust `EditorUiDoc` 增加 doc-lock 内可用的 failure + status event helper，并切换 didChange flush、refresh processing、on-type formatting request/response/apply、slot result apply 和 derived-state apply 的失败路径；不新增 C ABI/Swift wrapper 字段，不改变 `state_events_json` schema，不实现 server progress/activity 去重、server process health event、project-level status panel 或 project open/close 批量 LSP session 管理。
+  - 验证记录：
+    - `cargo test -p editor-core-ui flush_did_change_failure_records_lsp_status_event`
+    - `cargo test -p editor-core-ui on_type_formatting_response_error_records_lsp_status`
+    - `cargo test -p editor-core-ui poll_processing_reports_lsp_failure_without_applied_success`
+    - `cargo test -p editor-core-ui lsp_status_reports_current_workspace_folders`
+    - `cargo test -p editor-core-ui editor_ui_state_events_project_lsp_request_and_result_events`
+    - `cargo test -p editor-core-ui`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

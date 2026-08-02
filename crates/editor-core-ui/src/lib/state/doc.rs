@@ -116,7 +116,7 @@ impl EditorUiDoc {
 
         if let Err(err) = self.apply_processing_edits(view_id, edits) {
             let reason = format!("failed to apply LSP processing edits: {err}");
-            self.lsp_fail(reason.clone());
+            self.fail_lsp_and_record_status(view_id, reason.clone());
             return Err(UiError::Processor(reason));
         }
 

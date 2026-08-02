@@ -45,10 +45,13 @@ pub(super) fn collect_on_type_formatting_result(
                 None,
                 Some(&error),
             );
-            doc.lsp_fail(format!(
-                "LSP on-type formatting failed: {} (code {})",
-                error.message, error.code
-            ));
+            doc.fail_lsp_and_record_status(
+                view,
+                format!(
+                    "LSP on-type formatting failed: {} (code {})",
+                    error.message, error.code
+                ),
+            );
             return Ok(EventOutcome::Abort);
         }
 
@@ -91,8 +94,7 @@ pub(super) fn apply_on_type_formatting_results(
                 }
             }
             Err(err) => {
-                let mut doc = ui.lock_doc();
-                doc.lsp_fail(err.to_string());
+                ui.fail_lsp_and_record_status(err.to_string());
                 return Ok(false);
             }
         }
