@@ -2241,7 +2241,7 @@ final class AttoEditorCommandTests: XCTestCase {
                 in: root
             ) as? NSTableView
         )
-        XCTAssertEqual(table.numberOfRows, 16)
+        XCTAssertEqual(table.numberOfRows, 17)
 
         let summaryCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("Summary -") == true)
@@ -2291,6 +2291,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(serverTitle.contains("recovery enabled"), serverTitle)
         XCTAssertTrue(serverTitle.contains("max attempts 7"), serverTitle)
         XCTAssertTrue(serverTitle.contains("base delay 2.5s"), serverTitle)
+        XCTAssertTrue(serverTitle.contains("global policy"), serverTitle)
         XCTAssertTrue(serverTitle.contains("latest process exited"), serverTitle)
 
         let serverActionCell = try XCTUnwrap(table.view(atColumn: 0, row: 9, makeIfNecessary: true) as? NSTableCellView)
@@ -2298,28 +2299,33 @@ final class AttoEditorCommandTests: XCTestCase {
             (serverActionCell.textField?.stringValue ?? "").contains("Recovery Action - Disable auto-restart for fake-lsp")
         )
 
-        let serverIncreaseAttemptsCell = try XCTUnwrap(table.view(atColumn: 0, row: 10, makeIfNecessary: true) as? NSTableCellView)
+        let serverResetPolicyCell = try XCTUnwrap(table.view(atColumn: 0, row: 10, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertTrue(
+            (serverResetPolicyCell.textField?.stringValue ?? "").contains("Recovery Action - Reset recovery policy for fake-lsp to global")
+        )
+
+        let serverIncreaseAttemptsCell = try XCTUnwrap(table.view(atColumn: 0, row: 11, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(
             (serverIncreaseAttemptsCell.textField?.stringValue ?? "").contains("Recovery Action - Increase max attempts for fake-lsp to 8")
         )
-        let serverDecreaseAttemptsCell = try XCTUnwrap(table.view(atColumn: 0, row: 11, makeIfNecessary: true) as? NSTableCellView)
+        let serverDecreaseAttemptsCell = try XCTUnwrap(table.view(atColumn: 0, row: 12, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(
             (serverDecreaseAttemptsCell.textField?.stringValue ?? "").contains("Recovery Action - Decrease max attempts for fake-lsp to 6")
         )
-        let serverIncreaseBaseDelayCell = try XCTUnwrap(table.view(atColumn: 0, row: 12, makeIfNecessary: true) as? NSTableCellView)
+        let serverIncreaseBaseDelayCell = try XCTUnwrap(table.view(atColumn: 0, row: 13, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(
             (serverIncreaseBaseDelayCell.textField?.stringValue ?? "").contains("Recovery Action - Increase base delay for fake-lsp to 3.5s")
         )
-        let serverDecreaseBaseDelayCell = try XCTUnwrap(table.view(atColumn: 0, row: 13, makeIfNecessary: true) as? NSTableCellView)
+        let serverDecreaseBaseDelayCell = try XCTUnwrap(table.view(atColumn: 0, row: 14, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(
             (serverDecreaseBaseDelayCell.textField?.stringValue ?? "").contains("Recovery Action - Decrease base delay for fake-lsp to 1.5s")
         )
 
-        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 14, makeIfNecessary: true) as? NSTableCellView)
+        let statusCell = try XCTUnwrap(table.view(atColumn: 0, row: 15, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("Status -") == true)
         XCTAssertTrue(statusCell.textField?.stringValue.contains("server exited") == true)
 
-        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 15, makeIfNecessary: true) as? NSTableCellView)
+        let healthCell = try XCTUnwrap(table.view(atColumn: 0, row: 16, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("Health -") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("fake-lsp") == true)
         XCTAssertTrue(healthCell.textField?.stringValue.contains("dashboard stderr") == true)
@@ -2344,6 +2350,16 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(preferences.effectiveLspAutoRestartBaseDelaySeconds(serverName: "fake-lsp", serverCommand: nil), 3.5)
         XCTAssertEqual(preferences.effectiveLspAutoRestartBaseDelaySeconds, 2.5)
         XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP auto-restart base delay 3.5s for fake-lsp")
+
+        XCTAssertTrue(preferences.hasLspAutoRestartPolicyOverrideForServer(serverName: "fake-lsp", serverCommand: nil))
+        XCTAssertTrue(vc._runProjectLspDashboardCommandForTesting(
+            id: "lsp.project_dashboard.server_recovery.reset_policy.0"
+        ))
+        XCTAssertFalse(preferences.hasLspAutoRestartPolicyOverrideForServer(serverName: "fake-lsp", serverCommand: nil))
+        XCTAssertFalse(preferences.isLspAutoRestartDisabledForServer(serverName: "fake-lsp", serverCommand: nil))
+        XCTAssertEqual(preferences.effectiveLspAutoRestartMaxAttempts(serverName: "fake-lsp", serverCommand: nil), 7)
+        XCTAssertEqual(preferences.effectiveLspAutoRestartBaseDelaySeconds(serverName: "fake-lsp", serverCommand: nil), 2.5)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP auto-restart policy reset for fake-lsp")
 
         XCTAssertEqual(preferences.effectiveLspAutoRestartMaxAttempts, 7)
         XCTAssertTrue(vc._runProjectLspDashboardCommandForTesting(

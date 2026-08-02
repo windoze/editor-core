@@ -815,6 +815,10 @@ extension AttoEditorAreaViewController {
                 serverName: group.serverName,
                 serverCommand: group.serverCommand
             )
+            group.recoveryHasOverride = preferences.hasLspAutoRestartPolicyOverrideForServer(
+                serverName: group.serverName,
+                serverCommand: group.serverCommand
+            )
             return group
         }.sorted { lhs, rhs in
             if lhs.latestSequence != rhs.latestSequence {
@@ -837,6 +841,7 @@ extension AttoEditorAreaViewController {
         var recoveryDisabled: Bool = false
         var recoveryMaxAttempts: Int = 0
         var recoveryBaseDelaySeconds: Double = 0.0
+        var recoveryHasOverride: Bool = false
 
         init(identity: ProjectLspDashboardServerIdentity) {
             self.displayName = identity.displayName
@@ -900,7 +905,8 @@ extension AttoEditorAreaViewController {
         let latestProcess = group.latestProcessState.map { ", latest process \($0)" } ?? ""
         let recovery = group.recoveryDisabled ? "recovery disabled" : "recovery enabled"
         let baseDelay = formatProjectLspDashboardSeconds(group.recoveryBaseDelaySeconds)
-        return "Server - \(group.displayName): health events \(group.healthEventCount) failed \(group.healthFailedCount), persisted logs \(group.persistedLogCount) failed \(group.persistedFailedCount), \(recovery), max attempts \(group.recoveryMaxAttempts), base delay \(baseDelay)\(latestProcess)"
+        let policySource = group.recoveryHasOverride ? "custom policy" : "global policy"
+        return "Server - \(group.displayName): health events \(group.healthEventCount) failed \(group.healthFailedCount), persisted logs \(group.persistedLogCount) failed \(group.persistedFailedCount), \(recovery), max attempts \(group.recoveryMaxAttempts), base delay \(baseDelay), \(policySource)\(latestProcess)"
     }
 
     private func projectLspDashboardServerRecoveryActionCommands(
@@ -926,6 +932,18 @@ extension AttoEditorAreaViewController {
                     serverCommand: group.serverCommand
                 )
                 self.setTransientStatusText("LSP auto-restart \(disabled ? "disabled" : "enabled") for \(group.displayName)")
+            },
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.server_recovery.reset_policy.\(index)",
+                title: "Recovery Action - Reset recovery policy for \(group.displayName) to global",
+                isEnabled: group.recoveryHasOverride
+            ) { [weak self] in
+                guard let self else { return }
+                self.preferences.resetLspAutoRestartPolicy(
+                    forServerName: group.serverName,
+                    serverCommand: group.serverCommand
+                )
+                self.setTransientStatusText("LSP auto-restart policy reset for \(group.displayName)")
             },
             AttoCommandPaletteCommand(
                 id: "lsp.project_dashboard.server_recovery.increase_max_attempts.\(index)",

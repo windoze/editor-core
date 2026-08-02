@@ -338,6 +338,15 @@ final class AttoPreferences: NSObject {
         return storedLspAutoRestartServerBaseDelaySeconds[key] ?? effectiveLspAutoRestartBaseDelaySeconds
     }
 
+    func hasLspAutoRestartPolicyOverrideForServer(serverName: String?, serverCommand: String?) -> Bool {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return false
+        }
+        return storedLspAutoRestartDisabledServerKeys.contains(key)
+            || storedLspAutoRestartServerMaxAttempts.keys.contains(key)
+            || storedLspAutoRestartServerBaseDelaySeconds.keys.contains(key)
+    }
+
     func isLspAutoRestartDisabledForServer(serverName: String?, serverCommand: String?) -> Bool {
         guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
             return false
@@ -393,6 +402,38 @@ final class AttoPreferences: NSObject {
         var overrides = storedLspAutoRestartServerBaseDelaySeconds
         overrides[key] = Self.normalizeLspAutoRestartBaseDelaySeconds(seconds)
         defaults.set(overrides, forKey: Keys.lspAutoRestartServerBaseDelaySeconds)
+        postDidChange()
+    }
+
+    func resetLspAutoRestartPolicy(forServerName serverName: String?, serverCommand: String?) {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return
+        }
+
+        var disabledKeys = Set(storedLspAutoRestartDisabledServerKeys)
+        disabledKeys.remove(key)
+        if disabledKeys.isEmpty {
+            defaults.removeObject(forKey: Keys.lspAutoRestartDisabledServerKeys)
+        } else {
+            defaults.set(disabledKeys.sorted(), forKey: Keys.lspAutoRestartDisabledServerKeys)
+        }
+
+        var maxAttempts = storedLspAutoRestartServerMaxAttempts
+        maxAttempts.removeValue(forKey: key)
+        if maxAttempts.isEmpty {
+            defaults.removeObject(forKey: Keys.lspAutoRestartServerMaxAttempts)
+        } else {
+            defaults.set(maxAttempts, forKey: Keys.lspAutoRestartServerMaxAttempts)
+        }
+
+        var baseDelay = storedLspAutoRestartServerBaseDelaySeconds
+        baseDelay.removeValue(forKey: key)
+        if baseDelay.isEmpty {
+            defaults.removeObject(forKey: Keys.lspAutoRestartServerBaseDelaySeconds)
+        } else {
+            defaults.set(baseDelay, forKey: Keys.lspAutoRestartServerBaseDelaySeconds)
+        }
+
         postDidChange()
     }
 

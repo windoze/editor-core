@@ -201,6 +201,8 @@ final class AttoPreferencesTests: XCTestCase {
         prefs.setLspAutoRestartMaxAttempts(25, forServerName: " Fake-LSP ", serverCommand: nil)
         prefs.setLspAutoRestartBaseDelaySeconds(-5, forServerName: nil, serverCommand: " /BIN/Other-LSP ")
 
+        XCTAssertTrue(prefs.hasLspAutoRestartPolicyOverrideForServer(serverName: "fake-lsp", serverCommand: nil))
+        XCTAssertTrue(prefs.hasLspAutoRestartPolicyOverrideForServer(serverName: nil, serverCommand: "/bin/other-lsp"))
         XCTAssertEqual(prefs.storedLspAutoRestartServerMaxAttempts, ["fake-lsp": 10])
         XCTAssertEqual(prefs.storedLspAutoRestartServerBaseDelaySeconds, ["/bin/other-lsp": 0.0])
         XCTAssertEqual(prefs.effectiveLspAutoRestartMaxAttempts(serverName: "fake-lsp", serverCommand: nil), 10)
@@ -210,6 +212,16 @@ final class AttoPreferencesTests: XCTestCase {
         )
         XCTAssertEqual(prefs.effectiveLspAutoRestartMaxAttempts(serverName: "other", serverCommand: nil), 4)
         XCTAssertEqual(prefs.effectiveLspAutoRestartBaseDelaySeconds(serverName: "other", serverCommand: nil), 9.5)
+
+        prefs.setLspAutoRestartDisabled(true, forServerName: "fake-lsp", serverCommand: nil)
+        prefs.setLspAutoRestartBaseDelaySeconds(3, forServerName: "fake-lsp", serverCommand: nil)
+        prefs.resetLspAutoRestartPolicy(forServerName: "FAKE-LSP", serverCommand: nil)
+        XCTAssertFalse(prefs.hasLspAutoRestartPolicyOverrideForServer(serverName: "fake-lsp", serverCommand: nil))
+        XCTAssertFalse(prefs.isLspAutoRestartDisabledForServer(serverName: "fake-lsp", serverCommand: nil))
+        XCTAssertEqual(prefs.effectiveLspAutoRestartMaxAttempts(serverName: "fake-lsp", serverCommand: nil), 4)
+        XCTAssertEqual(prefs.effectiveLspAutoRestartBaseDelaySeconds(serverName: "fake-lsp", serverCommand: nil), 9.5)
+        XCTAssertEqual(prefs.storedLspAutoRestartServerMaxAttempts, [:])
+        XCTAssertEqual(prefs.storedLspAutoRestartServerBaseDelaySeconds, ["/bin/other-lsp": 0.0])
     }
 
     func testWrapModeDefaultEnvAndStoredPreference() {
