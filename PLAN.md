@@ -867,6 +867,14 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `git diff --check`
+- 中间提交：`fix(app): release lsp sessions when closing tabs`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；补齐 project/window close 停止侧的 App 起点，关闭拥有自身 LSP session 的 tab 时释放该 editor view 的 LSP handle，并避免 Swift 侧手动 didClose 与 Rust `lsp_reset()` 的 didClose 重复发送。
+  - 提交边界：只调整 AttoEditor close-tab 路径和测试；owned-session tab 关闭时走 `EditorUI.lspDisable()`，由 Rust `lsp_reset()` 负责当前文档 didClose 与 handle release；非 owned-session tab 仍按既有逻辑通知其它 open LSP sessions。不会新增 Rust/C ABI，不实现 graceful shutdown API、shared-session root-set 完整 ownership、project open 自动批量启动、stderr capture 或 dashboard 级 server health UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCloseAllTabsReleasesOwnedLspSessionsWithoutDuplicateDidClose`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testSaveAndCloseNotifyLspDocumentLifecycle`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenSaveAndCloseNotifyExistingLspSessions`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 

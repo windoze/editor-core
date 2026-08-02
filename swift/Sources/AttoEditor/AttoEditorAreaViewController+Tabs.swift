@@ -781,7 +781,11 @@ extension AttoEditorAreaViewController {
 
         let url = projectedFileURL(for: tab)
         let wasSelected = (selectedTabID == id)
-        notifyLspDocumentClosedForOpenSessions(tab, documentURL: url)
+        if (try? tab.editCore.editor.lspIsEnabled()) == true {
+            stopOwnedLspSessionForClosingTab(tab)
+        } else {
+            notifyLspDocumentClosedForOpenSessions(tab, documentURL: url)
+        }
         closeCoreTab(tab)
         clearDiagnosticsLifecycleState(forTabID: tab.id)
         tabs.remove(at: idx)
@@ -908,6 +912,11 @@ extension AttoEditorAreaViewController {
         } catch {
             NSLog("AttoEditor: failed to notify LSP didClose for %@: %@", documentURL.path, String(describing: error))
         }
+    }
+
+    func stopOwnedLspSessionForClosingTab(_ tab: AttoEditorTab) {
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else { return }
+        tab.editCore.editor.lspDisable()
     }
 
     func selectTab(id: UUID) {

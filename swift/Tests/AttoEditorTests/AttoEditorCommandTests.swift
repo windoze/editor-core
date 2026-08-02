@@ -5305,6 +5305,79 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(captured.contains("second opened"), captured)
     }
 
+    func testCloseAllTabsReleasesOwnedLspSessionsWithoutDuplicateDidClose() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-close.txt")
+        let secondURL = tempDir.appendingPathComponent("second-close.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        let firstCaptureURL = tempDir.appendingPathComponent("first-close-lsp-stdin.txt")
+        let secondCaptureURL = tempDir.appendingPathComponent("second-close-lsp-stdin.txt")
+        let firstScriptURL = tempDir.appendingPathComponent("first-close-fake-lsp.sh")
+        let secondScriptURL = tempDir.appendingPathComponent("second-close-fake-lsp.sh")
+        try writeFakeLspServerScript(captureURL: firstCaptureURL, scriptURL: firstScriptURL)
+        try writeFakeLspServerScript(captureURL: secondCaptureURL, scriptURL: secondScriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        let firstTab = try XCTUnwrap(vc.activeTab)
+        try firstTab.editCore.editor.lspEnable(
+            command: firstScriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: firstURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+
+        vc.openFile(url: secondURL, mode: .pinned)
+        let secondTab = try XCTUnwrap(vc.activeTab)
+        try secondTab.editCore.editor.lspEnable(
+            command: secondScriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: secondURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+
+        _ = waitForCapturedLspInput(
+            at: firstCaptureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+        _ = waitForCapturedLspInput(
+            at: secondCaptureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        XCTAssertEqual(vc.closeAllTabsForWindow(), 2)
+
+        let firstCaptured = waitForCapturedLspInput(
+            at: firstCaptureURL,
+            containing: #""method":"textDocument/didClose""#
+        )
+        let secondCaptured = waitForCapturedLspInput(
+            at: secondCaptureURL,
+            containing: #""method":"textDocument/didClose""#
+        )
+        XCTAssertEqual(
+            occurrenceCount(of: #""method":"textDocument/didClose""#, in: firstCaptured),
+            1,
+            firstCaptured
+        )
+        XCTAssertEqual(
+            occurrenceCount(of: #""method":"textDocument/didClose""#, in: secondCaptured),
+            1,
+            secondCaptured
+        )
+        XCTAssertFalse(try firstTab.editCore.editor.lspIsEnabled())
+        XCTAssertFalse(try secondTab.editCore.editor.lspIsEnabled())
+        XCTAssertTrue(vc.tabs.isEmpty)
+        let snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertTrue(snapshot.tabs.isEmpty)
+    }
+
     func testCoreMultiDocumentMirrorTracksEditedTextDirtyAndSearch() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
