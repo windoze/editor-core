@@ -4617,6 +4617,58 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(session.tabs[0].activePaneIndex, 1)
     }
 
+    func testOpenFileProjectionUsesCoreTabSnapshotWhenAvailable() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-opened.txt")
+        let secondURL = tempDir.appendingPathComponent("second-opened.txt")
+        let thirdURL = tempDir.appendingPathComponent("third-opened.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "third".write(to: thirdURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.openFile(url: thirdURL, mode: .pinned)
+
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        let secondTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == secondURL.standardizedFileURL })
+        let secondCoreTabID = try XCTUnwrap(secondTab.coreTabID)
+        XCTAssertTrue(try coreDocuments.moveTab(fromIndex: 2, toIndex: 0))
+        try coreDocuments.setActiveTab(secondCoreTabID)
+        try coreDocuments.replaceTabText(tabId: secondCoreTabID, text: "second dirty", markSaved: false)
+
+        let items = vc.openFileItems()
+        XCTAssertEqual(items.map { $0.url.lastPathComponent }, [
+            "third-opened.txt",
+            "first-opened.txt",
+            "second-opened.txt",
+        ])
+        let dirtyItem = try XCTUnwrap(items.first { $0.url.standardizedFileURL == secondURL.standardizedFileURL })
+        XCTAssertTrue(dirtyItem.isDirty)
+        XCTAssertEqual(dirtyItem.title, "● second-opened.txt")
+
+        var callbackItems: [AttoEditorAreaViewController.OpenFileItem] = []
+        var callbackSelectedID: UUID?
+        vc.onOpenFilesChanged = { items, selectedID in
+            callbackItems = items
+            callbackSelectedID = selectedID
+        }
+        vc.refreshTabBar()
+
+        XCTAssertEqual(callbackItems.map { $0.url.lastPathComponent }, [
+            "third-opened.txt",
+            "first-opened.txt",
+            "second-opened.txt",
+        ])
+        XCTAssertEqual(callbackSelectedID, secondTab.id)
+    }
+
     func testSessionRestoreRestoresSplitPanesIntoCoreMirror() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

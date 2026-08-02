@@ -5,6 +5,12 @@ import EditorCoreUIFFI
 import Foundation
 
 extension AttoEditorAreaViewController {
+    private struct CoreProjectedTab {
+        let tab: AttoEditorTab
+        let coreTab: EcuMultiDocumentTabSnapshot
+        let fileURL: URL
+    }
+
     // MARK: - Tabs
 
     func makeSessionSnapshot() -> (tabs: [AttoTabSnapshot], selectedTabIndex: Int?) {
@@ -35,6 +41,38 @@ extension AttoEditorAreaViewController {
     }
 
     private func makeCoreProjectedSessionSnapshot() -> (tabs: [AttoTabSnapshot], selectedTabIndex: Int?)? {
+        guard let projection = makeCoreProjectedTabs() else { return nil }
+        let coreSnapshot = projection.snapshot
+        let projectedTabs = projection.tabs
+
+        var tabSnaps: [AttoTabSnapshot] = []
+        tabSnaps.reserveCapacity(projectedTabs.count)
+        var selectedIndex: Int?
+
+        for projected in projectedTabs {
+            let coreTab = projected.coreTab
+            let paneCount = max(1, Int(coreTab.viewCount))
+            let activePaneIndex = max(0, min(Int(coreTab.activeViewIndex), paneCount - 1))
+
+            if coreTab.isActive || coreSnapshot.activeTabId == coreTab.id {
+                selectedIndex = tabSnaps.count
+            }
+
+            tabSnaps.append(
+                AttoTabSnapshot(
+                    filePath: projected.fileURL.standardizedFileURL.path,
+                    isPreview: coreTab.isPreview,
+                    showsMinimap: projected.tab.editCore.showsMinimap,
+                    paneCount: paneCount,
+                    activePaneIndex: activePaneIndex
+                )
+            )
+        }
+
+        return (tabs: tabSnaps, selectedTabIndex: selectedIndex)
+    }
+
+    private func makeCoreProjectedTabs() -> (snapshot: EcuMultiDocumentSnapshot, tabs: [CoreProjectedTab])? {
         guard let coreDocuments else { return nil }
         let coreSnapshot: EcuMultiDocumentSnapshot
         do {
@@ -52,33 +90,17 @@ extension AttoEditorAreaViewController {
             tabsByCoreID[coreTabID] = tab
         }
 
-        var tabSnaps: [AttoTabSnapshot] = []
-        tabSnaps.reserveCapacity(coreSnapshot.tabs.count)
-        var selectedIndex: Int?
+        var projectedTabs: [CoreProjectedTab] = []
+        projectedTabs.reserveCapacity(coreSnapshot.tabs.count)
 
         for coreTab in coreSnapshot.tabs {
             guard let tab = tabsByCoreID[coreTab.id] else { return nil }
             let fileURL = sessionFileURL(for: coreTab, fallback: tab.fileURL)
-            let paneCount = max(1, Int(coreTab.viewCount))
-            let activePaneIndex = max(0, min(Int(coreTab.activeViewIndex), paneCount - 1))
-
-            if coreTab.isActive || coreSnapshot.activeTabId == coreTab.id {
-                selectedIndex = tabSnaps.count
-            }
-
-            tabSnaps.append(
-                AttoTabSnapshot(
-                    filePath: fileURL.standardizedFileURL.path,
-                    isPreview: coreTab.isPreview,
-                    showsMinimap: tab.editCore.showsMinimap,
-                    paneCount: paneCount,
-                    activePaneIndex: activePaneIndex
-                )
-            )
+            projectedTabs.append(CoreProjectedTab(tab: tab, coreTab: coreTab, fileURL: fileURL))
         }
 
-        guard tabSnaps.count == tabs.count else { return nil }
-        return (tabs: tabSnaps, selectedTabIndex: selectedIndex)
+        guard projectedTabs.count == tabs.count else { return nil }
+        return (snapshot: coreSnapshot, tabs: projectedTabs)
     }
 
     private func sessionFileURL(for coreTab: EcuMultiDocumentTabSnapshot, fallback: URL) -> URL {
@@ -409,15 +431,23 @@ extension AttoEditorAreaViewController {
     }
 
     func containsFile(url: URL) -> Bool {
-        tabs.contains { $0.fileURL.standardizedFileURL == url.standardizedFileURL }
+        openFileURLs().contains { $0.standardizedFileURL == url.standardizedFileURL }
     }
 
     func openFileURLs() -> [URL] {
-        tabs.map(\.fileURL)
+        if let projection = makeCoreProjectedTabs() {
+            return projection.tabs.map(\.fileURL)
+        }
+
+        return tabs.map(\.fileURL)
     }
 
     func openFileItems() -> [OpenFileItem] {
-        tabs.map { tab in
+        if let projection = makeCoreProjectedTabs() {
+            return makeOpenFileItems(from: projection.tabs)
+        }
+
+        return tabs.map { tab in
             let isDirty = refreshTabDirtyState(tab)
             return OpenFileItem(
                 id: tab.id,
@@ -427,6 +457,39 @@ extension AttoEditorAreaViewController {
                 isPreview: tab.isPreview
             )
         }
+    }
+
+    private func makeOpenFileItems(from projectedTabs: [CoreProjectedTab]) -> [OpenFileItem] {
+        projectedTabs.map { projected in
+            let isDirty = projectedDirtyState(tab: projected.tab, coreTab: projected.coreTab)
+            let title = projectedTitle(
+                fileURL: projected.fileURL,
+                coreTab: projected.coreTab,
+                isDirty: isDirty
+            )
+            return OpenFileItem(
+                id: projected.tab.id,
+                url: projected.fileURL,
+                title: title,
+                isDirty: isDirty,
+                isPreview: projected.coreTab.isPreview
+            )
+        }
+    }
+
+    private func projectedDirtyState(tab: AttoEditorTab, coreTab: EcuMultiDocumentTabSnapshot) -> Bool {
+        let isDirty = coreTab.isModified || localTabDirtyState(tab)
+        tab.isDirty = isDirty
+        return isDirty
+    }
+
+    private func projectedTitle(
+        fileURL: URL,
+        coreTab: EcuMultiDocumentTabSnapshot,
+        isDirty: Bool
+    ) -> String {
+        let title = coreTab.title ?? fileURL.lastPathComponent
+        return isDirty ? "● \(title)" : title
     }
 
     func findInOpenTabs(query: String) -> [AttoFindInFilesViewController.SearchResult] {
@@ -651,12 +714,48 @@ extension AttoEditorAreaViewController {
     }
 
     func refreshTabBar() {
+        if let projection = makeCoreProjectedTabs() {
+            let projectedTabs = projection.tabs
+            let selectedID = projectedSelectedTabID(
+                snapshot: projection.snapshot,
+                projectedTabs: projectedTabs
+            ) ?? selectedTabID
+            tabBarView.updateTabs(
+                tabs: projectedTabs.map { projected in
+                    let isDirty = projectedDirtyState(tab: projected.tab, coreTab: projected.coreTab)
+                    return .init(
+                        id: projected.tab.id,
+                        title: projectedTitle(
+                            fileURL: projected.fileURL,
+                            coreTab: projected.coreTab,
+                            isDirty: isDirty
+                        ),
+                        toolTip: projected.fileURL.path,
+                        isPreview: projected.coreTab.isPreview
+                    )
+                },
+                selectedID: selectedID
+            )
+            onOpenFilesChanged?(makeOpenFileItems(from: projectedTabs), selectedID)
+            return
+        }
+
         refreshAllTabDirtyStates()
         tabBarView.updateTabs(
             tabs: tabs.map { .init(id: $0.id, title: $0.displayTitle, toolTip: $0.fileURL.path, isPreview: $0.isPreview) },
             selectedID: selectedTabID
         )
         onOpenFilesChanged?(openFileItems(), selectedTabID)
+    }
+
+    private func projectedSelectedTabID(
+        snapshot: EcuMultiDocumentSnapshot,
+        projectedTabs: [CoreProjectedTab]
+    ) -> UUID? {
+        guard let activeCoreTabID = snapshot.activeTabId else {
+            return projectedTabs.first(where: { $0.coreTab.isActive })?.tab.id
+        }
+        return projectedTabs.first(where: { $0.coreTab.id == activeCoreTabID })?.tab.id
     }
 
     func pinTabIfPreview(id: UUID) {
