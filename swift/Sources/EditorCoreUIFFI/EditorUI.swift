@@ -890,6 +890,15 @@ public final class EditorUI {
         }
     }
 
+    public func lspTakeLastDocumentColorResult() throws -> EcuLspDocumentColorResult? {
+        guard let json = try lspTakeLastDocumentColorResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspDocumentColorResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_document_color_decode"
+        )
+    }
+
     public func lspRequestColorPresentation(
         startOffset: UInt32,
         endOffset: UInt32,
@@ -913,6 +922,15 @@ public final class EditorUI {
         try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_color_presentation_json") { has, ptr in
             editor_core_ui_ffi_editor_ui_lsp_take_last_color_presentation_json(handle, has, ptr)
         }
+    }
+
+    public func lspTakeLastColorPresentationResult() throws -> EcuLspColorPresentationResult? {
+        guard let json = try lspTakeLastColorPresentationResultJSON() else { return nil }
+        return try Self.decodeSnapshot(
+            EcuLspColorPresentationResult.self,
+            from: json,
+            context: "editor_ui_lsp_take_last_color_presentation_decode"
+        )
     }
 
     public func lspRequestPrepareCallHierarchy(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {

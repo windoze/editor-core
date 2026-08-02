@@ -2697,6 +2697,35 @@ final class AttoEditorAreaViewController: NSViewController {
             fromDocumentColorResultJSON: json,
             documentText: text
         )
+        return finishDocumentColorResult(items, mode: mode, tab: tab, showFeedback: showFeedback)
+    }
+
+    @discardableResult
+    private func handleDocumentColorResult(
+        _ result: EcuLspDocumentColorResult,
+        mode: DocumentColorResultMode,
+        showFeedback: Bool
+    ) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        let text = (try? tab.editCore.editor.text()) ?? ""
+        let items = AttoLspDocumentColorParser.items(
+            fromDocumentColorResult: result,
+            documentText: text
+        )
+        return finishDocumentColorResult(items, mode: mode, tab: tab, showFeedback: showFeedback)
+    }
+
+    @discardableResult
+    private func finishDocumentColorResult(
+        _ items: [AttoLspDocumentColorParser.Item],
+        mode: DocumentColorResultMode,
+        tab: AttoEditorTab,
+        showFeedback: Bool
+    ) -> Bool {
         guard items.isEmpty == false else {
             if showFeedback {
                 showWorkspaceEditPopover(text: "No document colors are available.", in: tab.editCore.editorView)
@@ -2939,9 +2968,9 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspDocumentColorResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastDocumentColorResultJSON()
+                result = try tab.editCore.editor.lspTakeLastDocumentColorResult()
             } catch {
                 let showFeedback = ctx.showFeedback
                 self.cancelDocumentColorUI()
@@ -2954,12 +2983,12 @@ final class AttoEditorAreaViewController: NSViewController {
                 NSSound.beep()
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             let showFeedback = ctx.showFeedback
             let mode = ctx.mode
             self.cancelDocumentColorRequestOnly()
-            _ = self.handleDocumentColorResultJSON(json, mode: mode, showFeedback: showFeedback)
+            _ = self.handleDocumentColorResult(result, mode: mode, showFeedback: showFeedback)
         }
 
         documentColorPollTimer = timer
@@ -2995,9 +3024,9 @@ final class AttoEditorAreaViewController: NSViewController {
                 return
             }
 
-            let json: String?
+            let result: EcuLspColorPresentationResult?
             do {
-                json = try tab.editCore.editor.lspTakeLastColorPresentationResultJSON()
+                result = try tab.editCore.editor.lspTakeLastColorPresentationResult()
             } catch {
                 let showFeedback = ctx.showFeedback
                 self.cancelColorPresentationUI()
@@ -3010,13 +3039,13 @@ final class AttoEditorAreaViewController: NSViewController {
                 NSSound.beep()
                 return
             }
-            guard let json else { return }
+            guard let result else { return }
 
             let item = ctx.item
             let showFeedback = ctx.showFeedback
             self.cancelColorPresentationRequestOnly()
-            _ = self.showColorPresentationResultJSONInActiveTab(
-                json,
+            _ = self.showColorPresentationResultInActiveTab(
+                result,
                 item: item,
                 tabID: tabID,
                 showFeedback: showFeedback
@@ -3044,6 +3073,46 @@ final class AttoEditorAreaViewController: NSViewController {
             fromColorPresentationResultJSON: json,
             documentText: text
         )
+        return finishColorPresentationResult(
+            presentations,
+            item: item,
+            tab: tab,
+            showFeedback: showFeedback
+        )
+    }
+
+    @discardableResult
+    private func showColorPresentationResultInActiveTab(
+        _ result: EcuLspColorPresentationResult,
+        item: AttoLspDocumentColorParser.Item,
+        tabID: UUID,
+        showFeedback: Bool = false
+    ) -> Bool {
+        guard let tab = activeTab, tab.id == tabID else {
+            NSSound.beep()
+            return false
+        }
+
+        let text = (try? tab.editCore.editor.text()) ?? ""
+        let presentations = AttoLspDocumentColorParser.presentations(
+            fromColorPresentationResult: result,
+            documentText: text
+        )
+        return finishColorPresentationResult(
+            presentations,
+            item: item,
+            tab: tab,
+            showFeedback: showFeedback
+        )
+    }
+
+    @discardableResult
+    private func finishColorPresentationResult(
+        _ presentations: [AttoLspDocumentColorParser.Presentation],
+        item: AttoLspDocumentColorParser.Item,
+        tab: AttoEditorTab,
+        showFeedback: Bool
+    ) -> Bool {
         guard presentations.isEmpty == false else {
             if showFeedback {
                 showWorkspaceEditPopover(text: "No color presentations are available.", in: tab.editCore.editorView)

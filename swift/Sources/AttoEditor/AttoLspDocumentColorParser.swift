@@ -26,6 +26,12 @@ enum AttoLspDocumentColorParser {
     }
 
     static func items(fromDocumentColorResultJSON json: String, documentText: String) -> [Item] {
+        if let data = json.data(using: .utf8),
+           let result = try? JSONDecoder().decode(EcuLspDocumentColorResult.self, from: data)
+        {
+            return items(fromDocumentColorResult: result, documentText: documentText)
+        }
+
         guard let data = json.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data, options: []),
               let array = root as? [Any]
@@ -51,7 +57,30 @@ enum AttoLspDocumentColorParser {
         }
     }
 
+    static func items(fromDocumentColorResult result: EcuLspDocumentColorResult, documentText: String) -> [Item] {
+        result.items.compactMap { item in
+            guard let range = range(from: item.range, documentText: documentText) else { return nil }
+            return Item(
+                range: range.selectionRange,
+                startLine: range.startLine,
+                startUTF16Character: range.startUTF16Character,
+                color: Color(
+                    red: item.color.red,
+                    green: item.color.green,
+                    blue: item.color.blue,
+                    alpha: item.color.alpha
+                )
+            )
+        }
+    }
+
     static func presentations(fromColorPresentationResultJSON json: String, documentText: String) -> [Presentation] {
+        if let data = json.data(using: .utf8),
+           let result = try? JSONDecoder().decode(EcuLspColorPresentationResult.self, from: data)
+        {
+            return presentations(fromColorPresentationResult: result, documentText: documentText)
+        }
+
         guard let data = json.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data, options: []),
               let array = root as? [Any]
@@ -73,6 +102,25 @@ enum AttoLspDocumentColorParser {
             }
             edits.append(contentsOf: textEdits(from: object["additionalTextEdits"], documentText: documentText))
             return Presentation(label: label, edits: edits)
+        }
+    }
+
+    static func presentations(
+        fromColorPresentationResult result: EcuLspColorPresentationResult,
+        documentText: String
+    ) -> [Presentation] {
+        result.presentations.compactMap { presentation in
+            let label = presentation.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard label.isEmpty == false else { return nil }
+
+            var edits: [EcuTextEdit] = []
+            if let textEdit = presentation.textEdit.flatMap({ textEdit(from: $0, documentText: documentText) }) {
+                edits.append(textEdit)
+            }
+            edits.append(contentsOf: presentation.additionalTextEdits.compactMap {
+                textEdit(from: $0, documentText: documentText)
+            })
+            return Presentation(label: presentation.label, edits: edits)
         }
     }
 
@@ -138,6 +186,33 @@ enum AttoLspDocumentColorParser {
         )
     }
 
+    private static func range(
+        from range: EcuLspRange,
+        documentText: String
+    ) -> (selectionRange: EcuSelectionRange, startLine: Int, startUTF16Character: Int)? {
+        let startLine = Int(range.start.line)
+        let startCharacter = Int(range.start.utf16Character)
+        let endLine = Int(range.end.line)
+        let endCharacter = Int(range.end.utf16Character)
+
+        let startOffset = AttoLspDefinitionParser.charOffsetForLspPosition(
+            inText: documentText,
+            line: startLine,
+            utf16Character: startCharacter
+        )
+        let endOffset = AttoLspDefinitionParser.charOffsetForLspPosition(
+            inText: documentText,
+            line: endLine,
+            utf16Character: endCharacter
+        )
+
+        return (
+            EcuSelectionRange(start: min(startOffset, endOffset), end: max(startOffset, endOffset)),
+            startLine,
+            startCharacter
+        )
+    }
+
     private static func textEdits(from any: Any?, documentText: String) -> [EcuTextEdit] {
         guard let array = any as? [Any] else { return [] }
         return array.compactMap { textEdit(from: $0, documentText: documentText) }
@@ -152,6 +227,11 @@ enum AttoLspDocumentColorParser {
             return nil
         }
         return EcuTextEdit(start: range.selectionRange.start, end: range.selectionRange.end, text: newText)
+    }
+
+    private static func textEdit(from edit: EcuLspTextEdit, documentText: String) -> EcuTextEdit? {
+        guard let range = range(from: edit.range, documentText: documentText) else { return nil }
+        return EcuTextEdit(start: range.selectionRange.start, end: range.selectionRange.end, text: edit.newText)
     }
 
     private static func color(from object: [String: Any]) -> Color? {
