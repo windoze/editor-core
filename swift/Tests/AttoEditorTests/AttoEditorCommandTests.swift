@@ -4414,6 +4414,39 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(results[0].lineText, "needlealpha")
     }
 
+    func testFindInOpenTabsUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("opened-search-uri.txt")
+        let projectedURL = tempDir.appendingPathComponent("projected-opened-search-uri.txt")
+        try "alpha".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "projected".write(to: projectedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":" needle"}"#))
+
+        let results = vc.findInOpenTabs(query: "needle")
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].url.standardizedFileURL, projectedURL.standardizedFileURL)
+        XCTAssertEqual(results[0].line1, 1)
+        XCTAssertEqual(results[0].column1, 2)
+        XCTAssertEqual(results[0].lineText, "needlealpha")
+    }
+
     func testSplitRightCreatesSharedDocumentPane() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

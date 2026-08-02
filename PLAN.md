@@ -526,6 +526,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testSelectAndOpenFileUseCoreDocumentURIProjection`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenFileProjectionUsesCoreTabSnapshotWhenAvailable`
     - `git diff --check`
+- 中间提交：`feat(app): search open tabs from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 的 Find in Files opened scope 在使用 core `searchAllTabs` 匹配文本后，结果 URL 也按 core tab snapshot 的 `document_uri` 投影输出。
+  - 提交边界：只迁移 opened-tab search 结果组装中的 URL 来源；保留 Swift 本地 URL fallback，不新增 Rust/FFI ABI，不改变 project-wide filesystem search、search panel UI、session schema、LSP location parser 或真实 `tab.fileURL` 同步策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testFindInOpenTabsUsesCoreDocumentURIProjection`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testFindInOpenTabsUsesCoreMirrorForUnsavedText`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

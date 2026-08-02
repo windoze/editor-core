@@ -538,10 +538,19 @@ extension AttoEditorAreaViewController {
             var out: [AttoFindInFilesViewController.SearchResult] = []
             out.reserveCapacity(coreResults.reduce(0) { $0 + $1.matches.count })
 
+            var projectedURLsByCoreTabID: [UInt64: URL] = [:]
+            if let projection = makeCoreProjectedTabs() {
+                projectedURLsByCoreTabID = Dictionary(uniqueKeysWithValues: projection.tabs.compactMap { projected in
+                    guard let coreTabID = projected.tab.coreTabID else { return nil }
+                    return (coreTabID, projected.fileURL.standardizedFileURL)
+                })
+            }
+
             let maxResults = 2000
             for result in coreResults {
                 guard out.count < maxResults else { break }
                 guard let tab = tabs.first(where: { $0.coreTabID == result.tabId }) else { continue }
+                let resultURL = projectedURLsByCoreTabID[result.tabId] ?? tab.fileURL.standardizedFileURL
                 let text = (try? tab.editCore.editor.text()) ?? ""
 
                 for match in result.matches {
@@ -549,7 +558,7 @@ extension AttoEditorAreaViewController {
                     let position = try tab.editCore.editor.charOffsetToLogicalPosition(offset: match.start)
                     out.append(
                         AttoFindInFilesViewController.SearchResult(
-                            url: tab.fileURL.standardizedFileURL,
+                            url: resultURL,
                             line1: Int(position.line) + 1,
                             column1: Int(position.column) + 1,
                             lineText: Self.findResultLinePreview(in: text, zeroBasedLine: Int(position.line))
