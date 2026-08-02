@@ -726,11 +726,22 @@
   - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 headless `LspSession` 的 `textDocument/didSave` / `textDocument/didClose` 通知暴露到 `EditorUi`、C ABI、Swift typed wrapper，并让 AttoEditor 保存 tab / 关闭 tab 的主路径通知对应 LSP session。
   - 提交边界：只新增 didSave/didClose document lifecycle control-plane 接线和保存/关闭 hook；didSave 的 text payload 可为空但 AttoEditor 保存路径会传入保存后的文本；不新增 didOpen 多文档打开生命周期、不改变 didChange fan-out、不实现 project open/close 批量 LSP session 管理、server restart/shared-session root-set ownership 或更高层 project selector。
   - 验证记录：
-    - `cargo test -p editor-core-ui lsp_document_save_and_close_notifications_are_exposed`
+    - `cargo test -p editor-core-ui lsp_document_lifecycle_notifications_are_exposed`
     - `cargo test -p editor-core-ui-ffi ffi_lsp_request_definition_errors_when_lsp_disabled`
     - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testEditorUILSPResultEventsWrapperStartsEmpty`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testSaveAndCloseNotifyLspDocumentLifecycle`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): notify lsp document open`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 headless `LspSession::open_document(...)` 的 `textDocument/didOpen` 暴露到 `EditorUi`、C ABI 和 Swift typed wrapper，并让 AttoEditor 打开没有自身 LSP session 的新 tab 时通知其它已打开且 LSP 已启用的 tab session。
+  - 提交边界：只新增 didOpen document lifecycle control-plane 接线、open-tab fan-out，以及这类无自身 LSP tab 后续 didSave/didClose 对既有 sessions 的闭环通知；新 tab 自身已经启用 LSP 时仍由 `lspEnable(...)` 的既有启动路径发送 didOpen，避免对共享 session 重复 didOpen；不改变 didChange flush 语义、不新增 project open/close 批量 LSP session 管理、server restart/shared-session root-set ownership 或更高层 project selector。
+  - 验证记录：
+    - `cargo test -p editor-core-ui lsp_document_lifecycle_notifications_are_exposed`
+    - `cargo test -p editor-core-ui-ffi ffi_lsp_request_definition_errors_when_lsp_disabled`
+    - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testEditorUILSPResultEventsWrapperStartsEmpty`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testOpenSaveAndCloseNotifyExistingLspSessions`
     - `cargo fmt --check`
     - `git diff --check`
 

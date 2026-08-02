@@ -4984,6 +4984,48 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(captured.contains(" savedinitial"), captured)
     }
 
+    func testOpenSaveAndCloseNotifyExistingLspSessions() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first.txt")
+        let secondURL = tempDir.appendingPathComponent("second.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second opened".write(to: secondURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("open-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("open-fake-lsp.sh")
+        try writeFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        let firstTab = try XCTUnwrap(vc.activeTab)
+        try firstTab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: firstURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer { firstTab.editCore.editor.lspDisable() }
+
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.saveActiveTab()
+        vc.closeActiveTab()
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: "textDocument/didClose"
+        )
+        XCTAssertTrue(captured.contains(#""method":"textDocument/didOpen""#), captured)
+        XCTAssertTrue(captured.contains(#""method":"textDocument/didSave""#), captured)
+        XCTAssertTrue(captured.contains(#""method":"textDocument/didClose""#), captured)
+        XCTAssertTrue(captured.contains(secondURL.standardizedFileURL.absoluteString), captured)
+        XCTAssertTrue(captured.contains(#""languageId":"plaintext""#), captured)
+        XCTAssertTrue(captured.contains("second opened"), captured)
+    }
+
     func testCoreMultiDocumentMirrorTracksEditedTextDirtyAndSearch() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

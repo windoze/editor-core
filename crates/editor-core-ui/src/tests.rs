@@ -576,7 +576,7 @@ fn lsp_did_change_workspace_folders_notifies_and_updates_workspace_response() {
 }
 
 #[test]
-fn lsp_document_save_and_close_notifications_are_exposed() {
+fn lsp_document_lifecycle_notifications_are_exposed() {
     let capture_path = unique_temp_path("document-save-close");
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -584,11 +584,14 @@ fn lsp_document_save_and_close_notifications_are_exposed() {
         .as_nanos();
     let root_uri = format!("file:///tmp/editor-core-ui-doc-lifecycle-{stamp}");
     let doc_uri = format!("{root_uri}/main.rs");
+    let other_uri = format!("{root_uri}/other.rs");
     let script = lsp_capture_server_script(&capture_path, serde_json::json!({}));
     let args = vec!["-c".to_string(), script];
 
     let mut ui = EditorUi::new("fn main() {}\n", 80);
     ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+    ui.lsp_did_open_document(&other_uri, "rust", 1, "pub fn other() {}\n".to_string())
         .unwrap();
     ui.lsp_did_save_document(&doc_uri, Some("fn main() { saved(); }\n".to_string()))
         .unwrap();
@@ -596,6 +599,20 @@ fn lsp_document_save_and_close_notifications_are_exposed() {
 
     wait_for_captured_lsp_stdin(&capture_path, "textDocument/didClose");
     let messages = captured_lsp_json_messages(&capture_path);
+    let did_open = messages
+        .iter()
+        .find(|message| {
+            message["method"] == "textDocument/didOpen"
+                && message["params"]["textDocument"]["uri"] == other_uri
+        })
+        .expect("missing explicit textDocument/didOpen notification");
+    assert_eq!(did_open["params"]["textDocument"]["languageId"], "rust");
+    assert_eq!(did_open["params"]["textDocument"]["version"], 1);
+    assert_eq!(
+        did_open["params"]["textDocument"]["text"],
+        "pub fn other() {}\n"
+    );
+
     let did_save = messages
         .iter()
         .find(|message| message["method"] == "textDocument/didSave")

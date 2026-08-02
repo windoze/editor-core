@@ -5197,7 +5197,18 @@ fn ffi_lsp_request_definition_errors_when_lsp_disabled() {
     };
     assert_eq!(code, ECU_ERR_INTERNAL);
     let uri = CString::new("file:///tmp/closed.rs").unwrap();
+    let language_id = CString::new("rust").unwrap();
     let text = CString::new("saved").unwrap();
+    let code = unsafe {
+        editor_core_ui_ffi_editor_ui_lsp_did_open_document(
+            ui,
+            uri.as_ptr(),
+            language_id.as_ptr(),
+            1,
+            text.as_ptr(),
+        )
+    };
+    assert_eq!(code, ECU_ERR_INTERNAL);
     let code = unsafe {
         editor_core_ui_ffi_editor_ui_lsp_did_save_document(ui, uri.as_ptr(), text.as_ptr())
     };

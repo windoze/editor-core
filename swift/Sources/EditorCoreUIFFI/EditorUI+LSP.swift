@@ -54,6 +54,23 @@ extension EditorUI {
         try library.ensureStatus(status, context: "editor_ui_lsp_did_change_workspace_folders_json")
     }
 
+    public func lspDidOpenDocument(uri: String, languageId: String, version: Int32 = 1, text: String) throws {
+        let status = uri.withCString { uriPtr in
+            languageId.withCString { languagePtr in
+                text.withCString { textPtr in
+                    editor_core_ui_ffi_editor_ui_lsp_did_open_document(
+                        handle,
+                        uriPtr,
+                        languagePtr,
+                        version,
+                        textPtr
+                    )
+                }
+            }
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_did_open_document")
+    }
+
     public func lspDidSaveDocument(uri: String, text: String? = nil) throws {
         let status = uri.withCString { uriPtr in
             if let text {

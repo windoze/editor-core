@@ -101,6 +101,45 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_did_change_workspace_f
     }
 }
 
+/// Notify `textDocument/didOpen` for the active LSP session.
+///
+/// # Safety
+///
+/// `ui` must be a valid pointer to an `EditorUi`.
+/// `document_uri_utf8`, `language_id_utf8`, and `text_utf8` must be valid null-terminated UTF-8
+/// pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_lsp_did_open_document(
+    ui: *mut EditorUi,
+    document_uri_utf8: *const c_char,
+    language_id_utf8: *const c_char,
+    version: c_int,
+    text_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let document_uri = require_cstr(document_uri_utf8, "document_uri_utf8")?
+            .to_str()
+            .map_err(|_| "document_uri_utf8 is not valid UTF-8".to_string())?;
+        let language_id = require_cstr(language_id_utf8, "language_id_utf8")?
+            .to_str()
+            .map_err(|_| "language_id_utf8 is not valid UTF-8".to_string())?;
+        let text = require_cstr(text_utf8, "text_utf8")?
+            .to_str()
+            .map_err(|_| "text_utf8 is not valid UTF-8".to_string())?
+            .to_string();
+        ui.lsp_did_open_document(document_uri, language_id, version, text)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 /// Notify `textDocument/didSave` for the active LSP session.
 ///
 /// # Safety

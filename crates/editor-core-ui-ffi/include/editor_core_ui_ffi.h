@@ -365,6 +365,11 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_did_change_workspace_folders_json(
     const char* added_json_utf8,
     const char* removed_json_utf8
 );
+int32_t editor_core_ui_ffi_editor_ui_lsp_did_open_document(EditorUi* ui,
+                                                           const char* document_uri_utf8,
+                                                           const char* language_id_utf8,
+                                                           int32_t version,
+                                                           const char* text_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_did_save_document(EditorUi* ui,
                                                            const char* document_uri_utf8,
                                                            const char* text_utf8);

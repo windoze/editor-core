@@ -439,6 +439,7 @@ extension AttoEditorAreaViewController {
                         let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
                         tabs[previewIdx] = tab
                         selectTab(id: tab.id)
+                        notifyOtherLspSessionsDocumentOpened(tab)
                         onDidCloseFile?(oldURL)
                         notifySessionStateChanged()
                         return true
@@ -448,12 +449,14 @@ extension AttoEditorAreaViewController {
                 let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
                 tabs.append(tab)
                 selectTab(id: tab.id)
+                notifyOtherLspSessionsDocumentOpened(tab)
                 notifySessionStateChanged()
 
             case .pinned:
                 let tab = try makeTab(for: url, isPreview: false, isUntitled: isUntitled)
                 tabs.append(tab)
                 selectTab(id: tab.id)
+                notifyOtherLspSessionsDocumentOpened(tab)
                 notifySessionStateChanged()
             }
             return true
@@ -729,7 +732,7 @@ extension AttoEditorAreaViewController {
             updateWindowTitle()
             updateStatusBar()
             notifySessionStateChanged()
-            notifyLspDocumentSaved(tab, documentURL: projectedFileURL(for: tab), text: text)
+            notifyLspDocumentSavedForOpenSessions(tab, documentURL: projectedFileURL(for: tab), text: text)
             onDidSaveFile?(tab.fileURL, existedOnDiskBeforeSave == false)
             return true
         } catch {
@@ -766,7 +769,7 @@ extension AttoEditorAreaViewController {
 
         let url = projectedFileURL(for: tab)
         let wasSelected = (selectedTabID == id)
-        notifyLspDocumentClosed(tab, documentURL: url)
+        notifyLspDocumentClosedForOpenSessions(tab, documentURL: url)
         closeCoreTab(tab)
         clearDiagnosticsLifecycleState(forTabID: tab.id)
         tabs.remove(at: idx)
@@ -787,6 +790,62 @@ extension AttoEditorAreaViewController {
         }
     }
 
+    func notifyOtherLspSessionsDocumentOpened(_ openedTab: AttoEditorTab) {
+        guard (try? openedTab.editCore.editor.lspIsEnabled()) != true else { return }
+        let documentURL = projectedFileURL(for: openedTab)
+        let languageId = lspLanguageIdForDocument(tab: openedTab, documentURL: documentURL)
+        let text = (try? openedTab.editCore.editor.text()) ?? ""
+        for tab in tabs where tab.id != openedTab.id {
+            notifyLspDocumentOpened(
+                tab,
+                documentURL: documentURL,
+                languageId: languageId,
+                text: text
+            )
+        }
+    }
+
+    func notifyLspDocumentOpened(
+        _ tab: AttoEditorTab,
+        documentURL: URL,
+        languageId: String,
+        text: String
+    ) {
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else { return }
+        do {
+            try tab.editCore.editor.lspDidOpenDocument(
+                uri: documentURL.standardizedFileURL.absoluteString,
+                languageId: languageId,
+                text: text
+            )
+        } catch {
+            NSLog("AttoEditor: failed to notify LSP didOpen for %@: %@", documentURL.path, String(describing: error))
+        }
+    }
+
+    func lspLanguageIdForDocument(tab: AttoEditorTab, documentURL: URL) -> String {
+        if let syntaxLanguageId = tab.syntaxLanguageId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           syntaxLanguageId.isEmpty == false
+        {
+            return syntaxLanguageId
+        }
+        if let guessed = AttoLspLanguageId.guess(forExtension: documentURL.pathExtension) {
+            return guessed
+        }
+        return "plaintext"
+    }
+
+    func notifyLspDocumentSavedForOpenSessions(_ tab: AttoEditorTab, documentURL: URL, text: String) {
+        if (try? tab.editCore.editor.lspIsEnabled()) == true {
+            notifyLspDocumentSaved(tab, documentURL: documentURL, text: text)
+            return
+        }
+
+        for other in tabs where other.id != tab.id {
+            notifyLspDocumentSaved(other, documentURL: documentURL, text: text)
+        }
+    }
+
     func notifyLspDocumentSaved(_ tab: AttoEditorTab, documentURL: URL, text: String) {
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else { return }
         do {
@@ -796,6 +855,17 @@ extension AttoEditorAreaViewController {
             )
         } catch {
             NSLog("AttoEditor: failed to notify LSP didSave for %@: %@", documentURL.path, String(describing: error))
+        }
+    }
+
+    func notifyLspDocumentClosedForOpenSessions(_ tab: AttoEditorTab, documentURL: URL) {
+        if (try? tab.editCore.editor.lspIsEnabled()) == true {
+            notifyLspDocumentClosed(tab, documentURL: documentURL)
+            return
+        }
+
+        for other in tabs where other.id != tab.id {
+            notifyLspDocumentClosed(other, documentURL: documentURL)
         }
     }
 

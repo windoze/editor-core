@@ -122,6 +122,13 @@ final class EditorCoreUIFFITests: XCTestCase {
                 removed: []
             )
         )
+        XCTAssertThrowsError(
+            try ui.lspDidOpenDocument(
+                uri: "file:///tmp/opened.rs",
+                languageId: "rust",
+                text: "fn opened() {}\n"
+            )
+        )
         XCTAssertThrowsError(try ui.lspDidSaveDocument(uri: "file:///tmp/saved.rs", text: "saved"))
         XCTAssertThrowsError(try ui.lspDidCloseDocument(uri: "file:///tmp/saved.rs"))
         XCTAssertEqual(try ui.lspRequestEventsLatestSequence(), 0)
