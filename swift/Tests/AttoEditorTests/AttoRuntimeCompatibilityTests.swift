@@ -43,6 +43,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingFeatures.contains { $0.feature == .multiDocumentUI })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspInteractiveRequests })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspStatusSnapshot })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspStatusEnvelope })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .workspaceEditApplication })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .workspaceDiagnosticsStore })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspResultEvents })
@@ -86,6 +87,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
             Set([
                 EditorCoreUIFFIFeatures.lspInteractiveRequests.rawValue,
                 EditorCoreUIFFIFeatures.lspStatusSnapshot.rawValue,
+                EditorCoreUIFFIFeatures.lspStatusEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.workspaceEditApplication.rawValue,
                 EditorCoreUIFFIFeatures.workspaceDiagnosticsStore.rawValue,
                 EditorCoreUIFFIFeatures.workspaceDiagnosticsEvents.rawValue,

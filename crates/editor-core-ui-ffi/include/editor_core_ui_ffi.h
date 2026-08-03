@@ -173,6 +173,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE (1ull << 34)
 #define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE (1ull << 35)
 #define ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE (1ull << 36)
+#define ECU_FEATURE_LSP_STATUS_ENVELOPE (1ull << 37)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -430,6 +431,14 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_did_close_document(EditorUi* ui,
                                                             const char* document_uri_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_is_enabled(EditorUi* ui, uint8_t* out_enabled);
 int32_t editor_core_ui_ffi_editor_ui_lsp_status_json(EditorUi* ui, char** out_status_json_utf8);
+// Return the current LSP status snapshot through a stable envelope:
+//
+// Success: {"ok":true,"status":"success","value":<lsp status snapshot>,"error":null,"version":<abi>}
+// Failure: {"ok":false,"status":"error","value":null,"error":{"code":...,"status":...,"message":...},"version":<abi>}
+//
+// The returned string is owned by the caller and must be freed with
+// `editor_core_ui_ffi_string_free`.
+char* editor_core_ui_ffi_editor_ui_lsp_status_envelope_json(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_lsp_result_events_latest_sequence(EditorUi* ui,
                                                                         uint64_t* out_sequence);
 char* editor_core_ui_ffi_editor_ui_lsp_result_events_json(EditorUi* ui, uint64_t after_sequence);

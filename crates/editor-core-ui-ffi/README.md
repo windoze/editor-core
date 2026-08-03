@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 137438953471,
+  "feature_flags": 274877906943,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -252,6 +252,55 @@ Error:
 The returned string is owned by the caller and must be freed with
 `editor_core_ui_ffi_string_free`. Availability is advertised by
 `ECU_FEATURE_LSP_RESULT_ENVELOPE`.
+
+## LSP Status Envelope
+
+The legacy status snapshot API remains available:
+
+```c
+int32_t editor_core_ui_ffi_editor_ui_lsp_status_json(
+    EditorUi* ui,
+    char** out_status_json_utf8
+);
+```
+
+Hosts that want the stage-10 structured error model can call the envelope entry point:
+
+```c
+char* editor_core_ui_ffi_editor_ui_lsp_status_envelope_json(EditorUi* ui);
+```
+
+Success:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "value": {
+    "availability": "disabled",
+    "state": "disabled",
+    "workspace_folders": []
+  },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "value": null,
+  "error": { "code": "invalid_argument", "status": 1, "message": "ui is null" },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_LSP_STATUS_ENVELOPE`.
 
 ## Event Stream Envelope
 

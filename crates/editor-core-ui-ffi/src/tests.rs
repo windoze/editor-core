@@ -149,6 +149,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_STATUS_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -221,6 +225,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "editor_ui_derived_snapshot_envelope"
             && feature["bit"] == 36
             && feature["flag"] == ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "lsp_status_envelope"
+            && feature["bit"] == 37
+            && feature["flag"] == ECU_FEATURE_LSP_STATUS_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -339,6 +348,36 @@ fn ffi_editor_ui_derived_snapshot_envelope_json_reports_success_and_errors() {
     assert!(null_snapshot["snapshot"].is_null());
     assert_eq!(null_snapshot["error"]["code"], "invalid_argument");
     assert_eq!(null_snapshot["error"]["message"], "snapshot_utf8 is null");
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
+fn ffi_lsp_status_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+
+    let ok_json = take_owned_string(editor_core_ui_ffi_editor_ui_lsp_status_envelope_json(ui));
+    let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+    assert_eq!(ok["ok"], true);
+    assert_eq!(ok["status"], "success");
+    assert_eq!(ok["version"], ECU_ABI_VERSION);
+    assert_eq!(ok["value"]["availability"], "disabled");
+    assert_eq!(ok["value"]["state"], "disabled");
+    assert!(ok["error"].is_null());
+
+    let error_json = take_owned_string(editor_core_ui_ffi_editor_ui_lsp_status_envelope_json(
+        ptr::null_mut(),
+    ));
+    let error: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error["ok"], false);
+    assert_eq!(error["status"], "error");
+    assert_eq!(error["value"], serde_json::Value::Null);
+    assert_eq!(error["error"]["code"], "invalid_argument");
+    assert_eq!(error["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert_eq!(error["error"]["message"], "ui is null");
+    assert_eq!(error["version"], ECU_ABI_VERSION);
 
     unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
 }

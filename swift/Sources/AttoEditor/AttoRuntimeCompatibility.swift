@@ -88,6 +88,11 @@ struct AttoRuntimeCompatibility {
             reason: "Status bar and LSP capability gates consume typed status/capability snapshots; LSP commands degrade when unavailable."
         ),
         RuntimeFeature(
+            feature: .lspStatusEnvelope,
+            name: "LSP status envelope",
+            reason: "Status bar and LSP capability gates can consume structured status envelopes; Swift falls back to the legacy typed status snapshot when unavailable."
+        ),
+        RuntimeFeature(
             feature: .workspaceEditApplication,
             name: "WorkspaceEdit application",
             reason: "Rename, code actions, completion resolve, and color presentations apply WorkspaceEdit payloads; edit-producing commands degrade when unavailable."

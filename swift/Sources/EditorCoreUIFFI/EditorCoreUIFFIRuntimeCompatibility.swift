@@ -104,6 +104,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can read typed LSP status and capability snapshots before enabling LSP commands."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .lspStatusEnvelope,
+            name: "LSP status envelope",
+            reason: "Swift hosts can read LSP status snapshots through structured result envelopes."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .workspaceEditApplication,
             name: "WorkspaceEdit application",
             reason: "Swift hosts can apply LSP WorkspaceEdit payloads through UI FFI helpers."

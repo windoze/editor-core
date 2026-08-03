@@ -78,6 +78,8 @@ pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE: u64 = 1 <<
 pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE: u64 = 1 << 35;
 /// Feature bit: per-EditorUi derived snapshots can return structured result envelopes.
 pub const ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE: u64 = 1 << 36;
+/// Feature bit: per-EditorUi LSP status snapshots can return structured result envelopes.
+pub const ECU_FEATURE_LSP_STATUS_ENVELOPE: u64 = 1 << 37;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -115,7 +117,8 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE
     | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE
     | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE
-    | ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE;
+    | ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE
+    | ECU_FEATURE_LSP_STATUS_ENVELOPE;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -346,6 +349,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE,
         name: "editor_ui_derived_snapshot_envelope",
         description: "Per-EditorUi derived-state snapshots can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 37,
+        flag: ECU_FEATURE_LSP_STATUS_ENVELOPE,
+        name: "lsp_status_envelope",
+        description: "Per-EditorUi LSP status snapshots can return structured result envelopes.",
     },
 ];
 

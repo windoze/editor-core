@@ -112,6 +112,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceRootsChangeEnvelope))
         XCTAssertTrue(info.supports(.multiDocumentProjectLSPServersEnvelope))
         XCTAssertTrue(info.supports(.editorUIDerivedSnapshotEnvelope))
+        XCTAssertTrue(info.supports(.lspStatusEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -180,6 +181,12 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && (feature["bit"] as? NSNumber)?.uint8Value == 36
                 && (feature["flag"] as? NSNumber)?.uint64Value
                     == EditorCoreUIFFIFeatures.editorUIDerivedSnapshotEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "lsp_status_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 37
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.lspStatusEnvelope.rawValue
         })
     }
 
@@ -344,6 +351,77 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(failure.snapshot, "future_snapshot")
         XCTAssertEqual(failure.statusKind, .error)
         XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
+    }
+
+    func testLSPStatusEnvelopeReportsSuccess() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc", viewportWidthCells: 80)
+
+        let envelope = try ui.lspStatusEnvelope()
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.version, lib.abiVersion)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertEqual(envelope.value?.availability, .disabled)
+        XCTAssertEqual(envelope.value?.state, .disabled)
+        XCTAssertNil(envelope.error)
+        guard case .object(let rawValue)? = envelope.rawValue else {
+            XCTFail("expected raw LSP status object")
+            return
+        }
+        XCTAssertEqual(rawValue["availability"], .string("disabled"))
+        XCTAssertEqual(rawValue["state"], .string("disabled"))
+    }
+
+    func testLSPStatusEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "status": "future_status",
+          "value": {
+            "availability": "future_availability",
+            "state": "future_state",
+            "workspace_folders": [],
+            "future": true
+          },
+          "error": null,
+          "version": 13,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuLspStatusEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertEqual(success.value?.availability, .unknown("future_availability"))
+        XCTAssertEqual(success.value?.state, .unknown("future_state"))
+        XCTAssertNil(success.error)
+        guard case .object(let rawValue)? = success.rawValue else {
+            XCTFail("expected raw future status object")
+            return
+        }
+        XCTAssertEqual(rawValue["future"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 246810,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 14
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuLspStatusEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.rawValue, .null)
         XCTAssertEqual(failure.error?.code, "future_error")
         XCTAssertEqual(failure.error?.message, "future failure")
         XCTAssertNil(failure.error?.status)
