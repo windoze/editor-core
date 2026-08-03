@@ -1843,7 +1843,8 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
         var documentChanges: [AttoVisualWorkspaceEditDocumentChangePayload] = documents.map { document in
             .textDocumentEdit(AttoVisualWorkspaceEditTextDocumentChangePayload(
                 textDocument: AttoVisualWorkspaceEditTextDocumentPayload(
-                    uri: AttoVisualWorkspaceEditPreview.fileURI(document.fileName, tempDir: tempDir)
+                    uri: AttoVisualWorkspaceEditPreview.fileURI(document.fileName, tempDir: tempDir),
+                    version: document.version
                 ),
                 edits: document.edits.map(\.payload)
             ))
@@ -1957,6 +1958,7 @@ private struct AttoVisualWorkspaceEditExpectedFileContent: Decodable, Equatable 
 
 private struct AttoVisualWorkspaceEditJSONDocument: Decodable, Equatable {
     let fileName: String
+    let version: Int?
     let edits: [AttoVisualWorkspaceEditTextEdit]
 }
 
@@ -2025,6 +2027,7 @@ private struct AttoVisualWorkspaceEditTextDocumentChangePayload: Encodable {
 
 private struct AttoVisualWorkspaceEditTextDocumentPayload: Encodable {
     let uri: String
+    let version: Int?
 }
 
 private struct AttoVisualWorkspaceEditTextEditPayload: Encodable {
