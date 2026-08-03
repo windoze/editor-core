@@ -4,9 +4,34 @@ import Foundation
 
 @MainActor
 final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSTextFieldDelegate {
-    enum Scope: Int {
+    enum Scope: Int, Equatable {
         case openedFiles = 0
         case workspace = 1
+
+        init(configurationValue value: String?) {
+            let normalized = (value ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+                .replacingOccurrences(of: "-", with: "_")
+
+            switch normalized {
+            case "folder", "folders", "workspace", "workspace_files":
+                self = .workspace
+            case "open", "opened", "open_files", "opened_files", "tabs", "open_tabs":
+                self = .openedFiles
+            default:
+                self = .openedFiles
+            }
+        }
+
+        var configurationValue: String {
+            switch self {
+            case .openedFiles:
+                return "opened_files"
+            case .workspace:
+                return "workspace"
+            }
+        }
     }
 
     struct SearchResult: Hashable, Sendable {
@@ -26,6 +51,7 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
     private var results: [SearchResult] = []
     private var lastSearchToken: UInt64 = 0
     private var searchDebounceWorkItem: DispatchWorkItem?
+    private var defaultScope: Scope = .openedFiles
 
     private let headerLabel = NSTextField(labelWithString: "FIND IN FILES")
     private let queryField = NSSearchField(frame: .zero)
@@ -69,7 +95,7 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
 
         scopeControl.controlSize = .small
         scopeControl.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesScopeControl)
-        scopeControl.selectedSegment = Scope.openedFiles.rawValue
+        scopeControl.selectedSegment = defaultScope.rawValue
         scopeControl.target = self
         scopeControl.action = #selector(scopeChanged(_:))
         scopeControl.translatesAutoresizingMaskIntoConstraints = false
@@ -137,8 +163,27 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         clearResults()
     }
 
+    func setDefaultScope(_ scope: Scope) {
+        defaultScope = scope
+        guard isViewLoaded else { return }
+
+        let previousScope = selectedScope()
+        scopeControl.selectedSegment = scope.rawValue
+        if previousScope != scope {
+            scheduleSearch()
+        }
+    }
+
+    func setDefaultScope(configurationValue value: String) {
+        setDefaultScope(Scope(configurationValue: value))
+    }
+
     func focusSearchField() {
         view.window?.makeFirstResponder(queryField)
+    }
+
+    func _selectedScopeForTesting() -> Scope {
+        selectedScope()
     }
 
     // MARK: - Actions
@@ -176,7 +221,7 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
             return
         }
 
-        let scope = Scope(rawValue: scopeControl.selectedSegment) ?? .openedFiles
+        let scope = selectedScope()
 
         if scope == .openedFiles, let openedFilesSearchProvider {
             let token = lastSearchToken &+ 1
@@ -218,6 +263,10 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
     private func clearResults() {
         results = []
         tableView.reloadData()
+    }
+
+    private func selectedScope() -> Scope {
+        Scope(rawValue: scopeControl.selectedSegment) ?? defaultScope
     }
 
     private func open(result: SearchResult) {

@@ -323,6 +323,7 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertEqual(snapshot.language.lspAutoRestart.serverMaxAttempts, ["swift-lsp": 7])
         XCTAssertEqual(snapshot.workspace.rootURL, workspaceRootURL.absoluteString)
         XCTAssertEqual(snapshot.workspace.rootPath, workspaceRootURL.path)
+        XCTAssertEqual(snapshot.workspace.findInFilesDefaultScope, "opened_files")
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -393,5 +394,6 @@ final class AttoPreferencesTests: XCTestCase {
             AttoCommentConfiguration.lineAndBlock("//", "/*", "*/")
         )
         XCTAssertEqual(snapshot.workspace.rootPath, "/tmp/project")
+        XCTAssertEqual(snapshot.workspace.findInFilesDefaultScope, "opened_files")
     }
 }

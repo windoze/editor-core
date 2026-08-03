@@ -128,12 +128,36 @@ struct AttoLspAutoRestartPolicySnapshot: Codable, Equatable {
 }
 
 struct AttoWorkspacePreferenceSnapshot: Codable, Equatable {
+    static let defaultFindInFilesScope = "opened_files"
+
     var rootURL: String?
     var rootPath: String?
+    var findInFilesDefaultScope: String
+
+    init(
+        rootURL: String? = nil,
+        rootPath: String? = nil,
+        findInFilesDefaultScope: String = Self.defaultFindInFilesScope
+    ) {
+        self.rootURL = rootURL
+        self.rootPath = rootPath
+        self.findInFilesDefaultScope = findInFilesDefaultScope
+    }
 
     private enum CodingKeys: String, CodingKey {
         case rootURL = "root_url"
         case rootPath = "root_path"
+        case findInFilesDefaultScope = "find_in_files_default_scope"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            rootURL: try container.decodeIfPresent(String.self, forKey: .rootURL),
+            rootPath: try container.decodeIfPresent(String.self, forKey: .rootPath),
+            findInFilesDefaultScope: try container.decodeIfPresent(String.self, forKey: .findInFilesDefaultScope)
+                ?? Self.defaultFindInFilesScope
+        )
     }
 }
 

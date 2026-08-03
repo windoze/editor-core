@@ -21,7 +21,10 @@ final class AttoConfigurationSettingsTests: XCTestCase {
                 ],
                 lspAutoRestart: AttoLspAutoRestartPolicySettings(maxAttempts: 4)
             ),
-            workspace: AttoWorkspacePreferenceSettings(rootPath: "/user/root")
+            workspace: AttoWorkspacePreferenceSettings(
+                rootPath: "/user/root",
+                findInFilesDefaultScope: "opened_files"
+            )
         )
 
         let workspace = AttoConfigurationSettings(
@@ -40,7 +43,10 @@ final class AttoConfigurationSettingsTests: XCTestCase {
                     serverMaxAttempts: ["workspace-lsp": 2]
                 )
             ),
-            workspace: AttoWorkspacePreferenceSettings(rootPath: "/workspace/root")
+            workspace: AttoWorkspacePreferenceSettings(
+                rootPath: "/workspace/root",
+                findInFilesDefaultScope: "workspace"
+            )
         )
 
         let runtime = AttoConfigurationSettings(
@@ -83,6 +89,7 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(snapshot.language.lspAutoRestart.serverMaxAttempts, ["workspace-lsp": 2])
         XCTAssertEqual(snapshot.language.lspAutoRestart.serverBaseDelaySeconds, ["runtime-lsp": 0.5])
         XCTAssertEqual(snapshot.workspace.rootPath, "/workspace/root")
+        XCTAssertEqual(snapshot.workspace.findInFilesDefaultScope, "workspace")
     }
 
     func testSettingsResolutionSkipsEmptyScopes() {
@@ -210,6 +217,10 @@ final class AttoConfigurationSettingsTests: XCTestCase {
             "find_regex": true,
             "future_editor_field": "ignored"
           },
+          "workspace": {
+            "find_in_files_default_scope": "workspace",
+            "future_workspace_field": "ignored"
+          },
           "language": {
             "comment_configurations": {
               "swift": {
@@ -234,6 +245,7 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(settings.editor?.findCaseSensitive, false)
         XCTAssertEqual(settings.editor?.findWholeWord, true)
         XCTAssertEqual(settings.editor?.findRegex, true)
+        XCTAssertEqual(settings.workspace?.findInFilesDefaultScope, "workspace")
         XCTAssertEqual(settings.language?.commentConfigurations?["swift"], .line("//"))
         XCTAssertEqual(settings.language?.lspAutoRestart?.maxAttempts, 5)
     }
@@ -269,7 +281,8 @@ final class AttoConfigurationSettingsTests: XCTestCase {
             ),
             workspace: AttoWorkspacePreferenceSnapshot(
                 rootURL: "file:///base/root/",
-                rootPath: "/base/root"
+                rootPath: "/base/root",
+                findInFilesDefaultScope: "opened_files"
             )
         )
     }

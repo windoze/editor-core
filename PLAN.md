@@ -1566,6 +1566,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): configure find-in-files scope`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把 Find in Files 默认搜索范围纳入 workspace configuration，并让侧栏搜索 UI 消费 resolved configuration。
+  - 提交边界：`AttoWorkspacePreferenceSnapshot` 与 `AttoWorkspacePreferenceSettings` 新增 `find_in_files_default_scope` 字段，缺省为 `opened_files` 且兼容旧 snapshot JSON；`AttoFindInFilesViewController` 支持配置默认 `Opened` / `Folder` scope；`AttoWindowContext` 在窗口创建和偏好重应用时同步该 scope。该提交不新增 Rust/FFI ABI，不实现 workspace include/exclude glob、不改变 Find in Files 搜索算法、不实现自定义 word boundary 规则、不接 Preferences UI、不实现 runtime override UI/持久化，也不完成 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

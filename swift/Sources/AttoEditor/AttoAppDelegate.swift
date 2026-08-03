@@ -2666,7 +2666,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
         for ctx in windows {
             let configurationSnapshot = configurationSnapshot(forWorkspaceRootURL: ctx.workspaceRootURL)
-            ctx.editorAreaController.updateConfigurationSnapshot(configurationSnapshot)
+            ctx.updateConfigurationSnapshot(configurationSnapshot)
             let resolved = AttoThemeManager.resolveSkiaTheme(
                 themeName: configurationSnapshot.rendering.themeName,
                 registry: registry

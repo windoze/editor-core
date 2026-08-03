@@ -1333,7 +1333,9 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func setWorkspaceRootURL(_ url: URL) {
         workspaceRootURL = url
-        configurationSnapshot.workspace = preferences.effectiveConfigurationSnapshot(workspaceRootURL: url).workspace
+        let workspaceRootSnapshot = preferences.effectiveConfigurationSnapshot(workspaceRootURL: url).workspace
+        configurationSnapshot.workspace.rootURL = workspaceRootSnapshot.rootURL
+        configurationSnapshot.workspace.rootPath = workspaceRootSnapshot.rootPath
         syncCoreWorkspaceRoots()
         syncProjectLspServerConfigsToCore()
         startProjectLspServersForOpenTabs()

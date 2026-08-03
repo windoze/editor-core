@@ -36,6 +36,7 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         let fileExplorer = AttoFileExplorerViewController(rootURL: workspaceRootURL)
         let openedFiles = AttoOpenedFilesViewController(rootURL: workspaceRootURL)
         let findInFiles = AttoFindInFilesViewController(rootURL: workspaceRootURL)
+        findInFiles.setDefaultScope(configurationValue: configurationSnapshot.workspace.findInFilesDefaultScope)
         let sidebar = AttoSidebarViewController(
             fileExplorerController: fileExplorer,
             openedFilesController: openedFiles,
@@ -141,6 +142,11 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         }
 
         setWorkspaceRootURL(workspaceRootURL)
+    }
+
+    func updateConfigurationSnapshot(_ snapshot: AttoConfigurationSnapshot) {
+        editorAreaController.updateConfigurationSnapshot(snapshot)
+        findInFilesController.setDefaultScope(configurationValue: snapshot.workspace.findInFilesDefaultScope)
     }
 
     func show(center: Bool = true) {

@@ -180,15 +180,22 @@ struct AttoLspAutoRestartPolicySettings: Codable, Equatable {
 struct AttoWorkspacePreferenceSettings: Codable, Equatable {
     var rootURL: String?
     var rootPath: String?
+    var findInFilesDefaultScope: String?
 
-    init(rootURL: String? = nil, rootPath: String? = nil) {
+    init(
+        rootURL: String? = nil,
+        rootPath: String? = nil,
+        findInFilesDefaultScope: String? = nil
+    ) {
         self.rootURL = rootURL
         self.rootPath = rootPath
+        self.findInFilesDefaultScope = findInFilesDefaultScope
     }
 
     private enum CodingKeys: String, CodingKey {
         case rootURL = "root_url"
         case rootPath = "root_path"
+        case findInFilesDefaultScope = "find_in_files_default_scope"
     }
 }
 
@@ -427,6 +434,9 @@ extension AttoConfigurationSnapshot {
         }
         if let rootPath = settings.rootPath {
             workspace.rootPath = rootPath
+        }
+        if let findInFilesDefaultScope = settings.findInFilesDefaultScope {
+            workspace.findInFilesDefaultScope = findInFilesDefaultScope
         }
     }
 }
