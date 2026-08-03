@@ -1,6 +1,6 @@
 # PLAN: 完整实现 SWIFT-GAPS.md
 
-## TODO
+## TODO（尚未完成）
 
 | 状态 | 任务 | 阶段 |
 | --- | --- | --- |
@@ -10,7 +10,7 @@
 | 待办 | 完成跨 tab/project 的 result panels、统一 dock/workbench 容器和刷新/过期策略。 | 阶段 7 |
 | 待办 | 完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。 | 阶段 8 |
 | 待办 | 完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段语义迁移。 | 阶段 9 |
-| 待办 | 完成剩余 JSON result envelope 覆盖、错误模型统一和第三方 host capability negotiation。 | 阶段 10 |
+| 进行中 | 完成剩余 JSON result envelope 覆盖、错误模型统一和第三方 host capability negotiation。 | 阶段 10 |
 | 待办 | 产品化 Tree-sitter + LSP 主路线的高亮/outline/folding 合并、语言模式控制和降级体验。 | 阶段 11 |
 | 待办 | 完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。 | 阶段 12 |
 | 待办 | 合入首批审核过的 PNG baselines，并把 strict visual comparison 升级为默认 CI 门禁。 | 阶段 13 |
@@ -2068,6 +2068,20 @@
     - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
     - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
     - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(ffi): envelope editor view-point payload hit-tests`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 per-`EditorUi` document link、inlay hint 和 code lens view-point hit-test JSON result 面纳入统一结构化 envelope。
+  - 提交边界：新增 `editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(EditorUi*, kind_utf8, x_px, y_px)` 和 `ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE` feature bit；`kind_utf8` 覆盖 `document_link` / `inlay_hint` / `code_lens`；legacy `editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(...)`、`editor_core_ui_ffi_editor_ui_get_inlay_hint_json_at_view_point(...)`、`editor_core_ui_ffi_editor_ui_get_code_lens_json_at_view_point(...)` 保持 status/out-pointer 语义；Swift `EditorUI` 新增 raw/typed envelope accessor 与 `EcuViewPointPayloadEnvelope`，runtime compatibility 和 Atto optional capability report 同步新增该能力。该提交不切换 App Cmd-click / hover 主路径，不替换现有 typed parser，不改变 LSP payload JSON schema，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi ffi_view_point_payload_envelope_json_reports_success_empty_and_errors`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo build -p editor-core-ffi -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testViewPointPayloadEnvelope'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests'`
+    - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests'`
     - `cargo fmt --check`
     - `git diff --check`
 - 中间提交：`feat(ffi): envelope headless minimap snapshots`

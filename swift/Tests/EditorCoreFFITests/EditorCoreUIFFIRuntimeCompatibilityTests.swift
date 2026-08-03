@@ -45,6 +45,7 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .jsonCommandEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .editorUIDerivedSnapshotEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .editorUIMinimapEnvelope })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .editorUIViewPointPayloadEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .lspStatusEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .lspResultEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .eventStreamEnvelope })
@@ -85,7 +86,7 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
     }
 
     func testUnknownFutureFeatureBitsArePreservedAndIgnored() throws {
-        let future = EditorCoreUIFFIFeatures(rawValue: 1 << 40)
+        let future = EditorCoreUIFFIFeatures(rawValue: 1 << 62)
         let features = allKnownFeatures().union(future)
         let runtimeInfo = EditorCoreUIFFIRuntimeInfo(
             abiVersion: EditorCoreUIFFIRuntimeCompatibility.minimumABIVersion,

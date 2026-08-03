@@ -166,6 +166,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
             & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -258,6 +262,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "multi_document_workspace_edit_transaction_redo"
             && feature["bit"] == 40
             && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "editor_ui_view_point_payload_envelope"
+            && feature["bit"] == 41
+            && feature["flag"] == ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -4872,6 +4881,188 @@ fn ffi_code_lens_hit_test_returns_payload_json() {
     );
     assert_eq!(has_lens, 0);
     assert!(json_ptr.is_null());
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
+fn ffi_view_point_payload_envelope_json_reports_success_empty_and_errors() {
+    let initial = CString::new("ab cd\nline2\n").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+    assert_eq!(
+        editor_core_ui_ffi_editor_ui_set_render_metrics(ui, 12.0, 20.0, 10.0, 0.0, 0.0),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_editor_ui_set_viewport_px(ui, 400, 100, 1.0),
+        ECU_OK
+    );
+
+    let code_lens_result = CString::new(
+        r#"[
+          {
+            "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+            "command": { "title": "Run tests", "command": "test.run", "arguments": [1] }
+          }
+        ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_json(ui, code_lens_result.as_ptr()),
+        ECU_OK
+    );
+
+    let inlay_result = CString::new(
+        r#"[
+          {
+            "position": { "line": 0, "character": 1 },
+            "label": ": Int",
+            "data": { "id": 42 }
+          }
+        ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_json(ui, inlay_result.as_ptr()),
+        ECU_OK
+    );
+
+    let links_result = CString::new(
+        r#"[
+          {
+            "range": { "start": { "line": 0, "character": 3 }, "end": { "line": 0, "character": 4 } },
+            "target": "https://example.com"
+          }
+        ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_editor_ui_lsp_apply_document_links_json(ui, links_result.as_ptr()),
+        ECU_OK
+    );
+
+    let code_lens_kind = CString::new("code_lens").unwrap();
+    let code_lens_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(
+            ui,
+            code_lens_kind.as_ptr(),
+            5.0,
+            10.0,
+        ),
+    );
+    let code_lens: serde_json::Value = serde_json::from_str(&code_lens_json).unwrap();
+    assert_eq!(code_lens["ok"], true);
+    assert_eq!(code_lens["kind"], "code_lens");
+    assert_eq!(code_lens["status"], "success");
+    assert_eq!(code_lens["x_px"], 5.0);
+    assert_eq!(code_lens["y_px"], 10.0);
+    assert_eq!(code_lens["value"]["command"]["title"], "Run tests");
+    assert_eq!(code_lens["value"]["command"]["command"], "test.run");
+    assert!(code_lens["error"].is_null());
+    assert_eq!(code_lens["version"], ECU_ABI_VERSION);
+
+    let empty_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(
+            ui,
+            code_lens_kind.as_ptr(),
+            300.0,
+            10.0,
+        ),
+    );
+    let empty: serde_json::Value = serde_json::from_str(&empty_json).unwrap();
+    assert_eq!(empty["ok"], true);
+    assert_eq!(empty["kind"], "code_lens");
+    assert_eq!(empty["status"], "empty");
+    assert_eq!(empty["value"], serde_json::Value::Null);
+    assert!(empty["error"].is_null());
+    assert_eq!(empty["version"], ECU_ABI_VERSION);
+
+    let mut x: c_float = 0.0;
+    let mut y: c_float = 0.0;
+    let mut lh: c_float = 0.0;
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_editor_ui_char_offset_to_view_point(ui, 1, &mut x, &mut y, &mut lh)
+        },
+        ECU_OK
+    );
+    assert!(lh > 0.0);
+    let inlay_kind = CString::new("inlay_hint").unwrap();
+    let inlay_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(
+            ui,
+            inlay_kind.as_ptr(),
+            x + 1.0,
+            y + 1.0,
+        ),
+    );
+    let inlay: serde_json::Value = serde_json::from_str(&inlay_json).unwrap();
+    assert_eq!(inlay["ok"], true);
+    assert_eq!(inlay["kind"], "inlay_hint");
+    assert_eq!(inlay["status"], "success");
+    assert_eq!(inlay["value"]["label"], ": Int");
+    assert_eq!(inlay["value"]["data"]["id"], 42);
+
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_editor_ui_char_offset_to_view_point(ui, 3, &mut x, &mut y, &mut lh)
+        },
+        ECU_OK
+    );
+    assert!(lh > 0.0);
+    let link_kind = CString::new("document_link").unwrap();
+    let link_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(
+            ui,
+            link_kind.as_ptr(),
+            x + 1.0,
+            y + 1.0,
+        ),
+    );
+    let link: serde_json::Value = serde_json::from_str(&link_json).unwrap();
+    assert_eq!(link["ok"], true);
+    assert_eq!(link["kind"], "document_link");
+    assert_eq!(link["status"], "success");
+    assert_eq!(link["value"]["target"], "https://example.com");
+
+    let unknown_kind = CString::new("hover").unwrap();
+    let unknown_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(
+            ui,
+            unknown_kind.as_ptr(),
+            1.0,
+            2.0,
+        ),
+    );
+    let unknown: serde_json::Value = serde_json::from_str(&unknown_json).unwrap();
+    assert_eq!(unknown["ok"], false);
+    assert_eq!(unknown["kind"], "hover");
+    assert_eq!(unknown["status"], "error");
+    assert_eq!(unknown["value"], serde_json::Value::Null);
+    assert_eq!(unknown["error"]["code"], "invalid_argument");
+    assert_eq!(unknown["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert_eq!(
+        unknown["error"]["message"],
+        "unknown view point payload kind \"hover\""
+    );
+    assert_eq!(unknown["version"], ECU_ABI_VERSION);
+
+    let null_ui_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(
+            ptr::null_mut(),
+            code_lens_kind.as_ptr(),
+            3.0,
+            4.0,
+        ),
+    );
+    let null_ui: serde_json::Value = serde_json::from_str(&null_ui_json).unwrap();
+    assert_eq!(null_ui["ok"], false);
+    assert_eq!(null_ui["kind"], "code_lens");
+    assert_eq!(null_ui["status"], "error");
+    assert_eq!(null_ui["error"]["code"], "invalid_argument");
+    assert_eq!(null_ui["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert_eq!(null_ui["error"]["message"], "ui is null");
 
     unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
 }

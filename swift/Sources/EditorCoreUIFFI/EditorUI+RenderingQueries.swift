@@ -92,6 +92,114 @@ public struct EcuMinimapEnvelopeError: Decodable, Equatable, Sendable {
     }
 }
 
+public enum EcuViewPointPayloadKind: String, Hashable, Sendable {
+    case documentLink = "document_link"
+    case inlayHint = "inlay_hint"
+    case codeLens = "code_lens"
+}
+
+public enum EcuViewPointPayloadEnvelopeStatus: Hashable, Sendable {
+    case success
+    case empty
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "success":
+            self = .success
+        case "empty":
+            self = .empty
+        case "error":
+            self = .error
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .success:
+            return "success"
+        case .empty:
+            return "empty"
+        case .error:
+            return "error"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public struct EcuViewPointPayloadEnvelope: Decodable, Equatable, Sendable {
+    public let ok: Bool
+    public let kind: String?
+    public let status: String
+    public let xPx: Float
+    public let yPx: Float
+    public let value: EcuJSONValue?
+    public let error: EcuViewPointPayloadEnvelopeError?
+    public let version: UInt32
+
+    public var statusKind: EcuViewPointPayloadEnvelopeStatus {
+        EcuViewPointPayloadEnvelopeStatus(rawValue: status)
+    }
+
+    public var kindValue: EcuViewPointPayloadKind? {
+        kind.flatMap(EcuViewPointPayloadKind.init(rawValue:))
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case kind
+        case status
+        case xPx = "x_px"
+        case yPx = "y_px"
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        xPx = try container.decodeIfPresent(Float.self, forKey: .xPx) ?? 0
+        yPx = try container.decodeIfPresent(Float.self, forKey: .yPx) ?? 0
+        if container.contains(.value) {
+            value = try container.decode(EcuJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcuViewPointPayloadEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcuViewPointPayloadEnvelopeError: Decodable, Equatable, Sendable {
+    public let code: String
+    public let status: EcuStatus?
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcuStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 extension EditorUI {
     public func renderRGBA(into buffer: inout [UInt8]) throws -> Int {
         var required: UInt32 = 0
@@ -318,6 +426,36 @@ extension EditorUI {
         let status = editor_core_ui_ffi_editor_ui_view_point_to_char_offset(handle, xPx, yPx, &offset)
         try library.ensureStatus(status, context: "editor_ui_view_point_to_char_offset")
         return offset
+    }
+
+    public func viewPointPayloadEnvelopeJSON(kindRawValue: String, xPx: Float, yPx: Float) throws -> String {
+        try kindRawValue.withCString { kindPtr in
+            guard let ptr = editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(handle, kindPtr, xPx, yPx) else {
+                throw EditorCoreUIFFIError.ffiStatus(
+                    code: .internal,
+                    context: "editor_ui_view_point_payload_envelope_json",
+                    message: library.lastErrorMessageString()
+                )
+            }
+            defer { editor_core_ui_ffi_string_free(ptr) }
+            return String(cString: ptr)
+        }
+    }
+
+    public func viewPointPayloadEnvelopeJSON(kind: EcuViewPointPayloadKind, xPx: Float, yPx: Float) throws -> String {
+        try viewPointPayloadEnvelopeJSON(kindRawValue: kind.rawValue, xPx: xPx, yPx: yPx)
+    }
+
+    public func viewPointPayloadEnvelope(kindRawValue: String, xPx: Float, yPx: Float) throws -> EcuViewPointPayloadEnvelope {
+        try Self.decodeSnapshot(
+            EcuViewPointPayloadEnvelope.self,
+            from: viewPointPayloadEnvelopeJSON(kindRawValue: kindRawValue, xPx: xPx, yPx: yPx),
+            context: "editor_ui_view_point_payload_envelope_decode"
+        )
+    }
+
+    public func viewPointPayloadEnvelope(kind: EcuViewPointPayloadKind, xPx: Float, yPx: Float) throws -> EcuViewPointPayloadEnvelope {
+        try viewPointPayloadEnvelope(kindRawValue: kind.rawValue, xPx: xPx, yPx: yPx)
     }
 
     /// Hit-test a view point and return the raw LSP `DocumentLink` JSON payload (if present).

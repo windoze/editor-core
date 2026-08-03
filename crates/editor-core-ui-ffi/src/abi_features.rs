@@ -86,6 +86,8 @@ pub const ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE: u64 = 1 << 38;
 pub const ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE: u64 = 1 << 39;
 /// Feature bit: multi-document WorkspaceEdit transaction redo is available.
 pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO: u64 = 1 << 40;
+/// Feature bit: per-EditorUi view-point payload hit-tests can return structured result envelopes.
+pub const ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE: u64 = 1 << 41;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -127,7 +129,8 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_LSP_STATUS_ENVELOPE
     | ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE
     | ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE
-    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO;
+    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO
+    | ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -382,6 +385,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO,
         name: "multi_document_workspace_edit_transaction_redo",
         description: "Multi-document WorkspaceEdit transaction redo.",
+    },
+    FeatureDescriptor {
+        bit: 41,
+        flag: ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE,
+        name: "editor_ui_view_point_payload_envelope",
+        description: "Per-EditorUi view-point payload hit-tests can return structured result envelopes.",
     },
 ];
 

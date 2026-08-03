@@ -113,6 +113,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let lspWorkspaceEditApplicationEnvelope = Self(rawValue: 1 << 38)
     public static let editorUIMinimapEnvelope = Self(rawValue: 1 << 39)
     public static let multiDocumentWorkspaceEditTransactionRedo = Self(rawValue: 1 << 40)
+    public static let editorUIViewPointPayloadEnvelope = Self(rawValue: 1 << 41)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

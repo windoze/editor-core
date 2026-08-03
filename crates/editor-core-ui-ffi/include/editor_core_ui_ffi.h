@@ -177,6 +177,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE (1ull << 38)
 #define ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE (1ull << 39)
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO (1ull << 40)
+#define ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE (1ull << 41)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -1113,6 +1114,29 @@ int32_t editor_core_ui_ffi_editor_ui_view_point_to_char_offset(EditorUi* ui,
                                                                float x_px,
                                                                float y_px,
                                                                uint32_t* out_char_offset);
+
+// Hit-test a view point and return a stable envelope for an LSP auxiliary payload.
+//
+// `kind_utf8` must be one of:
+// - `document_link`
+// - `inlay_hint`
+// - `code_lens`
+//
+// Success with a hit:
+// {"ok":true,"kind":...,"status":"success","x_px":...,"y_px":...,"value":<payload>,"error":null,"version":<abi>}
+// Success with no hit:
+// {"ok":true,"kind":...,"status":"empty","x_px":...,"y_px":...,"value":null,"error":null,"version":<abi>}
+// Failure:
+// {"ok":false,"kind":...,"status":"error","x_px":...,"y_px":...,"value":null,"error":{"code":...,"status":...,"message":...},"version":<abi>}
+//
+// The returned string is owned by the caller and must be freed with
+// `editor_core_ui_ffi_string_free`.
+char* editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(
+    EditorUi* ui,
+    const char* kind_utf8,
+    float x_px,
+    float y_px
+);
 
 // Hit-test a view point and return an LSP `DocumentLink` JSON payload (if present).
 //

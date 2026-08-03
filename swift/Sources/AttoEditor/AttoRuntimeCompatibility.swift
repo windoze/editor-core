@@ -153,6 +153,11 @@ struct AttoRuntimeCompatibility {
             reason: "Minimap snapshots can use structured envelopes; Swift falls back to legacy raw minimap JSON when unavailable."
         ),
         RuntimeFeature(
+            feature: .editorUIViewPointPayloadEnvelope,
+            name: "editor UI view-point payload envelope",
+            reason: "Document link, inlay hint, and code lens hit-tests can use structured envelopes; Swift falls back to legacy optional hit-test wrappers when unavailable."
+        ),
+        RuntimeFeature(
             feature: .editorUIStateEvents,
             name: "Editor UI state events",
             reason: "Host UI can drain per-editor state changes through one cursor; Swift falls back to family-specific event streams when unavailable."

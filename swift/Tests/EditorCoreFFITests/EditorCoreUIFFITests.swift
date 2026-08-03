@@ -116,6 +116,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.lspStatusEnvelope))
         XCTAssertTrue(info.supports(.lspWorkspaceEditApplicationEnvelope))
         XCTAssertTrue(info.supports(.editorUIMinimapEnvelope))
+        XCTAssertTrue(info.supports(.editorUIViewPointPayloadEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -208,6 +209,12 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && (feature["bit"] as? NSNumber)?.uint8Value == 40
                 && (feature["flag"] as? NSNumber)?.uint64Value
                     == EditorCoreUIFFIFeatures.multiDocumentWorkspaceEditTransactionRedo.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "editor_ui_view_point_payload_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 41
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.editorUIViewPointPayloadEnvelope.rawValue
         })
     }
 
@@ -4331,6 +4338,161 @@ final class EditorCoreUIFFITests: XCTestCase {
 
         XCTAssertNil(try ui.codeLensJSONAtViewPoint(xPx: 200, yPx: 10))
         XCTAssertNil(try ui.codeLensJSONAtViewPoint(xPx: 5, yPx: 30))
+    }
+
+    func testViewPointPayloadEnvelopeReportsSuccessEmptyAndErrors() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "ab cd\nline2\n", viewportWidthCells: 80)
+
+        try ui.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try ui.setViewportPx(widthPx: 400, heightPx: 100, scale: 1)
+
+        try ui.lspApplyCodeLensJSON(
+            """
+            [
+              {
+                "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+                "command": { "title": "Run tests", "command": "test.run", "arguments": [1] }
+              }
+            ]
+            """
+        )
+        try ui.lspApplyInlayHintsJSON(
+            """
+            [
+              {
+                "position": { "line": 0, "character": 1 },
+                "label": ": Int",
+                "data": { "id": 42 }
+              }
+            ]
+            """
+        )
+        try ui.lspApplyDocumentLinksJSON(
+            """
+            [
+              {
+                "range": { "start": { "line": 0, "character": 3 }, "end": { "line": 0, "character": 4 } },
+                "target": "https://example.com"
+              }
+            ]
+            """
+        )
+
+        let codeLens = try ui.viewPointPayloadEnvelope(kind: .codeLens, xPx: 5, yPx: 10)
+        XCTAssertTrue(codeLens.ok)
+        XCTAssertEqual(codeLens.kindValue, EcuViewPointPayloadKind.codeLens)
+        XCTAssertEqual(codeLens.statusKind, .success)
+        XCTAssertEqual(codeLens.version, lib.abiVersion)
+        XCTAssertNil(codeLens.error)
+        guard case .object(let codeLensValue)? = codeLens.value,
+              case .object(let command)? = codeLensValue["command"]
+        else {
+            XCTFail("expected code lens payload object")
+            return
+        }
+        XCTAssertEqual(command["title"], .string("Run tests"))
+        XCTAssertEqual(command["command"], .string("test.run"))
+
+        let empty = try ui.viewPointPayloadEnvelope(kind: .codeLens, xPx: 300, yPx: 10)
+        XCTAssertTrue(empty.ok)
+        XCTAssertEqual(empty.kindValue, EcuViewPointPayloadKind.codeLens)
+        XCTAssertEqual(empty.statusKind, .empty)
+        XCTAssertEqual(empty.value, .null)
+        XCTAssertNil(empty.error)
+
+        let inlayPoint = try ui.charOffsetToViewPoint(offset: 1)
+        let inlay = try ui.viewPointPayloadEnvelope(kind: .inlayHint, xPx: inlayPoint.xPx + 1, yPx: inlayPoint.yPx + 1)
+        XCTAssertTrue(inlay.ok)
+        XCTAssertEqual(inlay.kindValue, EcuViewPointPayloadKind.inlayHint)
+        XCTAssertEqual(inlay.statusKind, .success)
+        guard case .object(let inlayValue)? = inlay.value,
+              case .object(let inlayData)? = inlayValue["data"]
+        else {
+            XCTFail("expected inlay hint payload object")
+            return
+        }
+        XCTAssertEqual(inlayValue["label"], .string(": Int"))
+        XCTAssertEqual(inlayData["id"], .number(42))
+
+        let linkPoint = try ui.charOffsetToViewPoint(offset: 3)
+        let link = try ui.viewPointPayloadEnvelope(kind: .documentLink, xPx: linkPoint.xPx + 1, yPx: linkPoint.yPx + 1)
+        XCTAssertTrue(link.ok)
+        XCTAssertEqual(link.kindValue, EcuViewPointPayloadKind.documentLink)
+        XCTAssertEqual(link.statusKind, .success)
+        guard case .object(let linkValue)? = link.value else {
+            XCTFail("expected document link payload object")
+            return
+        }
+        XCTAssertEqual(linkValue["target"], .string("https://example.com"))
+
+        let invalid = try ui.viewPointPayloadEnvelope(kindRawValue: "hover", xPx: 1, yPx: 2)
+        XCTAssertFalse(invalid.ok)
+        XCTAssertEqual(invalid.kind, "hover")
+        XCTAssertNil(invalid.kindValue)
+        XCTAssertEqual(invalid.statusKind, .error)
+        XCTAssertEqual(invalid.value, .null)
+        XCTAssertEqual(invalid.error?.code, "invalid_argument")
+        XCTAssertEqual(invalid.error?.status, .invalidArgument)
+        XCTAssertEqual(invalid.error?.message, #"unknown view point payload kind "hover""#)
+    }
+
+    func testViewPointPayloadEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "kind": "future_payload",
+          "status": "future_status",
+          "x_px": 1.5,
+          "y_px": 2.5,
+          "value": { "future": true },
+          "error": null,
+          "version": 17,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONDecoder().decode(EcuViewPointPayloadEnvelope.self, from: Data(successJSON.utf8))
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.kind, "future_payload")
+        XCTAssertNil(success.kindValue)
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertEqual(success.xPx, 1.5, accuracy: 0.001)
+        XCTAssertEqual(success.yPx, 2.5, accuracy: 0.001)
+        XCTAssertEqual(success.version, 17)
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future value object")
+            return
+        }
+        XCTAssertEqual(value["future"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "kind": null,
+          "status": "error",
+          "x_px": 3.5,
+          "y_px": 4.5,
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 135790,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 18
+        }
+        """
+        let failure = try JSONDecoder().decode(EcuViewPointPayloadEnvelope.self, from: Data(failureJSON.utf8))
+        XCTAssertFalse(failure.ok)
+        XCTAssertNil(failure.kind)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.xPx, 3.5, accuracy: 0.001)
+        XCTAssertEqual(failure.yPx, 4.5, accuracy: 0.001)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertNil(failure.error?.status)
+        XCTAssertEqual(failure.error?.message, "future failure")
     }
 
     func testLspDocumentLinksAffectRendering() throws {

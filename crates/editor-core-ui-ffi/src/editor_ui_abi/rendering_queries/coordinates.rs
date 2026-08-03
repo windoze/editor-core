@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::{Value, json};
 
 /// Map a character offset to logical `(line, column)` (both char-indexed).
 ///
@@ -102,6 +103,129 @@ pub unsafe extern "C" fn editor_core_ui_ffi_editor_ui_view_point_to_char_offset(
         }
         Err(err) => status_from_error(err),
     }
+}
+
+/// Hit-test a view point and return a structured envelope for an LSP auxiliary payload.
+///
+/// `kind_utf8` must be one of:
+/// - `document_link`
+/// - `inlay_hint`
+/// - `code_lens`
+///
+/// The returned string is owned by the caller and must be freed with
+/// `editor_core_ui_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(
+    ui: *mut EditorUi,
+    kind_utf8: *const c_char,
+    x_px: c_float,
+    y_px: c_float,
+) -> *mut c_char {
+    let mut kind_name: Option<String> = None;
+    let envelope = match ffi_catch(|| {
+        let kind = require_str(kind_utf8, "kind_utf8")?.to_string();
+        kind_name = Some(kind.clone());
+        let ui = require_mut(ui, "ui")?;
+
+        match view_point_payload_value(ui, &kind, x_px, y_px)? {
+            Some(value) => Ok(view_point_payload_envelope_success(
+                &kind, x_px, y_px, value,
+            )),
+            None => Ok(view_point_payload_envelope_empty(&kind, x_px, y_px)),
+        }
+    }) {
+        Ok(envelope) => {
+            clear_last_error();
+            envelope
+        }
+        Err(err) => {
+            let (status, message) = classify_error(err);
+            set_last_error(message.clone());
+            view_point_payload_envelope_error(kind_name.as_deref(), x_px, y_px, status, message)
+        }
+    };
+    make_c_string_ptr(envelope)
+}
+
+fn view_point_payload_value(
+    ui: &mut EditorUi,
+    kind: &str,
+    x_px: c_float,
+    y_px: c_float,
+) -> Result<Option<Value>, String> {
+    let result_json = match kind {
+        "document_link" => ui.document_link_json_at_view_point_px(x_px, y_px),
+        "inlay_hint" => ui.inlay_hint_json_at_view_point_px(x_px, y_px),
+        "code_lens" => ui.code_lens_json_at_view_point_px(x_px, y_px),
+        _ => {
+            return Err(invalid_argument(format!(
+                "unknown view point payload kind \"{kind}\""
+            )));
+        }
+    };
+    result_json
+        .map(|json| {
+            serde_json::from_str::<Value>(&json)
+                .map_err(|err| format!("{kind} view-point payload returned invalid JSON: {err}"))
+        })
+        .transpose()
+}
+
+fn view_point_payload_envelope_success(
+    kind: &str,
+    x_px: c_float,
+    y_px: c_float,
+    value: Value,
+) -> String {
+    json!({
+        "ok": true,
+        "kind": kind,
+        "status": "success",
+        "x_px": x_px,
+        "y_px": y_px,
+        "value": value,
+        "error": Value::Null,
+        "version": ECU_ABI_VERSION,
+    })
+    .to_string()
+}
+
+fn view_point_payload_envelope_empty(kind: &str, x_px: c_float, y_px: c_float) -> String {
+    json!({
+        "ok": true,
+        "kind": kind,
+        "status": "empty",
+        "x_px": x_px,
+        "y_px": y_px,
+        "value": Value::Null,
+        "error": Value::Null,
+        "version": ECU_ABI_VERSION,
+    })
+    .to_string()
+}
+
+fn view_point_payload_envelope_error(
+    kind: Option<&str>,
+    x_px: c_float,
+    y_px: c_float,
+    status: c_int,
+    message: String,
+) -> String {
+    json!({
+        "ok": false,
+        "kind": kind,
+        "status": "error",
+        "x_px": x_px,
+        "y_px": y_px,
+        "value": Value::Null,
+        "error": {
+            "code": status_code_name(status),
+            "status": status,
+            "message": message,
+        },
+        "version": ECU_ABI_VERSION,
+    })
+    .to_string()
 }
 
 /// Hit-test a view point and return the raw LSP `DocumentLink` JSON payload (if present).

@@ -889,3 +889,73 @@ Failure:
 The returned string is owned by the caller and must be freed with
 `editor_core_ui_ffi_string_free`. Availability is advertised by
 `ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE`.
+
+## EditorUi View-Point Payload Envelope
+
+The legacy view-point hit-test APIs for document links, inlay hints, and code lenses remain
+available as status-code/out-pointer functions. Hosts that want the stage-10 structured error model
+can call the generic envelope entry point:
+
+```c
+char* editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(
+    EditorUi* ui,
+    const char* kind_utf8,
+    float x_px,
+    float y_px
+);
+```
+
+`kind_utf8` must be one of `document_link`, `inlay_hint`, or `code_lens`.
+
+Success with a hit:
+
+```json
+{
+  "ok": true,
+  "kind": "document_link",
+  "status": "success",
+  "x_px": 10.0,
+  "y_px": 20.0,
+  "value": { "target": "https://example.com" },
+  "error": null,
+  "version": 1
+}
+```
+
+Success without a hit:
+
+```json
+{
+  "ok": true,
+  "kind": "document_link",
+  "status": "empty",
+  "x_px": 10.0,
+  "y_px": 20.0,
+  "value": null,
+  "error": null,
+  "version": 1
+}
+```
+
+Failure:
+
+```json
+{
+  "ok": false,
+  "kind": "unknown",
+  "status": "error",
+  "x_px": 10.0,
+  "y_px": 20.0,
+  "value": null,
+  "error": {
+    "code": "invalid_argument",
+    "status": 1,
+    "message": "unknown view point payload kind \"unknown\""
+  },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE`.
