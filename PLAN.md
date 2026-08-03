@@ -1966,6 +1966,20 @@
     - `swift test --package-path swift --filter 'AttoEditorCommandTests/testSaveDoesNotFormatWhenFormatOnSaveDisabled'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(lang): configure on-type formatting`
+  - 所属任务：阶段 11 的 Tree-sitter 与 LSP 主路线产品化增量；让 Swift/App 配置快照、settings 文件和 preferences 都能表达 format-on-type 开关，并把该开关下发到 core UI 的自动 LSP on-type formatting 触发路径。
+  - 提交边界：新增 `format_on_type_enabled` 配置字段、UserDefaults/env fallback、settings resolution、Rust `EditorUi` view-local 自动 on-type formatting 开关、C ABI setter、Swift typed setter 和 App 新建/重应用 editor chrome 下发；关闭后仍保留 LSP didChange 文本同步、显式 `lsp_format_on_type(...)` API、server capability 协商和手动格式化行为。该提交不实现完整 language settings 面板、不改变 formatter capability 协商、不新增 on-type result payload schema。
+  - 验证记录：
+    - `cargo test -p editor-core-ui ui_lsp_on_type_formatting_can_be_disabled`
+    - `cargo test -p editor-core-ui ui_clone_view_preserves_lsp_on_type_formatting_enabled`
+    - `cargo test -p editor-core-ui-ffi ffi_set_lsp_on_type_formatting_enabled_smoke`
+    - `swift test --package-path swift --filter 'AttoPreferencesTests/testFormatOnTypeDefaultEnvAndStoredPreference'`
+    - `swift test --package-path swift --filter 'AttoPreferencesTests/testEffectiveConfigurationSnapshotRoundTripsCurrentPreferences'`
+    - `swift test --package-path swift --filter 'AttoConfigurationSettingsTests/testSettingsResolutionAppliesUserWorkspaceRuntimePrecedence'`
+    - `swift test --package-path swift --filter 'AttoConfigurationSettingsTests/testSettingsDecodeIgnoresUnknownFutureFields'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests/testFormatOnTypePreferenceDisablesAutomaticOnTypeFormatting'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 12: Workspace search、project index、recent 与 session
 

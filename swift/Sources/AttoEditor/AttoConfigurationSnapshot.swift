@@ -103,12 +103,14 @@ struct AttoLanguagePreferenceSnapshot: Codable, Equatable {
     var commentConfigurations: [String: AttoCommentConfiguration]
     var semanticHighlightingEnabled: Bool
     var formatOnSaveEnabled: Bool
+    var formatOnTypeEnabled: Bool
     var lspAutoRestart: AttoLspAutoRestartPolicySnapshot
 
     private enum CodingKeys: String, CodingKey {
         case commentConfigurations = "comment_configurations"
         case semanticHighlightingEnabled = "semantic_highlighting_enabled"
         case formatOnSaveEnabled = "format_on_save_enabled"
+        case formatOnTypeEnabled = "format_on_type_enabled"
         case lspAutoRestart = "lsp_auto_restart"
     }
 
@@ -116,11 +118,13 @@ struct AttoLanguagePreferenceSnapshot: Codable, Equatable {
         commentConfigurations: [String: AttoCommentConfiguration],
         semanticHighlightingEnabled: Bool = true,
         formatOnSaveEnabled: Bool = false,
+        formatOnTypeEnabled: Bool = true,
         lspAutoRestart: AttoLspAutoRestartPolicySnapshot
     ) {
         self.commentConfigurations = commentConfigurations
         self.semanticHighlightingEnabled = semanticHighlightingEnabled
         self.formatOnSaveEnabled = formatOnSaveEnabled
+        self.formatOnTypeEnabled = formatOnTypeEnabled
         self.lspAutoRestart = lspAutoRestart
     }
 
@@ -139,6 +143,10 @@ struct AttoLanguagePreferenceSnapshot: Codable, Equatable {
                 Bool.self,
                 forKey: .formatOnSaveEnabled
             ) ?? false,
+            formatOnTypeEnabled: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .formatOnTypeEnabled
+            ) ?? true,
             lspAutoRestart: try container.decode(AttoLspAutoRestartPolicySnapshot.self, forKey: .lspAutoRestart)
         )
     }
@@ -453,6 +461,7 @@ extension AttoPreferences {
                 commentConfigurations: storedCommentConfigurations,
                 semanticHighlightingEnabled: effectiveSemanticHighlightingEnabled,
                 formatOnSaveEnabled: effectiveFormatOnSaveEnabled,
+                formatOnTypeEnabled: effectiveFormatOnTypeEnabled,
                 lspAutoRestart: AttoLspAutoRestartPolicySnapshot(
                     enabled: effectiveLspAutoRestartEnabled,
                     maxAttempts: effectiveLspAutoRestartMaxAttempts,

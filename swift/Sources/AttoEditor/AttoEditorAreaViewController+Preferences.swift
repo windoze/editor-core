@@ -15,6 +15,7 @@ extension AttoEditorAreaViewController {
         let wrapIndent = configuredWrapIndentForApplying()
         let fontSizePoints = configuredFontSizePointsForApplying()
         let semanticHighlightingEnabled = configuredSemanticHighlightingEnabledForApplying()
+        let formatOnTypeEnabled = configuredFormatOnTypeEnabledForApplying()
 
         for tab in tabs {
             for editCore in tab.panes {
@@ -35,6 +36,12 @@ extension AttoEditorAreaViewController {
                     try editCore.editor.setAutoPairsEnabled(autoPairsEnabled)
                 } catch {
                     NSLog("AttoEditor: setAutoPairsEnabled failed: %@", String(describing: error))
+                }
+
+                do {
+                    try editCore.editor.setLspOnTypeFormattingEnabled(formatOnTypeEnabled)
+                } catch {
+                    NSLog("AttoEditor: setLspOnTypeFormattingEnabled failed: %@", String(describing: error))
                 }
 
                 do {
@@ -96,6 +103,10 @@ extension AttoEditorAreaViewController {
 
     func configuredFormatOnSaveEnabledForApplying() -> Bool {
         configurationSnapshot.language.formatOnSaveEnabled
+    }
+
+    func configuredFormatOnTypeEnabledForApplying() -> Bool {
+        configurationSnapshot.language.formatOnTypeEnabled
     }
 
     func configuredSearchOptionsForApplying() -> EcuSearchOptions {

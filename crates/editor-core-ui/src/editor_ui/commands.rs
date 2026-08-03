@@ -69,6 +69,19 @@ impl EditorUi {
         Ok(())
     }
 
+    /// Enable/disable automatic LSP on-type formatting after trigger-character typing.
+    ///
+    /// This only controls the implicit typing path. Explicit `lsp_format_on_type(...)` requests
+    /// remain available to hosts that intentionally invoke them.
+    pub fn set_lsp_on_type_formatting_enabled(&mut self, enabled: bool) -> Result<(), UiError> {
+        self.lsp_on_type_formatting_enabled = enabled;
+        Ok(())
+    }
+
+    pub fn lsp_on_type_formatting_enabled(&self) -> bool {
+        self.lsp_on_type_formatting_enabled
+    }
+
     /// Jump the primary caret to the matching bracket (if any).
     pub fn move_to_matching_bracket(&mut self) -> Result<(), UiError> {
         self.exec_core(Command::Cursor(CursorCommand::MoveToMatchingBracket))?;

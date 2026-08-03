@@ -407,6 +407,7 @@ char* editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(Mult
 char* editor_core_ui_ffi_multi_document_workspace_outline_snapshot_envelope_json(MultiDocumentEditorUi* multi);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_hover(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_set_tab_width(EditorUi* ui, uint32_t width_cells);
+int32_t editor_core_ui_ffi_editor_ui_set_lsp_on_type_formatting_enabled(EditorUi* ui, uint8_t enabled);
 char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(EditorUi* ui, const char* workspace_edit_json_utf8, const char* document_uri_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_completion_item_resolve(EditorUi* ui, const char* item_json_utf8, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_completion_item_resolve_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);

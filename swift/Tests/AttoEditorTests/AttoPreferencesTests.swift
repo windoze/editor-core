@@ -168,6 +168,25 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertTrue(prefs.effectiveFormatOnSaveEnabled)
     }
 
+    func testFormatOnTypeDefaultEnvAndStoredPreference() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        var prefs = AttoPreferences(defaults: defaults, env: [:])
+        XCTAssertNil(prefs.storedFormatOnTypeEnabled)
+        XCTAssertTrue(prefs.effectiveFormatOnTypeEnabled)
+
+        prefs = AttoPreferences(defaults: defaults, env: ["ATTO_EDITOR_FORMAT_ON_TYPE": "0"])
+        XCTAssertFalse(prefs.effectiveFormatOnTypeEnabled)
+
+        prefs.setFormatOnTypeEnabled(true)
+        XCTAssertEqual(prefs.storedFormatOnTypeEnabled, true)
+        XCTAssertTrue(prefs.effectiveFormatOnTypeEnabled)
+
+        prefs.setFormatOnTypeEnabled(nil)
+        XCTAssertNil(prefs.storedFormatOnTypeEnabled)
+        XCTAssertFalse(prefs.effectiveFormatOnTypeEnabled)
+    }
+
     func testLspAutoRestartDefaultsEnvStoredAndClamping() {
         let (defaults, _) = makeIsolatedDefaults()
 
@@ -454,6 +473,7 @@ final class AttoPreferencesTests: XCTestCase {
         prefs.setCommentConfiguration(.lineAndBlock("//", "/*", "*/"), forLanguageKey: "  Swift  ")
         prefs.setSemanticHighlightingEnabled(false)
         prefs.setFormatOnSaveEnabled(true)
+        prefs.setFormatOnTypeEnabled(false)
         prefs.setLspAutoRestartDisabled(true, forServerName: " Swift-LSP ", serverCommand: nil)
         prefs.setLspAutoRestartMaxAttempts(7, forServerName: "Swift-LSP", serverCommand: nil)
 
@@ -477,6 +497,7 @@ final class AttoPreferencesTests: XCTestCase {
         )
         XCTAssertFalse(snapshot.language.semanticHighlightingEnabled)
         XCTAssertTrue(snapshot.language.formatOnSaveEnabled)
+        XCTAssertFalse(snapshot.language.formatOnTypeEnabled)
         XCTAssertEqual(snapshot.language.lspAutoRestart.enabled, true)
         XCTAssertEqual(snapshot.language.lspAutoRestart.maxAttempts, 4)
         XCTAssertEqual(snapshot.language.lspAutoRestart.baseDelaySeconds, 8.5)
@@ -497,6 +518,7 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertTrue(json.contains(#""block_start""#))
         XCTAssertTrue(json.contains(#""semantic_highlighting_enabled":false"#))
         XCTAssertTrue(json.contains(#""format_on_save_enabled":true"#))
+        XCTAssertTrue(json.contains(#""format_on_type_enabled":false"#))
 
         let decoded = try JSONDecoder().decode(AttoConfigurationSnapshot.self, from: data)
         XCTAssertEqual(decoded, snapshot)
@@ -560,6 +582,7 @@ final class AttoPreferencesTests: XCTestCase {
         )
         XCTAssertTrue(snapshot.language.semanticHighlightingEnabled)
         XCTAssertFalse(snapshot.language.formatOnSaveEnabled)
+        XCTAssertTrue(snapshot.language.formatOnTypeEnabled)
         XCTAssertEqual(snapshot.workspace.rootPath, "/tmp/project")
         XCTAssertEqual(snapshot.workspace.findInFilesDefaultScope, "opened_files")
         XCTAssertEqual(snapshot.workspace.workspaceSearchIncludeGlobs, [])

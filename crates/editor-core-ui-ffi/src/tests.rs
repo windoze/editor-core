@@ -5802,6 +5802,24 @@ fn ffi_set_font_ligatures_enabled_smoke() {
 }
 
 #[test]
+fn ffi_set_lsp_on_type_formatting_enabled_smoke() {
+    let initial = CString::new("let value = 1").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+
+    assert_eq!(
+        editor_core_ui_ffi_editor_ui_set_lsp_on_type_formatting_enabled(ui, 0),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_editor_ui_set_lsp_on_type_formatting_enabled(ui, 1),
+        ECU_OK
+    );
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
 fn ffi_set_caret_width_and_visibility_affect_render_rgba() {
     let initial = CString::new("").unwrap();
     let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);

@@ -95,6 +95,15 @@ extension EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_bracket_match_highlights_enabled")
     }
 
+    /// Enable/disable automatic LSP on-type formatting after trigger-character typing.
+    ///
+    /// Explicit `lspFormatOnType(...)` calls remain available when this implicit typing path is
+    /// disabled.
+    public func setLspOnTypeFormattingEnabled(_ enabled: Bool) throws {
+        let status = editor_core_ui_ffi_editor_ui_set_lsp_on_type_formatting_enabled(handle, enabled ? 1 : 0)
+        try library.ensureStatus(status, context: "editor_ui_set_lsp_on_type_formatting_enabled")
+    }
+
     /// Configure the ASCII word-boundary character set for editor-friendly "word" operations.
     ///
     /// This is similar in spirit to VSCode's `wordSeparators`.

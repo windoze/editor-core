@@ -287,6 +287,25 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_bracket_match_highlights_enab
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_lsp_on_type_formatting_enabled(
+    ui: *mut EditorUi,
+    enabled: u8,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        ui.set_lsp_on_type_formatting_enabled(enabled != 0)
+            .map(|_| ECU_OK)
+            .map_err(map_ui_error)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(
     ui: *mut EditorUi,
     boundary_chars_utf8: *const c_char,

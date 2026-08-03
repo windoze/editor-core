@@ -65,6 +65,7 @@ extension AttoEditorAreaViewController {
         _ = try editCore.editor.setWrapMode(configuredWrapModeForApplying())
         _ = try editCore.editor.setWrapIndent(configuredWrapIndentForApplying())
         try editCore.editor.setAutoPairsEnabled(configuredAutoPairsEnabledForApplying())
+        try editCore.editor.setLspOnTypeFormattingEnabled(configuredFormatOnTypeEnabledForApplying())
         try editCore.editor.setBracketMatchHighlightsEnabled(true)
     }
 

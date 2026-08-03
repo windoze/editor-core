@@ -7,6 +7,10 @@ impl EditorUi {
     ) -> Result<bool, UiError> {
         self.flush_lsp_did_change_from_delta();
 
+        if !self.lsp_on_type_formatting_enabled {
+            return Ok(false);
+        }
+
         let (shared, doc_uri, line_index, line, column, options, request_version) = {
             let mut doc = self.lock_doc();
             let Some(shared) = doc.lsp.clone() else {

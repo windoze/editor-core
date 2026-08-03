@@ -19,6 +19,7 @@ pub struct EditorUi {
     pub(crate) mouse_drag: Option<MouseDragState>,
     pub(crate) auto_pairs: AutoPairsConfig,
     pub(crate) bracket_match_highlights_enabled: bool,
+    pub(crate) lsp_on_type_formatting_enabled: bool,
     pub(crate) render_cache: Option<RenderFrameCache>,
     pub(crate) minimap_cache: Option<MinimapCache>,
 }

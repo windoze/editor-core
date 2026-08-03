@@ -53,6 +53,7 @@ impl EditorUi {
             mouse_drag: None,
             auto_pairs: AutoPairsConfig::default(),
             bracket_match_highlights_enabled: false,
+            lsp_on_type_formatting_enabled: true,
             render_cache: None,
             minimap_cache: None,
         }
@@ -82,6 +83,7 @@ impl EditorUi {
             mouse_drag: None,
             auto_pairs: self.auto_pairs.clone(),
             bracket_match_highlights_enabled: self.bracket_match_highlights_enabled,
+            lsp_on_type_formatting_enabled: self.lsp_on_type_formatting_enabled,
             render_cache: None,
             minimap_cache: None,
         };

@@ -76,6 +76,19 @@ or:
 Both strings are owned by the caller and must be freed with `editor_core_ui_ffi_string_free`.
 Availability is advertised by `ECU_FEATURE_JSON_COMMAND_ENVELOPE`.
 
+## EditorUi Configuration Controls
+
+`EditorUi` exposes view-local configuration setters for host-controlled editor behavior. LSP
+on-type formatting can be disabled without disabling text synchronization or the explicit
+`editor_core_ui_ffi_editor_ui_lsp_format_on_type(...)` request API:
+
+```c
+int32_t editor_core_ui_ffi_editor_ui_set_lsp_on_type_formatting_enabled(
+    EditorUi* ui,
+    uint8_t enabled
+);
+```
+
 ## MultiDocument Workspace Roots Change Envelope
 
 The legacy workspace roots change API remains available as a raw JSON string function:

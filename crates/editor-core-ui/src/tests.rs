@@ -2845,6 +2845,53 @@ fn ui_lsp_on_type_formatting_triggers_for_server_declared_single_chars() {
 }
 
 #[test]
+fn ui_lsp_on_type_formatting_can_be_disabled() {
+    let capture_path = unique_temp_path("on-type-formatting-disabled");
+    let capabilities = serde_json::json!({
+        "documentOnTypeFormattingProvider": {
+            "firstTriggerCharacter": ";",
+            "moreTriggerCharacter": ["}"]
+        }
+    });
+    let script = lsp_capture_server_script(&capture_path, capabilities);
+    let args = vec!["-c".to_string(), script];
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root_uri = format!("file:///tmp/editor-core-ui-on-type-disabled-{stamp}");
+    let doc_uri = format!("{root_uri}/main.rs");
+
+    let mut ui = EditorUi::new("let value = 1", 80);
+    ui.lsp_enable_stdio("/bin/sh", &args, &root_uri, &doc_uri, "rust")
+        .unwrap();
+    ui.set_lsp_on_type_formatting_enabled(false).unwrap();
+
+    ui.insert_text(";").unwrap();
+    let captured = wait_for_captured_lsp_stdin(&capture_path, "textDocument/didChange");
+    assert!(
+        captured.contains("textDocument/didChange"),
+        "disabled on-type formatting must still sync typed text to LSP; captured: {captured}"
+    );
+    assert!(
+        !captured.contains("textDocument/onTypeFormatting"),
+        "disabled on-type formatting must not request LSP on-type formatting; captured: {captured}"
+    );
+
+    ui.set_lsp_on_type_formatting_enabled(true).unwrap();
+    ui.insert_text("}").unwrap();
+    let captured_after_enable =
+        wait_for_captured_lsp_stdin(&capture_path, "textDocument/onTypeFormatting");
+    assert!(
+        captured_after_enable.contains("\"ch\":\"}\""),
+        "re-enabled on-type formatting should carry trigger '}}'; captured: {captured_after_enable}"
+    );
+
+    ui.lsp_disable();
+    let _ = std::fs::remove_file(capture_path);
+}
+
+#[test]
 fn poll_processing_reports_treesitter_worker_disconnected() {
     let mut ui = EditorUi::new("fn main() {}", 80);
     let (tx_worker, rx_worker) = mpsc::channel::<TreeSitterWorkerMsg>();
@@ -3230,6 +3277,16 @@ fn ui_clone_view_preserves_bracket_match_highlights_enabled() {
         styles_at_close.contains(&MATCH_HIGHLIGHT_STYLE_ID),
         "expected closing bracket to have MATCH_HIGHLIGHT_STYLE_ID"
     );
+}
+
+#[test]
+fn ui_clone_view_preserves_lsp_on_type_formatting_enabled() {
+    let mut ui = EditorUi::new("", 80);
+    ui.set_lsp_on_type_formatting_enabled(false).unwrap();
+
+    let cloned = ui.clone_view(80).unwrap();
+
+    assert!(!cloned.lsp_on_type_formatting_enabled());
 }
 
 #[test]

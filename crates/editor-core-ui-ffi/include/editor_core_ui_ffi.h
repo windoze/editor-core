@@ -816,6 +816,7 @@ int32_t editor_core_ui_ffi_editor_ui_set_tab_key_behavior(
 );
 int32_t editor_core_ui_ffi_editor_ui_set_auto_pairs_enabled(EditorUi* ui, uint8_t enabled);
 int32_t editor_core_ui_ffi_editor_ui_set_bracket_match_highlights_enabled(EditorUi* ui, uint8_t enabled);
+int32_t editor_core_ui_ffi_editor_ui_set_lsp_on_type_formatting_enabled(EditorUi* ui, uint8_t enabled);
 int32_t editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(
     EditorUi* ui,
     const char* boundary_chars_utf8

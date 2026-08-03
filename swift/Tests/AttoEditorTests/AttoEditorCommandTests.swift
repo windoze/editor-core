@@ -8499,6 +8499,55 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(captured.contains(#""method":"textDocument/didSave""#), captured)
     }
 
+    func testFormatOnTypePreferenceDisablesAutomaticOnTypeFormatting() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("format-on-type-disabled.txt")
+        try "let value = 1".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("format-on-type-disabled-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("format-on-type-disabled-fake-lsp.py")
+        try writeOnTypeFormattingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let suiteName = "atto_editor_command_format_on_type_disabled_\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        let preferences = AttoPreferences(defaults: defaults, env: [:])
+        var snapshot = preferences.effectiveConfigurationSnapshot(workspaceRootURL: tempDir)
+        snapshot.language.formatOnTypeEnabled = false
+        let vc = AttoEditorAreaViewController(
+            library: EditorCoreUIFFILibrary(),
+            theme: EditorCoreSkiaTheme.defaultLight(),
+            workspaceRootURL: tempDir,
+            configurationSnapshot: snapshot,
+            preferences: preferences
+        )
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        try tab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer { tab.editCore.editor.lspDisable() }
+
+        tab.editCore.editorView.insertText(";", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: "textDocument/didChange"
+        )
+        XCTAssertTrue(captured.contains(#""method":"textDocument/didChange""#), captured)
+        XCTAssertFalse(captured.contains(#""method":"textDocument/onTypeFormatting""#), captured)
+    }
+
     func testSaveAndCloseNotifyLspDocumentLifecycle() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -9620,6 +9669,76 @@ final class AttoEditorCommandTests: XCTestCase {
                         'newText': 'formatted\\n'
                     }]
                 })
+            elif method == 'shutdown':
+                send_message({'jsonrpc': '2.0', 'id': message.get('id'), 'result': None})
+            elif method == 'exit':
+                break
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+    }
+
+    private func writeOnTypeFormattingFakeLspServerScript(captureURL: URL, scriptURL: URL) throws {
+        let capturePath = captureURL.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let script = """
+        #!/usr/bin/env python3
+        import json
+        import sys
+
+        capture_path = '\(capturePath)'
+
+        def read_message():
+            headers = {}
+            while True:
+                line = sys.stdin.buffer.readline()
+                if not line:
+                    return None
+                if line in (b'\\r\\n', b'\\n'):
+                    break
+                key, _, value = line.decode('ascii', 'ignore').partition(':')
+                headers[key.lower()] = value.strip()
+
+            length = int(headers.get('content-length', '0'))
+            if length <= 0:
+                return None
+
+            body = sys.stdin.buffer.read(length)
+            with open(capture_path, 'ab') as fh:
+                fh.write(b'\\n--message--\\n')
+                fh.write(body)
+            return json.loads(body.decode('utf-8'))
+
+        def send_message(payload):
+            body = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+            sys.stdout.buffer.write(
+                b'Content-Length: ' + str(len(body)).encode('ascii') + b'\\r\\n\\r\\n' + body
+            )
+            sys.stdout.buffer.flush()
+
+        while True:
+            message = read_message()
+            if message is None:
+                break
+
+            method = message.get('method')
+            if method == 'initialize':
+                send_message({
+                    'jsonrpc': '2.0',
+                    'id': message.get('id'),
+                    'result': {
+                        'capabilities': {
+                            'textDocumentSync': 1,
+                            'documentOnTypeFormattingProvider': {
+                                'firstTriggerCharacter': ';',
+                                'moreTriggerCharacter': ['}']
+                            }
+                        }
+                    }
+                })
+            elif method == 'textDocument/onTypeFormatting':
+                send_message({'jsonrpc': '2.0', 'id': message.get('id'), 'result': []})
             elif method == 'shutdown':
                 send_message({'jsonrpc': '2.0', 'id': message.get('id'), 'result': None})
             elif method == 'exit':
