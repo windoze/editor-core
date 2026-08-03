@@ -1058,6 +1058,52 @@
       "persistentPanel": "documentColorPanel",
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "popup-workspace-edit-failure-dark",
+      "description": "Dark WorkspaceEdit failure popover with rollback detail.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/popup-workspace-edit-failure-dark.png",
+      "artifactName": "popup-workspace-edit-failure-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 460,
+        "height": 112
+      },
+      "failurePopover": {
+        "text": "Workspace edit failed.\nAtomic apply rolled back because generated/PalettePreview.swift changed on disk.\nNo files were modified."
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "popup-lsp-failure-dark",
+      "description": "Dark LSP request failure popover with server error detail.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/popup-lsp-failure-dark.png",
+      "artifactName": "popup-lsp-failure-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 420,
+        "height": 94
+      },
+      "failurePopover": {
+        "text": "LSP failed.\nCode lens refresh request failed.\nserver closed the request stream."
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }

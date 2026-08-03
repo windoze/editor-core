@@ -368,6 +368,13 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 in: tab.editCore.editorView
             )
         }
+        if let failurePopover = visualCase.failurePopover {
+            let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
+            vc.showWorkspaceEditPopover(
+                text: failurePopover.text,
+                in: tab.editCore.editorView
+            )
+        }
         if let persistentPanel = visualCase.persistentPanel {
             switch persistentPanel {
             case .problemsPanel:
@@ -432,6 +439,14 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
             guard let contentView = vc.signatureHelpPopover?.contentViewController?.view else {
                 throw AttoVisualBaselineError.invalidManifest(
                     "\(visualCase.id) missing signature help popover capture target"
+                )
+            }
+            preparePopoverCaptureView(contentView, for: visualCase)
+            return contentView
+        case .workspaceEditPopover:
+            guard let contentView = vc.workspaceEditPopover?.contentViewController?.view else {
+                throw AttoVisualBaselineError.invalidManifest(
+                    "\(visualCase.id) missing workspace edit popover capture target"
                 )
             }
             preparePopoverCaptureView(contentView, for: visualCase)
@@ -591,6 +606,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let completionPopup: AttoVisualCompletionPopup?
     let hoverPopover: AttoVisualHoverPopover?
     let signatureHelpPopover: AttoVisualSignatureHelpPopover?
+    let failurePopover: AttoVisualFailurePopover?
     let persistentPanel: AttoVisualPersistentPanel?
     let captureTarget: AttoVisualCaptureTarget
     let perChannelTolerance: UInt8
@@ -639,6 +655,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case completionPopup
         case hoverPopover
         case signatureHelpPopover
+        case failurePopover
         case persistentPanel
         case captureTarget
         case perChannelTolerance
@@ -711,6 +728,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
             AttoVisualSignatureHelpPopover.self,
             forKey: .signatureHelpPopover
         )
+        failurePopover = try container.decodeIfPresent(AttoVisualFailurePopover.self, forKey: .failurePopover)
         persistentPanel = try container.decodeIfPresent(AttoVisualPersistentPanel.self, forKey: .persistentPanel)
         captureTarget = try container.decodeIfPresent(AttoVisualCaptureTarget.self, forKey: .captureTarget) ?? .mainWindow
         perChannelTolerance = try container.decode(UInt8.self, forKey: .perChannelTolerance)
@@ -744,6 +762,7 @@ private struct AttoVisualCaptureTarget: Decodable, Equatable {
         case childWindow
         case hoverPopover
         case signatureHelpPopover
+        case workspaceEditPopover
 
         var requiresIdentifier: Bool {
             self == .childWindow
@@ -753,7 +772,7 @@ private struct AttoVisualCaptureTarget: Decodable, Equatable {
             switch self {
             case .mainWindow, .childWindow:
                 return false
-            case .hoverPopover, .signatureHelpPopover:
+            case .hoverPopover, .signatureHelpPopover, .workspaceEditPopover:
                 return true
             }
         }
@@ -1636,6 +1655,10 @@ private struct AttoVisualSignatureHelpPopover: Decodable, Equatable {
             activeParameterRanges: activeParameterRanges.map(\.nsRange)
         )
     }
+}
+
+private struct AttoVisualFailurePopover: Decodable, Equatable {
+    let text: String
 }
 
 private struct AttoVisualTextRange: Decodable, Equatable {
