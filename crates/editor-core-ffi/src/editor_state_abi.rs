@@ -144,18 +144,46 @@ pub extern "C" fn editor_core_ffi_editor_state_full_state_json(
     state: *const EcfEditorState,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let state = require_ref(state, "state")?;
-        Ok(value_editor_state(&state.inner.get_full_state()))
+        editor_state_full_state_value(state).map_err(|(_, message)| message)
     })
+}
+
+/// Return full editor state in a stable result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_full_state_envelope_json(
+    state: *const EcfEditorState,
+) -> *mut c_char {
+    editor_state_query_envelope_json_ptr("full_state", || editor_state_full_state_value(state))
+}
+
+fn editor_state_full_state_value(
+    state: *const EcfEditorState,
+) -> Result<Value, (EcfStatus, String)> {
+    let state =
+        require_ref(state, "state").map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    Ok(value_editor_state(&state.inner.get_full_state()))
 }
 
 /// Return full document text (LF-normalized internal text).
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_editor_state_text(state: *const EcfEditorState) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let state = require_ref(state, "state")?;
-        Ok(json!({ "text": state.inner.editor().get_text() }))
+        editor_state_text_value(state).map_err(|(_, message)| message)
     })
+}
+
+/// Return full document text in a stable result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_text_envelope_json(
+    state: *const EcfEditorState,
+) -> *mut c_char {
+    editor_state_query_envelope_json_ptr("text", || editor_state_text_value(state))
+}
+
+fn editor_state_text_value(state: *const EcfEditorState) -> Result<Value, (EcfStatus, String)> {
+    let state =
+        require_ref(state, "state").map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    Ok(json!({ "text": state.inner.editor().get_text() }))
 }
 
 /// Return full document text converted to preferred save line ending.
@@ -164,12 +192,29 @@ pub extern "C" fn editor_core_ffi_editor_state_text_for_saving(
     state: *const EcfEditorState,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let state = require_ref(state, "state")?;
-        Ok(json!({
-            "text": state.inner.get_text_for_saving(),
-            "line_ending": line_ending_to_str(state.inner.line_ending()),
-        }))
+        editor_state_text_for_saving_value(state).map_err(|(_, message)| message)
     })
+}
+
+/// Return save-form text in a stable result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_text_for_saving_envelope_json(
+    state: *const EcfEditorState,
+) -> *mut c_char {
+    editor_state_query_envelope_json_ptr("text_for_saving", || {
+        editor_state_text_for_saving_value(state)
+    })
+}
+
+fn editor_state_text_for_saving_value(
+    state: *const EcfEditorState,
+) -> Result<Value, (EcfStatus, String)> {
+    let state =
+        require_ref(state, "state").map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    Ok(json!({
+        "text": state.inner.get_text_for_saving(),
+        "line_ending": line_ending_to_str(state.inner.line_ending()),
+    }))
 }
 
 /// Return current document symbols / outline as JSON.
@@ -268,9 +313,24 @@ pub extern "C" fn editor_core_ffi_editor_state_get_line_ending(
     state: *const EcfEditorState,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let state = require_ref(state, "state")?;
-        Ok(json!({ "line_ending": line_ending_to_str(state.inner.line_ending()) }))
+        editor_state_line_ending_value(state).map_err(|(_, message)| message)
     })
+}
+
+/// Get preferred line ending in a stable result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_get_line_ending_envelope_json(
+    state: *const EcfEditorState,
+) -> *mut c_char {
+    editor_state_query_envelope_json_ptr("line_ending", || editor_state_line_ending_value(state))
+}
+
+fn editor_state_line_ending_value(
+    state: *const EcfEditorState,
+) -> Result<Value, (EcfStatus, String)> {
+    let state =
+        require_ref(state, "state").map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    Ok(json!({ "line_ending": line_ending_to_str(state.inner.line_ending()) }))
 }
 
 /// Get styled viewport snapshot as JSON.
@@ -410,14 +470,31 @@ pub extern "C" fn editor_core_ffi_editor_state_take_last_text_delta_json(
     state: *mut EcfEditorState,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let state = require_mut(state, "state")?;
-        let value = state
-            .inner
-            .take_last_text_delta()
-            .as_deref()
-            .map(value_text_delta);
-        Ok(json!({ "delta": value }))
+        editor_state_take_last_text_delta_value(state).map_err(|(_, message)| message)
     })
+}
+
+/// Take and return last text delta in a stable result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_take_last_text_delta_envelope_json(
+    state: *mut EcfEditorState,
+) -> *mut c_char {
+    editor_state_query_envelope_json_ptr("take_last_text_delta", || {
+        editor_state_take_last_text_delta_value(state)
+    })
+}
+
+fn editor_state_take_last_text_delta_value(
+    state: *mut EcfEditorState,
+) -> Result<Value, (EcfStatus, String)> {
+    let state =
+        require_mut(state, "state").map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    let value = state
+        .inner
+        .take_last_text_delta()
+        .as_deref()
+        .map(value_text_delta);
+    Ok(json!({ "delta": value }))
 }
 
 /// Return last text delta as JSON without consuming it.
@@ -426,8 +503,77 @@ pub extern "C" fn editor_core_ffi_editor_state_last_text_delta_json(
     state: *const EcfEditorState,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let state = require_ref(state, "state")?;
-        let value = state.inner.last_text_delta().map(value_text_delta);
-        Ok(json!({ "delta": value }))
+        editor_state_last_text_delta_value(state).map_err(|(_, message)| message)
+    })
+}
+
+/// Return last text delta without consuming it in a stable result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_last_text_delta_envelope_json(
+    state: *const EcfEditorState,
+) -> *mut c_char {
+    editor_state_query_envelope_json_ptr("last_text_delta", || {
+        editor_state_last_text_delta_value(state)
+    })
+}
+
+fn editor_state_last_text_delta_value(
+    state: *const EcfEditorState,
+) -> Result<Value, (EcfStatus, String)> {
+    let state =
+        require_ref(state, "state").map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    let value = state.inner.last_text_delta().map(value_text_delta);
+    Ok(json!({ "delta": value }))
+}
+
+fn editor_state_query_envelope_json_ptr<F>(operation: &'static str, f: F) -> *mut c_char
+where
+    F: FnOnce() -> Result<Value, (EcfStatus, String)>,
+{
+    let envelope = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(Ok(value)) => {
+            clear_last_error();
+            editor_state_query_envelope_success(operation, value)
+        }
+        Ok(Err((status, message))) => {
+            set_last_error(message.clone());
+            editor_state_query_envelope_error(operation, status, message)
+        }
+        Err(_) => {
+            let message = "panic across FFI boundary".to_string();
+            set_last_error(message.clone());
+            editor_state_query_envelope_error(operation, EcfStatus::Internal, message)
+        }
+    };
+    json_ptr(envelope)
+}
+
+fn editor_state_query_envelope_success(operation: &'static str, value: Value) -> Value {
+    json!({
+        "ok": true,
+        "status": "success",
+        "operation": operation,
+        "value": value,
+        "error": Value::Null,
+        "version": ECF_ABI_VERSION,
+    })
+}
+
+fn editor_state_query_envelope_error(
+    operation: &'static str,
+    status: EcfStatus,
+    message: String,
+) -> Value {
+    json!({
+        "ok": false,
+        "status": "error",
+        "operation": operation,
+        "value": Value::Null,
+        "error": {
+            "code": ecf_status_label(status),
+            "status": status.code(),
+            "message": message,
+        },
+        "version": ECF_ABI_VERSION,
     })
 }

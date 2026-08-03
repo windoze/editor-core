@@ -299,6 +299,7 @@ Guidelines:
   `ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE`,
   `ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE`,
   `ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE`,
+  `ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE`,
   `ECU_FEATURE_JSON_COMMAND_ENVELOPE`, and
   `ECU_FEATURE_LSP_RESULT_ENVELOPE` / `ECU_FEATURE_EVENT_STREAM_ENVELOPE` /
   `ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE` /
@@ -373,6 +374,12 @@ char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* 
 char* editor_core_ffi_editor_state_viewport_composed_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_derived_snapshot_envelope_json(const EcfEditorState* state, const char* snapshot_utf8);
 char* editor_core_ffi_editor_state_execute_envelope_json(EcfEditorState* state, const char* command_json);
+char* editor_core_ffi_editor_state_full_state_envelope_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_text_envelope_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_text_for_saving_envelope_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_get_line_ending_envelope_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_last_text_delta_envelope_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_take_last_text_delta_envelope_json(EcfEditorState* state);
 
 int32_t editor_core_ffi_workspace_open_buffer_typed(EcfWorkspace* workspace, const char* uri, const char* text, uint32_t viewport_width, EcfOpenBufferResult* out_result);
 int32_t editor_core_ffi_workspace_create_view_typed(EcfWorkspace* workspace, uint64_t buffer_id, uint32_t viewport_width, EcfCreateViewResult* out_result);

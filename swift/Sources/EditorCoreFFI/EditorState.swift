@@ -36,6 +36,21 @@ public final class EditorState {
         return try JSON.decode(EditorStateTextResponse.self, from: json, context: "editor_state_text").text
     }
 
+    public func textEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_text_envelope_json(handle),
+            context: "editor_state_text_envelope_json"
+        )
+    }
+
+    public func textEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: textEnvelopeJSON(),
+            context: "editor_state_text_envelope"
+        )
+    }
+
     public func executeJSON(_ commandJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = commandJSON.withCString { jsonPtr in
             editor_core_ffi_editor_state_execute_json(handle, jsonPtr)
@@ -84,8 +99,38 @@ public final class EditorState {
         try ffi.takeOwnedCString(editor_core_ffi_editor_state_full_state_json(handle), context: "editor_state_full_state_json")
     }
 
+    public func fullStateEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_full_state_envelope_json(handle),
+            context: "editor_state_full_state_envelope_json"
+        )
+    }
+
+    public func fullStateEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: fullStateEnvelopeJSON(),
+            context: "editor_state_full_state_envelope"
+        )
+    }
+
     public func textForSavingJSON() throws -> String {
         try ffi.takeOwnedCString(editor_core_ffi_editor_state_text_for_saving(handle), context: "editor_state_text_for_saving")
+    }
+
+    public func textForSavingEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_text_for_saving_envelope_json(handle),
+            context: "editor_state_text_for_saving_envelope_json"
+        )
+    }
+
+    public func textForSavingEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: textForSavingEnvelopeJSON(),
+            context: "editor_state_text_for_saving_envelope"
+        )
     }
 
     public func documentSymbolsJSON() throws -> String {
@@ -127,6 +172,21 @@ public final class EditorState {
 
     public func lineEndingJSON() throws -> String {
         try ffi.takeOwnedCString(editor_core_ffi_editor_state_get_line_ending(handle), context: "editor_state_get_line_ending")
+    }
+
+    public func lineEndingEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_get_line_ending_envelope_json(handle),
+            context: "editor_state_get_line_ending_envelope_json"
+        )
+    }
+
+    public func lineEndingEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: lineEndingEnvelopeJSON(),
+            context: "editor_state_get_line_ending_envelope"
+        )
     }
 
     public func viewportStyledJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
@@ -214,10 +274,40 @@ public final class EditorState {
         )
     }
 
+    public func takeLastTextDeltaEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_take_last_text_delta_envelope_json(handle),
+            context: "editor_state_take_last_text_delta_envelope_json"
+        )
+    }
+
+    public func takeLastTextDeltaEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: takeLastTextDeltaEnvelopeJSON(),
+            context: "editor_state_take_last_text_delta_envelope"
+        )
+    }
+
     public func lastTextDeltaJSON() throws -> String {
         try ffi.takeOwnedCString(
             editor_core_ffi_editor_state_last_text_delta_json(handle),
             context: "editor_state_last_text_delta_json"
+        )
+    }
+
+    public func lastTextDeltaEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_last_text_delta_envelope_json(handle),
+            context: "editor_state_last_text_delta_envelope_json"
+        )
+    }
+
+    public func lastTextDeltaEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: lastTextDeltaEnvelopeJSON(),
+            context: "editor_state_last_text_delta_envelope"
         )
     }
 

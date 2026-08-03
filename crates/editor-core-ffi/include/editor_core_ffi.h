@@ -142,6 +142,7 @@ void editor_core_ffi_string_free(char* ptr);
 #define ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE  (1ull << 11)
 #define ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE   (1ull << 12)
 #define ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE (1ull << 13)
+#define ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE (1ull << 14)
 uint64_t editor_core_ffi_feature_flags(void);
 char* editor_core_ffi_runtime_info_json(void);
 
@@ -151,14 +152,18 @@ char* editor_core_ffi_editor_state_execute_json(EcfEditorState* state, const cha
 char* editor_core_ffi_editor_state_execute_envelope_json(EcfEditorState* state, const char* command_json);
 bool editor_core_ffi_editor_state_apply_processing_edits_json(EcfEditorState* state, const char* edits_json);
 char* editor_core_ffi_editor_state_full_state_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_full_state_envelope_json(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_text(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_text_envelope_json(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_text_for_saving(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_text_for_saving_envelope_json(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_document_symbols_json(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_diagnostics_json(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_decorations_json(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_derived_snapshot_envelope_json(const EcfEditorState* state, const char* snapshot_utf8);
 bool editor_core_ffi_editor_state_set_line_ending(EcfEditorState* state, const char* line_ending);
 char* editor_core_ffi_editor_state_get_line_ending(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_get_line_ending_envelope_json(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_viewport_styled_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_minimap_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
@@ -166,7 +171,9 @@ char* editor_core_ffi_editor_state_minimap_envelope_json(const EcfEditorState* s
 char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_viewport_composed_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_take_last_text_delta_json(EcfEditorState* state);
+char* editor_core_ffi_editor_state_take_last_text_delta_envelope_json(EcfEditorState* state);
 char* editor_core_ffi_editor_state_last_text_delta_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_last_text_delta_envelope_json(const EcfEditorState* state);
 int32_t editor_core_ffi_editor_get_document_stats(const EcfEditorState* state, EcfDocumentStats* out_stats);
 int32_t editor_core_ffi_editor_insert_text_utf8(EcfEditorState* state, const uint8_t* bytes, uint32_t len);
 int32_t editor_core_ffi_editor_backspace(EcfEditorState* state);

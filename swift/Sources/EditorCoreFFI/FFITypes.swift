@@ -438,6 +438,10 @@ public struct EcfWorkspaceResultEnvelopeError: Equatable, Sendable, Decodable {
     }
 }
 
+public typealias EcfEditorStateQueryEnvelope = EcfWorkspaceResultEnvelope
+public typealias EcfEditorStateQueryEnvelopeError = EcfWorkspaceResultEnvelopeError
+public typealias EcfEditorStateQueryEnvelopeStatus = EcfWorkspaceResultEnvelopeStatus
+
 public struct EcfAutoPair: Equatable, Sendable {
     public let open: String
     public let close: String
