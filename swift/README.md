@@ -148,3 +148,22 @@ JSON schema 与实现规划见：`swift/theme.md`
 cd swift
 swift test
 ```
+
+### XCUIApplication smoke tests（可选）
+
+`AttoEditorXCUIApplicationSmokeTests` 是 macOS 黑盒 UI 自动化入口。普通 `swift test`
+默认只编译这些测试并跳过执行，因为 `XCUIApplication` 需要可访问 `testmanagerd` 的
+本机 UI automation 环境。
+
+本地运行：
+
+```bash
+cd swift
+scripts/build-attoeditor-app.sh --debug --out /tmp/attoeditor-xcui
+ATTO_XCUI_SMOKE_TESTS=1 \
+ATTO_XCUI_APP_PATH=/tmp/attoeditor-xcui/AttoEditor.app \
+swift test --filter AttoEditorXCUIApplicationSmokeTests
+```
+
+这些测试会为被测 app 注入独立 IPC socket/spool 路径，避免和当前用户正在运行的
+AttoEditor 实例互相影响。

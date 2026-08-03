@@ -2116,6 +2116,12 @@
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`（通过临时 `swift/.build/atto-visual-baseline-record.json` 指向 `/tmp/atto-visual-baselines-overlay-check-20260803` 和 `/tmp/atto-visual-artifacts-overlay-check-20260803` 验证 record mode 写出 6 个 baseline PNG 与 6 个 artifact PNG）
     - `bash -n swift/scripts/update-visual-baselines.sh`
     - `git diff --check`
+- 中间提交：`test(app): add xcui smoke test entrypoint`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；为 native App 黑盒自动化建立 `XCUIApplication` smoke test 起点，覆盖 app bundle 启动、主窗口 chrome AX 节点和 command palette 快捷键打开路径。
+  - 提交边界：新增 opt-in `AttoEditorXCUIApplicationSmokeTests`，默认在普通 `swift test` 中编译后跳过，设置 `ATTO_XCUI_SMOKE_TESTS=1` 和 `ATTO_XCUI_APP_PATH` 后才启动真实 app；`AttoIPC` 新增 socket/spool/runtime dir env override 以隔离测试实例；`swift/README.md` 补本地运行方式。该提交不启用默认 CI GUI 测试、不覆盖打开文件/输入/选择/多光标完整流程、不改变默认 IPC 路径、不接入 runner 权限配置。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoIPCTests|AttoEditorXCUIApplicationSmokeTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

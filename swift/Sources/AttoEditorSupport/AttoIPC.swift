@@ -8,14 +8,40 @@ package enum AttoIPC {
     // 内部启动参数：CLI 用它来启动 GUI/Server 进程。
     package static let internalServerFlag = "--atto-editor-internal-server"
     package static let internalNoDefaultWindowFlag = "--atto-editor-internal-no-default-window"
+    package static let socketPathEnvKey = "ATTO_EDITOR_IPC_SOCKET_PATH"
+    package static let spoolDirPathEnvKey = "ATTO_EDITOR_IPC_SPOOL_DIR"
+    package static let runtimeDirEnvKey = "ATTO_EDITOR_IPC_RUNTIME_DIR"
 
-    package static func socketPath() -> String {
+    package static func socketPath(env: [String: String] = ProcessInfo.processInfo.environment) -> String {
+        if let override = nonEmptyEnv(socketPathEnvKey, env: env) {
+            return override
+        }
+        if let runtimeDir = nonEmptyEnv(runtimeDirEnvKey, env: env) {
+            return URL(fileURLWithPath: runtimeDir, isDirectory: true)
+                .appendingPathComponent("codes.unwritten.attoeditor.\(getuid()).sock", isDirectory: false)
+                .path
+        }
         // Unix domain socket 路径长度有限（通常 104/108 bytes）。放到 /tmp 并带上 uid，避免冲突。
-        "/tmp/codes.unwritten.attoeditor.\(getuid()).sock"
+        return "/tmp/codes.unwritten.attoeditor.\(getuid()).sock"
     }
 
-    package static func spoolDirPath() -> String {
-        "/tmp/codes.unwritten.attoeditor.\(getuid()).spool"
+    package static func spoolDirPath(env: [String: String] = ProcessInfo.processInfo.environment) -> String {
+        if let override = nonEmptyEnv(spoolDirPathEnvKey, env: env) {
+            return override
+        }
+        if let runtimeDir = nonEmptyEnv(runtimeDirEnvKey, env: env) {
+            return URL(fileURLWithPath: runtimeDir, isDirectory: true)
+                .appendingPathComponent("codes.unwritten.attoeditor.\(getuid()).spool", isDirectory: true)
+                .path
+        }
+        return "/tmp/codes.unwritten.attoeditor.\(getuid()).spool"
+    }
+
+    private static func nonEmptyEnv(_ key: String, env: [String: String]) -> String? {
+        guard let value = env[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              value.isEmpty == false
+        else { return nil }
+        return value
     }
 
     /// 防止 socket 写入触发 SIGPIPE 导致进程被杀（表现为 exit code 141）。
