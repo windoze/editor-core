@@ -2293,6 +2293,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover visual workspace edit resource conflict`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；把 WorkspaceEdit failure visual coverage 扩展到“前序 text edit 成功、后续 resource operation conflict 被跳过”的 partial summary 触发链。
+  - 提交边界：manifest 新增 dark resource conflict partial summary popover artifact case，真实执行同一打开文档的 text edit 后再执行同 URI `create` resource operation，断言打开 tab 文本保持已应用状态，并捕获 core transaction 因 resource operation target conflict 生成的 partial summary popover。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 WorkspaceEdit partial apply/resource operation 语义，也不覆盖 rollback secondary failure 或专门的 global undo history UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
