@@ -1954,6 +1954,18 @@
     - `swift test --package-path swift --filter 'AttoEditorCommandTests/testApplyingSemanticHighlightingPreferenceClearsExistingTokens'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(lang): format on save from settings`
+  - 所属任务：阶段 11 的 Tree-sitter 与 LSP 主路线产品化增量；让 Swift/App 配置快照、settings 文件和 preferences 都能表达 format-on-save 开关，并让保存路径在写盘前按配置静默尝试 LSP document formatting。
+  - 提交边界：新增 `format_on_save_enabled` 配置字段、UserDefaults/env fallback、settings resolution 和 App 保存前 best-effort formatting 行为；开启时保存前调用当前 tab 的 LSP document formatting，成功后写入格式化后的文本，失败/不可用/无 edits 不阻断保存且不复用手动格式化的 HUD/蜂鸣反馈。该提交不新增 Rust/FFI ABI，不实现 format-on-type 设置，不改变 formatter capability 协商，不实现完整 language settings 面板。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoPreferencesTests/testFormatOnSaveDefaultEnvAndStoredPreference'`
+    - `swift test --package-path swift --filter 'AttoPreferencesTests/testEffectiveConfigurationSnapshotRoundTripsCurrentPreferences'`
+    - `swift test --package-path swift --filter 'AttoConfigurationSettingsTests/testSettingsResolutionAppliesUserWorkspaceRuntimePrecedence'`
+    - `swift test --package-path swift --filter 'AttoConfigurationSettingsTests/testSettingsDecodeIgnoresUnknownFutureFields'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests/testFormatOnSaveRunsBeforeWritingFile'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests/testSaveDoesNotFormatWhenFormatOnSaveDisabled'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 12: Workspace search、project index、recent 与 session
 

@@ -736,6 +736,7 @@ extension AttoEditorAreaViewController {
         let fm = FileManager.default
         let existedOnDiskBeforeSave = fm.fileExists(atPath: tab.fileURL.path)
         do {
+            applyFormatOnSaveIfNeeded(for: tab)
             let text = try tab.editCore.editor.text()
             try text.write(to: tab.fileURL, atomically: true, encoding: .utf8)
             try tab.editCore.editor.markSaved()
@@ -757,6 +758,30 @@ extension AttoEditorAreaViewController {
             NSSound.beep()
             NSLog("AttoEditor: failed to save file %@: %@", tab.fileURL.path, String(describing: error))
             return false
+        }
+    }
+
+    func applyFormatOnSaveIfNeeded(for tab: AttoEditorTab) {
+        guard configuredFormatOnSaveEnabledForApplying() else { return }
+
+        let result = tab.editCore.editorView.formatDocumentWithLSPResult()
+        switch result {
+        case .applied:
+            updateStatusBar()
+        case .noEdits:
+            break
+        case .unavailable(let reason):
+            NSLog(
+                "AttoEditor: format-on-save unavailable for %@: %@",
+                projectedFileURL(for: tab).path,
+                reason
+            )
+        case .failed(let message):
+            NSLog(
+                "AttoEditor: format-on-save failed for %@: %@",
+                projectedFileURL(for: tab).path,
+                message
+            )
         }
     }
 

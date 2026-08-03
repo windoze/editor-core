@@ -102,21 +102,25 @@ struct AttoRenderingPreferenceSnapshot: Codable, Equatable {
 struct AttoLanguagePreferenceSnapshot: Codable, Equatable {
     var commentConfigurations: [String: AttoCommentConfiguration]
     var semanticHighlightingEnabled: Bool
+    var formatOnSaveEnabled: Bool
     var lspAutoRestart: AttoLspAutoRestartPolicySnapshot
 
     private enum CodingKeys: String, CodingKey {
         case commentConfigurations = "comment_configurations"
         case semanticHighlightingEnabled = "semantic_highlighting_enabled"
+        case formatOnSaveEnabled = "format_on_save_enabled"
         case lspAutoRestart = "lsp_auto_restart"
     }
 
     init(
         commentConfigurations: [String: AttoCommentConfiguration],
         semanticHighlightingEnabled: Bool = true,
+        formatOnSaveEnabled: Bool = false,
         lspAutoRestart: AttoLspAutoRestartPolicySnapshot
     ) {
         self.commentConfigurations = commentConfigurations
         self.semanticHighlightingEnabled = semanticHighlightingEnabled
+        self.formatOnSaveEnabled = formatOnSaveEnabled
         self.lspAutoRestart = lspAutoRestart
     }
 
@@ -131,6 +135,10 @@ struct AttoLanguagePreferenceSnapshot: Codable, Equatable {
                 Bool.self,
                 forKey: .semanticHighlightingEnabled
             ) ?? true,
+            formatOnSaveEnabled: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .formatOnSaveEnabled
+            ) ?? false,
             lspAutoRestart: try container.decode(AttoLspAutoRestartPolicySnapshot.self, forKey: .lspAutoRestart)
         )
     }
@@ -444,6 +452,7 @@ extension AttoPreferences {
             language: AttoLanguagePreferenceSnapshot(
                 commentConfigurations: storedCommentConfigurations,
                 semanticHighlightingEnabled: effectiveSemanticHighlightingEnabled,
+                formatOnSaveEnabled: effectiveFormatOnSaveEnabled,
                 lspAutoRestart: AttoLspAutoRestartPolicySnapshot(
                     enabled: effectiveLspAutoRestartEnabled,
                     maxAttempts: effectiveLspAutoRestartMaxAttempts,

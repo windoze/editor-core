@@ -94,6 +94,10 @@ extension AttoEditorAreaViewController {
         configurationSnapshot.language.semanticHighlightingEnabled
     }
 
+    func configuredFormatOnSaveEnabledForApplying() -> Bool {
+        configurationSnapshot.language.formatOnSaveEnabled
+    }
+
     func configuredSearchOptionsForApplying() -> EcuSearchOptions {
         EcuSearchOptions(
             caseSensitive: configurationSnapshot.editor.findCaseSensitive,

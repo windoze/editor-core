@@ -75,6 +75,7 @@ final class AttoPreferences: NSObject {
         static let themeName = "AttoEditor.preferences.themeName"
         static let commentConfigurations = "AttoEditor.preferences.commentConfigurations"
         static let semanticHighlightingEnabled = "AttoEditor.preferences.semanticHighlightingEnabled"
+        static let formatOnSaveEnabled = "AttoEditor.preferences.formatOnSaveEnabled"
         static let lspAutoRestartEnabled = "AttoEditor.preferences.lspAutoRestartEnabled"
         static let lspAutoRestartMaxAttempts = "AttoEditor.preferences.lspAutoRestartMaxAttempts"
         static let lspAutoRestartBaseDelaySeconds = "AttoEditor.preferences.lspAutoRestartBaseDelaySeconds"
@@ -224,6 +225,16 @@ final class AttoPreferences: NSObject {
         return true
     }
 
+    var effectiveFormatOnSaveEnabled: Bool {
+        if let stored = storedFormatOnSaveEnabled { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_FORMAT_ON_SAVE"])
+            ?? Self.parseBoolEnv(env["EDITOR_CORE_APPKIT_FORMAT_ON_SAVE"])
+        {
+            return parsed
+        }
+        return false
+    }
+
     var effectiveLspAutoRestartMaxAttempts: Int {
         if let stored = storedLspAutoRestartMaxAttempts { return stored }
         if let parsed = Self.parseIntEnv(env["ATTO_EDITOR_LSP_AUTO_RESTART_MAX_ATTEMPTS"])
@@ -308,6 +319,10 @@ final class AttoPreferences: NSObject {
 
     var storedSemanticHighlightingEnabled: Bool? {
         defaults.object(forKey: Keys.semanticHighlightingEnabled) as? Bool
+    }
+
+    var storedFormatOnSaveEnabled: Bool? {
+        defaults.object(forKey: Keys.formatOnSaveEnabled) as? Bool
     }
 
     var storedLspAutoRestartEnabled: Bool? {
@@ -452,6 +467,15 @@ final class AttoPreferences: NSObject {
             defaults.set(enabled, forKey: Keys.semanticHighlightingEnabled)
         } else {
             defaults.removeObject(forKey: Keys.semanticHighlightingEnabled)
+        }
+        postDidChange()
+    }
+
+    func setFormatOnSaveEnabled(_ enabled: Bool?) {
+        if let enabled {
+            defaults.set(enabled, forKey: Keys.formatOnSaveEnabled)
+        } else {
+            defaults.removeObject(forKey: Keys.formatOnSaveEnabled)
         }
         postDidChange()
     }
