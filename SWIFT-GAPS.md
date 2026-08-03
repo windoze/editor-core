@@ -1630,8 +1630,9 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：阶段 13 已扩展 visual baseline harness 覆盖 floating panel / popup 截图场景，manifest 可捕获指定 child floating window content view，并新增 dark LSP symbol results floating panel 与 dark completion popup 两个 artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual floating panels` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已进一步扩展 floating panel visual matrix，manifest 可声明 LSP Location Results 和 Code Actions result payload，并新增 dark Location Results quick panel 与 dark Code Actions quick panel 两个 artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): expand visual floating panel matrix` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展持久在线 result panel visual matrix，manifest 可把 LSP Location Results 和 Symbol Results 记录到 lifecycle store 后打开持久在线 panel，并新增 dark persistent Locations panel 与 dark persistent Symbols panel 两个 artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual persistent result panels` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
+- 已完成：阶段 13 已扩展 popup visual matrix，manifest 可直接生成并捕获 LSP hover popover 与 signature help popover content view，并新增 dark hover popover 与 dark signature help popover 两个 artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual hover signature popups` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 仍缺提交首批经批准机器生成的 PNG golden baselines，并在首批 PNG 合入后把 strict visual comparison 提升为默认必过门禁。
-- 继续扩展 fixtures，覆盖 hover/signature 等更多 popup 类型、Problems/Workbench/Code Lens/Inlay/Document Links/Colors/Hierarchy 等更多持久在线 result panels，以及经审核的跨 theme/window-size 真实 baseline 场景。
+- 继续扩展 fixtures，覆盖 WorkspaceEdit/failure 等更多 popup 类型、Problems/Workbench/Code Lens/Inlay/Document Links/Colors/Hierarchy 等更多持久在线 result panels，以及经审核的跨 theme/window-size 真实 baseline 场景。
 - 继续扩展 `XCUIApplication` smoke tests，覆盖真实 LSP server 驱动的 Locations/Symbols/Workspace Outline 结果生成、panel row navigation 和打开目标行为。
 - 仍缺把 CI strict visual comparison 升级为首批 PNG baseline 合入后的默认必过门禁。
 

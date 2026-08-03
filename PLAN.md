@@ -2202,6 +2202,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover visual hover signature popups`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 popup 视觉矩阵，把 LSP hover 和 signature help popover 纳入可记录 artifact。
+  - 提交边界：测试 harness 新增 `hoverPopover` / `signatureHelpPopover` manifest actions，并让 `captureTarget` 支持直接捕获 `hoverPopover` / `signatureHelpPopover` content view；manifest 新增 dark hover popover 和 dark signature help popover 两个 artifact case。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 UI 或运行时代码，也不覆盖 WorkspaceEdit/failure popover 或真实 LSP server 触发路径。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

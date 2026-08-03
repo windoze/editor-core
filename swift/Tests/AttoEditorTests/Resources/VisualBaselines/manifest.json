@@ -576,6 +576,67 @@
       },
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "popup-hover-dark",
+      "description": "Dark LSP hover popover with markdown-derived symbol documentation.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/popup-hover-dark.png",
+      "artifactName": "popup-hover-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "hoverPopover",
+        "width": 420,
+        "height": 94
+      },
+      "hoverPopover": {
+        "text": "PaletteFixture\nstruct PaletteFixture\n\nRenders the sample line and returns the display label.",
+        "viewX": 160,
+        "viewY": 140,
+        "logicalLine": 0,
+        "logicalColumn": 7,
+        "charOffset": 7
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "popup-signature-help-dark",
+      "description": "Dark signature help popover with active parameter highlighting.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/popup-signature-help-dark.png",
+      "artifactName": "popup-signature-help-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "signatureHelpPopover",
+        "width": 420,
+        "height": 112
+      },
+      "signatureHelpPopover": {
+        "text": "renderLine(value: Int, mode: Mode)\nparameter: value\n\nRender a sample line using the selected value.",
+        "activeParameterRanges": [
+          {
+            "location": 11,
+            "length": 5
+          },
+          {
+            "location": 46,
+            "length": 5
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }

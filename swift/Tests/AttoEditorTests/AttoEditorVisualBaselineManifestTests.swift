@@ -32,9 +32,12 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
             XCTAssertTrue(visualCase.showReplaceBar == false || visualCase.showFindBar)
             XCTAssertGreaterThan(visualCase.captureTarget.expectedWidth(defaultWindow: visualCase.window), 0)
             XCTAssertGreaterThan(visualCase.captureTarget.expectedHeight(defaultWindow: visualCase.window), 0)
-            if visualCase.captureTarget.kind == .childWindow {
+            if visualCase.captureTarget.kind.requiresIdentifier {
                 XCTAssertNotNil(visualCase.captureTarget.identifier)
                 XCTAssertFalse(visualCase.captureTarget.identifier?.isEmpty ?? true)
+            }
+            if visualCase.captureTarget.kind.requiresExplicitSize {
+                XCTAssertTrue(visualCase.captureTarget.hasExplicitSize, visualCase.id)
             }
             if let fontSizePoints = visualCase.fontSizePoints {
                 XCTAssertGreaterThan(fontSizePoints, 0, visualCase.id)
@@ -111,7 +114,7 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         try applyScenarioActions(visualCase, to: vc)
         vc.view.layoutSubtreeIfNeeded()
 
-        let captureView = try captureTargetView(for: visualCase, in: window, fallbackView: vc.view)
+        let captureView = try captureTargetView(for: visualCase, in: window, controller: vc, fallbackView: vc.view)
         captureView.layoutSubtreeIfNeeded()
         let expectedSize = NSSize(
             width: visualCase.captureTarget.expectedWidth(defaultWindow: visualCase.window),
@@ -286,11 +289,27 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 visualCase.id
             )
         }
+        if let hoverPopover = visualCase.hoverPopover {
+            let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
+            vc.showHoverPopover(
+                text: hoverPopover.text,
+                at: hoverPopover.info,
+                in: tab.editCore.editorView
+            )
+        }
+        if let signatureHelpPopover = visualCase.signatureHelpPopover {
+            let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
+            vc.showSignatureHelpPopover(
+                display: signatureHelpPopover.display,
+                in: tab.editCore.editorView
+            )
+        }
     }
 
     private func captureTargetView(
         for visualCase: AttoVisualBaselineCase,
         in window: NSWindow,
+        controller vc: AttoEditorAreaViewController,
         fallbackView: NSView
     ) throws -> NSView {
         switch visualCase.captureTarget.kind {
@@ -317,7 +336,36 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
             contentView.needsLayout = true
             contentView.layoutSubtreeIfNeeded()
             return contentView
+        case .hoverPopover:
+            guard let contentView = vc.hoverPopover?.contentViewController?.view else {
+                throw AttoVisualBaselineError.invalidManifest(
+                    "\(visualCase.id) missing hover popover capture target"
+                )
+            }
+            preparePopoverCaptureView(contentView, for: visualCase)
+            return contentView
+        case .signatureHelpPopover:
+            guard let contentView = vc.signatureHelpPopover?.contentViewController?.view else {
+                throw AttoVisualBaselineError.invalidManifest(
+                    "\(visualCase.id) missing signature help popover capture target"
+                )
+            }
+            preparePopoverCaptureView(contentView, for: visualCase)
+            return contentView
         }
+    }
+
+    private func preparePopoverCaptureView(
+        _ contentView: NSView,
+        for visualCase: AttoVisualBaselineCase
+    ) {
+        if let width = visualCase.captureTarget.width,
+           let height = visualCase.captureTarget.height
+        {
+            contentView.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        }
+        contentView.needsLayout = true
+        contentView.layoutSubtreeIfNeeded()
     }
 
     private func makeTemporaryDirectory(caseID: String) throws -> URL {
@@ -450,6 +498,8 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let lspLocationResults: AttoVisualLspLocationResults?
     let codeActionResults: AttoVisualCodeActionResults?
     let completionPopup: AttoVisualCompletionPopup?
+    let hoverPopover: AttoVisualHoverPopover?
+    let signatureHelpPopover: AttoVisualSignatureHelpPopover?
     let captureTarget: AttoVisualCaptureTarget
     let perChannelTolerance: UInt8
     let maxDifferentPixelRatio: Double
@@ -488,6 +538,8 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case lspLocationResults
         case codeActionResults
         case completionPopup
+        case hoverPopover
+        case signatureHelpPopover
         case captureTarget
         case perChannelTolerance
         case maxDifferentPixelRatio
@@ -529,6 +581,11 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         )
         codeActionResults = try container.decodeIfPresent(AttoVisualCodeActionResults.self, forKey: .codeActionResults)
         completionPopup = try container.decodeIfPresent(AttoVisualCompletionPopup.self, forKey: .completionPopup)
+        hoverPopover = try container.decodeIfPresent(AttoVisualHoverPopover.self, forKey: .hoverPopover)
+        signatureHelpPopover = try container.decodeIfPresent(
+            AttoVisualSignatureHelpPopover.self,
+            forKey: .signatureHelpPopover
+        )
         captureTarget = try container.decodeIfPresent(AttoVisualCaptureTarget.self, forKey: .captureTarget) ?? .mainWindow
         perChannelTolerance = try container.decode(UInt8.self, forKey: .perChannelTolerance)
         maxDifferentPixelRatio = try container.decode(Double.self, forKey: .maxDifferentPixelRatio)
@@ -559,6 +616,21 @@ private struct AttoVisualCaptureTarget: Decodable, Equatable {
     enum Kind: String, Decodable {
         case mainWindow
         case childWindow
+        case hoverPopover
+        case signatureHelpPopover
+
+        var requiresIdentifier: Bool {
+            self == .childWindow
+        }
+
+        var requiresExplicitSize: Bool {
+            switch self {
+            case .mainWindow, .childWindow:
+                return false
+            case .hoverPopover, .signatureHelpPopover:
+                return true
+            }
+        }
     }
 
     static let mainWindow = AttoVisualCaptureTarget(
@@ -873,6 +945,83 @@ private struct AttoVisualCompletionItem: Codable, Equatable {
     let kind: Int?
     let detail: String?
     let documentation: String?
+}
+
+private struct AttoVisualHoverPopover: Decodable, Equatable {
+    let text: String
+    let viewX: Double
+    let viewY: Double
+    let logicalLine: UInt32
+    let logicalColumn: UInt32
+    let charOffset: UInt32
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case viewX
+        case viewY
+        case logicalLine
+        case logicalColumn
+        case charOffset
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = try container.decode(String.self, forKey: .text)
+        viewX = try container.decodeIfPresent(Double.self, forKey: .viewX) ?? 120
+        viewY = try container.decodeIfPresent(Double.self, forKey: .viewY) ?? 120
+        logicalLine = try container.decodeIfPresent(UInt32.self, forKey: .logicalLine) ?? 0
+        logicalColumn = try container.decodeIfPresent(UInt32.self, forKey: .logicalColumn) ?? 0
+        charOffset = try container.decodeIfPresent(UInt32.self, forKey: .charOffset) ?? 0
+    }
+
+    var info: EditorCoreSkiaHoverInfo {
+        let point = CGPoint(x: viewX, y: viewY)
+        return EditorCoreSkiaHoverInfo(
+            charOffset: charOffset,
+            logicalLine: logicalLine,
+            logicalColumn: logicalColumn,
+            windowPoint: point,
+            viewPoint: point,
+            viewBackingXPx: Float(viewX),
+            viewBackingYPx: Float(viewY),
+            documentLinkJSON: nil
+        )
+    }
+}
+
+private struct AttoVisualSignatureHelpPopover: Decodable, Equatable {
+    let text: String
+    let activeParameterRanges: [AttoVisualTextRange]
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case activeParameterRanges
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = try container.decode(String.self, forKey: .text)
+        activeParameterRanges = try container.decodeIfPresent(
+            [AttoVisualTextRange].self,
+            forKey: .activeParameterRanges
+        ) ?? []
+    }
+
+    var display: AttoLspSignatureHelpFormatter.Display {
+        AttoLspSignatureHelpFormatter.Display(
+            text: text,
+            activeParameterRanges: activeParameterRanges.map(\.nsRange)
+        )
+    }
+}
+
+private struct AttoVisualTextRange: Decodable, Equatable {
+    let location: Int
+    let length: Int
+
+    var nsRange: NSRange {
+        NSRange(location: location, length: length)
+    }
 }
 
 private struct AttoVisualBaselineWindow: Decodable, Equatable {
