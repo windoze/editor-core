@@ -1635,8 +1635,9 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：阶段 13 已扩展持久在线 result panel visual matrix，manifest 可结构化生成 incoming/outgoing/type hierarchy result JSON，复用 App hierarchy snapshot 路径打开并捕获 Hierarchy panel，并新增 dark incoming-call Hierarchy panel artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual hierarchy panel` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展持久在线 auxiliary LSP panel visual matrix，manifest 可结构化生成 Code Lens、Inlay Hints、Document Links 和 Document Colors 结果，并复用 App derived-state/result apply 路径打开并捕获对应 panels，新增四个 dark artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual auxiliary lsp panels` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 popup visual matrix，manifest 可直接生成并捕获 WorkspaceEdit failure 与 LSP request failure feedback popover content view，并新增两个 dark artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual failure popovers` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
+- 已完成：阶段 13 已扩展 WorkspaceEdit visual matrix，manifest 可结构化生成 WorkspaceEdit transaction preview 和 preview panel sections，并通过 package-internal non-modal testing/visual entry 捕获 modal WorkspaceEdit preview panel content view，新增 dark WorkspaceEdit preview panel artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual workspace edit preview` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 仍缺提交首批经批准机器生成的 PNG golden baselines，并在首批 PNG 合入后把 strict visual comparison 提升为默认必过门禁。
-- 继续扩展 fixtures，覆盖 modal WorkspaceEdit preview panel 等更多 WorkspaceEdit UI，以及经审核的跨 theme/window-size 真实 baseline 场景。
+- 继续扩展 fixtures，覆盖更多 WorkspaceEdit 真实触发链/失败场景，以及经审核的跨 theme/window-size 真实 baseline 场景。
 - 继续扩展 `XCUIApplication` smoke tests，覆盖真实 LSP server 驱动的 Locations/Symbols/Workspace Outline 结果生成、panel row navigation 和打开目标行为。
 - 仍缺把 CI strict visual comparison 升级为首批 PNG baseline 合入后的默认必过门禁。
 

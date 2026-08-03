@@ -2237,6 +2237,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover visual workspace edit preview`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 WorkspaceEdit 视觉矩阵，把 modal WorkspaceEdit preview panel 纳入可记录 artifact。
+  - 提交边界：`AttoWorkspaceEditPreviewPanelController` 新增 package-internal non-modal testing/visual entry，复用现有 panel 构建、定位、selection 和布局；visual manifest harness 新增结构化 `workspaceEditPreview` action，可从临时 workspace 文件名生成 core transaction result + preview sections；manifest 新增 dark WorkspaceEdit preview panel artifact case，覆盖 text edits、create resource operation 和 conflict detail。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变 modal `runModal` 产品行为，也不覆盖真实 WorkspaceEdit failure 触发链。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

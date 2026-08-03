@@ -1104,6 +1104,87 @@
       },
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-preview-panel-dark",
+      "description": "Dark WorkspaceEdit preview panel with text edits, a resource operation, and conflict detail.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-preview-panel-dark.png",
+      "artifactName": "workspace-edit-preview-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 980,
+        "height": 620
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.WorkspaceEditPreview.Panel",
+        "width": 880,
+        "height": 560
+      },
+      "workspaceEditPreview": {
+        "appliedEditCount": 3,
+        "appliedResourceOperationCount": 1,
+        "appliedFiles": [
+          "floating-panels.swift",
+          "generated/PalettePreview.swift"
+        ],
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "editCount": 2,
+            "isOpen": true
+          },
+          {
+            "fileName": "generated/PalettePreview.swift",
+            "editCount": 1,
+            "isOpen": false
+          }
+        ],
+        "resourceOperations": [
+          {
+            "kind": "create",
+            "fileName": "generated/PalettePreview.swift",
+            "affectedFiles": [
+              "generated/PalettePreview.swift"
+            ],
+            "supported": true,
+            "applied": false
+          }
+        ],
+        "conflicts": [
+          {
+            "fileName": "generated/PalettePreview.swift",
+            "kind": "existing_file",
+            "reason": "target_exists",
+            "operation": "create",
+            "message": "preview target already exists"
+          }
+        ],
+        "sections": [
+          {
+            "fileName": "floating-panels.swift",
+            "title": "floating-panels.swift",
+            "subtitle": "2 edits, open",
+            "detailText": "--- floating-panels.swift\n+++ floating-panels.swift\n@@\n-        return \"primary\"\n+        return renderPreview(primaryValue)\n\n@@\n-    let accent = \"blue\"\n+    let accent = previewAccent(for: palette)"
+          },
+          {
+            "fileName": "generated/PalettePreview.swift",
+            "title": "Create PalettePreview.swift",
+            "subtitle": "create file",
+            "detailText": "Create file\nPath: generated/PalettePreview.swift\n\nstruct PalettePreview {\n    let title: String\n    let accent: String\n}"
+          },
+          {
+            "fileName": "generated/PalettePreview.swift",
+            "title": "generated/PalettePreview.swift",
+            "subtitle": "existing_file: create: target_exists",
+            "detailText": "Conflict\nKind: existing_file\nOperation: create\nReason: target_exists\nMessage: preview target already exists"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }

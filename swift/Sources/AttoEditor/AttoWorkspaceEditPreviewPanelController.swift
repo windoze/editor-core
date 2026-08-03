@@ -40,6 +40,34 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         return decision
     }
 
+    @discardableResult
+    func showForTesting(
+        relativeTo parentWindow: NSWindow?,
+        preview: AttoWorkspaceEditPreview
+    ) -> NSPanel {
+        self.preview = preview
+        sections = preview.panelSections
+        decision = .cancel
+
+        let panel = buildPanel()
+        self.panel = panel
+        position(panel: panel, relativeTo: parentWindow)
+        if let parentWindow {
+            parentWindow.addChildWindow(panel, ordered: .above)
+        }
+
+        applySelection(row: 0)
+        panel.makeKeyAndOrderFront(nil)
+        return panel
+    }
+
+    func closeForTesting() {
+        guard let panel else { return }
+        panel.orderOut(nil)
+        panel.parent?.removeChildWindow(panel)
+        self.panel = nil
+    }
+
     private func buildPanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 880, height: 560),

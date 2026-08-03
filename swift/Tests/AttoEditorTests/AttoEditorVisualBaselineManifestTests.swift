@@ -375,6 +375,12 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 in: tab.editCore.editorView
             )
         }
+        if let workspaceEditPreview = visualCase.workspaceEditPreview {
+            let panelController = AttoWorkspaceEditPreviewPanelController()
+            let preview = try workspaceEditPreview.preview(tempDir: tempDir)
+            panelController.showForTesting(relativeTo: vc.view.window, preview: preview)
+            vc.workspaceEditPreviewPanelController = panelController
+        }
         if let persistentPanel = visualCase.persistentPanel {
             switch persistentPanel {
             case .problemsPanel:
@@ -607,6 +613,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let hoverPopover: AttoVisualHoverPopover?
     let signatureHelpPopover: AttoVisualSignatureHelpPopover?
     let failurePopover: AttoVisualFailurePopover?
+    let workspaceEditPreview: AttoVisualWorkspaceEditPreview?
     let persistentPanel: AttoVisualPersistentPanel?
     let captureTarget: AttoVisualCaptureTarget
     let perChannelTolerance: UInt8
@@ -656,6 +663,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case hoverPopover
         case signatureHelpPopover
         case failurePopover
+        case workspaceEditPreview
         case persistentPanel
         case captureTarget
         case perChannelTolerance
@@ -729,6 +737,10 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
             forKey: .signatureHelpPopover
         )
         failurePopover = try container.decodeIfPresent(AttoVisualFailurePopover.self, forKey: .failurePopover)
+        workspaceEditPreview = try container.decodeIfPresent(
+            AttoVisualWorkspaceEditPreview.self,
+            forKey: .workspaceEditPreview
+        )
         persistentPanel = try container.decodeIfPresent(AttoVisualPersistentPanel.self, forKey: .persistentPanel)
         captureTarget = try container.decodeIfPresent(AttoVisualCaptureTarget.self, forKey: .captureTarget) ?? .mainWindow
         perChannelTolerance = try container.decode(UInt8.self, forKey: .perChannelTolerance)
@@ -1659,6 +1671,323 @@ private struct AttoVisualSignatureHelpPopover: Decodable, Equatable {
 
 private struct AttoVisualFailurePopover: Decodable, Equatable {
     let text: String
+}
+
+private struct AttoVisualWorkspaceEditPreview: Decodable, Equatable {
+    let mode: String
+    let applyMode: String
+    let applied: Bool
+    let appliedFiles: [String]
+    let appliedEditCount: Int
+    let appliedResourceOperationCount: Int
+    let documents: [AttoVisualWorkspaceEditPreviewDocument]
+    let resourceOperations: [AttoVisualWorkspaceEditPreviewResourceOperation]
+    let dirtyFiles: [String]
+    let conflicts: [AttoVisualWorkspaceEditPreviewConflict]
+    let skippedFiles: [String]
+    let skippedDetails: [AttoVisualWorkspaceEditPreviewSkippedDetail]
+    let unsupportedOperationFiles: [String]
+    let sections: [AttoVisualWorkspaceEditPreviewSection]
+
+    enum CodingKeys: String, CodingKey {
+        case mode
+        case applyMode
+        case applied
+        case appliedFiles
+        case appliedEditCount
+        case appliedResourceOperationCount
+        case documents
+        case resourceOperations
+        case dirtyFiles
+        case conflicts
+        case skippedFiles
+        case skippedDetails
+        case unsupportedOperationFiles
+        case sections
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try container.decodeIfPresent(String.self, forKey: .mode) ?? "preview"
+        applyMode = try container.decodeIfPresent(String.self, forKey: .applyMode) ?? "partial"
+        applied = try container.decodeIfPresent(Bool.self, forKey: .applied) ?? false
+        appliedFiles = try container.decodeIfPresent([String].self, forKey: .appliedFiles) ?? []
+        appliedEditCount = try container.decodeIfPresent(Int.self, forKey: .appliedEditCount) ?? 0
+        appliedResourceOperationCount = try container.decodeIfPresent(
+            Int.self,
+            forKey: .appliedResourceOperationCount
+        ) ?? 0
+        documents = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditPreviewDocument].self,
+            forKey: .documents
+        ) ?? []
+        resourceOperations = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditPreviewResourceOperation].self,
+            forKey: .resourceOperations
+        ) ?? []
+        dirtyFiles = try container.decodeIfPresent([String].self, forKey: .dirtyFiles) ?? []
+        conflicts = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditPreviewConflict].self,
+            forKey: .conflicts
+        ) ?? []
+        skippedFiles = try container.decodeIfPresent([String].self, forKey: .skippedFiles) ?? []
+        skippedDetails = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditPreviewSkippedDetail].self,
+            forKey: .skippedDetails
+        ) ?? []
+        unsupportedOperationFiles = try container.decodeIfPresent(
+            [String].self,
+            forKey: .unsupportedOperationFiles
+        ) ?? []
+        sections = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditPreviewSection].self,
+            forKey: .sections
+        ) ?? []
+    }
+
+    func preview(tempDir: URL) throws -> AttoWorkspaceEditPreview {
+        let payload = AttoVisualWorkspaceEditTransactionPayload(
+            mode: mode,
+            applyMode: applyMode,
+            applied: applied,
+            appliedURIs: appliedFiles.map { Self.fileURI($0, tempDir: tempDir) },
+            appliedEditCount: appliedEditCount,
+            appliedResourceOperationCount: appliedResourceOperationCount,
+            resourceOperations: resourceOperations.map { $0.payload(tempDir: tempDir) },
+            dirtyDocumentURIs: dirtyFiles.map { Self.fileURI($0, tempDir: tempDir) },
+            conflicts: conflicts.map { $0.payload(tempDir: tempDir) },
+            skippedURIs: skippedFiles.map { Self.fileURI($0, tempDir: tempDir) },
+            skippedDetails: skippedDetails.map { $0.payload(tempDir: tempDir) },
+            unsupportedOperationURIs: unsupportedOperationFiles.map { Self.fileURI($0, tempDir: tempDir) },
+            documents: documents.map { $0.payload(tempDir: tempDir) }
+        )
+        let data = try JSONEncoder().encode(payload)
+        let result = try JSONDecoder().decode(EcuWorkspaceEditTransactionResult.self, from: data)
+        var preview = AttoWorkspaceEditPreview(result: result)
+        preview.sections = sections.map { $0.previewSection(tempDir: tempDir) }
+        return preview
+    }
+
+    fileprivate static func fileURI(_ fileName: String, tempDir: URL) -> String {
+        tempDir.appendingPathComponent(fileName).standardizedFileURL.absoluteString
+    }
+}
+
+private struct AttoVisualWorkspaceEditPreviewDocument: Decodable, Equatable {
+    let fileName: String
+    let editCount: Int
+    let isOpen: Bool
+    let isDirty: Bool
+    let hasOverlappingEdits: Bool
+    let versionMismatch: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case fileName
+        case editCount
+        case isOpen
+        case isDirty
+        case hasOverlappingEdits
+        case versionMismatch
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        editCount = try container.decodeIfPresent(Int.self, forKey: .editCount) ?? 0
+        isOpen = try container.decodeIfPresent(Bool.self, forKey: .isOpen) ?? false
+        isDirty = try container.decodeIfPresent(Bool.self, forKey: .isDirty) ?? false
+        hasOverlappingEdits = try container.decodeIfPresent(Bool.self, forKey: .hasOverlappingEdits) ?? false
+        versionMismatch = try container.decodeIfPresent(Bool.self, forKey: .versionMismatch) ?? false
+    }
+
+    func payload(tempDir: URL) -> AttoVisualWorkspaceEditTransactionDocumentPayload {
+        AttoVisualWorkspaceEditTransactionDocumentPayload(
+            uri: AttoVisualWorkspaceEditPreview.fileURI(fileName, tempDir: tempDir),
+            editCount: editCount,
+            hasOverlappingEdits: hasOverlappingEdits,
+            versionMismatch: versionMismatch,
+            isOpen: isOpen,
+            isDirty: isDirty
+        )
+    }
+}
+
+private struct AttoVisualWorkspaceEditPreviewResourceOperation: Decodable, Equatable {
+    let kind: String
+    let fileName: String?
+    let oldFileName: String?
+    let newFileName: String?
+    let affectedFiles: [String]
+    let supported: Bool
+    let applied: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case fileName
+        case oldFileName
+        case newFileName
+        case affectedFiles
+        case supported
+        case applied
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(String.self, forKey: .kind)
+        fileName = try container.decodeIfPresent(String.self, forKey: .fileName)
+        oldFileName = try container.decodeIfPresent(String.self, forKey: .oldFileName)
+        newFileName = try container.decodeIfPresent(String.self, forKey: .newFileName)
+        affectedFiles = try container.decodeIfPresent([String].self, forKey: .affectedFiles) ?? []
+        supported = try container.decodeIfPresent(Bool.self, forKey: .supported) ?? true
+        applied = try container.decodeIfPresent(Bool.self, forKey: .applied) ?? false
+    }
+
+    func payload(tempDir: URL) -> AttoVisualWorkspaceEditTransactionResourceOperationPayload {
+        AttoVisualWorkspaceEditTransactionResourceOperationPayload(
+            kind: kind,
+            uri: fileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
+            oldURI: oldFileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
+            newURI: newFileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
+            affectedURIs: affectedFiles.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
+            supported: supported,
+            applied: applied
+        )
+    }
+}
+
+private struct AttoVisualWorkspaceEditPreviewConflict: Decodable, Equatable {
+    let fileName: String
+    let kind: String
+    let reason: String
+    let operation: String?
+    let message: String
+
+    func payload(tempDir: URL) -> AttoVisualWorkspaceEditTransactionConflictPayload {
+        AttoVisualWorkspaceEditTransactionConflictPayload(
+            uri: AttoVisualWorkspaceEditPreview.fileURI(fileName, tempDir: tempDir),
+            kind: kind,
+            reason: reason,
+            operation: operation,
+            message: message
+        )
+    }
+}
+
+private struct AttoVisualWorkspaceEditPreviewSkippedDetail: Decodable, Equatable {
+    let fileName: String
+    let reason: String
+    let operation: String?
+    let message: String
+
+    func payload(tempDir: URL) -> AttoVisualWorkspaceEditTransactionSkippedDetailPayload {
+        AttoVisualWorkspaceEditTransactionSkippedDetailPayload(
+            uri: AttoVisualWorkspaceEditPreview.fileURI(fileName, tempDir: tempDir),
+            reason: reason,
+            operation: operation,
+            message: message
+        )
+    }
+}
+
+private struct AttoVisualWorkspaceEditPreviewSection: Decodable, Equatable {
+    let fileName: String?
+    let title: String
+    let subtitle: String
+    let detailText: String
+
+    func previewSection(tempDir: URL) -> AttoWorkspaceEditPreview.Section {
+        AttoWorkspaceEditPreview.Section(
+            uri: fileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) } ?? "",
+            title: title,
+            subtitle: subtitle,
+            detailText: detailText
+        )
+    }
+}
+
+private struct AttoVisualWorkspaceEditTransactionPayload: Encodable {
+    let mode: String
+    let applyMode: String
+    let applied: Bool
+    let appliedURIs: [String]
+    let appliedEditCount: Int
+    let appliedResourceOperationCount: Int
+    let resourceOperations: [AttoVisualWorkspaceEditTransactionResourceOperationPayload]
+    let dirtyDocumentURIs: [String]
+    let conflicts: [AttoVisualWorkspaceEditTransactionConflictPayload]
+    let skippedURIs: [String]
+    let skippedDetails: [AttoVisualWorkspaceEditTransactionSkippedDetailPayload]
+    let unsupportedOperationURIs: [String]
+    let documents: [AttoVisualWorkspaceEditTransactionDocumentPayload]
+
+    private enum CodingKeys: String, CodingKey {
+        case mode
+        case applyMode = "apply_mode"
+        case applied
+        case appliedURIs = "applied_uris"
+        case appliedEditCount = "applied_edit_count"
+        case appliedResourceOperationCount = "applied_resource_operation_count"
+        case resourceOperations = "resource_operations"
+        case dirtyDocumentURIs = "dirty_document_uris"
+        case conflicts
+        case skippedURIs = "skipped_uris"
+        case skippedDetails = "skipped_details"
+        case unsupportedOperationURIs = "unsupported_operation_uris"
+        case documents
+    }
+}
+
+private struct AttoVisualWorkspaceEditTransactionDocumentPayload: Encodable {
+    let uri: String
+    let editCount: Int
+    let hasOverlappingEdits: Bool
+    let versionMismatch: Bool
+    let isOpen: Bool
+    let isDirty: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case uri
+        case editCount = "edit_count"
+        case hasOverlappingEdits = "has_overlapping_edits"
+        case versionMismatch = "version_mismatch"
+        case isOpen = "is_open"
+        case isDirty = "is_dirty"
+    }
+}
+
+private struct AttoVisualWorkspaceEditTransactionResourceOperationPayload: Encodable {
+    let kind: String
+    let uri: String?
+    let oldURI: String?
+    let newURI: String?
+    let affectedURIs: [String]
+    let supported: Bool
+    let applied: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case uri
+        case oldURI = "old_uri"
+        case newURI = "new_uri"
+        case affectedURIs = "affected_uris"
+        case supported
+        case applied
+    }
+}
+
+private struct AttoVisualWorkspaceEditTransactionConflictPayload: Encodable {
+    let uri: String
+    let kind: String
+    let reason: String
+    let operation: String?
+    let message: String
+}
+
+private struct AttoVisualWorkspaceEditTransactionSkippedDetailPayload: Encodable {
+    let uri: String
+    let reason: String
+    let operation: String?
+    let message: String
 }
 
 private struct AttoVisualTextRange: Decodable, Equatable {
