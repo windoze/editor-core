@@ -435,6 +435,7 @@ extension AttoEditorAreaViewController {
                 pinCoreTabIfPreview(existing)
             }
             selectTab(id: existing.id)
+            installXCUISmokeResultFixturesIfEnabled(for: existing)
             refreshTabBar()
             updateWindowTitle()
             notifySessionStateChanged()
@@ -454,6 +455,7 @@ extension AttoEditorAreaViewController {
                         let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
                         tabs[previewIdx] = tab
                         selectTab(id: tab.id)
+                        installXCUISmokeResultFixturesIfEnabled(for: tab)
                         syncProjectLspServerConfigsToCore()
                         notifyOtherLspSessionsDocumentOpened(tab)
                         onDidCloseFile?(oldURL)
@@ -465,6 +467,7 @@ extension AttoEditorAreaViewController {
                 let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
                 tabs.append(tab)
                 selectTab(id: tab.id)
+                installXCUISmokeResultFixturesIfEnabled(for: tab)
                 syncProjectLspServerConfigsToCore()
                 notifyOtherLspSessionsDocumentOpened(tab)
                 notifySessionStateChanged()
@@ -473,6 +476,7 @@ extension AttoEditorAreaViewController {
                 let tab = try makeTab(for: url, isPreview: false, isUntitled: isUntitled)
                 tabs.append(tab)
                 selectTab(id: tab.id)
+                installXCUISmokeResultFixturesIfEnabled(for: tab)
                 syncProjectLspServerConfigsToCore()
                 notifyOtherLspSessionsDocumentOpened(tab)
                 notifySessionStateChanged()

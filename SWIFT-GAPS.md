@@ -1626,9 +1626,10 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：阶段 13 已新增 visual baseline CI/审核策略入口，包含 strict baseline check 脚本、`VisualBaselines/README.md` golden PNG 规则，以及固定 macOS runner 的 visual-baselines workflow；PR 路径触发先跑 smoke artifact capture，手动 workflow 可选择 strict PNG comparison。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): add visual baseline ci policy` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已新增 visual baseline CI 环境审计 artifact，workflow 会在 smoke/strict 前写出 toolchain、display、font、render backend 和 scale-factor 摘要，manifest 测试也固定 `scale == 1.0`。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): record visual ci environment` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已继续扩展 visual baseline fixture matrix，新增 dark narrow editor chrome + find bar + collapsed fold + selection + diagnostics/minimap markers 场景，以及 light wide split-pane + long-line minimap density + multi-selection + diagnostics 场景。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): expand visual overlay window fixtures` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
+- 已完成：阶段 13 已扩展 opt-in `XCUIApplication` injected result panel smoke flow，通过显式 `ATTO_XCUI_RESULT_FIXTURES` 测试 seam 给打开文件后的当前 tab 注入 Locations、Document Symbols 和 Workspace Outline stores，并经 command palette 打开 Locations、Symbols、Workspace Outline panel 断言稳定 AX 节点。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover xcui injected result panels` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 仍缺提交首批经批准机器生成的 PNG golden baselines，并在首批 PNG 合入后把 strict visual comparison 提升为默认必过门禁。
 - 继续扩展 fixtures，覆盖 floating panel/popup 组合和更多经审核的跨 theme/window-size 真实 baseline 场景。
-- 继续扩展 `XCUIApplication` smoke tests，覆盖需要真实 result fixture 或 LSP 注入路径的 Locations/Symbols/Workspace Outline 等结果面板黑盒操作流。
+- 继续扩展 `XCUIApplication` smoke tests，覆盖真实 LSP server 驱动的 Locations/Symbols/Workspace Outline 结果生成、panel row navigation 和打开目标行为。
 - 仍缺把 CI strict visual comparison 升级为首批 PNG baseline 合入后的默认必过门禁。
 
 ## 建议的功能矩阵

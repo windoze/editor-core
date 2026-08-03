@@ -2174,6 +2174,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover xcui injected result panels`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 opt-in `XCUIApplication` 黑盒操作流，覆盖 Locations、Symbols 和 Workspace Outline 这类需要真实 result fixture 的 panel 打开路径。
+  - 提交边界：新增显式 `ATTO_XCUI_RESULT_FIXTURES` opt-in fixture 注入路径，打开文件后给当前 tab 写入 Locations、Document Symbols 和 Workspace Outline stores；扩展 `AttoEditorXCUIApplicationSmokeTests` 通过 command palette 打开 `lsp.show_locations_panel`、`lsp.show_symbols_panel`、`lsp.show_workspace_outline_panel` 并断言 panel/root/search/metadata/table AX 节点。该提交不启用默认 CI GUI 测试、不启动真实 LSP server、不改变普通产品路径、不提交 golden PNG。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceOutlinePanelAggregatesDocumentSymbolSnapshots`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

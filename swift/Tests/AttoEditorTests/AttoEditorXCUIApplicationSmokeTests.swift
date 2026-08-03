@@ -221,7 +221,47 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         )
     }
 
-    private func launchAttoEditor() throws -> LaunchedAttoApp {
+    func testInjectedLocationSymbolAndWorkspaceOutlinePanelsSmokeFlow() throws {
+        let launched = try launchAttoEditor(resultFixtures: true)
+        defer { launched.cleanUp() }
+
+        XCTAssertTrue(launched.app.wait(for: .runningForeground, timeout: Self.timeout))
+        XCTAssertTrue(launched.app.windows.firstMatch.waitForExistence(timeout: Self.timeout))
+
+        let workspaceURL = launched.runtimeRoot.appendingPathComponent("result-fixtures", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let fileURL = workspaceURL.appendingPathComponent("ResultFixtures.swift", isDirectory: false)
+        try """
+        struct XCUISmokeDocument {
+            func smokeChild() {}
+        }
+        """.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        try enqueueOpenFileRequest(fileURL, launched: launched)
+        _ = try firstElement(identifierPrefix: dynamicIdentifierPrefix(AttoAccessibilityID.editorView), in: launched.app)
+
+        try runCommandPaletteCommand("lsp.show_locations_panel", in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspLocationPanel, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspLocationPanelRoot, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspLocationPanelSearchField, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspLocationPanelMetadataLabel, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspLocationPanelTable, in: launched.app)
+
+        try runCommandPaletteCommand("lsp.show_symbols_panel", in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspSymbolPanel, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspSymbolPanelRoot, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspSymbolPanelSearchField, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspSymbolPanelMetadataLabel, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspSymbolPanelTable, in: launched.app)
+
+        try runCommandPaletteCommand("lsp.show_workspace_outline_panel", in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspSymbolPanel, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspSymbolPanelSearchField, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspSymbolPanelMetadataLabel, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspSymbolPanelTable, in: launched.app)
+    }
+
+    private func launchAttoEditor(resultFixtures: Bool = false) throws -> LaunchedAttoApp {
         guard Self.isEnabled else {
             throw XCTSkip(
                 """
@@ -247,6 +287,9 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         app.launchEnvironment[AttoIPC.spoolDirPathEnvKey] = spoolDir.path
         app.launchEnvironment["HOME"] = homeURL.path
         app.launchEnvironment["ATTO_EDITOR_THEME"] = "Atto Dark"
+        if resultFixtures {
+            app.launchEnvironment[AttoEditorAreaViewController.xcuiResultFixturesEnvKey] = "1"
+        }
         app.launch()
 
         return LaunchedAttoApp(app: app, runtimeRoot: runtimeRoot, spoolDir: spoolDir)
