@@ -5223,6 +5223,43 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(macroStore.namedMacroNames(), ["One", "Three", "Two"])
     }
 
+    func testCommandMacroUndoDeleteUsesMultiLevelHistory() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
+        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
+        try macroStore.save(commands, named: "Alpha", maxCount: 20)
+        try macroStore.save(commands, named: "Beta", maxCount: 20)
+        try macroStore.save(commands, named: "Gamma", maxCount: 20)
+
+        delegate._setMacroDeleteBatchConfirmationProviderForTesting { _ in true }
+
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named",
+            arguments: ["name": .string("Alpha")]
+        ))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Beta", "Gamma"])
+
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named_batch",
+            arguments: ["names": .json("[\"Beta\", \"Gamma\"]")]
+        ))
+        XCTAssertEqual(macroStore.namedMacroNames(), [])
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
+        XCTAssertTrue(delegate.executeCommand(id: "macro.undo_delete"))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Beta", "Gamma"])
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
+        XCTAssertTrue(delegate.executeCommand(id: "macro.undo_delete"))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Alpha", "Beta", "Gamma"])
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
+    }
+
     func testCommandMacroImportsAndExportsSublimeMacroFiles() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

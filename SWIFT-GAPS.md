@@ -160,6 +160,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 325 继续推进阶段 8 的命名宏删除体验：`macro.delete_named` 现在会在真正删除 `.sublime-macro` 前弹出 warning 确认；测试路径可注入 confirmation provider 覆盖取消/确认。仍缺独立宏管理面板、批量删除、回收站/undo、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
 - 阶段 326 继续推进阶段 8 的命名宏批量管理：`macro.delete_named_batch` 现在可通过 JSON string array 参数一次删除多个命名 `.sublime-macro`，Tools 菜单也有对应入口；App 会去重、验证命名宏存在，并复用删除确认 UI 一次确认后批量删除。仍缺独立宏管理面板、回收站/undo、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
 - 阶段 327 继续推进阶段 8 的命名宏删除恢复：`macro.undo_delete` 现在可恢复最近一次单宏或批量删除的命名 `.sublime-macro`；删除前会保存 command sequence 快照，恢复时不会覆盖之后新建的同名宏，恢复成功后清空 undo 记录。仍缺独立宏管理面板、多级删除历史、跨启动回收站、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
+- 阶段 328 继续推进阶段 8 的命名宏删除恢复：`macro.undo_delete` 现在使用最多 20 条的 LIFO 删除历史，连续单宏删除和批量删除可按后进先出顺序逐步恢复；恢复失败时会保留历史以便处理同名冲突后重试。仍缺独立宏管理面板、跨启动回收站、删除历史 UI、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
@@ -1377,7 +1378,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 一些 core/LSP 命令仍没有 App 命令入口。
 - 用户 keymap 文件已有基础 Sublime JSON、context 条件过滤和快捷键冲突解析，但还不是完整 Sublime keymap 兼容实现。
 - 没有 Sublime 风格 settings scopes。
-- 已有 last macro 录制/回放、命名 `.sublime-macro` 保存、按名回放、重命名、删除、批量删除、最近一次删除 undo、基础导入/导出入口、原生文件选择流程和删除确认 UI，但还没有独立宏管理面板、多级删除历史、跨启动回收站、完整 Sublime `.sublime-macro` 扩展语义或 plugin/package command runtime。
+- 已有 last macro 录制/回放、命名 `.sublime-macro` 保存、按名回放、重命名、删除、批量删除、多级删除 undo、基础导入/导出入口、原生文件选择流程和删除确认 UI，但还没有独立宏管理面板、跨启动回收站、删除历史 UI、完整 Sublime `.sublime-macro` 扩展语义或 plugin/package command runtime。
 - 没有 build systems。
 - 没有 package/plugin command 入口。
 - 命令是否启用、是否可见、当前参数、错误展示没有统一模型。
@@ -1522,7 +1523,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor 命名 `.sublime-macro` 导入/导出的无参数命令和菜单路径已有原生文件选择流程，导入使用 open panel，导出使用 save panel；参数化路径仍可显式输入 path/name。
 - 已完成：AttoEditor 命名 `.sublime-macro` 删除已有确认 UI，`macro.delete_named` 删除前会弹出 warning alert；测试路径可注入 provider 覆盖取消/确认。
 - 已完成：AttoEditor 命名 `.sublime-macro` 已有批量删除起点，`macro.delete_named_batch` 可通过 JSON string array 参数一次删除多个命名宏，并复用删除确认 UI。
-- 已完成：AttoEditor 命名 `.sublime-macro` 已有最近一次删除 undo 起点，`macro.undo_delete` 可恢复最近一次单宏或批量删除的 command sequence，恢复时不会覆盖之后新建的同名宏。
+- 已完成：AttoEditor 命名 `.sublime-macro` 已有多级删除 undo 起点，`macro.undo_delete` 可按后进先出顺序恢复连续单宏或批量删除的 command sequence，恢复时不会覆盖之后新建的同名宏。
 - 已完成：AttoEditor keymap 已支持 arrow/navigation function-key token，move lines up/down 已有默认 arrow-key 绑定。
 - 已完成：AttoEditor keymap 已支持基础 `context` 条件过滤和快捷键冲突解析，`resolvedKeymap(...)` 可暴露 conflicts 供测试和后续 UI/诊断使用。
 - 已完成：AttoEditor keymap 已支持用户条目 `args` 解码，并能通过菜单/shortcut command 路径调用 `executeCommand(id:arguments:)` 执行参数化命令。

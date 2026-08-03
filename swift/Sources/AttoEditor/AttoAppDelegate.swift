@@ -191,10 +191,11 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var isReplayingMacro = false
     private var currentMacroCommands: [AttoRecordedCommand] = []
     private var lastMacroCommands: [AttoRecordedCommand] = []
-    private var deletedMacroUndoRecord: AttoDeletedMacroUndoRecord?
+    private var deletedMacroUndoStack: [AttoDeletedMacroUndoRecord] = []
 
     private static let maxRecentCommandCount = 12
     private static let maxRecordedMacroCommandCount = 512
+    private static let maxDeletedMacroUndoRecordCount = 20
     private static let sublimeMacroFileType = UTType(filenameExtension: "sublime-macro") ?? .json
 
     var ipcServer: AttoIpcServer?
@@ -1699,7 +1700,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
         do {
             try macroStore.deleteNamedMacros(names)
-            deletedMacroUndoRecord = AttoDeletedMacroUndoRecord(macros: snapshots)
+            pushDeletedMacroUndoRecord(AttoDeletedMacroUndoRecord(macros: snapshots))
             return true
         } catch {
             NSSound.beep()
@@ -1724,7 +1725,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
         do {
             try macroStore.deleteNamedMacros(names)
-            deletedMacroUndoRecord = AttoDeletedMacroUndoRecord(macros: snapshots)
+            pushDeletedMacroUndoRecord(AttoDeletedMacroUndoRecord(macros: snapshots))
             return true
         } catch {
             NSSound.beep()
@@ -1736,7 +1737,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private func undoDeletedMacros() -> Bool {
         guard isRecordingMacro == false,
               let macroStore,
-              let undoRecord = deletedMacroUndoRecord,
+              let undoRecord = deletedMacroUndoStack.last,
               undoRecord.macros.isEmpty == false
         else {
             NSSound.beep()
@@ -1746,12 +1747,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         let macros = undoRecord.macros.map { (name: $0.name, commands: $0.commands) }
         do {
             try macroStore.restoreNamedMacros(macros, maxCount: Self.maxRecordedMacroCommandCount)
-            deletedMacroUndoRecord = nil
+            _ = deletedMacroUndoStack.popLast()
             return true
         } catch {
             NSSound.beep()
             NSLog("AttoEditor: failed to undo macro delete: %@", String(describing: error))
             return false
+        }
+    }
+
+    private func pushDeletedMacroUndoRecord(_ record: AttoDeletedMacroUndoRecord) {
+        guard record.macros.isEmpty == false else { return }
+        deletedMacroUndoStack.append(record)
+        if deletedMacroUndoStack.count > Self.maxDeletedMacroUndoRecordCount {
+            deletedMacroUndoStack.removeFirst(deletedMacroUndoStack.count - Self.maxDeletedMacroUndoRecordCount)
         }
     }
 
@@ -1996,7 +2005,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         case "macro.replay_named", "macro.rename_named", "macro.delete_named", "macro.delete_named_batch":
             return isRecordingMacro == false && (macroStore?.namedMacroNames().isEmpty == false)
         case "macro.undo_delete":
-            return isRecordingMacro == false && macroStore != nil && (deletedMacroUndoRecord?.macros.isEmpty == false)
+            return isRecordingMacro == false && macroStore != nil && deletedMacroUndoStack.isEmpty == false
         case "macro.import_file":
             return isRecordingMacro == false && macroStore != nil
         case "macro.export_named":

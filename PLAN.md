@@ -1444,6 +1444,13 @@
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|CommandMacroBatchDeletesNamedSublimeMacroFiles)'`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroBatchDeletesNamedSublimeMacroFiles|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|CommandMacroImportExportUsesNativeFileSelectionProviders|CommandMacroImportsAndExportsSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
     - `git diff --check`
+- 中间提交：`feat(app): stack command macro deletion undo`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；把命名 `.sublime-macro` 删除 undo 从最近一次快照推进到 bounded 多级历史，让连续单删/批删可按后进先出顺序逐步恢复。
+  - 提交边界：App delegate 将删除 undo 状态改为最多 20 条的 LIFO 栈，单宏删除和批量删除成功后 push 新记录，`macro.undo_delete` 成功恢复后只弹出最近记录，失败时保留历史以便用户处理冲突后重试。该提交不实现跨启动回收站、删除历史 UI、独立宏管理面板、完整 Sublime package/plugin command runtime、完整 `.sublime-macro` 扩展语义，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroUndoDeleteUsesMultiLevelHistory|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|CommandMacroBatchDeletesNamedSublimeMacroFiles)'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroUndoDeleteUsesMultiLevelHistory|CommandMacroBatchDeletesNamedSublimeMacroFiles|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|CommandMacroImportExportUsesNativeFileSelectionProviders|CommandMacroImportsAndExportsSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 
