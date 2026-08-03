@@ -6,6 +6,7 @@ enum AttoWorkspaceEditPreviewDecision: Equatable {
     case cancel
     case openConflict(String)
     case saveConflict(String)
+    case discardConflict(String)
 }
 
 struct AttoWorkspaceEditPreview: Equatable {
@@ -174,7 +175,11 @@ struct AttoWorkspaceEditPreview: Equatable {
     }
 
     var firstSaveableConflictTargetURI: String? {
-        conflicts.first { Self.isSaveableConflict($0) && $0.uri.isEmpty == false }?.uri
+        conflicts.first { Self.isSaveOrDiscardConflict($0) && $0.uri.isEmpty == false }?.uri
+    }
+
+    var firstDiscardableConflictTargetURI: String? {
+        conflicts.first { Self.isSaveOrDiscardConflict($0) && $0.uri.isEmpty == false }?.uri
     }
 
     var conflictGroups: [ConflictGroup] {
@@ -369,13 +374,22 @@ struct AttoWorkspaceEditPreview: Equatable {
     func saveableConflictTargetURI(for section: Section?) -> String? {
         if let section,
            section.uri.isEmpty == false,
-           conflicts.contains(where: { $0.uri == section.uri && Self.isSaveableConflict($0) }) {
+           conflicts.contains(where: { $0.uri == section.uri && Self.isSaveOrDiscardConflict($0) }) {
             return section.uri
         }
         return firstSaveableConflictTargetURI
     }
 
-    private static func isSaveableConflict(_ conflict: Conflict) -> Bool {
+    func discardableConflictTargetURI(for section: Section?) -> String? {
+        if let section,
+           section.uri.isEmpty == false,
+           conflicts.contains(where: { $0.uri == section.uri && Self.isSaveOrDiscardConflict($0) }) {
+            return section.uri
+        }
+        return firstDiscardableConflictTargetURI
+    }
+
+    private static func isSaveOrDiscardConflict(_ conflict: Conflict) -> Bool {
         conflict.resolution == "save_or_discard" || conflict.kind == "dirty_document"
     }
 

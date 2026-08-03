@@ -14,6 +14,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     private let detailScrollView = NSScrollView(frame: .zero)
     private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
     private let saveConflictButton = NSButton(title: "Save Conflict", target: nil, action: nil)
+    private let discardConflictButton = NSButton(title: "Discard Conflict", target: nil, action: nil)
     private let openConflictButton = NSButton(title: "Open Conflict", target: nil, action: nil)
     private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
 
@@ -106,6 +107,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         root.addSubview(tableScrollView)
         root.addSubview(detailScrollView)
         root.addSubview(saveConflictButton)
+        root.addSubview(discardConflictButton)
         root.addSubview(openConflictButton)
         root.addSubview(cancelButton)
         root.addSubview(applyButton)
@@ -137,7 +139,11 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
             openConflictButton.centerYAnchor.constraint(equalTo: applyButton.centerYAnchor),
             openConflictButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 118),
 
-            saveConflictButton.trailingAnchor.constraint(equalTo: openConflictButton.leadingAnchor, constant: -8),
+            discardConflictButton.trailingAnchor.constraint(equalTo: openConflictButton.leadingAnchor, constant: -8),
+            discardConflictButton.centerYAnchor.constraint(equalTo: applyButton.centerYAnchor),
+            discardConflictButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 126),
+
+            saveConflictButton.trailingAnchor.constraint(equalTo: discardConflictButton.leadingAnchor, constant: -8),
             saveConflictButton.centerYAnchor.constraint(equalTo: applyButton.centerYAnchor),
             saveConflictButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 112),
         ])
@@ -200,6 +206,15 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         )
         saveConflictButton.translatesAutoresizingMaskIntoConstraints = false
 
+        discardConflictButton.target = self
+        discardConflictButton.action = #selector(discardConflictClicked(_:))
+        discardConflictButton.bezelStyle = .rounded
+        discardConflictButton.isHidden = preview?.firstDiscardableConflictTargetURI == nil
+        discardConflictButton.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.workspaceEditPreviewDiscardConflictButton
+        )
+        discardConflictButton.translatesAutoresizingMaskIntoConstraints = false
+
         openConflictButton.target = self
         openConflictButton.action = #selector(openConflictClicked(_:))
         openConflictButton.bezelStyle = .rounded
@@ -260,6 +275,9 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         if saveConflictButton.isHidden == false {
             saveConflictButton.isEnabled = selectedSaveableConflictTargetURI() != nil
         }
+        if discardConflictButton.isHidden == false {
+            discardConflictButton.isEnabled = selectedDiscardableConflictTargetURI() != nil
+        }
         guard openConflictButton.isHidden == false else { return }
         openConflictButton.isEnabled = selectedConflictTargetURI() != nil
     }
@@ -274,6 +292,12 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         let row = tableView.selectedRow
         let section = sections.indices.contains(row) ? sections[row] : nil
         return preview?.saveableConflictTargetURI(for: section)
+    }
+
+    private func selectedDiscardableConflictTargetURI() -> String? {
+        let row = tableView.selectedRow
+        let section = sections.indices.contains(row) ? sections[row] : nil
+        return preview?.discardableConflictTargetURI(for: section)
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -341,6 +365,15 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
             return
         }
         decision = .saveConflict(uri)
+        NSApp.stopModal()
+    }
+
+    @objc private func discardConflictClicked(_ sender: Any?) {
+        guard let uri = selectedDiscardableConflictTargetURI() else {
+            NSSound.beep()
+            return
+        }
+        decision = .discardConflict(uri)
         NSApp.stopModal()
     }
 

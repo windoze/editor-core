@@ -194,6 +194,7 @@ enum AttoAccessibilityID {
     static let workspaceEditPreviewDetailScrollView = "AttoEditor.WorkspaceEditPreview.DetailScrollView"
     static let workspaceEditPreviewApplyButton = "AttoEditor.WorkspaceEditPreview.Apply"
     static let workspaceEditPreviewSaveConflictButton = "AttoEditor.WorkspaceEditPreview.SaveConflict"
+    static let workspaceEditPreviewDiscardConflictButton = "AttoEditor.WorkspaceEditPreview.DiscardConflict"
     static let workspaceEditPreviewOpenConflictButton = "AttoEditor.WorkspaceEditPreview.OpenConflict"
     static let workspaceEditPreviewCancelButton = "AttoEditor.WorkspaceEditPreview.Cancel"
 

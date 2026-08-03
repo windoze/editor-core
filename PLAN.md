@@ -504,6 +504,13 @@
     - `swift test --package-path swift --filter 'AttoWorkspaceEditSummaryTests.testWorkspaceEditPreviewListsTypedConflicts|AttoEditorCommandTests.testWorkspaceEditPreviewSaveConflictDecisionSavesTargetTabBeforeRetry|AttoEditorCommandTests.testWorkspaceEditPreviewOpenConflictDecisionSelectsTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewBlocksAtomicConflictEvenWhenDecisionProviderApplies'`
     - `git diff --check`
 
+- 中间提交：`feat(app): discard workspace edit conflict targets`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 WorkspaceEdit `dirty_document` / `save_or_discard` conflict preview 的手动解决入口补成 save/discard 双路径，让用户可以从 preview 丢弃冲突目标 tab 的未保存变更并重试同一 transaction。
+  - 提交边界：只新增 AppKit preview panel 的 `Discard Conflict` 按钮、稳定 accessibility identifier、`AttoWorkspaceEditPreviewDecision.discardConflict(uri)`、discardable conflict target display-model helper 和 App 侧从磁盘重载已打开目标 tab 的 handler；该动作关闭 preview、复用既有 open-tab text replacement/core dirty sync 路径并返回 false，不自动重跑 LSP request、不自动重新 apply，也不新增 Rust/FFI ABI 或改变 core conflict schema、transaction apply/preview/undo/redo 语义。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoWorkspaceEditSummaryTests.testWorkspaceEditPreviewListsTypedConflicts|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardConflictDecisionReloadsTargetTabBeforeRetry|AttoEditorCommandTests.testWorkspaceEditPreviewSaveConflictDecisionSavesTargetTabBeforeRetry|AttoEditorCommandTests.testWorkspaceEditPreviewOpenConflictDecisionSelectsTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewBlocksAtomicConflictEvenWhenDecisionProviderApplies'`
+    - `git diff --check`
+
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 
 ### 目标

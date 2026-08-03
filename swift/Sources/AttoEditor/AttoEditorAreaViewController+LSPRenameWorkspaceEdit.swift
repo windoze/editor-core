@@ -344,6 +344,9 @@ extension AttoEditorAreaViewController {
         case .saveConflict(let uri):
             saveWorkspaceEditConflictTarget(uri, editorView: editorView)
             return false
+        case .discardConflict(let uri):
+            discardWorkspaceEditConflictTarget(uri, editorView: editorView)
+            return false
         }
     }
 
@@ -384,6 +387,44 @@ extension AttoEditorAreaViewController {
         }
 
         setTransientStatusText("Saved WorkspaceEdit conflict: \(url.lastPathComponent)")
+        if activeTab?.id == tab.id, let activeEditorView = activeTab?.editCore.editorView {
+            view.window?.makeFirstResponder(activeEditorView)
+        } else {
+            view.window?.makeFirstResponder(editorView)
+        }
+        return true
+    }
+
+    @discardableResult
+    func discardWorkspaceEditConflictTarget(_ uri: String, editorView: EditorCoreSkiaView) -> Bool {
+        guard let url = Self.fileURL(fromDocumentURI: uri)?.standardizedFileURL,
+              let tab = projectedTab(forFileURL: url)
+        else {
+            setTransientStatusText("WorkspaceEdit conflict target unavailable")
+            NSSound.beep()
+            return false
+        }
+
+        let diskText: String
+        do {
+            diskText = try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            setTransientStatusText("WorkspaceEdit conflict discard failed")
+            NSSound.beep()
+            NSLog(
+                "AttoEditor: failed to read WorkspaceEdit conflict target %@ for discard: %@",
+                url.path,
+                String(describing: error)
+            )
+            return false
+        }
+
+        guard replaceOpenTabText(tab, with: diskText, markSaved: true) else {
+            setTransientStatusText("WorkspaceEdit conflict discard failed")
+            return false
+        }
+
+        setTransientStatusText("Discarded WorkspaceEdit conflict changes: \(url.lastPathComponent)")
         if activeTab?.id == tab.id, let activeEditorView = activeTab?.editCore.editorView {
             view.window?.makeFirstResponder(activeEditorView)
         } else {
