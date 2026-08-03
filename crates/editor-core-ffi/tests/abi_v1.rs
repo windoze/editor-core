@@ -1,14 +1,17 @@
 use editor_core_ffi::{
-    ECF_ABI_VERSION, EcfCreateViewResult, EcfDocumentStats, EcfEditorState, EcfOpenBufferResult,
-    EcfStatus, EcfWorkspace, EcfWorkspaceInfo, EcfWorkspaceViewportState, ecf_abi_version,
-    ecf_editor_backspace, ecf_editor_get_viewport_blob, ecf_editor_insert_text_utf8,
-    ecf_editor_move_to, editor_core_ffi_editor_get_document_stats,
-    editor_core_ffi_editor_get_viewport_blob, editor_core_ffi_editor_insert_text_utf8,
-    editor_core_ffi_editor_state_execute_envelope_json, editor_core_ffi_editor_state_free,
-    editor_core_ffi_editor_state_minimap_json, editor_core_ffi_editor_state_new,
-    editor_core_ffi_editor_state_viewport_composed_json,
-    editor_core_ffi_editor_state_viewport_styled_json, editor_core_ffi_last_error_message,
-    editor_core_ffi_lsp_char_offset_to_utf16,
+    ECF_ABI_VERSION, ECF_FEATURE_JSON_COMMAND_DISPATCH, ECF_FEATURE_JSON_COMMAND_ENVELOPE,
+    ECF_FEATURE_LSP_HELPERS, ECF_FEATURE_PROCESSING_EDIT_JSON, ECF_FEATURE_SUBLIME_PROCESSOR,
+    ECF_FEATURE_TREESITTER_PROCESSOR, ECF_FEATURE_TYPED_HOT_PATH, ECF_FEATURE_VIEWPORT_BLOB,
+    ECF_FEATURE_WORKSPACE_TYPED_API, EcfCreateViewResult, EcfDocumentStats, EcfEditorState,
+    EcfOpenBufferResult, EcfStatus, EcfWorkspace, EcfWorkspaceInfo, EcfWorkspaceViewportState,
+    ecf_abi_version, ecf_editor_backspace, ecf_editor_get_viewport_blob,
+    ecf_editor_insert_text_utf8, ecf_editor_move_to, ecf_feature_flags,
+    editor_core_ffi_editor_get_document_stats, editor_core_ffi_editor_get_viewport_blob,
+    editor_core_ffi_editor_insert_text_utf8, editor_core_ffi_editor_state_execute_envelope_json,
+    editor_core_ffi_editor_state_free, editor_core_ffi_editor_state_minimap_json,
+    editor_core_ffi_editor_state_new, editor_core_ffi_editor_state_viewport_composed_json,
+    editor_core_ffi_editor_state_viewport_styled_json, editor_core_ffi_feature_flags,
+    editor_core_ffi_last_error_message, editor_core_ffi_lsp_char_offset_to_utf16,
     editor_core_ffi_lsp_completion_item_to_text_edits_json,
     editor_core_ffi_lsp_formatting_options_json, editor_core_ffi_lsp_utf16_to_char_offset,
     editor_core_ffi_string_free, editor_core_ffi_workspace_backspace,
@@ -48,7 +51,25 @@ fn abi_version_and_alias_work() {
 }
 
 #[test]
+fn feature_flags_and_alias_work() {
+    let flags = editor_core_ffi_feature_flags();
+    assert_eq!(ecf_feature_flags(), flags);
+    assert_ne!(flags & ECF_FEATURE_JSON_COMMAND_DISPATCH, 0);
+    assert_ne!(flags & ECF_FEATURE_TYPED_HOT_PATH, 0);
+    assert_ne!(flags & ECF_FEATURE_WORKSPACE_TYPED_API, 0);
+    assert_ne!(flags & ECF_FEATURE_VIEWPORT_BLOB, 0);
+    assert_ne!(flags & ECF_FEATURE_PROCESSING_EDIT_JSON, 0);
+    assert_ne!(flags & ECF_FEATURE_LSP_HELPERS, 0);
+    assert_ne!(flags & ECF_FEATURE_SUBLIME_PROCESSOR, 0);
+    assert_ne!(flags & ECF_FEATURE_TREESITTER_PROCESSOR, 0);
+    assert_ne!(flags & ECF_FEATURE_JSON_COMMAND_ENVELOPE, 0);
+}
+
+#[test]
 fn public_abi_scalar_signatures_are_fixed_width() {
+    let _: extern "C" fn() -> u64 = editor_core_ffi_feature_flags;
+    let _: extern "C" fn() -> u64 = ecf_feature_flags;
+
     let _: extern "C" fn(*const std::ffi::c_char, u32) -> *mut EcfEditorState =
         editor_core_ffi_editor_state_new;
     let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =

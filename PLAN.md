@@ -1645,6 +1645,15 @@
     - `swift test --package-path swift --filter 'WorkspaceAdditionalTests/testWorkspaceExecuteEnvelopeReportsSuccessParseAndCommandErrors'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): expose headless feature flags`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；为 headless `editor-core-ffi` 增加与 UI FFI 对齐的 feature flags / Swift runtime info 起点，便于 Swift 和第三方 host 在调用新增符号前做能力探测。
+  - 提交边界：新增 `editor_core_ffi_feature_flags()` 和 `ecf_feature_flags()` C ABI；定义 append-only 的粗粒度 `ECF_FEATURE_*` bit，覆盖 JSON command dispatch、typed hot path、workspace typed API、viewport blob、processing edits、LSP helpers、Sublime processor、Tree-sitter processor 和 JSON command envelope；Swift `EditorCoreFFILibrary` 新增 `featureFlags`、`runtimeInfo()`、`EditorCoreFFIFeatures` 和 `EditorCoreFFIRuntimeInfo`。该提交不改变现有调用路径，不新增 UI FFI feature，不给每个 helper JSON 函数单独建 bit，也不完成完整第三方 capability negotiation schema。
+  - 验证记录：
+    - `cargo test -p editor-core-ffi --test abi_v1 feature_flags_and_alias_work`
+    - `cargo test -p editor-core-ffi --test abi_v1 public_abi_scalar_signatures_are_fixed_width`
+    - `swift test --package-path swift --filter 'FFILibrarySmokeTests'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

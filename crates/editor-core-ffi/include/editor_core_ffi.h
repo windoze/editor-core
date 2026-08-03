@@ -127,6 +127,18 @@ char* editor_core_ffi_version(void);
 char* editor_core_ffi_last_error_message(void);
 void editor_core_ffi_string_free(char* ptr);
 
+/* Feature flags returned by `editor_core_ffi_feature_flags`. */
+#define ECF_FEATURE_JSON_COMMAND_DISPATCH      (1ull << 0)
+#define ECF_FEATURE_TYPED_HOT_PATH             (1ull << 1)
+#define ECF_FEATURE_WORKSPACE_TYPED_API        (1ull << 2)
+#define ECF_FEATURE_VIEWPORT_BLOB              (1ull << 3)
+#define ECF_FEATURE_PROCESSING_EDIT_JSON       (1ull << 4)
+#define ECF_FEATURE_LSP_HELPERS                (1ull << 5)
+#define ECF_FEATURE_SUBLIME_PROCESSOR          (1ull << 6)
+#define ECF_FEATURE_TREESITTER_PROCESSOR       (1ull << 7)
+#define ECF_FEATURE_JSON_COMMAND_ENVELOPE      (1ull << 8)
+uint64_t editor_core_ffi_feature_flags(void);
+
 EcfEditorState* editor_core_ffi_editor_state_new(const char* initial_text, uint32_t viewport_width);
 void editor_core_ffi_editor_state_free(EcfEditorState* state);
 char* editor_core_ffi_editor_state_execute_json(EcfEditorState* state, const char* command_json);
@@ -293,6 +305,7 @@ char* editor_core_ffi_treesitter_indenter_reindent_line_json(
 
 /* ABI-v1 short aliases */
 uint32_t ecf_abi_version(void);
+uint64_t ecf_feature_flags(void);
 int32_t ecf_editor_insert_text_utf8(EcfEditorState* state, const uint8_t* bytes, uint32_t len);
 int32_t ecf_editor_move_to(EcfEditorState* state, uint32_t line, uint32_t column);
 int32_t ecf_editor_backspace(EcfEditorState* state);

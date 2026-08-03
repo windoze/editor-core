@@ -60,6 +60,7 @@ use std::slice;
 
 mod json_bridge;
 use json_bridge::*;
+mod abi_features;
 mod binary_abi;
 mod editor_state_abi;
 mod lsp_abi;
@@ -73,6 +74,7 @@ pub(crate) use support::*;
 pub use types::*;
 pub(crate) use viewport_blob::*;
 
+pub use abi_features::*;
 pub use binary_abi::*;
 pub use editor_state_abi::*;
 pub use lsp_abi::*;

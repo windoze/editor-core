@@ -8,6 +8,7 @@ import Foundation
 /// - Rust 侧仍保留 `cdylib` 产物（给其它语言/宿主使用），但 SwiftPM 这里不依赖它。
 public final class EditorCoreFFILibrary {
     public let abiVersion: UInt32
+    public let featureFlags: EditorCoreFFIFeatures
 
     /// Backwards-compatible initializer.
     ///
@@ -15,10 +16,19 @@ public final class EditorCoreFFILibrary {
     public init(path: String? = nil) throws {
         _ = path
         self.abiVersion = editor_core_ffi_abi_version()
+        self.featureFlags = EditorCoreFFIFeatures(rawValue: editor_core_ffi_feature_flags())
     }
 
     public func versionString() throws -> String {
         return try takeOwnedCString(editor_core_ffi_version(), context: "editor_core_ffi_version")
+    }
+
+    public func runtimeInfo() throws -> EditorCoreFFIRuntimeInfo {
+        EditorCoreFFIRuntimeInfo(
+            abiVersion: abiVersion,
+            version: try versionString(),
+            features: featureFlags
+        )
     }
 
     public func lastErrorMessage() -> String {
@@ -52,5 +62,39 @@ public final class EditorCoreFFILibrary {
         }
         defer { editor_core_ffi_string_free(ptr) }
         return String(cString: ptr)
+    }
+}
+
+public struct EditorCoreFFIFeatures: OptionSet, Equatable, Sendable {
+    public let rawValue: UInt64
+
+    public init(rawValue: UInt64) {
+        self.rawValue = rawValue
+    }
+
+    public static let jsonCommandDispatch = Self(rawValue: 1 << 0)
+    public static let typedHotPath = Self(rawValue: 1 << 1)
+    public static let workspaceTypedAPI = Self(rawValue: 1 << 2)
+    public static let viewportBlob = Self(rawValue: 1 << 3)
+    public static let processingEditJSON = Self(rawValue: 1 << 4)
+    public static let lspHelpers = Self(rawValue: 1 << 5)
+    public static let sublimeProcessor = Self(rawValue: 1 << 6)
+    public static let treeSitterProcessor = Self(rawValue: 1 << 7)
+    public static let jsonCommandEnvelope = Self(rawValue: 1 << 8)
+}
+
+public struct EditorCoreFFIRuntimeInfo: Equatable, Sendable {
+    public let abiVersion: UInt32
+    public let version: String
+    public let features: EditorCoreFFIFeatures
+
+    public init(abiVersion: UInt32, version: String, features: EditorCoreFFIFeatures) {
+        self.abiVersion = abiVersion
+        self.version = version
+        self.features = features
+    }
+
+    public func supports(_ feature: EditorCoreFFIFeatures) -> Bool {
+        features.contains(feature)
     }
 }

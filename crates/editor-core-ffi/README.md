@@ -47,7 +47,21 @@ Version:
 
 ```c
 uint32_t editor_core_ffi_abi_version(void); /* currently 1 */
+uint64_t editor_core_ffi_feature_flags(void);
 ```
+
+The feature bitmask is append-only for the current pre-v1 ABI line. Important coarse-grained bits
+include:
+
+- `ECF_FEATURE_JSON_COMMAND_DISPATCH`
+- `ECF_FEATURE_TYPED_HOT_PATH`
+- `ECF_FEATURE_WORKSPACE_TYPED_API`
+- `ECF_FEATURE_VIEWPORT_BLOB`
+- `ECF_FEATURE_PROCESSING_EDIT_JSON`
+- `ECF_FEATURE_LSP_HELPERS`
+- `ECF_FEATURE_SUBLIME_PROCESSOR`
+- `ECF_FEATURE_TREESITTER_PROCESSOR`
+- `ECF_FEATURE_JSON_COMMAND_ENVELOPE`
 
 Core hot-path examples:
 

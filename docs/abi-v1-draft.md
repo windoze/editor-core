@@ -283,11 +283,15 @@ Guidelines:
 ## Versioning Strategy
 
 - ABI major version baked into library and exported via `ecf_abi_version()`.
-- The UI FFI also exports `editor_core_ui_ffi_abi_version()` and
+- The headless FFI exports `editor_core_ffi_abi_version()` and
+  `editor_core_ffi_feature_flags()` so Swift/third-party hosts can probe the loaded core ABI and
+  gate optional feature paths before calling newer symbols.
+- The UI FFI exports `editor_core_ui_ffi_abi_version()` and
   `editor_core_ui_ffi_feature_flags()` so Swift/App hosts can probe the loaded UI ABI and gate
   optional feature paths before calling newer symbols.
-- UI FFI feature flags are append-only within the pre-v1 line. As of the current draft, bit 25
-  (`ECU_FEATURE_JSON_COMMAND_ENVELOPE`) marks availability of the UI command JSON envelope symbol.
+- Headless and UI FFI feature flags are append-only within the pre-v1 line. As of the current
+  draft, `ECF_FEATURE_JSON_COMMAND_ENVELOPE` and `ECU_FEATURE_JSON_COMMAND_ENVELOPE` mark
+  availability of the corresponding command JSON envelope symbols.
 - The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
   - new functions
@@ -335,6 +339,8 @@ The C headers are authoritative. The examples below are representative surfaces 
 
 ```c
 EcfEditorState* editor_core_ffi_editor_state_new(const char* initial_text, uint32_t viewport_width);
+uint32_t editor_core_ffi_abi_version(void);
+uint64_t editor_core_ffi_feature_flags(void);
 char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_minimap_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
