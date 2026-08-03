@@ -166,6 +166,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 331 继续推进阶段 8 的命名宏删除历史管理：`macro.clear_delete_history` 现在提供显式清空删除历史命令和 Tools 菜单入口；清空前会独立确认，确认后移除内存 undo stack 和持久化隐藏 JSON，并关闭已打开的删除历史 palette。仍缺独立宏管理面板、删除历史单条清理/批量选择管理、完整可视化回收站、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
 - 阶段 332 继续推进阶段 8 的命名宏删除历史管理：`macro.remove_delete_history_entry` 现在提供按最近优先 1-based index 移除指定删除历史记录的命令和 Tools 菜单入口；参数 schema 会按当前历史生成 choices，移除前会独立确认，确认后持久化并刷新/关闭删除历史 palette。仍缺独立宏管理面板、删除历史批量选择管理、完整可视化回收站、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
 - 阶段 333 继续推进阶段 8 的命名宏删除历史管理：`macro.remove_delete_history_entries` 现在提供基于 command 参数的批量移除删除历史命令和 Tools 菜单入口；`indices` 参数使用最近优先的 1-based JSON 整数数组，移除前会独立确认，确认后持久化并刷新/关闭删除历史 palette。仍缺独立宏管理面板、可视化删除历史批量选择、完整可视化回收站、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
+- 阶段 334 继续推进阶段 8 的命名宏删除历史管理：`macro.manage_delete_history` 现在提供独立 AppKit 删除历史管理面板，可按最近优先查看删除历史、单选恢复、多选移除和清空历史，并复用既有确认、持久化与 restore/remove/clear 逻辑；已打开的删除历史 palette 与管理面板会在历史变更后同步刷新或关闭。仍缺完整命名宏管理面板、完整可视化回收站、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
@@ -1383,7 +1384,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 一些 core/LSP 命令仍没有 App 命令入口。
 - 用户 keymap 文件已有基础 Sublime JSON、context 条件过滤和快捷键冲突解析，但还不是完整 Sublime keymap 兼容实现。
 - 没有 Sublime 风格 settings scopes。
-- 已有 last macro 录制/回放、命名 `.sublime-macro` 保存、按名回放、重命名、删除、批量删除、跨启动多级删除 undo、可浏览删除历史 palette、单条/批量/全部清理删除历史、基础导入/导出入口、原生文件选择流程和删除确认 UI，但还没有独立宏管理面板、可视化删除历史批量选择、完整可视化回收站、完整 Sublime `.sublime-macro` 扩展语义或 plugin/package command runtime。
+- 已有 last macro 录制/回放、命名 `.sublime-macro` 保存、按名回放、重命名、删除、批量删除、跨启动多级删除 undo、可浏览删除历史 palette、可视化删除历史管理面板、单条/批量/全部清理删除历史、基础导入/导出入口、原生文件选择流程和删除确认 UI，但还没有完整命名宏管理面板、完整可视化回收站、完整 Sublime `.sublime-macro` 扩展语义或 plugin/package command runtime。
 - 没有 build systems。
 - 没有 package/plugin command 入口。
 - 命令是否启用、是否可见、当前参数、错误展示没有统一模型。
@@ -1534,6 +1535,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor 命名 `.sublime-macro` 删除历史已有显式清空入口，`macro.clear_delete_history` 会在确认后清空内存 undo stack 和持久化隐藏 JSON。
 - 已完成：AttoEditor 命名 `.sublime-macro` 删除历史已有单条移除入口，`macro.remove_delete_history_entry` 可按最近优先的 1-based index 丢弃指定 restore 记录并持久化。
 - 已完成：AttoEditor 命名 `.sublime-macro` 删除历史已有批量移除入口，`macro.remove_delete_history_entries` 可按最近优先的 1-based JSON index 数组丢弃多条 restore 记录并持久化。
+- 已完成：AttoEditor 命名 `.sublime-macro` 删除历史已有可视化管理面板，`macro.manage_delete_history` 可打开 AppKit 面板进行单选恢复、多选移除和清空历史，并与删除历史 palette 同步刷新或关闭。
 - 已完成：AttoEditor keymap 已支持 arrow/navigation function-key token，move lines up/down 已有默认 arrow-key 绑定。
 - 已完成：AttoEditor keymap 已支持基础 `context` 条件过滤和快捷键冲突解析，`resolvedKeymap(...)` 可暴露 conflicts 供测试和后续 UI/诊断使用。
 - 已完成：AttoEditor keymap 已支持用户条目 `args` 解码，并能通过菜单/shortcut command 路径调用 `executeCommand(id:arguments:)` 执行参数化命令。

@@ -95,6 +95,7 @@ enum AttoMainMenuBuilder {
         toolsMenu.addItem(commandItem(title: "Delete Named Macros…", commandID: "macro.delete_named_batch", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Undo Macro Delete", commandID: "macro.undo_delete", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Show Deleted Macros…", commandID: "macro.show_delete_history", appDelegate: appDelegate))
+        toolsMenu.addItem(commandItem(title: "Manage Deleted Macro History…", commandID: "macro.manage_delete_history", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Remove Deleted Macro History Entry…", commandID: "macro.remove_delete_history_entry", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Remove Deleted Macro History Entries…", commandID: "macro.remove_delete_history_entries", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Clear Deleted Macro History…", commandID: "macro.clear_delete_history", appDelegate: appDelegate))

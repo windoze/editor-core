@@ -52,6 +52,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("macro.delete_named_batch"))
         XCTAssertTrue(ids.contains("macro.undo_delete"))
         XCTAssertTrue(ids.contains("macro.show_delete_history"))
+        XCTAssertTrue(ids.contains("macro.manage_delete_history"))
         XCTAssertTrue(ids.contains("macro.remove_delete_history_entry"))
         XCTAssertTrue(ids.contains("macro.remove_delete_history_entries"))
         XCTAssertTrue(ids.contains("macro.clear_delete_history"))
@@ -250,6 +251,9 @@ final class AttoEditorCommandTests: XCTestCase {
         let showDeleteHistory = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.show_delete_history"))
         XCTAssertEqual(showDeleteHistory.macroPolicy, .notRecordable)
         XCTAssertFalse(showDeleteHistory.isParameterized)
+        let manageDeleteHistory = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.manage_delete_history"))
+        XCTAssertEqual(manageDeleteHistory.macroPolicy, .notRecordable)
+        XCTAssertFalse(manageDeleteHistory.isParameterized)
         let removeDeleteHistoryEntry = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.remove_delete_history_entry"))
         XCTAssertEqual(removeDeleteHistoryEntry.macroPolicy, .notRecordable)
         XCTAssertEqual(removeDeleteHistoryEntry.parameters.map(\.name), ["index"])
@@ -2110,6 +2114,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "macro.delete_named_batch", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.undo_delete", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.show_delete_history", in: toolsMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.manage_delete_history", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.remove_delete_history_entry", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.remove_delete_history_entries", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.clear_delete_history", in: toolsMenu))
@@ -5385,6 +5390,104 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(delegate.executeCommand(id: "macro.undo_delete"))
         XCTAssertEqual(macroStore.namedMacroNames(), ["Alpha", "Beta", "Gamma"])
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.show_delete_history"))
+    }
+
+    func testCommandMacroDeleteHistoryPanelSupportsVisualBatchRemovalAndRestore() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
+        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        let context = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { context.window.close() }
+
+        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
+        try macroStore.save(commands, named: "Alpha", maxCount: 20)
+        try macroStore.save(commands, named: "Beta", maxCount: 20)
+        try macroStore.save(commands, named: "Gamma", maxCount: 20)
+        try macroStore.save(commands, named: "Delta", maxCount: 20)
+
+        delegate._setMacroDeleteBatchConfirmationProviderForTesting { _ in true }
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named",
+            arguments: ["name": .string("Alpha")]
+        ))
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named",
+            arguments: ["name": .string("Beta")]
+        ))
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named_batch",
+            arguments: ["names": .json("[\"Gamma\", \"Delta\"]")]
+        ))
+        XCTAssertEqual(macroStore.namedMacroNames(), [])
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.manage_delete_history"))
+        XCTAssertTrue(delegate.executeCommand(id: "macro.manage_delete_history"))
+
+        let historyPanel = try XCTUnwrap(context.window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.deletedMacroHistoryPanel
+        })
+        let root = try XCTUnwrap(historyPanel.contentView)
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.deletedMacroHistoryPanelTable, in: root) as? NSTableView
+        )
+        let restoreButton = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.deletedMacroHistoryPanelRestoreButton, in: root) as? NSButton
+        )
+        let removeButton = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.deletedMacroHistoryPanelRemoveButton, in: root) as? NSButton
+        )
+        let clearButton = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.deletedMacroHistoryPanelClearButton, in: root) as? NSButton
+        )
+
+        func title(at row: Int) throws -> String {
+            let cell = try XCTUnwrap(table.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView)
+            return try XCTUnwrap(cell.textField?.stringValue)
+        }
+
+        XCTAssertTrue(table.allowsMultipleSelection)
+        XCTAssertEqual(table.numberOfRows, 3)
+        XCTAssertEqual(try title(at: 0), "1. Gamma, Delta (2 macros)")
+        XCTAssertEqual(try title(at: 1), "2. Beta")
+        XCTAssertEqual(try title(at: 2), "3. Alpha")
+        XCTAssertTrue(restoreButton.isEnabled)
+        XCTAssertTrue(removeButton.isEnabled)
+        XCTAssertTrue(clearButton.isEnabled)
+
+        table.selectRowIndexes(IndexSet([0, 2]), byExtendingSelection: false)
+        table.delegate?.tableViewSelectionDidChange?(
+            Notification(name: NSTableView.selectionDidChangeNotification, object: table)
+        )
+        XCTAssertFalse(restoreButton.isEnabled)
+        XCTAssertTrue(removeButton.isEnabled)
+
+        var removalAttempts: [[(displayIndex: Int, title: String)]] = []
+        delegate._setMacroDeleteHistoryEntriesRemovalConfirmationProviderForTesting { items in
+            removalAttempts.append(items)
+            return true
+        }
+        removeButton.performClick(nil)
+        XCTAssertEqual(removalAttempts.count, 1)
+        XCTAssertEqual(removalAttempts.first?.map(\.displayIndex), [1, 3])
+        XCTAssertEqual(removalAttempts.first?.map(\.title), ["Gamma, Delta (2 macros)", "Alpha"])
+        XCTAssertEqual(table.numberOfRows, 1)
+        XCTAssertEqual(try title(at: 0), "1. Beta")
+        XCTAssertTrue(restoreButton.isEnabled)
+        XCTAssertTrue(removeButton.isEnabled)
+        XCTAssertTrue(clearButton.isEnabled)
+
+        table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        table.delegate?.tableViewSelectionDidChange?(
+            Notification(name: NSTableView.selectionDidChangeNotification, object: table)
+        )
+        restoreButton.performClick(nil)
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Beta"])
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.manage_delete_history"))
+        XCTAssertFalse(historyPanel.isVisible)
     }
 
     func testCommandMacroDeleteHistoryWithoutWindowDoesNotRestoreEntry() throws {

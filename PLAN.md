@@ -1482,6 +1482,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroRemoveDeleteHistoryEntriesRemovesPersistentSelectedRecords|CommandMacroRemoveDeleteHistoryEntryRemovesPersistentSelectedRecord|CommandMacroClearDeleteHistoryClearsPersistentUndoStack|CommandMacroDeleteHistoryPanelRestoresSelectedEntry|CommandMacroDeleteHistoryWithoutWindowDoesNotRestoreEntry|CommandMacroUndoDeleteHistoryPersistsAcrossDelegates|CommandMacroUndoDeleteUsesMultiLevelHistory|CommandMacroBatchDeletesNamedSublimeMacroFiles|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
     - `git diff --check`
+- 中间提交：`feat(app): manage command macro delete history visually`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；把命名 `.sublime-macro` 删除历史从 command 参数批量移除推进到可视化多选管理面板，让用户可以直接选择删除历史项并执行恢复、移除或清空。
+  - 提交边界：新增 `macro.manage_delete_history` 命令和 Tools 菜单入口，打开独立 AppKit 删除历史管理面板；面板按最近优先列出持久化删除历史，支持多选移除、单选恢复和清空历史，并复用既有确认、持久化和 restore/remove/clear 逻辑；删除历史 palette 与管理面板在历史变更后同步刷新或关闭。该提交不实现完整命名宏管理面板、完整可视化回收站、完整 Sublime package/plugin command runtime、完整 `.sublime-macro` 扩展语义，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroDeleteHistoryPanelSupportsVisualBatchRemovalAndRestore|CommandMacroRemoveDeleteHistoryEntriesRemovesPersistentSelectedRecords|CommandMacroRemoveDeleteHistoryEntryRemovesPersistentSelectedRecord|CommandMacroClearDeleteHistoryClearsPersistentUndoStack|CommandMacroDeleteHistoryPanelRestoresSelectedEntry|CommandMacroDeleteHistoryWithoutWindowDoesNotRestoreEntry|CommandMacroUndoDeleteHistoryPersistsAcrossDelegates|CommandMacroUndoDeleteUsesMultiLevelHistory|CommandMacroBatchDeletesNamedSublimeMacroFiles|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

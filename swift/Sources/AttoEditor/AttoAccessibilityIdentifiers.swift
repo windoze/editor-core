@@ -194,6 +194,16 @@ enum AttoAccessibilityID {
     static let workspaceEditPreviewApplyButton = "AttoEditor.WorkspaceEditPreview.Apply"
     static let workspaceEditPreviewCancelButton = "AttoEditor.WorkspaceEditPreview.Cancel"
 
+    static let deletedMacroHistoryPanel = "AttoEditor.Macro.DeleteHistoryPanel.Panel"
+    static let deletedMacroHistoryPanelRoot = "AttoEditor.Macro.DeleteHistoryPanel.Root"
+    static let deletedMacroHistoryPanelTable = "AttoEditor.Macro.DeleteHistoryPanel.Table"
+    static let deletedMacroHistoryPanelScrollView = "AttoEditor.Macro.DeleteHistoryPanel.ScrollView"
+    static let deletedMacroHistoryPanelRow = "AttoEditor.Macro.DeleteHistoryPanel.Row"
+    static let deletedMacroHistoryPanelRowTitle = "AttoEditor.Macro.DeleteHistoryPanel.RowTitle"
+    static let deletedMacroHistoryPanelRestoreButton = "AttoEditor.Macro.DeleteHistoryPanel.Restore"
+    static let deletedMacroHistoryPanelRemoveButton = "AttoEditor.Macro.DeleteHistoryPanel.Remove"
+    static let deletedMacroHistoryPanelClearButton = "AttoEditor.Macro.DeleteHistoryPanel.Clear"
+
     static func commandMenuItem(_ commandID: String) -> String {
         "AttoCommand.\(commandID)"
     }
