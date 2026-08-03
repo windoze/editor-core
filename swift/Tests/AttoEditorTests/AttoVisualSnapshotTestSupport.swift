@@ -13,9 +13,15 @@ struct AttoVisualSnapshot: Equatable {
     }
 
     @MainActor
-    static func capture(view: NSView, scale: CGFloat = 1) throws -> Self {
+    static func capture(view: NSView, scale: CGFloat = 1, forcedSize: NSSize? = nil) throws -> Self {
         view.layoutSubtreeIfNeeded()
-        let bounds = view.bounds
+        let bounds: NSRect
+        if let forcedSize {
+            bounds = NSRect(origin: .zero, size: forcedSize)
+            view.bounds = bounds
+        } else {
+            bounds = view.bounds
+        }
         let pixelWidth = max(1, Int((bounds.width * scale).rounded()))
         let pixelHeight = max(1, Int((bounds.height * scale).rounded()))
 

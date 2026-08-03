@@ -308,6 +308,102 @@
       ],
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "floating-symbol-results-dark",
+      "description": "Dark LSP symbol results floating panel with grouped document symbols.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/floating-symbol-results-dark.png",
+      "artifactName": "floating-symbol-results-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 820,
+        "height": 520
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.SymbolResults.Panel",
+        "width": 640,
+        "height": 360
+      },
+      "lspSymbolResults": {
+        "placeholder": "Filter document symbols...",
+        "symbols": [
+          {
+            "name": "PaletteFixture",
+            "kindLabel": "Struct",
+            "line": 0,
+            "utf16Character": 7
+          },
+          {
+            "name": "primaryValue",
+            "kindLabel": "Property",
+            "containerName": "PaletteFixture",
+            "line": 1,
+            "utf16Character": 8,
+            "depth": 1
+          },
+          {
+            "name": "renderLine",
+            "detail": "() -> String",
+            "kindLabel": "Method",
+            "containerName": "PaletteFixture",
+            "line": 3,
+            "utf16Character": 9,
+            "depth": 1
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "floating-completion-popup-dark",
+      "description": "Dark completion popup with detail and documentation preview.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/floating-completion-popup-dark.png",
+      "artifactName": "floating-completion-popup-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.Completion.Panel",
+        "width": 680,
+        "height": 83
+      },
+      "selectionRanges": [
+        {
+          "start": 3,
+          "end": 3
+        }
+      ],
+      "completionPopup": {
+        "items": [
+          {
+            "label": "print",
+            "kind": 3,
+            "detail": "(value: Any)",
+            "documentation": "Write a value to the debug console."
+          },
+          {
+            "label": "primaryValue",
+            "kind": 10,
+            "detail": "Int"
+          },
+          {
+            "label": "PaletteFixture",
+            "kind": 7,
+            "detail": "struct"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }

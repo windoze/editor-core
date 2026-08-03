@@ -30,6 +30,12 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
             XCTAssertLessThanOrEqual(visualCase.maxDifferentPixelRatio, 1)
             XCTAssertTrue(visualCase.baseline.hasSuffix(".png"))
             XCTAssertTrue(visualCase.showReplaceBar == false || visualCase.showFindBar)
+            XCTAssertGreaterThan(visualCase.captureTarget.expectedWidth(defaultWindow: visualCase.window), 0)
+            XCTAssertGreaterThan(visualCase.captureTarget.expectedHeight(defaultWindow: visualCase.window), 0)
+            if visualCase.captureTarget.kind == .childWindow {
+                XCTAssertNotNil(visualCase.captureTarget.identifier)
+                XCTAssertFalse(visualCase.captureTarget.identifier?.isEmpty ?? true)
+            }
             if let fontSizePoints = visualCase.fontSizePoints {
                 XCTAssertGreaterThan(fontSizePoints, 0, visualCase.id)
             }
@@ -105,9 +111,27 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         try applyScenarioActions(visualCase, to: vc)
         vc.view.layoutSubtreeIfNeeded()
 
-        let snapshot = try AttoVisualSnapshot.capture(view: vc.view, scale: CGFloat(visualCase.scale))
-        XCTAssertEqual(snapshot.width, visualCase.window.width, visualCase.id)
-        XCTAssertEqual(snapshot.height, visualCase.window.height, visualCase.id)
+        let captureView = try captureTargetView(for: visualCase, in: window, fallbackView: vc.view)
+        captureView.layoutSubtreeIfNeeded()
+        let expectedSize = NSSize(
+            width: visualCase.captureTarget.expectedWidth(defaultWindow: visualCase.window),
+            height: visualCase.captureTarget.expectedHeight(defaultWindow: visualCase.window)
+        )
+        let snapshot = try AttoVisualSnapshot.capture(
+            view: captureView,
+            scale: CGFloat(visualCase.scale),
+            forcedSize: visualCase.captureTarget.hasExplicitSize ? expectedSize : nil
+        )
+        XCTAssertEqual(
+            snapshot.width,
+            visualCase.captureTarget.expectedWidth(defaultWindow: visualCase.window),
+            visualCase.id
+        )
+        XCTAssertEqual(
+            snapshot.height,
+            visualCase.captureTarget.expectedHeight(defaultWindow: visualCase.window),
+            visualCase.id
+        )
 
         let artifactDirectory = try visualArtifactDirectory(fallbackRoot: tempDir)
         try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
@@ -215,6 +239,52 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
             tab.editCore.needsDisplay = true
             vc.updateStatusBar()
             vc.view.window?.makeFirstResponder(tab.editCore.editorView)
+        }
+        if let symbolResults = visualCase.lspSymbolResults {
+            let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
+            let documentURI = vc.projectedFileURL(for: tab).standardizedFileURL.absoluteString
+            vc.showLspSymbolResults(
+                symbolResults.symbols(documentURI: documentURI),
+                placeholder: symbolResults.placeholder
+            )
+        }
+        if let completionPopup = visualCase.completionPopup {
+            XCTAssertTrue(
+                vc._showCompletionResultJSONForTesting(try completionPopup.resultJSON(), showFeedback: false),
+                visualCase.id
+            )
+        }
+    }
+
+    private func captureTargetView(
+        for visualCase: AttoVisualBaselineCase,
+        in window: NSWindow,
+        fallbackView: NSView
+    ) throws -> NSView {
+        switch visualCase.captureTarget.kind {
+        case .mainWindow:
+            return fallbackView
+        case .childWindow:
+            guard let identifier = visualCase.captureTarget.identifier else {
+                throw AttoVisualBaselineError.invalidManifest(
+                    "\(visualCase.id) child-window capture target requires an identifier"
+                )
+            }
+            guard let childWindow = window.childWindows?.first(where: { $0.identifier?.rawValue == identifier }),
+                  let contentView = childWindow.contentView
+            else {
+                throw AttoVisualBaselineError.invalidManifest(
+                    "\(visualCase.id) missing child window capture target: \(identifier)"
+                )
+            }
+            if let width = visualCase.captureTarget.width,
+               let height = visualCase.captureTarget.height
+            {
+                contentView.frame = NSRect(x: 0, y: 0, width: width, height: height)
+            }
+            contentView.needsLayout = true
+            contentView.layoutSubtreeIfNeeded()
+            return contentView
         }
     }
 
@@ -344,6 +414,9 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let collapsedFolds: [AttoVisualFoldRange]
     let semanticTokens: EcuLspSemanticTokensResult?
     let diagnosticMarkers: [AttoVisualDiagnosticMarker]
+    let lspSymbolResults: AttoVisualLspSymbolResults?
+    let completionPopup: AttoVisualCompletionPopup?
+    let captureTarget: AttoVisualCaptureTarget
     let perChannelTolerance: UInt8
     let maxDifferentPixelRatio: Double
 
@@ -377,6 +450,9 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case collapsedFolds
         case semanticTokens
         case diagnosticMarkers
+        case lspSymbolResults
+        case completionPopup
+        case captureTarget
         case perChannelTolerance
         case maxDifferentPixelRatio
     }
@@ -410,6 +486,9 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
             [AttoVisualDiagnosticMarker].self,
             forKey: .diagnosticMarkers
         ) ?? []
+        lspSymbolResults = try container.decodeIfPresent(AttoVisualLspSymbolResults.self, forKey: .lspSymbolResults)
+        completionPopup = try container.decodeIfPresent(AttoVisualCompletionPopup.self, forKey: .completionPopup)
+        captureTarget = try container.decodeIfPresent(AttoVisualCaptureTarget.self, forKey: .captureTarget) ?? .mainWindow
         perChannelTolerance = try container.decode(UInt8.self, forKey: .perChannelTolerance)
         maxDifferentPixelRatio = try container.decode(Double.self, forKey: .maxDifferentPixelRatio)
     }
@@ -432,6 +511,37 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         default:
             throw AttoVisualBaselineError.invalidManifest("unsupported visual baseline theme: \(themeName)")
         }
+    }
+}
+
+private struct AttoVisualCaptureTarget: Decodable, Equatable {
+    enum Kind: String, Decodable {
+        case mainWindow
+        case childWindow
+    }
+
+    static let mainWindow = AttoVisualCaptureTarget(
+        kind: .mainWindow,
+        identifier: nil,
+        width: nil,
+        height: nil
+    )
+
+    let kind: Kind
+    let identifier: String?
+    let width: Int?
+    let height: Int?
+
+    var hasExplicitSize: Bool {
+        width != nil && height != nil
+    }
+
+    func expectedWidth(defaultWindow: AttoVisualBaselineWindow) -> Int {
+        width ?? defaultWindow.width
+    }
+
+    func expectedHeight(defaultWindow: AttoVisualBaselineWindow) -> Int {
+        height ?? defaultWindow.height
     }
 }
 
@@ -470,6 +580,98 @@ private struct AttoVisualDiagnosticMarker: Decodable, Equatable {
         case severity
         case sourceName = "source"
     }
+}
+
+private struct AttoVisualLspSymbolResults: Decodable, Equatable {
+    let placeholder: String
+    let symbols: [AttoVisualLspSymbol]
+
+    func symbols(documentURI: String) -> [AttoLspSymbolParser.Symbol] {
+        symbols.map { $0.symbol(documentURI: documentURI) }
+    }
+}
+
+private struct AttoVisualLspSymbol: Decodable, Equatable {
+    let name: String
+    let detail: String?
+    let kindLabel: String?
+    let containerName: String?
+    let line: Int
+    let utf16Character: Int
+    let depth: Int
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case detail
+        case kindLabel
+        case containerName
+        case line
+        case utf16Character
+        case depth
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        detail = try container.decodeIfPresent(String.self, forKey: .detail)
+        kindLabel = try container.decodeIfPresent(String.self, forKey: .kindLabel)
+        containerName = try container.decodeIfPresent(String.self, forKey: .containerName)
+        line = try container.decodeIfPresent(Int.self, forKey: .line) ?? 0
+        utf16Character = try container.decodeIfPresent(Int.self, forKey: .utf16Character) ?? 0
+        depth = try container.decodeIfPresent(Int.self, forKey: .depth) ?? 0
+    }
+
+    func symbol(documentURI: String) -> AttoLspSymbolParser.Symbol {
+        AttoLspSymbolParser.Symbol(
+            name: name,
+            detail: detail,
+            kindLabel: kindLabel,
+            containerName: containerName,
+            target: AttoLspDefinitionParser.Target(
+                uri: documentURI,
+                line: line,
+                utf16Character: utf16Character
+            ),
+            depth: depth
+        )
+    }
+}
+
+private struct AttoVisualCompletionPopup: Codable, Equatable {
+    let isIncomplete: Bool
+    let items: [AttoVisualCompletionItem]
+
+    enum CodingKeys: String, CodingKey {
+        case isIncomplete
+        case items
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isIncomplete = try container.decodeIfPresent(Bool.self, forKey: .isIncomplete) ?? false
+        items = try container.decode([AttoVisualCompletionItem].self, forKey: .items)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(isIncomplete, forKey: .isIncomplete)
+        try container.encode(items, forKey: .items)
+    }
+
+    func resultJSON() throws -> String {
+        let data = try JSONEncoder().encode(self)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw AttoVisualBaselineError.invalidManifest("failed to encode completion popup JSON")
+        }
+        return json
+    }
+}
+
+private struct AttoVisualCompletionItem: Codable, Equatable {
+    let label: String
+    let kind: Int?
+    let detail: String?
+    let documentation: String?
 }
 
 private struct AttoVisualBaselineWindow: Decodable, Equatable {

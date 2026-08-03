@@ -2181,6 +2181,13 @@
     - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceOutlinePanelAggregatesDocumentSymbolSnapshots`
     - `git diff --check`
+- 中间提交：`test(app): cover visual floating panels`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 visual baseline manifest，覆盖 floating panel / popup 类 UI，而不只捕获主 editor chrome。
+  - 提交边界：测试 harness 新增 manifest `captureTarget`，可捕获主窗口或指定 child floating window 的 content view，并支持测试侧 `lspSymbolResults` 与 `completionPopup` 场景动作；manifest 新增 dark LSP symbol results floating panel 和 dark completion popup 两个 artifact case 及共享 Swift fixture。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 UI 或运行时代码，也不覆盖所有 floating panel/popup 类型。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
