@@ -1185,6 +1185,59 @@
       },
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-json-preview-panel-dark",
+      "description": "Dark WorkspaceEdit preview panel generated through the App WorkspaceEdit JSON helper.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-json-preview-panel-dark.png",
+      "artifactName": "workspace-edit-json-preview-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 980,
+        "height": 620
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.WorkspaceEditPreview.Panel",
+        "width": 880,
+        "height": 560
+      },
+      "workspaceEditJSONPreview": {
+        "supportFiles": [
+          {
+            "fileName": "workspace-edit-preview-target.swift",
+            "text": "struct WorkspacePreviewTarget {\n    func label() -> String {\n        return \"old\"\n    }\n}\n"
+          }
+        ],
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 4,
+                "startUTF16Character": 8,
+                "endUTF16Character": 8,
+                "newText": "let previewValue = primaryValue\n        "
+              }
+            ]
+          },
+          {
+            "fileName": "workspace-edit-preview-target.swift",
+            "edits": [
+              {
+                "startLine": 2,
+                "startUTF16Character": 16,
+                "endUTF16Character": 19,
+                "newText": "preview"
+              }
+            ]
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }

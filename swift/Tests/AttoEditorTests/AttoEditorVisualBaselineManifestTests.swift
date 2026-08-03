@@ -375,6 +375,23 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 in: tab.editCore.editorView
             )
         }
+        if let workspaceEditJSONPreview = visualCase.workspaceEditJSONPreview {
+            try workspaceEditJSONPreview.materializeSupportFiles(in: tempDir)
+            var didShowPreview = false
+            vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+                let panelController = AttoWorkspaceEditPreviewPanelController()
+                panelController.showForTesting(relativeTo: vc.view.window, preview: preview)
+                vc.workspaceEditPreviewPanelController = panelController
+                didShowPreview = true
+                return .cancel
+            }
+            defer { vc._setWorkspaceEditPreviewDecisionProviderForTesting(nil) }
+            XCTAssertFalse(
+                vc.applyWorkspaceEditJSONToActiveTab(try workspaceEditJSONPreview.resultJSON(tempDir: tempDir)),
+                visualCase.id
+            )
+            XCTAssertTrue(didShowPreview, visualCase.id)
+        }
         if let workspaceEditPreview = visualCase.workspaceEditPreview {
             let panelController = AttoWorkspaceEditPreviewPanelController()
             let preview = try workspaceEditPreview.preview(tempDir: tempDir)
@@ -613,6 +630,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let hoverPopover: AttoVisualHoverPopover?
     let signatureHelpPopover: AttoVisualSignatureHelpPopover?
     let failurePopover: AttoVisualFailurePopover?
+    let workspaceEditJSONPreview: AttoVisualWorkspaceEditJSONPreview?
     let workspaceEditPreview: AttoVisualWorkspaceEditPreview?
     let persistentPanel: AttoVisualPersistentPanel?
     let captureTarget: AttoVisualCaptureTarget
@@ -663,6 +681,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case hoverPopover
         case signatureHelpPopover
         case failurePopover
+        case workspaceEditJSONPreview
         case workspaceEditPreview
         case persistentPanel
         case captureTarget
@@ -737,6 +756,10 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
             forKey: .signatureHelpPopover
         )
         failurePopover = try container.decodeIfPresent(AttoVisualFailurePopover.self, forKey: .failurePopover)
+        workspaceEditJSONPreview = try container.decodeIfPresent(
+            AttoVisualWorkspaceEditJSONPreview.self,
+            forKey: .workspaceEditJSONPreview
+        )
         workspaceEditPreview = try container.decodeIfPresent(
             AttoVisualWorkspaceEditPreview.self,
             forKey: .workspaceEditPreview
@@ -1671,6 +1694,102 @@ private struct AttoVisualSignatureHelpPopover: Decodable, Equatable {
 
 private struct AttoVisualFailurePopover: Decodable, Equatable {
     let text: String
+}
+
+private struct AttoVisualWorkspaceEditJSONPreview: Decodable, Equatable {
+    let supportFiles: [AttoVisualWorkspaceEditSupportFile]
+    let documents: [AttoVisualWorkspaceEditJSONDocument]
+
+    enum CodingKeys: String, CodingKey {
+        case supportFiles
+        case documents
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        supportFiles = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditSupportFile].self,
+            forKey: .supportFiles
+        ) ?? []
+        documents = try container.decode([AttoVisualWorkspaceEditJSONDocument].self, forKey: .documents)
+    }
+
+    func materializeSupportFiles(in tempDir: URL) throws {
+        for file in supportFiles {
+            let url = tempDir.appendingPathComponent(file.fileName)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try file.text.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    func resultJSON(tempDir: URL) throws -> String {
+        var changes: [String: [AttoVisualWorkspaceEditTextEditPayload]] = [:]
+        for document in documents {
+            let uri = AttoVisualWorkspaceEditPreview.fileURI(document.fileName, tempDir: tempDir)
+            changes[uri, default: []].append(contentsOf: document.edits.map(\.payload))
+        }
+        return try encodeVisualJSON(
+            AttoVisualWorkspaceEditJSONPayload(changes: changes),
+            context: "WorkspaceEdit preview"
+        )
+    }
+}
+
+private struct AttoVisualWorkspaceEditSupportFile: Decodable, Equatable {
+    let fileName: String
+    let text: String
+}
+
+private struct AttoVisualWorkspaceEditJSONDocument: Decodable, Equatable {
+    let fileName: String
+    let edits: [AttoVisualWorkspaceEditTextEdit]
+}
+
+private struct AttoVisualWorkspaceEditTextEdit: Decodable, Equatable {
+    let startLine: UInt32
+    let startUTF16Character: UInt32
+    let endLine: UInt32
+    let endUTF16Character: UInt32
+    let newText: String
+
+    enum CodingKeys: String, CodingKey {
+        case startLine
+        case startUTF16Character
+        case endLine
+        case endUTF16Character
+        case newText
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        startLine = try container.decode(UInt32.self, forKey: .startLine)
+        startUTF16Character = try container.decode(UInt32.self, forKey: .startUTF16Character)
+        endLine = try container.decodeIfPresent(UInt32.self, forKey: .endLine) ?? startLine
+        endUTF16Character = try container.decode(UInt32.self, forKey: .endUTF16Character)
+        newText = try container.decode(String.self, forKey: .newText)
+    }
+
+    var payload: AttoVisualWorkspaceEditTextEditPayload {
+        AttoVisualWorkspaceEditTextEditPayload(
+            range: AttoVisualLspRange(
+                start: AttoVisualLspPosition(line: startLine, character: startUTF16Character),
+                end: AttoVisualLspPosition(line: endLine, character: endUTF16Character)
+            ),
+            newText: newText
+        )
+    }
+}
+
+private struct AttoVisualWorkspaceEditJSONPayload: Encodable {
+    let changes: [String: [AttoVisualWorkspaceEditTextEditPayload]]
+}
+
+private struct AttoVisualWorkspaceEditTextEditPayload: Encodable {
+    let range: AttoVisualLspRange
+    let newText: String
 }
 
 private struct AttoVisualWorkspaceEditPreview: Decodable, Equatable {
