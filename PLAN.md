@@ -783,6 +783,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testOpenPreviewUsesCorePreviewProjectionForReplacement|AttoEditorCommandTests.testOpenPinnedExistingTabUsesCorePreviewProjection|AttoPreviewTabDoubleClickTests.testDoubleClickPreviewTabPinsInsteadOfReplacing'`
     - `git diff --check`
+- 中间提交：`feat(app): project preview close callbacks from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 preview tab replacement 隐式关闭旧 preview tab 时，`onDidCloseFile` callback 使用替换前 core tab snapshot 的 `document_uri` 投影。
+  - 提交边界：只迁移 `openFile(url:mode:isUntitled:)` preview replacement 分支中旧 tab close callback 的 URL 来源；不改变 preview replacement、dirty preview pin 保护、LSP open/close 通知、真实保存路径、session schema 或 Rust/FFI ABI。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testPreviewReplacementCloseCallbackUsesCoreDocumentURIProjection|AttoEditorCommandTests.testOpenPreviewUsesCorePreviewProjectionForReplacement'`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

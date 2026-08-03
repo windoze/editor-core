@@ -8491,6 +8491,38 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(item.isPreview)
     }
 
+    func testPreviewReplacementCloseCallbackUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("preview-close-local.txt")
+        let projectedURL = tempDir.appendingPathComponent("preview-close-projected.txt")
+        let secondURL = tempDir.appendingPathComponent("preview-close-next.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        XCTAssertTrue(vc.openFile(url: firstURL, mode: .preview))
+
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, firstURL.standardizedFileURL)
+
+        var closedURLs: [URL] = []
+        vc.onDidCloseFile = { closedURLs.append($0.standardizedFileURL) }
+        XCTAssertTrue(vc.openFile(url: secondURL, mode: .preview))
+
+        XCTAssertEqual(closedURLs, [projectedURL.standardizedFileURL])
+        XCTAssertEqual(vc.openFileItems().map { $0.url.standardizedFileURL }, [secondURL.standardizedFileURL])
+    }
+
     func testWorkspaceRootChangeNotifiesOpenTabLspWorkspaceFolders() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

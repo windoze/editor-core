@@ -479,7 +479,7 @@ extension AttoEditorAreaViewController {
                         tabs[previewIdx].isPreview = false
                         pinCoreTabIfPreview(tabs[previewIdx])
                     } else {
-                        let oldURL = tabs[previewIdx].fileURL
+                        let oldURL = projectedFileURL(for: tabs[previewIdx])
                         let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
                         tabs[previewIdx] = tab
                         selectTab(id: tab.id)
