@@ -2715,7 +2715,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         applyEditorPreferencesToAllWindows()
     }
 
-    private func configurationSnapshot(forWorkspaceRootURL workspaceRootURL: URL) -> AttoConfigurationSnapshot {
+    private func configurationSnapshot(
+        forWorkspaceRootURL workspaceRootURL: URL,
+        documentContext: AttoConfigurationDocumentContext? = nil
+    ) -> AttoConfigurationSnapshot {
         let base = AttoPreferences.shared.effectiveConfigurationSnapshot(workspaceRootURL: workspaceRootURL)
 
         let userSettings: AttoConfigurationSettings?
@@ -2748,7 +2751,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         return base.resolvingSettings(
             user: userSettings,
             workspace: workspaceSettings,
-            runtime: runtimeConfigurationSettings
+            runtime: runtimeConfigurationSettings,
+            documentContext: documentContext
         ).snapshot
     }
 
@@ -2973,6 +2977,15 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             theme: resolved.theme,
             workspaceRootURL: workspaceRootURL,
             configurationSnapshot: configurationSnapshot,
+            configurationSnapshotProvider: { [weak self] workspaceRootURL, documentContext in
+                guard let self else {
+                    return AttoPreferences.shared.effectiveConfigurationSnapshot(workspaceRootURL: workspaceRootURL)
+                }
+                return self.configurationSnapshot(
+                    forWorkspaceRootURL: workspaceRootURL,
+                    documentContext: documentContext
+                )
+            },
             contentSize: contentSize
         )
 

@@ -29,6 +29,7 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         theme: EditorCoreSkiaTheme,
         workspaceRootURL: URL,
         configurationSnapshot: AttoConfigurationSnapshot,
+        configurationSnapshotProvider: ((URL, AttoConfigurationDocumentContext?) -> AttoConfigurationSnapshot)? = nil,
         contentSize: CGSize
     ) {
         self.workspaceRootURL = workspaceRootURL
@@ -50,7 +51,8 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
             library: library,
             theme: theme,
             workspaceRootURL: workspaceRootURL,
-            configurationSnapshot: configurationSnapshot
+            configurationSnapshot: configurationSnapshot,
+            configurationSnapshotProvider: configurationSnapshotProvider
         )
 
         let splitVC = NSSplitViewController()

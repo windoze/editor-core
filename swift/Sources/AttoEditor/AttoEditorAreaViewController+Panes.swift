@@ -45,14 +45,15 @@ extension AttoEditorAreaViewController {
     @discardableResult
     func appendSplitPane(to tab: AttoEditorTab) throws -> EditCoreUI {
         let editor = try tab.editCore.editor.cloneView(viewportWidthCells: 120)
+        let documentConfiguration = documentConfigurationSnapshot(for: tab)
         let pane = try EditCoreUI(
             editor: editor,
-            fontFamiliesCSV: AttoPreferences.shared.fontFamiliesCSVForNewViews(),
+            fontFamiliesCSV: configuredFontFamiliesCSVForNewView(documentConfiguration),
             showsMinimap: tab.editCore.showsMinimap,
             minimapPlacement: .rightOfScrollbar
         )
 
-        try configureEditorChrome(pane)
+        try configureEditorChrome(pane, configurationSnapshot: documentConfiguration)
         applyLanguageConfiguration(fileURL: projectedFileURL(for: tab), syntaxLanguageId: tab.syntaxLanguageId, to: pane)
         configureEditCoreHooks(pane, tabID: tab.id)
 

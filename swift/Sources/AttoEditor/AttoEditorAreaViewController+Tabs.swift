@@ -912,7 +912,7 @@ extension AttoEditorAreaViewController {
     }
 
     func applyFormatOnSaveIfNeeded(for tab: AttoEditorTab) {
-        guard configuredFormatOnSaveEnabledForApplying() else { return }
+        guard configuredFormatOnSaveEnabledForApplying(documentConfigurationSnapshot(for: tab)) else { return }
 
         let result = tab.editCore.editorView.formatDocumentWithLSPResult()
         switch result {
@@ -1150,7 +1150,7 @@ extension AttoEditorAreaViewController {
         updateWindowTitle()
         tab.editCore.focusEditor()
 
-        applyFindStateToActiveTab()
+        applyFindPreferences()
         notifySessionStateChanged()
     }
 
@@ -1208,7 +1208,7 @@ extension AttoEditorAreaViewController {
         if focusEditor {
             tab.editCore.focusEditor()
         }
-        applyFindStateToActiveTab()
+        applyFindPreferences()
         return true
     }
 

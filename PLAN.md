@@ -1750,6 +1750,13 @@
   - 验证记录：
     - `swift test --package-path swift --filter AttoConfigurationSettingsTests`
     - `git diff --check`
+- 中间提交：`feat(app): apply scoped settings to documents`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把上一提交的 scoped settings resolver 接入 AttoEditor 打开文档、split pane 和偏好重应用路径，让同一 window 内不同文档可按 selector 使用不同 editor/language 配置。
+  - 提交边界：`AttoAppDelegate` 向 `AttoEditorAreaViewController` 提供 workspace-root aware configuration resolver；新建 tab、split pane、已打开 tab 的 preference reapply、active tab Find bar、format-on-save 和 semantic highlighting gate 会按文档 URL + language id 解析 scoped snapshot。该提交不新增 Rust/FFI ABI，不实现 per-tab theme switching、workspace/project scoped settings 编辑 UI、runtime override UI/持久化、完整 Sublime settings selector grammar、跨 schema 字段语义迁移或 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorPreferencesApplicationTests`
+    - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

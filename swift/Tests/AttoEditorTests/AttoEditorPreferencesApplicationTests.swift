@@ -131,6 +131,106 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertTrue(try viewportLines(editorView.editor).contains { ($0["is_wrapped_part"] as? Bool) == true })
     }
 
+    func testDocumentScopedConfigurationSettingsApplyPerOpenTabAndReapply() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorDocumentScopedConfigurationTests-\(UUID().uuidString)", isDirectory: true)
+        let workspaceRootURL = tempDir.appendingPathComponent("Workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspaceRootURL, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let textURL = workspaceRootURL.appendingPathComponent("plain.txt")
+        let swiftURL = workspaceRootURL.appendingPathComponent("App.swift")
+        try "abcdefghijklmnop\n".write(to: textURL, atomically: true, encoding: .utf8)
+        try "abcdefghijklmnop\n".write(to: swiftURL, atomically: true, encoding: .utf8)
+
+        let settingsStore = AttoConfigurationSettingsStore(
+            userSettingsURL: tempDir.appendingPathComponent("user-settings.json")
+        )
+        try settingsStore.saveWorkspaceSettings(AttoConfigurationSettings(
+            editor: AttoEditorPreferenceSettings(
+                fontSizePoints: 14,
+                wrapMode: "none",
+                findCaseSensitive: true,
+                findWholeWord: false,
+                findRegex: false
+            ),
+            scopedSettings: [
+                AttoScopedConfigurationSettings(
+                    selectors: ["*.swift"],
+                    editor: AttoEditorPreferenceSettings(
+                        fontSizePoints: 23,
+                        wrapMode: "char",
+                        findCaseSensitive: false,
+                        findWholeWord: true,
+                        findRegex: true
+                    )
+                ),
+            ]
+        ), workspaceRootURL: workspaceRootURL)
+
+        let delegate = AttoAppDelegate(
+            keyBindings: [:],
+            configurationSettingsStore: settingsStore
+        )
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: workspaceRootURL)
+        addTeardownBlock {
+            ctx.window.close()
+        }
+
+        ctx.editorAreaController.openFile(url: textURL, mode: .pinned)
+        ctx.editorAreaController.view.layoutSubtreeIfNeeded()
+        let textView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        try textView.editor.setViewportWidthCells(4)
+        XCTAssertFalse(try viewportLines(textView.editor).contains { ($0["is_wrapped_part"] as? Bool) == true })
+        XCTAssertEqual(textView.fontSizePoints, CGFloat(14))
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.caseSensitiveButton.state, .on)
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.wholeWordButton.state, .off)
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .off)
+
+        ctx.editorAreaController.openFile(url: swiftURL, mode: .pinned)
+        ctx.editorAreaController.view.layoutSubtreeIfNeeded()
+        let swiftView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        try swiftView.editor.setViewportWidthCells(4)
+        XCTAssertTrue(try viewportLines(swiftView.editor).contains { ($0["is_wrapped_part"] as? Bool) == true })
+        XCTAssertEqual(swiftView.fontSizePoints, CGFloat(23))
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.caseSensitiveButton.state, .off)
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.wholeWordButton.state, .on)
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .on)
+
+        try settingsStore.saveWorkspaceSettings(AttoConfigurationSettings(
+            editor: AttoEditorPreferenceSettings(
+                fontSizePoints: 14,
+                wrapMode: "none",
+                findCaseSensitive: true,
+                findWholeWord: false,
+                findRegex: false
+            ),
+            scopedSettings: [
+                AttoScopedConfigurationSettings(
+                    selectors: ["*.swift"],
+                    editor: AttoEditorPreferenceSettings(
+                        fontSizePoints: 24,
+                        wrapMode: "none",
+                        findCaseSensitive: true,
+                        findWholeWord: false,
+                        findRegex: false
+                    )
+                ),
+            ]
+        ), workspaceRootURL: workspaceRootURL)
+        delegate._applyEditorPreferencesForTesting()
+
+        try swiftView.editor.setViewportWidthCells(4)
+        XCTAssertFalse(try viewportLines(swiftView.editor).contains { ($0["is_wrapped_part"] as? Bool) == true })
+        XCTAssertEqual(swiftView.fontSizePoints, CGFloat(24))
+        XCTAssertEqual(textView.fontSizePoints, CGFloat(14))
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.caseSensitiveButton.state, .on)
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.wholeWordButton.state, .off)
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .off)
+    }
+
     func testRuntimeConfigurationSettingsOverrideUserAndWorkspaceSettings() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorRuntimeConfigurationTests-\(UUID().uuidString)", isDirectory: true)

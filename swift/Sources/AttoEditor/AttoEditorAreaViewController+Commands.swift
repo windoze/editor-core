@@ -444,7 +444,7 @@ extension AttoEditorAreaViewController {
             return false
         }
 
-        guard configuredSemanticHighlightingEnabledForApplying() else {
+        guard configuredSemanticHighlightingEnabledForApplying(documentConfigurationSnapshot(for: tab)) else {
             clearSemanticTokens(for: tab)
             derivedStateStore.refreshActive(editor: tab.editCore.editor)
             updateStatusBar()

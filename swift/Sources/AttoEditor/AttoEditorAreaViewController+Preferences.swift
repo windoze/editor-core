@@ -8,55 +8,12 @@ extension AttoEditorAreaViewController {
     // MARK: - Preferences (editor rendering)
 
     func applyEditorPreferences() {
-        let fontFamiliesCSV = configuredFontFamiliesCSVForApplying()
-        let ligaturesEnabled = configuredLigaturesEnabledForApplying()
-        let autoPairsEnabled = configuredAutoPairsEnabledForApplying()
-        let wrapMode = configuredWrapModeForApplying()
-        let wrapIndent = configuredWrapIndentForApplying()
-        let fontSizePoints = configuredFontSizePointsForApplying()
-        let semanticHighlightingEnabled = configuredSemanticHighlightingEnabledForApplying()
-        let formatOnTypeEnabled = configuredFormatOnTypeEnabledForApplying()
-
         for tab in tabs {
+            let snapshot = documentConfigurationSnapshot(for: tab)
+            applyEditorPreferences(to: tab, configurationSnapshot: snapshot)
+
+            let semanticHighlightingEnabled = configuredSemanticHighlightingEnabledForApplying(snapshot)
             for editCore in tab.panes {
-                // Font families: empty CSV means "reset to default" (Skia renderer falls back).
-                do {
-                    try editCore.editor.setFontFamiliesCSV(fontFamiliesCSV)
-                } catch {
-                    NSLog("AttoEditor: setFontFamiliesCSV failed: %@", String(describing: error))
-                }
-
-                do {
-                    try editCore.editor.setFontLigaturesEnabled(ligaturesEnabled)
-                } catch {
-                    NSLog("AttoEditor: setFontLigaturesEnabled failed: %@", String(describing: error))
-                }
-
-                do {
-                    try editCore.editor.setAutoPairsEnabled(autoPairsEnabled)
-                } catch {
-                    NSLog("AttoEditor: setAutoPairsEnabled failed: %@", String(describing: error))
-                }
-
-                do {
-                    try editCore.editor.setLspOnTypeFormattingEnabled(formatOnTypeEnabled)
-                } catch {
-                    NSLog("AttoEditor: setLspOnTypeFormattingEnabled failed: %@", String(describing: error))
-                }
-
-                do {
-                    _ = try editCore.editor.setWrapMode(wrapMode)
-                } catch {
-                    NSLog("AttoEditor: setWrapMode failed: %@", String(describing: error))
-                }
-
-                do {
-                    _ = try editCore.editor.setWrapIndent(wrapIndent)
-                } catch {
-                    NSLog("AttoEditor: setWrapIndent failed: %@", String(describing: error))
-                }
-
-                editCore.editorView.fontSizePoints = CGFloat(fontSizePoints)
                 editCore.editorView.needsDisplay = true
             }
 
@@ -65,7 +22,9 @@ extension AttoEditorAreaViewController {
             }
         }
 
-        if semanticHighlightingEnabled == false, let activeTab {
+        if let activeTab,
+           configuredSemanticHighlightingEnabledForApplying(documentConfigurationSnapshot(for: activeTab)) == false
+        {
             derivedStateStore.refreshActive(editor: activeTab.editCore.editor)
             updateStatusBar()
         }
@@ -73,47 +32,128 @@ extension AttoEditorAreaViewController {
         applyFindPreferences()
     }
 
-    func configuredFontFamiliesCSVForApplying() -> String {
-        configurationSnapshot.editor.fontFamilies.joined(separator: ", ")
+    func applyEditorPreferences(
+        to tab: AttoEditorTab,
+        configurationSnapshot snapshot: AttoConfigurationSnapshot
+    ) {
+        for editCore in tab.panes {
+            applyEditorPreferences(to: editCore, configurationSnapshot: snapshot)
+        }
     }
 
-    func configuredLigaturesEnabledForApplying() -> Bool {
-        configurationSnapshot.rendering.fontLigaturesEnabled
+    func applyEditorPreferences(
+        to editCore: EditCoreUI,
+        configurationSnapshot snapshot: AttoConfigurationSnapshot
+    ) {
+        do {
+            try editCore.editor.setFontFamiliesCSV(configuredFontFamiliesCSVForApplying(snapshot))
+        } catch {
+            NSLog("AttoEditor: setFontFamiliesCSV failed: %@", String(describing: error))
+        }
+
+        do {
+            try editCore.editor.setFontLigaturesEnabled(configuredLigaturesEnabledForApplying(snapshot))
+        } catch {
+            NSLog("AttoEditor: setFontLigaturesEnabled failed: %@", String(describing: error))
+        }
+
+        do {
+            try editCore.editor.setAutoPairsEnabled(configuredAutoPairsEnabledForApplying(snapshot))
+        } catch {
+            NSLog("AttoEditor: setAutoPairsEnabled failed: %@", String(describing: error))
+        }
+
+        do {
+            try editCore.editor.setLspOnTypeFormattingEnabled(configuredFormatOnTypeEnabledForApplying(snapshot))
+        } catch {
+            NSLog("AttoEditor: setLspOnTypeFormattingEnabled failed: %@", String(describing: error))
+        }
+
+        do {
+            _ = try editCore.editor.setWrapMode(configuredWrapModeForApplying(snapshot))
+        } catch {
+            NSLog("AttoEditor: setWrapMode failed: %@", String(describing: error))
+        }
+
+        do {
+            _ = try editCore.editor.setWrapIndent(configuredWrapIndentForApplying(snapshot))
+        } catch {
+            NSLog("AttoEditor: setWrapIndent failed: %@", String(describing: error))
+        }
+
+        editCore.editorView.fontSizePoints = CGFloat(configuredFontSizePointsForApplying(snapshot))
     }
 
-    func configuredAutoPairsEnabledForApplying() -> Bool {
-        configurationSnapshot.editor.autoPairsEnabled
+    func documentConfigurationSnapshot(for tab: AttoEditorTab) -> AttoConfigurationSnapshot {
+        documentConfigurationSnapshot(
+            for: projectedFileURL(for: tab),
+            syntaxLanguageId: tab.syntaxLanguageId
+        )
     }
 
-    func configuredFontSizePointsForApplying() -> Double {
-        configurationSnapshot.editor.fontSizePoints
+    func documentConfigurationSnapshot(
+        for fileURL: URL,
+        syntaxLanguageId: String?
+    ) -> AttoConfigurationSnapshot {
+        let languageId = AttoLanguageConfiguration.languageKey(
+            fileURL: fileURL,
+            syntaxLanguageId: syntaxLanguageId
+        )
+        let context = AttoConfigurationDocumentContext(
+            fileURL: fileURL.standardizedFileURL,
+            languageId: languageId.isEmpty ? nil : languageId
+        )
+        return configurationSnapshotProvider?(workspaceRootURL, context) ?? configurationSnapshot
     }
 
-    func configuredWrapModeForApplying() -> EcuWrapMode {
-        EcuWrapMode(rawValue: configurationSnapshot.editor.wrapMode) ?? preferences.effectiveWrapMode
+    func configuredFontFamiliesCSVForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> String {
+        (snapshot ?? configurationSnapshot).editor.fontFamilies.joined(separator: ", ")
     }
 
-    func configuredWrapIndentForApplying() -> EcuWrapIndent {
-        AttoPreferences.parseWrapIndentString(configurationSnapshot.editor.wrapIndent) ?? preferences.effectiveWrapIndent
+    func configuredFontFamiliesCSVForNewView(_ snapshot: AttoConfigurationSnapshot) -> String? {
+        let csv = configuredFontFamiliesCSVForApplying(snapshot)
+        return csv.isEmpty ? nil : csv
     }
 
-    func configuredSemanticHighlightingEnabledForApplying() -> Bool {
-        configurationSnapshot.language.semanticHighlightingEnabled
+    func configuredLigaturesEnabledForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> Bool {
+        (snapshot ?? configurationSnapshot).rendering.fontLigaturesEnabled
     }
 
-    func configuredFormatOnSaveEnabledForApplying() -> Bool {
-        configurationSnapshot.language.formatOnSaveEnabled
+    func configuredAutoPairsEnabledForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> Bool {
+        (snapshot ?? configurationSnapshot).editor.autoPairsEnabled
     }
 
-    func configuredFormatOnTypeEnabledForApplying() -> Bool {
-        configurationSnapshot.language.formatOnTypeEnabled
+    func configuredFontSizePointsForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> Double {
+        (snapshot ?? configurationSnapshot).editor.fontSizePoints
     }
 
-    func configuredSearchOptionsForApplying() -> EcuSearchOptions {
-        EcuSearchOptions(
-            caseSensitive: configurationSnapshot.editor.findCaseSensitive,
-            wholeWord: configurationSnapshot.editor.findWholeWord,
-            regex: configurationSnapshot.editor.findRegex
+    func configuredWrapModeForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> EcuWrapMode {
+        EcuWrapMode(rawValue: (snapshot ?? configurationSnapshot).editor.wrapMode) ?? preferences.effectiveWrapMode
+    }
+
+    func configuredWrapIndentForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> EcuWrapIndent {
+        AttoPreferences.parseWrapIndentString((snapshot ?? configurationSnapshot).editor.wrapIndent)
+            ?? preferences.effectiveWrapIndent
+    }
+
+    func configuredSemanticHighlightingEnabledForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> Bool {
+        (snapshot ?? configurationSnapshot).language.semanticHighlightingEnabled
+    }
+
+    func configuredFormatOnSaveEnabledForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> Bool {
+        (snapshot ?? configurationSnapshot).language.formatOnSaveEnabled
+    }
+
+    func configuredFormatOnTypeEnabledForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> Bool {
+        (snapshot ?? configurationSnapshot).language.formatOnTypeEnabled
+    }
+
+    func configuredSearchOptionsForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> EcuSearchOptions {
+        let snapshot = snapshot ?? activeTab.map(documentConfigurationSnapshot(for:)) ?? configurationSnapshot
+        return EcuSearchOptions(
+            caseSensitive: snapshot.editor.findCaseSensitive,
+            wholeWord: snapshot.editor.findWholeWord,
+            regex: snapshot.editor.findRegex
         )
     }
 

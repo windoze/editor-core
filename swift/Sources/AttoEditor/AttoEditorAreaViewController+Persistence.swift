@@ -54,18 +54,25 @@ extension AttoEditorAreaViewController {
     }
 
     func configureEditorChrome(_ editCore: EditCoreUI) throws {
+        try configureEditorChrome(editCore, configurationSnapshot: configurationSnapshot)
+    }
+
+    func configureEditorChrome(
+        _ editCore: EditCoreUI,
+        configurationSnapshot snapshot: AttoConfigurationSnapshot
+    ) throws {
         // 保持至少 6 个 cell 的 gutter（折叠标记 + 行号），但仍允许在超大文件时自动扩展。
         editCore.editorView.minimumGutterWidthCells = 6
         try editCore.editor.setWhitespaceRenderMode(.selection)
         try editCore.editor.setIndentGuidesEnabled(true)
-        try editCore.editor.setFontFamiliesCSV(configuredFontFamiliesCSVForApplying())
-        try editCore.editor.setFontLigaturesEnabled(configuredLigaturesEnabledForApplying())
-        editCore.editorView.fontSizePoints = CGFloat(configuredFontSizePointsForApplying())
+        try editCore.editor.setFontFamiliesCSV(configuredFontFamiliesCSVForApplying(snapshot))
+        try editCore.editor.setFontLigaturesEnabled(configuredLigaturesEnabledForApplying(snapshot))
+        editCore.editorView.fontSizePoints = CGFloat(configuredFontSizePointsForApplying(snapshot))
         try editCore.applyTheme(theme)
-        _ = try editCore.editor.setWrapMode(configuredWrapModeForApplying())
-        _ = try editCore.editor.setWrapIndent(configuredWrapIndentForApplying())
-        try editCore.editor.setAutoPairsEnabled(configuredAutoPairsEnabledForApplying())
-        try editCore.editor.setLspOnTypeFormattingEnabled(configuredFormatOnTypeEnabledForApplying())
+        _ = try editCore.editor.setWrapMode(configuredWrapModeForApplying(snapshot))
+        _ = try editCore.editor.setWrapIndent(configuredWrapIndentForApplying(snapshot))
+        try editCore.editor.setAutoPairsEnabled(configuredAutoPairsEnabledForApplying(snapshot))
+        try editCore.editor.setLspOnTypeFormattingEnabled(configuredFormatOnTypeEnabledForApplying(snapshot))
         try editCore.editor.setBracketMatchHighlightsEnabled(true)
     }
 
@@ -188,8 +195,6 @@ extension AttoEditorAreaViewController {
             minimapPlacement: .rightOfScrollbar
         )
 
-        try configureEditorChrome(editCore)
-
         // Tree-sitter registry (best-effort).
         loadTreeSitterRegistryCacheIfNeeded()
         if let registryJSON = treeSitterRegistryJSON {
@@ -202,6 +207,11 @@ extension AttoEditorAreaViewController {
 
         // Syntax support (best-effort): LSP -> Tree-sitter -> Sublime `.sublime-syntax`.
         let syntaxSupport = configureSyntaxSupport(for: url, editCore: editCore)
+        let documentConfiguration = documentConfigurationSnapshot(
+            for: url,
+            syntaxLanguageId: syntaxSupport.syntaxLanguageId
+        )
+        try configureEditorChrome(editCore, configurationSnapshot: documentConfiguration)
         applyLanguageConfiguration(fileURL: url, syntaxLanguageId: syntaxSupport.syntaxLanguageId, to: editCore)
 
         let tabId = UUID()
