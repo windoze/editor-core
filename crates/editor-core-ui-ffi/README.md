@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 34359738367,
+  "feature_flags": 68719476735,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -582,6 +582,10 @@ int32_t editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(
 );
 
 char* editor_core_ui_ffi_multi_document_project_lsp_servers_json(MultiDocumentEditorUi* multi);
+
+char* editor_core_ui_ffi_multi_document_project_lsp_servers_envelope_json(
+    MultiDocumentEditorUi* multi
+);
 ```
 
 `configs_json_utf8` is a JSON array of objects with `key`, `command`, optional `args`,
@@ -589,3 +593,40 @@ char* editor_core_ui_ffi_multi_document_project_lsp_servers_json(MultiDocumentEd
 commands, args, language ids, and workspace roots, and the returned JSON array is ordered by the
 normalized key. `editor_core_ui_ffi_multi_document_snapshot_json` includes the same list under
 `project_lsp_servers`.
+
+Hosts that want a single JSON result/error shape can use the additive envelope variant:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "value": [
+    {
+      "key": "rust",
+      "command": "/bin/rust-analyzer",
+      "args": ["--stdio"],
+      "language_id": "rust",
+      "workspace_roots": ["file:///workspace"],
+      "auto_start": true
+    }
+  ],
+  "error": null,
+  "version": 1
+}
+```
+
+Error:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "value": null,
+  "error": { "code": "invalid_argument", "status": 1, "message": "multi is null" },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE`.

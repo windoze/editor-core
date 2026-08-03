@@ -124,6 +124,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can update workspace roots and read folder diffs through structured result envelopes."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentProjectLSPServersEnvelope,
+            name: "multi-document project LSP servers envelope",
+            reason: "Swift hosts can read project LSP server launch metadata through structured result envelopes."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .workspaceDiagnosticsStore,
             name: "workspace diagnostics store",
             reason: "Swift hosts can use the core-owned workspace diagnostics snapshot."

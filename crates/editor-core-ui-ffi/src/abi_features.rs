@@ -74,6 +74,8 @@ pub const ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE: u64 = 1 << 32;
 pub const ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE: u64 = 1 << 33;
 /// Feature bit: multi-document workspace roots changes can return structured result envelopes.
 pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE: u64 = 1 << 34;
+/// Feature bit: multi-document project LSP server configs can return structured result envelopes.
+pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE: u64 = 1 << 35;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -109,7 +111,8 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT_ENVELOPE
     | ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE
     | ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE
-    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE;
+    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE
+    | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -328,6 +331,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE,
         name: "multi_document_workspace_roots_change_envelope",
         description: "Multi-document workspace roots changes can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 35,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE,
+        name: "multi_document_project_lsp_servers_envelope",
+        description: "Multi-document project LSP server configs can return structured result envelopes.",
     },
 ];
 

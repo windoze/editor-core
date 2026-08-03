@@ -1792,6 +1792,20 @@
     - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope project lsp servers`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 MultiDocument project LSP server config JSON result 面纳入统一结构化 envelope。
+  - 提交边界：新增 `editor_core_ui_ffi_multi_document_project_lsp_servers_envelope_json(MultiDocumentEditorUi*)` 和 `ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE` feature bit；legacy `multi_document_project_lsp_servers_json` 保持 raw JSON/null+last_error 语义，status 型 `set_project_lsp_servers_json` 保持不变；Swift `MultiDocumentEditorUI` 新增 raw/typed envelope accessor 与 `EcuProjectLspServersEnvelope`，runtime compatibility 和 Atto optional capability report 同步新增该能力。该提交不切换 App project LSP launch metadata 消费主路径，不替换现有 typed `projectLspServers()` wrapper，不改变实际 LSP server 启停/restart 策略，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi --release ffi_project_lsp_servers_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testProjectLspServersEnvelope'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

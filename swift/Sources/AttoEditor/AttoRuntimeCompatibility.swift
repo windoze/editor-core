@@ -158,6 +158,11 @@ struct AttoRuntimeCompatibility {
             reason: "Workspace root sync can read core folder diffs through structured envelopes; Swift falls back to the legacy typed change wrapper when unavailable."
         ),
         RuntimeFeature(
+            feature: .multiDocumentProjectLSPServersEnvelope,
+            name: "multi-document project LSP servers envelope",
+            reason: "Project LSP launch metadata can be read through structured envelopes; Swift falls back to the legacy typed project LSP servers wrapper when unavailable."
+        ),
+        RuntimeFeature(
             feature: .eventStreamEnvelope,
             name: "event stream envelope",
             reason: "Host UI can drain editor and project event streams through structured envelopes; Swift falls back to legacy raw event stream JSON when unavailable."

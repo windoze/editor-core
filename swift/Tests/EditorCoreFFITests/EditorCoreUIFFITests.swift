@@ -110,6 +110,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentSnapshotEnvelope))
         XCTAssertTrue(info.supports(.multiDocumentSearchEnvelope))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceRootsChangeEnvelope))
+        XCTAssertTrue(info.supports(.multiDocumentProjectLSPServersEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -166,6 +167,12 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && (feature["bit"] as? NSNumber)?.uint8Value == 34
                 && (feature["flag"] as? NSNumber)?.uint64Value
                     == EditorCoreUIFFIFeatures.multiDocumentWorkspaceRootsChangeEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_project_lsp_servers_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 35
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentProjectLSPServersEnvelope.rawValue
         })
     }
 
@@ -619,6 +626,105 @@ final class EditorCoreUIFFITests: XCTestCase {
         }
         """
         let failure = try JSONTestHelpers.decode(EcuWorkspaceRootsChangeEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
+    }
+
+    func testProjectLspServersEnvelopeReportsSuccess() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        try multi.setProjectLspServers([
+            EcuProjectLspServerConfig(
+                key: " Rust ",
+                command: " /bin/rust-analyzer ",
+                args: [" ", "--stdio "],
+                languageId: " rust ",
+                workspaceRoots: ["file:///workspace", " file:///workspace ", "file:///other"],
+                autoStart: true
+            ),
+            EcuProjectLspServerConfig(
+                key: "",
+                command: "/bin/sourcekit-lsp",
+                languageId: "swift",
+                autoStart: false
+            ),
+        ])
+
+        let envelope = try multi.projectLspServersEnvelope()
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.version, lib.abiVersion)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertNil(envelope.error)
+        guard case .array(let servers)? = envelope.value,
+              case .object(let first)? = servers.first,
+              case .object(let second)? = servers.dropFirst().first
+        else {
+            XCTFail("expected project LSP server config array")
+            return
+        }
+        XCTAssertEqual(first["key"], .string("rust"))
+        XCTAssertEqual(first["command"], .string("/bin/rust-analyzer"))
+        XCTAssertEqual(first["args"], .array([.string("--stdio")]))
+        XCTAssertEqual(first["language_id"], .string("rust"))
+        XCTAssertEqual(first["workspace_roots"], .array([.string("file:///other"), .string("file:///workspace")]))
+        XCTAssertEqual(first["auto_start"], .bool(true))
+        XCTAssertEqual(second["key"], .string("swift"))
+        XCTAssertEqual(second["command"], .string("/bin/sourcekit-lsp"))
+        XCTAssertEqual(second["args"], .array([]))
+        XCTAssertEqual(second["language_id"], .string("swift"))
+        XCTAssertEqual(second["workspace_roots"], .array([]))
+        XCTAssertEqual(second["auto_start"], .bool(false))
+    }
+
+    func testProjectLspServersEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "status": "future_status",
+          "value": [
+            {
+              "key": "future",
+              "command": "future-lsp",
+              "futureConfigField": true
+            }
+          ],
+          "error": null,
+          "version": 13,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuProjectLspServersEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertNil(success.error)
+        guard case .array(let value)? = success.value,
+              case .object(let first)? = value.first
+        else {
+            XCTFail("expected future project LSP config array")
+            return
+        }
+        XCTAssertEqual(first["key"], .string("future"))
+        XCTAssertEqual(first["futureConfigField"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 1000002,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 14
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuProjectLspServersEnvelope.self, from: failureJSON)
         XCTAssertFalse(failure.ok)
         XCTAssertEqual(failure.statusKind, .error)
         XCTAssertEqual(failure.value, .null)

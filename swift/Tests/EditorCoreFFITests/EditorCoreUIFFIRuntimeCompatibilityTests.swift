@@ -53,6 +53,9 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.contains {
             $0.feature == .multiDocumentWorkspaceRootsChangeEnvelope
         })
+        XCTAssertTrue(report.missingRequiredFeatures.contains {
+            $0.feature == .multiDocumentProjectLSPServersEnvelope
+        })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing UI FFI features"))
     }
 
