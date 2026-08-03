@@ -143,6 +143,11 @@ struct AttoRuntimeCompatibility {
             reason: "Project-level UI can drain state changes aggregated across tabs and split views; Swift falls back to family-specific multi-document event streams when unavailable."
         ),
         RuntimeFeature(
+            feature: .multiDocumentSnapshotEnvelope,
+            name: "multi-document snapshot envelope",
+            reason: "Project-level UI can read tab/project snapshots through structured envelopes; Swift falls back to the legacy typed snapshot wrapper when unavailable."
+        ),
+        RuntimeFeature(
             feature: .eventStreamEnvelope,
             name: "event stream envelope",
             reason: "Host UI can drain editor and project event streams through structured envelopes; Swift falls back to legacy raw event stream JSON when unavailable."

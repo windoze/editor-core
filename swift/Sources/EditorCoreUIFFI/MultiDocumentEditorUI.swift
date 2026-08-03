@@ -63,6 +63,90 @@ public struct EcuMultiDocumentSnapshot: Decodable, Equatable, Sendable {
     }
 }
 
+public enum EcuMultiDocumentSnapshotEnvelopeStatus: Hashable, Sendable {
+    case success
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "success":
+            self = .success
+        case "error":
+            self = .error
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .success:
+            return "success"
+        case .error:
+            return "error"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public struct EcuMultiDocumentSnapshotEnvelope: Decodable, Equatable, Sendable {
+    public let ok: Bool
+    public let status: String
+    public let value: EcuJSONValue?
+    public let error: EcuMultiDocumentSnapshotEnvelopeError?
+    public let version: UInt32
+
+    public var statusKind: EcuMultiDocumentSnapshotEnvelopeStatus {
+        EcuMultiDocumentSnapshotEnvelopeStatus(rawValue: status)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case status
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        if container.contains(.value) {
+            value = try container.decode(EcuJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcuMultiDocumentSnapshotEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcuMultiDocumentSnapshotEnvelopeError: Decodable, Equatable, Sendable {
+    public let code: String
+    public let status: EcuStatus?
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcuStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
     public let key: String
     public let command: String
@@ -913,6 +997,20 @@ public final class MultiDocumentEditorUI {
         }
         defer { editor_core_ui_ffi_string_free(ptr) }
         return String(cString: ptr)
+    }
+
+    public func snapshotEnvelopeJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_snapshot_envelope_json") {
+            editor_core_ui_ffi_multi_document_snapshot_envelope_json(handle)
+        }
+    }
+
+    public func snapshotEnvelope() throws -> EcuMultiDocumentSnapshotEnvelope {
+        try decode(
+            EcuMultiDocumentSnapshotEnvelope.self,
+            from: snapshotEnvelopeJSON(),
+            context: "multi_document_snapshot_envelope_decode"
+        )
     }
 
     public func snapshot() throws -> EcuMultiDocumentSnapshot {

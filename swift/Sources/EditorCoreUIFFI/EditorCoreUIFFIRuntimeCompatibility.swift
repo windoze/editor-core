@@ -109,6 +109,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can mirror tabs, split views, and project-level state into the core-owned multi-document UI model."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentSnapshotEnvelope,
+            name: "multi-document snapshot envelope",
+            reason: "Swift hosts can read tab/project snapshots through structured result envelopes."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .workspaceDiagnosticsStore,
             name: "workspace diagnostics store",
             reason: "Swift hosts can use the core-owned workspace diagnostics snapshot."

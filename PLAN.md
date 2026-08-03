@@ -1752,6 +1752,18 @@
     - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope multi-document snapshots`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 MultiDocument tab/project snapshot JSON result 面纳入统一结构化 envelope。
+  - 提交边界：新增 `editor_core_ui_ffi_multi_document_snapshot_envelope_json(MultiDocumentEditorUi*)` 和 `ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE` feature bit；legacy `multi_document_snapshot_json` 保持 raw JSON/null+last_error 语义；Swift `MultiDocumentEditorUI` 新增 raw/typed envelope accessor 与 `EcuMultiDocumentSnapshotEnvelope`，runtime compatibility 和 Atto optional capability report 同步新增该能力。该提交不切换 App 主路径，不替换现有 typed `snapshot()` wrapper，不把 active-tab/status 型 ABI 改造成 result API，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi --release ffi_multi_document_snapshot_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testMultiDocumentSnapshotEnvelope'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

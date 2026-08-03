@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 4294967295,
+  "feature_flags": 8589934591,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -75,6 +75,46 @@ or:
 
 Both strings are owned by the caller and must be freed with `editor_core_ui_ffi_string_free`.
 Availability is advertised by `ECU_FEATURE_JSON_COMMAND_ENVELOPE`.
+
+## MultiDocument Snapshot Envelope
+
+The legacy multi-document snapshot API remains available as a raw JSON string function:
+`editor_core_ui_ffi_multi_document_snapshot_json(...)`. Hosts that want a single JSON result/error
+shape can use the additive envelope variant:
+
+```c
+char* editor_core_ui_ffi_multi_document_snapshot_envelope_json(
+    MultiDocumentEditorUi* multi
+);
+```
+
+Success:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "value": { "active_tab_id": null, "workspace_roots": [], "project_lsp_servers": [], "tabs": [] },
+  "error": null,
+  "version": 1
+}
+```
+
+Error:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "value": null,
+  "error": { "code": "invalid_argument", "status": 1, "message": "multi is null" },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE`.
 
 ## LSP Result Envelope
 

@@ -107,6 +107,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.workspaceEditTransactionEnvelope))
         XCTAssertTrue(info.supports(.workspaceDiagnosticsEnvelope))
         XCTAssertTrue(info.supports(.workspaceOutlineSnapshotEnvelope))
+        XCTAssertTrue(info.supports(.multiDocumentSnapshotEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -147,6 +148,11 @@ final class EditorCoreUIFFITests: XCTestCase {
             feature["name"] as? String == "workspace_outline_snapshot_envelope"
                 && (feature["bit"] as? NSNumber)?.uint8Value == 31
                 && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.workspaceOutlineSnapshotEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_snapshot_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 32
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.multiDocumentSnapshotEnvelope.rawValue
         })
     }
 
@@ -437,6 +443,85 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(failure.streamKind, .stateEvents)
         XCTAssertEqual(failure.statusKind, .error)
         XCTAssertEqual(failure.afterSequence, 8)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
+    }
+
+    func testMultiDocumentSnapshotEnvelopeReportsSuccess() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let tab = try multi.openTab(text: "alpha\n", viewportWidthCells: 80)
+        try multi.setTabTitle("Alpha", tabId: tab)
+        try multi.setTabDocumentURI("file:///project/Alpha.swift", tabId: tab)
+        try multi.setTabLanguageId("swift", tabId: tab)
+
+        let envelope = try multi.snapshotEnvelope()
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.version, lib.abiVersion)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertNil(envelope.error)
+        guard case .object(let value)? = envelope.value,
+              case .array(let tabs)? = value["tabs"],
+              case .object(let firstTab)? = tabs.first
+        else {
+            XCTFail("expected multi-document snapshot object")
+            return
+        }
+        XCTAssertEqual(value["active_tab_id"], .number(Double(tab)))
+        XCTAssertEqual(value["workspace_roots"], .array([]))
+        XCTAssertEqual(firstTab["id"], .number(Double(tab)))
+        XCTAssertEqual(firstTab["title"], .string("Alpha"))
+        XCTAssertEqual(firstTab["document_uri"], .string("file:///project/Alpha.swift"))
+        XCTAssertEqual(firstTab["language_id"], .string("swift"))
+        XCTAssertEqual(firstTab["is_active"], .bool(true))
+        XCTAssertEqual(firstTab["is_modified"], .bool(false))
+        XCTAssertEqual(firstTab["view_count"], .number(1))
+    }
+
+    func testMultiDocumentSnapshotEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "status": "future_status",
+          "value": {
+            "tabs": [],
+            "future": true
+          },
+          "error": null,
+          "version": 7,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuMultiDocumentSnapshotEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future multi-document snapshot value")
+            return
+        }
+        XCTAssertEqual(value["tabs"], .array([]))
+        XCTAssertEqual(value["future"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 777777,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 8
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuMultiDocumentSnapshotEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
         XCTAssertEqual(failure.value, .null)
         XCTAssertEqual(failure.error?.code, "future_error")
         XCTAssertEqual(failure.error?.message, "future failure")

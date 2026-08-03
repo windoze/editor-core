@@ -168,6 +168,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE (1ull << 29)
 #define ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE (1ull << 30)
 #define ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT_ENVELOPE (1ull << 31)
+#define ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE (1ull << 32)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -185,6 +186,7 @@ int32_t editor_core_ui_ffi_multi_document_active_tab_id(MultiDocumentEditorUi* m
                                                         uint8_t* out_has_active,
                                                         uint64_t* out_tab_id);
 char* editor_core_ui_ffi_multi_document_snapshot_json(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_snapshot_envelope_json(MultiDocumentEditorUi* multi);
 int32_t editor_core_ui_ffi_multi_document_set_active_tab(MultiDocumentEditorUi* multi,
                                                          uint64_t tab_id);
 int32_t editor_core_ui_ffi_multi_document_set_tab_title(MultiDocumentEditorUi* multi,
