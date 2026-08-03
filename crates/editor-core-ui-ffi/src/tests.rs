@@ -153,6 +153,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_STATUS_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -230,6 +234,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "lsp_status_envelope"
             && feature["bit"] == 37
             && feature["flag"] == ECU_FEATURE_LSP_STATUS_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "lsp_workspace_edit_application_envelope"
+            && feature["bit"] == 38
+            && feature["flag"] == ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -5239,6 +5248,82 @@ fn ffi_match_highlights_affect_rendering() {
 
     // Highlighted cell at col=1 => x in [10..20]
     assert_eq!(pixel(&buf, 200, 15, 10), [1, 200, 2, 255]);
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
+fn ffi_lsp_workspace_edit_application_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc\n").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+
+    let workspace_edit = CString::new(
+        r#"{
+                "changes": {
+                    "file:///test.rs": [
+                        { "range": { "start": { "line": 0, "character": 1 }, "end": { "line": 0, "character": 2 } }, "newText": "B" }
+                    ],
+                    "file:///other.rs": [
+                        { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "X" }
+                    ]
+                }
+            }"#,
+    )
+    .unwrap();
+    let uri = CString::new("file:///test.rs").unwrap();
+
+    let result_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_envelope_json(
+            ui,
+            workspace_edit.as_ptr(),
+            uri.as_ptr(),
+        ),
+    );
+    let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
+    assert_eq!(result["ok"], true);
+    assert_eq!(result["status"], "success");
+    assert_eq!(result["document_uri"], "file:///test.rs");
+    assert_eq!(result["version"], ECU_ABI_VERSION);
+    assert_eq!(result["value"]["applied"], true);
+    assert_eq!(result["value"]["applied_uri"], "file:///test.rs");
+    assert_eq!(result["value"]["applied_edit_count"], 1);
+    assert_eq!(
+        result["value"]["skipped_uris"],
+        serde_json::json!(["file:///other.rs"])
+    );
+    assert!(result["error"].is_null());
+
+    let text_ptr = editor_core_ui_ffi_editor_ui_get_text(ui);
+    assert!(!text_ptr.is_null());
+    let text = unsafe { CStr::from_ptr(text_ptr) }
+        .to_str()
+        .unwrap()
+        .to_string();
+    unsafe { editor_core_ui_ffi_string_free(text_ptr) };
+    assert_eq!(text, "aBc\n");
+
+    let invalid = CString::new("{").unwrap();
+    let error_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_envelope_json(
+            ui,
+            invalid.as_ptr(),
+            uri.as_ptr(),
+        ),
+    );
+    let error: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error["ok"], false);
+    assert_eq!(error["status"], "error");
+    assert_eq!(error["document_uri"], "file:///test.rs");
+    assert_eq!(error["value"], serde_json::Value::Null);
+    assert_eq!(error["error"]["code"], "internal");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("EOF while parsing")
+    );
+    assert_eq!(error["version"], ECU_ABI_VERSION);
 
     unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
 }

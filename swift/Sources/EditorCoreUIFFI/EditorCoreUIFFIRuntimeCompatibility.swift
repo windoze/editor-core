@@ -114,6 +114,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can apply LSP WorkspaceEdit payloads through UI FFI helpers."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .lspWorkspaceEditApplicationEnvelope,
+            name: "LSP WorkspaceEdit application envelope",
+            reason: "Swift hosts can apply LSP WorkspaceEdit payloads through structured result envelopes."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .multiDocumentUI,
             name: "multi-document UI",
             reason: "Swift hosts can mirror tabs, split views, and project-level state into the core-owned multi-document UI model."

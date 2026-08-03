@@ -174,6 +174,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE (1ull << 35)
 #define ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE (1ull << 36)
 #define ECU_FEATURE_LSP_STATUS_ENVELOPE (1ull << 37)
+#define ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE (1ull << 38)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -769,6 +770,18 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json(
     const char* folding_ranges_result_json_utf8
 );
 char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(
+    EditorUi* ui,
+    const char* workspace_edit_json_utf8,
+    const char* document_uri_utf8
+);
+// Apply an LSP WorkspaceEdit through a stable envelope:
+//
+// Success: {"ok":true,"status":"success","document_uri":...,"value":<application summary>,"error":null,"version":<abi>}
+// Failure: {"ok":false,"status":"error","document_uri":...,"value":null,"error":{"code":...,"status":...,"message":...},"version":<abi>}
+//
+// The returned string is owned by the caller and must be freed with
+// `editor_core_ui_ffi_string_free`.
+char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_envelope_json(
     EditorUi* ui,
     const char* workspace_edit_json_utf8,
     const char* document_uri_utf8

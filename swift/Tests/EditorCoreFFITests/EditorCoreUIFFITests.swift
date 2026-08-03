@@ -113,6 +113,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentProjectLSPServersEnvelope))
         XCTAssertTrue(info.supports(.editorUIDerivedSnapshotEnvelope))
         XCTAssertTrue(info.supports(.lspStatusEnvelope))
+        XCTAssertTrue(info.supports(.lspWorkspaceEditApplicationEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -187,6 +188,12 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && (feature["bit"] as? NSNumber)?.uint8Value == 37
                 && (feature["flag"] as? NSNumber)?.uint64Value
                     == EditorCoreUIFFIFeatures.lspStatusEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "lsp_workspace_edit_application_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 38
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.lspWorkspaceEditApplicationEnvelope.rawValue
         })
     }
 
@@ -3867,6 +3874,137 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && ($0["edit_count"] as? Int) == 1
                 && ($0["has_overlapping_edits"] as? Bool) == false
         })
+    }
+
+    func testLspWorkspaceEditApplicationEnvelopeReportsSuccessAndError() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc\n", viewportWidthCells: 80)
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "file:///test.rs": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "B"
+              }
+            ],
+            "file:///other.rs": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "X"
+              }
+            ]
+          }
+        }
+        """
+
+        let envelope = try ui.lspApplyWorkspaceEditEnvelope(workspaceEdit, documentURI: "file:///test.rs")
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.version, lib.abiVersion)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertEqual(envelope.documentURI, "file:///test.rs")
+        XCTAssertEqual(envelope.value?.applied, true)
+        XCTAssertEqual(envelope.value?.appliedURI, "file:///test.rs")
+        XCTAssertEqual(envelope.value?.appliedEditCount, 1)
+        XCTAssertEqual(envelope.value?.skippedURIs, ["file:///other.rs"])
+        XCTAssertEqual(envelope.value?.documents.count, 2)
+        XCTAssertNil(envelope.error)
+        guard case .object(let rawValue)? = envelope.rawValue else {
+            XCTFail("expected workspace edit application raw object")
+            return
+        }
+        XCTAssertEqual(rawValue["applied_uri"], .string("file:///test.rs"))
+        XCTAssertEqual(try ui.text(), "aBc\n")
+
+        let failure = try ui.lspApplyWorkspaceEditEnvelope("{", documentURI: "file:///test.rs")
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.documentURI, "file:///test.rs")
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.rawValue, .null)
+        XCTAssertEqual(failure.error?.code, "internal")
+        XCTAssertTrue(failure.error?.message.contains("EOF while parsing") ?? false)
+    }
+
+    func testLspWorkspaceEditApplicationEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "status": "future_status",
+          "document_uri": "file:///future.swift",
+          "value": {
+            "applied": true,
+            "applied_uri": "file:///future.swift",
+            "applied_edit_count": 2,
+            "skipped_uris": ["file:///other.swift"],
+            "documents": [
+              {
+                "uri": "file:///future.swift",
+                "edit_count": 2,
+                "has_overlapping_edits": false,
+                "futureDocumentField": true
+              }
+            ],
+            "future": true
+          },
+          "error": null,
+          "version": 15,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONDecoder().decode(
+            EcuLspWorkspaceEditApplicationEnvelope.self,
+            from: Data(successJSON.utf8)
+        )
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertEqual(success.documentURI, "file:///future.swift")
+        XCTAssertEqual(success.value?.applied, true)
+        XCTAssertEqual(success.value?.appliedURI, "file:///future.swift")
+        XCTAssertEqual(success.value?.appliedEditCount, 2)
+        XCTAssertEqual(success.value?.skippedURIs, ["file:///other.swift"])
+        XCTAssertEqual(success.value?.documents.first?.uri, "file:///future.swift")
+        XCTAssertNil(success.error)
+        guard case .object(let rawValue)? = success.rawValue else {
+            XCTFail("expected future workspace edit application raw object")
+            return
+        }
+        XCTAssertEqual(rawValue["future"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "status": "error",
+          "document_uri": "file:///future.swift",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 135790,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 16
+        }
+        """
+        let failure = try JSONDecoder().decode(
+            EcuLspWorkspaceEditApplicationEnvelope.self,
+            from: Data(failureJSON.utf8)
+        )
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.documentURI, "file:///future.swift")
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.rawValue, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
     }
 
     func testLspInlayHintsAffectRendering() throws {

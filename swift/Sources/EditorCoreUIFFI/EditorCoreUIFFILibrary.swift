@@ -110,6 +110,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let multiDocumentProjectLSPServersEnvelope = Self(rawValue: 1 << 35)
     public static let editorUIDerivedSnapshotEnvelope = Self(rawValue: 1 << 36)
     public static let lspStatusEnvelope = Self(rawValue: 1 << 37)
+    public static let lspWorkspaceEditApplicationEnvelope = Self(rawValue: 1 << 38)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

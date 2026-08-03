@@ -98,6 +98,11 @@ struct AttoRuntimeCompatibility {
             reason: "Rename, code actions, completion resolve, and color presentations apply WorkspaceEdit payloads; edit-producing commands degrade when unavailable."
         ),
         RuntimeFeature(
+            feature: .lspWorkspaceEditApplicationEnvelope,
+            name: "LSP WorkspaceEdit application envelope",
+            reason: "Single-editor WorkspaceEdit fallback can use structured apply envelopes; Swift falls back to the legacy raw apply summary when unavailable."
+        ),
+        RuntimeFeature(
             feature: .workspaceDiagnosticsStore,
             name: "workspace diagnostics store",
             reason: "Project Problems can use the core-owned multi-document workspace diagnostics snapshot; Swift falls back to local parsing when unavailable."

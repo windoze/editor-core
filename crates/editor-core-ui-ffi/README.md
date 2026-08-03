@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 274877906943,
+  "feature_flags": 549755813887,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -301,6 +301,66 @@ Failure:
 The returned string is owned by the caller and must be freed with
 `editor_core_ui_ffi_string_free`. Availability is advertised by
 `ECU_FEATURE_LSP_STATUS_ENVELOPE`.
+
+## LSP WorkspaceEdit Application Envelope
+
+The legacy per-`EditorUi` WorkspaceEdit apply API remains available as a raw JSON string function:
+
+```c
+char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(
+    EditorUi* ui,
+    const char* workspace_edit_json_utf8,
+    const char* document_uri_utf8
+);
+```
+
+Hosts that want the stage-10 structured error model can call the additive envelope entry point:
+
+```c
+char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_envelope_json(
+    EditorUi* ui,
+    const char* workspace_edit_json_utf8,
+    const char* document_uri_utf8
+);
+```
+
+Success preserves the legacy apply summary under `value` and records the requested document URI:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "document_uri": "file:///main.rs",
+  "value": {
+    "applied": true,
+    "applied_uri": "file:///main.rs",
+    "applied_edit_count": 1,
+    "skipped_uris": [],
+    "documents": [
+      { "uri": "file:///main.rs", "edit_count": 1, "has_overlapping_edits": false }
+    ]
+  },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure returns a structured error instead of a null pointer:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "document_uri": "file:///main.rs",
+  "value": null,
+  "error": { "code": "internal", "status": 4, "message": "failed to parse WorkspaceEdit JSON: ..." },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE`.
 
 ## Event Stream Envelope
 
