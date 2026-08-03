@@ -1942,6 +1942,18 @@
     - `swift test --package-path swift --filter 'AttoAccessibilityIdentifierTests/testEditorChromeAndTabsExposeStableIdentifiers'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(lang): configure semantic highlighting`
+  - 所属任务：阶段 11 的 Tree-sitter 与 LSP 主路线产品化增量；让 Swift/App 配置快照、settings 文件和 preferences 都能表达 semantic highlighting 开关，并让 App typed semantic tokens apply 主路径尊重该开关。
+  - 提交边界：新增 `semantic_highlighting_enabled` 配置字段、UserDefaults/env fallback、settings resolution 和 App apply/clear 行为；关闭后跳过新的 typed semantic tokens 结果并清空已应用 semantic token style layer。该提交不新增 Rust/FFI ABI，不改变 LSP server capabilities/request 协商，不关闭底层 core LSP auto-refresh 请求，也不实现完整 language settings 面板。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoPreferencesTests/testSemanticHighlightingDefaultEnvAndStoredPreference'`
+    - `swift test --package-path swift --filter 'AttoPreferencesTests/testEffectiveConfigurationSnapshotRoundTripsCurrentPreferences'`
+    - `swift test --package-path swift --filter 'AttoConfigurationSettingsTests/testSettingsResolutionAppliesUserWorkspaceRuntimePrecedence'`
+    - `swift test --package-path swift --filter 'AttoConfigurationSettingsTests/testSettingsDecodeIgnoresUnknownFutureFields'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests/testSemanticHighlightingPreferenceSkipsTypedSemanticTokens'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests/testApplyingSemanticHighlightingPreferenceClearsExistingTokens'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 12: Workspace search、project index、recent 与 session
 

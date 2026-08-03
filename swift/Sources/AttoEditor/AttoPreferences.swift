@@ -74,6 +74,7 @@ final class AttoPreferences: NSObject {
         static let workspaceSearchExcludeGlobs = "AttoEditor.preferences.workspaceSearchExcludeGlobs"
         static let themeName = "AttoEditor.preferences.themeName"
         static let commentConfigurations = "AttoEditor.preferences.commentConfigurations"
+        static let semanticHighlightingEnabled = "AttoEditor.preferences.semanticHighlightingEnabled"
         static let lspAutoRestartEnabled = "AttoEditor.preferences.lspAutoRestartEnabled"
         static let lspAutoRestartMaxAttempts = "AttoEditor.preferences.lspAutoRestartMaxAttempts"
         static let lspAutoRestartBaseDelaySeconds = "AttoEditor.preferences.lspAutoRestartBaseDelaySeconds"
@@ -213,6 +214,16 @@ final class AttoPreferences: NSObject {
         return true
     }
 
+    var effectiveSemanticHighlightingEnabled: Bool {
+        if let stored = storedSemanticHighlightingEnabled { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_SEMANTIC_HIGHLIGHTING"])
+            ?? Self.parseBoolEnv(env["EDITOR_CORE_APPKIT_SEMANTIC_HIGHLIGHTING"])
+        {
+            return parsed
+        }
+        return true
+    }
+
     var effectiveLspAutoRestartMaxAttempts: Int {
         if let stored = storedLspAutoRestartMaxAttempts { return stored }
         if let parsed = Self.parseIntEnv(env["ATTO_EDITOR_LSP_AUTO_RESTART_MAX_ATTEMPTS"])
@@ -293,6 +304,10 @@ final class AttoPreferences: NSObject {
 
     var storedCommentConfigurations: [String: AttoCommentConfiguration] {
         commentConfigurationStorage().compactMapValues(Self.parseCommentConfiguration)
+    }
+
+    var storedSemanticHighlightingEnabled: Bool? {
+        defaults.object(forKey: Keys.semanticHighlightingEnabled) as? Bool
     }
 
     var storedLspAutoRestartEnabled: Bool? {
@@ -429,6 +444,15 @@ final class AttoPreferences: NSObject {
 
     func setLspAutoRestartEnabled(_ enabled: Bool) {
         defaults.set(enabled, forKey: Keys.lspAutoRestartEnabled)
+        postDidChange()
+    }
+
+    func setSemanticHighlightingEnabled(_ enabled: Bool?) {
+        if let enabled {
+            defaults.set(enabled, forKey: Keys.semanticHighlightingEnabled)
+        } else {
+            defaults.removeObject(forKey: Keys.semanticHighlightingEnabled)
+        }
         postDidChange()
     }
 

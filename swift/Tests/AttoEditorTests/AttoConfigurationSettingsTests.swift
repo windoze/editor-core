@@ -19,6 +19,7 @@ final class AttoConfigurationSettingsTests: XCTestCase {
                 commentConfigurations: [
                     "swift": .line("//"),
                 ],
+                semanticHighlightingEnabled: true,
                 lspAutoRestart: AttoLspAutoRestartPolicySettings(maxAttempts: 4)
             ),
             workspace: AttoWorkspacePreferenceSettings(
@@ -40,6 +41,7 @@ final class AttoConfigurationSettingsTests: XCTestCase {
                 commentConfigurations: [
                     "python": .line("#"),
                 ],
+                semanticHighlightingEnabled: false,
                 lspAutoRestart: AttoLspAutoRestartPolicySettings(
                     disabledServerKeys: ["workspace-lsp"],
                     serverMaxAttempts: ["workspace-lsp": 2]
@@ -62,6 +64,7 @@ final class AttoConfigurationSettingsTests: XCTestCase {
                 commentConfigurations: [
                     "swift": .lineAndBlock(";;", "#|", "|#"),
                 ],
+                semanticHighlightingEnabled: true,
                 lspAutoRestart: AttoLspAutoRestartPolicySettings(
                     baseDelaySeconds: 1.5,
                     serverBaseDelaySeconds: ["runtime-lsp": 0.5]
@@ -85,6 +88,7 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(snapshot.language.commentConfigurations["rust"], .line("//"))
         XCTAssertEqual(snapshot.language.commentConfigurations["python"], .line("#"))
         XCTAssertEqual(snapshot.language.commentConfigurations["swift"], .lineAndBlock(";;", "#|", "|#"))
+        XCTAssertTrue(snapshot.language.semanticHighlightingEnabled)
         XCTAssertEqual(snapshot.language.lspAutoRestart.enabled, true)
         XCTAssertEqual(snapshot.language.lspAutoRestart.maxAttempts, 4)
         XCTAssertEqual(snapshot.language.lspAutoRestart.baseDelaySeconds, 1.5)
@@ -229,6 +233,7 @@ final class AttoConfigurationSettingsTests: XCTestCase {
             "future_workspace_field": "ignored"
           },
           "language": {
+            "semantic_highlighting_enabled": false,
             "comment_configurations": {
               "swift": {
                 "line": "//",
@@ -255,6 +260,7 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(settings.workspace?.findInFilesDefaultScope, "workspace")
         XCTAssertEqual(settings.workspace?.workspaceSearchIncludeGlobs, ["Sources/**/*.swift"])
         XCTAssertEqual(settings.workspace?.workspaceSearchExcludeGlobs, ["**/*.generated.swift"])
+        XCTAssertEqual(settings.language?.semanticHighlightingEnabled, false)
         XCTAssertEqual(settings.language?.commentConfigurations?["swift"], .line("//"))
         XCTAssertEqual(settings.language?.lspAutoRestart?.maxAttempts, 5)
     }

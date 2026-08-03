@@ -491,6 +491,85 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(interval.styleId, 0x0007_0000)
     }
 
+    func testSemanticHighlightingPreferenceSkipsTypedSemanticTokens() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("semantic-disabled.txt")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let suiteName = "atto_editor_command_semantic_disabled_\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        let preferences = AttoPreferences(defaults: defaults, env: [:])
+        var snapshot = preferences.effectiveConfigurationSnapshot(workspaceRootURL: tempDir)
+        snapshot.language.semanticHighlightingEnabled = false
+
+        let vc = AttoEditorAreaViewController(
+            library: EditorCoreUIFFILibrary(),
+            theme: EditorCoreSkiaTheme.defaultLight(),
+            workspaceRootURL: tempDir,
+            configurationSnapshot: snapshot,
+            preferences: preferences
+        )
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let full = try JSONDecoder().decode(EcuLspSemanticTokensResult.self, from: Data("""
+        {
+          "resultId": "full-1",
+          "data": [0, 4, 5, 7, 0]
+        }
+        """.utf8))
+
+        XCTAssertFalse(vc.applySemanticTokensResultToActiveTab(full))
+        let baseline = try XCTUnwrap(vc._activeSemanticTokensBaselineForTesting())
+        XCTAssertNil(baseline.resultId)
+        XCTAssertEqual(baseline.data, [])
+        let semanticLayer = vc._activeDerivedStateForTesting().styleIntervals.layers.first { $0.layer == 1 }
+        XCTAssertTrue(semanticLayer?.intervals.isEmpty ?? true)
+    }
+
+    func testApplyingSemanticHighlightingPreferenceClearsExistingTokens() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("semantic-clear.txt")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let full = try JSONDecoder().decode(EcuLspSemanticTokensResult.self, from: Data("""
+        {
+          "resultId": "full-1",
+          "data": [0, 4, 5, 7, 0]
+        }
+        """.utf8))
+
+        XCTAssertTrue(vc.applySemanticTokensResultToActiveTab(full))
+        XCTAssertNotNil(vc._activeDerivedStateForTesting().styleIntervals.layers.first { $0.layer == 1 })
+
+        var snapshot = vc._configurationSnapshotForTesting()
+        snapshot.language.semanticHighlightingEnabled = false
+        vc.updateConfigurationSnapshot(snapshot)
+        vc.applyEditorPreferences()
+
+        let baseline = try XCTUnwrap(vc._activeSemanticTokensBaselineForTesting())
+        XCTAssertNil(baseline.resultId)
+        XCTAssertEqual(baseline.data, [])
+        let semanticLayer = vc._activeDerivedStateForTesting().styleIntervals.layers.first { $0.layer == 1 }
+        XCTAssertTrue(semanticLayer?.intervals.isEmpty ?? true)
+    }
+
     func testRefreshCodeLensRequiresEnabledLsp() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

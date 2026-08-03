@@ -444,6 +444,13 @@ extension AttoEditorAreaViewController {
             return false
         }
 
+        guard configuredSemanticHighlightingEnabledForApplying() else {
+            clearSemanticTokens(for: tab)
+            derivedStateStore.refreshActive(editor: tab.editCore.editor)
+            updateStatusBar()
+            return false
+        }
+
         do {
             let data = try tab.editCore.editor.lspApplySemanticTokens(
                 result,
@@ -472,6 +479,21 @@ extension AttoEditorAreaViewController {
             }
             NSSound.beep()
             return false
+        }
+    }
+
+    func clearSemanticTokens(for tab: AttoEditorTab) {
+        tab.semanticTokensData = []
+        tab.semanticTokensResultId = nil
+
+        for editCore in tab.panes {
+            do {
+                try editCore.editor.lspApplySemanticTokens([])
+                editCore.editorView.needsDisplay = true
+                editCore.needsDisplay = true
+            } catch {
+                NSLog("AttoEditor: failed to clear semantic tokens: %@", String(describing: error))
+            }
         }
     }
 

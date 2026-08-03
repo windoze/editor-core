@@ -127,18 +127,22 @@ struct AttoRenderingPreferenceSettings: Codable, Equatable {
 
 struct AttoLanguagePreferenceSettings: Codable, Equatable {
     var commentConfigurations: [String: AttoCommentConfiguration]?
+    var semanticHighlightingEnabled: Bool?
     var lspAutoRestart: AttoLspAutoRestartPolicySettings?
 
     init(
         commentConfigurations: [String: AttoCommentConfiguration]? = nil,
+        semanticHighlightingEnabled: Bool? = nil,
         lspAutoRestart: AttoLspAutoRestartPolicySettings? = nil
     ) {
         self.commentConfigurations = commentConfigurations
+        self.semanticHighlightingEnabled = semanticHighlightingEnabled
         self.lspAutoRestart = lspAutoRestart
     }
 
     private enum CodingKeys: String, CodingKey {
         case commentConfigurations = "comment_configurations"
+        case semanticHighlightingEnabled = "semantic_highlighting_enabled"
         case lspAutoRestart = "lsp_auto_restart"
     }
 }
@@ -409,6 +413,9 @@ extension AttoConfigurationSnapshot {
     private mutating func apply(_ settings: AttoLanguagePreferenceSettings) {
         if let commentConfigurations = settings.commentConfigurations {
             language.commentConfigurations.merge(commentConfigurations) { _, new in new }
+        }
+        if let semanticHighlightingEnabled = settings.semanticHighlightingEnabled {
+            language.semanticHighlightingEnabled = semanticHighlightingEnabled
         }
         if let lspAutoRestart = settings.lspAutoRestart {
             apply(lspAutoRestart)

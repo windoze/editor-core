@@ -14,6 +14,7 @@ extension AttoEditorAreaViewController {
         let wrapMode = configuredWrapModeForApplying()
         let wrapIndent = configuredWrapIndentForApplying()
         let fontSizePoints = configuredFontSizePointsForApplying()
+        let semanticHighlightingEnabled = configuredSemanticHighlightingEnabledForApplying()
 
         for tab in tabs {
             for editCore in tab.panes {
@@ -51,6 +52,15 @@ extension AttoEditorAreaViewController {
                 editCore.editorView.fontSizePoints = CGFloat(fontSizePoints)
                 editCore.editorView.needsDisplay = true
             }
+
+            if semanticHighlightingEnabled == false {
+                clearSemanticTokens(for: tab)
+            }
+        }
+
+        if semanticHighlightingEnabled == false, let activeTab {
+            derivedStateStore.refreshActive(editor: activeTab.editCore.editor)
+            updateStatusBar()
         }
 
         applyFindPreferences()
@@ -78,6 +88,10 @@ extension AttoEditorAreaViewController {
 
     func configuredWrapIndentForApplying() -> EcuWrapIndent {
         AttoPreferences.parseWrapIndentString(configurationSnapshot.editor.wrapIndent) ?? preferences.effectiveWrapIndent
+    }
+
+    func configuredSemanticHighlightingEnabledForApplying() -> Bool {
+        configurationSnapshot.language.semanticHighlightingEnabled
     }
 
     func configuredSearchOptionsForApplying() -> EcuSearchOptions {

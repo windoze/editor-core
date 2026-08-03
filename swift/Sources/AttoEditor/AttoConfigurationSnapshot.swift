@@ -101,11 +101,38 @@ struct AttoRenderingPreferenceSnapshot: Codable, Equatable {
 
 struct AttoLanguagePreferenceSnapshot: Codable, Equatable {
     var commentConfigurations: [String: AttoCommentConfiguration]
+    var semanticHighlightingEnabled: Bool
     var lspAutoRestart: AttoLspAutoRestartPolicySnapshot
 
     private enum CodingKeys: String, CodingKey {
         case commentConfigurations = "comment_configurations"
+        case semanticHighlightingEnabled = "semantic_highlighting_enabled"
         case lspAutoRestart = "lsp_auto_restart"
+    }
+
+    init(
+        commentConfigurations: [String: AttoCommentConfiguration],
+        semanticHighlightingEnabled: Bool = true,
+        lspAutoRestart: AttoLspAutoRestartPolicySnapshot
+    ) {
+        self.commentConfigurations = commentConfigurations
+        self.semanticHighlightingEnabled = semanticHighlightingEnabled
+        self.lspAutoRestart = lspAutoRestart
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            commentConfigurations: try container.decodeIfPresent(
+                [String: AttoCommentConfiguration].self,
+                forKey: .commentConfigurations
+            ) ?? [:],
+            semanticHighlightingEnabled: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .semanticHighlightingEnabled
+            ) ?? true,
+            lspAutoRestart: try container.decode(AttoLspAutoRestartPolicySnapshot.self, forKey: .lspAutoRestart)
+        )
     }
 }
 
@@ -416,6 +443,7 @@ extension AttoPreferences {
             ),
             language: AttoLanguagePreferenceSnapshot(
                 commentConfigurations: storedCommentConfigurations,
+                semanticHighlightingEnabled: effectiveSemanticHighlightingEnabled,
                 lspAutoRestart: AttoLspAutoRestartPolicySnapshot(
                     enabled: effectiveLspAutoRestartEnabled,
                     maxAttempts: effectiveLspAutoRestartMaxAttempts,
