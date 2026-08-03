@@ -77,6 +77,7 @@ extension AttoEditorAreaViewController {
         let inlayHintCount = decorations.map { AttoLspInlayHintParser.items(fromDecorationsSnapshot: $0).count } ?? 0
         let documentLinkCount = decorations.map { AttoLspDocumentLinkParser.items(fromDecorationsSnapshot: $0).count } ?? 0
         let documentColorCount = lastDocumentColorItems.count
+        let documentColorStatus = lspWorkbenchDocumentColorStatus(count: documentColorCount)
         let hierarchyCount = hierarchyPanelSnapshot?.entries.count ?? 0
 
         return [
@@ -140,7 +141,7 @@ extension AttoEditorAreaViewController {
                 id: LspWorkbenchItemID.documentColors,
                 title: "Document Colors",
                 detail: "Document colors and color presentations for the active tab",
-                status: documentColorCount > 0 ? "\(documentColorCount) cached" : "request on open",
+                status: documentColorStatus,
                 isEnabled: hasActiveTab
             ),
             .init(
@@ -166,6 +167,35 @@ extension AttoEditorAreaViewController {
         ]
         if entry.title.isEmpty == false {
             parts.append(entry.title)
+        }
+        return parts.joined(separator: " | ")
+    }
+
+    private func lspWorkbenchDocumentColorStatus(count: Int) -> String {
+        guard count > 0 else { return "request on open" }
+        let countText = count == 1 ? "1 color" : "\(count) colors"
+        guard let event = lspWorkbenchResultEvent(family: "document_colors") else {
+            return "\(count) cached"
+        }
+        return lspWorkbenchResultEventStatus(countText: countText, event: event)
+    }
+
+    private func lspWorkbenchResultEvent(family: String) -> AttoLspResultLifecycleEvent? {
+        lspResultEventStream.events.reversed().first { $0.family == family }
+    }
+
+    private func lspWorkbenchResultEventStatus(
+        countText: String,
+        event: AttoLspResultLifecycleEvent
+    ) -> String {
+        var parts = [
+            countText,
+            "Fresh",
+            "Result #\(event.sequence)",
+            event.family,
+        ]
+        if event.title.isEmpty == false {
+            parts.append(event.title)
         }
         return parts.joined(separator: " | ")
     }

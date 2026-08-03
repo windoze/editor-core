@@ -828,6 +828,44 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
     }
 
+    func testLspWorkbenchPanelShowsDocumentColorLifecycleEvent() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("workbench-colors.swift")
+        try "let color = #ff0000\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(vc.showDocumentColorResultJSONInActiveTab("""
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 12 },
+              "end": { "line": 0, "character": 19 }
+            },
+            "color": { "red": 1, "green": 0, "blue": 0, "alpha": 1 }
+          }
+        ]
+        """))
+
+        XCTAssertTrue(vc.showLspWorkbenchPanel())
+        let statuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(statuses["Document Colors"]?.hasPrefix("1 color | Fresh | Result #") == true)
+        XCTAssertTrue(
+            statuses["Document Colors"]?.contains(" | document_colors | Document Colors: 1 color") == true
+        )
+        XCTAssertEqual(vc._lspWorkbenchPanelRowCountForTesting(), 10)
+        XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
+    }
+
     func testInlayHintClickUsesResolveFeedbackWhenLspDisabled() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

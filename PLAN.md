@@ -1246,6 +1246,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelShowsLifecycleStateForLocationsAndSymbols`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
     - `git diff --check`
+- 中间提交：`feat(app): show workbench color lifecycle`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；让统一 LSP Workbench 的 Document Colors 行消费已有 `document_colors` result event metadata，把颜色结果从简单 cached 数量推进到带 sequence/family/title 的 result family 状态。
+  - 提交边界：Workbench 的 Document Colors 行在已有颜色结果和 `document_colors` event 时展示颜色数量、Fresh、Result sequence、family 和 title；没有结果仍显示 `request on open`，旧无 event 的缓存状态仍保留 cached fallback。该提交不改变 Document Colors request/result/picker/panel 语义，不消费 color presentation event，不新增统一 pin/history 数据模型或真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelShowsDocumentColorLifecycleEvent`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 
