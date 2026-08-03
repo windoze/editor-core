@@ -360,9 +360,11 @@ uint32_t editor_core_ffi_abi_version(void);
 uint64_t editor_core_ffi_feature_flags(void);
 char* editor_core_ffi_runtime_info_json(void);
 char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_viewport_styled_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_minimap_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_minimap_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_viewport_composed_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_execute_envelope_json(EcfEditorState* state, const char* command_json);
 
 int32_t editor_core_ffi_workspace_open_buffer_typed(EcfWorkspace* workspace, const char* uri, const char* text, uint32_t viewport_width, EcfOpenBufferResult* out_result);
@@ -370,7 +372,9 @@ int32_t editor_core_ffi_workspace_create_view_typed(EcfWorkspace* workspace, uin
 bool editor_core_ffi_workspace_set_viewport_height(EcfWorkspace* workspace, uint64_t view_id, uint32_t height);
 bool editor_core_ffi_workspace_set_smooth_scroll_state(EcfWorkspace* workspace, uint64_t view_id, uint32_t top_visual_row, uint16_t sub_row_offset, uint32_t overscan_rows);
 char* editor_core_ffi_workspace_execute_envelope_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
+char* editor_core_ffi_workspace_viewport_styled_envelope_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_workspace_minimap_envelope_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_workspace_viewport_composed_envelope_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
 
 uint64_t editor_core_ffi_lsp_char_offset_to_utf16(const char* line_text, uint64_t char_offset);
 uint64_t editor_core_ffi_lsp_utf16_to_char_offset(const char* line_text, uint64_t utf16_offset);

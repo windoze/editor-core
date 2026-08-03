@@ -485,6 +485,40 @@ pub extern "C" fn editor_core_ffi_workspace_viewport_styled_json(
     })
 }
 
+/// Get styled viewport snapshot for a view as a stable JSON result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_viewport_styled_envelope_json(
+    workspace: *mut EcfWorkspace,
+    view_id: u64,
+    start_visual_row: u32,
+    count: u32,
+) -> *mut c_char {
+    rendering_snapshot_envelope_json_ptr(
+        "workspace_viewport_styled",
+        Some(view_id),
+        start_visual_row,
+        count,
+        || {
+            let workspace = require_mut(workspace, "workspace")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let count = usize_from_u32(count, "count")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let grid = workspace
+                .inner
+                .get_viewport_content_styled(ViewId::from_raw(view_id), start_visual_row, count)
+                .map_err(|err| {
+                    (
+                        EcfStatus::Internal,
+                        format!("get_viewport_content_styled failed: {err:?}"),
+                    )
+                })?;
+            Ok(value_headless_grid(&grid))
+        },
+    )
+}
+
 /// Get minimap snapshot for a view as JSON.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_workspace_minimap_json(
@@ -513,7 +547,7 @@ pub extern "C" fn editor_core_ffi_workspace_minimap_envelope_json(
     start_visual_row: u32,
     count: u32,
 ) -> *mut c_char {
-    minimap_envelope_json_ptr(
+    rendering_snapshot_envelope_json_ptr(
         "workspace_minimap",
         Some(view_id),
         start_visual_row,
@@ -557,6 +591,40 @@ pub extern "C" fn editor_core_ffi_workspace_viewport_composed_json(
             .map_err(|err| format!("get_viewport_content_composed failed: {err:?}"))?;
         Ok(value_composed_grid(&grid))
     })
+}
+
+/// Get composed viewport snapshot for a view as a stable JSON result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_viewport_composed_envelope_json(
+    workspace: *mut EcfWorkspace,
+    view_id: u64,
+    start_visual_row: u32,
+    count: u32,
+) -> *mut c_char {
+    rendering_snapshot_envelope_json_ptr(
+        "workspace_viewport_composed",
+        Some(view_id),
+        start_visual_row,
+        count,
+        || {
+            let workspace = require_mut(workspace, "workspace")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let count = usize_from_u32(count, "count")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let grid = workspace
+                .inner
+                .get_viewport_content_composed(ViewId::from_raw(view_id), start_visual_row, count)
+                .map_err(|err| {
+                    (
+                        EcfStatus::Internal,
+                        format!("get_viewport_content_composed failed: {err:?}"),
+                    )
+                })?;
+            Ok(value_composed_grid(&grid))
+        },
+    )
 }
 
 /// Search all open buffers.

@@ -260,6 +260,10 @@ public struct EcfMinimapEnvelopeError: Equatable, Sendable, Decodable {
     }
 }
 
+public typealias EcfRenderingSnapshotEnvelope = EcfMinimapEnvelope
+public typealias EcfRenderingSnapshotEnvelopeError = EcfMinimapEnvelopeError
+public typealias EcfRenderingSnapshotEnvelopeStatus = EcfMinimapEnvelopeStatus
+
 public struct EcfAutoPair: Equatable, Sendable {
     public let open: String
     public let close: String

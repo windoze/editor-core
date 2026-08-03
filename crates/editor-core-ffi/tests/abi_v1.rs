@@ -11,7 +11,9 @@ use editor_core_ffi::{
     editor_core_ffi_editor_insert_text_utf8, editor_core_ffi_editor_state_execute_envelope_json,
     editor_core_ffi_editor_state_free, editor_core_ffi_editor_state_minimap_envelope_json,
     editor_core_ffi_editor_state_minimap_json, editor_core_ffi_editor_state_new,
+    editor_core_ffi_editor_state_viewport_composed_envelope_json,
     editor_core_ffi_editor_state_viewport_composed_json,
+    editor_core_ffi_editor_state_viewport_styled_envelope_json,
     editor_core_ffi_editor_state_viewport_styled_json, editor_core_ffi_feature_flags,
     editor_core_ffi_last_error_message, editor_core_ffi_lsp_char_offset_to_utf16,
     editor_core_ffi_lsp_completion_item_to_text_edits_json,
@@ -25,7 +27,9 @@ use editor_core_ffi::{
     editor_core_ffi_workspace_move_to, editor_core_ffi_workspace_new,
     editor_core_ffi_workspace_open_buffer_typed, editor_core_ffi_workspace_set_smooth_scroll_state,
     editor_core_ffi_workspace_set_viewport_height,
+    editor_core_ffi_workspace_viewport_composed_envelope_json,
     editor_core_ffi_workspace_viewport_composed_json,
+    editor_core_ffi_workspace_viewport_styled_envelope_json,
     editor_core_ffi_workspace_viewport_styled_json,
 };
 use std::ffi::{CStr, CString};
@@ -107,11 +111,15 @@ fn public_abi_scalar_signatures_are_fixed_width() {
     let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_editor_state_viewport_styled_json;
     let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_viewport_styled_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_editor_state_minimap_json;
     let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_editor_state_minimap_envelope_json;
     let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_editor_state_viewport_composed_json;
+    let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_viewport_composed_envelope_json;
     let _: extern "C" fn(*mut EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
         editor_core_ffi_editor_state_execute_envelope_json;
 
@@ -131,11 +139,15 @@ fn public_abi_scalar_signatures_are_fixed_width() {
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_workspace_viewport_styled_json;
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_viewport_styled_envelope_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_workspace_minimap_json;
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_workspace_minimap_envelope_json;
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_workspace_viewport_composed_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_viewport_composed_envelope_json;
     let _: extern "C" fn(*mut EcfWorkspace, u64, *const std::ffi::c_char) -> *mut std::ffi::c_char =
         editor_core_ffi_workspace_execute_envelope_json;
 
@@ -291,6 +303,54 @@ fn editor_state_minimap_envelope_json_reports_success_and_errors() {
         status(EcfStatus::InvalidArgument)
     );
     assert_eq!(failed["error"]["message"], "state is null");
+
+    unsafe { editor_core_ffi_editor_state_free(state) };
+}
+
+#[test]
+fn editor_state_viewport_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc\nsecond\nthird\n").expect("cstring");
+    let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
+    assert!(!state.is_null());
+
+    for (surface, function) in [
+        (
+            "editor_state_viewport_styled",
+            editor_core_ffi_editor_state_viewport_styled_envelope_json
+                as extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char,
+        ),
+        (
+            "editor_state_viewport_composed",
+            editor_core_ffi_editor_state_viewport_composed_envelope_json
+                as extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char,
+        ),
+    ] {
+        let ok_json = take_string(function(state, 0, 20));
+        let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+        assert_eq!(ok["ok"], true);
+        assert_eq!(ok["status"], "success");
+        assert_eq!(ok["surface"], surface);
+        assert!(ok["view_id"].is_null());
+        assert_eq!(ok["start_visual_row"], 0);
+        assert_eq!(ok["count"], 20);
+        assert!(ok["value"]["lines"].is_array());
+        assert!(ok["error"].is_null());
+        assert_eq!(ok["version"], ECF_ABI_VERSION);
+
+        let failed_json = take_string(function(std::ptr::null(), 0, 20));
+        let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+        assert_eq!(failed["ok"], false);
+        assert_eq!(failed["status"], "error");
+        assert_eq!(failed["surface"], surface);
+        assert!(failed["view_id"].is_null());
+        assert_eq!(failed["value"], serde_json::Value::Null);
+        assert_eq!(failed["error"]["code"], "invalid_argument");
+        assert_eq!(
+            failed["error"]["status"],
+            status(EcfStatus::InvalidArgument)
+        );
+        assert_eq!(failed["error"]["message"], "state is null");
+    }
 
     unsafe { editor_core_ffi_editor_state_free(state) };
 }
@@ -687,6 +747,75 @@ fn workspace_minimap_envelope_json_reports_success_and_errors() {
             .unwrap()
             .contains("get_minimap_content failed")
     );
+
+    unsafe { editor_core_ffi_workspace_free(workspace) };
+}
+
+#[test]
+fn workspace_viewport_envelope_json_reports_success_and_errors() {
+    let workspace = editor_core_ffi_workspace_new();
+    assert!(!workspace.is_null());
+
+    let text = CString::new("abc\nsecond\nthird\n").expect("cstring");
+    let mut opened = EcfOpenBufferResult {
+        abi_version: 0,
+        struct_size: 0,
+        buffer_id: 0,
+        view_id: 0,
+    };
+    let st = unsafe {
+        editor_core_ffi_workspace_open_buffer_typed(
+            workspace,
+            std::ptr::null(),
+            text.as_ptr(),
+            80,
+            &mut opened,
+        )
+    };
+    assert_eq!(st, status(EcfStatus::Ok));
+
+    for (surface, function, expected_error) in [
+        (
+            "workspace_viewport_styled",
+            editor_core_ffi_workspace_viewport_styled_envelope_json
+                as extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char,
+            "get_viewport_content_styled failed",
+        ),
+        (
+            "workspace_viewport_composed",
+            editor_core_ffi_workspace_viewport_composed_envelope_json
+                as extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char,
+            "get_viewport_content_composed failed",
+        ),
+    ] {
+        let ok_json = take_string(function(workspace, opened.view_id, 0, 20));
+        let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+        assert_eq!(ok["ok"], true);
+        assert_eq!(ok["status"], "success");
+        assert_eq!(ok["surface"], surface);
+        assert_eq!(ok["view_id"], opened.view_id);
+        assert_eq!(ok["start_visual_row"], 0);
+        assert_eq!(ok["count"], 20);
+        assert!(ok["value"]["lines"].is_array());
+        assert!(ok["error"].is_null());
+        assert_eq!(ok["version"], ECF_ABI_VERSION);
+
+        let failed_json = take_string(function(workspace, 999_999, 0, 20));
+        let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+        assert_eq!(failed["ok"], false);
+        assert_eq!(failed["status"], "error");
+        assert_eq!(failed["surface"], surface);
+        assert_eq!(failed["view_id"], 999_999);
+        assert_eq!(failed["value"], serde_json::Value::Null);
+        assert_eq!(failed["error"]["code"], "internal");
+        assert_eq!(failed["error"]["status"], status(EcfStatus::Internal));
+        assert!(
+            failed["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(expected_error)
+        );
+    }
 
     unsafe { editor_core_ffi_workspace_free(workspace) };
 }

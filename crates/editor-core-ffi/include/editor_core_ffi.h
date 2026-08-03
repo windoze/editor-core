@@ -155,9 +155,11 @@ char* editor_core_ffi_editor_state_decorations_json(const EcfEditorState* state)
 bool editor_core_ffi_editor_state_set_line_ending(EcfEditorState* state, const char* line_ending);
 char* editor_core_ffi_editor_state_get_line_ending(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_viewport_styled_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_minimap_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_minimap_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_viewport_composed_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_take_last_text_delta_json(EcfEditorState* state);
 char* editor_core_ffi_editor_state_last_text_delta_json(const EcfEditorState* state);
 int32_t editor_core_ffi_editor_get_document_stats(const EcfEditorState* state, EcfDocumentStats* out_stats);
@@ -216,9 +218,11 @@ int32_t editor_core_ffi_workspace_get_viewport_state(
 bool editor_core_ffi_workspace_set_viewport_height(EcfWorkspace* workspace, uint64_t view_id, uint32_t height);
 bool editor_core_ffi_workspace_set_smooth_scroll_state(EcfWorkspace* workspace, uint64_t view_id, uint32_t top_visual_row, uint16_t sub_row_offset, uint32_t overscan_rows);
 char* editor_core_ffi_workspace_viewport_styled_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_workspace_viewport_styled_envelope_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_workspace_minimap_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_workspace_minimap_envelope_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_workspace_viewport_composed_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_workspace_viewport_composed_envelope_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_workspace_search_all_open_buffers_json(const EcfWorkspace* workspace, const char* query, const char* options_json);
 char* editor_core_ffi_workspace_apply_text_edits_json(EcfWorkspace* workspace, const char* edits_json);
 int32_t editor_core_ffi_workspace_insert_text_utf8(EcfWorkspace* workspace, uint64_t view_id, const uint8_t* bytes, uint32_t len);

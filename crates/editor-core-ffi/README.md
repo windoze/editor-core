@@ -213,8 +213,24 @@ failure. Hosts that need non-null structured success/error results can use the e
 guarded by `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE`:
 
 ```c
+char* editor_core_ffi_editor_state_viewport_styled_envelope_json(
+    const EcfEditorState* state,
+    uint32_t start_visual_row,
+    uint32_t count);
+
 char* editor_core_ffi_editor_state_minimap_envelope_json(
     const EcfEditorState* state,
+    uint32_t start_visual_row,
+    uint32_t count);
+
+char* editor_core_ffi_editor_state_viewport_composed_envelope_json(
+    const EcfEditorState* state,
+    uint32_t start_visual_row,
+    uint32_t count);
+
+char* editor_core_ffi_workspace_viewport_styled_envelope_json(
+    EcfWorkspace* workspace,
+    uint64_t view_id,
     uint32_t start_visual_row,
     uint32_t count);
 
@@ -223,10 +239,23 @@ char* editor_core_ffi_workspace_minimap_envelope_json(
     uint64_t view_id,
     uint32_t start_visual_row,
     uint32_t count);
+
+char* editor_core_ffi_workspace_viewport_composed_envelope_json(
+    EcfWorkspace* workspace,
+    uint64_t view_id,
+    uint32_t start_visual_row,
+    uint32_t count);
 ```
 
-Success envelopes preserve the legacy minimap payload under `value` and include stable query
-metadata:
+Success envelopes preserve the legacy snapshot payload under `value` and include stable query
+metadata. `surface` identifies the snapshot family:
+
+- `editor_state_viewport_styled`
+- `editor_state_minimap`
+- `editor_state_viewport_composed`
+- `workspace_viewport_styled`
+- `workspace_minimap`
+- `workspace_viewport_composed`
 
 ```json
 {

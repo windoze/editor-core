@@ -1877,6 +1877,18 @@
     - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope headless viewport snapshots`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把上一提交的 headless rendering snapshot envelope 从 minimap 扩展到 styled/composed viewport snapshot，使 `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE` 覆盖完整 headless rendering query family。
+  - 提交边界：新增 `editor_core_ffi_editor_state_viewport_styled_envelope_json(...)`、`editor_core_ffi_editor_state_viewport_composed_envelope_json(...)`、`editor_core_ffi_workspace_viewport_styled_envelope_json(...)` 和 `editor_core_ffi_workspace_viewport_composed_envelope_json(...)`；legacy viewport styled/composed raw JSON API 保持 null+last_error 语义；Swift `EditorState` / `Workspace` 新增 styled/composed viewport raw/typed envelope accessor 与 `EcfRenderingSnapshotEnvelope` alias。该提交不切换 App rendering/minimap 主路径，不替换 viewport blob API，不改变 styled/composed snapshot JSON schema，也不新增 feature bit。
+  - 验证记录：
+    - `cargo test -p editor-core-ffi --test abi_v1 editor_state_viewport_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ffi --test abi_v1 workspace_viewport_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ffi --test abi_v1 public_abi_scalar_signatures_are_fixed_width`
+    - `cargo build -p editor-core-ffi --release`
+    - `swift test --package-path swift --filter 'EditorStateCoreTests/testViewportEnvelope'`
+    - `swift test --package-path swift --filter 'WorkspaceTests/testWorkspaceViewportEnvelope'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

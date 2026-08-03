@@ -137,4 +137,48 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertTrue(failure.error?.message.contains("get_minimap_content failed") ?? false)
         XCTAssertEqual(failure.value, .null)
     }
+
+    func testWorkspaceViewportEnvelope() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let ws = try Workspace(library: library)
+        let opened = try ws.openBuffer(uri: "file:///demo.txt", text: "hello\nworld\n", viewportWidth: 80)
+
+        let styled = try ws.viewportStyledEnvelope(viewId: opened.viewId, startVisualRow: 0, rowCount: 20)
+        XCTAssertTrue(styled.ok)
+        XCTAssertEqual(styled.statusKind, .success)
+        XCTAssertEqual(styled.surface, "workspace_viewport_styled")
+        XCTAssertEqual(styled.viewId, opened.viewId)
+        XCTAssertEqual(styled.startVisualRow, 0)
+        XCTAssertEqual(styled.count, 20)
+        XCTAssertNil(styled.error)
+        XCTAssertEqual(styled.version, library.abiVersion)
+        guard case let .object(styledValue)? = styled.value else {
+            return XCTFail("expected object styled viewport value")
+        }
+        XCTAssertNotNil(styledValue["lines"])
+
+        let composed = try ws.viewportComposedEnvelope(viewId: opened.viewId, startVisualRow: 0, rowCount: 20)
+        XCTAssertTrue(composed.ok)
+        XCTAssertEqual(composed.statusKind, .success)
+        XCTAssertEqual(composed.surface, "workspace_viewport_composed")
+        XCTAssertEqual(composed.viewId, opened.viewId)
+        XCTAssertEqual(composed.startVisualRow, 0)
+        XCTAssertEqual(composed.count, 20)
+        XCTAssertNil(composed.error)
+        XCTAssertEqual(composed.version, library.abiVersion)
+        guard case let .object(composedValue)? = composed.value else {
+            return XCTFail("expected object composed viewport value")
+        }
+        XCTAssertNotNil(composedValue["lines"])
+
+        let failure = try ws.viewportStyledEnvelope(viewId: 999_999, startVisualRow: 0, rowCount: 20)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.surface, "workspace_viewport_styled")
+        XCTAssertEqual(failure.viewId, 999_999)
+        XCTAssertEqual(failure.error?.code, "internal")
+        XCTAssertEqual(failure.error?.status, .internal)
+        XCTAssertTrue(failure.error?.message.contains("get_viewport_content_styled failed") ?? false)
+        XCTAssertEqual(failure.value, .null)
+    }
 }

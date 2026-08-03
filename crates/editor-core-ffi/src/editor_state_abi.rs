@@ -277,6 +277,33 @@ pub extern "C" fn editor_core_ffi_editor_state_viewport_styled_json(
     })
 }
 
+/// Get styled viewport snapshot as a stable JSON result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_viewport_styled_envelope_json(
+    state: *const EcfEditorState,
+    start_visual_row: u32,
+    count: u32,
+) -> *mut c_char {
+    rendering_snapshot_envelope_json_ptr(
+        "editor_state_viewport_styled",
+        None,
+        start_visual_row,
+        count,
+        || {
+            let state = require_ref(state, "state")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let count = usize_from_u32(count, "count")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let grid = state
+                .inner
+                .get_viewport_content_styled(start_visual_row, count);
+            Ok(value_headless_grid(&grid))
+        },
+    )
+}
+
 /// Get minimap snapshot as JSON.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_editor_state_minimap_json(
@@ -300,7 +327,7 @@ pub extern "C" fn editor_core_ffi_editor_state_minimap_envelope_json(
     start_visual_row: u32,
     count: u32,
 ) -> *mut c_char {
-    minimap_envelope_json_ptr(
+    rendering_snapshot_envelope_json_ptr(
         "editor_state_minimap",
         None,
         start_visual_row,
@@ -334,6 +361,33 @@ pub extern "C" fn editor_core_ffi_editor_state_viewport_composed_json(
             .get_viewport_content_composed(start_visual_row, count);
         Ok(value_composed_grid(&grid))
     })
+}
+
+/// Get decoration-aware composed snapshot as a stable JSON result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_viewport_composed_envelope_json(
+    state: *const EcfEditorState,
+    start_visual_row: u32,
+    count: u32,
+) -> *mut c_char {
+    rendering_snapshot_envelope_json_ptr(
+        "editor_state_viewport_composed",
+        None,
+        start_visual_row,
+        count,
+        || {
+            let state = require_ref(state, "state")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let count = usize_from_u32(count, "count")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let grid = state
+                .inner
+                .get_viewport_content_composed(start_visual_row, count);
+            Ok(value_composed_grid(&grid))
+        },
+    )
 }
 
 /// Take and return last text delta as JSON (or null delta).

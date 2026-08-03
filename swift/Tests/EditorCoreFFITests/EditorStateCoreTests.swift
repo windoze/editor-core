@@ -77,6 +77,39 @@ final class EditorStateCoreTests: XCTestCase {
         XCTAssertEqual(direct.count, 2)
     }
 
+    func testViewportEnvelope() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let state = try EditorState(library: library, initialText: "hello\nworld\n", viewportWidth: 80)
+
+        let styled = try state.viewportStyledEnvelope(startVisualRow: 0, rowCount: 20)
+        XCTAssertTrue(styled.ok)
+        XCTAssertEqual(styled.statusKind, .success)
+        XCTAssertEqual(styled.surface, "editor_state_viewport_styled")
+        XCTAssertNil(styled.viewId)
+        XCTAssertEqual(styled.startVisualRow, 0)
+        XCTAssertEqual(styled.count, 20)
+        XCTAssertNil(styled.error)
+        XCTAssertEqual(styled.version, library.abiVersion)
+        guard case let .object(styledValue)? = styled.value else {
+            return XCTFail("expected object styled viewport value")
+        }
+        XCTAssertNotNil(styledValue["lines"])
+
+        let composed = try state.viewportComposedEnvelope(startVisualRow: 0, rowCount: 20)
+        XCTAssertTrue(composed.ok)
+        XCTAssertEqual(composed.statusKind, .success)
+        XCTAssertEqual(composed.surface, "editor_state_viewport_composed")
+        XCTAssertNil(composed.viewId)
+        XCTAssertEqual(composed.startVisualRow, 0)
+        XCTAssertEqual(composed.count, 20)
+        XCTAssertNil(composed.error)
+        XCTAssertEqual(composed.version, library.abiVersion)
+        guard case let .object(composedValue)? = composed.value else {
+            return XCTFail("expected object composed viewport value")
+        }
+        XCTAssertNotNil(composedValue["lines"])
+    }
+
     func testApplyProcessingEditsAffectsStylesFoldsDecorationsDiagnostics() throws {
         let library = try EditorCoreFFITestSupport.shared.loadLibrary()
         let state = try EditorState(library: library, initialText: "let value = 1\nsecond line\n", viewportWidth: 80)

@@ -176,6 +176,23 @@ public final class Workspace {
         )
     }
 
+    public func viewportStyledEnvelopeJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
+        let start = try checkedFFIUInt32(startVisualRow, context: "workspace_viewport_styled_envelope_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "workspace_viewport_styled_envelope_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_viewport_styled_envelope_json(handle, viewId, start, count),
+            context: "workspace_viewport_styled_envelope_json"
+        )
+    }
+
+    public func viewportStyledEnvelope(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> EcfRenderingSnapshotEnvelope {
+        try JSON.decode(
+            EcfRenderingSnapshotEnvelope.self,
+            from: viewportStyledEnvelopeJSON(viewId: viewId, startVisualRow: startVisualRow, rowCount: rowCount),
+            context: "workspace_viewport_styled_envelope"
+        )
+    }
+
     public func minimapJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
         let start = try checkedFFIUInt32(startVisualRow, context: "workspace_minimap_json.start_visual_row")
         let count = try checkedFFIUInt32(rowCount, context: "workspace_minimap_json.count")
@@ -208,6 +225,23 @@ public final class Workspace {
         return try ffi.takeOwnedCString(
             editor_core_ffi_workspace_viewport_composed_json(handle, viewId, start, count),
             context: "workspace_viewport_composed_json"
+        )
+    }
+
+    public func viewportComposedEnvelopeJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
+        let start = try checkedFFIUInt32(startVisualRow, context: "workspace_viewport_composed_envelope_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "workspace_viewport_composed_envelope_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_viewport_composed_envelope_json(handle, viewId, start, count),
+            context: "workspace_viewport_composed_envelope_json"
+        )
+    }
+
+    public func viewportComposedEnvelope(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> EcfRenderingSnapshotEnvelope {
+        try JSON.decode(
+            EcfRenderingSnapshotEnvelope.self,
+            from: viewportComposedEnvelopeJSON(viewId: viewId, startVisualRow: startVisualRow, rowCount: rowCount),
+            context: "workspace_viewport_composed_envelope"
         )
     }
 
