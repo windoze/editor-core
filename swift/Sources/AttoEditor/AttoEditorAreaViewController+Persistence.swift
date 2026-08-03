@@ -52,12 +52,13 @@ extension AttoEditorAreaViewController {
         editCore.editorView.minimumGutterWidthCells = 6
         try editCore.editor.setWhitespaceRenderMode(.selection)
         try editCore.editor.setIndentGuidesEnabled(true)
-        try editCore.editor.setFontLigaturesEnabled(preferences.effectiveLigaturesEnabled)
-        editCore.editorView.fontSizePoints = CGFloat(preferences.effectiveFontSizePoints)
+        try editCore.editor.setFontFamiliesCSV(configuredFontFamiliesCSVForApplying())
+        try editCore.editor.setFontLigaturesEnabled(configuredLigaturesEnabledForApplying())
+        editCore.editorView.fontSizePoints = CGFloat(configuredFontSizePointsForApplying())
         try editCore.applyTheme(theme)
-        _ = try editCore.editor.setWrapMode(preferences.effectiveWrapMode)
-        _ = try editCore.editor.setWrapIndent(preferences.effectiveWrapIndent)
-        try editCore.editor.setAutoPairsEnabled(preferences.effectiveAutoPairsEnabled)
+        _ = try editCore.editor.setWrapMode(configuredWrapModeForApplying())
+        _ = try editCore.editor.setWrapIndent(configuredWrapIndentForApplying())
+        try editCore.editor.setAutoPairsEnabled(configuredAutoPairsEnabledForApplying())
         try editCore.editor.setBracketMatchHighlightsEnabled(true)
     }
 

@@ -23,6 +23,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var theme: EditorCoreSkiaTheme
     var workspaceRootURL: URL
     let preferences: AttoPreferences
+    private(set) var configurationSnapshot: AttoConfigurationSnapshot
     static let maxLspResultHistoryEntries = 20
     static let maxLspResultEventHistoryEntries = 80
 
@@ -149,6 +150,10 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func _transientStatusTextForTesting() -> String? {
         transientStatusText
+    }
+
+    func _configurationSnapshotForTesting() -> AttoConfigurationSnapshot {
+        configurationSnapshot
     }
 
     func _updateStatusBarForTesting() {
@@ -1152,6 +1157,7 @@ final class AttoEditorAreaViewController: NSViewController {
         library: EditorCoreUIFFILibrary,
         theme: EditorCoreSkiaTheme,
         workspaceRootURL: URL,
+        configurationSnapshot: AttoConfigurationSnapshot? = nil,
         preferences: AttoPreferences = .shared,
         projectLspProcessHealthLogStore: AttoProjectLspProcessHealthLogStore = AttoProjectLspProcessHealthLogStore()
     ) {
@@ -1159,6 +1165,8 @@ final class AttoEditorAreaViewController: NSViewController {
         self.theme = theme
         self.workspaceRootURL = workspaceRootURL
         self.preferences = preferences
+        self.configurationSnapshot = configurationSnapshot
+            ?? preferences.effectiveConfigurationSnapshot(workspaceRootURL: workspaceRootURL)
         self.projectLspProcessHealthLogStore = projectLspProcessHealthLogStore
         do {
             let coreDocuments = try MultiDocumentEditorUI(library: library)
@@ -1324,9 +1332,14 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func setWorkspaceRootURL(_ url: URL) {
         workspaceRootURL = url
+        configurationSnapshot.workspace = preferences.effectiveConfigurationSnapshot(workspaceRootURL: url).workspace
         syncCoreWorkspaceRoots()
         syncProjectLspServerConfigsToCore()
         startProjectLspServersForOpenTabs()
+    }
+
+    func updateConfigurationSnapshot(_ snapshot: AttoConfigurationSnapshot) {
+        configurationSnapshot = snapshot
     }
 
     func syncCoreWorkspaceRoots() {

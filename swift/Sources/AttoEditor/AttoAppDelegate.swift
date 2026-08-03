@@ -186,6 +186,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var recentCommandRecords: [AttoRecentCommandRecord] = []
     private let recentCommandStore: AttoRecentCommandStore?
     private let macroStore: AttoMacroStore?
+    private let settingsStore: AttoConfigurationSettingsStore
     private var macroImportSelectionProvider: (() -> (url: URL, name: String)?)?
     private var macroExportSelectionProvider: (([String]) -> (name: String, url: URL)?)?
     private var macroDeleteConfirmationProvider: (([String]) -> Bool)?
@@ -221,6 +222,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.recentCommandStore = .appDefault
         self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
         self.macroStore = .appDefault
+        self.settingsStore = AttoConfigurationSettingsStore()
         self.lastMacroCommands = self.macroStore?.load(maxCount: Self.maxRecordedMacroCommandCount) ?? []
         self.deletedMacroUndoStack = self.macroStore?.loadDeletedMacroUndoRecords(
             maxRecords: Self.maxDeletedMacroUndoRecordCount,
@@ -237,7 +239,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         keySequenceStatusHandler: ((String?) -> Void)? = nil,
         keymapResolver: ((AttoKeymapContext) -> AttoKeymapResolution)? = nil,
         recentCommandStore: AttoRecentCommandStore? = nil,
-        macroStore: AttoMacroStore? = nil
+        macroStore: AttoMacroStore? = nil,
+        configurationSettingsStore: AttoConfigurationSettingsStore = AttoConfigurationSettingsStore()
     ) {
         self.keyBindings = keyBindings
         self.keySequences = keySequences
@@ -248,6 +251,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.recentCommandStore = recentCommandStore
         self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
         self.macroStore = macroStore
+        self.settingsStore = configurationSettingsStore
         self.lastMacroCommands = self.macroStore?.load(maxCount: Self.maxRecordedMacroCommandCount) ?? []
         self.deletedMacroUndoStack = self.macroStore?.loadDeletedMacroUndoRecords(
             maxRecords: Self.maxDeletedMacroUndoRecordCount,
@@ -1450,6 +1454,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         )
     }
 
+    func _applyEditorPreferencesForTesting() {
+        applyEditorPreferencesToAllWindows()
+    }
+
     @discardableResult
     func executeCommand(id commandID: String) -> Bool {
         executeCommand(id: commandID, explicitArguments: nil)
@@ -2650,13 +2658,50 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     private func applyEditorPreferencesToAllWindows() {
         let registry = AttoThemeManager.loadRegistry()
-        let effectiveThemeName = AttoPreferences.shared.effectiveThemeName
-        let resolved = AttoThemeManager.resolveSkiaTheme(themeName: effectiveThemeName, registry: registry)
 
         for ctx in windows {
+            let configurationSnapshot = configurationSnapshot(forWorkspaceRootURL: ctx.workspaceRootURL)
+            ctx.editorAreaController.updateConfigurationSnapshot(configurationSnapshot)
+            let resolved = AttoThemeManager.resolveSkiaTheme(
+                themeName: configurationSnapshot.rendering.themeName,
+                registry: registry
+            )
             ctx.editorAreaController.applyTheme(resolved.theme)
             ctx.editorAreaController.applyEditorPreferences()
         }
+    }
+
+    private func configurationSnapshot(forWorkspaceRootURL workspaceRootURL: URL) -> AttoConfigurationSnapshot {
+        let base = AttoPreferences.shared.effectiveConfigurationSnapshot(workspaceRootURL: workspaceRootURL)
+
+        let userSettings: AttoConfigurationSettings?
+        do {
+            userSettings = try settingsStore.loadUserSettings()
+        } catch {
+            userSettings = nil
+            NSLog(
+                "AttoEditor: failed to load user settings %@: %@",
+                settingsStore.userSettingsURL.path,
+                String(describing: error)
+            )
+        }
+
+        let workspaceSettingsURL = AttoConfigurationSettingsStore.workspaceSettingsURL(
+            forWorkspaceRootURL: workspaceRootURL
+        )
+        let workspaceSettings: AttoConfigurationSettings?
+        do {
+            workspaceSettings = try settingsStore.loadWorkspaceSettings(workspaceRootURL: workspaceRootURL)
+        } catch {
+            workspaceSettings = nil
+            NSLog(
+                "AttoEditor: failed to load workspace settings %@: %@",
+                workspaceSettingsURL.path,
+                String(describing: error)
+            )
+        }
+
+        return base.resolvingSettings(user: userSettings, workspace: workspaceSettings).snapshot
     }
 
     private func quickOpenCommands() -> [AttoCommandPaletteCommand] {
@@ -2869,13 +2914,17 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         let referenceWindow: NSWindow? = activeWindow()?.window ?? windows.last?.window
 
         let registry = AttoThemeManager.loadRegistry()
-        let effectiveThemeName = AttoPreferences.shared.effectiveThemeName
-        let resolved = AttoThemeManager.resolveSkiaTheme(themeName: effectiveThemeName, registry: registry)
+        let configurationSnapshot = configurationSnapshot(forWorkspaceRootURL: workspaceRootURL)
+        let resolved = AttoThemeManager.resolveSkiaTheme(
+            themeName: configurationSnapshot.rendering.themeName,
+            registry: registry
+        )
 
         let ctx = AttoWindowContext(
             library: library,
             theme: resolved.theme,
             workspaceRootURL: workspaceRootURL,
+            configurationSnapshot: configurationSnapshot,
             contentSize: contentSize
         )
 

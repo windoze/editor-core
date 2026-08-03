@@ -1535,6 +1535,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|Preferences|RuntimeCompatibility)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): load scoped editor settings`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把阶段 9 已有 settings store 接入 AttoEditor App 的窗口创建和偏好重应用路径，让 user/workspace partial settings 参与实际 editor/rendering 配置。
+  - 提交边界：`AttoAppDelegate` 在创建窗口和收到偏好变更时按 workspace root 读取 user settings 与 workspace `.attoeditor/settings.json`，生成 resolved `AttoConfigurationSnapshot`；`AttoWindowContext` 将该 snapshot 传入 `AttoEditorAreaViewController`；EditorArea 的新 editor chrome 与已打开 editor 偏好重应用改为消费 snapshot 中的 font、ligatures、wrap、auto-pairs 和 theme 字段。该提交不实现 Sublime settings scope selector 规则、不接 Preferences UI、不持久化 runtime overrides、不实现迁移/损坏文件备份、不新增 Rust/FFI ABI，也不完成 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'Atto(EditorPreferencesApplication|ConfigurationSettings|Preferences)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

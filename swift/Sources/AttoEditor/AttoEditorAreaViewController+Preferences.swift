@@ -8,12 +8,12 @@ extension AttoEditorAreaViewController {
     // MARK: - Preferences (editor rendering)
 
     func applyEditorPreferences() {
-        let fontFamiliesCSV = preferences.fontFamiliesCSVForApplying()
-        let ligaturesEnabled = preferences.effectiveLigaturesEnabled
-        let autoPairsEnabled = preferences.effectiveAutoPairsEnabled
-        let wrapMode = preferences.effectiveWrapMode
-        let wrapIndent = preferences.effectiveWrapIndent
-        let fontSizePoints = preferences.effectiveFontSizePoints
+        let fontFamiliesCSV = configuredFontFamiliesCSVForApplying()
+        let ligaturesEnabled = configuredLigaturesEnabledForApplying()
+        let autoPairsEnabled = configuredAutoPairsEnabledForApplying()
+        let wrapMode = configuredWrapModeForApplying()
+        let wrapIndent = configuredWrapIndentForApplying()
+        let fontSizePoints = configuredFontSizePointsForApplying()
 
         for tab in tabs {
             for editCore in tab.panes {
@@ -52,6 +52,30 @@ extension AttoEditorAreaViewController {
                 editCore.editorView.needsDisplay = true
             }
         }
+    }
+
+    func configuredFontFamiliesCSVForApplying() -> String {
+        configurationSnapshot.editor.fontFamilies.joined(separator: ", ")
+    }
+
+    func configuredLigaturesEnabledForApplying() -> Bool {
+        configurationSnapshot.rendering.fontLigaturesEnabled
+    }
+
+    func configuredAutoPairsEnabledForApplying() -> Bool {
+        configurationSnapshot.editor.autoPairsEnabled
+    }
+
+    func configuredFontSizePointsForApplying() -> Double {
+        configurationSnapshot.editor.fontSizePoints
+    }
+
+    func configuredWrapModeForApplying() -> EcuWrapMode {
+        EcuWrapMode(rawValue: configurationSnapshot.editor.wrapMode) ?? preferences.effectiveWrapMode
+    }
+
+    func configuredWrapIndentForApplying() -> EcuWrapIndent {
+        AttoPreferences.parseWrapIndentString(configurationSnapshot.editor.wrapIndent) ?? preferences.effectiveWrapIndent
     }
 
     func applyTheme(_ theme: EditorCoreSkiaTheme) {
