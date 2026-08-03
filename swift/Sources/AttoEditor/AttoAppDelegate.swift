@@ -370,6 +370,31 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         )
     }
 
+    private static func macroRenameCommandSchema(choices: [String] = []) -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "oldName",
+                    title: "Existing Macro",
+                    kind: .string,
+                    isRequired: true,
+                    choices: choices.map { AttoCommandArgumentChoice(title: $0, value: .string($0)) },
+                    allowsEmptyString: false,
+                    help: "Existing .sublime-macro name in AttoEditor's macro directory."
+                ),
+                AttoCommandParameterSchema(
+                    name: "newName",
+                    title: "New Macro Name",
+                    kind: .string,
+                    isRequired: true,
+                    allowsEmptyString: false,
+                    help: "New .sublime-macro file name."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationCenter.default.addObserver(
             self,
@@ -897,6 +922,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             ) { [weak self] arguments in
                 self?.replayNamedMacro(arguments: arguments)
             },
+            .init(
+                id: "macro.rename_named",
+                title: "Macro: Rename Named Macro…",
+                schema: Self.macroRenameCommandSchema()
+            ) { [weak self] arguments in
+                self?.renameNamedMacro(arguments: arguments)
+            },
+            .init(
+                id: "macro.delete_named",
+                title: "Macro: Delete Named Macro…",
+                schema: Self.macroNameCommandSchema()
+            ) { [weak self] arguments in
+                self?.deleteNamedMacro(arguments: arguments)
+            },
             .init(id: "go.file", title: "Go: Go to File…") { [weak self] in
                 self?.showQuickOpen()
             },
@@ -1409,6 +1448,25 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         _ = replayNamedMacro(named: name)
     }
 
+    private func renameNamedMacro(arguments: AttoCommandArguments) {
+        let effectiveArguments = arguments.isEmpty
+            ? (promptMacroArguments(commandID: "macro.rename_named", title: "Macro: Rename Named Macro…") ?? [:])
+            : arguments
+        guard let oldName = effectiveArguments.string("oldName"),
+              let newName = effectiveArguments.string("newName")
+        else {
+            return
+        }
+        _ = renameNamedMacro(from: oldName, to: newName)
+    }
+
+    private func deleteNamedMacro(arguments: AttoCommandArguments) {
+        guard let name = arguments.string("name") ?? promptMacroName(commandID: "macro.delete_named", title: "Macro: Delete Named Macro…") else {
+            return
+        }
+        _ = deleteNamedMacro(named: name)
+    }
+
     private func saveLastMacro(named name: String) -> Bool {
         guard isRecordingMacro == false, lastMacroCommands.isEmpty == false, let macroStore else {
             NSSound.beep()
@@ -1438,7 +1496,43 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         return true
     }
 
+    private func renameNamedMacro(from oldName: String, to newName: String) -> Bool {
+        guard isRecordingMacro == false, let macroStore else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try macroStore.renameNamedMacro(oldName, to: newName)
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to rename macro %@ to %@: %@", oldName, newName, String(describing: error))
+            return false
+        }
+    }
+
+    private func deleteNamedMacro(named name: String) -> Bool {
+        guard isRecordingMacro == false, let macroStore else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try macroStore.deleteNamedMacro(name)
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to delete macro %@: %@", name, String(describing: error))
+            return false
+        }
+    }
+
     private func promptMacroName(commandID: String, title: String) -> String? {
+        promptMacroArguments(commandID: commandID, title: title)?.string("name")
+    }
+
+    private func promptMacroArguments(commandID: String, title: String) -> AttoCommandArguments? {
         let schema = commandSchema(commandID: commandID)
         let promptCommand = AttoCommandPaletteCommand(
             id: commandID,
@@ -1446,7 +1540,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             schema: schema,
             promptsForArguments: true
         ) { _ in }
-        return AttoCommandArgumentPrompt.promptArguments(for: promptCommand)?.string("name")
+        return AttoCommandArgumentPrompt.promptArguments(for: promptCommand)
     }
 
     private func replayMacroCommands(_ commands: [AttoRecordedCommand]) {
@@ -1488,7 +1582,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return isRecordingMacro == false && lastMacroCommands.isEmpty == false
         case "macro.save_named":
             return isRecordingMacro == false && lastMacroCommands.isEmpty == false && macroStore != nil
-        case "macro.replay_named":
+        case "macro.replay_named", "macro.rename_named", "macro.delete_named":
             return isRecordingMacro == false && (macroStore?.namedMacroNames().isEmpty == false)
         default:
             break
@@ -1619,6 +1713,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         case "macro.save_named":
             return Self.macroNameCommandSchema()
         case "macro.replay_named":
+            return Self.macroNameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
+        case "macro.rename_named":
+            return Self.macroRenameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
+        case "macro.delete_named":
             return Self.macroNameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
         case "macro.toggle_recording", "macro.replay_last":
             return AttoCommandSchema(macroPolicy: .notRecordable)

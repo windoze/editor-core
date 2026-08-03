@@ -47,6 +47,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("macro.replay_last"))
         XCTAssertTrue(ids.contains("macro.save_named"))
         XCTAssertTrue(ids.contains("macro.replay_named"))
+        XCTAssertTrue(ids.contains("macro.rename_named"))
+        XCTAssertTrue(ids.contains("macro.delete_named"))
         for command in AttoEditorAreaViewController.CursorMovementCommand.allCases {
             XCTAssertTrue(ids.contains(command.id), command.id)
         }
@@ -222,6 +224,14 @@ final class AttoEditorCommandTests: XCTestCase {
         let replayNamedMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.replay_named"))
         XCTAssertEqual(replayNamedMacro.macroPolicy, .notRecordable)
         XCTAssertEqual(replayNamedMacro.parameters.map(\.name), ["name"])
+        let renameNamedMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.rename_named"))
+        XCTAssertEqual(renameNamedMacro.macroPolicy, .notRecordable)
+        XCTAssertEqual(renameNamedMacro.parameters.map(\.name), ["oldName", "newName"])
+        XCTAssertEqual(renameNamedMacro.parameters.first?.kind, .string)
+        XCTAssertEqual(renameNamedMacro.parameters.last?.kind, .string)
+        let deleteNamedMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.delete_named"))
+        XCTAssertEqual(deleteNamedMacro.macroPolicy, .notRecordable)
+        XCTAssertEqual(deleteNamedMacro.parameters.map(\.name), ["name"])
 
         let openFile = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "file.open_file"))
         XCTAssertEqual(openFile.macroPolicy, .promptRequired)
@@ -2057,6 +2067,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "macro.replay_last", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.save_named", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.replay_named", in: toolsMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.rename_named", in: toolsMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.delete_named", in: toolsMenu))
 
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
@@ -5038,6 +5050,73 @@ final class AttoEditorCommandTests: XCTestCase {
             arguments: ["name": .string("Duplicate Current Line")]
         ))
         XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\n")
+    }
+
+    func testCommandMacroRenamesAndDeletesNamedSublimeMacroFiles() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let macroURL = tempDir.appendingPathComponent("Last Macro.sublime-macro")
+        let macroStore = AttoMacroStore(macroFileURL: macroURL)
+        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+
+        let recordFileURL = tempDir.appendingPathComponent("macro-rename-record.txt")
+        try "abc\ndef\n".write(to: recordFileURL, atomically: true, encoding: .utf8)
+
+        let context = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { context.window.close() }
+        context.editorAreaController.openFile(url: recordFileURL, mode: .pinned)
+
+        XCTAssertTrue(delegate.executeCommand(id: "macro.toggle_recording"))
+        XCTAssertTrue(delegate.executeCommand(id: "go.line", arguments: ["line": .integer(2), "column": .integer(2)]))
+        XCTAssertTrue(delegate.executeCommand(id: "editor.duplicate_lines"))
+        XCTAssertTrue(delegate.executeCommand(id: "macro.toggle_recording"))
+        XCTAssertTrue(delegate.executeCommand(id: "macro.save_named", arguments: ["name": .string("Old Macro")]))
+
+        let oldURL = tempDir.appendingPathComponent("Old Macro.sublime-macro")
+        let newURL = tempDir.appendingPathComponent("Renamed Macro.sublime-macro")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: oldURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: newURL.path))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Old Macro"])
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.rename_named"))
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.rename_named",
+            arguments: ["oldName": .string("Old Macro"), "newName": .string("Renamed Macro")]
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: newURL.path))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Renamed Macro"])
+
+        let renameSchema = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.rename_named"))
+        XCTAssertEqual(renameSchema.parameters.first?.choices.map(\.title), ["Renamed Macro"])
+        XCTAssertThrowsError(try renameSchema.normalizedArguments([
+            "oldName": .string("Old Macro"),
+            "newName": .string("Another Macro"),
+        ]))
+
+        let replayFileURL = tempDir.appendingPathComponent("macro-rename-replay.txt")
+        try "abc\ndef\n".write(to: replayFileURL, atomically: true, encoding: .utf8)
+        context.editorAreaController.openFile(url: replayFileURL, mode: .pinned)
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: context.editorAreaController.view))
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.replay_named",
+            arguments: ["name": .string("Renamed Macro")]
+        ))
+        XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\n")
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.delete_named"))
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named",
+            arguments: ["name": .string("Renamed Macro")]
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: newURL.path))
+        XCTAssertEqual(macroStore.namedMacroNames(), [])
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.replay_named"))
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.rename_named"))
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.delete_named"))
     }
 
     func testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands() throws {

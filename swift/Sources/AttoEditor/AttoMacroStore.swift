@@ -2,6 +2,8 @@ import Foundation
 
 enum AttoMacroStoreError: Error, Equatable {
     case invalidMacroName(String)
+    case macroAlreadyExists(String)
+    case macroNotFound(String)
 }
 
 struct AttoMacroStore {
@@ -57,6 +59,32 @@ struct AttoMacroStore {
             throw AttoMacroStoreError.invalidMacroName(name)
         }
         try save(commands, to: fileURL, maxCount: maxCount)
+    }
+
+    func deleteNamedMacro(_ name: String) throws {
+        guard let fileURL = namedMacroFileURL(name) else {
+            throw AttoMacroStoreError.invalidMacroName(name)
+        }
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            throw AttoMacroStoreError.macroNotFound(name)
+        }
+        try FileManager.default.removeItem(at: fileURL)
+    }
+
+    func renameNamedMacro(_ oldName: String, to newName: String) throws {
+        guard let oldFileURL = namedMacroFileURL(oldName) else {
+            throw AttoMacroStoreError.invalidMacroName(oldName)
+        }
+        guard let newFileURL = namedMacroFileURL(newName) else {
+            throw AttoMacroStoreError.invalidMacroName(newName)
+        }
+        guard FileManager.default.fileExists(atPath: oldFileURL.path) else {
+            throw AttoMacroStoreError.macroNotFound(oldName)
+        }
+        guard FileManager.default.fileExists(atPath: newFileURL.path) == false else {
+            throw AttoMacroStoreError.macroAlreadyExists(newName)
+        }
+        try FileManager.default.moveItem(at: oldFileURL, to: newFileURL)
     }
 
     func save(_ commands: [AttoRecordedCommand], maxCount: Int) throws {

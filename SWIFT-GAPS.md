@@ -154,6 +154,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 319 继续推进阶段 8 的宏能力起点：AttoEditor 现在消费 command registry 的 `macroPolicy`，提供 in-memory last macro 录制/回放、`macro.toggle_recording` / `macro.replay_last` 命令、Tools 菜单和 `ctrl+q` / `ctrl+shift+q` 默认 keymap；录制会保留可录制命令的 command id 和显式 typed arguments，并过滤 `.promptRequired` / `.notRecordable` 命令，回放时不会递归录制。仍缺宏持久化文件、命名/多宏管理、Sublime `.sublime-macro` 文件兼容、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
 - 阶段 320 继续推进阶段 8 的宏持久化起点：AttoEditor 现在会把 last command macro 保存为 Sublime 风格 `.sublime-macro` JSON array，并在默认 App delegate 启动时从 Application Support 下的 `Macros/Last Macro.sublime-macro` 恢复；文件项使用 `command` 和可选 `args`，基础 typed arguments 可跨 delegate 回放。仍缺命名/多宏管理、导入导出 UI、完整 Sublime `.sublime-macro` 运行语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
 - 阶段 321 继续推进阶段 8 的命名宏管理起点：`AttoMacroStore` 现在支持命名 `.sublime-macro` 文件保存、读取和名称枚举；AttoEditor 新增 `macro.save_named` / `macro.replay_named` 参数化命令和 Tools 菜单入口，command palette 可提示 `name` 参数，按名回放 schema choices 来自当前宏目录。仍缺宏重命名/删除 UI、导入导出 UI、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
+- 阶段 322 继续推进阶段 8 的命名宏管理：`AttoMacroStore` 现在支持命名 `.sublime-macro` 删除和重命名；AttoEditor 新增 `macro.rename_named` / `macro.delete_named` 参数化命令和 Tools 菜单入口，command palette 可选择已有宏名并输入新名称，相关命令在没有命名宏或正在录制时禁用。仍缺独立宏管理面板、删除确认 UI、导入导出 UI、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
@@ -1371,7 +1372,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 一些 core/LSP 命令仍没有 App 命令入口。
 - 用户 keymap 文件已有基础 Sublime JSON、context 条件过滤和快捷键冲突解析，但还不是完整 Sublime keymap 兼容实现。
 - 没有 Sublime 风格 settings scopes。
-- 已有 last macro 录制/回放、命名 `.sublime-macro` 保存和按名回放起点，但还没有宏重命名/删除 UI、导入导出 UI、完整 Sublime `.sublime-macro` 扩展语义或 plugin/package command runtime。
+- 已有 last macro 录制/回放、命名 `.sublime-macro` 保存、按名回放、重命名和删除起点，但还没有独立宏管理面板、删除确认 UI、导入导出 UI、完整 Sublime `.sublime-macro` 扩展语义或 plugin/package command runtime。
 - 没有 build systems。
 - 没有 package/plugin command 入口。
 - 命令是否启用、是否可见、当前参数、错误展示没有统一模型。
@@ -1511,6 +1512,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor 已有 in-memory last macro 录制/回放起点，`macro.toggle_recording` / `macro.replay_last` 接入 command palette、Tools 菜单和默认 keymap，并按 `macroPolicy` 过滤可录制命令。
 - 已完成：AttoEditor last macro 会保存/加载 `.sublime-macro` 兼容文件，默认路径位于用户 Application Support 下的 `Macros/Last Macro.sublime-macro`，可跨 App delegate / App 启动恢复最近一次录制的 command sequence。
 - 已完成：AttoEditor 已有命名 `.sublime-macro` 保存和按名称回放起点，`macro.save_named` / `macro.replay_named` 接入 command palette 与 Tools 菜单，按名回放 prompt choices 来自当前宏目录。
+- 已完成：AttoEditor 已有命名 `.sublime-macro` 重命名和删除起点，`macro.rename_named` / `macro.delete_named` 接入 command palette 与 Tools 菜单，并按当前宏目录动态启用和提供 choices。
 - 已完成：AttoEditor keymap 已支持 arrow/navigation function-key token，move lines up/down 已有默认 arrow-key 绑定。
 - 已完成：AttoEditor keymap 已支持基础 `context` 条件过滤和快捷键冲突解析，`resolvedKeymap(...)` 可暴露 conflicts 供测试和后续 UI/诊断使用。
 - 已完成：AttoEditor keymap 已支持用户条目 `args` 解码，并能通过菜单/shortcut command 路径调用 `executeCommand(id:arguments:)` 执行参数化命令。

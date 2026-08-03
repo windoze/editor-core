@@ -1402,6 +1402,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroSavesAndReplaysNamedSublimeMacroFiles`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap|CommandMacroPersistsSublimeMacroFileAcrossDelegates|CommandMacroRecordsAndReplaysCommandSequence)'`
     - `git diff --check`
+- 中间提交：`feat(app): manage named command macros`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；补齐命名 `.sublime-macro` 的基础重命名和删除入口，让多宏管理不再只能创建和回放。
+  - 提交边界：`AttoMacroStore` 新增命名 macro 删除、重命名、not found 和 already exists 错误；AttoEditor 新增 `macro.rename_named` / `macro.delete_named` 参数化命令和 Tools 菜单入口，命令 palette 可选择已有宏名并输入新名称；相关命令在没有命名宏或正在录制时禁用。本提交不实现独立宏管理面板、删除确认 UI、导入导出 UI、完整 Sublime package/plugin command runtime、完整 `.sublime-macro` 扩展语义，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroRenamesAndDeletesNamedSublimeMacroFiles`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap|CommandMacroSavesAndReplaysNamedSublimeMacroFiles)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 
