@@ -49,6 +49,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("macro.replay_named"))
         XCTAssertTrue(ids.contains("macro.rename_named"))
         XCTAssertTrue(ids.contains("macro.delete_named"))
+        XCTAssertTrue(ids.contains("macro.import_file"))
+        XCTAssertTrue(ids.contains("macro.export_named"))
         for command in AttoEditorAreaViewController.CursorMovementCommand.allCases {
             XCTAssertTrue(ids.contains(command.id), command.id)
         }
@@ -232,6 +234,14 @@ final class AttoEditorCommandTests: XCTestCase {
         let deleteNamedMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.delete_named"))
         XCTAssertEqual(deleteNamedMacro.macroPolicy, .notRecordable)
         XCTAssertEqual(deleteNamedMacro.parameters.map(\.name), ["name"])
+        let importMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.import_file"))
+        XCTAssertEqual(importMacro.macroPolicy, .notRecordable)
+        XCTAssertEqual(importMacro.parameters.map(\.name), ["path", "name"])
+        XCTAssertEqual(importMacro.parameters[0].kind, .string)
+        XCTAssertEqual(importMacro.parameters[1].kind, .string)
+        let exportMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.export_named"))
+        XCTAssertEqual(exportMacro.macroPolicy, .notRecordable)
+        XCTAssertEqual(exportMacro.parameters.map(\.name), ["name", "path"])
 
         let openFile = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "file.open_file"))
         XCTAssertEqual(openFile.macroPolicy, .promptRequired)
@@ -2069,6 +2079,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "macro.replay_named", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.rename_named", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.delete_named", in: toolsMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.import_file", in: toolsMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.export_named", in: toolsMenu))
 
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
@@ -5117,6 +5129,80 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.replay_named"))
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.rename_named"))
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.delete_named"))
+    }
+
+    func testCommandMacroImportsAndExportsSublimeMacroFiles() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let externalDir = tempDir.appendingPathComponent("External", isDirectory: true)
+        try FileManager.default.createDirectory(at: externalDir, withIntermediateDirectories: true)
+
+        let sourceMacroURL = externalDir.appendingPathComponent("External Macro.sublime-macro")
+        try """
+        [
+          {
+            "command": "go.line",
+            "args": {
+              "line": 2,
+              "column": 2
+            }
+          },
+          {
+            "command": "editor.duplicate_lines"
+          }
+        ]
+        """.write(to: sourceMacroURL, atomically: true, encoding: .utf8)
+
+        let internalDir = tempDir.appendingPathComponent("Internal", isDirectory: true)
+        let macroURL = internalDir.appendingPathComponent("Last Macro.sublime-macro")
+        let macroStore = AttoMacroStore(macroFileURL: macroURL)
+        let importDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        XCTAssertTrue(importDelegate._commandIsEnabledForTesting(commandID: "macro.import_file"))
+        XCTAssertFalse(importDelegate._commandIsEnabledForTesting(commandID: "macro.export_named"))
+
+        XCTAssertTrue(importDelegate.executeCommand(
+            id: "macro.import_file",
+            arguments: [
+                "path": .string(sourceMacroURL.path),
+                "name": .string("Imported Macro"),
+            ]
+        ))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Imported Macro"])
+        let importedURL = internalDir.appendingPathComponent("Imported Macro.sublime-macro")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: importedURL.path))
+        let importedCommands = try XCTUnwrap(macroStore.loadNamedMacro("Imported Macro", maxCount: 512))
+        XCTAssertEqual(importedCommands.map(\.commandID), ["go.line", "editor.duplicate_lines"])
+        XCTAssertEqual(importedCommands.first?.arguments, ["line": .integer(2), "column": .integer(2)])
+        XCTAssertTrue(importDelegate._commandIsEnabledForTesting(commandID: "macro.export_named"))
+
+        let exportSchema = try XCTUnwrap(importDelegate._commandSchemaForTesting(commandID: "macro.export_named"))
+        XCTAssertEqual(exportSchema.parameters.first?.choices.map(\.title), ["Imported Macro"])
+
+        let exportURL = externalDir.appendingPathComponent("Round Trip.sublime-macro")
+        XCTAssertTrue(importDelegate.executeCommand(
+            id: "macro.export_named",
+            arguments: [
+                "name": .string("Imported Macro"),
+                "path": .string(exportURL.path),
+            ]
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: exportURL.path))
+        let exportedJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: exportURL)) as? [[String: Any]]
+        let exported = try XCTUnwrap(exportedJSON)
+        XCTAssertEqual(exported.count, 2)
+        XCTAssertEqual(exported[0]["command"] as? String, "go.line")
+        let exportedArgs = try XCTUnwrap(exported[0]["args"] as? [String: Any])
+        XCTAssertEqual((exportedArgs["line"] as? NSNumber)?.intValue, 2)
+        XCTAssertEqual((exportedArgs["column"] as? NSNumber)?.intValue, 2)
+        XCTAssertEqual(exported[1]["command"] as? String, "editor.duplicate_lines")
+
+        XCTAssertEqual(
+            try XCTUnwrap(macroStore.loadNamedMacro("Imported Macro", maxCount: 512)),
+            importedCommands
+        )
     }
 
     func testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands() throws {

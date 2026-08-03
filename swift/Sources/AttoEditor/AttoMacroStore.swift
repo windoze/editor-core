@@ -1,6 +1,7 @@
 import Foundation
 
 enum AttoMacroStoreError: Error, Equatable {
+    case invalidMacroFilePath(String)
     case invalidMacroName(String)
     case macroAlreadyExists(String)
     case macroNotFound(String)
@@ -57,6 +58,26 @@ struct AttoMacroStore {
     func save(_ commands: [AttoRecordedCommand], named name: String, maxCount: Int) throws {
         guard let fileURL = namedMacroFileURL(name) else {
             throw AttoMacroStoreError.invalidMacroName(name)
+        }
+        try save(commands, to: fileURL, maxCount: maxCount)
+    }
+
+    func importNamedMacro(from sourceURL: URL, named name: String, maxCount: Int) throws {
+        guard let fileURL = externalMacroFileURL(sourceURL) else {
+            throw AttoMacroStoreError.invalidMacroFilePath(sourceURL.path)
+        }
+        guard let commands = load(from: fileURL, maxCount: maxCount) else {
+            throw AttoMacroStoreError.macroNotFound(sourceURL.path)
+        }
+        try save(commands, named: name, maxCount: maxCount)
+    }
+
+    func exportNamedMacro(_ name: String, to destinationURL: URL, maxCount: Int) throws {
+        guard let fileURL = externalMacroFileURL(destinationURL) else {
+            throw AttoMacroStoreError.invalidMacroFilePath(destinationURL.path)
+        }
+        guard let commands = loadNamedMacro(name, maxCount: maxCount) else {
+            throw AttoMacroStoreError.macroNotFound(name)
         }
         try save(commands, to: fileURL, maxCount: maxCount)
     }
@@ -121,6 +142,12 @@ struct AttoMacroStore {
             .appendingPathExtension("sublime-macro")
             .standardizedFileURL
         guard fileURL != macroFileURL.standardizedFileURL else { return nil }
+        return fileURL
+    }
+
+    private func externalMacroFileURL(_ url: URL) -> URL? {
+        let fileURL = url.standardizedFileURL
+        guard fileURL.pathExtension.lowercased() == "sublime-macro" else { return nil }
         return fileURL
     }
 

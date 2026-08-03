@@ -1409,6 +1409,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroRenamesAndDeletesNamedSublimeMacroFiles`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap|CommandMacroSavesAndReplaysNamedSublimeMacroFiles)'`
     - `git diff --check`
+- 中间提交：`feat(app): import export command macros`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；为命名 `.sublime-macro` 补齐基础导入/导出入口，让外部 Sublime 风格宏文件能进入 AttoEditor 宏目录，也能从命名宏导出为文件。
+  - 提交边界：`AttoMacroStore` 新增外部 `.sublime-macro` 路径校验、导入和导出；AttoEditor 新增 `macro.import_file` / `macro.export_named` 参数化命令和 Tools 菜单入口，command palette 参数表单可输入源/目标路径与命名宏名称，导入时会解码并重新写为 AttoEditor 兼容 JSON，导出时会把已有命名宏写到目标 `.sublime-macro` 文件。本提交不实现独立宏管理面板、原生 NSOpenPanel/NSSavePanel 文件选择流程、删除确认 UI、完整 Sublime package/plugin command runtime、完整 `.sublime-macro` 扩展语义，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroImportsAndExportsSublimeMacroFiles`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

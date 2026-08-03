@@ -92,6 +92,8 @@ enum AttoMainMenuBuilder {
         toolsMenu.addItem(commandItem(title: "Replay Named Macro…", commandID: "macro.replay_named", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Rename Named Macro…", commandID: "macro.rename_named", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Delete Named Macro…", commandID: "macro.delete_named", appDelegate: appDelegate))
+        toolsMenu.addItem(commandItem(title: "Import Macro File…", commandID: "macro.import_file", appDelegate: appDelegate))
+        toolsMenu.addItem(commandItem(title: "Export Named Macro…", commandID: "macro.export_named", appDelegate: appDelegate))
 
         let viewMenuItem = NSMenuItem()
         viewMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("View"))

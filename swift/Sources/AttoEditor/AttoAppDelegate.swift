@@ -395,6 +395,55 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         )
     }
 
+    private static func macroImportCommandSchema() -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "path",
+                    title: "Macro File Path",
+                    kind: .string,
+                    isRequired: true,
+                    allowsEmptyString: false,
+                    help: "Path to an existing .sublime-macro file."
+                ),
+                AttoCommandParameterSchema(
+                    name: "name",
+                    title: "Imported Macro Name",
+                    kind: .string,
+                    isRequired: true,
+                    allowsEmptyString: false,
+                    help: "Name to store in AttoEditor's macro directory."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
+    private static func macroExportCommandSchema(choices: [String] = []) -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "name",
+                    title: "Macro Name",
+                    kind: .string,
+                    isRequired: true,
+                    choices: choices.map { AttoCommandArgumentChoice(title: $0, value: .string($0)) },
+                    allowsEmptyString: false,
+                    help: "Existing .sublime-macro name in AttoEditor's macro directory."
+                ),
+                AttoCommandParameterSchema(
+                    name: "path",
+                    title: "Export File Path",
+                    kind: .string,
+                    isRequired: true,
+                    allowsEmptyString: false,
+                    help: "Destination .sublime-macro file path."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationCenter.default.addObserver(
             self,
@@ -936,6 +985,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             ) { [weak self] arguments in
                 self?.deleteNamedMacro(arguments: arguments)
             },
+            .init(
+                id: "macro.import_file",
+                title: "Macro: Import Macro File…",
+                schema: Self.macroImportCommandSchema()
+            ) { [weak self] arguments in
+                self?.importNamedMacro(arguments: arguments)
+            },
+            .init(
+                id: "macro.export_named",
+                title: "Macro: Export Named Macro…",
+                schema: Self.macroExportCommandSchema()
+            ) { [weak self] arguments in
+                self?.exportNamedMacro(arguments: arguments)
+            },
             .init(id: "go.file", title: "Go: Go to File…") { [weak self] in
                 self?.showQuickOpen()
             },
@@ -1467,6 +1530,30 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         _ = deleteNamedMacro(named: name)
     }
 
+    private func importNamedMacro(arguments: AttoCommandArguments) {
+        let effectiveArguments = arguments.isEmpty
+            ? (promptMacroArguments(commandID: "macro.import_file", title: "Macro: Import Macro File…") ?? [:])
+            : arguments
+        guard let path = effectiveArguments.string("path"),
+              let name = effectiveArguments.string("name")
+        else {
+            return
+        }
+        _ = importNamedMacro(fromPath: path, named: name)
+    }
+
+    private func exportNamedMacro(arguments: AttoCommandArguments) {
+        let effectiveArguments = arguments.isEmpty
+            ? (promptMacroArguments(commandID: "macro.export_named", title: "Macro: Export Named Macro…") ?? [:])
+            : arguments
+        guard let name = effectiveArguments.string("name"),
+              let path = effectiveArguments.string("path")
+        else {
+            return
+        }
+        _ = exportNamedMacro(named: name, toPath: path)
+    }
+
     private func saveLastMacro(named name: String) -> Bool {
         guard isRecordingMacro == false, lastMacroCommands.isEmpty == false, let macroStore else {
             NSSound.beep()
@@ -1528,6 +1615,49 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
     }
 
+    private func importNamedMacro(fromPath path: String, named name: String) -> Bool {
+        guard isRecordingMacro == false, let macroStore, let sourceURL = macroFileURL(fromPath: path) else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try macroStore.importNamedMacro(from: sourceURL, named: name, maxCount: Self.maxRecordedMacroCommandCount)
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to import macro %@ from %@: %@", name, path, String(describing: error))
+            return false
+        }
+    }
+
+    private func exportNamedMacro(named name: String, toPath path: String) -> Bool {
+        guard isRecordingMacro == false, let macroStore, let destinationURL = macroFileURL(fromPath: path) else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try macroStore.exportNamedMacro(name, to: destinationURL, maxCount: Self.maxRecordedMacroCommandCount)
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to export macro %@ to %@: %@", name, path, String(describing: error))
+            return false
+        }
+    }
+
+    private func macroFileURL(fromPath rawPath: String) -> URL? {
+        let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard path.isEmpty == false else { return nil }
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path).standardizedFileURL
+        }
+        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+            .appendingPathComponent(path, isDirectory: false)
+            .standardizedFileURL
+    }
+
     private func promptMacroName(commandID: String, title: String) -> String? {
         promptMacroArguments(commandID: commandID, title: title)?.string("name")
     }
@@ -1583,6 +1713,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         case "macro.save_named":
             return isRecordingMacro == false && lastMacroCommands.isEmpty == false && macroStore != nil
         case "macro.replay_named", "macro.rename_named", "macro.delete_named":
+            return isRecordingMacro == false && (macroStore?.namedMacroNames().isEmpty == false)
+        case "macro.import_file":
+            return isRecordingMacro == false && macroStore != nil
+        case "macro.export_named":
             return isRecordingMacro == false && (macroStore?.namedMacroNames().isEmpty == false)
         default:
             break
@@ -1718,6 +1852,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return Self.macroRenameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
         case "macro.delete_named":
             return Self.macroNameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
+        case "macro.import_file":
+            return Self.macroImportCommandSchema()
+        case "macro.export_named":
+            return Self.macroExportCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
         case "macro.toggle_recording", "macro.replay_last":
             return AttoCommandSchema(macroPolicy: .notRecordable)
         case "file.new", "file.save", "file.close_tab", "file.close_all_tabs",
