@@ -79,6 +79,39 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         assertElementCount(atLeast: 2, identifierPrefix: editorViewPrefix, in: launched.app)
     }
 
+    func testSidebarSearchAndQuickOpenPanelSmokeFlow() throws {
+        let launched = try launchAttoEditor()
+        defer { launched.cleanUp() }
+
+        XCTAssertTrue(launched.app.wait(for: .runningForeground, timeout: Self.timeout))
+        XCTAssertTrue(launched.app.windows.firstMatch.waitForExistence(timeout: Self.timeout))
+
+        launched.app.typeKey("f", modifierFlags: [.command, .shift])
+        let findQuery = try requiredElement(identifier: AttoAccessibilityID.findInFilesQueryField, in: launched.app)
+        findQuery.click()
+        launched.app.typeText("alpha")
+        assertElementExists(AttoAccessibilityID.findInFilesScopeControl, in: launched.app)
+        assertElementExists(AttoAccessibilityID.findInFilesStatusLabel, in: launched.app)
+        assertElementExists(AttoAccessibilityID.findInFilesTable, in: launched.app)
+
+        launched.app.typeKey("p", modifierFlags: [.command])
+        let quickOpenPrefix = "AttoEditor.QuickOpen"
+        assertElementExists(
+            AttoAccessibilityID.commandPalettePanel(prefix: quickOpenPrefix),
+            in: launched.app
+        )
+        let quickOpenSearch = try requiredElement(
+            identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: quickOpenPrefix),
+            in: launched.app
+        )
+        quickOpenSearch.click()
+        launched.app.typeText("main")
+        assertElementExists(
+            AttoAccessibilityID.commandPaletteTable(prefix: quickOpenPrefix),
+            in: launched.app
+        )
+    }
+
     private func launchAttoEditor() throws -> LaunchedAttoApp {
         guard Self.isEnabled else {
             throw XCTSkip(
@@ -147,8 +180,21 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
     }
 
     private func assertElementExists(_ identifier: String, in app: XCUIApplication) {
-        let element = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+        let element = element(identifier: identifier, in: app)
         XCTAssertTrue(element.waitForExistence(timeout: Self.timeout), "missing AX element: \(identifier)")
+    }
+
+    private func element(identifier: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+
+    private func requiredElement(identifier: String, in app: XCUIApplication) throws -> XCUIElement {
+        let element = element(identifier: identifier, in: app)
+        guard element.waitForExistence(timeout: Self.timeout) else {
+            XCTFail("missing AX element: \(identifier)")
+            throw AttoXCUISmokeConfigurationError.missingElement(identifier)
+        }
+        return element
     }
 
     private func assertElementCount(
@@ -224,6 +270,7 @@ private enum AttoXCUISmokeConfigurationError: Error, CustomStringConvertible {
     case missingAppPath(String)
     case invalidAppBundle(String)
     case nonExecutablePath(String)
+    case missingElement(String)
     case missingElementPrefix(String)
 
     var description: String {
@@ -234,6 +281,8 @@ private enum AttoXCUISmokeConfigurationError: Error, CustomStringConvertible {
             return "ATTO_XCUI_APP_PATH should point at AttoEditor.app or an executable: \(path)"
         case let .nonExecutablePath(path):
             return "ATTO_XCUI_APP_PATH is not executable: \(path)"
+        case let .missingElement(identifier):
+            return "missing AX element: \(identifier)"
         case let .missingElementPrefix(prefix):
             return "missing AX element prefix: \(prefix)"
         }

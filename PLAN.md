@@ -2128,6 +2128,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover xcui sidebar and quick panels`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 opt-in `XCUIApplication` 黑盒操作流，覆盖 project/sidebar 搜索入口和 Quick Open panel 导航入口。
+  - 提交边界：只扩展 `AttoEditorXCUIApplicationSmokeTests`，新增 `cmd+shift+f` 打开 Find in Files sidebar、输入查询、断言 scope/status/table AX 节点，以及 `cmd+p` 打开 Quick Open panel、输入过滤文本、断言 panel/search/table AX 节点；并为需要交互的 AX 节点新增等待式 lookup helper。该提交不启用默认 CI GUI 测试、不覆盖打开文件/保存、多光标、Problems/Outline/Locations panel navigation，也不改变产品代码。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
