@@ -5120,6 +5120,21 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\n")
 
         XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.delete_named"))
+        delegate._setMacroDeleteConfirmationProviderForTesting { name in
+            XCTAssertEqual(name, "Renamed Macro")
+            return false
+        }
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named",
+            arguments: ["name": .string("Renamed Macro")]
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: newURL.path))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Renamed Macro"])
+
+        delegate._setMacroDeleteConfirmationProviderForTesting { name in
+            XCTAssertEqual(name, "Renamed Macro")
+            return true
+        }
         XCTAssertTrue(delegate.executeCommand(
             id: "macro.delete_named",
             arguments: ["name": .string("Renamed Macro")]

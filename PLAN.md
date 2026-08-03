@@ -1423,6 +1423,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroImportExportUsesNativeFileSelectionProviders`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroImportsAndExportsSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
     - `git diff --check`
+- 中间提交：`feat(app): confirm command macro deletion`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；为命名 `.sublime-macro` 删除补上确认 UI，降低从 Tools 菜单或 command palette 误删宏文件的风险。
+  - 提交边界：`macro.delete_named` 在真正删除前通过 AppKit warning alert 确认；测试路径可注入 confirmation provider 覆盖取消/确认两条路径。该提交不实现独立宏管理面板、批量删除、回收站/undo、完整 Sublime package/plugin command runtime、完整 `.sublime-macro` 扩展语义，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroRenamesAndDeletesNamedSublimeMacroFiles`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroImportExportUsesNativeFileSelectionProviders|CommandMacroImportsAndExportsSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

@@ -177,6 +177,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private let macroStore: AttoMacroStore?
     private var macroImportSelectionProvider: (() -> (url: URL, name: String)?)?
     private var macroExportSelectionProvider: (([String]) -> (name: String, url: URL)?)?
+    private var macroDeleteConfirmationProvider: ((String) -> Bool)?
     private var isRecordingMacro = false
     private var isReplayingMacro = false
     private var currentMacroCommands: [AttoRecordedCommand] = []
@@ -1292,6 +1293,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         macroExportSelectionProvider = provider
     }
 
+    func _setMacroDeleteConfirmationProviderForTesting(_ provider: ((String) -> Bool)?) {
+        macroDeleteConfirmationProvider = provider
+    }
+
     func _validateRuntimeCompatibilityForTesting() -> Bool {
         validateRuntimeCompatibilityBeforeLaunch(logSuccess: false)
     }
@@ -1633,6 +1638,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             NSSound.beep()
             return false
         }
+        guard confirmDeleteNamedMacro(name) else {
+            return false
+        }
 
         do {
             try macroStore.deleteNamedMacro(name)
@@ -1642,6 +1650,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             NSLog("AttoEditor: failed to delete macro %@: %@", name, String(describing: error))
             return false
         }
+    }
+
+    private func confirmDeleteNamedMacro(_ name: String) -> Bool {
+        if let macroDeleteConfirmationProvider {
+            return macroDeleteConfirmationProvider(name)
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Delete Macro?"
+        alert.informativeText = "Delete the named macro \"\(name)\" from AttoEditor's macro directory. This cannot be undone."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     private func importNamedMacro(fromPath path: String, named name: String) -> Bool {
