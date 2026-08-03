@@ -1,0 +1,58 @@
+name: Visual Baselines
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Visual baseline mode.
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - strict
+  pull_request:
+    paths:
+      - ".github/workflows/visual-baselines.yml"
+      - "swift/Tests/AttoEditorTests/AttoEditorVisualBaselineManifestTests.swift"
+      - "swift/Tests/AttoEditorTests/AttoVisualSnapshotTestSupport.swift"
+      - "swift/Tests/AttoEditorTests/Resources/VisualBaselines/**"
+      - "swift/Tests/AttoEditorTests/Resources/VisualFixtures/**"
+      - "swift/scripts/*visual-baselines.sh"
+
+concurrency:
+  group: visual-baselines-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  visual-baselines:
+    name: Visual baseline smoke/strict
+    runs-on: macos-15
+    env:
+      ATTO_VISUAL_ARTIFACT_DIR: ${{ github.workspace }}/target/atto-visual-artifacts
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Toolchain versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          rustc --version
+          cargo --version
+
+      - name: Smoke visual baseline manifest
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'smoke' }}
+        run: swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'
+
+      - name: Strict visual baseline comparison
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'strict' }}
+        run: swift/scripts/check-visual-baselines.sh
+
+      - name: Upload visual artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: atto-visual-artifacts
+          path: target/atto-visual-artifacts
+          if-no-files-found: ignore

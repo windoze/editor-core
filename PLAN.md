@@ -2152,6 +2152,14 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
     - `git diff --check`
+- 中间提交：`test(app): add visual baseline ci policy`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；为 visual baseline PNG 审核和 CI 执行补齐明确策略与入口。
+  - 提交边界：新增 strict baseline check 脚本、`VisualBaselines/README.md` 审核规则，以及固定 macOS runner 的 `.github/workflows/visual-baselines.yml`；PR 路径触发只跑 smoke artifact capture，手动 workflow 可选择 smoke 或 strict PNG comparison。该提交不提交机器生成的 golden PNG，不把 strict visual comparison 设为默认必过门禁，也不改变产品 UI 或测试 manifest schema。
+  - 验证记录：
+    - `bash -n swift/scripts/update-visual-baselines.sh`
+    - `bash -n swift/scripts/check-visual-baselines.sh`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

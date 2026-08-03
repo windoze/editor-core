@@ -1623,10 +1623,11 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：阶段 13 已扩展 opt-in `XCUIApplication` LSP result panel smoke flow，通过 command palette 打开 LSP Workbench、active Problems 和 Workspace Problems panel，并断言 panel/root/search/metadata/table 等稳定 AX 节点。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover xcui lsp result panels` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 opt-in `XCUIApplication` selection/multicursor smoke flow，在新建 buffer 中输入重复词，经 command palette 执行 select word、add next occurrence 和 add all occurrences，并断言 status bar selection label 出现单选区和多 cursor 反馈。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover xcui selection multicursor commands` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 opt-in `XCUIApplication` open/save smoke flow，通过测试隔离 IPC spool request 打开临时文件，等待 tab/editor view AX 节点出现，输入文本后触发 `cmd+s`，并从磁盘轮询确认保存内容落盘。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover xcui open save flow` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
-- 仍缺提交机器稳定的 PNG golden baselines 和 CI baseline 审核策略。
+- 已完成：阶段 13 已新增 visual baseline CI/审核策略入口，包含 strict baseline check 脚本、`VisualBaselines/README.md` golden PNG 规则，以及固定 macOS runner 的 visual-baselines workflow；PR 路径触发先跑 smoke artifact capture，手动 workflow 可选择 strict PNG comparison。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): add visual baseline ci policy` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
+- 仍缺提交首批经批准机器生成的 PNG golden baselines，并在首批 PNG 合入后把 strict visual comparison 提升为默认必过门禁。
 - 继续扩展 fixtures，覆盖更完整 minimap/overlay 组合、panel/popup 组合和更多跨 theme/window-size 的真实 baseline 审核场景。
 - 继续扩展 `XCUIApplication` smoke tests，覆盖需要真实 result fixture 或 LSP 注入路径的 Locations/Symbols/Workspace Outline 等结果面板黑盒操作流。
-- 在 CI 上固定 macOS runner、字体、scale factor 和渲染后端。
+- 仍缺在 CI strict 门禁中审计/固定字体清单、scale factor 和渲染后端，并把对应环境摘要作为 visual artifact 保留。
 
 ## 建议的功能矩阵
 
