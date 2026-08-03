@@ -8,6 +8,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
     private static let enabledEnvKey = "ATTO_XCUI_SMOKE_TESTS"
     private static let appPathEnvKey = "ATTO_XCUI_APP_PATH"
     private static let timeout: TimeInterval = 12
+    private static let pollInterval: TimeInterval = 0.05
 
     func testLaunchShowsMainChromeAccessibilityNodes() throws {
         let launched = try launchAttoEditor()
@@ -43,6 +44,39 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
             AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.CommandPalette"),
             in: launched.app
         )
+    }
+
+    func testEditingFindAndSplitKeyboardSmokeFlow() throws {
+        let launched = try launchAttoEditor()
+        defer { launched.cleanUp() }
+
+        XCTAssertTrue(launched.app.wait(for: .runningForeground, timeout: Self.timeout))
+        XCTAssertTrue(launched.app.windows.firstMatch.waitForExistence(timeout: Self.timeout))
+
+        launched.app.typeKey("n", modifierFlags: [.command])
+        let editorViewPrefix = dynamicIdentifierPrefix(AttoAccessibilityID.editorView)
+        let editorView = try firstElement(identifierPrefix: editorViewPrefix, in: launched.app)
+        editorView.click()
+        launched.app.typeText("alpha\nbeta\nalpha\n")
+        launched.app.typeKey("z", modifierFlags: [.command])
+
+        launched.app.typeKey("f", modifierFlags: [.command])
+        assertElementExists(AttoAccessibilityID.findReplaceBar, in: launched.app)
+        assertElementExists(AttoAccessibilityID.findSearchField, in: launched.app)
+        launched.app.typeText("alpha")
+
+        launched.app.typeKey("2", modifierFlags: [.command, .option])
+        assertElementCount(
+            atLeast: 1,
+            identifierPrefix: dynamicIdentifierPrefix(AttoAccessibilityID.tabChip),
+            in: launched.app
+        )
+        assertElementCount(
+            atLeast: 2,
+            identifierPrefix: dynamicIdentifierPrefix(AttoAccessibilityID.editorPane),
+            in: launched.app
+        )
+        assertElementCount(atLeast: 2, identifierPrefix: editorViewPrefix, in: launched.app)
     }
 
     private func launchAttoEditor() throws -> LaunchedAttoApp {
@@ -117,6 +151,63 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: Self.timeout), "missing AX element: \(identifier)")
     }
 
+    private func assertElementCount(
+        atLeast expected: Int,
+        identifierPrefix: String,
+        in app: XCUIApplication
+    ) {
+        let actual = waitForElementCount(atLeast: expected, identifierPrefix: identifierPrefix, in: app)
+        XCTAssertGreaterThanOrEqual(
+            actual,
+            expected,
+            "expected at least \(expected) AX elements with prefix \(identifierPrefix), got \(actual)"
+        )
+    }
+
+    private func firstElement(
+        identifierPrefix: String,
+        in app: XCUIApplication
+    ) throws -> XCUIElement {
+        let deadline = Date().addingTimeInterval(Self.timeout)
+        repeat {
+            if let element = elements(identifierPrefix: identifierPrefix, in: app).first {
+                return element
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(Self.pollInterval))
+        } while Date() < deadline
+
+        XCTFail("missing AX element prefix: \(identifierPrefix)")
+        throw AttoXCUISmokeConfigurationError.missingElementPrefix(identifierPrefix)
+    }
+
+    private func waitForElementCount(
+        atLeast expected: Int,
+        identifierPrefix: String,
+        in app: XCUIApplication
+    ) -> Int {
+        let deadline = Date().addingTimeInterval(Self.timeout)
+        var lastCount = 0
+        repeat {
+            lastCount = elements(identifierPrefix: identifierPrefix, in: app).count
+            if lastCount >= expected {
+                return lastCount
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(Self.pollInterval))
+        } while Date() < deadline
+        return lastCount
+    }
+
+    private func elements(identifierPrefix: String, in app: XCUIApplication) -> [XCUIElement] {
+        app.descendants(matching: .any).allElementsBoundByIndex.filter {
+            $0.identifier.hasPrefix(identifierPrefix)
+        }
+    }
+
+    private func dynamicIdentifierPrefix(_ makeIdentifier: (UUID) -> String) -> String {
+        let id = UUID()
+        return makeIdentifier(id).replacingOccurrences(of: id.uuidString, with: "")
+    }
+
     private struct LaunchedAttoApp {
         let app: XCUIApplication
         let runtimeRoot: URL
@@ -133,6 +224,7 @@ private enum AttoXCUISmokeConfigurationError: Error, CustomStringConvertible {
     case missingAppPath(String)
     case invalidAppBundle(String)
     case nonExecutablePath(String)
+    case missingElementPrefix(String)
 
     var description: String {
         switch self {
@@ -142,6 +234,8 @@ private enum AttoXCUISmokeConfigurationError: Error, CustomStringConvertible {
             return "ATTO_XCUI_APP_PATH should point at AttoEditor.app or an executable: \(path)"
         case let .nonExecutablePath(path):
             return "ATTO_XCUI_APP_PATH is not executable: \(path)"
+        case let .missingElementPrefix(prefix):
+            return "missing AX element prefix: \(prefix)"
         }
     }
 }

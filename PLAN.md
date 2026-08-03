@@ -2122,6 +2122,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoIPCTests|AttoEditorXCUIApplicationSmokeTests'`
     - `git diff --check`
+- 中间提交：`test(app): extend xcui editing smoke flow`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；在 opt-in `XCUIApplication` 入口上补一条真实编辑操作流，覆盖 keyboard shortcut dispatch、new tab、text input、undo、find bar 和 split pane 的基础黑盒路径。
+  - 提交边界：只扩展 `AttoEditorXCUIApplicationSmokeTests`，新增动态 AX identifier prefix 查询 helper，并新增 `cmd+n` 新建 tab、点击 editor view、输入/撤销、`cmd+f` 打开 find bar、输入查询、`cmd+option+2` split 后断言 tab/editor pane/editor view 数量的 smoke test。该提交不启用默认 CI GUI 测试、不覆盖打开文件/保存、多光标、Problems/Outline/Locations panel navigation，也不改变产品代码。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
