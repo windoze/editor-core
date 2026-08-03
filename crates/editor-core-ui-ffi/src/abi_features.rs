@@ -62,6 +62,8 @@ pub const ECU_FEATURE_LSP_RESULT_ENVELOPE: u64 = 1 << 26;
 pub const ECU_FEATURE_EVENT_STREAM_ENVELOPE: u64 = 1 << 27;
 /// Feature bit: multi-document diagnostics and WorkspaceEdit event streams are available through the event envelope.
 pub const ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE: u64 = 1 << 28;
+/// Feature bit: multi-document WorkspaceEdit transactions can return structured result envelopes.
+pub const ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE: u64 = 1 << 29;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -91,7 +93,8 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_JSON_COMMAND_ENVELOPE
     | ECU_FEATURE_LSP_RESULT_ENVELOPE
     | ECU_FEATURE_EVENT_STREAM_ENVELOPE
-    | ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE;
+    | ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE
+    | ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -274,6 +277,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE,
         name: "multi_document_special_event_stream_envelope",
         description: "Multi-document workspace diagnostics and WorkspaceEdit event streams are available through structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 29,
+        flag: ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE,
+        name: "workspace_edit_transaction_envelope",
+        description: "Multi-document WorkspaceEdit transaction preview/apply/undo can return structured result envelopes.",
     },
 ];
 

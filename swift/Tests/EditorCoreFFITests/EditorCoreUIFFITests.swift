@@ -104,6 +104,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.lspResultEnvelope))
         XCTAssertTrue(info.supports(.eventStreamEnvelope))
         XCTAssertTrue(info.supports(.multiDocumentSpecialEventStreamEnvelope))
+        XCTAssertTrue(info.supports(.workspaceEditTransactionEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -129,6 +130,11 @@ final class EditorCoreUIFFITests: XCTestCase {
             feature["name"] as? String == "multi_document_special_event_stream_envelope"
                 && (feature["bit"] as? NSNumber)?.uint8Value == 28
                 && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.multiDocumentSpecialEventStreamEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "workspace_edit_transaction_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 29
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.workspaceEditTransactionEnvelope.rawValue
         })
     }
 
@@ -419,6 +425,116 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(failure.streamKind, .stateEvents)
         XCTAssertEqual(failure.statusKind, .error)
         XCTAssertEqual(failure.afterSequence, 8)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
+    }
+
+    func testWorkspaceEditTransactionEnvelopeReportsSuccessAndError() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let tab = try multi.openTab(text: "hello\n", viewportWidthCells: 80)
+        try multi.setTabDocumentURI("file:///project/App.swift", tabId: tab)
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "file:///project/App.swift": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 5 }
+                },
+                "newText": "Hello"
+              }
+            ]
+          }
+        }
+        """
+
+        let preview = try multi.previewWorkspaceEditTransactionEnvelope(workspaceEdit)
+        XCTAssertTrue(preview.ok)
+        XCTAssertEqual(preview.version, lib.abiVersion)
+        XCTAssertEqual(preview.operation, "preview")
+        XCTAssertEqual(preview.operationKind, .preview)
+        XCTAssertEqual(preview.statusKind, .success)
+        XCTAssertNil(preview.error)
+        guard case .object(let previewValue)? = preview.value else {
+            XCTFail("expected WorkspaceEdit transaction result object")
+            return
+        }
+        XCTAssertEqual(previewValue["mode"], .string("preview"))
+        XCTAssertEqual(previewValue["applied"], .bool(false))
+
+        let undo = try multi.undoLastWorkspaceEditTransactionEnvelope()
+        XCTAssertTrue(undo.ok)
+        XCTAssertEqual(undo.operationKind, .undo)
+        guard case .object(let undoValue)? = undo.value else {
+            XCTFail("expected WorkspaceEdit undo result object")
+            return
+        }
+        XCTAssertEqual(undoValue["undone"], .bool(false))
+
+        let failure = try multi.workspaceEditTransactionEnvelope(
+            operationRawValue: "future_operation",
+            workspaceEditJSON: workspaceEdit
+        )
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.operationKind, .unknown("future_operation"))
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "invalid_argument")
+        XCTAssertEqual(failure.error?.status, .invalidArgument)
+        XCTAssertTrue(failure.error?.message.contains("unknown workspace edit transaction operation") ?? false)
+    }
+
+    func testWorkspaceEditTransactionEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "operation": "future_operation",
+          "status": "future_status",
+          "value": {
+            "mode": "future_mode",
+            "items": [1, "x"]
+          },
+          "error": null,
+          "version": 7,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuWorkspaceEditTransactionEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.operationKind, .unknown("future_operation"))
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future WorkspaceEdit transaction value")
+            return
+        }
+        XCTAssertEqual(value["mode"], .string("future_mode"))
+        XCTAssertEqual(value["items"], .array([.number(1), .string("x")]))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "operation": "apply",
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 777777,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 8
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuWorkspaceEditTransactionEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.operationKind, .apply)
+        XCTAssertEqual(failure.statusKind, .error)
         XCTAssertEqual(failure.value, .null)
         XCTAssertEqual(failure.error?.code, "future_error")
         XCTAssertEqual(failure.error?.message, "future failure")

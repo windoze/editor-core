@@ -115,6 +115,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
             & ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -147,6 +151,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "multi_document_special_event_stream_envelope"
             && feature["bit"] == 28
             && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "workspace_edit_transaction_envelope"
+            && feature["bit"] == 29
+            && feature["flag"] == ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -374,6 +383,107 @@ fn ffi_event_stream_envelope_json_reports_snapshots_and_errors() {
             .len(),
         0
     );
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+}
+
+#[test]
+fn ffi_workspace_edit_transaction_envelope_json_reports_success_and_errors() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let text = CString::new("hello\n").unwrap();
+    let mut tab_id = 0u64;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, text.as_ptr(), 80, &mut tab_id),
+        ECU_OK
+    );
+    let uri = CString::new("file:///project/App.swift").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_document_uri(multi, tab_id, uri.as_ptr()),
+        ECU_OK
+    );
+
+    let workspace_edit = CString::new(
+        r#"{
+          "changes": {
+            "file:///project/App.swift": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 5 }
+                },
+                "newText": "Hello"
+              }
+            ]
+          }
+        }"#,
+    )
+    .unwrap();
+    let preview = CString::new("preview").unwrap();
+    let preview_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(
+            multi,
+            preview.as_ptr(),
+            workspace_edit.as_ptr(),
+        ),
+    );
+    let preview_envelope: serde_json::Value = serde_json::from_str(&preview_json).unwrap();
+    assert_eq!(preview_envelope["ok"], true);
+    assert_eq!(preview_envelope["operation"], "preview");
+    assert_eq!(preview_envelope["status"], "success");
+    assert_eq!(preview_envelope["value"]["mode"], "preview");
+    assert_eq!(preview_envelope["value"]["applied"], false);
+    assert!(preview_envelope["error"].is_null());
+    assert_eq!(preview_envelope["version"], ECU_ABI_VERSION);
+
+    let undo = CString::new("undo").unwrap();
+    let undo_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(
+            multi,
+            undo.as_ptr(),
+            ptr::null(),
+        ),
+    );
+    let undo_envelope: serde_json::Value = serde_json::from_str(&undo_json).unwrap();
+    assert_eq!(undo_envelope["ok"], true);
+    assert_eq!(undo_envelope["operation"], "undo");
+    assert_eq!(undo_envelope["value"]["undone"], false);
+
+    let unknown = CString::new("future_operation").unwrap();
+    let error_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(
+            multi,
+            unknown.as_ptr(),
+            workspace_edit.as_ptr(),
+        ),
+    );
+    let error_envelope: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error_envelope["ok"], false);
+    assert_eq!(error_envelope["operation"], "future_operation");
+    assert_eq!(error_envelope["status"], "error");
+    assert!(error_envelope["value"].is_null());
+    assert_eq!(error_envelope["error"]["code"], "invalid_argument");
+    assert_eq!(error_envelope["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert!(
+        error_envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown workspace edit transaction operation")
+    );
+
+    let null_operation_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(
+            multi,
+            ptr::null(),
+            workspace_edit.as_ptr(),
+        ),
+    );
+    let null_operation: serde_json::Value = serde_json::from_str(&null_operation_json).unwrap();
+    assert_eq!(null_operation["ok"], false);
+    assert!(null_operation["operation"].is_null());
+    assert_eq!(null_operation["error"]["code"], "invalid_argument");
+    assert_eq!(null_operation["error"]["message"], "operation_utf8 is null");
 
     unsafe { editor_core_ui_ffi_multi_document_free(multi) };
 }

@@ -359,6 +359,130 @@ public struct EcuWorkspaceEditTransactionUndoResult: Decodable, Equatable, Senda
     }
 }
 
+public enum EcuWorkspaceEditTransactionOperation: Hashable, Sendable {
+    case preview
+    case apply
+    case undo
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "preview":
+            self = .preview
+        case "apply":
+            self = .apply
+        case "undo":
+            self = .undo
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .preview:
+            return "preview"
+        case .apply:
+            return "apply"
+        case .undo:
+            return "undo"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public enum EcuWorkspaceEditTransactionEnvelopeStatus: Hashable, Sendable {
+    case success
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "success":
+            self = .success
+        case "error":
+            self = .error
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .success:
+            return "success"
+        case .error:
+            return "error"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public struct EcuWorkspaceEditTransactionEnvelope: Decodable, Equatable, Sendable {
+    public let ok: Bool
+    public let operation: String?
+    public let status: String
+    public let value: EcuJSONValue?
+    public let error: EcuWorkspaceEditTransactionEnvelopeError?
+    public let version: UInt32
+
+    public var operationKind: EcuWorkspaceEditTransactionOperation? {
+        operation.map(EcuWorkspaceEditTransactionOperation.init(rawValue:))
+    }
+
+    public var statusKind: EcuWorkspaceEditTransactionEnvelopeStatus {
+        EcuWorkspaceEditTransactionEnvelopeStatus(rawValue: status)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case operation
+        case status
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        operation = try container.decodeIfPresent(String.self, forKey: .operation)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        if container.contains(.value) {
+            value = try container.decode(EcuJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcuWorkspaceEditTransactionEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcuWorkspaceEditTransactionEnvelopeError: Decodable, Equatable, Sendable {
+    public let code: String
+    public let status: EcuStatus?
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcuStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 public struct EcuWorkspaceDiagnosticTarget: Decodable, Equatable, Sendable {
     public let uri: String
     public let line: UInt32
@@ -1008,6 +1132,78 @@ public final class MultiDocumentEditorUI {
             from: undoLastWorkspaceEditTransactionJSON(),
             context: "multi_document_undo_last_workspace_edit_transaction_decode"
         )
+    }
+
+    public func workspaceEditTransactionEnvelopeJSON(
+        operationRawValue: String,
+        workspaceEditJSON: String? = nil
+    ) throws -> String {
+        try operationRawValue.withCString { operationPtr in
+            if let workspaceEditJSON {
+                return try workspaceEditJSON.withCString { editPtr in
+                    try ffiStringResult(context: "multi_document_workspace_edit_transaction_envelope_json") {
+                        editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(
+                            handle,
+                            operationPtr,
+                            editPtr
+                        )
+                    }
+                }
+            }
+            return try ffiStringResult(context: "multi_document_workspace_edit_transaction_envelope_json") {
+                editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(
+                    handle,
+                    operationPtr,
+                    nil
+                )
+            }
+        }
+    }
+
+    public func workspaceEditTransactionEnvelopeJSON(
+        operation: EcuWorkspaceEditTransactionOperation,
+        workspaceEditJSON: String? = nil
+    ) throws -> String {
+        try workspaceEditTransactionEnvelopeJSON(
+            operationRawValue: operation.rawValue,
+            workspaceEditJSON: workspaceEditJSON
+        )
+    }
+
+    public func workspaceEditTransactionEnvelope(
+        operationRawValue: String,
+        workspaceEditJSON: String? = nil
+    ) throws -> EcuWorkspaceEditTransactionEnvelope {
+        try decode(
+            EcuWorkspaceEditTransactionEnvelope.self,
+            from: workspaceEditTransactionEnvelopeJSON(
+                operationRawValue: operationRawValue,
+                workspaceEditJSON: workspaceEditJSON
+            ),
+            context: "multi_document_workspace_edit_transaction_envelope_decode"
+        )
+    }
+
+    public func workspaceEditTransactionEnvelope(
+        operation: EcuWorkspaceEditTransactionOperation,
+        workspaceEditJSON: String? = nil
+    ) throws -> EcuWorkspaceEditTransactionEnvelope {
+        try workspaceEditTransactionEnvelope(
+            operationRawValue: operation.rawValue,
+            workspaceEditJSON: workspaceEditJSON
+        )
+    }
+
+    public func previewWorkspaceEditTransactionEnvelope(_ workspaceEditJSON: String) throws -> EcuWorkspaceEditTransactionEnvelope {
+        try workspaceEditTransactionEnvelope(operation: .preview, workspaceEditJSON: workspaceEditJSON)
+    }
+
+    public func applyWorkspaceEditTransactionEnvelope(_ workspaceEditJSON: String) throws -> EcuWorkspaceEditTransactionEnvelope {
+        try workspaceEditTransactionEnvelope(operation: .apply, workspaceEditJSON: workspaceEditJSON)
+    }
+
+    public func undoLastWorkspaceEditTransactionEnvelope() throws -> EcuWorkspaceEditTransactionEnvelope {
+        try workspaceEditTransactionEnvelope(operation: .undo)
     }
 
     public func workspaceEditTransactionEventsLatestSequence() throws -> UInt64 {

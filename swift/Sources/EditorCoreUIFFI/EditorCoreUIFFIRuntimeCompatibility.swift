@@ -223,6 +223,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             name: "multi-document special event stream envelope",
             reason: "Swift hosts can drain workspace diagnostics and WorkspaceEdit transaction event streams through structured envelopes."
         ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .workspaceEditTransactionEnvelope,
+            name: "WorkspaceEdit transaction envelope",
+            reason: "Swift hosts can preview, apply, and undo multi-document WorkspaceEdit transactions through structured result envelopes."
+        ),
     ]
 
     public static let requiredFeatures: [EditorCoreUIFFIRuntimeFeature] = knownFeatures

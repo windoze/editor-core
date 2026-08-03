@@ -1716,6 +1716,18 @@
     - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope workspace edit transactions`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 MultiDocument WorkspaceEdit transaction 的 preview/apply/undo JSON result 面纳入统一结构化 envelope。
+  - 提交边界：新增 `editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(MultiDocumentEditorUi*, operation, workspace_edit_json)` 和 `ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE` feature bit；operation 支持 `preview`、`apply`、`undo`，legacy preview/apply/undo raw JSON API 保持 null+last_error 语义；Swift `MultiDocumentEditorUI` 新增 raw/typed envelope accessor 与 `EcuWorkspaceEditTransactionEnvelope`，runtime compatibility 和 Atto optional capability report 同步新增该能力。该提交不切换 App 主路径，不替换现有 typed WorkspaceEdit transaction wrappers，不统一 diagnostics/apply/snapshot 等 remaining JSON helper，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi --release ffi_workspace_edit_transaction_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testWorkspaceEditTransactionEnvelope'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

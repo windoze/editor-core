@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 536870911,
+  "feature_flags": 1073741823,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -185,6 +185,55 @@ The returned string is owned by the caller and must be freed with
 `ECU_FEATURE_EVENT_STREAM_ENVELOPE`. The multi-document-only
 `workspace_diagnostics_events` and `workspace_edit_transaction_events` streams are additionally
 advertised by `ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE`.
+
+## WorkspaceEdit Transaction Envelope
+
+The legacy WorkspaceEdit transaction APIs remain available as raw JSON string functions:
+`editor_core_ui_ffi_multi_document_preview_workspace_edit_transaction_json(...)`,
+`editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(...)`, and
+`editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(...)`. Hosts that want
+a single JSON result/error shape can use the additive operation-based envelope variant:
+
+```c
+char* editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* operation_utf8,
+    const char* workspace_edit_json_utf8
+);
+```
+
+`operation_utf8` accepts `preview`, `apply`, or `undo`. `preview` and `apply` require
+`workspace_edit_json_utf8`; `undo` ignores it and may be called with null.
+
+Success:
+
+```json
+{
+  "ok": true,
+  "operation": "preview",
+  "status": "success",
+  "value": { "mode": "preview", "applied": false },
+  "error": null,
+  "version": 1
+}
+```
+
+Error:
+
+```json
+{
+  "ok": false,
+  "operation": "future_operation",
+  "status": "error",
+  "value": null,
+  "error": { "code": "invalid_argument", "status": 1, "message": "unknown workspace edit transaction operation \"future_operation\"" },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE`.
 
 ## LSP Workspace Lifecycle
 
