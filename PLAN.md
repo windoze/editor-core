@@ -1523,6 +1523,12 @@
 ### 提交
 
 - `feat(swift): type editor configuration and capabilities`
+- 中间提交：`feat(app): snapshot editor configuration capabilities`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；为 Swift/App 现有偏好和运行时能力补一个可序列化、可 round-trip、可审计的 typed snapshot 起点。
+  - 提交边界：新增 `AttoConfigurationSnapshot` / `AttoCapabilitySnapshot`，覆盖当前已落地的 editor/rendering/language/workspace 偏好、UI FFI runtime ABI/features、LSP server capability 摘要以及 platform/App capability；`AttoPreferences` 可生成当前有效配置 snapshot，runtime compatibility report 可生成 capability snapshot；JSON decode 默认忽略 unknown future fields。该提交不改变运行时应用偏好的行为，不新增 Rust/FFI ABI，不实现 Sublime settings scope/user-vs-workspace settings 合并、runtime overrides 持久化、完整 core/headless capability negotiation 或迁移策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'Atto(Preferences|RuntimeCompatibility)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

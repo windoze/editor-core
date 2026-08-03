@@ -85,6 +85,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
                 EditorCoreUIFFIFeatures.multiDocumentStateEvents.rawValue,
                 EditorCoreUIFFIFeatures.workspaceOutlineSnapshot.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentTabDocumentURI.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentTabLanguageID.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentWorkspaceEditTransaction.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentWorkspaceEditTransactionEvents.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentWorkspaceRoots.rawValue,
@@ -101,6 +102,141 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
 
         let report = try XCTUnwrap(delegate._runtimeCompatibilityReportForTesting())
         XCTAssertTrue(report.isCompatible, report.diagnosticMessage)
+    }
+
+    func testCapabilitySnapshotSummarizesRuntimeAndLspCapabilities() throws {
+        let runtimeInfo = EditorCoreUIFFIRuntimeInfo(
+            abiVersion: AttoRuntimeCompatibility.minimumUIABIVersion,
+            version: "test-runtime",
+            features: [.jsonCommandDispatch, .multiDocumentUI, .lspStatusSnapshot]
+        )
+        let report = AttoRuntimeCompatibility.evaluate(runtimeInfo: runtimeInfo)
+        let lspCapabilities = EcuLspCapabilities(
+            semanticTokens: true,
+            semanticTokensDelta: false,
+            completionItemResolve: true,
+            completion: EcuLspCompletionCapability(
+                supported: true,
+                triggerCharacters: [".", ":"],
+                allCommitCharacters: [";", ")"]
+            ),
+            foldingRanges: true,
+            onTypeFormatting: true,
+            signatureHelp: EcuLspSignatureHelpCapability(
+                supported: true,
+                triggerCharacters: ["("],
+                retriggerCharacters: [","]
+            )
+        )
+
+        let snapshot = AttoCapabilitySnapshot(
+            runtimeReport: report,
+            lspCapabilities: lspCapabilities,
+            platform: AttoPlatformCapabilitySnapshot(
+                operatingSystem: "macOS",
+                operatingSystemVersion: "14.0.0",
+                architecture: "arm64",
+                supportsAppKit: true,
+                supportsNativeFileDialogs: true,
+                supportsChildWindows: true
+            ),
+            app: AttoAppCapabilitySnapshot(
+                supportsCommandPalette: true,
+                supportsMenuCommandValidation: true,
+                supportsUserDefaultsPersistence: true,
+                supportsWorkspaceSessions: true,
+                supportsMultipleWindows: true
+            )
+        )
+
+        XCTAssertEqual(snapshot.schemaVersion, AttoCapabilitySnapshot.currentSchemaVersion)
+        XCTAssertEqual(snapshot.uiRuntime?.abiVersion, AttoRuntimeCompatibility.minimumUIABIVersion)
+        XCTAssertEqual(snapshot.uiRuntime?.version, "test-runtime")
+        XCTAssertEqual(snapshot.uiRuntime?.rawFeatureFlags, runtimeInfo.features.rawValue)
+        XCTAssertEqual(
+            snapshot.uiRuntime?.knownFeatureNames,
+            ["JSON command dispatch", "multi-document UI", "LSP status snapshot"]
+        )
+        XCTAssertTrue(snapshot.requiredUIFeatures.contains { $0.name == "typed derived snapshots" })
+        XCTAssertTrue(snapshot.missingRequiredUIFeatures.contains("typed derived snapshots"))
+        XCTAssertFalse(snapshot.missingOptionalUIFeatures.contains("LSP status snapshot"))
+        XCTAssertEqual(snapshot.lsp?.semanticTokens, true)
+        XCTAssertEqual(snapshot.lsp?.completionTriggerCharacters, [".", ":"])
+        XCTAssertEqual(snapshot.lsp?.completionCommitCharacters, [";", ")"])
+        XCTAssertEqual(snapshot.lsp?.signatureHelpTriggerCharacters, ["("])
+        XCTAssertEqual(snapshot.platform.operatingSystemVersion, "14.0.0")
+        XCTAssertTrue(snapshot.app.supportsWorkspaceSessions)
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(snapshot)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(json.contains(#""ui_runtime""#))
+        XCTAssertTrue(json.contains(#""completion_trigger_characters":[".",":"]"#))
+
+        let decoded = try JSONDecoder().decode(AttoCapabilitySnapshot.self, from: data)
+        XCTAssertEqual(decoded, snapshot)
+    }
+
+    func testCapabilitySnapshotIgnoresUnknownFutureFields() throws {
+        let json = """
+        {
+          "schema_version": 1,
+          "ui_runtime": {
+            "abi_version": 1,
+            "version": "test",
+            "raw_feature_flags": 3,
+            "known_feature_names": ["JSON command dispatch"],
+            "future_runtime_field": true
+          },
+          "required_ui_features": [],
+          "optional_ui_features": [],
+          "missing_required_ui_features": [],
+          "missing_optional_ui_features": [],
+          "lsp": {
+            "semantic_tokens": true,
+            "semantic_tokens_delta": false,
+            "completion_supported": true,
+            "completion_item_resolve": false,
+            "completion_trigger_characters": ["."],
+            "completion_commit_characters": [],
+            "folding_ranges": true,
+            "on_type_formatting": false,
+            "signature_help_supported": false,
+            "signature_help_trigger_characters": [],
+            "signature_help_retrigger_characters": [],
+            "future_lsp_field": "ignored"
+          },
+          "platform": {
+            "operating_system": "macOS",
+            "operating_system_version": "14.0.0",
+            "architecture": "arm64",
+            "supports_app_kit": true,
+            "supports_native_file_dialogs": true,
+            "supports_child_windows": true,
+            "future_platform_field": "ignored"
+          },
+          "app": {
+            "supports_command_palette": true,
+            "supports_menu_command_validation": true,
+            "supports_user_defaults_persistence": true,
+            "supports_workspace_sessions": true,
+            "supports_multiple_windows": true,
+            "future_app_field": "ignored"
+          },
+          "load_error": null,
+          "future_top_level": "ignored"
+        }
+        """
+
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let snapshot = try JSONDecoder().decode(AttoCapabilitySnapshot.self, from: data)
+
+        XCTAssertEqual(snapshot.uiRuntime?.version, "test")
+        XCTAssertEqual(snapshot.lsp?.semanticTokens, true)
+        XCTAssertEqual(snapshot.lsp?.completionTriggerCharacters, ["."])
+        XCTAssertEqual(snapshot.platform.architecture, "arm64")
+        XCTAssertTrue(snapshot.app.supportsCommandPalette)
     }
 
     private func allRequiredFeatures() -> EditorCoreUIFFIFeatures {

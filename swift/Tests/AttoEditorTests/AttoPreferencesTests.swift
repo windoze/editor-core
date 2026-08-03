@@ -280,4 +280,115 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.storedCommentConfigurations, [:])
         XCTAssertNil(prefs.commentConfigurationOverride(forLanguageKey: "lisp"))
     }
+
+    func testEffectiveConfigurationSnapshotRoundTripsCurrentPreferences() throws {
+        let (defaults, _) = makeIsolatedDefaults()
+        let prefs = AttoPreferences(defaults: defaults, env: [
+            "ATTO_EDITOR_THEME": "Atto Light",
+            "ATTO_EDITOR_WRAP_MODE": "word",
+            "ATTO_EDITOR_LSP_AUTO_RESTART_MAX_ATTEMPTS": "4",
+            "ATTO_EDITOR_LSP_AUTO_RESTART_BASE_DELAY_SECONDS": "8.5",
+        ])
+        prefs.setFontFaces([" Fira Code ", "PingFang SC", "fira code"])
+        prefs.setFontSizePoints(16.5)
+        prefs.setLigaturesEnabled(true)
+        prefs.setAutoPairsEnabled(false)
+        prefs.setWrapIndent(.fixedCells(3))
+        prefs.setCommentConfiguration(.lineAndBlock("//", "/*", "*/"), forLanguageKey: "  Swift  ")
+        prefs.setLspAutoRestartDisabled(true, forServerName: " Swift-LSP ", serverCommand: nil)
+        prefs.setLspAutoRestartMaxAttempts(7, forServerName: "Swift-LSP", serverCommand: nil)
+
+        let workspaceRootURL = URL(fileURLWithPath: "/tmp/Atto Project", isDirectory: true)
+        let snapshot = prefs.effectiveConfigurationSnapshot(workspaceRootURL: workspaceRootURL)
+
+        XCTAssertEqual(snapshot.schemaVersion, AttoConfigurationSnapshot.currentSchemaVersion)
+        XCTAssertEqual(snapshot.editor.fontFamilies, ["Fira Code", "PingFang SC"])
+        XCTAssertEqual(snapshot.editor.fontSizePoints, 16.5)
+        XCTAssertFalse(snapshot.editor.autoPairsEnabled)
+        XCTAssertEqual(snapshot.editor.wrapMode, "word")
+        XCTAssertEqual(snapshot.editor.wrapIndent, "fixed_cells:3")
+        XCTAssertEqual(snapshot.rendering.themeName, "Atto Light")
+        XCTAssertTrue(snapshot.rendering.fontLigaturesEnabled)
+        XCTAssertEqual(
+            snapshot.language.commentConfigurations,
+            ["swift": AttoCommentConfiguration.lineAndBlock("//", "/*", "*/")]
+        )
+        XCTAssertEqual(snapshot.language.lspAutoRestart.enabled, true)
+        XCTAssertEqual(snapshot.language.lspAutoRestart.maxAttempts, 4)
+        XCTAssertEqual(snapshot.language.lspAutoRestart.baseDelaySeconds, 8.5)
+        XCTAssertEqual(snapshot.language.lspAutoRestart.disabledServerKeys, ["swift-lsp"])
+        XCTAssertEqual(snapshot.language.lspAutoRestart.serverMaxAttempts, ["swift-lsp": 7])
+        XCTAssertEqual(snapshot.workspace.rootURL, workspaceRootURL.absoluteString)
+        XCTAssertEqual(snapshot.workspace.rootPath, workspaceRootURL.path)
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(snapshot)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(json.contains(#""schema_version":1"#))
+        XCTAssertTrue(json.contains(#""font_families":["Fira Code","PingFang SC"]"#))
+        XCTAssertTrue(json.contains(#""block_start""#))
+
+        let decoded = try JSONDecoder().decode(AttoConfigurationSnapshot.self, from: data)
+        XCTAssertEqual(decoded, snapshot)
+    }
+
+    func testConfigurationSnapshotIgnoresUnknownFutureFields() throws {
+        let json = """
+        {
+          "schema_version": 99,
+          "future_top_level": true,
+          "editor": {
+            "font_families": ["Menlo"],
+            "font_size_points": 13,
+            "auto_pairs_enabled": true,
+            "wrap_mode": "char",
+            "wrap_indent": "none",
+            "future_editor_field": "ignored"
+          },
+          "rendering": {
+            "theme_name": "Atto Dark",
+            "font_ligatures_enabled": false,
+            "future_rendering_field": "ignored"
+          },
+          "language": {
+            "comment_configurations": {
+              "swift": {
+                "line": "//",
+                "block_start": "/*",
+                "block_end": "*/",
+                "future_comment_field": "ignored"
+              }
+            },
+            "lsp_auto_restart": {
+              "enabled": true,
+              "max_attempts": 3,
+              "base_delay_seconds": 5,
+              "disabled_server_keys": [],
+              "server_max_attempts": {},
+              "server_base_delay_seconds": {},
+              "future_lsp_policy_field": "ignored"
+            },
+            "future_language_field": "ignored"
+          },
+          "workspace": {
+            "root_url": "file:///tmp/project/",
+            "root_path": "/tmp/project",
+            "future_workspace_field": "ignored"
+          }
+        }
+        """
+
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let snapshot = try JSONDecoder().decode(AttoConfigurationSnapshot.self, from: data)
+
+        XCTAssertEqual(snapshot.schemaVersion, 99)
+        XCTAssertEqual(snapshot.editor.fontFamilies, ["Menlo"])
+        XCTAssertEqual(snapshot.rendering.themeName, "Atto Dark")
+        XCTAssertEqual(
+            snapshot.language.commentConfigurations["swift"],
+            AttoCommentConfiguration.lineAndBlock("//", "/*", "*/")
+        )
+        XCTAssertEqual(snapshot.workspace.rootPath, "/tmp/project")
+    }
 }

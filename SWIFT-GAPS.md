@@ -167,6 +167,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 332 继续推进阶段 8 的命名宏删除历史管理：`macro.remove_delete_history_entry` 现在提供按最近优先 1-based index 移除指定删除历史记录的命令和 Tools 菜单入口；参数 schema 会按当前历史生成 choices，移除前会独立确认，确认后持久化并刷新/关闭删除历史 palette。仍缺独立宏管理面板、删除历史批量选择管理、完整可视化回收站、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
 - 阶段 333 继续推进阶段 8 的命名宏删除历史管理：`macro.remove_delete_history_entries` 现在提供基于 command 参数的批量移除删除历史命令和 Tools 菜单入口；`indices` 参数使用最近优先的 1-based JSON 整数数组，移除前会独立确认，确认后持久化并刷新/关闭删除历史 palette。仍缺独立宏管理面板、可视化删除历史批量选择、完整可视化回收站、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
 - 阶段 334 继续推进阶段 8 的命名宏删除历史管理：`macro.manage_delete_history` 现在提供独立 AppKit 删除历史管理面板，可按最近优先查看删除历史、单选恢复、多选移除和清空历史，并复用既有确认、持久化与 restore/remove/clear 逻辑；已打开的删除历史 palette 与管理面板会在历史变更后同步刷新或关闭。仍缺完整命名宏管理面板、完整可视化回收站、完整 Sublime `.sublime-macro` 扩展语义、plugin/package command runtime，以及命令内部 modal prompt 参数捕获。
+- 阶段 335 开始推进阶段 9 的配置/capability DTO：AttoEditor 现在有 `AttoConfigurationSnapshot` / `AttoCapabilitySnapshot`，可把当前有效 editor/rendering/language/workspace 偏好、UI FFI ABI/features、LSP capability 摘要和 platform/App capability 编码为 typed Codable snapshot；JSON decode 会忽略 unknown future fields，测试覆盖 round trip 与兼容性。仍缺 Sublime settings scope/user-vs-workspace settings 合并、runtime overrides、完整迁移策略和面向第三方 host 的完整 capability negotiation。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
@@ -1484,7 +1485,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - Swift `EditorUI` typed API 覆盖主路径，但不是完整 command API。
 - LSP interactive request 已覆盖一批 raw JSON result API；LSP status/capabilities 已有 typed snapshot，`EditorUi` request lifecycle event stream 起点、Swift event metadata typed accessor、completion result/resolve item typed payload wrapper、location family result typed payload wrapper、rename/WorkspaceEdit typed payload wrapper、code action result/resolve typed payload wrapper、symbols/color/hierarchy/diagnostics/selection range/linked editing/code lens/folding ranges/semantic tokens typed payload wrapper 已补齐。
 - 长任务、异步请求、取消、错误、诊断日志没有统一 Swift 事件流。
-- 配置 DTO 不完整，例如 wrap、indentation、comment、auto-pairs、word boundary、search options。
+- 配置 DTO 已有 `AttoConfigurationSnapshot` / `AttoCapabilitySnapshot` 起点，覆盖当前有效 editor/rendering/language/workspace 偏好、UI FFI ABI/features、LSP capability 摘要和 platform/App capability；但 Sublime settings scope、user/workspace settings 合并、runtime overrides、word boundary/search options 等仍不完整。
 - headless Swift FFI 已有 ABI version；阶段 69 已补齐 UI FFI 的 ABI version / feature flags C ABI 和 Swift `runtimeInfo()` typed facade，阶段 80 已新增 multi-document UI feature flag，阶段 81 已把该 feature 纳入 AttoEditor 启动期必需能力；阶段 70 已补 AttoEditor 启动期最低 ABI/必需 feature compatibility gate，阶段 105 已补基础逐命令可选 feature 降级。后续仍缺更细粒度的逐面板降级策略和面向第三方 host 的 ABI capability negotiation。
 
 建议演进方向：
@@ -1516,6 +1517,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor command registry 已接入基础 group/requiresEditor/isEnabled 元数据，菜单、palette 和 `executeCommand(id:)` 共用同一启用状态。
 - 已完成：AttoEditor command registry 已接入基础参数 schema、宏录制策略、静态 editor-core JSON payload 元数据和 `executeCommand(id:arguments:)` typed arguments 路径；默认命令集已有重复 command id 检测测试。
 - 已完成：AttoEditor command registry 已接入 runtime feature requirement，LSP/WorkspaceEdit 可选 feature 缺失时会按命令禁用相关菜单、palette 项和 `executeCommand` 路径，而基础编辑命令保持可用。
+- 已完成：AttoEditor 已有 `AttoConfigurationSnapshot` / `AttoCapabilitySnapshot` typed DTO 起点，可审计当前有效偏好、UI FFI runtime ABI/features、LSP capability 摘要和 platform/App capability，并支持 Codable round trip 与 unknown future fields 兼容。
 - 已完成：AttoEditor 主命令 palette 已开始展示 command registry 分组，并能按命令 title、group 和 command id 搜索；LSP/Project/Quick Open 等结果 palette 仍保持原有简洁标题。
 - 已完成：AttoEditor 主命令 palette 已有 bounded in-memory recent command ordering，统一 command id 路径成功触发的命令会在下一次打开 palette 时排到前面。
 - 已完成：AttoEditor 主命令 palette 的 recent command ordering 已通过 `AttoRecentCommandStore` 跨启动持久化，默认 App 启动可恢复最近命令顺序。

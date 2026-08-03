@@ -1,10 +1,16 @@
 import EditorCoreUIFFI
 import Foundation
 
-struct AttoCommentConfiguration: Equatable {
+struct AttoCommentConfiguration: Equatable, Codable {
     var line: String?
     var blockStart: String?
     var blockEnd: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case line
+        case blockStart = "block_start"
+        case blockEnd = "block_end"
+    }
 
     var jsonObject: [String: String] {
         var out: [String: String] = [:]
