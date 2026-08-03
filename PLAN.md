@@ -2187,6 +2187,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover xcui real lsp result flow`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；把 opt-in `XCUIApplication` LSP panel flow 从 injected store seam 推进到真实 stdio LSP request/response 触发链。
+  - 提交边界：`AttoEditorXCUIApplicationSmokeTests` 新增测试侧 Python stdio fixture LSP server，launch app 时只给该用例注入 `ATTO_EDITOR_LSP_CMD`；新增 real-LSP smoke flow，打开 `.rs` 文件后等待真实 `didOpen`，经 command palette 发送 `textDocument/definition` 和 `textDocument/documentSymbol` 请求，断言 Locations、Document Symbols 和 Workspace Outline panel 均由真实 server response 填充，并通过 row open/status bar position 验证目标跳转。该提交不启用默认 CI GUI 测试、不依赖外部 rust-analyzer/sourcekit-lsp、不改变产品 LSP 启动/请求语义、不提交 golden PNG。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
+    - `git diff --check`
 - 中间提交：`test(app): cover visual floating panels`
   - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 visual baseline manifest，覆盖 floating panel / popup 类 UI，而不只捕获主 editor chrome。
   - 提交边界：测试 harness 新增 manifest `captureTarget`，可捕获主窗口或指定 child floating window 的 content view，并支持测试侧 `lspSymbolResults` 与 `completionPopup` 场景动作；manifest 新增 dark LSP symbol results floating panel 和 dark completion popup 两个 artifact case 及共享 Swift fixture。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 UI 或运行时代码，也不覆盖所有 floating panel/popup 类型。

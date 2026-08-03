@@ -319,7 +319,146 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         )
     }
 
-    private func launchAttoEditor(resultFixtures: Bool = false) throws -> LaunchedAttoApp {
+    func testRealLspServerLocationSymbolAndWorkspaceOutlineSmokeFlow() throws {
+        let runtimeRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("atto-xcui-real-lsp-\(UUID().uuidString)", isDirectory: true)
+        let scriptURL = runtimeRoot.appendingPathComponent("fixture-lsp.py", isDirectory: false)
+        let captureURL = runtimeRoot.appendingPathComponent("fixture-lsp-capture.jsonl", isDirectory: false)
+        try FileManager.default.createDirectory(at: runtimeRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: runtimeRoot) }
+        try writeRealLspFixtureServerScript(scriptURL: scriptURL, captureURL: captureURL)
+
+        let launched = try launchAttoEditor(environment: [
+            "ATTO_EDITOR_LSP_CMD": scriptURL.path,
+        ])
+        defer { launched.cleanUp() }
+
+        XCTAssertTrue(launched.app.wait(for: .runningForeground, timeout: Self.timeout))
+        XCTAssertTrue(launched.app.windows.firstMatch.waitForExistence(timeout: Self.timeout))
+
+        let workspaceURL = launched.runtimeRoot.appendingPathComponent("real-lsp", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let fileURL = workspaceURL.appendingPathComponent("fixture_real_lsp.rs", isDirectory: false)
+        try """
+        fn fixture_main() {
+            fixture_child();
+        }
+
+        fn fixture_child() {}
+        """.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        try enqueueOpenFileRequest(fileURL, launched: launched)
+        let editorView = try firstElement(
+            identifierPrefix: dynamicIdentifierPrefix(AttoAccessibilityID.editorView),
+            in: launched.app
+        )
+        editorView.click()
+        XCTAssertNotNil(
+            waitForFileText(at: captureURL, contains: "textDocument/didOpen"),
+            "expected fixture LSP server to receive a real didOpen notification"
+        )
+
+        try runCommandPaletteCommand("lsp.go_to_definition", in: launched.app)
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.statusBarPositionLabel,
+                contains: "Ln 5, Col 4",
+                in: launched.app
+            ),
+            "expected real fixture LSP definition response to navigate to fixture_child"
+        )
+
+        try runCommandPaletteCommand("lsp.show_locations_panel", in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspLocationPanel, in: launched.app)
+        XCTAssertNotNil(
+            waitForAnyElementText(
+                identifier: AttoAccessibilityID.lspLocationPanelRowTitle,
+                contains: "fixture_real_lsp.rs",
+                in: launched.app
+            ),
+            "expected real fixture LSP definition response to populate Locations panel"
+        )
+        launched.app.typeKey(.return, modifierFlags: [])
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.statusBarPositionLabel,
+                contains: "Ln 5, Col 4",
+                in: launched.app
+            ),
+            "expected opening the real LSP Locations panel row to keep the fixture_child target"
+        )
+
+        try runCommandPaletteCommand("lsp.document_symbols", in: launched.app)
+        XCTAssertNotNil(
+            waitForAnyElementText(
+                identifier: AttoAccessibilityID.commandPaletteRowTitle(prefix: "AttoEditor.LSP.SymbolResults"),
+                contains: "fixture_child",
+                in: launched.app
+            ),
+            "expected real fixture LSP documentSymbol response to populate Symbol Results"
+        )
+        launched.app.typeKey(.escape, modifierFlags: [])
+
+        try runCommandPaletteCommand("lsp.show_symbols_panel", in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspSymbolPanel, in: launched.app)
+        let symbolSearch = try requiredElement(identifier: AttoAccessibilityID.lspSymbolPanelSearchField, in: launched.app)
+        symbolSearch.click()
+        launched.app.typeText("fixture_child")
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.lspSymbolPanelRowTitle,
+                contains: "fixture_child",
+                in: launched.app
+            ),
+            "expected real fixture LSP symbols to populate Symbols panel"
+        )
+        launched.app.typeKey(.return, modifierFlags: [])
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.statusBarPositionLabel,
+                contains: "Ln 5, Col 4",
+                in: launched.app
+            ),
+            "expected opening the real LSP Symbols panel row to navigate to fixture_child"
+        )
+
+        try runCommandPaletteCommand("lsp.show_workspace_outline_panel", in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspSymbolPanel, in: launched.app)
+        let outlineSearch = try requiredElement(identifier: AttoAccessibilityID.lspSymbolPanelSearchField, in: launched.app)
+        outlineSearch.click()
+        launched.app.typeText("fixture_child")
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.lspSymbolPanelRowTitle,
+                contains: "fixture_child",
+                in: launched.app
+            ),
+            "expected real fixture LSP document symbols to feed Workspace Outline"
+        )
+        launched.app.typeKey(.return, modifierFlags: [])
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.statusBarPositionLabel,
+                contains: "Ln 5, Col 4",
+                in: launched.app
+            ),
+            "expected opening the real LSP Workspace Outline row to navigate to fixture_child"
+        )
+
+        XCTAssertNotNil(
+            waitForFileText(at: captureURL, contains: "textDocument/definition"),
+            "expected fixture LSP server to receive a real definition request"
+        )
+        XCTAssertNotNil(
+            waitForFileText(at: captureURL, contains: "textDocument/documentSymbol"),
+            "expected fixture LSP server to receive a real documentSymbol request"
+        )
+    }
+
+    private func launchAttoEditor(
+        resultFixtures: Bool = false,
+        environment: [String: String] = [:]
+    ) throws -> LaunchedAttoApp {
         guard Self.isEnabled else {
             throw XCTSkip(
                 """
@@ -347,6 +486,9 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         app.launchEnvironment["ATTO_EDITOR_THEME"] = "Atto Dark"
         if resultFixtures {
             app.launchEnvironment[AttoEditorAreaViewController.xcuiResultFixturesEnvKey] = "1"
+        }
+        for (key, value) in environment {
+            app.launchEnvironment[key] = value
         }
         app.launch()
 
@@ -468,11 +610,157 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         return nil
     }
 
+    private func waitForAnyElementText(
+        identifier: String,
+        contains expected: String,
+        in app: XCUIApplication
+    ) -> String? {
+        let deadline = Date().addingTimeInterval(Self.timeout)
+        repeat {
+            let candidates = app.descendants(matching: .any)
+                .matching(identifier: identifier)
+                .allElementsBoundByIndex
+            for candidate in candidates where candidate.exists {
+                let text = text(from: candidate)
+                if text.contains(expected) {
+                    return text
+                }
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(Self.pollInterval))
+        } while Date() < deadline
+        return nil
+    }
+
     private func text(from element: XCUIElement) -> String {
         if let value = element.value as? String, value.isEmpty == false {
             return value
         }
         return element.label
+    }
+
+    private func writeRealLspFixtureServerScript(scriptURL: URL, captureURL: URL) throws {
+        let capturePath = captureURL.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let script = """
+        #!/usr/bin/env python3
+        import json
+        import sys
+        import traceback
+
+        capture_path = '\(capturePath)'
+
+        def log_event(method):
+            with open(capture_path, 'a', encoding='utf-8') as fh:
+                fh.write(json.dumps({'method': method}) + '\\n')
+
+        def read_message():
+            headers = {}
+            while True:
+                line = sys.stdin.buffer.readline()
+                if not line:
+                    return None
+                if line in (b'\\r\\n', b'\\n'):
+                    break
+                key, _, value = line.decode('ascii', 'ignore').partition(':')
+                headers[key.lower()] = value.strip()
+            length = int(headers.get('content-length', '0'))
+            if length <= 0:
+                return None
+            body = sys.stdin.buffer.read(length)
+            return json.loads(body.decode('utf-8'))
+
+        def send_response(request_id, result):
+            body = json.dumps(
+                {'jsonrpc': '2.0', 'id': request_id, 'result': result},
+                separators=(',', ':')
+            ).encode('utf-8')
+            sys.stdout.buffer.write(b'Content-Length: ' + str(len(body)).encode('ascii') + b'\\r\\n\\r\\n')
+            sys.stdout.buffer.write(body)
+            sys.stdout.buffer.flush()
+
+        def location(uri, line, character):
+            return {
+                'uri': uri,
+                'range': {
+                    'start': {'line': line, 'character': character},
+                    'end': {'line': line, 'character': character + 13},
+                },
+            }
+
+        def document_symbols():
+            return [
+                {
+                    'name': 'fixture_main',
+                    'kind': 12,
+                    'range': {
+                        'start': {'line': 0, 'character': 0},
+                        'end': {'line': 2, 'character': 1},
+                    },
+                    'selectionRange': {
+                        'start': {'line': 0, 'character': 3},
+                        'end': {'line': 0, 'character': 15},
+                    },
+                },
+                {
+                    'name': 'fixture_child',
+                    'kind': 12,
+                    'range': {
+                        'start': {'line': 4, 'character': 0},
+                        'end': {'line': 4, 'character': 21},
+                    },
+                    'selectionRange': {
+                        'start': {'line': 4, 'character': 3},
+                        'end': {'line': 4, 'character': 16},
+                    },
+                },
+            ]
+
+        try:
+            while True:
+                message = read_message()
+                if message is None:
+                    break
+                method = message.get('method')
+                if method:
+                    log_event(method)
+                if 'id' not in message:
+                    continue
+                request_id = message['id']
+                if method == 'initialize':
+                    send_response(request_id, {
+                        'capabilities': {
+                            'definitionProvider': True,
+                            'documentSymbolProvider': True,
+                            'workspaceSymbolProvider': True,
+                        },
+                        'serverInfo': {'name': 'atto-xcui-fixture-lsp'},
+                    })
+                elif method == 'textDocument/definition':
+                    uri = message.get('params', {}).get('textDocument', {}).get('uri', '')
+                    send_response(request_id, [location(uri, 4, 3)])
+                elif method == 'textDocument/documentSymbol':
+                    send_response(request_id, document_symbols())
+                elif method == 'workspace/symbol':
+                    uri = message.get('params', {}).get('textDocument', {}).get('uri', '')
+                    send_response(request_id, [
+                        {
+                            'name': 'fixture_child',
+                            'kind': 12,
+                            'location': location(uri, 4, 3),
+                        },
+                    ])
+                elif method == 'shutdown':
+                    send_response(request_id, None)
+                else:
+                    send_response(request_id, None)
+        except Exception:
+            with open(capture_path, 'a', encoding='utf-8') as fh:
+                fh.write(traceback.format_exc())
+            raise
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
     }
 
     private func assertElementCount(
