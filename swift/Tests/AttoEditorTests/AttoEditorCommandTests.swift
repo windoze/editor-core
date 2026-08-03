@@ -9637,6 +9637,32 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(vc.closeActivePane())
     }
 
+    func testPaneFocusUsesCoreActiveViewProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("focus-core-pane.txt")
+        try "abc".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        XCTAssertTrue(vc.splitActiveTabRight())
+
+        let tab = try XCTUnwrap(vc.activeTab)
+        XCTAssertEqual(tab.activePaneIndex, 1)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        try coreDocuments.setActiveViewIndex(tabId: coreTabID, viewIndex: 0)
+
+        XCTAssertTrue(vc.focusNextPaneInActiveTab())
+        let snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs[0].activeViewIndex, 1)
+        XCTAssertEqual(tab.activePaneIndex, 1)
+    }
+
     func testMovePaneCommandsReorderAppKitProjectionAndCoreMirror() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -9681,6 +9707,54 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc.moveActivePaneRight())
         snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
         XCTAssertEqual(snapshot.tabs[0].activeViewIndex, 1)
+    }
+
+    func testMoveAndClosePaneUseCoreActiveViewProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("move-core-pane.txt")
+        try "abc".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(vc.splitActiveTabRight())
+        XCTAssertTrue(vc.splitActiveTabRight())
+        vc.view.layoutSubtreeIfNeeded()
+
+        let original = findSubviews(of: EditorCoreSkiaView.self, in: vc.view)
+        XCTAssertEqual(original.count, 3)
+        let tab = try XCTUnwrap(vc.activeTab)
+        XCTAssertEqual(tab.activePaneIndex, 2)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        try coreDocuments.setActiveViewIndex(tabId: coreTabID, viewIndex: 0)
+
+        XCTAssertTrue(vc.moveActivePaneRight())
+        vc.view.layoutSubtreeIfNeeded()
+        var moved = findSubviews(of: EditorCoreSkiaView.self, in: vc.view)
+        XCTAssertEqual(moved.count, 3)
+        XCTAssertTrue(moved[0] === original[1])
+        XCTAssertTrue(moved[1] === original[0])
+        XCTAssertTrue(moved[2] === original[2])
+        var snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs[0].activeViewIndex, 1)
+
+        try coreDocuments.setActiveViewIndex(tabId: coreTabID, viewIndex: 0)
+        XCTAssertTrue(vc.closeActivePane())
+        vc.view.layoutSubtreeIfNeeded()
+
+        moved = findSubviews(of: EditorCoreSkiaView.self, in: vc.view)
+        XCTAssertEqual(moved.count, 2)
+        XCTAssertTrue(moved[0] === original[0])
+        XCTAssertTrue(moved[1] === original[2])
+        snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs[0].viewCount, 2)
+        XCTAssertEqual(snapshot.tabs[0].activeViewIndex, 0)
     }
 
     func testMoveTabCommandsReorderAppKitProjectionAndCoreMirror() throws {

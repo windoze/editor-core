@@ -125,6 +125,33 @@ extension AttoEditorAreaViewController {
         return projection.tabs.first(where: { $0.tab.id == selectedID })?.tab
     }
 
+    func coreProjectedPaneState(for tab: AttoEditorTab) -> (viewCount: Int, activeViewIndex: Int)? {
+        guard let projection = makeCoreProjectedTabs(),
+              let projected = projection.tabs.first(where: { $0.tab.id == tab.id }),
+              tab.panes.isEmpty == false
+        else {
+            return nil
+        }
+
+        let localPaneCount = tab.panes.count
+        let viewCount = max(1, Int(projected.coreTab.viewCount))
+        let activeViewIndex = max(0, min(Int(projected.coreTab.activeViewIndex), localPaneCount - 1))
+        return (viewCount: viewCount, activeViewIndex: activeViewIndex)
+    }
+
+    @discardableResult
+    func syncActivePaneIndexFromCoreProjectionIfAvailable(for tab: AttoEditorTab) -> Bool {
+        guard let paneState = coreProjectedPaneState(for: tab),
+              paneState.viewCount == tab.panes.count,
+              tab.activePaneIndex != paneState.activeViewIndex
+        else {
+            return false
+        }
+
+        tab.activePaneIndex = paneState.activeViewIndex
+        return true
+    }
+
     private func sessionFileURL(for coreTab: EcuMultiDocumentTabSnapshot, fallback: URL) -> URL {
         if let documentURI = coreTab.documentURI,
            let url = URL(string: documentURI),

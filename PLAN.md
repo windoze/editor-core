@@ -759,6 +759,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testPinActiveTabUsesCoreActivePreviewProjection|AttoEditorCommandTests.testPinTabCommandPinsActivePreviewTab|AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap|AttoPreviewTabDoubleClickTests.testDoubleClickPreviewTabPinsInsteadOfReplacing'`
     - `git diff --check`
+- 中间提交：`feat(app): project active panes from core views`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 的 pane focus/move/close 用户路径在 core snapshot 可用时使用 `active_view_index` 投影作为当前 pane，而不是只依赖 Swift 本地 `activePaneIndex`。
+  - 提交边界：新增 App 层 core pane state projection helper，并在 `focusPaneInActiveTab(delta:)`、`moveActivePaneInActiveTab(delta:)`、`closeActivePane()` 操作前同步 active pane index；仅使用既有 `MultiDocumentEditorUI.snapshot()` / move-view / close-view / set-active-view ABI。本提交不新增 Rust/FFI ABI，不实现 drag/drop tab-to-split、跨 tab move-to-pane、pane layout tree 或完整 core-owned project/session ownership。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testPaneFocusUsesCoreActiveViewProjection|AttoEditorCommandTests.testMoveAndClosePaneUseCoreActiveViewProjection|AttoEditorCommandTests.testMovePaneCommandsReorderAppKitProjectionAndCoreMirror|AttoEditorCommandTests.testPaneFocusAndCloseCommandsUseActivePane'`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

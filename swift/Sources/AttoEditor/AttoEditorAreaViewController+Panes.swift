@@ -74,7 +74,12 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func closeActivePane() -> Bool {
-        guard let tab = activeTab, tab.panes.count > 1 else {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        syncActivePaneIndexFromCoreProjectionIfAvailable(for: tab)
+        guard tab.panes.count > 1 else {
             NSSound.beep()
             return false
         }
@@ -106,7 +111,12 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func focusPaneInActiveTab(delta: Int) -> Bool {
-        guard let tab = activeTab, tab.panes.count > 1 else {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        syncActivePaneIndexFromCoreProjectionIfAvailable(for: tab)
+        guard tab.panes.count > 1 else {
             NSSound.beep()
             return false
         }
@@ -127,7 +137,12 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func moveActivePaneInActiveTab(delta: Int) -> Bool {
-        guard let tab = activeTab, tab.panes.count > 1 else {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        syncActivePaneIndexFromCoreProjectionIfAvailable(for: tab)
+        guard tab.panes.count > 1 else {
             NSSound.beep()
             return false
         }
