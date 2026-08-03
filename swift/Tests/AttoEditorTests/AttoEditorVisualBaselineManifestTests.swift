@@ -1747,12 +1747,7 @@ private struct AttoVisualWorkspaceEditJSONPreview: Decodable, Equatable {
 
     func materializeSupportFiles(in tempDir: URL) throws {
         for file in supportFiles {
-            let url = tempDir.appendingPathComponent(file.fileName)
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try file.text.write(to: url, atomically: true, encoding: .utf8)
+            try file.write(in: tempDir)
         }
     }
 
@@ -1771,6 +1766,7 @@ private struct AttoVisualWorkspaceEditJSONPreview: Decodable, Equatable {
 
 private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
     let supportFiles: [AttoVisualWorkspaceEditSupportFile]
+    let applyMode: String?
     let makeActiveDocumentDirty: Bool
     let expectedApplied: Bool
     let undoAfterApply: Bool
@@ -1784,6 +1780,7 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case supportFiles
+        case applyMode
         case makeActiveDocumentDirty
         case expectedApplied
         case undoAfterApply
@@ -1802,6 +1799,7 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
             [AttoVisualWorkspaceEditSupportFile].self,
             forKey: .supportFiles
         ) ?? []
+        applyMode = try container.decodeIfPresent(String.self, forKey: .applyMode)
         makeActiveDocumentDirty = try container.decodeIfPresent(
             Bool.self,
             forKey: .makeActiveDocumentDirty
@@ -1837,12 +1835,7 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
 
     func materializeSupportFiles(in tempDir: URL) throws {
         for file in supportFiles {
-            let url = tempDir.appendingPathComponent(file.fileName)
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try file.text.write(to: url, atomically: true, encoding: .utf8)
+            try file.write(in: tempDir)
         }
     }
 
@@ -1859,7 +1852,10 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
             .resourceOperation(operation.payload(tempDir: tempDir))
         })
         return try encodeVisualJSON(
-            AttoVisualWorkspaceEditDocumentChangesPayload(documentChanges: documentChanges),
+            AttoVisualWorkspaceEditDocumentChangesPayload(
+                applyMode: applyMode,
+                documentChanges: documentChanges
+            ),
             context: "WorkspaceEdit apply summary"
         )
     }
@@ -1914,7 +1910,44 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
 
 private struct AttoVisualWorkspaceEditSupportFile: Decodable, Equatable {
     let fileName: String
-    let text: String
+    let text: String?
+    let hexBytes: String?
+
+    func write(in tempDir: URL) throws {
+        let url = tempDir.appendingPathComponent(fileName)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        if let text {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return
+        }
+        if let hexBytes {
+            try Self.data(hexBytes: hexBytes).write(to: url, options: .atomic)
+            return
+        }
+        throw AttoVisualBaselineError.invalidManifest("support file \(fileName) needs text or hexBytes")
+    }
+
+    private static func data(hexBytes: String) throws -> Data {
+        let compact = hexBytes.filter { $0.isWhitespace == false }
+        guard compact.count.isMultiple(of: 2) else {
+            throw AttoVisualBaselineError.invalidManifest("hexBytes must contain whole bytes")
+        }
+        var data = Data()
+        var index = compact.startIndex
+        while index < compact.endIndex {
+            let next = compact.index(index, offsetBy: 2)
+            let byteText = String(compact[index..<next])
+            guard let byte = UInt8(byteText, radix: 16) else {
+                throw AttoVisualBaselineError.invalidManifest("invalid hex byte: \(byteText)")
+            }
+            data.append(byte)
+            index = next
+        }
+        return data
+    }
 }
 
 private struct AttoVisualWorkspaceEditExpectedFileContent: Decodable, Equatable {
@@ -1967,6 +2000,7 @@ private struct AttoVisualWorkspaceEditJSONPayload: Encodable {
 }
 
 private struct AttoVisualWorkspaceEditDocumentChangesPayload: Encodable {
+    let applyMode: String?
     let documentChanges: [AttoVisualWorkspaceEditDocumentChangePayload]
 }
 

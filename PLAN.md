@@ -2272,6 +2272,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover visual workspace edit atomic rollback`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；把 WorkspaceEdit rollback visual coverage 推进到真实 App helper + core atomic runtime rollback 触发链。
+  - 提交边界：visual manifest support file 支持 `hexBytes` 二进制 fixture，`workspaceEditJSONApplySummary` 支持 `applyMode`；manifest 新增 dark atomic rollback failure summary popover artifact case，写入 invalid UTF-8 未打开文件，真实执行 `applyMode: atomic` 的跨文档 WorkspaceEdit，断言打开 tab text edit 被回滚为原文，并捕获 core transaction 拒绝后的 summary popover。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 WorkspaceEdit apply/rollback 语义，也不覆盖 rollback secondary failure 或专门的 rollback history UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
