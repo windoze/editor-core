@@ -765,6 +765,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testPaneFocusUsesCoreActiveViewProjection|AttoEditorCommandTests.testMoveAndClosePaneUseCoreActiveViewProjection|AttoEditorCommandTests.testMovePaneCommandsReorderAppKitProjectionAndCoreMirror|AttoEditorCommandTests.testPaneFocusAndCloseCommandsUseActivePane'`
     - `git diff --check`
+- 中间提交：`feat(app): drag tabs with core tab order`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor tab bar 拖拽重排和 move-tab command 都按 core snapshot 的 tab order / active tab 投影执行，而不是只依赖 Swift `tabs` 数组顺序和 `selectedTabID`。
+  - 提交边界：新增 tab chip mouse drag-end reorder callback，并新增 App 层 `moveTab(id:toProjectedIndex:)` helper 复用既有 `MultiDocumentEditorUI.moveTab(fromIndex:toIndex:)`；`moveActiveTab(delta:)` 也改为使用 core-projected active tab/order。本提交不新增 Rust/FFI ABI，不实现 drag/drop tab-to-split、跨 pane tab move、pane layout tree 或完整 core-owned project/session ownership。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testTabDragReordersCoreTabProjection|AttoEditorCommandTests.testMoveTabCommandUsesCoreActiveTabProjection|AttoEditorCommandTests.testMoveTabCommandsReorderAppKitProjectionAndCoreMirror'`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

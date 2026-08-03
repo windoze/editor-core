@@ -1223,30 +1223,64 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func moveActiveTab(delta: Int) -> Bool {
-        guard let selectedTabID,
-              let from = tabs.firstIndex(where: { $0.id == selectedTabID }),
-              tabs.count > 1
-        else {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard let from = projectedTabOrder().firstIndex(where: { $0.id == tab.id }) else {
             NSSound.beep()
             return false
         }
 
-        let to = from + delta
-        guard to >= 0, to < tabs.count else {
-            NSSound.beep()
+        return moveTab(id: tab.id, toProjectedIndex: from + delta)
+    }
+
+    @discardableResult
+    func moveTab(id: UUID, toProjectedIndex requestedIndex: Int, beepOnFailure: Bool = true) -> Bool {
+        let projectedTabs = projectedTabOrder()
+        guard let from = projectedTabs.firstIndex(where: { $0.id == id }),
+              projectedTabs.count > 1
+        else {
+            if beepOnFailure {
+                NSSound.beep()
+            }
+            return false
+        }
+
+        let to = requestedIndex
+        guard to >= 0, to < projectedTabs.count else {
+            if beepOnFailure {
+                NSSound.beep()
+            }
+            return false
+        }
+
+        guard from != to else {
             return false
         }
 
         guard moveCoreTab(fromIndex: from, toIndex: to) else {
-            NSSound.beep()
+            if beepOnFailure {
+                NSSound.beep()
+            }
             return false
         }
 
-        let tab = tabs.remove(at: from)
-        tabs.insert(tab, at: to)
+        var reorderedTabs = projectedTabs
+        let tab = reorderedTabs.remove(at: from)
+        reorderedTabs.insert(tab, at: to)
+        tabs = reorderedTabs
         refreshTabBar()
         updateWindowTitle()
         notifySessionStateChanged()
         return true
+    }
+
+    private func projectedTabOrder() -> [AttoEditorTab] {
+        if let projection = makeCoreProjectedTabs() {
+            return projection.tabs.map(\.tab)
+        }
+
+        return tabs
     }
 }

@@ -9821,6 +9821,137 @@ final class AttoEditorCommandTests: XCTestCase {
         ])
     }
 
+    func testMoveTabCommandUsesCoreActiveTabProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-core-move.txt")
+        let secondURL = tempDir.appendingPathComponent("second-core-move.txt")
+        let thirdURL = tempDir.appendingPathComponent("third-core-move.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "third".write(to: thirdURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.openFile(url: thirdURL, mode: .pinned)
+
+        let secondTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == secondURL.standardizedFileURL })
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setActiveTab(try XCTUnwrap(secondTab.coreTabID))
+        XCTAssertEqual(vc.selectedTabID, vc.tabs.last?.id)
+        XCTAssertEqual(vc.activeTab?.id, secondTab.id)
+
+        XCTAssertTrue(vc.moveActiveTabLeft())
+
+        let snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs.map(\.title), [
+            "second-core-move.txt",
+            "first-core-move.txt",
+            "third-core-move.txt",
+        ])
+        XCTAssertEqual(snapshot.tabs.first(where: { $0.isActive })?.title, "second-core-move.txt")
+        XCTAssertEqual(vc.openFileItems().map { $0.url.lastPathComponent }, [
+            "second-core-move.txt",
+            "first-core-move.txt",
+            "third-core-move.txt",
+        ])
+    }
+
+    func testTabDragReordersCoreTabProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-drag-tab.txt")
+        let secondURL = tempDir.appendingPathComponent("second-drag-tab.txt")
+        let thirdURL = tempDir.appendingPathComponent("third-drag-tab.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "third".write(to: thirdURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.openFile(url: thirdURL, mode: .pinned)
+        vc.view.layoutSubtreeIfNeeded()
+
+        let tabBar = try XCTUnwrap(findSubview(of: AttoTabBarView.self, in: vc.view))
+        let firstChip = try XCTUnwrap(findTabChipView(title: "first-drag-tab.txt", in: tabBar))
+        let thirdChip = try XCTUnwrap(findTabChipView(title: "third-drag-tab.txt", in: tabBar))
+        let startPoint = firstChip.convert(
+            NSPoint(x: firstChip.bounds.midX, y: firstChip.bounds.midY),
+            to: nil
+        )
+        let endPoint = thirdChip.convert(
+            NSPoint(x: thirdChip.bounds.maxX - 1, y: thirdChip.bounds.midY),
+            to: nil
+        )
+
+        let mouseDown = try XCTUnwrap(
+            NSEvent.mouseEvent(
+                with: .leftMouseDown,
+                location: startPoint,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 10,
+                clickCount: 1,
+                pressure: 1
+            )
+        )
+        let mouseDragged = try XCTUnwrap(
+            NSEvent.mouseEvent(
+                with: .leftMouseDragged,
+                location: endPoint,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 11,
+                clickCount: 1,
+                pressure: 1
+            )
+        )
+        let mouseUp = try XCTUnwrap(
+            NSEvent.mouseEvent(
+                with: .leftMouseUp,
+                location: endPoint,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 12,
+                clickCount: 1,
+                pressure: 0
+            )
+        )
+
+        firstChip.mouseDown(with: mouseDown)
+        firstChip.mouseDragged(with: mouseDragged)
+        firstChip.mouseUp(with: mouseUp)
+
+        let snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
+        XCTAssertEqual(snapshot.tabs.map(\.title), [
+            "second-drag-tab.txt",
+            "third-drag-tab.txt",
+            "first-drag-tab.txt",
+        ])
+        XCTAssertEqual(vc.openFileItems().map { $0.url.lastPathComponent }, [
+            "second-drag-tab.txt",
+            "third-drag-tab.txt",
+            "first-drag-tab.txt",
+        ])
+        XCTAssertEqual(snapshot.tabs.first(where: { $0.isActive })?.title, "first-drag-tab.txt")
+    }
+
     func testCloseTabGroupCommandsUseCoreTabProjection() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -10722,6 +10853,14 @@ final class AttoEditorCommandTests: XCTestCase {
             out.append(contentsOf: findSubviews(of: type, in: child))
         }
         return out
+    }
+
+    private func findTabChipView(title: String, in root: NSView) -> NSView? {
+        findSubviews(of: NSView.self, in: root).first { view in
+            view.subviews.contains { subview in
+                (subview as? NSTextField)?.stringValue == title
+            }
+        }
     }
 
     private func findView(identifier: String, in root: NSView) -> NSView? {

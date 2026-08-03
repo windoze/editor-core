@@ -1224,6 +1224,9 @@ final class AttoEditorAreaViewController: NSViewController {
         tabBarView.onDoubleClickTab = { [weak self] id in
             self?.pinTabIfPreview(id: id)
         }
+        tabBarView.onMoveTab = { [weak self] id, targetIndex in
+            self?.moveTab(id: id, toProjectedIndex: targetIndex, beepOnFailure: false)
+        }
         tabBarView.translatesAutoresizingMaskIntoConstraints = false
 
         findReplaceBarView.translatesAutoresizingMaskIntoConstraints = false

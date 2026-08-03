@@ -13,6 +13,7 @@ final class AttoTabBarView: NSView {
     var onSelectTab: ((UUID) -> Void)?
     var onCloseTab: ((UUID) -> Void)?
     var onDoubleClickTab: ((UUID) -> Void)?
+    var onMoveTab: ((UUID, Int) -> Void)?
 
     private let scrollView = NSScrollView()
     private let documentContainerView = NSView()
@@ -158,7 +159,8 @@ final class AttoTabBarView: NSView {
                 selected: tab.id == selectedID,
                 onSelect: { [weak self] in self?.onSelectTab?(tab.id) },
                 onDoubleClick: { [weak self] in self?.onDoubleClickTab?(tab.id) },
-                onClose: { [weak self] in self?.onCloseTab?(tab.id) }
+                onClose: { [weak self] in self?.onCloseTab?(tab.id) },
+                onDragEnd: { [weak self] event in self?.moveTab(tab.id, forDragEndingWith: event) }
             )
             chip.translatesAutoresizingMaskIntoConstraints = false
             stackView.addArrangedSubview(chip)
@@ -251,6 +253,39 @@ final class AttoTabBarView: NSView {
         pendingScrollToTabID = id
         onSelectTab?(id)
     }
+
+    private func moveTab(_ id: UUID, forDragEndingWith event: NSEvent) {
+        guard let targetIndex = dragTargetIndex(for: id, event: event) else { return }
+        guard let fromIndex = currentTabs.firstIndex(where: { $0.id == id }),
+              fromIndex != targetIndex
+        else {
+            return
+        }
+        onMoveTab?(id, targetIndex)
+    }
+
+    private func dragTargetIndex(for id: UUID, event: NSEvent) -> Int? {
+        guard currentTabs.count > 1,
+              currentTabs.contains(where: { $0.id == id })
+        else {
+            return nil
+        }
+
+        let pointInTabBar = convert(event.locationInWindow, from: nil)
+        let pointInDocument = documentContainerView.convert(pointInTabBar, from: self)
+        var targetIndex = 0
+
+        for tab in currentTabs where tab.id != id {
+            guard let chip = chipByID[tab.id] else { continue }
+            let rect = chip.convert(chip.bounds, to: documentContainerView)
+            if pointInDocument.x < rect.midX {
+                return targetIndex
+            }
+            targetIndex += 1
+        }
+
+        return max(0, currentTabs.count - 1)
+    }
 }
 
 @MainActor
@@ -259,14 +294,19 @@ private final class AttoTabChipView: NSView {
     private let onSelect: () -> Void
     private let onDoubleClick: () -> Void
     private let onClose: () -> Void
+    private let onDragEnd: (NSEvent) -> Void
 
     private let titleLabel = NSTextField(labelWithString: "")
     private let closeButton: NSButton
     private var trackingAreaRef: NSTrackingArea?
     private let selected: Bool
+    private var mouseDownLocationInWindow: NSPoint?
+    private var latestDragEvent: NSEvent?
+    private var hasDraggedTab = false
 
     // Sublime-ish sizing.
     private let minWidth: CGFloat = 96
+    private let dragThreshold: CGFloat = 6
 
     init(
         id: UUID,
@@ -276,12 +316,14 @@ private final class AttoTabChipView: NSView {
         selected: Bool,
         onSelect: @escaping () -> Void,
         onDoubleClick: @escaping () -> Void,
-        onClose: @escaping () -> Void
+        onClose: @escaping () -> Void,
+        onDragEnd: @escaping (NSEvent) -> Void
     ) {
         self.id = id
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
         self.onClose = onClose
+        self.onDragEnd = onDragEnd
         self.selected = selected
 
         if let image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Tab")?
@@ -386,10 +428,33 @@ private final class AttoTabChipView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        mouseDownLocationInWindow = event.locationInWindow
+        latestDragEvent = nil
+        hasDraggedTab = false
         onSelect()
         if event.clickCount == 2 {
             onDoubleClick()
         }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        latestDragEvent = event
+        guard let mouseDownLocationInWindow else { return }
+        let dx = event.locationInWindow.x - mouseDownLocationInWindow.x
+        let dy = event.locationInWindow.y - mouseDownLocationInWindow.y
+        if hypot(dx, dy) >= dragThreshold {
+            hasDraggedTab = true
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer {
+            mouseDownLocationInWindow = nil
+            latestDragEvent = nil
+            hasDraggedTab = false
+        }
+        guard hasDraggedTab else { return }
+        onDragEnd(latestDragEvent ?? event)
     }
 
     @objc private func closeClicked(_ sender: Any?) {
