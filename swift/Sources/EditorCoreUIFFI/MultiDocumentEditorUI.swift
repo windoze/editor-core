@@ -538,6 +538,135 @@ public struct EcuWorkspaceDiagnosticsSnapshot: Decodable, Equatable, Sendable {
     public let diagnostics: [EcuWorkspaceDiagnostic]
 }
 
+public enum EcuWorkspaceDiagnosticsOperation: Hashable, Sendable {
+    case apply
+    case snapshot
+    case markers
+    case previousResultIds
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "apply":
+            self = .apply
+        case "snapshot":
+            self = .snapshot
+        case "markers":
+            self = .markers
+        case "previous_result_ids":
+            self = .previousResultIds
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .apply:
+            return "apply"
+        case .snapshot:
+            return "snapshot"
+        case .markers:
+            return "markers"
+        case .previousResultIds:
+            return "previous_result_ids"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public enum EcuWorkspaceDiagnosticsEnvelopeStatus: Hashable, Sendable {
+    case success
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "success":
+            self = .success
+        case "error":
+            self = .error
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .success:
+            return "success"
+        case .error:
+            return "error"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public struct EcuWorkspaceDiagnosticsEnvelope: Decodable, Equatable, Sendable {
+    public let ok: Bool
+    public let operation: String?
+    public let status: String
+    public let value: EcuJSONValue?
+    public let error: EcuWorkspaceDiagnosticsEnvelopeError?
+    public let version: UInt32
+
+    public var operationKind: EcuWorkspaceDiagnosticsOperation? {
+        operation.map(EcuWorkspaceDiagnosticsOperation.init(rawValue:))
+    }
+
+    public var statusKind: EcuWorkspaceDiagnosticsEnvelopeStatus {
+        EcuWorkspaceDiagnosticsEnvelopeStatus(rawValue: status)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case operation
+        case status
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        operation = try container.decodeIfPresent(String.self, forKey: .operation)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        if container.contains(.value) {
+            value = try container.decode(EcuJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcuWorkspaceDiagnosticsEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcuWorkspaceDiagnosticsEnvelopeError: Decodable, Equatable, Sendable {
+    public let code: String
+    public let status: EcuStatus?
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcuStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 public struct EcuWorkspaceDiagnosticMarker: Decodable, Equatable, Sendable {
     public let uri: String
     public let line: UInt32
@@ -1242,6 +1371,73 @@ public final class MultiDocumentEditorUI {
                 editor_core_ui_ffi_multi_document_apply_workspace_diagnostics_json(handle, resultPtr)
             }
         }
+    }
+
+    public func workspaceDiagnosticsEnvelopeJSON(
+        operationRawValue: String,
+        resultJSON: String? = nil
+    ) throws -> String {
+        try operationRawValue.withCString { operationPtr in
+            if let resultJSON {
+                return try resultJSON.withCString { resultPtr in
+                    try ffiStringResult(context: "multi_document_workspace_diagnostics_envelope_json") {
+                        editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(
+                            handle,
+                            operationPtr,
+                            resultPtr
+                        )
+                    }
+                }
+            }
+            return try ffiStringResult(context: "multi_document_workspace_diagnostics_envelope_json") {
+                editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(
+                    handle,
+                    operationPtr,
+                    nil
+                )
+            }
+        }
+    }
+
+    public func workspaceDiagnosticsEnvelopeJSON(
+        operation: EcuWorkspaceDiagnosticsOperation,
+        resultJSON: String? = nil
+    ) throws -> String {
+        try workspaceDiagnosticsEnvelopeJSON(operationRawValue: operation.rawValue, resultJSON: resultJSON)
+    }
+
+    public func workspaceDiagnosticsEnvelope(
+        operationRawValue: String,
+        resultJSON: String? = nil
+    ) throws -> EcuWorkspaceDiagnosticsEnvelope {
+        try decode(
+            EcuWorkspaceDiagnosticsEnvelope.self,
+            from: workspaceDiagnosticsEnvelopeJSON(operationRawValue: operationRawValue, resultJSON: resultJSON),
+            context: "multi_document_workspace_diagnostics_envelope_decode"
+        )
+    }
+
+    public func workspaceDiagnosticsEnvelope(
+        operation: EcuWorkspaceDiagnosticsOperation,
+        resultJSON: String? = nil
+    ) throws -> EcuWorkspaceDiagnosticsEnvelope {
+        try workspaceDiagnosticsEnvelope(operationRawValue: operation.rawValue, resultJSON: resultJSON)
+    }
+
+    public func applyWorkspaceDiagnosticsEnvelope(_ resultJSON: String) throws -> EcuWorkspaceDiagnosticsEnvelope {
+        try workspaceDiagnosticsEnvelope(operation: .apply, resultJSON: resultJSON)
+    }
+
+    public func workspaceDiagnosticsSnapshotEnvelope() throws -> EcuWorkspaceDiagnosticsEnvelope {
+        try workspaceDiagnosticsEnvelope(operation: .snapshot)
+    }
+
+    public func workspaceDiagnosticMarkersEnvelope() throws -> EcuWorkspaceDiagnosticsEnvelope {
+        try workspaceDiagnosticsEnvelope(operation: .markers)
+    }
+
+    public func workspaceDiagnosticsPreviousResultIdsEnvelope() throws -> EcuWorkspaceDiagnosticsEnvelope {
+        try workspaceDiagnosticsEnvelope(operation: .previousResultIds)
     }
 
     public func workspaceDiagnosticsSnapshotJSON() throws -> String {

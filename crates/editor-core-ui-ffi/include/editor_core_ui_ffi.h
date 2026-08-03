@@ -166,6 +166,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_EVENT_STREAM_ENVELOPE    (1ull << 27)
 #define ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE (1ull << 28)
 #define ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE (1ull << 29)
+#define ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE (1ull << 30)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -296,6 +297,10 @@ char* editor_core_ui_ffi_multi_document_workspace_diagnostic_markers_json(
     MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_workspace_diagnostics_previous_result_ids_json(
     MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* operation_utf8,
+    const char* result_json_utf8);
 int32_t editor_core_ui_ffi_multi_document_workspace_diagnostics_latest_event_sequence(
     MultiDocumentEditorUi* multi,
     uint64_t* out_sequence);

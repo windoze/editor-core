@@ -119,6 +119,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -156,6 +160,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "workspace_edit_transaction_envelope"
             && feature["bit"] == 29
             && feature["flag"] == ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "workspace_diagnostics_envelope"
+            && feature["bit"] == 30
+            && feature["flag"] == ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -484,6 +493,144 @@ fn ffi_workspace_edit_transaction_envelope_json_reports_success_and_errors() {
     assert!(null_operation["operation"].is_null());
     assert_eq!(null_operation["error"]["code"], "invalid_argument");
     assert_eq!(null_operation["error"]["message"], "operation_utf8 is null");
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+}
+
+#[test]
+fn ffi_workspace_diagnostics_envelope_json_reports_success_and_errors() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let apply = CString::new("apply").unwrap();
+    let diagnostics = CString::new(
+        r#"{
+          "items": [
+            {
+              "uri": "file:///project/a.swift",
+              "kind": "full",
+              "resultId": "a-1",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 1 },
+                    "end": { "line": 0, "character": 3 }
+                  },
+                  "severity": 1,
+                  "message": "first problem"
+                }
+              ]
+            }
+          ]
+        }"#,
+    )
+    .unwrap();
+    let apply_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(
+            multi,
+            apply.as_ptr(),
+            diagnostics.as_ptr(),
+        ),
+    );
+    let apply_value: serde_json::Value = serde_json::from_str(&apply_json).unwrap();
+    assert_eq!(apply_value["ok"], true);
+    assert_eq!(apply_value["operation"], "apply");
+    assert_eq!(apply_value["status"], "success");
+    assert_eq!(
+        apply_value["value"]["diagnostics"][0]["message"],
+        "first problem"
+    );
+    assert_eq!(
+        apply_value["value"]["diagnostics"][0]["severity_label"],
+        "error"
+    );
+    assert!(apply_value["error"].is_null());
+    assert_eq!(apply_value["version"], ECU_ABI_VERSION);
+
+    let markers = CString::new("markers").unwrap();
+    let markers_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(
+            multi,
+            markers.as_ptr(),
+            ptr::null(),
+        ),
+    );
+    let markers_value: serde_json::Value = serde_json::from_str(&markers_json).unwrap();
+    assert_eq!(markers_value["ok"], true);
+    assert_eq!(markers_value["operation"], "markers");
+    assert_eq!(
+        markers_value["value"]["markers"][0]["uri"],
+        "file:///project/a.swift"
+    );
+
+    let previous = CString::new("previous_result_ids").unwrap();
+    let previous_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(
+            multi,
+            previous.as_ptr(),
+            ptr::null(),
+        ),
+    );
+    let previous_value: serde_json::Value = serde_json::from_str(&previous_json).unwrap();
+    assert_eq!(previous_value["ok"], true);
+    assert_eq!(
+        previous_value["value"],
+        serde_json::json!([{"uri": "file:///project/a.swift", "value": "a-1"}])
+    );
+
+    let snapshot = CString::new("snapshot").unwrap();
+    let snapshot_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(
+            multi,
+            snapshot.as_ptr(),
+            ptr::null(),
+        ),
+    );
+    let snapshot_value: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
+    assert_eq!(snapshot_value["ok"], true);
+    assert_eq!(
+        snapshot_value["value"]["documents"][0]["uri"],
+        "file:///project/a.swift"
+    );
+
+    let unknown = CString::new("future_operation").unwrap();
+    let error_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(
+            multi,
+            unknown.as_ptr(),
+            ptr::null(),
+        ),
+    );
+    let error_value: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error_value["ok"], false);
+    assert_eq!(error_value["operation"], "future_operation");
+    assert_eq!(error_value["status"], "error");
+    assert!(error_value["value"].is_null());
+    assert_eq!(error_value["error"]["code"], "invalid_argument");
+    assert_eq!(error_value["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert!(
+        error_value["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown workspace diagnostics operation")
+    );
+
+    let null_operation_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(
+            multi,
+            ptr::null(),
+            ptr::null(),
+        ),
+    );
+    let null_operation_value: serde_json::Value =
+        serde_json::from_str(&null_operation_json).unwrap();
+    assert_eq!(null_operation_value["ok"], false);
+    assert!(null_operation_value["operation"].is_null());
+    assert_eq!(null_operation_value["error"]["code"], "invalid_argument");
+    assert_eq!(
+        null_operation_value["error"]["message"],
+        "operation_utf8 is null"
+    );
 
     unsafe { editor_core_ui_ffi_multi_document_free(multi) };
 }

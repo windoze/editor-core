@@ -105,6 +105,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.eventStreamEnvelope))
         XCTAssertTrue(info.supports(.multiDocumentSpecialEventStreamEnvelope))
         XCTAssertTrue(info.supports(.workspaceEditTransactionEnvelope))
+        XCTAssertTrue(info.supports(.workspaceDiagnosticsEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -135,6 +136,11 @@ final class EditorCoreUIFFITests: XCTestCase {
             feature["name"] as? String == "workspace_edit_transaction_envelope"
                 && (feature["bit"] as? NSNumber)?.uint8Value == 29
                 && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.workspaceEditTransactionEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "workspace_diagnostics_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 30
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.workspaceDiagnosticsEnvelope.rawValue
         })
     }
 
@@ -532,6 +538,149 @@ final class EditorCoreUIFFITests: XCTestCase {
         }
         """
         let failure = try JSONTestHelpers.decode(EcuWorkspaceEditTransactionEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.operationKind, .apply)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
+    }
+
+    func testWorkspaceDiagnosticsEnvelopeReportsSuccessAndError() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+
+        let diagnosticsJSON = """
+        {
+          "items": [
+            {
+              "uri": "file:///project/a.swift",
+              "kind": "full",
+              "resultId": "a-1",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 1 },
+                    "end": { "line": 0, "character": 3 }
+                  },
+                  "severity": 1,
+                  "message": "first problem"
+                }
+              ]
+            }
+          ]
+        }
+        """
+
+        let apply = try multi.applyWorkspaceDiagnosticsEnvelope(diagnosticsJSON)
+        XCTAssertTrue(apply.ok)
+        XCTAssertEqual(apply.version, lib.abiVersion)
+        XCTAssertEqual(apply.operation, "apply")
+        XCTAssertEqual(apply.operationKind, .apply)
+        XCTAssertEqual(apply.statusKind, .success)
+        XCTAssertNil(apply.error)
+        guard case .object(let applyValue)? = apply.value,
+              case .array(let diagnostics)? = applyValue["diagnostics"],
+              case .object(let firstDiagnostic)? = diagnostics.first
+        else {
+            XCTFail("expected workspace diagnostics snapshot object")
+            return
+        }
+        XCTAssertEqual(firstDiagnostic["message"], .string("first problem"))
+        XCTAssertEqual(firstDiagnostic["severity_label"], .string("error"))
+
+        let markers = try multi.workspaceDiagnosticMarkersEnvelope()
+        XCTAssertTrue(markers.ok)
+        XCTAssertEqual(markers.operationKind, .markers)
+        guard case .object(let markersValue)? = markers.value,
+              case .array(let markerItems)? = markersValue["markers"],
+              case .object(let firstMarker)? = markerItems.first
+        else {
+            XCTFail("expected workspace diagnostic markers object")
+            return
+        }
+        XCTAssertEqual(firstMarker["uri"], .string("file:///project/a.swift"))
+        XCTAssertEqual(firstMarker["line"], .number(0))
+        XCTAssertEqual(firstMarker["severity_label"], .string("error"))
+
+        let previous = try multi.workspaceDiagnosticsPreviousResultIdsEnvelope()
+        XCTAssertTrue(previous.ok)
+        XCTAssertEqual(previous.operationKind, .previousResultIds)
+        guard case .array(let previousItems)? = previous.value,
+              case .object(let previousItem)? = previousItems.first
+        else {
+            XCTFail("expected workspace diagnostics previous-result-id array")
+            return
+        }
+        XCTAssertEqual(previousItem["uri"], .string("file:///project/a.swift"))
+        XCTAssertEqual(previousItem["value"], .string("a-1"))
+
+        let snapshot = try multi.workspaceDiagnosticsSnapshotEnvelope()
+        XCTAssertTrue(snapshot.ok)
+        XCTAssertEqual(snapshot.operationKind, .snapshot)
+        guard case .object(let snapshotValue)? = snapshot.value,
+              case .array(let documents)? = snapshotValue["documents"],
+              case .object(let firstDocument)? = documents.first
+        else {
+            XCTFail("expected workspace diagnostics snapshot documents")
+            return
+        }
+        XCTAssertEqual(firstDocument["uri"], .string("file:///project/a.swift"))
+
+        let failure = try multi.workspaceDiagnosticsEnvelope(operationRawValue: "future_operation")
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.operationKind, .unknown("future_operation"))
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "invalid_argument")
+        XCTAssertEqual(failure.error?.status, .invalidArgument)
+        XCTAssertTrue(failure.error?.message.contains("unknown workspace diagnostics operation") ?? false)
+    }
+
+    func testWorkspaceDiagnosticsEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "operation": "future_operation",
+          "status": "future_status",
+          "value": {
+            "documents": [],
+            "future": true
+          },
+          "error": null,
+          "version": 7,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuWorkspaceDiagnosticsEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.operationKind, .unknown("future_operation"))
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future workspace diagnostics value")
+            return
+        }
+        XCTAssertEqual(value["documents"], .array([]))
+        XCTAssertEqual(value["future"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "operation": "apply",
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 777777,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 8
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuWorkspaceDiagnosticsEnvelope.self, from: failureJSON)
         XCTAssertFalse(failure.ok)
         XCTAssertEqual(failure.operationKind, .apply)
         XCTAssertEqual(failure.statusKind, .error)

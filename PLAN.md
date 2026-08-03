@@ -1728,6 +1728,18 @@
     - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope workspace diagnostics results`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 MultiDocument workspace diagnostics 的 apply/snapshot/markers/previous-result-ids JSON result 面纳入统一结构化 envelope。
+  - 提交边界：新增 `editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(MultiDocumentEditorUi*, operation, result_json)` 和 `ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE` feature bit；operation 支持 `apply`、`snapshot`、`markers`、`previous_result_ids`，legacy workspace diagnostics raw JSON API 和 clear/status/event APIs 保持原语义；Swift `MultiDocumentEditorUI` 新增 raw/typed envelope accessor 与 `EcuWorkspaceDiagnosticsEnvelope`，runtime compatibility 和 Atto optional capability report 同步新增该能力。该提交不切换 App 主路径，不替换现有 typed workspace diagnostics wrappers，不重复覆盖已由 event stream envelope 覆盖的 diagnostics events，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi --release ffi_workspace_diagnostics_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testWorkspaceDiagnosticsEnvelope'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

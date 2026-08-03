@@ -228,6 +228,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             name: "WorkspaceEdit transaction envelope",
             reason: "Swift hosts can preview, apply, and undo multi-document WorkspaceEdit transactions through structured result envelopes."
         ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .workspaceDiagnosticsEnvelope,
+            name: "workspace diagnostics envelope",
+            reason: "Swift hosts can apply, read, and project workspace diagnostics through structured result envelopes."
+        ),
     ]
 
     public static let requiredFeatures: [EditorCoreUIFFIRuntimeFeature] = knownFeatures

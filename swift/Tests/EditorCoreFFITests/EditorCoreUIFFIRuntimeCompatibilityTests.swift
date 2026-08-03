@@ -46,6 +46,7 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .eventStreamEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentSpecialEventStreamEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .workspaceEditTransactionEnvelope })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .workspaceDiagnosticsEnvelope })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing UI FFI features"))
     }
 

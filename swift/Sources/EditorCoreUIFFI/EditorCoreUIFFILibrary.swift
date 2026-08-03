@@ -102,6 +102,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let eventStreamEnvelope = Self(rawValue: 1 << 27)
     public static let multiDocumentSpecialEventStreamEnvelope = Self(rawValue: 1 << 28)
     public static let workspaceEditTransactionEnvelope = Self(rawValue: 1 << 29)
+    public static let workspaceDiagnosticsEnvelope = Self(rawValue: 1 << 30)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

@@ -158,6 +158,11 @@ struct AttoRuntimeCompatibility {
             reason: "WorkspaceEdit transaction preview/apply/undo can use structured envelopes; Swift falls back to legacy typed wrappers when unavailable."
         ),
         RuntimeFeature(
+            feature: .workspaceDiagnosticsEnvelope,
+            name: "workspace diagnostics envelope",
+            reason: "Workspace diagnostics apply/snapshot/markers/previous-result-id APIs can use structured envelopes; Swift falls back to legacy typed wrappers when unavailable."
+        ),
+        RuntimeFeature(
             feature: .workspaceOutlineSnapshot,
             name: "workspace outline snapshot",
             reason: "Workspace Outline can consume the core-owned MultiDocumentEditorUI symbol snapshot; Swift falls back to opened-document App projection when unavailable."
