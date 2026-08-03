@@ -18,6 +18,41 @@ extension AttoEditorAreaViewController {
     }
 
     @discardableResult
+    func showInlayHintsPanelInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelCodeLensUI()
+        cancelAuxiliaryRefreshUI()
+        cancelInlayHintResolveUI()
+        cancelDocumentLinkResolveUI()
+
+        let items = currentInlayHintItems(in: tab)
+        guard items.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        guard let window = view.window else {
+            return resolveInlayHintPanelItem(items[0])
+        }
+
+        let controller = inlayHintPanelController ?? makeInlayHintPanelController()
+        inlayHintPanelController = controller
+        return controller.show(relativeTo: window, items: items)
+    }
+
+    @discardableResult
     func refreshAuxiliaryLspDecorationsInActiveTab(
         kind: AuxiliaryRefreshKind,
         showFeedback: Bool = true
@@ -51,8 +86,6 @@ extension AttoEditorAreaViewController {
         cancelLinkedEditingUI()
         cancelDocumentColorUI()
         cancelAuxiliaryRefreshUI()
-        cancelInlayHintResolveUI()
-        cancelInlayHintResolveUI()
         cancelInlayHintResolveUI()
         cancelDocumentLinkResolveUI()
 
@@ -201,6 +234,9 @@ extension AttoEditorAreaViewController {
             tab.editCore.editorView.needsDisplay = true
             tab.editCore.needsDisplay = true
             self.derivedStateStore.refreshActive(editor: tab.editCore.editor)
+            if kind == .inlayHints {
+                self.updateVisibleInlayHintPanel(for: tab)
+            }
             self.updateStatusBar()
 
             guard showFeedback else { return }
@@ -499,5 +535,52 @@ extension AttoEditorAreaViewController {
 
         documentLinkResolvePollTimer = timer
         timer.resume()
+    }
+
+    private func currentInlayHintItems(in tab: AttoEditorTab) -> [AttoLspInlayHintParser.Item] {
+        derivedStateStore.refreshActive(editor: tab.editCore.editor)
+        return AttoLspInlayHintParser.items(fromDecorationsSnapshot: derivedStateStore.active.decorations)
+    }
+
+    private func makeInlayHintPanelController() -> AttoInlayHintPanelController {
+        AttoInlayHintPanelController(
+            titleForItem: { [weak self] item in
+                guard let self, let tab = self.activeTab else { return item.title }
+                return self.displayTitle(for: item, in: tab)
+            },
+            onResolve: { [weak self] item in
+                _ = self?.resolveInlayHintPanelItem(item)
+            }
+        )
+    }
+
+    private func displayTitle(for item: AttoLspInlayHintParser.Item, in tab: AttoEditorTab) -> String {
+        let documentURL = projectedFileURL(for: tab)
+        let location: String? = {
+            do {
+                let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: item.range.start)
+                return "\(documentURL.lastPathComponent):\(pos.line + 1):\(pos.column + 1)"
+            } catch {
+                return documentURL.lastPathComponent
+            }
+        }()
+        return AttoLspInlayHintParser.displayTitle(for: item, location: location)
+    }
+
+    private func resolveInlayHintPanelItem(_ item: AttoLspInlayHintParser.Item) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        return requestInlayHintResolve(
+            json: item.hintJSON,
+            tabID: tab.id,
+            editorView: tab.editCore.editorView
+        )
+    }
+
+    private func updateVisibleInlayHintPanel(for tab: AttoEditorTab) {
+        guard let controller = inlayHintPanelController, controller.isVisible else { return }
+        controller.update(items: currentInlayHintItems(in: tab))
     }
 }

@@ -1176,6 +1176,16 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `git diff --check`
+- 中间提交：`feat(app): add inlay hints workbench panel`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把 Inlay Hints 从 inline decorations、hover/click resolve 和 refresh HUD 推进到可保持打开、可过滤、可键盘 resolve 的持久 panel。
+  - 提交边界：新增 `AttoLspInlayHintParser` 从 active decorations 提取 inlay hint items，新增 `AttoInlayHintPanelController` 提供稳定 AppKit identifiers、filter/search、row selection、Enter resolve 和关闭行为；AttoEditor 新增 `lsp.show_inlay_hints_panel` command、Go 菜单入口、VC 测试钩子，并在 Inlay Hints refresh 后同步更新已打开的持久 panel。该提交不改变 LSP inlayHints / resolve 请求协议、不改变 renderer inline virtual text，也不实现跨 tab/project Inlay Hints history 或统一 dock/workbench 容器。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoLspInlayHintResolverTests.testParserProjectsInlayHintDecorations`
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testInlayHintPanelExposesStableIdentifiersAndFiltersRows`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testInlayHintPanelUsesDerivedDecorations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

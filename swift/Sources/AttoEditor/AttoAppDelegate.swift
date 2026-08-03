@@ -785,6 +785,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.refresh_inlay_hints", title: "LSP: Refresh Inlay Hints") { [weak self] in
                 self?.activeWindow()?.editorAreaController.refreshInlayHintsInActiveTab()
             },
+            .init(id: "lsp.show_inlay_hints_panel", title: "LSP: Show Inlay Hints Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showInlayHintsPanelInActiveTab()
+            },
             .init(id: "lsp.refresh_document_links", title: "LSP: Refresh Document Links") { [weak self] in
                 self?.activeWindow()?.editorAreaController.refreshDocumentLinksInActiveTab()
             },

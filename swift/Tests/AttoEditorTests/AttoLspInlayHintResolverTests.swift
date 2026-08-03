@@ -75,6 +75,45 @@ final class AttoLspInlayHintResolverTests: XCTestCase {
         XCTAssertEqual(arguments.first?["id"] as? Int, 1)
     }
 
+    func testParserProjectsInlayHintDecorations() throws {
+        let hintJSON = """
+        {
+          "position": { "line": 0, "character": 4 },
+          "label": ": Int",
+          "kind": 1
+        }
+        """
+        let snapshot = EcuDecorationsSnapshot(layers: [
+            EcuDecorationLayerSnapshot(layer: 1, decorations: [
+                EcuDecoration(
+                    range: EcuOffsetRange(start: 4, end: 4),
+                    placement: .after,
+                    kind: .object(["kind": .string("inlay_hint")]),
+                    text: ": Int",
+                    styles: [],
+                    tooltip: nil,
+                    dataJSON: hintJSON
+                ),
+                EcuDecoration(
+                    range: EcuOffsetRange(start: 0, end: 0),
+                    placement: .after,
+                    kind: .object(["kind": .string("code_lens")]),
+                    text: "Run",
+                    styles: [],
+                    tooltip: nil,
+                    dataJSON: "{}"
+                ),
+            ]),
+        ])
+
+        let items = AttoLspInlayHintParser.items(fromDecorationsSnapshot: snapshot)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].title, ": Int")
+        XCTAssertEqual(items[0].kindLabel, "Type")
+        XCTAssertEqual(items[0].range, EcuOffsetRange(start: 4, end: 4))
+        XCTAssertEqual(items[0].hintJSON, hintJSON)
+    }
+
     private func decodeHint(_ json: String) throws -> EcuLspInlayHint {
         try JSONDecoder().decode(EcuLspInlayHint.self, from: Data(json.utf8))
     }

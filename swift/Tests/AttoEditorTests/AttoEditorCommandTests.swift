@@ -82,6 +82,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.show_code_lens_panel"))
         XCTAssertTrue(ids.contains("lsp.refresh_code_lens"))
         XCTAssertTrue(ids.contains("lsp.refresh_inlay_hints"))
+        XCTAssertTrue(ids.contains("lsp.show_inlay_hints_panel"))
         XCTAssertTrue(ids.contains("lsp.refresh_document_links"))
         XCTAssertTrue(ids.contains("lsp.quick_fix"))
         XCTAssertTrue(ids.contains("lsp.refactor"))
@@ -505,6 +506,61 @@ final class AttoEditorCommandTests: XCTestCase {
         """
         XCTAssertFalse(editorView.onInlayHintClick?(hintJSON) ?? true)
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Inlay hint resolve: unavailable")
+    }
+
+    func testInlayHintPanelUsesDerivedDecorations() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("inlay-panel.swift")
+        let text = """
+        let value = makeValue()
+        call(value)
+        """
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.lspApplyInlayHintsJSON("""
+        [
+          {
+            "position": { "line": 0, "character": 9 },
+            "label": ": Int",
+            "kind": 1
+          },
+          {
+            "position": { "line": 1, "character": 5 },
+            "label": [{ "value": "argument:" }],
+            "kind": 2
+          }
+        ]
+        """)
+
+        XCTAssertTrue(vc.showInlayHintsPanelInActiveTab())
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.inlayHintPanel
+        })
+        XCTAssertEqual(panel.title, "Inlay Hints (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.inlayHintPanelSearchField, in: root) as? NSSearchField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.inlayHintPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter inlay hints...")
+        XCTAssertEqual(table.numberOfRows, 2)
+        XCTAssertEqual(vc._inlayHintPanelRowCountForTesting(), 2)
+        XCTAssertEqual(vc._inlayHintPanelItemsForTesting().map(\.title), [": Int", "argument:"])
+        XCTAssertEqual(vc._inlayHintPanelItemsForTesting().compactMap(\.kindLabel), ["Type", "Parameter"])
+        XCTAssertTrue(vc._inlayHintPanelIsVisibleForTesting())
     }
 
     func testCodeLensAtCursorFiltersActionsToCurrentLine() throws {
@@ -1511,6 +1567,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_code_lens_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_code_lens", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_inlay_hints", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_inlay_hints_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_document_links", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.quick_fix", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refactor", in: menu))
