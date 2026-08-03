@@ -2078,6 +2078,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorVisualLayoutTests'`
     - `git diff --check`
+- 中间提交：`test(app): add visual snapshot diff harness`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；在 layout invariant 之后建立 screenshot/golden 测试工具起点，提供 AppKit view snapshot 捕获、PNG artifact 输出、RGBA tolerance 比较和 mismatch diff artifact 输出。
+  - 提交边界：新增 `AttoEditorVisualSnapshotHarnessTests` 测试侧工具与 smoke 覆盖；通过真实 `AttoEditorAreaViewController` 捕获固定尺寸 editor chrome snapshot，并用人工 mismatch fixture 验证 `actual` / `expected` / `diff` PNG artifact。该提交不新增 checked-in golden baseline、不引入 `XCUIApplication` 黑盒 target、不接 CI runner 固定字体/DPI/scale，也不改变产品 UI 或渲染行为。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorVisualSnapshotHarnessTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
