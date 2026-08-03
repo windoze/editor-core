@@ -41,8 +41,18 @@ extension AttoEditorAreaViewController {
             return unifiedDiagnosticsSnapshot(for: tab, includeActiveDiagnostics: true).problems.count
         } ?? 0
         let workspaceProblemsCount = hasActiveTab ? workspaceDiagnosticProblems().count : 0
-        let locationCount = lspLocationResultStore.currentEntry?.snapshot.items.count ?? 0
-        let symbolCount = lspSymbolResultStore.currentEntry?.snapshot.symbols.count ?? 0
+        let locationEntry = lspLocationResultStore.currentEntry
+        let symbolEntry = lspSymbolResultStore.currentEntry
+        let locationCount = locationEntry?.snapshot.items.count ?? 0
+        let symbolCount = symbolEntry?.snapshot.symbols.count ?? 0
+        let locationStatus = lspWorkbenchLifecycleStatus(
+            countText: locationCount == 1 ? "1 location" : "\(locationCount) locations",
+            entry: locationEntry
+        )
+        let symbolStatus = lspWorkbenchLifecycleStatus(
+            countText: symbolCount == 1 ? "1 symbol" : "\(symbolCount) symbols",
+            entry: symbolEntry
+        )
         let outlineCount = workspaceOutlineSymbolSnapshot().symbols.count
         let decorations = activeTab.map { tab -> EcuDecorationsSnapshot in
             derivedStateStore.refreshActive(editor: tab.editCore.editor)
@@ -73,14 +83,14 @@ extension AttoEditorAreaViewController {
                 id: LspWorkbenchItemID.locations,
                 title: "Locations",
                 detail: "Latest definition, implementation, type definition, declaration, or references result",
-                status: locationCount == 1 ? "1 location" : "\(locationCount) locations",
+                status: locationStatus,
                 isEnabled: locationCount > 0
             ),
             .init(
                 id: LspWorkbenchItemID.symbols,
                 title: "Symbols",
                 detail: "Latest document or workspace symbol result",
-                status: symbolCount == 1 ? "1 symbol" : "\(symbolCount) symbols",
+                status: symbolStatus,
                 isEnabled: symbolCount > 0
             ),
             .init(
@@ -126,6 +136,23 @@ extension AttoEditorAreaViewController {
                 isEnabled: hierarchyCount > 0
             ),
         ]
+    }
+
+    private func lspWorkbenchLifecycleStatus<Snapshot>(
+        countText: String,
+        entry: AttoLspResultLifecycleEntry<Snapshot>?
+    ) -> String {
+        guard let entry else { return countText }
+        var parts = [
+            countText,
+            entry.state.displayText,
+            "Result #\(entry.sequence)",
+            entry.family,
+        ]
+        if entry.title.isEmpty == false {
+            parts.append(entry.title)
+        }
+        return parts.joined(separator: " | ")
     }
 
     private func makeLspWorkbenchPanelController() -> AttoLspWorkbenchPanelController {

@@ -328,23 +328,31 @@ extension AttoEditorAreaViewController {
 
     func markCurrentLspResultPanelsStale(reason: String) {
         let state = AttoLspResultLifecycleState.stale(reason: reason)
+        var didUpdate = false
         if let entry = lspLocationResultStore.updateCurrentState(state) {
             lspLocationPanelController?.update(entry: entry)
+            didUpdate = true
         }
         if let entry = lspSymbolResultStore.updateCurrentState(state) {
             lspSymbolPanelController?.update(entry: entry)
+            didUpdate = true
+        }
+        if didUpdate {
+            updateVisibleLspWorkbenchPanel()
         }
     }
 
     func markCurrentLspLocationResultError(_ message: AttoLspResultFeedback.Message) {
         if let entry = lspLocationResultStore.updateCurrentState(.error(message: message.statusText)) {
             lspLocationPanelController?.update(entry: entry)
+            updateVisibleLspWorkbenchPanel()
         }
     }
 
     func markCurrentLspSymbolResultError(_ message: AttoLspResultFeedback.Message) {
         if let entry = lspSymbolResultStore.updateCurrentState(.error(message: message.statusText)) {
             lspSymbolPanelController?.update(entry: entry)
+            updateVisibleLspWorkbenchPanel()
         }
     }
 

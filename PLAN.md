@@ -1223,6 +1223,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `git diff --check`
+- 中间提交：`feat(app): show lsp workbench lifecycle status`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；让统一 LSP Workbench 入口继续消费 Locations/Symbols 已有 lifecycle entry，把独立持久在线 panel 中的 Fresh/Stale/Error 状态推进到跨 result family 目录层。
+  - 提交边界：只更新 Workbench 的 Locations/Symbols 行状态文本，展示结果数量、Fresh/Stale/Error、Result sequence、family 和 title，并让 visible Workbench 在当前 Locations/Symbols entry 被标记 stale/error 时同步刷新。该提交不引入统一 pin/history 数据模型，不改变 Locations/Symbols result store 语义，不迁移到真正内嵌 dock，也不实现跨 tab/project result history。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelShowsLifecycleStateForLocationsAndSymbols`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

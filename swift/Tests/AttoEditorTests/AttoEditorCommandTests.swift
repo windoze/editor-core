@@ -607,6 +607,95 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
     }
 
+    func testLspWorkbenchPanelShowsLifecycleStateForLocationsAndSymbols() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("workbench-lifecycle.swift")
+        try "struct Project {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let target = AttoLspDefinitionParser.Target(
+            uri: fileURL.absoluteString,
+            line: 0,
+            utf16Character: 7
+        )
+        let locationSnapshot = AttoEditorAreaViewController.LspLocationResultSnapshot(
+            kind: .definition,
+            items: [
+                AttoLspDefinitionParser.LocationItem(
+                    target: target,
+                    fileDisplayName: fileURL.lastPathComponent
+                ),
+            ]
+        )
+        let symbolSnapshot = AttoEditorAreaViewController.LspSymbolResultSnapshot(
+            title: "Document Symbols",
+            symbols: [
+                AttoLspSymbolParser.Symbol(
+                    name: "Project",
+                    detail: nil,
+                    kindLabel: "Struct",
+                    containerName: nil,
+                    target: target,
+                    depth: 0
+                ),
+            ],
+            placeholder: "Filter document symbols..."
+        )
+
+        vc.recordLspLocationResultSnapshot(locationSnapshot)
+        vc.recordLspSymbolResultSnapshot(symbolSnapshot)
+
+        XCTAssertTrue(vc.showLspWorkbenchPanel())
+
+        func statuses() -> [String: String] {
+            Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+                ($0.title, $0.status)
+            })
+        }
+
+        var current = statuses()
+        let freshLocationPrefix = "1 location | Fresh | Result #1 | locations | Definitions:"
+        let staleLocationPrefix = "1 location | Stale: document edited | Result #1 | locations | Definitions:"
+        XCTAssertTrue(current["Locations"]?.hasPrefix(freshLocationPrefix) == true)
+        XCTAssertEqual(
+            current["Symbols"],
+            "1 symbol | Fresh | Result #1 | symbols | Document Symbols: 1 results"
+        )
+
+        vc.markCurrentLspResultPanelsStale(reason: "document edited")
+
+        current = statuses()
+        XCTAssertTrue(current["Locations"]?.hasPrefix(staleLocationPrefix) == true)
+        XCTAssertEqual(
+            current["Symbols"],
+            "1 symbol | Stale: document edited | Result #1 | symbols | Document Symbols: 1 results"
+        )
+
+        vc.markCurrentLspSymbolResultError(
+            AttoLspResultFeedback.Message(
+                statusText: "Workspace symbols: server busy",
+                detailText: "Workspace symbols failed."
+            )
+        )
+
+        current = statuses()
+        XCTAssertTrue(current["Locations"]?.hasPrefix(staleLocationPrefix) == true)
+        XCTAssertEqual(
+            current["Symbols"],
+            "1 symbol | Error: Workspace symbols: server busy | Result #1 | symbols | Document Symbols: 1 results"
+        )
+        XCTAssertEqual(vc._lspWorkbenchPanelRowCountForTesting(), 10)
+        XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
+    }
+
     func testInlayHintClickUsesResolveFeedbackWhenLspDisabled() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
