@@ -8,6 +8,7 @@ mod hierarchy_workspace;
 mod navigation;
 
 pub use actions::*;
+pub use common::editor_core_ui_ffi_editor_ui_lsp_take_last_result_envelope_json;
 pub use completion::*;
 pub use document::*;
 pub use document_colors::*;

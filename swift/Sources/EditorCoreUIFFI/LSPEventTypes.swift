@@ -624,6 +624,16 @@ public extension EcuLspResultEvent {
     }
 }
 
+public extension EcuLspResultEnvelope {
+    var slotKind: EcuLspResultSlot? {
+        slot.map(EcuLspResultSlot.init(rawValue:))
+    }
+
+    var statusKind: EcuLspResultStatus {
+        EcuLspResultStatus(rawValue: status)
+    }
+}
+
 public extension EcuLspRequestEvent {
     var familyKind: EcuLspEventFamily {
         EcuLspEventFamily(rawValue: family)

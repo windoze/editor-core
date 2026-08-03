@@ -98,6 +98,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let multiDocumentWorkspaceEditTransactionUndo = Self(rawValue: 1 << 23)
     public static let multiDocumentTabLanguageID = Self(rawValue: 1 << 24)
     public static let jsonCommandEnvelope = Self(rawValue: 1 << 25)
+    public static let lspResultEnvelope = Self(rawValue: 1 << 26)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

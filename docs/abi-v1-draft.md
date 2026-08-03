@@ -293,8 +293,8 @@ Guidelines:
   third-party C/non-Swift hosts. The JSON contains `kind`, `abi_version`, `version`,
   `feature_flags`, and append-only feature descriptors.
 - Headless and UI FFI feature flags are append-only within the pre-v1 line. As of the current
-  draft, `ECF_FEATURE_JSON_COMMAND_ENVELOPE` and `ECU_FEATURE_JSON_COMMAND_ENVELOPE` mark
-  availability of the corresponding command JSON envelope symbols.
+  draft, `ECF_FEATURE_JSON_COMMAND_ENVELOPE`, `ECU_FEATURE_JSON_COMMAND_ENVELOPE`, and
+  `ECU_FEATURE_LSP_RESULT_ENVELOPE` mark availability of the corresponding JSON envelope symbols.
 - The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
   - new functions
@@ -370,6 +370,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
 EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8, uint32_t viewport_width_cells);
 EditorUi* editor_core_ui_ffi_editor_ui_clone_view(EditorUi* ui, uint32_t viewport_width_cells);
 char* editor_core_ui_ffi_editor_ui_execute_command_envelope_json(EditorUi* ui, const char* command_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_take_last_result_envelope_json(EditorUi* ui, const char* slot_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_hover(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_set_tab_width(EditorUi* ui, uint32_t width_cells);
 char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(EditorUi* ui, const char* workspace_edit_json_utf8, const char* document_uri_utf8);

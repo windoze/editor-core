@@ -101,6 +101,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransactionUndo))
         XCTAssertTrue(info.supports(.multiDocumentTabLanguageID))
         XCTAssertTrue(info.supports(.jsonCommandEnvelope))
+        XCTAssertTrue(info.supports(.lspResultEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -111,6 +112,11 @@ final class EditorCoreUIFFITests: XCTestCase {
             feature["name"] as? String == "json_command_envelope"
                 && (feature["bit"] as? NSNumber)?.uint8Value == 25
                 && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.jsonCommandEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "lsp_result_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 26
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.lspResultEnvelope.rawValue
         })
     }
 
@@ -191,6 +197,89 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(failure.error?.code, "future_error")
         XCTAssertNil(failure.error?.status)
         XCTAssertEqual(failure.error?.message, "future failure")
+    }
+
+    func testLSPTakeLastResultEnvelopeReportsEmptyAndError() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc", viewportWidthCells: 80)
+
+        let empty = try ui.lspTakeLastResultEnvelope(slot: .hover)
+        XCTAssertTrue(empty.ok)
+        XCTAssertEqual(empty.version, lib.abiVersion)
+        XCTAssertEqual(empty.slot, "hover")
+        XCTAssertEqual(empty.slotKind, .hover)
+        XCTAssertEqual(empty.status, "empty")
+        XCTAssertEqual(empty.statusKind, .empty)
+        XCTAssertFalse(empty.hasResult)
+        XCTAssertEqual(empty.value, .null)
+        XCTAssertNil(empty.error)
+
+        let failure = try ui.lspTakeLastResultEnvelope(slotRawValue: "future_slot")
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.version, lib.abiVersion)
+        XCTAssertEqual(failure.slot, "future_slot")
+        XCTAssertEqual(failure.slotKind, .unknown("future_slot"))
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertFalse(failure.hasResult)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "invalid_argument")
+        XCTAssertEqual(failure.error?.status, .invalidArgument)
+        XCTAssertTrue(failure.error?.message.contains("unknown lsp result slot") ?? false)
+    }
+
+    func testLSPTakeLastResultEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "slot": "future_slot",
+          "status": "future_status",
+          "has_result": true,
+          "value": {
+            "kind": "future_payload",
+            "items": [1, "x"]
+          },
+          "error": null,
+          "version": 3,
+          "futureTopLevel": "ignored"
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuLspResultEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.slotKind, .unknown("future_slot"))
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertTrue(success.hasResult)
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future payload object")
+            return
+        }
+        XCTAssertEqual(value["kind"], .string("future_payload"))
+        XCTAssertEqual(value["items"], .array([.number(1), .string("x")]))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "slot": "hover",
+          "status": "error",
+          "has_result": false,
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 123456,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 4
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuLspResultEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.slotKind, .hover)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {

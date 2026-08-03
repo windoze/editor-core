@@ -1683,6 +1683,16 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests'`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope ui lsp result slots`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把兼容的结构化 result envelope 扩展到 UI FFI LSP take-last result slots。
+  - 提交边界：新增 `editor_core_ui_ffi_editor_ui_lsp_take_last_result_envelope_json(EditorUi*, slot)` C ABI 和 `ECU_FEATURE_LSP_RESULT_ENVELOPE` feature bit；legacy per-slot `editor_core_ui_ffi_editor_ui_lsp_take_last_*_json(...)` 保持 status/out-param/null+last_error 语义；Swift `EditorUI` 新增 raw/typed LSP result envelope accessor 与 `EcuLspResultEnvelope` / `EcuLspResultEnvelopeError`。该提交不替换 App 主路径，不移除 legacy take-last API，不为 publish diagnostics/on-type formatting 等非 take-last slots 暴露虚假 buffer，不统一所有 remaining JSON helper，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi --release ffi_lsp_take_last_result_envelope_json_reports_empty_and_errors`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLSPTakeLastResultEnvelope'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

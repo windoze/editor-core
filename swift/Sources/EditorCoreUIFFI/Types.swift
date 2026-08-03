@@ -502,6 +502,91 @@ public struct EcuJSONCommandError: Equatable, Sendable, Decodable {
     }
 }
 
+public struct EcuLspResultEnvelope: Equatable, Sendable, Decodable {
+    public var ok: Bool
+    public var slot: String?
+    public var status: String
+    public var hasResult: Bool
+    public var value: EcuJSONValue?
+    public var error: EcuLspResultEnvelopeError?
+    public var version: UInt32
+
+    public init(
+        ok: Bool,
+        slot: String?,
+        status: String,
+        hasResult: Bool,
+        value: EcuJSONValue?,
+        error: EcuLspResultEnvelopeError?,
+        version: UInt32
+    ) {
+        self.ok = ok
+        self.slot = slot
+        self.status = status
+        self.hasResult = hasResult
+        self.value = value
+        self.error = error
+        self.version = version
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case slot
+        case status
+        case hasResult
+        case hasResultSnake = "has_result"
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        slot = try container.decodeIfPresent(String.self, forKey: .slot)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        hasResult = try container.decodeIfPresent(Bool.self, forKey: .hasResultSnake)
+            ?? container.decodeIfPresent(Bool.self, forKey: .hasResult)
+            ?? false
+        if container.contains(.value) {
+            value = try container.decode(EcuJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcuLspResultEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcuLspResultEnvelopeError: Equatable, Sendable, Decodable {
+    public var code: String
+    public var status: EcuStatus?
+    public var message: String
+
+    public init(code: String, status: EcuStatus?, message: String) {
+        self.code = code
+        self.status = status
+        self.message = message
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcuStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 public enum EcuLspAvailability: Equatable, Sendable, Decodable {
     case disabled
     case enabled

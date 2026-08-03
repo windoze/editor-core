@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 67108863,
+  "feature_flags": 134217727,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -75,6 +75,55 @@ or:
 
 Both strings are owned by the caller and must be freed with `editor_core_ui_ffi_string_free`.
 Availability is advertised by `ECU_FEATURE_JSON_COMMAND_ENVELOPE`.
+
+## LSP Result Envelope
+
+The legacy LSP take-last APIs remain available as status-code functions with `out_has_result` and
+`out_result_json_utf8` out parameters. Hosts that want a single JSON result/error shape can use the
+additive slot-based envelope variant:
+
+```c
+char* editor_core_ui_ffi_editor_ui_lsp_take_last_result_envelope_json(
+    EditorUi* ui,
+    const char* slot_utf8
+);
+```
+
+`slot_utf8` uses the same stable slot names as the LSP result event stream, such as `hover`,
+`definition`, `completion`, `code_action`, `semantic_tokens_full`, `document_symbols`,
+`workspace_diagnostic`, or `type_hierarchy_subtypes`.
+
+Empty result:
+
+```json
+{
+  "ok": true,
+  "slot": "hover",
+  "status": "empty",
+  "has_result": false,
+  "value": null,
+  "error": null,
+  "version": 1
+}
+```
+
+Error:
+
+```json
+{
+  "ok": false,
+  "slot": "future_slot",
+  "status": "error",
+  "has_result": false,
+  "value": null,
+  "error": { "code": "invalid_argument", "status": 1, "message": "unknown lsp result slot \"future_slot\"" },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_LSP_RESULT_ENVELOPE`.
 
 ## LSP Workspace Lifecycle
 

@@ -208,6 +208,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             name: "JSON command envelope",
             reason: "Swift command envelope APIs require structured `{ ok, value, error, version }` command results."
         ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .lspResultEnvelope,
+            name: "LSP result envelope",
+            reason: "Swift hosts can read LSP take-last result slots through structured `{ ok, value, error, version }` envelopes."
+        ),
     ]
 
     public static let requiredFeatures: [EditorCoreUIFFIRuntimeFeature] = knownFeatures

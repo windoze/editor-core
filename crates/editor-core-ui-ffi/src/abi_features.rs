@@ -56,6 +56,8 @@ pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO: u64 = 1 <<
 pub const ECU_FEATURE_MULTI_DOCUMENT_TAB_LANGUAGE_ID: u64 = 1 << 24;
 /// Feature bit: JSON command dispatcher can return `{ ok, value, error, version }` envelopes.
 pub const ECU_FEATURE_JSON_COMMAND_ENVELOPE: u64 = 1 << 25;
+/// Feature bit: LSP take-last result slots can return `{ ok, value, error, version }` envelopes.
+pub const ECU_FEATURE_LSP_RESULT_ENVELOPE: u64 = 1 << 26;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -82,7 +84,8 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS
     | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO
     | ECU_FEATURE_MULTI_DOCUMENT_TAB_LANGUAGE_ID
-    | ECU_FEATURE_JSON_COMMAND_ENVELOPE;
+    | ECU_FEATURE_JSON_COMMAND_ENVELOPE
+    | ECU_FEATURE_LSP_RESULT_ENVELOPE;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -247,6 +250,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECU_FEATURE_JSON_COMMAND_ENVELOPE,
         name: "json_command_envelope",
         description: "JSON command dispatcher can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 26,
+        flag: ECU_FEATURE_LSP_RESULT_ENVELOPE,
+        name: "lsp_result_envelope",
+        description: "LSP take-last result slots can return structured result envelopes.",
     },
 ];
 

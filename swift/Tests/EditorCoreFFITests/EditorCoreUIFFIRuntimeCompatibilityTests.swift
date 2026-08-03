@@ -42,6 +42,7 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .typedDerivedSnapshots })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentUI })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .jsonCommandEnvelope })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .lspResultEnvelope })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing UI FFI features"))
     }
 

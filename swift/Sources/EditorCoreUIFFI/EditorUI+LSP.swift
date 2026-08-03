@@ -324,6 +324,36 @@ extension EditorUI {
         return String(cString: ptr)
     }
 
+    public func lspTakeLastResultEnvelopeJSON(slotRawValue: String) throws -> String {
+        guard let ptr = slotRawValue.withCString({ slotPtr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_result_envelope_json(handle, slotPtr)
+        }) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_lsp_take_last_result_envelope_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func lspTakeLastResultEnvelopeJSON(slot: EcuLspResultSlot) throws -> String {
+        try lspTakeLastResultEnvelopeJSON(slotRawValue: slot.rawValue)
+    }
+
+    public func lspTakeLastResultEnvelope(slotRawValue: String) throws -> EcuLspResultEnvelope {
+        try Self.decodeSnapshot(
+            EcuLspResultEnvelope.self,
+            from: lspTakeLastResultEnvelopeJSON(slotRawValue: slotRawValue),
+            context: "editor_ui_lsp_take_last_result_envelope_decode"
+        )
+    }
+
+    public func lspTakeLastResultEnvelope(slot: EcuLspResultSlot) throws -> EcuLspResultEnvelope {
+        try lspTakeLastResultEnvelope(slotRawValue: slot.rawValue)
+    }
+
     func lspRequestJSON(
         _ json: String,
         context: String,

@@ -162,6 +162,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO (1ull << 23)
 #define ECU_FEATURE_MULTI_DOCUMENT_TAB_LANGUAGE_ID (1ull << 24)
 #define ECU_FEATURE_JSON_COMMAND_ENVELOPE    (1ull << 25)
+#define ECU_FEATURE_LSP_RESULT_ENVELOPE      (1ull << 26)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -417,6 +418,8 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_mark_request_timed_out(EditorUi* ui,
 // These APIs are non-blocking: they enqueue an LSP request and store the result internally.
 // Hosts should poll via `editor_core_ui_ffi_editor_ui_poll_processing` and then read the latest
 // result via the corresponding `take_*` function.
+char* editor_core_ui_ffi_editor_ui_lsp_take_last_result_envelope_json(EditorUi* ui,
+                                                                      const char* slot_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_hover(EditorUi* ui,
                                                        uint32_t line,
                                                        uint32_t column,

@@ -102,6 +102,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_JSON_COMMAND_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_RESULT_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -119,6 +123,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "json_command_envelope"
             && feature["bit"] == 25
             && feature["flag"] == ECU_FEATURE_JSON_COMMAND_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "lsp_result_envelope"
+            && feature["bit"] == 26
+            && feature["flag"] == ECU_FEATURE_LSP_RESULT_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -171,6 +180,55 @@ fn ffi_editor_ui_execute_command_envelope_json_reports_success_and_errors() {
     assert_eq!(null_arg["error"]["code"], "invalid_argument");
     assert_eq!(null_arg["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
     assert_eq!(null_arg["error"]["message"], "command_json_utf8 is null");
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
+fn ffi_lsp_take_last_result_envelope_json_reports_empty_and_errors() {
+    let initial = CString::new("abc").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+
+    let hover = CString::new("hover").unwrap();
+    let empty_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_lsp_take_last_result_envelope_json(ui, hover.as_ptr()),
+    );
+    let empty: serde_json::Value = serde_json::from_str(&empty_json).unwrap();
+    assert_eq!(empty["ok"], true);
+    assert_eq!(empty["slot"], "hover");
+    assert_eq!(empty["status"], "empty");
+    assert_eq!(empty["has_result"], false);
+    assert!(empty["value"].is_null());
+    assert!(empty["error"].is_null());
+    assert_eq!(empty["version"], ECU_ABI_VERSION);
+
+    let unknown = CString::new("future_slot").unwrap();
+    let error_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_lsp_take_last_result_envelope_json(ui, unknown.as_ptr()),
+    );
+    let error: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error["ok"], false);
+    assert_eq!(error["slot"], "future_slot");
+    assert_eq!(error["status"], "error");
+    assert_eq!(error["has_result"], false);
+    assert_eq!(error["error"]["code"], "invalid_argument");
+    assert_eq!(error["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown lsp result slot")
+    );
+
+    let null_slot_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_lsp_take_last_result_envelope_json(ui, ptr::null()),
+    );
+    let null_slot: serde_json::Value = serde_json::from_str(&null_slot_json).unwrap();
+    assert_eq!(null_slot["ok"], false);
+    assert!(null_slot["slot"].is_null());
+    assert_eq!(null_slot["error"]["code"], "invalid_argument");
+    assert_eq!(null_slot["error"]["message"], "slot_utf8 is null");
 
     unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
 }
