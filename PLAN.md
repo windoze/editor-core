@@ -1437,6 +1437,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroBatchDeletesNamedSublimeMacroFiles`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|CommandMacroImportExportUsesNativeFileSelectionProviders|CommandMacroImportsAndExportsSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
     - `git diff --check`
+- 中间提交：`feat(app): undo command macro deletion`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；为命名 `.sublime-macro` 删除补齐最近一次 undo 起点，降低单删或批量删除后的不可恢复风险。
+  - 提交边界：删除前加载并保存最近一次被删除宏的 command sequence 快照；新增 `macro.undo_delete` 命令和 Tools 菜单入口，恢复时不覆盖之后新建的同名宏，恢复成功后清空 undo 记录；单宏删除和批量删除都会替换该最近一次 undo 记录。该提交不实现多级删除历史、跨启动回收站、独立宏管理面板、完整 Sublime package/plugin command runtime、完整 `.sublime-macro` 扩展语义，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|CommandMacroBatchDeletesNamedSublimeMacroFiles)'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroBatchDeletesNamedSublimeMacroFiles|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|CommandMacroImportExportUsesNativeFileSelectionProviders|CommandMacroImportsAndExportsSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

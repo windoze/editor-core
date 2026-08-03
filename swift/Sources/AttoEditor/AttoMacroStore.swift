@@ -125,6 +125,25 @@ struct AttoMacroStore {
         }
     }
 
+    func restoreNamedMacros(_ macros: [(name: String, commands: [AttoRecordedCommand])], maxCount: Int) throws {
+        let names = try normalizedNamedMacroNames(macros.map { $0.name })
+        guard names.count == macros.count else {
+            throw AttoMacroStoreError.invalidMacroName("")
+        }
+        let restoreItems = try zip(names, macros).map { name, macro in
+            guard let fileURL = namedMacroFileURL(name) else {
+                throw AttoMacroStoreError.invalidMacroName(macro.name)
+            }
+            guard FileManager.default.fileExists(atPath: fileURL.path) == false else {
+                throw AttoMacroStoreError.macroAlreadyExists(name)
+            }
+            return (commands: macro.commands, fileURL: fileURL)
+        }
+        for item in restoreItems {
+            try save(item.commands, to: item.fileURL, maxCount: maxCount)
+        }
+    }
+
     func renameNamedMacro(_ oldName: String, to newName: String) throws {
         guard let oldFileURL = namedMacroFileURL(oldName) else {
             throw AttoMacroStoreError.invalidMacroName(oldName)

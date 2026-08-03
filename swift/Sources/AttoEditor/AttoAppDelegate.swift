@@ -15,6 +15,15 @@ struct AttoRecordedCommand: Equatable {
     let arguments: AttoCommandArguments
 }
 
+private struct AttoDeletedMacroSnapshot {
+    let name: String
+    let commands: [AttoRecordedCommand]
+}
+
+private struct AttoDeletedMacroUndoRecord {
+    let macros: [AttoDeletedMacroSnapshot]
+}
+
 @MainActor
 struct AttoRecentCommandStore {
     private static let defaultRecordsKey = "AttoEditor.RecentCommandRecords"
@@ -182,6 +191,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var isReplayingMacro = false
     private var currentMacroCommands: [AttoRecordedCommand] = []
     private var lastMacroCommands: [AttoRecordedCommand] = []
+    private var deletedMacroUndoRecord: AttoDeletedMacroUndoRecord?
 
     private static let maxRecentCommandCount = 12
     private static let maxRecordedMacroCommandCount = 512
@@ -1012,6 +1022,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             ) { [weak self] arguments in
                 self?.deleteNamedMacros(arguments: arguments)
             },
+            .init(id: "macro.undo_delete", title: "Macro: Undo Macro Delete") { [weak self] in
+                _ = self?.undoDeletedMacros()
+            },
             .init(
                 id: "macro.import_file",
                 title: "Macro: Import Macro File…",
@@ -1676,12 +1689,17 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             NSSound.beep()
             return false
         }
-        guard confirmDeleteNamedMacro(name) else {
+        guard let snapshots = macroSnapshotsForDeletion(named: [name], macroStore: macroStore) else {
+            return false
+        }
+        let names = snapshots.map(\.name)
+        guard confirmDeleteNamedMacros(names) else {
             return false
         }
 
         do {
-            try macroStore.deleteNamedMacro(name)
+            try macroStore.deleteNamedMacros(names)
+            deletedMacroUndoRecord = AttoDeletedMacroUndoRecord(macros: snapshots)
             return true
         } catch {
             NSSound.beep()
@@ -1696,26 +1714,17 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return false
         }
 
-        let names: [String]
-        do {
-            names = try macroStore.normalizedNamedMacroNames(rawNames)
-        } catch {
-            NSSound.beep()
-            NSLog("AttoEditor: invalid macro names for batch delete: %@", String(describing: error))
+        guard let snapshots = macroSnapshotsForDeletion(named: rawNames, macroStore: macroStore) else {
             return false
         }
-        let existingNames = Set(macroStore.namedMacroNames())
-        if let missingName = names.first(where: { existingNames.contains($0) == false }) {
-            NSSound.beep()
-            NSLog("AttoEditor: failed to delete macros, missing macro %@", missingName)
-            return false
-        }
+        let names = snapshots.map(\.name)
         guard confirmDeleteNamedMacros(names) else {
             return false
         }
 
         do {
             try macroStore.deleteNamedMacros(names)
+            deletedMacroUndoRecord = AttoDeletedMacroUndoRecord(macros: snapshots)
             return true
         } catch {
             NSSound.beep()
@@ -1724,8 +1733,57 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
     }
 
-    private func confirmDeleteNamedMacro(_ name: String) -> Bool {
-        confirmDeleteNamedMacros([name])
+    private func undoDeletedMacros() -> Bool {
+        guard isRecordingMacro == false,
+              let macroStore,
+              let undoRecord = deletedMacroUndoRecord,
+              undoRecord.macros.isEmpty == false
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        let macros = undoRecord.macros.map { (name: $0.name, commands: $0.commands) }
+        do {
+            try macroStore.restoreNamedMacros(macros, maxCount: Self.maxRecordedMacroCommandCount)
+            deletedMacroUndoRecord = nil
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to undo macro delete: %@", String(describing: error))
+            return false
+        }
+    }
+
+    private func macroSnapshotsForDeletion(
+        named rawNames: [String],
+        macroStore: AttoMacroStore
+    ) -> [AttoDeletedMacroSnapshot]? {
+        let names: [String]
+        do {
+            names = try macroStore.normalizedNamedMacroNames(rawNames)
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: invalid macro names for delete: %@", String(describing: error))
+            return nil
+        }
+
+        let existingNames = Set(macroStore.namedMacroNames())
+        var snapshots: [AttoDeletedMacroSnapshot] = []
+        for name in names {
+            guard existingNames.contains(name) else {
+                NSSound.beep()
+                NSLog("AttoEditor: failed to delete macros, missing macro %@", name)
+                return nil
+            }
+            guard let commands = macroStore.loadNamedMacro(name, maxCount: Self.maxRecordedMacroCommandCount) else {
+                NSSound.beep()
+                NSLog("AttoEditor: failed to load macro %@ before delete", name)
+                return nil
+            }
+            snapshots.append(AttoDeletedMacroSnapshot(name: name, commands: commands))
+        }
+        return snapshots
     }
 
     private func confirmDeleteNamedMacros(_ names: [String]) -> Bool {
@@ -1937,6 +1995,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return isRecordingMacro == false && lastMacroCommands.isEmpty == false && macroStore != nil
         case "macro.replay_named", "macro.rename_named", "macro.delete_named", "macro.delete_named_batch":
             return isRecordingMacro == false && (macroStore?.namedMacroNames().isEmpty == false)
+        case "macro.undo_delete":
+            return isRecordingMacro == false && macroStore != nil && (deletedMacroUndoRecord?.macros.isEmpty == false)
         case "macro.import_file":
             return isRecordingMacro == false && macroStore != nil
         case "macro.export_named":
@@ -2081,7 +2141,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return Self.macroImportCommandSchema()
         case "macro.export_named":
             return Self.macroExportCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
-        case "macro.toggle_recording", "macro.replay_last":
+        case "macro.toggle_recording", "macro.replay_last", "macro.undo_delete":
             return AttoCommandSchema(macroPolicy: .notRecordable)
         case "file.new", "file.save", "file.close_tab", "file.close_all_tabs",
              "file.close_other_tabs", "file.close_tabs_to_right",

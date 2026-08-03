@@ -93,6 +93,7 @@ enum AttoMainMenuBuilder {
         toolsMenu.addItem(commandItem(title: "Rename Named Macro…", commandID: "macro.rename_named", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Delete Named Macro…", commandID: "macro.delete_named", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Delete Named Macros…", commandID: "macro.delete_named_batch", appDelegate: appDelegate))
+        toolsMenu.addItem(commandItem(title: "Undo Macro Delete", commandID: "macro.undo_delete", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Import Macro File…", commandID: "macro.import_file", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Export Named Macro…", commandID: "macro.export_named", appDelegate: appDelegate))
 
