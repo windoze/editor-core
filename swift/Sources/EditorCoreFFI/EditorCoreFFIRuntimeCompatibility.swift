@@ -133,6 +133,11 @@ public enum EditorCoreFFIRuntimeCompatibility {
             name: "editor-state derived snapshot envelope",
             reason: "Swift editor-state derived snapshot envelope APIs require structured diagnostics, decorations, and symbol snapshot results."
         ),
+        EditorCoreFFIRuntimeFeature(
+            feature: .workspaceResultEnvelope,
+            name: "workspace result envelope",
+            reason: "Swift workspace search and text-edit result envelope APIs require structured workspace results and errors."
+        ),
     ]
 
     public static let requiredFeatures: [EditorCoreFFIRuntimeFeature] = knownFeatures

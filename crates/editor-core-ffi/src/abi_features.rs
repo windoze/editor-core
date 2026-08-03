@@ -23,6 +23,8 @@ pub const ECF_FEATURE_JSON_COMMAND_ENVELOPE: u64 = 1 << 8;
 pub const ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE: u64 = 1 << 9;
 /// Feature bit: headless editor-state derived snapshot query APIs can return structured envelopes.
 pub const ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE: u64 = 1 << 10;
+/// Feature bit: headless workspace search/apply JSON result APIs can return structured envelopes.
+pub const ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE: u64 = 1 << 11;
 
 pub const ECF_FEATURE_FLAGS: u64 = ECF_FEATURE_JSON_COMMAND_DISPATCH
     | ECF_FEATURE_TYPED_HOT_PATH
@@ -34,7 +36,8 @@ pub const ECF_FEATURE_FLAGS: u64 = ECF_FEATURE_JSON_COMMAND_DISPATCH
     | ECF_FEATURE_TREESITTER_PROCESSOR
     | ECF_FEATURE_JSON_COMMAND_ENVELOPE
     | ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE
-    | ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE;
+    | ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE
+    | ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -109,6 +112,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE,
         name: "editor_state_derived_snapshot_envelope",
         description: "Headless editor-state derived snapshot query APIs can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 11,
+        flag: ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE,
+        name: "workspace_result_envelope",
+        description: "Headless workspace search/apply JSON result APIs can return structured result envelopes.",
     },
 ];
 

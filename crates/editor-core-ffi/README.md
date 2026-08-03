@@ -65,6 +65,7 @@ include:
 - `ECF_FEATURE_JSON_COMMAND_ENVELOPE`
 - `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE`
 - `ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE`
+- `ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE`
 
 `editor_core_ffi_runtime_info_json()` returns a caller-owned one-call capability snapshot for
 C/non-Swift hosts:
@@ -74,7 +75,7 @@ C/non-Swift hosts:
   "kind": "editor-core-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 2047,
+  "feature_flags": 4095,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -335,6 +336,54 @@ Failure envelopes keep the same metadata and report a structured `EcfStatus`:
     "code": "internal",
     "status": 7,
     "message": "get_minimap_content failed: ..."
+  },
+  "version": 1
+}
+```
+
+## Workspace Result Envelopes
+
+Legacy workspace result helpers keep returning raw JSON on success and `NULL` on failure. Hosts
+that need non-null structured success/error results can use the envelope variants guarded by
+`ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE`:
+
+```c
+char* editor_core_ffi_workspace_search_all_open_buffers_envelope_json(
+    const EcfWorkspace* workspace,
+    const char* query,
+    const char* options_json);
+
+char* editor_core_ffi_workspace_apply_text_edits_envelope_json(
+    EcfWorkspace* workspace,
+    const char* edits_json);
+```
+
+Success envelopes preserve the legacy result payload under `value` and identify the operation:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "operation": "search_all_open_buffers",
+  "value": { "results": [] },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes return an allocated JSON string with a structured `EcfStatus` instead of the
+legacy `NULL` sentinel:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "operation": "apply_text_edits",
+  "value": null,
+  "error": {
+    "code": "parse",
+    "status": 5,
+    "message": "invalid workspace text edits JSON: ..."
   },
   "version": 1
 }

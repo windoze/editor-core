@@ -44,6 +44,7 @@ final class EditorCoreFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .jsonCommandEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .renderingSnapshotEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .editorStateDerivedSnapshotEnvelope })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .workspaceResultEnvelope })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing core FFI features"))
     }
 

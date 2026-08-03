@@ -139,6 +139,7 @@ void editor_core_ffi_string_free(char* ptr);
 #define ECF_FEATURE_JSON_COMMAND_ENVELOPE      (1ull << 8)
 #define ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE (1ull << 9)
 #define ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE (1ull << 10)
+#define ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE  (1ull << 11)
 uint64_t editor_core_ffi_feature_flags(void);
 char* editor_core_ffi_runtime_info_json(void);
 
@@ -226,7 +227,9 @@ char* editor_core_ffi_workspace_minimap_envelope_json(EcfWorkspace* workspace, u
 char* editor_core_ffi_workspace_viewport_composed_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_workspace_viewport_composed_envelope_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_workspace_search_all_open_buffers_json(const EcfWorkspace* workspace, const char* query, const char* options_json);
+char* editor_core_ffi_workspace_search_all_open_buffers_envelope_json(const EcfWorkspace* workspace, const char* query, const char* options_json);
 char* editor_core_ffi_workspace_apply_text_edits_json(EcfWorkspace* workspace, const char* edits_json);
+char* editor_core_ffi_workspace_apply_text_edits_envelope_json(EcfWorkspace* workspace, const char* edits_json);
 int32_t editor_core_ffi_workspace_insert_text_utf8(EcfWorkspace* workspace, uint64_t view_id, const uint8_t* bytes, uint32_t len);
 int32_t editor_core_ffi_workspace_move_to(EcfWorkspace* workspace, uint64_t view_id, uint32_t line, uint32_t column);
 int32_t editor_core_ffi_workspace_backspace(EcfWorkspace* workspace, uint64_t view_id);

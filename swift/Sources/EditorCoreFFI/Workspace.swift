@@ -257,11 +257,46 @@ public final class Workspace {
         return try ffi.takeOwnedCString(ptr, context: "workspace_search_all_open_buffers_json")
     }
 
+    public func searchAllOpenBuffersEnvelopeJSON(query: String, optionsJSON: String? = nil) throws -> String {
+        let ptr: UnsafeMutablePointer<CChar>? = query.withCString { queryPtr in
+            if let optionsJSON {
+                return optionsJSON.withCString { optionsPtr in
+                    editor_core_ffi_workspace_search_all_open_buffers_envelope_json(handle, queryPtr, optionsPtr)
+                }
+            }
+            return editor_core_ffi_workspace_search_all_open_buffers_envelope_json(handle, queryPtr, nil)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "workspace_search_all_open_buffers_envelope_json")
+    }
+
+    public func searchAllOpenBuffersEnvelope(query: String, optionsJSON: String? = nil) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: searchAllOpenBuffersEnvelopeJSON(query: query, optionsJSON: optionsJSON),
+            context: "workspace_search_all_open_buffers_envelope"
+        )
+    }
+
     public func applyTextEditsJSON(_ editsJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = editsJSON.withCString { editsPtr in
             editor_core_ffi_workspace_apply_text_edits_json(handle, editsPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "workspace_apply_text_edits_json")
+    }
+
+    public func applyTextEditsEnvelopeJSON(_ editsJSON: String) throws -> String {
+        let ptr: UnsafeMutablePointer<CChar>? = editsJSON.withCString { editsPtr in
+            editor_core_ffi_workspace_apply_text_edits_envelope_json(handle, editsPtr)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "workspace_apply_text_edits_envelope_json")
+    }
+
+    public func applyTextEditsEnvelope(_ editsJSON: String) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: applyTextEditsEnvelopeJSON(editsJSON),
+            context: "workspace_apply_text_edits_envelope"
+        )
     }
 
     public func insertText(viewId: UInt64, _ text: String) throws {

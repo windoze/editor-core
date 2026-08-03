@@ -351,6 +351,93 @@ public struct EcfDerivedSnapshotEnvelopeError: Equatable, Sendable, Decodable {
     }
 }
 
+public enum EcfWorkspaceResultEnvelopeStatus: Hashable, Sendable {
+    case success
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "success":
+            self = .success
+        case "error":
+            self = .error
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .success:
+            return "success"
+        case .error:
+            return "error"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public struct EcfWorkspaceResultEnvelope: Equatable, Sendable, Decodable {
+    public let ok: Bool
+    public let status: String
+    public let operation: String
+    public let value: EcfJSONValue?
+    public let error: EcfWorkspaceResultEnvelopeError?
+    public let version: UInt32
+
+    public var statusKind: EcfWorkspaceResultEnvelopeStatus {
+        EcfWorkspaceResultEnvelopeStatus(rawValue: status)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case status
+        case operation
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        operation = try container.decodeIfPresent(String.self, forKey: .operation) ?? "unknown"
+        if container.contains(.value) {
+            value = try container.decode(EcfJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcfWorkspaceResultEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcfWorkspaceResultEnvelopeError: Equatable, Sendable, Decodable {
+    public let code: String
+    public let status: EcfStatus?
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcfStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 public struct EcfAutoPair: Equatable, Sendable {
     public let open: String
     public let close: String

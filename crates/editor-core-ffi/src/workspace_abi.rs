@@ -635,23 +635,8 @@ pub extern "C" fn editor_core_ffi_workspace_search_all_open_buffers_json(
     options_json: *const c_char,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let workspace = require_ref(workspace, "workspace")?;
-        let query = require_string(query, "query")?;
-        let options = if options_json.is_null() {
-            SearchOptions::default()
-        } else {
-            let options_text = require_string(options_json, "options_json")?;
-            let parsed: FfiSearchOptions = parse_json(&options_text, "search options")?;
-            parsed.into()
-        };
-
-        let results = workspace
-            .inner
-            .search_all_open_buffers(&query, options)
-            .map_err(|err| format!("search failed: {err}"))?;
-        Ok(json!({
-            "results": results.iter().map(value_workspace_search_result).collect::<Vec<_>>()
-        }))
+        workspace_search_all_open_buffers_value(workspace, query, options_json)
+            .map_err(|(_, message)| message)
     })
 }
 
@@ -664,37 +649,156 @@ pub extern "C" fn editor_core_ffi_workspace_apply_text_edits_json(
     workspace: *mut EcfWorkspace,
     edits_json: *const c_char,
 ) -> *mut c_char {
-    #[derive(Debug, Deserialize)]
-    struct WorkspaceEditsItem {
-        buffer_id: u64,
-        edits: Vec<FfiTextEditSpec>,
-    }
-
     result_json_ptr(ptr::null_mut(), || {
-        let workspace = require_mut(workspace, "workspace")?;
-        let edits_json = require_string(edits_json, "edits_json")?;
-        let parsed: Vec<WorkspaceEditsItem> = parse_json(&edits_json, "workspace text edits")?;
+        workspace_apply_text_edits_value(workspace, edits_json).map_err(|(_, message)| message)
+    })
+}
 
-        let edits = parsed.into_iter().map(|item| {
-            (
-                BufferId::from_raw(item.buffer_id),
-                item.edits
-                    .into_iter()
-                    .map(Into::into)
-                    .collect::<Vec<TextEditSpec>>(),
-            )
-        });
+/// Search all open buffers and return a stable result envelope.
+///
+/// Caller owns returned string and must free it with `editor_core_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_search_all_open_buffers_envelope_json(
+    workspace: *const EcfWorkspace,
+    query: *const c_char,
+    options_json: *const c_char,
+) -> *mut c_char {
+    workspace_result_envelope_json_ptr("search_all_open_buffers", || {
+        workspace_search_all_open_buffers_value(workspace, query, options_json)
+    })
+}
 
-        let applied = workspace
-            .inner
-            .apply_text_edits(edits)
-            .map_err(|err| format!("apply_text_edits failed: {err:?}"))?;
+/// Apply workspace text edits and return a stable result envelope.
+///
+/// Caller owns returned string and must free it with `editor_core_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_apply_text_edits_envelope_json(
+    workspace: *mut EcfWorkspace,
+    edits_json: *const c_char,
+) -> *mut c_char {
+    workspace_result_envelope_json_ptr("apply_text_edits", || {
+        workspace_apply_text_edits_value(workspace, edits_json)
+    })
+}
 
-        Ok(json!({
-            "applied": applied
+#[derive(Debug, Deserialize)]
+struct WorkspaceEditsItem {
+    buffer_id: u64,
+    edits: Vec<FfiTextEditSpec>,
+}
+
+fn workspace_search_all_open_buffers_value(
+    workspace: *const EcfWorkspace,
+    query: *const c_char,
+    options_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    let workspace = require_ref(workspace, "workspace")
+        .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    let query = require_string_status(query, "query")?;
+    let options = if options_json.is_null() {
+        SearchOptions::default()
+    } else {
+        let options_text = require_string_status(options_json, "options_json")?;
+        let parsed: FfiSearchOptions = parse_json(&options_text, "search options")
+            .map_err(|message| (EcfStatus::Parse, message))?;
+        parsed.into()
+    };
+
+    let results = workspace
+        .inner
+        .search_all_open_buffers(&query, options)
+        .map_err(|err| (EcfStatus::Internal, format!("search failed: {err}")))?;
+    Ok(json!({
+        "results": results
+            .iter()
+            .map(value_workspace_search_result)
+            .collect::<Vec<_>>()
+    }))
+}
+
+fn workspace_apply_text_edits_value(
+    workspace: *mut EcfWorkspace,
+    edits_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    let workspace = require_mut(workspace, "workspace")
+        .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    let edits_json = require_string_status(edits_json, "edits_json")?;
+    let parsed: Vec<WorkspaceEditsItem> = parse_json(&edits_json, "workspace text edits")
+        .map_err(|message| (EcfStatus::Parse, message))?;
+
+    let edits = parsed.into_iter().map(|item| {
+        (
+            BufferId::from_raw(item.buffer_id),
+            item.edits
                 .into_iter()
-                .map(|(id, count)| json!({ "buffer_id": id.get(), "edit_count": count }))
-                .collect::<Vec<_>>()
-        }))
+                .map(Into::into)
+                .collect::<Vec<TextEditSpec>>(),
+        )
+    });
+
+    let applied = workspace.inner.apply_text_edits(edits).map_err(|err| {
+        (
+            EcfStatus::Internal,
+            format!("apply_text_edits failed: {err:?}"),
+        )
+    })?;
+
+    Ok(json!({
+        "applied": applied
+            .into_iter()
+            .map(|(id, count)| json!({ "buffer_id": id.get(), "edit_count": count }))
+            .collect::<Vec<_>>()
+    }))
+}
+
+fn workspace_result_envelope_json_ptr<F>(operation: &'static str, f: F) -> *mut c_char
+where
+    F: FnOnce() -> Result<Value, (EcfStatus, String)>,
+{
+    let envelope = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(Ok(value)) => {
+            clear_last_error();
+            workspace_result_envelope_success(operation, value)
+        }
+        Ok(Err((status, message))) => {
+            set_last_error(message.clone());
+            workspace_result_envelope_error(operation, status, message)
+        }
+        Err(_) => {
+            let message = "panic across FFI boundary".to_string();
+            set_last_error(message.clone());
+            workspace_result_envelope_error(operation, EcfStatus::Internal, message)
+        }
+    };
+    json_ptr(envelope)
+}
+
+fn workspace_result_envelope_success(operation: &'static str, value: Value) -> Value {
+    json!({
+        "ok": true,
+        "status": "success",
+        "operation": operation,
+        "value": value,
+        "error": Value::Null,
+        "version": ECF_ABI_VERSION,
+    })
+}
+
+fn workspace_result_envelope_error(
+    operation: &'static str,
+    status: EcfStatus,
+    message: String,
+) -> Value {
+    json!({
+        "ok": false,
+        "status": "error",
+        "operation": operation,
+        "value": Value::Null,
+        "error": {
+            "code": ecf_status_label(status),
+            "status": status.code(),
+            "message": message,
+        },
+        "version": ECF_ABI_VERSION,
     })
 }
