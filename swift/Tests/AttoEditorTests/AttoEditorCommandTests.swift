@@ -4193,6 +4193,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let window = attachToWindow(vc)
         defer { window.close() }
         vc.openFile(url: fileURL, mode: .pinned)
+        let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
 
         XCTAssertTrue(vc._showHierarchyResultJSONForTesting("""
         [
@@ -4253,6 +4254,17 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._hierarchyPanelRowCountForTesting(), 2)
         XCTAssertEqual(vc._hierarchyPanelEntriesForTesting().map(\.name), ["render", "layout"])
         XCTAssertTrue(vc._hierarchyPanelIsVisibleForTesting())
+
+        let events = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
+            .filter { $0.family == "hierarchy" }
+        XCTAssertEqual(events.map(\.payload), [.hierarchy(title: "Incoming Calls", itemCount: 2)])
+
+        XCTAssertTrue(vc.showLspWorkbenchPanel())
+        let statuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(statuses["Hierarchy"]?.hasPrefix("2 results | Fresh | Result #") == true)
+        XCTAssertTrue(statuses["Hierarchy"]?.contains(" | hierarchy | Incoming Calls") == true)
     }
 
     func testFormattingResultsUseUnifiedFeedbackStatus() throws {

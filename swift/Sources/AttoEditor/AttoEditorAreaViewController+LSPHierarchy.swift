@@ -447,6 +447,11 @@ extension AttoEditorAreaViewController {
     func recordHierarchyPanelSnapshot(entries: [AttoLspHierarchyParser.Entry], title: String) {
         let snapshot = AttoHierarchyPanelController.Snapshot(title: title, entries: entries)
         hierarchyPanelSnapshot = snapshot
+        lspResultEventStream.record(
+            family: "hierarchy",
+            title: title,
+            payload: .hierarchy(title: title, itemCount: entries.count)
+        )
         if hierarchyPanelController?.isVisible == true {
             hierarchyPanelController?.update(snapshot: snapshot)
         }

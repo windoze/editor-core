@@ -1253,6 +1253,14 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelShowsDocumentColorLifecycleEvent`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
     - `git diff --check`
+- 中间提交：`feat(app): show workbench hierarchy lifecycle`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；让 Hierarchy result 写入已有 App 层 result event stream，并让统一 LSP Workbench 的 Hierarchy 行消费该 event metadata。
+  - 提交边界：新增 `AttoLspResultLifecycleEvent.Payload.hierarchy`，`recordHierarchyPanelSnapshot(...)` 记录 `hierarchy` family event；Workbench 的 Hierarchy 行在已有 hierarchy result event 时展示结果数量、Fresh、Result sequence、family 和 title，旧无 event 的 snapshot 仍保留数量 fallback。该提交不改变 call/type hierarchy request/prepare/children 协议，不实现树状展开或 children refresh，也不新增统一 pin/history 数据模型或真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testHierarchyPanelUsesLastHierarchyResults`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

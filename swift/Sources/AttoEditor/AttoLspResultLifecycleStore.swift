@@ -162,6 +162,7 @@ struct AttoLspResultLifecycleEvent: Equatable {
         case rename(newName: String, documentCount: Int, resourceOperationCount: Int, applied: Bool)
         case documentColors(mode: String, itemCount: Int)
         case colorPresentations(itemCount: Int)
+        case hierarchy(title: String, itemCount: Int)
         case diagnostics(
             scope: AttoDiagnosticsLifecycleSnapshot.Scope,
             problemCount: Int,

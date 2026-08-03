@@ -79,6 +79,10 @@ extension AttoEditorAreaViewController {
         let documentColorCount = lastDocumentColorItems.count
         let documentColorStatus = lspWorkbenchDocumentColorStatus(count: documentColorCount)
         let hierarchyCount = hierarchyPanelSnapshot?.entries.count ?? 0
+        let hierarchyStatus = lspWorkbenchResultEventStatus(
+            countText: hierarchyCount == 1 ? "1 result" : "\(hierarchyCount) results",
+            family: "hierarchy"
+        ) ?? (hierarchyCount == 1 ? "1 result" : "\(hierarchyCount) results")
 
         return [
             .init(
@@ -148,7 +152,7 @@ extension AttoEditorAreaViewController {
                 id: LspWorkbenchItemID.hierarchy,
                 title: "Hierarchy",
                 detail: "Latest call or type hierarchy children result",
-                status: hierarchyCount == 1 ? "1 result" : "\(hierarchyCount) results",
+                status: hierarchyStatus,
                 isEnabled: hierarchyCount > 0
             ),
         ]
@@ -174,14 +178,19 @@ extension AttoEditorAreaViewController {
     private func lspWorkbenchDocumentColorStatus(count: Int) -> String {
         guard count > 0 else { return "request on open" }
         let countText = count == 1 ? "1 color" : "\(count) colors"
-        guard let event = lspWorkbenchResultEvent(family: "document_colors") else {
-            return "\(count) cached"
-        }
-        return lspWorkbenchResultEventStatus(countText: countText, event: event)
+        return lspWorkbenchResultEventStatus(countText: countText, family: "document_colors") ?? "\(count) cached"
     }
 
     private func lspWorkbenchResultEvent(family: String) -> AttoLspResultLifecycleEvent? {
         lspResultEventStream.events.reversed().first { $0.family == family }
+    }
+
+    private func lspWorkbenchResultEventStatus(
+        countText: String,
+        family: String
+    ) -> String? {
+        guard let event = lspWorkbenchResultEvent(family: family) else { return nil }
+        return lspWorkbenchResultEventStatus(countText: countText, event: event)
     }
 
     private func lspWorkbenchResultEventStatus(
