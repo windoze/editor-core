@@ -436,6 +436,13 @@
     - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIUndoesMultipleWorkspaceEditTransactions`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditTransactionUndoCommandRestoresAppProjectionAndFiles|AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents'`
     - `git diff --check`
+- 中间提交：`feat(app): register workspace edit undo manager`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把成功应用的 core-owned WorkspaceEdit transaction 注册到窗口 AppKit `UndoManager`，让系统 undo action 也能触发同一条跨文件 transaction undo。
+  - 提交边界：只在 AttoEditor App 成功 apply core WorkspaceEdit transaction 后注册 `Workspace Edit` undo action，action 复用既有 `undoLastCoreWorkspaceEditTransaction()` 并同步 AppKit 投影；不改变 core undo stack、C ABI 或 Swift wrapper，不实现 redo，也不把普通 editor buffer undo 改成 WorkspaceEdit undo。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditRegistersAppKitUndoManagerAction`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditTransactionUndoCommandRestoresAppProjectionAndFiles|AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents'`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

@@ -251,6 +251,7 @@ extension AttoEditorAreaViewController {
 
             updateStatusBar()
             showWorkspaceEditSummaryIfNeeded(result, editorView: feedbackEditorView)
+            registerWorkspaceEditUndoManagerAction()
             refreshWorkspaceEditHistoryPanelIfVisible()
             if let activeEditorView = activeTab?.editCore.editorView {
                 view.window?.makeFirstResponder(activeEditorView)
@@ -592,6 +593,14 @@ extension AttoEditorAreaViewController {
             NSSound.beep()
             return false
         }
+    }
+
+    func registerWorkspaceEditUndoManagerAction() {
+        guard let undoManager = view.window?.undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { controller in
+            controller.undoLastCoreWorkspaceEditTransaction()
+        }
+        undoManager.setActionName("Workspace Edit")
     }
 
     func projectedFileURLsByTabID() -> [UUID: URL] {
