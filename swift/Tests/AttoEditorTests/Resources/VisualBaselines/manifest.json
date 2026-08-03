@@ -637,6 +637,185 @@
       },
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-problems-panel-dark",
+      "description": "Dark active Problems panel with active and workspace diagnostics.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-problems-panel-dark.png",
+      "artifactName": "persistent-problems-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 860,
+        "height": 540
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.ProblemsPanel.Panel",
+        "width": 700,
+        "height": 360
+      },
+      "activeDiagnostics": {
+        "items": [
+          {
+            "line": 4,
+            "utf16Character": 8,
+            "length": 5,
+            "severity": 1,
+            "source": "swift",
+            "message": "print is unavailable in production palette",
+            "code": "ATTO001"
+          },
+          {
+            "line": 1,
+            "utf16Character": 8,
+            "length": 12,
+            "severity": 2,
+            "source": "swift",
+            "message": "primaryValue is never mutated",
+            "code": "ATTO002"
+          }
+        ]
+      },
+      "workspaceDiagnostics": {
+        "documents": [
+          {
+            "resultId": "active-workspace-problems",
+            "items": [
+              {
+                "line": 3,
+                "utf16Character": 9,
+                "length": 10,
+                "severity": 2,
+                "source": "workspace",
+                "message": "renderLine has stale project metadata",
+                "code": "ATTO101"
+              }
+            ]
+          }
+        ]
+      },
+      "persistentPanel": "problemsPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-workspace-problems-panel-dark",
+      "description": "Dark Workspace Problems panel with diagnostics from multiple workspace documents.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-workspace-problems-panel-dark.png",
+      "artifactName": "persistent-workspace-problems-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 880,
+        "height": 540
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.WorkspaceProblemsPanel.Panel",
+        "width": 720,
+        "height": 380
+      },
+      "workspaceDiagnostics": {
+        "documents": [
+          {
+            "resultId": "workspace-active-problems",
+            "items": [
+              {
+                "line": 0,
+                "utf16Character": 7,
+                "length": 14,
+                "severity": 1,
+                "source": "workspace",
+                "message": "PaletteFixture is missing generated registration",
+                "code": "ATTO201"
+              }
+            ]
+          },
+          {
+            "fileName": "palette-secondary.swift",
+            "resultId": "workspace-secondary-problems",
+            "items": [
+              {
+                "line": 2,
+                "utf16Character": 4,
+                "length": 9,
+                "severity": 2,
+                "source": "workspace",
+                "message": "secondary palette import is unused",
+                "code": "ATTO202"
+              },
+              {
+                "line": 8,
+                "utf16Character": 12,
+                "length": 5,
+                "severity": 3,
+                "source": "workspace",
+                "message": "consider extracting shared fixture state",
+                "code": "ATTO203"
+              }
+            ]
+          }
+        ]
+      },
+      "persistentPanel": "workspaceProblemsPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-workbench-panel-dark",
+      "description": "Dark LSP Workbench panel summarizing diagnostics lifecycle state.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-workbench-panel-dark.png",
+      "artifactName": "persistent-workbench-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 920,
+        "height": 580
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.WorkbenchPanel.Panel",
+        "width": 780,
+        "height": 440
+      },
+      "activeDiagnostics": {
+        "items": [
+          {
+            "line": 4,
+            "utf16Character": 8,
+            "length": 5,
+            "severity": 1,
+            "source": "swift",
+            "message": "print is unavailable in production palette",
+            "code": "ATTO001"
+          }
+        ]
+      },
+      "workspaceDiagnostics": {
+        "documents": [
+          {
+            "resultId": "workbench-workspace-problems",
+            "items": [
+              {
+                "line": 1,
+                "utf16Character": 8,
+                "length": 12,
+                "severity": 2,
+                "source": "workspace",
+                "message": "primaryValue is stale in workspace index",
+                "code": "ATTO301"
+              }
+            ]
+          }
+        ]
+      },
+      "persistentPanel": "lspWorkbenchPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }

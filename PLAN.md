@@ -2209,6 +2209,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover visual problems workbench panels`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展持久在线 result panel 视觉矩阵，把 active Problems、Workspace Problems 和 LSP Workbench panels 纳入可记录 artifact。
+  - 提交边界：测试 harness 新增结构化 `activeDiagnostics` / `workspaceDiagnostics` manifest actions 和 `persistentPanel` 打开动作；manifest 新增 dark Problems panel、dark Workspace Problems panel 和 dark LSP Workbench panel 三个 artifact case。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 UI 或运行时代码，也不覆盖 Code Lens/Inlay/Document Links/Colors/Hierarchy 等其它持久在线 panels。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

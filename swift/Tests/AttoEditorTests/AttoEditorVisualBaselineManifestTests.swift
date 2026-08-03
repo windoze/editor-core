@@ -111,7 +111,7 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         } else if visualCase.showFindBar {
             vc.showFindBar()
         }
-        try applyScenarioActions(visualCase, to: vc)
+        try applyScenarioActions(visualCase, to: vc, documentURLs: documentURLs, tempDir: tempDir)
         vc.view.layoutSubtreeIfNeeded()
 
         let captureView = try captureTargetView(for: visualCase, in: window, controller: vc, fallbackView: vc.view)
@@ -204,7 +204,9 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
 
     private func applyScenarioActions(
         _ visualCase: AttoVisualBaselineCase,
-        to vc: AttoEditorAreaViewController
+        to vc: AttoEditorAreaViewController,
+        documentURLs: [String: URL],
+        tempDir: URL
     ) throws {
         if let foldingRanges = visualCase.foldingRanges {
             XCTAssertTrue(vc.applyFoldingRangesResultToActiveTab(foldingRanges), visualCase.id)
@@ -242,6 +244,29 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
             tab.editCore.needsDisplay = true
             vc.updateStatusBar()
             vc.view.window?.makeFirstResponder(tab.editCore.editorView)
+        }
+        if let activeDiagnostics = visualCase.activeDiagnostics {
+            let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
+            let documentURI = vc.projectedFileURL(for: tab).standardizedFileURL.absoluteString
+            try tab.editCore.editor.lspApplyDiagnosticsJSON(
+                try activeDiagnostics.resultJSON(documentURI: documentURI)
+            )
+            vc._updateStatusBarForTesting()
+        }
+        if let workspaceDiagnostics = visualCase.workspaceDiagnostics {
+            let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
+            let documentURI = vc.projectedFileURL(for: tab).standardizedFileURL.absoluteString
+            XCTAssertTrue(
+                vc.showWorkspaceDiagnosticsResultJSONInActiveTab(
+                    try workspaceDiagnostics.resultJSON(
+                        activeDocumentURI: documentURI,
+                        documentURLs: documentURLs,
+                        tempDir: tempDir
+                    ),
+                    showFeedback: false
+                ),
+                visualCase.id
+            )
         }
         if let symbolResults = visualCase.lspSymbolResults {
             let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
@@ -303,6 +328,16 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 display: signatureHelpPopover.display,
                 in: tab.editCore.editorView
             )
+        }
+        if let persistentPanel = visualCase.persistentPanel {
+            switch persistentPanel {
+            case .problemsPanel:
+                XCTAssertTrue(vc.showProblemsPanelInActiveTab(), visualCase.id)
+            case .workspaceProblemsPanel:
+                XCTAssertTrue(vc.showWorkspaceProblemsPanelInActiveTab(), visualCase.id)
+            case .lspWorkbenchPanel:
+                XCTAssertTrue(vc.showLspWorkbenchPanel(), visualCase.id)
+            }
         }
     }
 
@@ -494,12 +529,15 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let collapsedFolds: [AttoVisualFoldRange]
     let semanticTokens: EcuLspSemanticTokensResult?
     let diagnosticMarkers: [AttoVisualDiagnosticMarker]
+    let activeDiagnostics: AttoVisualActiveDiagnostics?
+    let workspaceDiagnostics: AttoVisualWorkspaceDiagnostics?
     let lspSymbolResults: AttoVisualLspSymbolResults?
     let lspLocationResults: AttoVisualLspLocationResults?
     let codeActionResults: AttoVisualCodeActionResults?
     let completionPopup: AttoVisualCompletionPopup?
     let hoverPopover: AttoVisualHoverPopover?
     let signatureHelpPopover: AttoVisualSignatureHelpPopover?
+    let persistentPanel: AttoVisualPersistentPanel?
     let captureTarget: AttoVisualCaptureTarget
     let perChannelTolerance: UInt8
     let maxDifferentPixelRatio: Double
@@ -534,12 +572,15 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case collapsedFolds
         case semanticTokens
         case diagnosticMarkers
+        case activeDiagnostics
+        case workspaceDiagnostics
         case lspSymbolResults
         case lspLocationResults
         case codeActionResults
         case completionPopup
         case hoverPopover
         case signatureHelpPopover
+        case persistentPanel
         case captureTarget
         case perChannelTolerance
         case maxDifferentPixelRatio
@@ -574,6 +615,14 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
             [AttoVisualDiagnosticMarker].self,
             forKey: .diagnosticMarkers
         ) ?? []
+        activeDiagnostics = try container.decodeIfPresent(
+            AttoVisualActiveDiagnostics.self,
+            forKey: .activeDiagnostics
+        )
+        workspaceDiagnostics = try container.decodeIfPresent(
+            AttoVisualWorkspaceDiagnostics.self,
+            forKey: .workspaceDiagnostics
+        )
         lspSymbolResults = try container.decodeIfPresent(AttoVisualLspSymbolResults.self, forKey: .lspSymbolResults)
         lspLocationResults = try container.decodeIfPresent(
             AttoVisualLspLocationResults.self,
@@ -586,6 +635,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
             AttoVisualSignatureHelpPopover.self,
             forKey: .signatureHelpPopover
         )
+        persistentPanel = try container.decodeIfPresent(AttoVisualPersistentPanel.self, forKey: .persistentPanel)
         captureTarget = try container.decodeIfPresent(AttoVisualCaptureTarget.self, forKey: .captureTarget) ?? .mainWindow
         perChannelTolerance = try container.decode(UInt8.self, forKey: .perChannelTolerance)
         maxDifferentPixelRatio = try container.decode(Double.self, forKey: .maxDifferentPixelRatio)
@@ -693,6 +743,177 @@ private struct AttoVisualDiagnosticMarker: Decodable, Equatable {
         case severity
         case sourceName = "source"
     }
+}
+
+private struct AttoVisualActiveDiagnostics: Decodable, Equatable {
+    let version: Int
+    let items: [AttoVisualDiagnostic]
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case items
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        items = try container.decode([AttoVisualDiagnostic].self, forKey: .items)
+    }
+
+    func resultJSON(documentURI: String) throws -> String {
+        try encodeVisualJSON(
+            AttoVisualPublishDiagnosticsPayload(
+                uri: documentURI,
+                diagnostics: items.map(\.payload),
+                version: version
+            ),
+            context: "active diagnostics"
+        )
+    }
+}
+
+private struct AttoVisualWorkspaceDiagnostics: Decodable, Equatable {
+    let documents: [AttoVisualWorkspaceDiagnosticDocument]
+
+    func resultJSON(
+        activeDocumentURI: String,
+        documentURLs: [String: URL],
+        tempDir: URL
+    ) throws -> String {
+        let items = try documents.map { document in
+            try AttoVisualWorkspaceDiagnosticsDocumentPayload(
+                uri: document.documentURI(
+                    activeDocumentURI: activeDocumentURI,
+                    documentURLs: documentURLs,
+                    tempDir: tempDir
+                ),
+                kind: document.kind,
+                resultId: document.resultId,
+                items: document.items.map(\.payload)
+            )
+        }
+        return try encodeVisualJSON(
+            AttoVisualWorkspaceDiagnosticsPayload(items: items),
+            context: "workspace diagnostics"
+        )
+    }
+}
+
+private struct AttoVisualWorkspaceDiagnosticDocument: Decodable, Equatable {
+    let fixture: String?
+    let fileName: String?
+    let kind: String
+    let resultId: String?
+    let items: [AttoVisualDiagnostic]
+
+    enum CodingKeys: String, CodingKey {
+        case fixture
+        case fileName
+        case kind
+        case resultId
+        case items
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fixture = try container.decodeIfPresent(String.self, forKey: .fixture)
+        fileName = try container.decodeIfPresent(String.self, forKey: .fileName)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? "full"
+        resultId = try container.decodeIfPresent(String.self, forKey: .resultId)
+        items = try container.decode([AttoVisualDiagnostic].self, forKey: .items)
+    }
+
+    func documentURI(
+        activeDocumentURI: String,
+        documentURLs: [String: URL],
+        tempDir: URL
+    ) throws -> String {
+        if let fixture {
+            guard let url = documentURLs[fixture] else {
+                throw AttoVisualBaselineError.invalidManifest("workspace diagnostics fixture not loaded: \(fixture)")
+            }
+            return url.standardizedFileURL.absoluteString
+        }
+        if let fileName {
+            return tempDir.appendingPathComponent(fileName).standardizedFileURL.absoluteString
+        }
+        return activeDocumentURI
+    }
+}
+
+private struct AttoVisualDiagnostic: Decodable, Equatable {
+    let line: UInt32
+    let utf16Character: UInt32
+    let length: UInt32
+    let severity: Int?
+    let source: String?
+    let message: String
+    let code: String?
+
+    enum CodingKeys: String, CodingKey {
+        case line
+        case utf16Character
+        case length
+        case severity
+        case source
+        case message
+        case code
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        line = try container.decode(UInt32.self, forKey: .line)
+        utf16Character = try container.decode(UInt32.self, forKey: .utf16Character)
+        length = try container.decodeIfPresent(UInt32.self, forKey: .length) ?? 1
+        severity = try container.decodeIfPresent(Int.self, forKey: .severity)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
+        message = try container.decode(String.self, forKey: .message)
+        code = try container.decodeIfPresent(String.self, forKey: .code)
+    }
+
+    var payload: AttoVisualDiagnosticPayload {
+        AttoVisualDiagnosticPayload(
+            range: AttoVisualLspRange(
+                start: AttoVisualLspPosition(line: line, character: utf16Character),
+                end: AttoVisualLspPosition(line: line, character: utf16Character + length)
+            ),
+            severity: severity,
+            source: source,
+            message: message,
+            code: code
+        )
+    }
+}
+
+private struct AttoVisualPublishDiagnosticsPayload: Encodable {
+    let uri: String
+    let diagnostics: [AttoVisualDiagnosticPayload]
+    let version: Int
+}
+
+private struct AttoVisualWorkspaceDiagnosticsPayload: Encodable {
+    let items: [AttoVisualWorkspaceDiagnosticsDocumentPayload]
+}
+
+private struct AttoVisualWorkspaceDiagnosticsDocumentPayload: Encodable {
+    let uri: String
+    let kind: String
+    let resultId: String?
+    let items: [AttoVisualDiagnosticPayload]
+}
+
+private struct AttoVisualDiagnosticPayload: Encodable {
+    let range: AttoVisualLspRange
+    let severity: Int?
+    let source: String?
+    let message: String
+    let code: String?
+}
+
+private enum AttoVisualPersistentPanel: String, Decodable, Equatable {
+    case problemsPanel
+    case workspaceProblemsPanel
+    case lspWorkbenchPanel
 }
 
 private struct AttoVisualLspSymbolResults: Decodable, Equatable {
@@ -1022,6 +1243,14 @@ private struct AttoVisualTextRange: Decodable, Equatable {
     var nsRange: NSRange {
         NSRange(location: location, length: length)
     }
+}
+
+private func encodeVisualJSON<T: Encodable>(_ value: T, context: String) throws -> String {
+    let data = try JSONEncoder().encode(value)
+    guard let json = String(data: data, encoding: .utf8) else {
+        throw AttoVisualBaselineError.invalidManifest("failed to encode \(context) JSON")
+    }
+    return json
 }
 
 private struct AttoVisualBaselineWindow: Decodable, Equatable {
