@@ -195,6 +195,18 @@ enum AttoAccessibilityID {
     static let workspaceEditPreviewApplyButton = "AttoEditor.WorkspaceEditPreview.Apply"
     static let workspaceEditPreviewCancelButton = "AttoEditor.WorkspaceEditPreview.Cancel"
 
+    static let workspaceEditHistoryPanel = "AttoEditor.WorkspaceEditHistory.Panel"
+    static let workspaceEditHistoryPanelRoot = "AttoEditor.WorkspaceEditHistory.Root"
+    static let workspaceEditHistoryPanelSearchField = "AttoEditor.WorkspaceEditHistory.SearchField"
+    static let workspaceEditHistoryPanelMetadataLabel = "AttoEditor.WorkspaceEditHistory.Metadata"
+    static let workspaceEditHistoryPanelTable = "AttoEditor.WorkspaceEditHistory.Table"
+    static let workspaceEditHistoryPanelScrollView = "AttoEditor.WorkspaceEditHistory.ScrollView"
+    static let workspaceEditHistoryPanelRow = "AttoEditor.WorkspaceEditHistory.Row"
+    static let workspaceEditHistoryPanelRowTitle = "AttoEditor.WorkspaceEditHistory.RowTitle"
+    static let workspaceEditHistoryPanelRowDetail = "AttoEditor.WorkspaceEditHistory.RowDetail"
+    static let workspaceEditHistoryPanelRowStatus = "AttoEditor.WorkspaceEditHistory.RowStatus"
+    static let workspaceEditHistoryPanelUndoButton = "AttoEditor.WorkspaceEditHistory.UndoLatest"
+
     static let deletedMacroHistoryPanel = "AttoEditor.Macro.DeleteHistoryPanel.Panel"
     static let deletedMacroHistoryPanelRoot = "AttoEditor.Macro.DeleteHistoryPanel.Root"
     static let deletedMacroHistoryPanelTable = "AttoEditor.Macro.DeleteHistoryPanel.Table"

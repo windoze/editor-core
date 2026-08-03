@@ -519,6 +519,18 @@ final class AttoEditorAreaViewController: NSViewController {
         undoLastCoreWorkspaceEditTransaction()
     }
 
+    func _workspaceEditHistoryPanelItemsForTesting() -> [AttoWorkspaceEditHistoryPanelController.Item] {
+        workspaceEditHistoryPanelController?.currentItems ?? []
+    }
+
+    func _workspaceEditHistoryPanelRowCountForTesting() -> Int {
+        workspaceEditHistoryPanelController?.rowCount ?? 0
+    }
+
+    func _workspaceEditHistoryPanelIsVisibleForTesting() -> Bool {
+        workspaceEditHistoryPanelController?.isVisible == true
+    }
+
     func _setWorkspaceEditPreviewDecisionProviderForTesting(
         _ provider: ((AttoWorkspaceEditPreview) -> AttoWorkspaceEditPreviewDecision)?
     ) {
@@ -1026,6 +1038,8 @@ final class AttoEditorAreaViewController: NSViewController {
     var workspaceEditPopover: NSPopover?
     var workspaceEditPopoverLabel: NSTextField?
     var workspaceEditPreviewPanelController: AttoWorkspaceEditPreviewPanelController?
+    var workspaceEditHistoryPanelController: AttoWorkspaceEditHistoryPanelController?
+    var workspaceEditConsumedUndoSequence: UInt64?
     var workspaceEditPreviewDecisionProviderForTesting: ((AttoWorkspaceEditPreview) -> AttoWorkspaceEditPreviewDecision)?
 
     var definitionContext: DefinitionRequestContext?

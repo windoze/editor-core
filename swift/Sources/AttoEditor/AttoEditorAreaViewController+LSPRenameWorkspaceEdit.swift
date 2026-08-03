@@ -231,6 +231,7 @@ extension AttoEditorAreaViewController {
 
             guard result.applied else {
                 showWorkspaceEditSummaryIfNeeded(result, editorView: feedbackEditorView)
+                refreshWorkspaceEditHistoryPanelIfVisible()
                 if result.skippedURIs.isEmpty == false {
                     NSLog(
                         "AttoEditor: core WorkspaceEdit transaction was not applied; skipped URIs: %@",
@@ -250,6 +251,7 @@ extension AttoEditorAreaViewController {
 
             updateStatusBar()
             showWorkspaceEditSummaryIfNeeded(result, editorView: feedbackEditorView)
+            refreshWorkspaceEditHistoryPanelIfVisible()
             if let activeEditorView = activeTab?.editCore.editorView {
                 view.window?.makeFirstResponder(activeEditorView)
             }
@@ -577,7 +579,9 @@ extension AttoEditorAreaViewController {
                 coreDocuments,
                 projectedURLsBeforeSync: projectedURLsBeforeUndo
             )
+            workspaceEditConsumedUndoSequence = try? coreDocuments.workspaceEditTransactionEventsLatestSequence()
             setTransientStatusText("Workspace edit undone")
+            refreshWorkspaceEditHistoryPanelIfVisible()
             return true
         } catch {
             NSLog("AttoEditor: failed to undo WorkspaceEdit transaction: %@", String(describing: error))

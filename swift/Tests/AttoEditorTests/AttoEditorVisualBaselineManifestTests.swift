@@ -441,6 +441,8 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 XCTAssertTrue(vc.showDocumentLinksPanelInActiveTab(), visualCase.id)
             case .documentColorPanel:
                 XCTAssertTrue(vc._documentColorPanelIsVisibleForTesting(), visualCase.id)
+            case .workspaceEditHistoryPanel:
+                XCTAssertTrue(vc.showWorkspaceEditHistoryPanel(), visualCase.id)
             }
         }
     }
@@ -1080,6 +1082,7 @@ private enum AttoVisualPersistentPanel: String, Decodable, Equatable {
     case inlayHintPanel
     case documentLinkPanel
     case documentColorPanel
+    case workspaceEditHistoryPanel
 }
 
 private struct AttoVisualLspSymbolResults: Decodable, Equatable {

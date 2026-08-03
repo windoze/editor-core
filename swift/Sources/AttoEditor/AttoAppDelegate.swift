@@ -1010,6 +1010,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "workspace.undo_last_workspace_edit", title: "Workspace: Undo Last Workspace Edit") { [weak self] in
                 self?.activeWindow()?.editorAreaController.undoLastCoreWorkspaceEditTransaction()
             },
+            .init(id: "workspace.show_workspace_edit_history", title: "Workspace: Show Workspace Edit History") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showWorkspaceEditHistoryPanel()
+            },
             .init(id: "view.toggle_sidebar", title: "View: Toggle Sidebar") { [weak self] in
                 self?.activeWindow()?.toggleSidebar()
             },
@@ -2515,7 +2518,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             switch commandID {
             case "file.open_folder", "file.open_file", "file.new", "workbench.command_palette", "workbench.preferences":
                 return .none
-            case "go.file", "search.find_in_files", "view.toggle_sidebar", "workspace.undo_last_workspace_edit":
+            case "go.file", "search.find_in_files", "view.toggle_sidebar",
+                 "workspace.undo_last_workspace_edit", "workspace.show_workspace_edit_history":
                 return .activeWindow
             case "view.focus_next_pane", "view.focus_previous_pane", "view.move_pane_left", "view.move_pane_right", "view.close_pane":
                 return .multiplePanes
@@ -2579,6 +2583,11 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return AttoCommandSchema(
                 macroPolicy: .notRecordable,
                 requiredRuntimeFeatures: .workspaceEditTransactionUndoCommandRequirements
+            )
+        case "workspace.show_workspace_edit_history":
+            return AttoCommandSchema(
+                macroPolicy: .notRecordable,
+                requiredRuntimeFeatures: .workspaceEditTransactionHistoryCommandRequirements
             )
         case "file.open_folder", "file.open_file", "workbench.preferences", "go.file",
              "editor.find", "editor.replace", "workbench.command_palette":

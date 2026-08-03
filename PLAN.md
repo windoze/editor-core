@@ -2319,6 +2319,14 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`feat(app): show workspace edit history panel`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；补齐专门的 WorkspaceEdit/global undo history UI 形态起点，让 App 层可从 core-owned `MultiDocumentEditorUI` WorkspaceEdit transaction event stream 展示历史，而不是维护 Swift 侧独立历史模型。
+  - 提交边界：新增 `AttoWorkspaceEditHistoryPanelController`、`workspace.show_workspace_edit_history` command/menu/keymap entry、runtime feature gate 和 AppKit 测试访问器；panel 展示 core transaction event 的 sequence、operation、Applied/Partial/Rejected 状态、edit/resource operation 数量和 URI 摘要，并提供 Undo Latest 入口复用现有 core transaction undo command。visual manifest 新增 dark WorkspaceEdit history panel artifact case，真实执行 WorkspaceEdit apply 后捕获 panel child window。该提交不新增多级/global transaction-wide undo 语义、不提交 golden PNG、不启用 strict 默认门禁，也不改变 Rust core transaction 事件 schema。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents|AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testCommandRegistryCarriesMetadataAndAvailability|AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents'`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

@@ -1501,6 +1501,44 @@
       "maxDifferentPixelRatio": 0.001
     },
     {
+      "id": "workspace-edit-history-panel-dark",
+      "description": "Dark WorkspaceEdit history panel after a core transaction event is recorded.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-history-panel-dark.png",
+      "artifactName": "workspace-edit-history-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.WorkspaceEditHistory.Panel",
+        "width": 760,
+        "height": 400
+      },
+      "workspaceEditJSONApplySummary": {
+        "expectedApplied": true,
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "history"
+              }
+            ]
+          }
+        ]
+      },
+      "persistentPanel": "workspaceEditHistoryPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
       "id": "workspace-edit-undo-status-dark",
       "description": "Dark editor chrome after a WorkspaceEdit transaction is undone.",
       "fixture": "VisualFixtures/floating-panels.swift",

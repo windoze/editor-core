@@ -43,6 +43,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.unfold"))
         XCTAssertTrue(ids.contains("editor.unfold_all"))
         XCTAssertTrue(ids.contains("workspace.undo_last_workspace_edit"))
+        XCTAssertTrue(ids.contains("workspace.show_workspace_edit_history"))
         XCTAssertTrue(ids.contains("macro.toggle_recording"))
         XCTAssertTrue(ids.contains("macro.replay_last"))
         XCTAssertTrue(ids.contains("macro.save_named"))
@@ -149,6 +150,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(workspaceUndo.group, "Workspace")
         XCTAssertFalse(workspaceUndo.requiresEditor)
         XCTAssertFalse(workspaceUndo.isEnabled)
+
+        let workspaceHistory = try XCTUnwrap(commands.first { $0.id == "workspace.show_workspace_edit_history" })
+        XCTAssertEqual(workspaceHistory.group, "Workspace")
+        XCTAssertFalse(workspaceHistory.requiresEditor)
+        XCTAssertFalse(workspaceHistory.isEnabled)
 
         let closeRight = try XCTUnwrap(commands.first { $0.id == "file.close_tabs_to_right" })
         XCTAssertEqual(closeRight.group, "File")
@@ -6160,6 +6166,58 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "abc\n")
         XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "other\n")
         XCTAssertFalse(ctx.window.title.contains("●"))
+    }
+
+    func testWorkspaceEditHistoryPanelShowsCoreTransactionEvents() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("history-main.txt")
+        try "abc\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(ctx.editorAreaController)
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "\(fileURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "B"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(ctx.editorAreaController.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(try ctx.editorAreaController._coreWorkspaceEditTransactionLatestSequenceForTesting(), 1)
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "workspace.show_workspace_edit_history"))
+        XCTAssertTrue(delegate.executeCommand(id: "workspace.show_workspace_edit_history"))
+        XCTAssertTrue(ctx.editorAreaController._workspaceEditHistoryPanelIsVisibleForTesting())
+        XCTAssertEqual(ctx.editorAreaController._workspaceEditHistoryPanelRowCountForTesting(), 1)
+
+        let item = try XCTUnwrap(ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting().first)
+        XCTAssertEqual(item.sequence, 1)
+        XCTAssertEqual(item.operation, "apply")
+        XCTAssertEqual(item.status, "Applied")
+        XCTAssertTrue(item.canUndoLatest)
+        XCTAssertTrue(item.title.contains("Apply WorkspaceEdit"))
+        XCTAssertTrue(item.detail.contains("1 text edits, 0 resource ops"))
+        XCTAssertTrue(item.detail.contains("history-main.txt"))
+
+        XCTAssertTrue(ctx.editorAreaController._undoLastCoreWorkspaceEditTransactionForTesting())
+        let itemAfterUndo = try XCTUnwrap(ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting().first)
+        XCTAssertFalse(itemAfterUndo.canUndoLatest)
     }
 
     func testWorkspaceEditPreviewConfirmationCanCancelCoreTransaction() throws {
