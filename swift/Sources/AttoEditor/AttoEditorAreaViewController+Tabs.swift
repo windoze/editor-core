@@ -687,6 +687,97 @@ extension AttoEditorAreaViewController {
         _ = saveTabWithSavePanelIfNeeded(tab)
     }
 
+    @discardableResult
+    func reloadActiveTab(discardingUnsavedChanges: Bool = false) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        return reloadTabFromDisk(tab, discardingUnsavedChanges: discardingUnsavedChanges)
+    }
+
+    @discardableResult
+    func reloadTabFromDisk(_ tab: AttoEditorTab, discardingUnsavedChanges: Bool = false) -> Bool {
+        guard tab.isUntitled == false else {
+            setTransientStatusText("Reload unavailable for untitled file")
+            NSSound.beep()
+            return false
+        }
+
+        let url = projectedFileURL(for: tab)
+        if discardingUnsavedChanges == false, isTabDirtyForDataLossDecision(tab) {
+            guard confirmReloadDirtyTab(tab) else { return false }
+        }
+
+        let diskText: String
+        do {
+            diskText = try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            setTransientStatusText("Reload failed: \(url.lastPathComponent)")
+            NSSound.beep()
+            NSLog("AttoEditor: failed to reload file %@: %@", url.path, String(describing: error))
+            return false
+        }
+
+        guard replaceOpenTabTextForReload(tab, with: diskText, documentURL: url) else {
+            setTransientStatusText("Reload failed: \(url.lastPathComponent)")
+            NSSound.beep()
+            return false
+        }
+
+        setTransientStatusText("Reloaded \(url.lastPathComponent)")
+        if activeTab?.id == tab.id, let activeEditorView = activeTab?.editCore.editorView {
+            view.window?.makeFirstResponder(activeEditorView)
+        }
+        return true
+    }
+
+    @discardableResult
+    private func replaceOpenTabTextForReload(
+        _ tab: AttoEditorTab,
+        with text: String,
+        documentURL: URL
+    ) -> Bool {
+        do {
+            let oldText = try tab.editCore.editor.text()
+            let fullRange = UInt32(clamping: oldText.unicodeScalars.count)
+            _ = try tab.editCore.editor.applyTextEdits([
+                EcuTextEdit(start: 0, end: fullRange, text: text),
+            ])
+            if oldText != text {
+                try tab.editCore.editor.endUndoGroup()
+            }
+            try tab.editCore.editor.markSaved()
+            tab.isDirty = false
+            tab.isUntitled = false
+            syncCoreTabText(tab, markSaved: true)
+            notifyLspDocumentChangedForOpenSessions(tab, documentURL: documentURL, text: text)
+            refreshTabAfterReload(tab, documentURL: documentURL)
+            return true
+        } catch {
+            NSLog("AttoEditor: failed to replace reloaded tab %@: %@", documentURL.path, String(describing: error))
+            return false
+        }
+    }
+
+    private func refreshTabAfterReload(_ tab: AttoEditorTab, documentURL: URL) {
+        tab.semanticTokensData = []
+        tab.semanticTokensResultId = nil
+        for pane in tab.panes {
+            pane.layoutSubtreeIfNeeded()
+            pane.editorView.kickProcessingPoll()
+            pane.editorView.needsDisplay = true
+            pane.needsDisplay = true
+            applyLanguageConfiguration(fileURL: documentURL, syntaxLanguageId: tab.syntaxLanguageId, to: pane)
+        }
+        updateCoreTabTitle(tab)
+        refreshTabBar()
+        updateWindowTitle()
+        updateStatusBar()
+        notifySessionStateChanged()
+    }
+
     func confirmClosingDirtyTabsIfNeeded() -> Bool {
         let dirtyTabs = tabs.filter { isTabDirtyForDataLossDecision($0) }
         guard dirtyTabs.isEmpty == false else { return true }
@@ -713,6 +804,17 @@ extension AttoEditorAreaViewController {
         case save
         case dontSave
         case cancel
+    }
+
+    func confirmReloadDirtyTab(_ tab: AttoEditorTab) -> Bool {
+        let name = projectedFileURL(for: tab).lastPathComponent
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Do you want to reload \"\(name)\" from disk?"
+        alert.informativeText = "Your unsaved changes will be discarded."
+        alert.addButton(withTitle: "Reload")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     func confirmCloseDirtyTab(_ tab: AttoEditorTab) -> DirtyCloseDecision {

@@ -18,6 +18,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.format_selection"))
         XCTAssertTrue(ids.contains("editor.duplicate_lines"))
         XCTAssertTrue(ids.contains("file.close_tab"))
+        XCTAssertTrue(ids.contains("file.reload"))
         XCTAssertTrue(ids.contains("file.close_all_tabs"))
         XCTAssertTrue(ids.contains("file.close_other_tabs"))
         XCTAssertTrue(ids.contains("file.close_tabs_to_right"))
@@ -2163,6 +2164,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let menu = AttoMainMenuBuilder.build(appDelegate: delegate)
 
         let fileMenu = try XCTUnwrap(topLevelMenu(title: "File", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "file.reload", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.close_all_tabs", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.close_other_tabs", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.close_tabs_to_right", in: fileMenu))
@@ -4929,6 +4931,32 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
         XCTAssertEqual(try editorView.editor.text(), "a\na\n")
+    }
+
+    func testReloadFileCommandReloadsActiveTabFromDisk() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("reload-command.txt")
+        try "before\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(ctx.editorAreaController.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+
+        try "after\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "file.reload"))
+        XCTAssertTrue(delegate.executeCommand(id: "file.reload"))
+        XCTAssertEqual(try tab.editCore.editor.text(), "after\n")
+        XCTAssertEqual(try ctx.editorAreaController.coreDocuments?.tabText(tabId: coreTabID), "after\n")
+        XCTAssertEqual(try ctx.editorAreaController.coreDocuments?.isTabModified(coreTabID), false)
+        XCTAssertEqual(ctx.editorAreaController._transientStatusTextForTesting(), "Reloaded reload-command.txt")
     }
 
     func testCommandPaletteOrdersRecentCommandsFirst() throws {
@@ -9912,6 +9940,52 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let snapshotTab = try XCTUnwrap(try coreDocuments.snapshot().tabs.first { $0.id == coreTabID })
         XCTAssertEqual(snapshotTab.title, "title-projected-tab.txt")
+    }
+
+    func testReloadActiveTabUsesCoreDocumentURIProjectionAndSyncsCoreDirtyState() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("reload-local-tab.txt")
+        let projectedURL = tempDir.appendingPathComponent("reload-projected-tab.txt")
+        try "local disk\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "projected disk\n".write(to: projectedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: coreTabID
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"unsaved "}"#))
+        XCTAssertTrue(try coreDocuments.isTabModified(coreTabID))
+        XCTAssertNotEqual(try tab.editCore.editor.text(), "projected disk\n")
+
+        XCTAssertTrue(vc.reloadActiveTab(discardingUnsavedChanges: true))
+
+        XCTAssertEqual(try tab.editCore.editor.text(), "projected disk\n")
+        XCTAssertEqual(try coreDocuments.tabText(tabId: coreTabID), "projected disk\n")
+        XCTAssertFalse(try coreDocuments.isTabModified(coreTabID))
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        let snapshotTab = try XCTUnwrap(try coreDocuments.snapshot().tabs.first { $0.id == coreTabID })
+        XCTAssertEqual(snapshotTab.documentURI, projectedURL.standardizedFileURL.absoluteString)
+        XCTAssertEqual(snapshotTab.title, "reload-projected-tab.txt")
+
+        let item = try XCTUnwrap(vc.openFileItems().first { $0.id == tab.id })
+        XCTAssertEqual(item.url.standardizedFileURL, projectedURL.standardizedFileURL)
+        XCTAssertFalse(item.isDirty)
+        XCTAssertEqual(item.title, "reload-projected-tab.txt")
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Reloaded reload-projected-tab.txt")
     }
 
     func testSelectAndOpenFileUseCoreDocumentURIProjection() throws {

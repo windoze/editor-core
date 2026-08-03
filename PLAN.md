@@ -741,6 +741,12 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testSessionRestorePrefersPaneLayoutSnapshotOverLegacyPaneCount`
     - `swift test --package-path swift --filter AttoSessionStoreTests.testLoadAcceptsLegacyTabSnapshotWithoutPaneLayout`
     - `git diff --check`
+- 中间提交：`feat(app): reload active tab from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 的 active-tab reload 用户路径使用 core tab snapshot 的 `document_uri` 投影读取磁盘文件，并把 reloaded 文本、saved/dirty 状态同步回 core mirror 和 AppKit tab 投影。
+  - 提交边界：新增 `file.reload` command/menu 入口、dirty reload 确认和 App 层 reload helper；reload 使用 `projectedFileURL(for:)`，不通过 WorkspaceEdit resource-operation 刷新路径覆盖 core `document_uri`。本提交不新增 Rust/FFI ABI，不实现 core 侧 reload command、不改变 save 路径真实写入 URL、session schema、LSP server lifecycle 或真实 `tab.fileURL` 同步策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testReloadActiveTabUsesCoreDocumentURIProjectionAndSyncsCoreDirtyState|AttoEditorCommandTests.testReloadFileCommandReloadsActiveTabFromDisk|AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

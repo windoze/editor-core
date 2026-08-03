@@ -751,6 +751,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         activeWindow()?.editorAreaController.saveActiveTab()
     }
 
+    @objc func reloadFileMenuClicked(_ sender: Any?) {
+        activeWindow()?.editorAreaController.reloadActiveTab()
+    }
+
     @objc func toggleSidebarMenuClicked(_ sender: Any?) {
         activeWindow()?.toggleSidebar()
     }
@@ -976,6 +980,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             },
             .init(id: "file.save", title: "File: Save") { [weak self] in
                 self?.saveMenuClicked(nil)
+            },
+            .init(id: "file.reload", title: "File: Reload File") { [weak self] in
+                self?.reloadFileMenuClicked(nil)
             },
             .init(id: "file.close_tab", title: "File: Close Tab") { [weak self] in
                 self?.closeTabMenuClicked(nil)
@@ -2531,7 +2538,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                  "file.move_tab_left", "file.move_tab_right":
                 return .multipleTabs
             default:
-                if commandID == "file.save" || commandID == "file.close_tab" || commandID == "file.close_all_tabs" {
+                if commandID == "file.save" || commandID == "file.reload"
+                    || commandID == "file.close_tab" || commandID == "file.close_all_tabs"
+                {
                     return .activeEditor
                 }
                 if commandID.hasPrefix("editor.")
@@ -2622,7 +2631,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         case "macro.toggle_recording", "macro.replay_last", "macro.undo_delete", "macro.show_delete_history",
              "macro.manage_delete_history", "macro.clear_delete_history":
             return AttoCommandSchema(macroPolicy: .notRecordable)
-        case "file.new", "file.save", "file.close_tab", "file.close_all_tabs",
+        case "file.new", "file.save", "file.reload", "file.close_tab", "file.close_all_tabs",
              "file.close_other_tabs", "file.close_tabs_to_right",
              "file.move_tab_left", "file.move_tab_right",
              "view.toggle_sidebar", "view.toggle_minimap", "view.split_right",
