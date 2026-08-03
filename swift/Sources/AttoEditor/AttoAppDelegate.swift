@@ -2986,6 +2986,13 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                     documentContext: documentContext
                 )
             },
+            themeResolver: { themeName in
+                let registry = AttoThemeManager.loadRegistry()
+                return AttoThemeManager.resolveSkiaTheme(
+                    themeName: themeName,
+                    registry: registry
+                ).theme
+            },
             contentSize: contentSize
         )
 

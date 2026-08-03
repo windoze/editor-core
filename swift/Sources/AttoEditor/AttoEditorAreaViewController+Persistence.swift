@@ -20,6 +20,7 @@ extension AttoEditorAreaViewController {
 
     func showEmptyState() {
         contentHostView.subviews.forEach { $0.removeFromSuperview() }
+        applyEditorBackground(theme)
         contentHostView.addSubview(emptyStateLabel)
         NSLayoutConstraint.activate([
             emptyStateLabel.centerXAnchor.constraint(equalTo: contentHostView.centerXAnchor),
@@ -29,6 +30,7 @@ extension AttoEditorAreaViewController {
 
     func showTabContent(_ tab: AttoEditorTab) {
         contentHostView.subviews.forEach { $0.removeFromSuperview() }
+        applyEditorBackground(configuredThemeForApplying(tab))
         let container: NSView
         if tab.panes.count == 1 {
             container = tab.editCore
@@ -68,7 +70,7 @@ extension AttoEditorAreaViewController {
         try editCore.editor.setFontFamiliesCSV(configuredFontFamiliesCSVForApplying(snapshot))
         try editCore.editor.setFontLigaturesEnabled(configuredLigaturesEnabledForApplying(snapshot))
         editCore.editorView.fontSizePoints = CGFloat(configuredFontSizePointsForApplying(snapshot))
-        try editCore.applyTheme(theme)
+        try editCore.applyTheme(configuredThemeForApplying(snapshot))
         _ = try editCore.editor.setWrapMode(configuredWrapModeForApplying(snapshot))
         _ = try editCore.editor.setWrapIndent(configuredWrapIndentForApplying(snapshot))
         try editCore.editor.setAutoPairsEnabled(configuredAutoPairsEnabledForApplying(snapshot))

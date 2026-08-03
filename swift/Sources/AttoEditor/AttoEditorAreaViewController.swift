@@ -25,6 +25,7 @@ final class AttoEditorAreaViewController: NSViewController {
     let preferences: AttoPreferences
     private(set) var configurationSnapshot: AttoConfigurationSnapshot
     let configurationSnapshotProvider: ((URL, AttoConfigurationDocumentContext?) -> AttoConfigurationSnapshot)?
+    let themeResolver: ((String) -> EditorCoreSkiaTheme)?
     static let maxLspResultHistoryEntries = 20
     static let maxLspResultEventHistoryEntries = 80
 
@@ -1183,6 +1184,7 @@ final class AttoEditorAreaViewController: NSViewController {
         workspaceRootURL: URL,
         configurationSnapshot: AttoConfigurationSnapshot? = nil,
         configurationSnapshotProvider: ((URL, AttoConfigurationDocumentContext?) -> AttoConfigurationSnapshot)? = nil,
+        themeResolver: ((String) -> EditorCoreSkiaTheme)? = nil,
         preferences: AttoPreferences = .shared,
         projectLspProcessHealthLogStore: AttoProjectLspProcessHealthLogStore = AttoProjectLspProcessHealthLogStore()
     ) {
@@ -1191,6 +1193,7 @@ final class AttoEditorAreaViewController: NSViewController {
         self.workspaceRootURL = workspaceRootURL
         self.preferences = preferences
         self.configurationSnapshotProvider = configurationSnapshotProvider
+        self.themeResolver = themeResolver
         self.configurationSnapshot = configurationSnapshot
             ?? preferences.effectiveConfigurationSnapshot(workspaceRootURL: workspaceRootURL)
         self.projectLspProcessHealthLogStore = projectLspProcessHealthLogStore

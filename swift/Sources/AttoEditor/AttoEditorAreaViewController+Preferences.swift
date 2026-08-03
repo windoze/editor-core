@@ -29,6 +29,7 @@ extension AttoEditorAreaViewController {
             updateStatusBar()
         }
 
+        updateEditorBackgroundForActiveTab()
         applyFindPreferences()
     }
 
@@ -45,6 +46,12 @@ extension AttoEditorAreaViewController {
         to editCore: EditCoreUI,
         configurationSnapshot snapshot: AttoConfigurationSnapshot
     ) {
+        do {
+            try editCore.applyTheme(configuredThemeForApplying(snapshot))
+        } catch {
+            NSLog("AttoEditor: applyTheme failed: %@", String(describing: error))
+        }
+
         do {
             try editCore.editor.setFontFamiliesCSV(configuredFontFamiliesCSVForApplying(snapshot))
         } catch {
@@ -165,23 +172,43 @@ extension AttoEditorAreaViewController {
         applyFindStateToActiveTab()
     }
 
+    func configuredThemeForApplying(_ snapshot: AttoConfigurationSnapshot) -> EditorCoreSkiaTheme {
+        themeResolver?(snapshot.rendering.themeName) ?? theme
+    }
+
+    func configuredThemeForApplying(_ tab: AttoEditorTab) -> EditorCoreSkiaTheme {
+        configuredThemeForApplying(documentConfigurationSnapshot(for: tab))
+    }
+
+    func applyEditorBackground(_ theme: EditorCoreSkiaTheme) {
+        guard isViewLoaded else { return }
+        let bg = NSColor(ecuRgba8: theme.editorBackground).cgColor
+        view.layer?.backgroundColor = bg
+        contentHostView.layer?.backgroundColor = bg
+    }
+
+    func updateEditorBackgroundForActiveTab() {
+        if let activeTab {
+            applyEditorBackground(configuredThemeForApplying(activeTab))
+        } else {
+            applyEditorBackground(theme)
+        }
+    }
+
     func applyTheme(_ theme: EditorCoreSkiaTheme) {
         self.theme = theme
 
-        if isViewLoaded {
-            let bg = NSColor(ecuRgba8: theme.editorBackground).cgColor
-            view.layer?.backgroundColor = bg
-            contentHostView.layer?.backgroundColor = bg
-        }
-
         for tab in tabs {
+            let tabTheme = configuredThemeForApplying(tab)
             for editCore in tab.panes {
                 do {
-                    try editCore.applyTheme(theme)
+                    try editCore.applyTheme(tabTheme)
                 } catch {
                     NSLog("AttoEditor: applyTheme failed: %@", String(describing: error))
                 }
             }
         }
+
+        updateEditorBackgroundForActiveTab()
     }
 }

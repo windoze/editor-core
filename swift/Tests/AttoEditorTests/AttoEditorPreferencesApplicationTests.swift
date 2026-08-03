@@ -156,6 +156,7 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
                 findWholeWord: false,
                 findRegex: false
             ),
+            rendering: AttoRenderingPreferenceSettings(themeName: "Atto Light"),
             scopedSettings: [
                 AttoScopedConfigurationSettings(
                     selectors: ["*.swift"],
@@ -165,7 +166,8 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
                         findCaseSensitive: false,
                         findWholeWord: true,
                         findRegex: true
-                    )
+                    ),
+                    rendering: AttoRenderingPreferenceSettings(themeName: "Atto Dark")
                 ),
             ]
         ), workspaceRootURL: workspaceRootURL)
@@ -188,6 +190,7 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.caseSensitiveButton.state, .on)
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.wholeWordButton.state, .off)
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .off)
+        try assertEditorBackground(ctx.editorAreaController, matchesThemeNamed: "Atto Light")
 
         ctx.editorAreaController.openFile(url: swiftURL, mode: .pinned)
         ctx.editorAreaController.view.layoutSubtreeIfNeeded()
@@ -198,6 +201,16 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.caseSensitiveButton.state, .off)
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.wholeWordButton.state, .on)
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .on)
+        try assertEditorBackground(ctx.editorAreaController, matchesThemeNamed: "Atto Dark")
+
+        let textTabID = try XCTUnwrap(ctx.editorAreaController.tabs.first { $0.fileURL.standardizedFileURL == textURL.standardizedFileURL }?.id)
+        let swiftTabID = try XCTUnwrap(ctx.editorAreaController.tabs.first { $0.fileURL.standardizedFileURL == swiftURL.standardizedFileURL }?.id)
+        ctx.editorAreaController.selectTab(id: textTabID)
+        ctx.editorAreaController.view.layoutSubtreeIfNeeded()
+        try assertEditorBackground(ctx.editorAreaController, matchesThemeNamed: "Atto Light")
+        ctx.editorAreaController.selectTab(id: swiftTabID)
+        ctx.editorAreaController.view.layoutSubtreeIfNeeded()
+        try assertEditorBackground(ctx.editorAreaController, matchesThemeNamed: "Atto Dark")
 
         try settingsStore.saveWorkspaceSettings(AttoConfigurationSettings(
             editor: AttoEditorPreferenceSettings(
@@ -207,6 +220,7 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
                 findWholeWord: false,
                 findRegex: false
             ),
+            rendering: AttoRenderingPreferenceSettings(themeName: "Atto Light"),
             scopedSettings: [
                 AttoScopedConfigurationSettings(
                     selectors: ["*.swift"],
@@ -216,7 +230,8 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
                         findCaseSensitive: true,
                         findWholeWord: false,
                         findRegex: false
-                    )
+                    ),
+                    rendering: AttoRenderingPreferenceSettings(themeName: "Atto Light")
                 ),
             ]
         ), workspaceRootURL: workspaceRootURL)
@@ -229,6 +244,7 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.caseSensitiveButton.state, .on)
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.wholeWordButton.state, .off)
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .off)
+        try assertEditorBackground(ctx.editorAreaController, matchesThemeNamed: "Atto Light")
     }
 
     func testRuntimeConfigurationSettingsOverrideUserAndWorkspaceSettings() throws {
@@ -378,6 +394,31 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: data, options: []) as? [String: Any])
         let viewport = try XCTUnwrap(obj["viewport"] as? [String: Any])
         return try XCTUnwrap(viewport["lines"] as? [[String: Any]])
+    }
+
+    private func assertEditorBackground(
+        _ vc: AttoEditorAreaViewController,
+        matchesThemeNamed themeName: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let registry = AttoThemeManager.loadRegistry()
+        let theme = AttoThemeManager.resolveSkiaTheme(themeName: themeName, registry: registry).theme
+        let actualCGColor = try XCTUnwrap(vc.contentHostView.layer?.backgroundColor, file: file, line: line)
+        let actual = try XCTUnwrap(
+            NSColor(cgColor: actualCGColor)?.usingColorSpace(.deviceRGB),
+            file: file,
+            line: line
+        )
+        let expected = try XCTUnwrap(
+            NSColor(ecuRgba8: theme.editorBackground).usingColorSpace(.deviceRGB),
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(actual.redComponent, expected.redComponent, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(actual.greenComponent, expected.greenComponent, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(actual.blueComponent, expected.blueComponent, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(actual.alphaComponent, expected.alphaComponent, accuracy: 0.001, file: file, line: line)
     }
 
     private func findSubview<T: NSView>(of type: T.Type, in root: NSView) -> T? {

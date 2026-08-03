@@ -1757,6 +1757,12 @@
     - `swift test --package-path swift --filter AttoEditorPreferencesApplicationTests`
     - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): switch scoped tab themes`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把 scoped settings 中的 `rendering.theme_name` 接入 AttoEditor 的 document/tab 级主题应用，让同一 window 内不同 tab 可按文档 selector 使用不同 Skia theme。
+  - 提交边界：`AttoWindowContext` / `AttoEditorAreaViewController` 新增 theme resolver 注入；新建 tab、split pane、已打开 tab preference reapply、window-wide theme reapply 和 active tab 内容背景都会按文档 URL + language id 解析 scoped `rendering.theme_name` 后应用主题。该提交不新增 Rust/FFI ABI，不实现 workspace/project scoped settings 编辑 UI、runtime override UI/持久化、完整 Sublime settings selector grammar、跨 schema 字段语义迁移、自定义 word boundary 规则或 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorPreferencesApplicationTests`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 
