@@ -1641,8 +1641,9 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：阶段 13 已扩展 WorkspaceEdit transaction undo visual matrix，manifest 可在真实 App WorkspaceEdit JSON apply 成功后执行 core transaction undo hook，并捕获 status bar 的 `Workspace edit undone` 用户反馈，新增 dark WorkspaceEdit undo status artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual workspace edit undo status` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 WorkspaceEdit 多文件 transaction undo visual matrix，manifest 可在真实 App WorkspaceEdit JSON apply 成功后断言打开文档和未打开本地文件内容变化，执行 core transaction undo hook 后断言两边内容恢复，并捕获 status bar undo 反馈，新增 dark multi-file WorkspaceEdit undo status artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual workspace edit multifile undo` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 WorkspaceEdit atomic rollback visual matrix，manifest 可写入二进制 invalid UTF-8 fixture、生成 `applyMode: atomic` WorkspaceEdit、断言打开 tab text edit 在 core atomic runtime failure 后回滚，并捕获 App summary popover，新增 dark atomic rollback failure artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual workspace edit atomic rollback` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
+- 已完成：阶段 13 已扩展 WorkspaceEdit partial runtime failure visual matrix，manifest 可在真实 App WorkspaceEdit JSON partial apply 后断言打开 tab text edit 保留已应用状态，并捕获 core transaction 因 invalid UTF-8 未打开文件失败后生成的 “partially applied” summary popover，新增 dark partial runtime failure artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual workspace edit partial failure` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 仍缺提交首批经批准机器生成的 PNG golden baselines，并在首批 PNG 合入后把 strict visual comparison 提升为默认必过门禁。
-- 继续扩展 fixtures，覆盖更多 WorkspaceEdit rollback 变体、专门的 global undo history UI 形态和更多 failure 变体，以及经审核的跨 theme/window-size 真实 baseline 场景。
+- 继续扩展 fixtures，覆盖更多 WorkspaceEdit rollback secondary failure/edge-case 变体、专门的 global undo history UI 形态和更多 failure 变体，以及经审核的跨 theme/window-size 真实 baseline 场景。
 - 继续扩展 `XCUIApplication` smoke tests，覆盖真实 LSP server 驱动的 Locations/Symbols/Workspace Outline 结果生成、panel row navigation 和打开目标行为。
 - 仍缺把 CI strict visual comparison 升级为首批 PNG baseline 合入后的默认必过门禁。
 

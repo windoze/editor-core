@@ -2279,6 +2279,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover visual workspace edit partial failure`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；把 WorkspaceEdit failure visual coverage 扩展到真实 App helper + core partial runtime failure summary 触发链。
+  - 提交边界：manifest 新增 dark partial runtime failure summary popover artifact case，复用二进制 invalid UTF-8 fixture 和 `workspaceEditJSONApplySummary` action，真实执行 partial apply 的跨文档 WorkspaceEdit，断言打开 tab text edit 保留已应用状态，并捕获 core transaction “partially applied” summary popover。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 WorkspaceEdit partial apply 语义，也不覆盖 rollback secondary failure 或专门的 global undo history UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
