@@ -291,11 +291,12 @@ extension AttoEditorAreaViewController {
         }
     }
 
-    func updateCoreTabDocumentURI(_ tab: AttoEditorTab) {
+    func updateCoreTabDocumentURI(_ tab: AttoEditorTab, documentURL: URL? = nil) {
         guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+        let url = documentURL?.standardizedFileURL ?? tab.fileURL.standardizedFileURL
         do {
             try coreDocuments.setTabDocumentURI(
-                tab.fileURL.standardizedFileURL.absoluteString,
+                url.absoluteString,
                 tabId: coreTabID
             )
         } catch {
@@ -838,31 +839,32 @@ extension AttoEditorAreaViewController {
     }
 
     @discardableResult
-    func saveTab(_ tab: AttoEditorTab) -> Bool {
+    func saveTab(_ tab: AttoEditorTab, documentURL explicitDocumentURL: URL? = nil) -> Bool {
+        let documentURL = (explicitDocumentURL ?? projectedFileURL(for: tab)).standardizedFileURL
         let fm = FileManager.default
-        let existedOnDiskBeforeSave = fm.fileExists(atPath: tab.fileURL.path)
+        let existedOnDiskBeforeSave = fm.fileExists(atPath: documentURL.path)
         do {
             applyFormatOnSaveIfNeeded(for: tab)
             let text = try tab.editCore.editor.text()
-            try text.write(to: tab.fileURL, atomically: true, encoding: .utf8)
+            try text.write(to: documentURL, atomically: true, encoding: .utf8)
             try tab.editCore.editor.markSaved()
             tab.isUntitled = false
             tab.isDirty = false
             tab.isPreview = false
             syncCoreTabText(tab, markSaved: true)
             pinCoreTabIfPreview(tab)
+            updateCoreTabDocumentURI(tab, documentURL: documentURL)
             updateCoreTabTitle(tab)
-            updateCoreTabDocumentURI(tab)
             refreshTabBar()
             updateWindowTitle()
             updateStatusBar()
             notifySessionStateChanged()
-            notifyLspDocumentSavedForOpenSessions(tab, documentURL: projectedFileURL(for: tab), text: text)
-            onDidSaveFile?(tab.fileURL, existedOnDiskBeforeSave == false)
+            notifyLspDocumentSavedForOpenSessions(tab, documentURL: documentURL, text: text)
+            onDidSaveFile?(documentURL, existedOnDiskBeforeSave == false)
             return true
         } catch {
             NSSound.beep()
-            NSLog("AttoEditor: failed to save file %@: %@", tab.fileURL.path, String(describing: error))
+            NSLog("AttoEditor: failed to save file %@: %@", documentURL.path, String(describing: error))
             return false
         }
     }

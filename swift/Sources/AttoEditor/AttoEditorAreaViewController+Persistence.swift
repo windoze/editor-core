@@ -246,7 +246,7 @@ extension AttoEditorAreaViewController {
             return false
         }
 
-        if tabs.contains(where: { $0.id != tab.id && $0.fileURL.standardizedFileURL == url }) {
+        if let existingTab = projectedTab(forFileURL: url), existingTab.id != tab.id {
             NSSound.beep()
             let alert = NSAlert()
             alert.alertStyle = .warning
@@ -258,7 +258,7 @@ extension AttoEditorAreaViewController {
 
         let oldURL = tab.fileURL
         tab.fileURL = url
-        if saveTab(tab) {
+        if saveTab(tab, documentURL: url) {
             return true
         }
 

@@ -9988,6 +9988,59 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Reloaded reload-projected-tab.txt")
     }
 
+    func testSaveActiveTabUsesCoreDocumentURIProjectionAndSyncsCoreDirtyState() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("save-local-tab.txt")
+        let projectedURL = tempDir.appendingPathComponent("save-projected-tab.txt")
+        try "local disk\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "projected old\n".write(to: projectedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: coreTabID
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        var savedCallback: (url: URL, createdOnDisk: Bool)?
+        vc.onDidSaveFile = { url, createdOnDisk in
+            savedCallback = (url.standardizedFileURL, createdOnDisk)
+        }
+
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"saved "}"#))
+        XCTAssertTrue(try coreDocuments.isTabModified(coreTabID))
+
+        vc.saveActiveTab()
+
+        XCTAssertEqual(try String(contentsOf: fileURL, encoding: .utf8), "local disk\n")
+        XCTAssertEqual(try String(contentsOf: projectedURL, encoding: .utf8), "saved local disk\n")
+        XCTAssertEqual(try tab.editCore.editor.text(), "saved local disk\n")
+        XCTAssertEqual(try coreDocuments.tabText(tabId: coreTabID), "saved local disk\n")
+        XCTAssertFalse(try coreDocuments.isTabModified(coreTabID))
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+
+        let snapshotTab = try XCTUnwrap(try coreDocuments.snapshot().tabs.first { $0.id == coreTabID })
+        XCTAssertEqual(snapshotTab.documentURI, projectedURL.standardizedFileURL.absoluteString)
+        XCTAssertEqual(snapshotTab.title, "save-projected-tab.txt")
+
+        let item = try XCTUnwrap(vc.openFileItems().first { $0.id == tab.id })
+        XCTAssertEqual(item.url.standardizedFileURL, projectedURL.standardizedFileURL)
+        XCTAssertFalse(item.isDirty)
+        XCTAssertEqual(item.title, "save-projected-tab.txt")
+        XCTAssertEqual(savedCallback?.url, projectedURL.standardizedFileURL)
+        XCTAssertEqual(savedCallback?.createdOnDisk, false)
+    }
+
     func testSelectAndOpenFileUseCoreDocumentURIProjection() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

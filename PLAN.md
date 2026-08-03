@@ -747,6 +747,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testReloadActiveTabUsesCoreDocumentURIProjectionAndSyncsCoreDirtyState|AttoEditorCommandTests.testReloadFileCommandReloadsActiveTabFromDisk|AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
     - `git diff --check`
+- 中间提交：`feat(app): save active tab from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 的 save active tab 主路径使用 core tab snapshot 的 `document_uri` 投影作为真实写盘 URL，并把 saved/dirty 状态、core tab text、document URI/title、LSP didSave 和 save callback 统一到同一 projected URL。
+  - 提交边界：只调整 App 层保存 helper、Save Panel 首次落盘 override 和 projected duplicate-open 检查；普通保存默认用 `projectedFileURL(for:)`，untitled Save Panel 仍显式使用用户选择 URL 并把 core document URI 更新到该 URL。本提交不新增 Rust/FFI ABI，不实现 core 侧 save command，不改变 format-on-save、session schema、LSP server ownership 或真实 `tab.fileURL` 同步策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testSaveActiveTabUsesCoreDocumentURIProjectionAndSyncsCoreDirtyState|AttoEditorCommandTests.testReloadActiveTabUsesCoreDocumentURIProjectionAndSyncsCoreDirtyState|AttoEditorCommandTests.testFormatOnSaveRunsBeforeWritingFile|AttoEditorCommandTests.testSaveAndCloseNotifyLspDocumentLifecycle|AttoEditorCommandTests.testWorkspaceEditPreviewSaveConflictDecisionSavesTargetTabBeforeRetry|AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab'`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 
