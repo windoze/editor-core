@@ -1451,6 +1451,13 @@
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroUndoDeleteUsesMultiLevelHistory|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|CommandMacroBatchDeletesNamedSublimeMacroFiles)'`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroUndoDeleteUsesMultiLevelHistory|CommandMacroBatchDeletesNamedSublimeMacroFiles|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|CommandMacroImportExportUsesNativeFileSelectionProviders|CommandMacroImportsAndExportsSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
     - `git diff --check`
+- 中间提交：`feat(app): persist command macro delete history`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；把命名 `.sublime-macro` 删除 undo 历史从 App 内存推进到宏目录持久化，让重启或重新创建 App delegate 后仍能恢复删除记录。
+  - 提交边界：`AttoMacroStore` 新增隐藏 JSON 删除历史文件读写，保存 bounded undo stack 的宏名和 command sequence；App delegate 初始化时加载该历史，push/pop 后写回，空历史会移除文件；该 JSON 不使用 `.sublime-macro` 扩展，不污染命名宏列表。该提交不实现可浏览回收站 UI、删除历史选择/清理 UI、独立宏管理面板、完整 Sublime package/plugin command runtime、完整 `.sublime-macro` 扩展语义，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroUndoDeleteHistoryPersistsAcrossDelegates`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroUndoDeleteHistoryPersistsAcrossDelegates|CommandMacroUndoDeleteUsesMultiLevelHistory|CommandMacroBatchDeletesNamedSublimeMacroFiles|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|CommandMacroImportExportUsesNativeFileSelectionProviders|CommandMacroImportsAndExportsSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

@@ -144,6 +144,41 @@ struct AttoMacroStore {
         }
     }
 
+    func loadDeletedMacroUndoRecords(maxRecords: Int, maxCommands: Int) -> [AttoDeletedMacroUndoRecord] {
+        let fileURL = deletedMacroUndoRecordsFileURL()
+        guard FileManager.default.fileExists(atPath: fileURL.path),
+              let data = try? Data(contentsOf: fileURL),
+              let stored = try? JSONDecoder().decode([StoredDeletedMacroUndoRecord].self, from: data)
+        else {
+            return []
+        }
+        return sanitizeDeletedMacroUndoRecords(stored.compactMap(\.record), maxRecords: maxRecords, maxCommands: maxCommands)
+    }
+
+    func saveDeletedMacroUndoRecords(
+        _ records: [AttoDeletedMacroUndoRecord],
+        maxRecords: Int,
+        maxCommands: Int
+    ) throws {
+        let fileURL = deletedMacroUndoRecordsFileURL()
+        let sanitized = sanitizeDeletedMacroUndoRecords(records, maxRecords: maxRecords, maxCommands: maxCommands)
+        guard sanitized.isEmpty == false else {
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                try FileManager.default.removeItem(at: fileURL)
+            }
+            return
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(sanitized.map(StoredDeletedMacroUndoRecord.init(record:)))
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: fileURL, options: [.atomic])
+    }
+
     func renameNamedMacro(_ oldName: String, to newName: String) throws {
         guard let oldFileURL = namedMacroFileURL(oldName) else {
             throw AttoMacroStoreError.invalidMacroName(oldName)
@@ -201,6 +236,13 @@ struct AttoMacroStore {
         namedMacroFileURL(rawName)?.deletingPathExtension().lastPathComponent
     }
 
+    private func deletedMacroUndoRecordsFileURL() -> URL {
+        macroFileURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(".AttoDeletedMacroUndoHistory.json", isDirectory: false)
+            .standardizedFileURL
+    }
+
     private func externalMacroFileURL(_ url: URL) -> URL? {
         let fileURL = url.standardizedFileURL
         guard fileURL.pathExtension.lowercased() == "sublime-macro" else { return nil }
@@ -232,6 +274,39 @@ struct AttoMacroStore {
         return out
     }
 
+    private func sanitizeDeletedMacroUndoRecords(
+        _ records: [AttoDeletedMacroUndoRecord],
+        maxRecords: Int,
+        maxCommands: Int
+    ) -> [AttoDeletedMacroUndoRecord] {
+        let recordLimit = max(0, maxRecords)
+        guard recordLimit > 0 else { return [] }
+
+        var out: [AttoDeletedMacroUndoRecord] = []
+        for record in records {
+            var snapshots: [AttoDeletedMacroSnapshot] = []
+            var rawNames: [String] = []
+            for snapshot in record.macros {
+                guard let name = normalizedNamedMacroName(snapshot.name) else { continue }
+                rawNames.append(name)
+                snapshots.append(AttoDeletedMacroSnapshot(
+                    name: name,
+                    commands: sanitize(snapshot.commands, maxCount: maxCommands)
+                ))
+            }
+            guard snapshots.isEmpty == false,
+                  (try? normalizedNamedMacroNames(rawNames)).map({ $0.count == snapshots.count }) == true
+            else {
+                continue
+            }
+            out.append(AttoDeletedMacroUndoRecord(macros: snapshots))
+        }
+        if out.count > recordLimit {
+            out.removeFirst(out.count - recordLimit)
+        }
+        return out
+    }
+
     private struct StoredCommand: Codable {
         let command: String
         let args: [String: MacroJSONValue]?
@@ -246,6 +321,34 @@ struct AttoMacroStore {
                 commandID: command,
                 arguments: args?.compactMapValues { $0.argumentValue } ?? [:]
             )
+        }
+    }
+
+    private struct StoredDeletedMacroUndoRecord: Codable {
+        let macros: [StoredDeletedMacro]
+
+        init(record: AttoDeletedMacroUndoRecord) {
+            macros = record.macros.map(StoredDeletedMacro.init(snapshot:))
+        }
+
+        var record: AttoDeletedMacroUndoRecord? {
+            let snapshots = macros.map(\.snapshot)
+            guard snapshots.isEmpty == false else { return nil }
+            return AttoDeletedMacroUndoRecord(macros: snapshots)
+        }
+    }
+
+    private struct StoredDeletedMacro: Codable {
+        let name: String
+        let commands: [StoredCommand]
+
+        init(snapshot: AttoDeletedMacroSnapshot) {
+            name = snapshot.name
+            commands = snapshot.commands.map(StoredCommand.init(record:))
+        }
+
+        var snapshot: AttoDeletedMacroSnapshot {
+            AttoDeletedMacroSnapshot(name: name, commands: commands.map(\.record))
         }
     }
 

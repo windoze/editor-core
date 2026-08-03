@@ -15,12 +15,12 @@ struct AttoRecordedCommand: Equatable {
     let arguments: AttoCommandArguments
 }
 
-private struct AttoDeletedMacroSnapshot {
+struct AttoDeletedMacroSnapshot {
     let name: String
     let commands: [AttoRecordedCommand]
 }
 
-private struct AttoDeletedMacroUndoRecord {
+struct AttoDeletedMacroUndoRecord {
     let macros: [AttoDeletedMacroSnapshot]
 }
 
@@ -215,6 +215,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
         self.macroStore = .appDefault
         self.lastMacroCommands = self.macroStore?.load(maxCount: Self.maxRecordedMacroCommandCount) ?? []
+        self.deletedMacroUndoStack = self.macroStore?.loadDeletedMacroUndoRecords(
+            maxRecords: Self.maxDeletedMacroUndoRecordCount,
+            maxCommands: Self.maxRecordedMacroCommandCount
+        ) ?? []
         super.init()
     }
 
@@ -238,6 +242,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
         self.macroStore = macroStore
         self.lastMacroCommands = self.macroStore?.load(maxCount: Self.maxRecordedMacroCommandCount) ?? []
+        self.deletedMacroUndoStack = self.macroStore?.loadDeletedMacroUndoRecords(
+            maxRecords: Self.maxDeletedMacroUndoRecordCount,
+            maxCommands: Self.maxRecordedMacroCommandCount
+        ) ?? []
         super.init()
     }
 
@@ -1748,6 +1756,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         do {
             try macroStore.restoreNamedMacros(macros, maxCount: Self.maxRecordedMacroCommandCount)
             _ = deletedMacroUndoStack.popLast()
+            persistDeletedMacroUndoStack()
             return true
         } catch {
             NSSound.beep()
@@ -1761,6 +1770,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         deletedMacroUndoStack.append(record)
         if deletedMacroUndoStack.count > Self.maxDeletedMacroUndoRecordCount {
             deletedMacroUndoStack.removeFirst(deletedMacroUndoStack.count - Self.maxDeletedMacroUndoRecordCount)
+        }
+        persistDeletedMacroUndoStack()
+    }
+
+    private func persistDeletedMacroUndoStack() {
+        guard let macroStore else { return }
+        do {
+            try macroStore.saveDeletedMacroUndoRecords(
+                deletedMacroUndoStack,
+                maxRecords: Self.maxDeletedMacroUndoRecordCount,
+                maxCommands: Self.maxRecordedMacroCommandCount
+            )
+        } catch {
+            NSLog("AttoEditor: failed to persist deleted macro undo history: %@", String(describing: error))
         }
     }
 
