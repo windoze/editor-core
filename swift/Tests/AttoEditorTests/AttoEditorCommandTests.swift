@@ -4925,6 +4925,56 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(delegate._lastMacroCommandsForTesting(), recorded)
     }
 
+    func testCommandMacroPersistsSublimeMacroFileAcrossDelegates() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let macroURL = tempDir.appendingPathComponent("Last Macro.sublime-macro")
+        let macroStore = AttoMacroStore(macroFileURL: macroURL)
+        let firstDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+
+        let firstFileURL = tempDir.appendingPathComponent("macro-record.txt")
+        try "abc\ndef\n".write(to: firstFileURL, atomically: true, encoding: .utf8)
+
+        let firstContext = firstDelegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { firstContext.window.close() }
+        firstContext.editorAreaController.openFile(url: firstFileURL, mode: .pinned)
+
+        XCTAssertTrue(firstDelegate.executeCommand(id: "macro.toggle_recording"))
+        XCTAssertTrue(firstDelegate.executeCommand(id: "go.line", arguments: ["line": .integer(2), "column": .integer(2)]))
+        XCTAssertTrue(firstDelegate.executeCommand(id: "editor.duplicate_lines"))
+        XCTAssertTrue(firstDelegate.executeCommand(id: "macro.toggle_recording"))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: macroURL.path))
+        let rawJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: macroURL)) as? [[String: Any]]
+        let stored = try XCTUnwrap(rawJSON)
+        XCTAssertEqual(stored.count, 2)
+        XCTAssertEqual(stored[0]["command"] as? String, "go.line")
+        let goLineArgs = try XCTUnwrap(stored[0]["args"] as? [String: Any])
+        XCTAssertEqual((goLineArgs["line"] as? NSNumber)?.intValue, 2)
+        XCTAssertEqual((goLineArgs["column"] as? NSNumber)?.intValue, 2)
+        XCTAssertEqual(stored[1]["command"] as? String, "editor.duplicate_lines")
+        XCTAssertNil(stored[1]["args"])
+
+        let secondDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        let loaded = secondDelegate._lastMacroCommandsForTesting()
+        XCTAssertEqual(loaded.map(\.commandID), ["go.line", "editor.duplicate_lines"])
+        XCTAssertEqual(loaded.first?.arguments, ["line": .integer(2), "column": .integer(2)])
+
+        let replayFileURL = tempDir.appendingPathComponent("macro-replay.txt")
+        try "abc\ndef\n".write(to: replayFileURL, atomically: true, encoding: .utf8)
+        let secondContext = secondDelegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { secondContext.window.close() }
+        secondContext.editorAreaController.openFile(url: replayFileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: secondContext.editorAreaController.view))
+        XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.replay_last"))
+        XCTAssertTrue(secondDelegate.executeCommand(id: "macro.replay_last"))
+        XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\n")
+    }
+
     func testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands() throws {
         let delegate = AttoAppDelegate(keyBindings: [:])
         let tempDir = FileManager.default.temporaryDirectory

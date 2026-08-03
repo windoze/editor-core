@@ -1387,6 +1387,14 @@
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroRecordsAndReplaysCommandSequence|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testKeymapParsesSublimeStyleBindingsAndOverridesDefaults`
     - `git diff --check`
+- 中间提交：`feat(app): persist last command macro`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；把 last command macro 从单次内存状态推进到 `.sublime-macro` 兼容文件，让 App 启动后可恢复最近一次录制的宏。
+  - 提交边界：新增 `AttoMacroStore`，默认路径为用户 Application Support 下的 `Macros/Last Macro.sublime-macro`；停止录制时把 sanitized last macro 写为 Sublime 风格 JSON array，每项包含 `command` 和可选 `args`；App 默认 delegate 初始化时加载该文件，测试构造 delegate 继续通过注入 store 避免读写全局用户状态；JSON object/array/null 参数以 typed `.json` 形式回读，基础 string/integer/number/boolean 参数保持 typed 值。本提交不实现命名/多宏管理、导入导出 UI、完整 Sublime `.sublime-macro` 运行语义、plugin/package command runtime，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroPersistsSublimeMacroFileAcrossDelegates`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroRecordsAndReplaysCommandSequence|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies)'`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testKeymapParsesSublimeStyleBindingsAndOverridesDefaults`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

@@ -173,6 +173,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var keyEventMonitor: Any?
     private var recentCommandRecords: [AttoRecentCommandRecord] = []
     private let recentCommandStore: AttoRecentCommandStore?
+    private let macroStore: AttoMacroStore?
     private var isRecordingMacro = false
     private var isReplayingMacro = false
     private var currentMacroCommands: [AttoRecordedCommand] = []
@@ -196,6 +197,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.keySequencePrefixTimeoutSeconds = 1.0
         self.recentCommandStore = .appDefault
         self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
+        self.macroStore = .appDefault
+        self.lastMacroCommands = self.macroStore?.load(maxCount: Self.maxRecordedMacroCommandCount) ?? []
         super.init()
     }
 
@@ -206,7 +209,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         keySequencePrefixTimeoutSeconds: TimeInterval = 1.0,
         keySequenceStatusHandler: ((String?) -> Void)? = nil,
         keymapResolver: ((AttoKeymapContext) -> AttoKeymapResolution)? = nil,
-        recentCommandStore: AttoRecentCommandStore? = nil
+        recentCommandStore: AttoRecentCommandStore? = nil,
+        macroStore: AttoMacroStore? = nil
     ) {
         self.keyBindings = keyBindings
         self.keySequences = keySequences
@@ -216,6 +220,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.keySequenceStatusHandler = keySequenceStatusHandler
         self.recentCommandStore = recentCommandStore
         self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
+        self.macroStore = macroStore
+        self.lastMacroCommands = self.macroStore?.load(maxCount: Self.maxRecordedMacroCommandCount) ?? []
         super.init()
     }
 
@@ -1346,6 +1352,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         lastMacroCommands = currentMacroCommands
         currentMacroCommands = []
         isRecordingMacro = false
+        try? macroStore?.save(lastMacroCommands, maxCount: Self.maxRecordedMacroCommandCount)
     }
 
     private func replayLastMacro() {
