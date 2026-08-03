@@ -25,6 +25,7 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
             XCTAssertGreaterThan(visualCase.window.width, 0)
             XCTAssertGreaterThan(visualCase.window.height, 0)
             XCTAssertGreaterThan(visualCase.scale, 0)
+            XCTAssertEqual(visualCase.scale, 1.0, visualCase.id)
             XCTAssertGreaterThanOrEqual(visualCase.maxDifferentPixelRatio, 0)
             XCTAssertLessThanOrEqual(visualCase.maxDifferentPixelRatio, 1)
             XCTAssertTrue(visualCase.baseline.hasSuffix(".png"))

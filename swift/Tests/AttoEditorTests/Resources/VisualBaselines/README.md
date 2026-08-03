@@ -22,4 +22,5 @@
 
 - Pull requests that touch visual baseline resources or harness files run smoke mode on a pinned macOS runner and upload review artifacts.
 - Manual workflow runs support `mode=smoke` for artifact review and `mode=strict` for checked-in PNG comparison.
+- Every workflow run records `environment/summary.txt`, `environment/displays.txt`, and `environment/fonts.txt` with the toolchain, display, font, render backend, and scale-factor context used for that artifact set.
 - Strict mode is expected to become required after the first approved PNG baseline set is committed.

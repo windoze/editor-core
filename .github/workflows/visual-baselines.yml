@@ -30,6 +30,8 @@ jobs:
     runs-on: macos-15
     env:
       ATTO_VISUAL_ARTIFACT_DIR: ${{ github.workspace }}/target/atto-visual-artifacts
+      ATTO_VISUAL_RENDER_BACKEND: appkit-skia-metal
+      ATTO_VISUAL_SCALE_FACTOR: "1.0"
     steps:
       - uses: actions/checkout@v5
 
@@ -40,6 +42,9 @@ jobs:
           swift --version
           rustc --version
           cargo --version
+
+      - name: Record visual environment
+        run: swift/scripts/write-visual-ci-environment.sh
 
       - name: Smoke visual baseline manifest
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'smoke' }}

@@ -2160,6 +2160,13 @@
     - `bash -n swift/scripts/check-visual-baselines.sh`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): record visual ci environment`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；补齐 visual baseline CI 环境审计 artifact，降低后续 PNG baseline review 时的字体/显示/工具链不确定性。
+  - 提交边界：新增 `swift/scripts/write-visual-ci-environment.sh`，workflow 在 smoke/strict 测试前写出 toolchain、display、font、render backend 和 scale-factor 摘要 artifact；visual manifest 测试固定 `scale == 1.0`，baseline policy 文档同步说明环境 artifact。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品渲染代码。
+  - 验证记录：
+    - `bash -n swift/scripts/write-visual-ci-environment.sh`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
