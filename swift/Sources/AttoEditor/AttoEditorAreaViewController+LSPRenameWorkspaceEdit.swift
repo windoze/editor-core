@@ -569,6 +569,7 @@ extension AttoEditorAreaViewController {
         }
 
         do {
+            let undoneSequence = latestUndoableWorkspaceEditTransactionSequence()
             let projectedURLsBeforeUndo = projectedFileURLsByTabID()
             let result = try coreDocuments.undoLastWorkspaceEditTransaction()
             guard result.undone else {
@@ -579,7 +580,9 @@ extension AttoEditorAreaViewController {
                 coreDocuments,
                 projectedURLsBeforeSync: projectedURLsBeforeUndo
             )
-            workspaceEditConsumedUndoSequence = try? coreDocuments.workspaceEditTransactionEventsLatestSequence()
+            if let undoneSequence {
+                workspaceEditConsumedUndoSequences.insert(undoneSequence)
+            }
             setTransientStatusText("Workspace edit undone")
             refreshWorkspaceEditHistoryPanelIfVisible()
             return true

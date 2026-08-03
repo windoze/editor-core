@@ -1039,7 +1039,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var workspaceEditPopoverLabel: NSTextField?
     var workspaceEditPreviewPanelController: AttoWorkspaceEditPreviewPanelController?
     var workspaceEditHistoryPanelController: AttoWorkspaceEditHistoryPanelController?
-    var workspaceEditConsumedUndoSequence: UInt64?
+    var workspaceEditConsumedUndoSequences: Set<UInt64> = []
     var workspaceEditPreviewDecisionProviderForTesting: ((AttoWorkspaceEditPreview) -> AttoWorkspaceEditPreviewDecision)?
 
     var definitionContext: DefinitionRequestContext?

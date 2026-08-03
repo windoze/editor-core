@@ -2311,6 +2311,64 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(unavailable.restoredURIs.isEmpty)
     }
 
+    func testMultiDocumentEditorUIUndoesMultipleWorkspaceEditTransactions() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let uri = "file:///project/MultiLevel.swift"
+        let tab = try multi.openTab(text: "abc\n", viewportWidthCells: 80)
+        try multi.setTabDocumentURI(uri, tabId: tab)
+
+        let firstEdit = """
+        {
+          "changes": {
+            "\(uri)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "B"
+              }
+            ]
+          }
+        }
+        """
+        let firstApply = try multi.applyWorkspaceEditTransaction(firstEdit)
+        XCTAssertTrue(firstApply.applied)
+        XCTAssertEqual(try multi.tabText(tabId: tab), "aBc\n")
+
+        let secondEdit = """
+        {
+          "changes": {
+            "\(uri)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 2 },
+                  "end": { "line": 0, "character": 3 }
+                },
+                "newText": "C"
+              }
+            ]
+          }
+        }
+        """
+        let secondApply = try multi.applyWorkspaceEditTransaction(secondEdit)
+        XCTAssertTrue(secondApply.applied)
+        XCTAssertEqual(try multi.tabText(tabId: tab), "aBC\n")
+        XCTAssertEqual(try multi.workspaceEditTransactionEventsLatestSequence(), 2)
+
+        let secondUndo = try multi.undoLastWorkspaceEditTransaction()
+        XCTAssertTrue(secondUndo.undone)
+        XCTAssertEqual(try multi.tabText(tabId: tab), "aBc\n")
+
+        let firstUndo = try multi.undoLastWorkspaceEditTransaction()
+        XCTAssertTrue(firstUndo.undone)
+        XCTAssertEqual(try multi.tabText(tabId: tab), "abc\n")
+
+        let unavailable = try multi.undoLastWorkspaceEditTransaction()
+        XCTAssertFalse(unavailable.undone)
+    }
+
     func testMultiDocumentEditorUIAppliesUnopenedWorkspaceFileTextEdits() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)

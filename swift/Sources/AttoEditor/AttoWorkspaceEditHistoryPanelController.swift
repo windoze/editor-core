@@ -297,10 +297,12 @@ enum AttoWorkspaceEditHistoryFormatter {
     @MainActor
     static func items(
         from snapshot: EcuWorkspaceEditTransactionEventsSnapshot,
-        consumedUndoSequence: UInt64? = nil
+        consumedUndoSequences: Set<UInt64> = []
     ) -> [AttoWorkspaceEditHistoryPanelController.Item] {
         let latestUndoableSequence = snapshot.events.last { event in
-            event.operation == "apply" && event.result.applied
+            event.operation == "apply"
+                && event.result.applied
+                && consumedUndoSequences.contains(event.sequence) == false
         }?.sequence
         return snapshot.events.reversed().map { event in
             let result = event.result
@@ -313,7 +315,6 @@ enum AttoWorkspaceEditHistoryFormatter {
                 detail: "\(editCount) text edits, \(resourceCount) resource ops | \(uriSummary(for: result))",
                 status: status(for: result),
                 canUndoLatest: event.sequence == latestUndoableSequence
-                    && event.sequence != consumedUndoSequence
             )
         }
     }

@@ -6159,7 +6159,34 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "Xother\n")
         XCTAssertTrue(ctx.window.title.contains("●"))
 
+        let secondWorkspaceEdit = """
+        {
+          "changes": {
+            "\(fileURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 2 },
+                  "end": { "line": 0, "character": 3 }
+                },
+                "newText": "Z"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(ctx.editorAreaController.applyWorkspaceEditJSONToActiveTab(secondWorkspaceEdit))
+        editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        XCTAssertEqual(try editorView.editor.text(), "aBZ\n")
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "Xother\n")
+
         XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "workspace.undo_last_workspace_edit"))
+        XCTAssertTrue(delegate.executeCommand(id: "workspace.undo_last_workspace_edit"))
+
+        editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        XCTAssertEqual(try editorView.editor.text(), "aBc\n")
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "Xother\n")
+
         XCTAssertTrue(delegate.executeCommand(id: "workspace.undo_last_workspace_edit"))
 
         editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
@@ -6200,24 +6227,48 @@ final class AttoEditorCommandTests: XCTestCase {
         """
 
         XCTAssertTrue(ctx.editorAreaController.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
-        XCTAssertEqual(try ctx.editorAreaController._coreWorkspaceEditTransactionLatestSequenceForTesting(), 1)
+        let secondWorkspaceEdit = """
+        {
+          "changes": {
+            "\(fileURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 2 },
+                  "end": { "line": 0, "character": 3 }
+                },
+                "newText": "C"
+              }
+            ]
+          }
+        }
+        """
+        XCTAssertTrue(ctx.editorAreaController.applyWorkspaceEditJSONToActiveTab(secondWorkspaceEdit))
+        XCTAssertEqual(try ctx.editorAreaController._coreWorkspaceEditTransactionLatestSequenceForTesting(), 2)
         XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "workspace.show_workspace_edit_history"))
         XCTAssertTrue(delegate.executeCommand(id: "workspace.show_workspace_edit_history"))
         XCTAssertTrue(ctx.editorAreaController._workspaceEditHistoryPanelIsVisibleForTesting())
-        XCTAssertEqual(ctx.editorAreaController._workspaceEditHistoryPanelRowCountForTesting(), 1)
+        XCTAssertEqual(ctx.editorAreaController._workspaceEditHistoryPanelRowCountForTesting(), 2)
 
-        let item = try XCTUnwrap(ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting().first)
-        XCTAssertEqual(item.sequence, 1)
-        XCTAssertEqual(item.operation, "apply")
-        XCTAssertEqual(item.status, "Applied")
-        XCTAssertTrue(item.canUndoLatest)
-        XCTAssertTrue(item.title.contains("Apply WorkspaceEdit"))
-        XCTAssertTrue(item.detail.contains("1 text edits, 0 resource ops"))
-        XCTAssertTrue(item.detail.contains("history-main.txt"))
+        let items = ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting()
+        let firstItem = try XCTUnwrap(items.first { $0.sequence == 1 })
+        let secondItem = try XCTUnwrap(items.first { $0.sequence == 2 })
+        XCTAssertEqual(firstItem.operation, "apply")
+        XCTAssertEqual(firstItem.status, "Applied")
+        XCTAssertFalse(firstItem.canUndoLatest)
+        XCTAssertTrue(firstItem.detail.contains("1 text edits, 0 resource ops"))
+        XCTAssertTrue(firstItem.detail.contains("history-main.txt"))
+        XCTAssertTrue(secondItem.canUndoLatest)
+        XCTAssertTrue(secondItem.title.contains("Apply WorkspaceEdit"))
 
         XCTAssertTrue(ctx.editorAreaController._undoLastCoreWorkspaceEditTransactionForTesting())
-        let itemAfterUndo = try XCTUnwrap(ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting().first)
-        XCTAssertFalse(itemAfterUndo.canUndoLatest)
+        let itemsAfterOneUndo = ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting()
+        XCTAssertFalse(try XCTUnwrap(itemsAfterOneUndo.first { $0.sequence == 2 }).canUndoLatest)
+        XCTAssertTrue(try XCTUnwrap(itemsAfterOneUndo.first { $0.sequence == 1 }).canUndoLatest)
+
+        XCTAssertTrue(ctx.editorAreaController._undoLastCoreWorkspaceEditTransactionForTesting())
+        let itemsAfterTwoUndos = ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting()
+        XCTAssertFalse(try XCTUnwrap(itemsAfterTwoUndos.first { $0.sequence == 2 }).canUndoLatest)
+        XCTAssertFalse(try XCTUnwrap(itemsAfterTwoUndos.first { $0.sequence == 1 }).canUndoLatest)
     }
 
     func testWorkspaceEditPreviewConfirmationCanCancelCoreTransaction() throws {

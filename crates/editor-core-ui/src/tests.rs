@@ -2309,6 +2309,61 @@ fn multi_document_state_events_aggregate_text_and_dirty_events() {
 }
 
 #[test]
+fn multi_document_workspace_edit_transaction_undo_is_multilevel() {
+    let mut multi = MultiDocumentEditorUi::new();
+    let tab = multi.open_tab("abc\n", 80);
+    multi
+        .set_tab_document_uri(tab, Some("file:///project/main.txt".to_string()))
+        .unwrap();
+
+    let first_edit = r#"{
+      "changes": {
+        "file:///project/main.txt": [
+          {
+            "range": {
+              "start": { "line": 0, "character": 1 },
+              "end": { "line": 0, "character": 2 }
+            },
+            "newText": "B"
+          }
+        ]
+      }
+    }"#;
+    let first_result = multi.apply_workspace_edit_transaction(first_edit).unwrap();
+    assert!(first_result.applied);
+    assert_eq!(multi.tab_text(tab).unwrap(), "aBc\n");
+
+    let second_edit = r#"{
+      "changes": {
+        "file:///project/main.txt": [
+          {
+            "range": {
+              "start": { "line": 0, "character": 2 },
+              "end": { "line": 0, "character": 3 }
+            },
+            "newText": "C"
+          }
+        ]
+      }
+    }"#;
+    let second_result = multi.apply_workspace_edit_transaction(second_edit).unwrap();
+    assert!(second_result.applied);
+    assert_eq!(multi.tab_text(tab).unwrap(), "aBC\n");
+    assert_eq!(multi.workspace_edit_transaction_events_latest_sequence(), 2);
+
+    let second_undo = multi.undo_last_workspace_edit_transaction().unwrap();
+    assert!(second_undo.undone);
+    assert_eq!(multi.tab_text(tab).unwrap(), "aBc\n");
+
+    let first_undo = multi.undo_last_workspace_edit_transaction().unwrap();
+    assert!(first_undo.undone);
+    assert_eq!(multi.tab_text(tab).unwrap(), "abc\n");
+
+    let unavailable = multi.undo_last_workspace_edit_transaction().unwrap();
+    assert!(!unavailable.undone);
+}
+
+#[test]
 fn multi_document_state_events_aggregate_derived_state_events() {
     let mut multi = MultiDocumentEditorUi::new();
     let tab = multi.open_tab("abc\n", 80);

@@ -425,6 +425,17 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditTransactionUndoRestoresAppProjectionAndFiles`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testExecuteCommandUsesRegisteredCommandIDs`
     - `git diff --check`
+- 中间提交：`feat(ui): stack workspace edit transaction undo`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把最近一次 core-owned WorkspaceEdit transaction undo 推进到 bounded 多级 transaction-wide undo stack，让连续 WorkspaceEdit apply 可按后进先出顺序逐步恢复。
+  - 提交边界：`MultiDocumentEditorUi` 将单个 undo record 改为最多 64 条的 LIFO stack；新的成功 transaction 会 push record，失败或 rejected transaction 不再丢弃已有可撤销记录，超过上限时丢弃最旧 record 并清理其 filesystem backup；现有 `undo_last_workspace_edit_transaction` Rust/C ABI/Swift wrapper/API 保持兼容。AttoEditor history panel 改为按已消费 sequence 集合标记当前可撤销 event，`workspace.undo_last_workspace_edit` 命令可连续撤销多条 transaction。本提交不实现 redo、不新增 AppKit `UndoManager` 聚合，也不改变 WorkspaceEdit transaction event schema。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui`
+    - `cargo test -p editor-core-ui multi_document_workspace_edit_transaction_undo_is_multilevel`
+    - `cargo test -p editor-core-ui-ffi workspace_edit`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIUndoesMultipleWorkspaceEditTransactions`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditTransactionUndoCommandRestoresAppProjectionAndFiles|AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents'`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

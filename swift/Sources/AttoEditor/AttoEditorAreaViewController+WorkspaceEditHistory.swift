@@ -36,11 +36,21 @@ extension AttoEditorAreaViewController {
             let snapshot = try coreDocuments.workspaceEditTransactionEvents()
             return AttoWorkspaceEditHistoryFormatter.items(
                 from: snapshot,
-                consumedUndoSequence: workspaceEditConsumedUndoSequence
+                consumedUndoSequences: workspaceEditConsumedUndoSequences
             )
         } catch {
             NSLog("AttoEditor: failed to load WorkspaceEdit transaction history: %@", String(describing: error))
             return []
         }
+    }
+
+    func latestUndoableWorkspaceEditTransactionSequence() -> UInt64? {
+        guard let coreDocuments else { return nil }
+        guard let snapshot = try? coreDocuments.workspaceEditTransactionEvents() else { return nil }
+        return snapshot.events.last { event in
+            event.operation == "apply"
+                && event.result.applied
+                && workspaceEditConsumedUndoSequences.contains(event.sequence) == false
+        }?.sequence
     }
 }

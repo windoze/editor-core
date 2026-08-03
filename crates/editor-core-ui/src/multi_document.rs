@@ -1,6 +1,6 @@
 use crate::{EditorUi, UiError};
 use editor_core::{SearchMatch, SearchOptions};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 mod lsp_request_events;
 mod lsp_result_events;
@@ -28,6 +28,8 @@ pub use workspace_edit::{
 };
 pub use workspace_outline::{WorkspaceOutlineDocument, WorkspaceOutlineSnapshot};
 pub use workspace_roots::{WorkspaceFolder, WorkspaceRootsChange};
+
+const MAX_WORKSPACE_EDIT_UNDO_RECORDS: usize = 64;
 
 /// Opaque id for an open tab/document managed by [`MultiDocumentEditorUi`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -92,7 +94,7 @@ pub struct MultiDocumentEditorUi {
     project_lsp_servers: BTreeMap<String, ProjectLspServerConfig>,
     state_events: state_events::MultiDocumentStateEventStore,
     workspace_edit_transactions: workspace_edit::WorkspaceEditTransactionEventStore,
-    workspace_edit_undo: Option<workspace_edit::WorkspaceEditTransactionUndoRecord>,
+    workspace_edit_undo_stack: VecDeque<workspace_edit::WorkspaceEditTransactionUndoRecord>,
 }
 
 impl MultiDocumentEditorUi {
@@ -707,7 +709,6 @@ impl MultiDocumentEditorUi {
         &mut self,
         workspace_edit_json: &str,
     ) -> Result<WorkspaceEditTransactionResult, UiError> {
-        self.discard_workspace_edit_undo_record()?;
         let apply_result = workspace_edit::apply(
             &mut self.tabs,
             &mut self.tab_order,
@@ -717,7 +718,9 @@ impl MultiDocumentEditorUi {
             workspace_edit_json,
         )?;
         let result = apply_result.result;
-        self.workspace_edit_undo = apply_result.undo_record;
+        if let Some(record) = apply_result.undo_record {
+            self.push_workspace_edit_undo_record(record);
+        }
         self.workspace_edit_transactions
             .record("apply", result.clone());
         Ok(result)
@@ -740,7 +743,7 @@ impl MultiDocumentEditorUi {
     pub fn undo_last_workspace_edit_transaction(
         &mut self,
     ) -> Result<WorkspaceEditTransactionUndoResult, UiError> {
-        let Some(mut record) = self.workspace_edit_undo.take() else {
+        let Some(mut record) = self.workspace_edit_undo_stack.pop_back() else {
             return Ok(workspace_edit::undo_unavailable_result());
         };
         record.undo(
@@ -761,11 +764,16 @@ impl MultiDocumentEditorUi {
         })
     }
 
-    fn discard_workspace_edit_undo_record(&mut self) -> Result<(), UiError> {
-        if let Some(record) = self.workspace_edit_undo.take() {
-            record.discard()?;
+    fn push_workspace_edit_undo_record(
+        &mut self,
+        record: workspace_edit::WorkspaceEditTransactionUndoRecord,
+    ) {
+        self.workspace_edit_undo_stack.push_back(record);
+        while self.workspace_edit_undo_stack.len() > MAX_WORKSPACE_EDIT_UNDO_RECORDS {
+            if let Some(record) = self.workspace_edit_undo_stack.pop_front() {
+                let _ = record.discard();
+            }
         }
-        Ok(())
     }
 
     /// Return latest WorkspaceEdit transaction event sequence.
