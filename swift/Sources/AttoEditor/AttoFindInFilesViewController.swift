@@ -52,6 +52,8 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
     private var lastSearchToken: UInt64 = 0
     private var searchDebounceWorkItem: DispatchWorkItem?
     private var defaultScope: Scope = .openedFiles
+    private var workspaceSearchIncludeGlobs: [String] = []
+    private var workspaceSearchExcludeGlobs: [String] = []
 
     private let headerLabel = NSTextField(labelWithString: "FIND IN FILES")
     private let queryField = NSSearchField(frame: .zero)
@@ -178,12 +180,32 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         setDefaultScope(Scope(configurationValue: value))
     }
 
+    func setWorkspaceSearchGlobs(include: [String], exclude: [String]) {
+        let normalizedInclude = Self.normalizedGlobPatterns(include)
+        let normalizedExclude = Self.normalizedGlobPatterns(exclude)
+        guard normalizedInclude != workspaceSearchIncludeGlobs
+            || normalizedExclude != workspaceSearchExcludeGlobs
+        else {
+            return
+        }
+
+        workspaceSearchIncludeGlobs = normalizedInclude
+        workspaceSearchExcludeGlobs = normalizedExclude
+        if isViewLoaded, selectedScope() == .workspace {
+            scheduleSearch()
+        }
+    }
+
     func focusSearchField() {
         view.window?.makeFirstResponder(queryField)
     }
 
     func _selectedScopeForTesting() -> Scope {
         selectedScope()
+    }
+
+    func _filteredWorkspaceFileURLsForTesting(_ files: [URL]) -> [URL] {
+        filteredWorkspaceFiles(files)
     }
 
     // MARK: - Actions
@@ -240,7 +262,7 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
             case .openedFiles:
                 return openedFilesProvider?() ?? []
             case .workspace:
-                return workspaceFilesProvider?() ?? []
+                return filteredWorkspaceFiles(workspaceFilesProvider?() ?? [])
             }
         }()
 
@@ -269,9 +291,124 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         Scope(rawValue: scopeControl.selectedSegment) ?? defaultScope
     }
 
+    private func filteredWorkspaceFiles(_ files: [URL]) -> [URL] {
+        guard workspaceSearchIncludeGlobs.isEmpty == false
+            || workspaceSearchExcludeGlobs.isEmpty == false
+        else {
+            return files
+        }
+
+        return files.filter { url in
+            let relativePath = relativePathForDisplay(url, rootURL: rootURL)
+            return Self.isWorkspaceSearchPathIncluded(
+                relativePath,
+                includeGlobs: workspaceSearchIncludeGlobs,
+                excludeGlobs: workspaceSearchExcludeGlobs
+            )
+        }
+    }
+
     private func open(result: SearchResult) {
         let loc = AttoCommandLine.FileLocation(line1: max(1, result.line1), column1: max(1, result.column1))
         onOpenResult?(result.url, loc)
+    }
+
+    nonisolated static func isWorkspaceSearchPathIncluded(
+        _ relativePath: String,
+        includeGlobs: [String],
+        excludeGlobs: [String]
+    ) -> Bool {
+        let path = relativePath.replacingOccurrences(of: "\\", with: "/")
+        let include = normalizedGlobPatterns(includeGlobs)
+        let exclude = normalizedGlobPatterns(excludeGlobs)
+
+        let included = include.isEmpty || include.contains { globMatches(path: path, pattern: $0) }
+        guard included else { return false }
+        return exclude.contains { globMatches(path: path, pattern: $0) } == false
+    }
+
+    nonisolated private static func normalizedGlobPatterns(_ patterns: [String]) -> [String] {
+        var seen: Set<String> = []
+        var out: [String] = []
+        for pattern in patterns {
+            var normalized = pattern
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\\", with: "/")
+            while normalized.contains("//") {
+                normalized = normalized.replacingOccurrences(of: "//", with: "/")
+            }
+            if normalized.hasPrefix("./") {
+                normalized.removeFirst(2)
+            }
+            if normalized.hasSuffix("/") {
+                normalized.append("**")
+            }
+            guard normalized.isEmpty == false else { continue }
+            guard seen.insert(normalized).inserted else { continue }
+            out.append(normalized)
+        }
+        return out
+    }
+
+    nonisolated private static func globMatches(path: String, pattern: String) -> Bool {
+        let candidates: [String]
+        if pattern.contains("/") {
+            candidates = [path]
+        } else {
+            candidates = path
+                .split(separator: "/", omittingEmptySubsequences: true)
+                .map(String.init)
+        }
+
+        return candidates.contains { candidate in
+            guard let regex = try? NSRegularExpression(
+                pattern: globRegex(pattern),
+                options: [.caseInsensitive]
+            ) else {
+                return false
+            }
+            let range = NSRange(candidate.startIndex..<candidate.endIndex, in: candidate)
+            return regex.firstMatch(in: candidate, options: [], range: range) != nil
+        }
+    }
+
+    nonisolated private static func globRegex(_ pattern: String) -> String {
+        var out = "^"
+        var index = pattern.startIndex
+
+        while index < pattern.endIndex {
+            let char = pattern[index]
+            let next = pattern.index(after: index)
+
+            if char == "*" {
+                if next < pattern.endIndex, pattern[next] == "*" {
+                    let afterDoubleStar = pattern.index(after: next)
+                    if afterDoubleStar < pattern.endIndex, pattern[afterDoubleStar] == "/" {
+                        out += "(?:.*/)?"
+                        index = pattern.index(after: afterDoubleStar)
+                    } else {
+                        out += ".*"
+                        index = afterDoubleStar
+                    }
+                } else {
+                    out += "[^/]*"
+                    index = next
+                }
+                continue
+            }
+
+            if char == "?" {
+                out += "[^/]"
+                index = next
+                continue
+            }
+
+            out += NSRegularExpression.escapedPattern(for: String(char))
+            index = next
+        }
+
+        out += "$"
+        return out
     }
 
     nonisolated private static func search(query: String, inFiles files: [URL]) -> [SearchResult] {

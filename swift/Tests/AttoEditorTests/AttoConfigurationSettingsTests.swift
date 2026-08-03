@@ -23,7 +23,9 @@ final class AttoConfigurationSettingsTests: XCTestCase {
             ),
             workspace: AttoWorkspacePreferenceSettings(
                 rootPath: "/user/root",
-                findInFilesDefaultScope: "opened_files"
+                findInFilesDefaultScope: "opened_files",
+                workspaceSearchIncludeGlobs: ["Sources/**/*.swift"],
+                workspaceSearchExcludeGlobs: ["**/*.generated.swift"]
             )
         )
 
@@ -45,7 +47,8 @@ final class AttoConfigurationSettingsTests: XCTestCase {
             ),
             workspace: AttoWorkspacePreferenceSettings(
                 rootPath: "/workspace/root",
-                findInFilesDefaultScope: "workspace"
+                findInFilesDefaultScope: "workspace",
+                workspaceSearchExcludeGlobs: ["Vendor/**"]
             )
         )
 
@@ -90,6 +93,8 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(snapshot.language.lspAutoRestart.serverBaseDelaySeconds, ["runtime-lsp": 0.5])
         XCTAssertEqual(snapshot.workspace.rootPath, "/workspace/root")
         XCTAssertEqual(snapshot.workspace.findInFilesDefaultScope, "workspace")
+        XCTAssertEqual(snapshot.workspace.workspaceSearchIncludeGlobs, ["Sources/**/*.swift"])
+        XCTAssertEqual(snapshot.workspace.workspaceSearchExcludeGlobs, ["Vendor/**"])
     }
 
     func testSettingsResolutionSkipsEmptyScopes() {
@@ -219,6 +224,8 @@ final class AttoConfigurationSettingsTests: XCTestCase {
           },
           "workspace": {
             "find_in_files_default_scope": "workspace",
+            "workspace_search_include_globs": ["Sources/**/*.swift"],
+            "workspace_search_exclude_globs": ["**/*.generated.swift"],
             "future_workspace_field": "ignored"
           },
           "language": {
@@ -246,6 +253,8 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(settings.editor?.findWholeWord, true)
         XCTAssertEqual(settings.editor?.findRegex, true)
         XCTAssertEqual(settings.workspace?.findInFilesDefaultScope, "workspace")
+        XCTAssertEqual(settings.workspace?.workspaceSearchIncludeGlobs, ["Sources/**/*.swift"])
+        XCTAssertEqual(settings.workspace?.workspaceSearchExcludeGlobs, ["**/*.generated.swift"])
         XCTAssertEqual(settings.language?.commentConfigurations?["swift"], .line("//"))
         XCTAssertEqual(settings.language?.lspAutoRestart?.maxAttempts, 5)
     }
@@ -282,7 +291,9 @@ final class AttoConfigurationSettingsTests: XCTestCase {
             workspace: AttoWorkspacePreferenceSnapshot(
                 rootURL: "file:///base/root/",
                 rootPath: "/base/root",
-                findInFilesDefaultScope: "opened_files"
+                findInFilesDefaultScope: "opened_files",
+                workspaceSearchIncludeGlobs: [],
+                workspaceSearchExcludeGlobs: []
             )
         )
     }

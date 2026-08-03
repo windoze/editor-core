@@ -17,6 +17,18 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
 
         let fileURL = workspaceRootURL.appendingPathComponent("wrap.txt")
         try "abcdefghijklmnop\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        let sourcesURL = workspaceRootURL.appendingPathComponent("Sources", isDirectory: true)
+        let vendorURL = workspaceRootURL.appendingPathComponent("Vendor", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourcesURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: vendorURL, withIntermediateDirectories: true)
+        let sourceURL = sourcesURL.appendingPathComponent("App.swift")
+        let generatedURL = sourcesURL.appendingPathComponent("Model.generated.swift")
+        let readmeURL = workspaceRootURL.appendingPathComponent("README.md")
+        let vendoredURL = vendorURL.appendingPathComponent("Vendored.swift")
+        try "needle\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "needle\n".write(to: generatedURL, atomically: true, encoding: .utf8)
+        try "needle\n".write(to: readmeURL, atomically: true, encoding: .utf8)
+        try "needle\n".write(to: vendoredURL, atomically: true, encoding: .utf8)
 
         let settingsStore = AttoConfigurationSettingsStore(
             userSettingsURL: tempDir.appendingPathComponent("user-settings.json")
@@ -42,7 +54,11 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
                 findRegex: true
             ),
             rendering: AttoRenderingPreferenceSettings(themeName: "Atto Dark"),
-            workspace: AttoWorkspacePreferenceSettings(findInFilesDefaultScope: "workspace")
+            workspace: AttoWorkspacePreferenceSettings(
+                findInFilesDefaultScope: "workspace",
+                workspaceSearchIncludeGlobs: ["Sources/**/*.swift", "README.md"],
+                workspaceSearchExcludeGlobs: ["**/*.generated.swift", "Vendor/**"]
+            )
         ), workspaceRootURL: workspaceRootURL)
 
         let delegate = AttoAppDelegate(
@@ -67,12 +83,19 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertTrue(snapshot.rendering.fontLigaturesEnabled)
         XCTAssertEqual(snapshot.workspace.rootPath, workspaceRootURL.path)
         XCTAssertEqual(snapshot.workspace.findInFilesDefaultScope, "workspace")
+        XCTAssertEqual(snapshot.workspace.workspaceSearchIncludeGlobs, ["Sources/**/*.swift", "README.md"])
+        XCTAssertEqual(snapshot.workspace.workspaceSearchExcludeGlobs, ["**/*.generated.swift", "Vendor/**"])
         ctx.editorAreaController.view.layoutSubtreeIfNeeded()
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.caseSensitiveButton.state, .off)
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.wholeWordButton.state, .on)
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .on)
         ctx.findInFilesController.view.layoutSubtreeIfNeeded()
         XCTAssertEqual(ctx.findInFilesController._selectedScopeForTesting(), .workspace)
+        let workspaceSearchFiles = [sourceURL, generatedURL, readmeURL, vendoredURL, fileURL]
+        XCTAssertEqual(
+            ctx.findInFilesController._filteredWorkspaceFileURLsForTesting(workspaceSearchFiles).map(\.standardizedFileURL),
+            [sourceURL, readmeURL].map(\.standardizedFileURL)
+        )
 
         ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
@@ -92,11 +115,17 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertFalse(snapshot.editor.findWholeWord)
         XCTAssertFalse(snapshot.editor.findRegex)
         XCTAssertEqual(snapshot.workspace.findInFilesDefaultScope, "opened_files")
+        XCTAssertEqual(snapshot.workspace.workspaceSearchIncludeGlobs, [])
+        XCTAssertEqual(snapshot.workspace.workspaceSearchExcludeGlobs, [])
         XCTAssertEqual(snapshot.rendering.themeName, "Atto Light")
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.caseSensitiveButton.state, .on)
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.wholeWordButton.state, .off)
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .off)
         XCTAssertEqual(ctx.findInFilesController._selectedScopeForTesting(), .openedFiles)
+        XCTAssertEqual(
+            ctx.findInFilesController._filteredWorkspaceFileURLsForTesting(workspaceSearchFiles).map(\.standardizedFileURL),
+            workspaceSearchFiles.map(\.standardizedFileURL)
+        )
 
         try editorView.editor.setViewportWidthCells(4)
         XCTAssertTrue(try viewportLines(editorView.editor).contains { ($0["is_wrapped_part"] as? Bool) == true })

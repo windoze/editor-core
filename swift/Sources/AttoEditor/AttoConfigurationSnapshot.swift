@@ -133,21 +133,29 @@ struct AttoWorkspacePreferenceSnapshot: Codable, Equatable {
     var rootURL: String?
     var rootPath: String?
     var findInFilesDefaultScope: String
+    var workspaceSearchIncludeGlobs: [String]
+    var workspaceSearchExcludeGlobs: [String]
 
     init(
         rootURL: String? = nil,
         rootPath: String? = nil,
-        findInFilesDefaultScope: String = Self.defaultFindInFilesScope
+        findInFilesDefaultScope: String = Self.defaultFindInFilesScope,
+        workspaceSearchIncludeGlobs: [String] = [],
+        workspaceSearchExcludeGlobs: [String] = []
     ) {
         self.rootURL = rootURL
         self.rootPath = rootPath
         self.findInFilesDefaultScope = findInFilesDefaultScope
+        self.workspaceSearchIncludeGlobs = workspaceSearchIncludeGlobs
+        self.workspaceSearchExcludeGlobs = workspaceSearchExcludeGlobs
     }
 
     private enum CodingKeys: String, CodingKey {
         case rootURL = "root_url"
         case rootPath = "root_path"
         case findInFilesDefaultScope = "find_in_files_default_scope"
+        case workspaceSearchIncludeGlobs = "workspace_search_include_globs"
+        case workspaceSearchExcludeGlobs = "workspace_search_exclude_globs"
     }
 
     init(from decoder: Decoder) throws {
@@ -156,7 +164,15 @@ struct AttoWorkspacePreferenceSnapshot: Codable, Equatable {
             rootURL: try container.decodeIfPresent(String.self, forKey: .rootURL),
             rootPath: try container.decodeIfPresent(String.self, forKey: .rootPath),
             findInFilesDefaultScope: try container.decodeIfPresent(String.self, forKey: .findInFilesDefaultScope)
-                ?? Self.defaultFindInFilesScope
+                ?? Self.defaultFindInFilesScope,
+            workspaceSearchIncludeGlobs: try container.decodeIfPresent(
+                [String].self,
+                forKey: .workspaceSearchIncludeGlobs
+            ) ?? [],
+            workspaceSearchExcludeGlobs: try container.decodeIfPresent(
+                [String].self,
+                forKey: .workspaceSearchExcludeGlobs
+            ) ?? []
         )
     }
 }

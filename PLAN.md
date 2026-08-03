@@ -1572,6 +1572,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): configure workspace search globs`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把 workspace Find in Files 的 include/exclude glob 纳入 workspace configuration，并让侧栏 workspace-scope 搜索消费 resolved configuration。
+  - 提交边界：`AttoWorkspacePreferenceSnapshot` 与 `AttoWorkspacePreferenceSettings` 新增 `workspace_search_include_globs` / `workspace_search_exclude_globs` 字段，缺省为空数组且兼容旧 snapshot JSON；`AttoFindInFilesViewController` 在 Folder/workspace scope 下用这些 glob 过滤 `workspaceFilesProvider` 的 URL 集合，支持常见 `*`、`?`、`**` 和目录前缀写法；`AttoWindowContext` 在窗口创建和偏好重应用时同步 glob 配置。该提交不新增 Rust/FFI ABI，不改变文件索引策略、不实现 replace preview/apply、不实现自定义 word boundary 规则、不接 Preferences UI、不实现 runtime override UI/持久化，也不完成 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

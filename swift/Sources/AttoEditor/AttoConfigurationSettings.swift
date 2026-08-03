@@ -181,21 +181,29 @@ struct AttoWorkspacePreferenceSettings: Codable, Equatable {
     var rootURL: String?
     var rootPath: String?
     var findInFilesDefaultScope: String?
+    var workspaceSearchIncludeGlobs: [String]?
+    var workspaceSearchExcludeGlobs: [String]?
 
     init(
         rootURL: String? = nil,
         rootPath: String? = nil,
-        findInFilesDefaultScope: String? = nil
+        findInFilesDefaultScope: String? = nil,
+        workspaceSearchIncludeGlobs: [String]? = nil,
+        workspaceSearchExcludeGlobs: [String]? = nil
     ) {
         self.rootURL = rootURL
         self.rootPath = rootPath
         self.findInFilesDefaultScope = findInFilesDefaultScope
+        self.workspaceSearchIncludeGlobs = workspaceSearchIncludeGlobs
+        self.workspaceSearchExcludeGlobs = workspaceSearchExcludeGlobs
     }
 
     private enum CodingKeys: String, CodingKey {
         case rootURL = "root_url"
         case rootPath = "root_path"
         case findInFilesDefaultScope = "find_in_files_default_scope"
+        case workspaceSearchIncludeGlobs = "workspace_search_include_globs"
+        case workspaceSearchExcludeGlobs = "workspace_search_exclude_globs"
     }
 }
 
@@ -437,6 +445,12 @@ extension AttoConfigurationSnapshot {
         }
         if let findInFilesDefaultScope = settings.findInFilesDefaultScope {
             workspace.findInFilesDefaultScope = findInFilesDefaultScope
+        }
+        if let workspaceSearchIncludeGlobs = settings.workspaceSearchIncludeGlobs {
+            workspace.workspaceSearchIncludeGlobs = workspaceSearchIncludeGlobs
+        }
+        if let workspaceSearchExcludeGlobs = settings.workspaceSearchExcludeGlobs {
+            workspace.workspaceSearchExcludeGlobs = workspaceSearchExcludeGlobs
         }
     }
 }
