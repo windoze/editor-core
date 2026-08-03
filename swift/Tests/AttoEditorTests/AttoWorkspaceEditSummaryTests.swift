@@ -337,6 +337,8 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         XCTAssertEqual(sections.count, 2)
         XCTAssertEqual(sections[1].title, "dirty.swift")
         XCTAssertEqual(sections[1].subtitle, "Dirty document: delete: resource_operation_dirty_target")
+        XCTAssertEqual(preview.firstConflictTargetURI, "file:///project/dirty.swift")
+        XCTAssertEqual(preview.conflictTargetURI(for: sections[1]), "file:///project/dirty.swift")
         XCTAssertTrue(sections[1].detailText.contains("Category: Dirty document"))
         XCTAssertTrue(sections[1].detailText.contains("Severity: warning"))
         XCTAssertTrue(sections[1].detailText.contains("Apply impact: Skipped change"))

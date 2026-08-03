@@ -199,13 +199,14 @@ extension AttoEditorAreaViewController {
 
         do {
             try syncOpenTabsToCoreBeforeWorkspaceEditApply(coreDocuments)
+            let transientStatusBeforeConfirmation = transientStatusText
             guard try confirmCoreWorkspaceEditPreviewIfNeeded(
                 coreDocuments,
                 workspaceEdit: workspaceEdit,
                 workspaceEditJSON: workspaceEditJSON,
                 editorView: feedbackEditorView
             ) else {
-                if transientStatusText != "Resolve WorkspaceEdit conflicts before applying" {
+                if transientStatusText == transientStatusBeforeConfirmation {
                     setTransientStatusText("Workspace edit cancelled")
                 }
                 return false
@@ -293,16 +294,20 @@ extension AttoEditorAreaViewController {
         _ preview: AttoWorkspaceEditPreview,
         editorView: EditorCoreSkiaView
     ) -> Bool {
-        guard preview.canApply else {
-            _ = workspaceEditPreviewDecisionProviderForTesting?(preview)
-            setTransientStatusText("Resolve WorkspaceEdit conflicts before applying")
-            NSSound.beep()
-            return false
-        }
         if let decisionProvider = workspaceEditPreviewDecisionProviderForTesting {
-            return decisionProvider(preview) == .apply
+            return handleWorkspaceEditPreviewDecision(
+                decisionProvider(preview),
+                preview: preview,
+                editorView: editorView
+            )
         }
-        guard view.window != nil || editorView.window != nil else { return true }
+        guard view.window != nil || editorView.window != nil else {
+            return handleWorkspaceEditPreviewDecision(
+                .apply,
+                preview: preview,
+                editorView: editorView
+            )
+        }
 
         let panelController = AttoWorkspaceEditPreviewPanelController()
         workspaceEditPreviewPanelController = panelController
@@ -311,7 +316,53 @@ extension AttoEditorAreaViewController {
             preview: preview
         )
         workspaceEditPreviewPanelController = nil
-        return decision == .apply
+        return handleWorkspaceEditPreviewDecision(
+            decision,
+            preview: preview,
+            editorView: editorView
+        )
+    }
+
+    func handleWorkspaceEditPreviewDecision(
+        _ decision: AttoWorkspaceEditPreviewDecision,
+        preview: AttoWorkspaceEditPreview,
+        editorView: EditorCoreSkiaView
+    ) -> Bool {
+        switch decision {
+        case .apply:
+            guard preview.canApply else {
+                setTransientStatusText("Resolve WorkspaceEdit conflicts before applying")
+                NSSound.beep()
+                return false
+            }
+            return true
+        case .cancel:
+            return false
+        case .openConflict(let uri):
+            openWorkspaceEditConflictTarget(uri, editorView: editorView)
+            return false
+        }
+    }
+
+    @discardableResult
+    func openWorkspaceEditConflictTarget(_ uri: String, editorView: EditorCoreSkiaView) -> Bool {
+        guard let url = Self.fileURL(fromDocumentURI: uri)?.standardizedFileURL else {
+            setTransientStatusText("WorkspaceEdit conflict target unavailable")
+            NSSound.beep()
+            return false
+        }
+
+        guard openFile(url: url, mode: .pinned) else {
+            setTransientStatusText("WorkspaceEdit conflict target unavailable")
+            return false
+        }
+        setTransientStatusText("Opened WorkspaceEdit conflict: \(url.lastPathComponent)")
+        if let activeEditorView = activeTab?.editCore.editorView {
+            view.window?.makeFirstResponder(activeEditorView)
+        } else {
+            view.window?.makeFirstResponder(editorView)
+        }
+        return true
     }
 
     func workspaceEditPreviewText(for uri: String) -> String? {

@@ -13,6 +13,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     private let detailTextView = NSTextView(frame: .zero)
     private let detailScrollView = NSScrollView(frame: .zero)
     private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
+    private let openConflictButton = NSButton(title: "Open Conflict", target: nil, action: nil)
     private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
 
     @discardableResult
@@ -103,6 +104,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         root.addSubview(summaryLabel)
         root.addSubview(tableScrollView)
         root.addSubview(detailScrollView)
+        root.addSubview(openConflictButton)
         root.addSubview(cancelButton)
         root.addSubview(applyButton)
 
@@ -128,6 +130,10 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
             cancelButton.trailingAnchor.constraint(equalTo: applyButton.leadingAnchor, constant: -8),
             cancelButton.centerYAnchor.constraint(equalTo: applyButton.centerYAnchor),
             cancelButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 82),
+
+            openConflictButton.trailingAnchor.constraint(equalTo: cancelButton.leadingAnchor, constant: -8),
+            openConflictButton.centerYAnchor.constraint(equalTo: applyButton.centerYAnchor),
+            openConflictButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 118),
         ])
 
         return panel
@@ -179,6 +185,15 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     }
 
     private func configureButtons() {
+        openConflictButton.target = self
+        openConflictButton.action = #selector(openConflictClicked(_:))
+        openConflictButton.bezelStyle = .rounded
+        openConflictButton.isHidden = preview?.conflicts.isEmpty ?? true
+        openConflictButton.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.workspaceEditPreviewOpenConflictButton
+        )
+        openConflictButton.translatesAutoresizingMaskIntoConstraints = false
+
         cancelButton.target = self
         cancelButton.action = #selector(cancelClicked(_:))
         cancelButton.bezelStyle = .rounded
@@ -215,6 +230,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         }
         tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         updateDetail(row: row)
+        updateOpenConflictButton()
     }
 
     private func updateDetail(row: Int) {
@@ -223,6 +239,17 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
             return
         }
         detailTextView.string = sections[row].detailText
+    }
+
+    private func updateOpenConflictButton() {
+        guard openConflictButton.isHidden == false else { return }
+        openConflictButton.isEnabled = selectedConflictTargetURI() != nil
+    }
+
+    private func selectedConflictTargetURI() -> String? {
+        let row = tableView.selectedRow
+        let section = sections.indices.contains(row) ? sections[row] : nil
+        return preview?.conflictTargetURI(for: section)
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -262,6 +289,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         let row = tableView.selectedRow
         guard row >= 0 else { return }
         updateDetail(row: row)
+        updateOpenConflictButton()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -271,6 +299,15 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
 
     @objc private func applyClicked(_ sender: Any?) {
         decision = .apply
+        NSApp.stopModal()
+    }
+
+    @objc private func openConflictClicked(_ sender: Any?) {
+        guard let uri = selectedConflictTargetURI() else {
+            NSSound.beep()
+            return
+        }
+        decision = .openConflict(uri)
         NSApp.stopModal()
     }
 

@@ -490,6 +490,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditPreviewBlocksAtomicConflictEvenWhenDecisionProviderApplies`
     - `git diff --check`
 
+- 中间提交：`feat(app): open workspace edit conflict targets`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 WorkspaceEdit conflict preview 从“只能读 suggested action / 禁用 Apply”推进到可执行的 resolution UI 起点，让用户能从 preview 直接打开或选中第一个/当前冲突目标文件。
+  - 提交边界：只新增 AppKit preview panel 的 `Open Conflict` 按钮、稳定 accessibility identifier、`AttoWorkspaceEditPreviewDecision.openConflict(uri)` 和 App 侧打开目标 tab 的 handler；该动作关闭 preview、选择/打开目标文件并返回 false，不自动保存、discard、重跑 LSP request 或重新 apply。本提交不新增 Rust/FFI ABI，不改变 core conflict schema、transaction apply/preview/undo/redo 语义，不实现自动修复、跨 transaction conflict resolution 或 project-level conflict owner。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoWorkspaceEditSummaryTests.testWorkspaceEditPreviewListsTypedConflicts|AttoEditorCommandTests.testWorkspaceEditPreviewOpenConflictDecisionSelectsTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewBlocksAtomicConflictEvenWhenDecisionProviderApplies'`
+    - `git diff --check`
+
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 
 ### 目标

@@ -4,6 +4,7 @@ import EditorCoreUIFFI
 enum AttoWorkspaceEditPreviewDecision: Equatable {
     case apply
     case cancel
+    case openConflict(String)
 }
 
 struct AttoWorkspaceEditPreview: Equatable {
@@ -165,6 +166,10 @@ struct AttoWorkspaceEditPreview: Equatable {
 
     var canApply: Bool {
         hasBlockingConflicts == false
+    }
+
+    var firstConflictTargetURI: String? {
+        conflicts.first { $0.uri.isEmpty == false }?.uri
     }
 
     var conflictGroups: [ConflictGroup] {
@@ -345,6 +350,15 @@ struct AttoWorkspaceEditPreview: Equatable {
         Set(conflicts.map {
             Self.detailIdentity(uri: $0.uri, reason: $0.reason, operation: $0.operation)
         })
+    }
+
+    func conflictTargetURI(for section: Section?) -> String? {
+        if let section,
+           section.uri.isEmpty == false,
+           conflicts.contains(where: { $0.uri == section.uri }) {
+            return section.uri
+        }
+        return firstConflictTargetURI
     }
 
     fileprivate static func editCountText(_ count: Int) -> String {
